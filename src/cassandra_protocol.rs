@@ -37,6 +37,7 @@ pub enum Flag {
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub enum RawFrame {
     CASSANDRA(CassandraFrame),
+    NONE
 }
 
 

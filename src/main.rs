@@ -13,7 +13,8 @@ use std::env;
 use std::error::Error;
 
 use rust_practice::cassandra_protocol::{CassandraCodec, CassandraFrame, MessageType, Direction, RawFrame};
-use rust_practice::transforms::{Transform, NoOp, Printer, QueryTypeFilter};
+use rust_practice::transforms::chain::{Transform, TransformChain, Wrapper, ChainResponse};
+use rust_practice::transforms::{NoOp, Printer, QueryTypeFilter, Forward};
 use rust_practice::message::{QueryType, Message, QueryMessage, QueryResponse};
 use rust_practice::message::Message::{Query, Response};
 use rust_practice::cassandra_protocol::RawFrame::CASSANDRA;
@@ -24,7 +25,6 @@ use tokio::net::{TcpListener, TcpStream};
 struct Config {
 
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -44,6 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let messages = Framed::new(inbound, CassandraCodec::new());
         let outbound_stream = TcpStream::connect(server_addr.clone()).await?;
         let outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec::new());
+        println!("Connection received");
 
         let transfer = transfer(messages, outbound_framed_codec).map(|r| {
             if let Err(e) = r {
@@ -87,16 +88,9 @@ fn process_cassandra_frame(mut frame: CassandraFrame) -> Message {
 
 // TODO we should allow users to build and define their own topology of transforms/tasks to perform on a single request
 // however for the poc we'll just decode the C* frame to a common format, run through a lua script then write to C* and REDIS
-fn process_message(frame: CassandraFrame, transforms: &Vec<&mut dyn Transform>) -> Option<Message> {
-    let frame = process_cassandra_frame(frame);
-    let foo: Option<Message> = transforms.iter().fold(Some(frame), |acc, x| {
-        match acc {
-            Some(m) => x.transform(m),
-            None => None,
-        }
-    });
-
-    return foo;   
+fn process_message(frame: CassandraFrame, transforms: & TransformChain) -> ChainResponse {
+    let mut frame = Wrapper::new(process_cassandra_frame(frame));
+    transforms.process_request(&mut frame)
 }
 
 
@@ -104,19 +98,16 @@ fn process_message(frame: CassandraFrame, transforms: &Vec<&mut dyn Transform>) 
 //    transform.transform(message);
 //}
 
-async fn transfer(
+async fn transfer<'a>(
     mut inbound: Framed<TcpStream, CassandraCodec>,
     mut outbound: Framed<TcpStream, CassandraCodec>,
 ) -> Result<(), Box<dyn Error>> {
+    let noop_transformer = NoOp::new();
+    let printer_transform = Printer::new();
+    let query_transform = QueryTypeFilter::new(vec![QueryType::Write]);
+    let forward = Forward::new();
 
-    let mut noop_transformer = NoOp::new();
-    let mut printer_transform = Printer::new();
-    let mut query_transform = QueryTypeFilter::new(vec![QueryType::Write]);
-
-
-    let topology: Vec<&mut dyn Transform> = vec![&mut noop_transformer, &mut printer_transform, &mut query_transform];
-//    let transforms: Vec<Box<Transform>> = vec![Box::new(NoOp::new()), Box::new(Printer::new()), Box::new(QueryTypeFilter::new(vec![QueryType::Write]))];
-
+    let chain = TransformChain::new(vec![&noop_transformer, &printer_transform, &query_transform, &forward], "test");
     // Holy snappers this is terrible - seperate out inbound and outbound loops
     // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
     loop {
@@ -131,7 +122,9 @@ async fn transfer(
                             // If we don't want to forward upstream, then process message should return a response and we'll just
                             // return it to the client instead of forwarding.
                             // This could be something like a spoofed success.
-                            if let Some(modified_message) = process_message(message, &topology) {
+                            let pm = process_message(message, &chain);
+                            println!("{:?}", pm);
+                            if let Ok(modified_message) = pm {
                                 match modified_message {
                                     Query(query)    =>  {
                                         //Unwrap c* frame

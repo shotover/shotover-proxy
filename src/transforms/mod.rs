@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::message::Message::Query as MessageQuery;
-use crate::message::Message;
+use crate::message::{Message, QueryResponse};
 use crate::message::QueryType;
 use redis::{Client, Connection};
 use sqlparser::dialect::GenericDialect;
@@ -10,11 +10,25 @@ use sqlparser::ast::{Query, SetExpr::Values, Values as ValuesStruct, Expr, SetEx
 use sqlparser::ast::Value;
 use std::iter::Iterator;
 
+pub mod chain;
 
-pub trait Transform: std::marker::Sync + std::marker::Send {
-   fn transform(&self, message: Message) -> Option<Message>;
+use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
+use std::borrow::Borrow;
+
+#[derive(Debug, Clone)]
+pub struct Forward {
+    name: &'static str,
 }
 
+impl Forward {
+    pub fn new() -> Forward {
+        Forward{
+            name: "Forward",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct NoOp {
     name: &'static str,
 }
@@ -27,6 +41,7 @@ impl NoOp {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Printer {
     name: &'static str,
 }
@@ -34,53 +49,75 @@ pub struct Printer {
 impl Printer {
     pub fn new() -> Printer {
         Printer{
-            name: "NoOp",
+            name: "Printer",
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
     name: &'static str,
     filters: Vec<QueryType>,
 }
 
-
 impl QueryTypeFilter {
     pub fn new(nfilters: Vec<QueryType>) -> QueryTypeFilter {
         QueryTypeFilter{
-            name: "NoOp",
+            name: "QueryFilter",
             filters: nfilters,
         }
     }
 }
 
+impl Transform for Forward {
+    fn transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse {
+        return ChainResponse::Ok(qd.message.clone());
+    }
+
+    fn get_name(&self) -> &'static str {
+        self.name
+    }
+}
+
 impl Transform for NoOp {
-    fn transform(&self, message: Message) -> Option<Message> {
-        return Some(message);
+    fn transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse {
+        return self.call_next_transform(qd, t)
+    }
+
+    fn get_name(&self) -> &'static str {
+        self.name
     }
 }
 
 impl Transform for Printer {
-    fn transform(&self, message: Message) -> Option<Message> {
-        println!("Message content: {:?}", message);
-        return Some(message)
+    fn transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse {
+        println!("Message content: {:?}", qd.message);
+        return self.call_next_transform(qd, t)
+    }
+
+    fn get_name(&self) -> &'static str {
+        self.name
     }
 }
 
 impl Transform for QueryTypeFilter {
-    fn transform(&self, message: Message) -> Option<Message> {
+    fn transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse {
         // TODO this is likely the wrong way to get around the borrow from the match statement
+        let message  = qd.message.borrow();
+
         return match message {
             Message::Query(q) => {
                 if self.filters.iter().any(|x| *x == q.query_type) {
-                    return None
+                    return ChainResponse::Ok(Message::Response(QueryResponse::empty()))
                 }
-                Some(Message::Query(q))
+                self.call_next_transform(qd, t)
             }
-            Message::Response(r) => {
-                Some(Message::Response(r))
-            }
+            _ => self.call_next_transform(qd, t)
         }
+    }
+
+    fn get_name(&self) -> &'static str {
+        self.name
     }
 }
 
@@ -89,6 +126,45 @@ pub struct SimpleRedisCache {
     client: Client,
     con: Connection,
     tables_to_pks: HashMap<String, Vec<String>>,
+}
+
+pub struct RedisQueryCache {
+    name: &'static str,
+    client: Client,
+    con: Connection
+}
+
+impl RedisQueryCache {
+    pub fn new(uri: String) -> Option<SimpleRedisCache> {
+        if let Ok(c) = redis::Client::open(uri) {
+            if let Ok(con) = c.get_connection() {
+                return Some(SimpleRedisCache {
+                    name: "SimpleRedisCache",
+                    client: c,
+                    con: con,
+                    tables_to_pks: HashMap::new(),
+                })
+            }
+        }
+        return None
+    }
+}
+
+
+impl Transform for RedisQueryCache {
+    fn transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse {
+        // let message  = qd.message.borrow();
+        // if let MessageQuery(qm) = message {
+        //     if let
+        // }
+
+
+        unimplemented!()
+    }
+
+    fn get_name(&self) -> &'static str {
+        self.name
+    }
 }
 
 impl SimpleRedisCache {
@@ -113,28 +189,23 @@ impl SimpleRedisCache {
         let mut cumulator: Vec<String> = Vec::new();
          match expr {
              Values(v) => {
-                 for value in v.0 {
+                 for value in &v.0 {
                      for ex in value {
                          match ex {
                              EValue(v) => {
                                  match v {
                                      Value::Number(v) |
-                                     /// 'string value'
                                      Value::SingleQuotedString(v) |
-                                     /// N'string value'
                                      Value::NationalStringLiteral(v) |
-                                     /// X'hex value'
                                      Value::HexStringLiteral(v) |
-                                     /// Boolean value true or false
-                                     Value::Boolean(v) |
-                                     /// `DATE '...'` literals
                                      Value::Date(v) |
-                                     /// `TIME '...'` literals
                                      Value::Time(v) |
-                                     /// `TIMESTAMP '...'` literals
                                      Value::Timestamp(v)  => {
                                          cumulator.push(format!("{:?}", v))
                                      },
+                                     Value::Boolean(v) => {
+                                         cumulator.push(format!("{:?}", v))
+                                     }
                                      _ => cumulator.push("NULL".to_string())
                                  }
                              },
@@ -151,16 +222,13 @@ impl SimpleRedisCache {
 }
 
 impl Transform for SimpleRedisCache {
-
-
-
-
-    fn transform(&self, message: Message) -> Option<Message> {
+    fn transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse {
+        let message  = qd.message.borrow();
         let dialect = GenericDialect {}; //TODO write CQL dialect
         
         // Only handle client requests
         if let MessageQuery(qm) = message {
-            let ast = Parser::parse_sql(&dialect, qm.query_string).unwrap(); //TODO eat the error properly
+            let ast = Parser::parse_sql(&dialect, qm.query_string.clone()).unwrap(); //TODO eat the error properly
             //TODO Grammar parser
             for statement in ast.iter() {
                 match statement {
@@ -228,10 +296,10 @@ impl Transform for SimpleRedisCache {
                         E.g use pk_cols as the key, append the non-pk columns to it as the unique id e.g. foo:bar:column_name = column_value where foo and bar are pk elements
                         */
 
-
-                        if let Values(v) = source.body {
-                            let flattened = v.0.into_iter().flatten().collect::<Vec<Expr>>();
-                        }
+                        //
+                        // if let Values(v) = &source.body {
+                        //     let flattened = v.0.into_iter().flatten().collect::<Vec<Expr>>();
+                        // }
 
                     },
                     Update {table_name, assignments, selection} => {},
@@ -243,10 +311,12 @@ impl Transform for SimpleRedisCache {
             }
         }
 //        match message.
-        unimplemented!()
+        self.call_next_transform(qd, t)
     }
 
 
-
+    fn get_name(&self) -> &'static str {
+        self.name
+    }
 }
 

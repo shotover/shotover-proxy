@@ -26,6 +26,16 @@ pub struct QueryResponse {
     pub error: Option<Value>,
 }
 
+impl QueryResponse {
+    pub fn empty() -> Self {
+        return QueryResponse {
+            original: RawFrame::NONE,
+            result: None,
+            error: None
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum QueryType {
    Read,
