@@ -26,7 +26,7 @@ metrics = "0.12.1"
 
 
 # Sink deps
-redis = "0.15.1"
+redis = {version = "0.15.1", features = ["tokio-rt-core"]}
 cdrs = { version = "2" }
 # elasticsearch = "7.6.0-alpha.1"
 

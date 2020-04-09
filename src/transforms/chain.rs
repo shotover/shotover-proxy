@@ -1,7 +1,8 @@
 use std::{error, fmt};
 use crate::message::Message;
 use tokio::time::Instant;
-use metrics::{timing, counter};
+use metrics::{timing};
+use std::borrow::BorrowMut;
 
 #[derive(Debug, Clone)]
 struct QueryData {
@@ -9,14 +10,14 @@ struct QueryData {
 }
 
 //TODO change this to be generic to messages type
-#[derive(Debug, Clone)]
-pub struct Wrapper {
-    pub message: Message,
+#[derive(Debug)]
+pub struct Wrapper<'a> {
+    pub message: Message<'a>,
     next_transform: usize
 }
 
-impl Wrapper {
-    pub fn new(m: Message) -> Self {
+impl <'a> Wrapper<'a>  {
+    pub fn new(m: Message<'a>) -> Self {
         Wrapper {
             message: m,
             next_transform: 0
@@ -25,12 +26,12 @@ impl Wrapper {
 }
 
 #[derive(Debug)]
-struct ResponseData {
-    response: Message,
+struct ResponseData<'a> {
+    response: Message<'a>,
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RequestError;
 
 impl fmt::Display for RequestError {
@@ -50,16 +51,16 @@ impl error::Error for RequestError {
 // Option 1
 
 //TODO change Transform to maintain the InnerChain internally so we don't have to expose this
-pub type InnerChain<'a> = Vec<&'a dyn Transform>;
+pub type InnerChain<'a, 'c> = Vec<&'a dyn Transform<'a, 'c>>;
 
 //Option 2
 
-pub trait Transform: Send + Sync  {
-    fn transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse;
+pub trait Transform<'a, 'c>: Send + Sync  {
+    fn transform(&self, mut qd: Wrapper<'c>, t: &TransformChain<'a,'c>) -> ChainResponse<'c>;
 
     fn get_name(&self) -> &'static str;
 
-    fn instrument_transform(&self, qd: &mut Wrapper, t: &TransformChain) -> ChainResponse {
+    fn instrument_transform(&self, mut qd: Wrapper<'c>, t: &TransformChain<'a,'c>) -> ChainResponse<'c> {
         let start = Instant::now();
         let result = self.transform(qd, t);
         let end = Instant::now();
@@ -67,7 +68,7 @@ pub trait Transform: Send + Sync  {
         return result;
     }
 
-    fn call_next_transform(&self, qd: &mut Wrapper, transforms: &TransformChain) -> ChainResponse {
+    fn call_next_transform(&self, mut qd: Wrapper<'c>, transforms: &TransformChain<'a,'c>) -> ChainResponse<'c> {
         let next = qd.next_transform;
         qd.next_transform += 1;
         return match transforms.chain.get(next) {
@@ -82,22 +83,22 @@ pub trait Transform: Send + Sync  {
 }
 
 #[derive(Clone)]
-pub struct TransformChain<'a> {
+pub struct TransformChain<'a, 'c> {
     name: &'static str,
-    chain: InnerChain<'a>
+    chain: InnerChain<'a, 'c>
 }
 
-pub type ChainResponse = Result<Message, RequestError>;
+pub type ChainResponse<'a> = Result<Message<'a>, RequestError>;
 
-impl <'a> TransformChain<'a> {
-    pub fn new(transform_list: Vec<&'a dyn Transform>, name: &'static str) -> Self {
+impl <'a, 'c> TransformChain<'a, 'c> {
+    pub fn new(transform_list: Vec<&'a dyn Transform<'a, 'c>>, name: &'static str) -> Self {
         TransformChain {
             name,
             chain: transform_list
         }
     }
 
-    pub fn process_request(&self, wrapper: &mut Wrapper) -> ChainResponse {
+    pub fn process_request(&self, mut wrapper: Wrapper<'c>) -> ChainResponse<'c> {
         let start = Instant::now();
         let result = match self.chain.get(wrapper.next_transform) {
             Some(t) => {
@@ -108,7 +109,7 @@ impl <'a> TransformChain<'a> {
         };
         let end = Instant::now();
         timing!("", start, end, "chain" => self.name, "" => "");
-        return result;
+        return result.clone();
 
 
     }

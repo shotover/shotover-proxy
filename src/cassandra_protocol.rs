@@ -26,6 +26,7 @@ pub struct CassandraFrame {
 
 #[derive(IntoPrimitive, TryFromPrimitive, Eq, PartialEq, Debug, Copy, Clone, Hash)]
 #[repr(u8)]
+#[allow(non_camel_case_types)]
 pub enum Flag {
     COMPRESSED,
     TRACING,

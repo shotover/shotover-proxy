@@ -1,22 +1,33 @@
 use bytes::Bytes;
 use std::collections::HashMap;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use crate::cassandra_protocol::{RawFrame};
-use std::rc::Rc;
+use sqlparser::ast::Statement;
 
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Message {
-   Query(QueryMessage),
+pub enum Message<'a> {
+   Query(QueryMessage<'a>),
    Response(QueryResponse)
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct QueryMessage {
+pub struct QueryMessage<'a> {
     pub original: RawFrame,
     pub query_string: String,
-//    pub query_parameters: HashMap<String, Value>,
+    pub namespace: Vec<String>,
+    pub primary_key: HashMap<String, Value>,
+    pub query_values: Option<HashMap<String, Value>>,
+    pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
+    pub ast: Option<&'a Statement>
+}
+
+impl QueryMessage<'_> {
+    pub fn get_primary_key(&self) -> Option<String> {
+        let f: Vec<String> = self.primary_key.iter().map(|(k,v) | {format!("{:?}", v)}).collect();
+        return Some(f.join("."));
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
