@@ -14,12 +14,19 @@ pub mod chain;
 
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
 use std::borrow::{Borrow, BorrowMut};
+use crate::message::{Value as MValue};
+
 use redis::aio::{MultiplexedConnection};
-use futures::executor::block_on;
+use tokio::task::{*};
 use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use std::future::Future;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
+use crate::cassandra_protocol::RawFrame;
+use futures::StreamExt;
+use futures::executor::block_on;
+
+use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct Forward {
@@ -75,8 +82,9 @@ impl QueryTypeFilter {
     }
 }
 
+#[async_trait]
 impl<'a, 'c> Transform<'a, 'c> for Forward {
-    fn transform(&self, mut qd: Wrapper<'c>, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
         return ChainResponse::Ok(qd.message.clone());
     }
 
@@ -85,9 +93,10 @@ impl<'a, 'c> Transform<'a, 'c> for Forward {
     }
 }
 
+#[async_trait]
 impl<'a, 'c> Transform<'a, 'c> for NoOp {
-    fn transform(&self, mut qd: Wrapper<'c>, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
-        return self.call_next_transform(qd, t)
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+        return self.call_next_transform(qd, t).await
     }
 
     fn get_name(&self) -> &'static str {
@@ -95,10 +104,11 @@ impl<'a, 'c> Transform<'a, 'c> for NoOp {
     }
 }
 
+#[async_trait]
 impl<'a, 'c> Transform<'a, 'c> for Printer {
-    fn transform(&self, mut qd: Wrapper<'c>, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
         println!("Message content: {:?}", qd.message);
-        return self.call_next_transform(qd, t)
+        return self.call_next_transform(qd, t).await
     }
 
     fn get_name(&self) -> &'static str {
@@ -106,8 +116,9 @@ impl<'a, 'c> Transform<'a, 'c> for Printer {
     }
 }
 
+#[async_trait]
 impl<'a, 'c> Transform<'a, 'c> for QueryTypeFilter {
-    fn transform(&self, mut qd: Wrapper<'c>, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
         // TODO this is likely the wrong way to get around the borrow from the match statement
         let message  = qd.message.borrow();
 
@@ -116,9 +127,9 @@ impl<'a, 'c> Transform<'a, 'c> for QueryTypeFilter {
                 if self.filters.iter().any(|x| *x == q.query_type) {
                     return ChainResponse::Ok(Message::Response(QueryResponse::empty()))
                 }
-                self.call_next_transform(qd, t)
+                self.call_next_transform(qd, t).await
             }
-            _ => self.call_next_transform(qd, t)
+            _ => self.call_next_transform(qd, t).await
         }
     }
 
@@ -135,7 +146,7 @@ pub struct SimpleRedisCache {
 
 impl SimpleRedisCache {
     //"redis://127.0.0.1/"
-    pub fn new(uri: & String, connection: MultiplexedConnection) -> SimpleRedisCache {
+    pub fn new(connection: MultiplexedConnection) -> SimpleRedisCache {
             return SimpleRedisCache {
                 name: "SimpleRedisCache",
                 con: connection,
@@ -244,14 +255,17 @@ struct CassandraEnrichment {
 // }
 
 
-
+#[async_trait]
 impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
-    fn transform(&self, mut qd: Wrapper<'c>, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
         let message  = qd.message.borrow();
-        let dialect = GenericDialect {}; //TODO write CQL dialect
-        
+
         // Only handle client requests
         if let MessageQuery(qm) = message {
+            if qm.primary_key.is_empty() {
+                return self.call_next_transform(qd, t).await;
+            }
+
             for statement in qm.ast.iter() {
                 match statement {
                     /*
@@ -287,31 +301,37 @@ impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
                         //TODO: something something what happens if hset fails.
                         // let f: RedisFuture<HashMap<String, String>> = client_copy.hgetall(&qm.get_primary_key());
                         let mut p = &mut pipe();
-                        if let Some(pk) = qm.get_primary_key() {
+                        if let Some(pk) = qm.get_namespaced_primary_key() {
                             if let Some(values) = &qm.projection {
                                 for v in values {
                                     if let None = qm.primary_key.get(v) {
-                                        p.hget(&pk, v).ignore();
+                                        p.hget(&pk, v);
                                     }
                                 }
                             }
                         }
 
+                        // println!("{:?}", p);
+                        let result: RedisResult<(Vec<String>)> = p.query_async(&mut client_copy).await;
+                        println!("{:?}", result);
 
-                        // let f: RedisFuture<()>  = client_copy.hset_multiple(build_key(namespace,pk_cols,&colmap), );
-                        let result_vec: Vec<Vec<String>> = Vec::new();
-                        let result: RedisResult<()> = block_on(p.query_async(&mut client_copy));
+                        if let Ok(ok_result) = result {
+                            if !ok_result.is_empty() {
 
-                        // if let Ok(result) =  {
-                        //
-                        //     return ChainResponse::Ok(Message::Response(QueryResponse{
-                        //         original: RawFrame::NONE,
-                        //         result: Some(IValue::Rows(Vec::new())), //todo: Translate function
-                        //         error: None,
-                        //     }))
-                        // }
+                                //TODO a type translation function should be generalised here
+                                let some = ok_result.into_iter().map(|x| MValue::Strings(x)).collect::<Vec<MValue>>();
+                                return ChainResponse::Ok(Message::Response(QueryResponse{
+                                    matching_query: Some(qm.clone()),
+                                    original: RawFrame::NONE,
+                                    result: Some(MValue::Rows(vec![some])), //todo: Translate function
+                                    error: None,
+                                }))
+                            }
 
-                        return self.call_next_transform(qd, t)
+                        }
+
+                        return self.call_next_transform(qd, t).await
+
                     },
 
                     /*
@@ -334,38 +354,37 @@ impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
 
                     */
                     Insert {table_name, columns, source} => {
-                        let namespace = table_name.0.join(".");
-                        let pk_cols = self.tables_to_pks.get(&namespace).unwrap();
-                        let values = self.getColumnValues(&source.body);
-                        let mut colmap: HashMap<String, &String> = HashMap::new();
                         let mut insert_values: Vec<(String, String)> = Vec::new();
-                        for (i, c) in columns.iter().enumerate() {
-                            match values.get(i) {
-                                Some(v) => {
-                                    let key = c.to_string();
-                                    colmap.insert(c.to_string(), v);
-                                    if !pk_cols.contains(&key) {
-                                        insert_values.push((c.clone(), v.clone()))
+
+                        if let Some(pk) = qm.get_namespaced_primary_key() {
+                            if let Some(value_map) = qm.query_values.borrow()  {
+                                for (k, v) in value_map {
+                                    if !qm.primary_key.contains_key(k) {
+                                        insert_values.push((k.clone(), format!("{:?}", v.clone())));
                                     }
-                                },
-                                None => {}, //TODO some error
+                                }
+
+                                let mut client_copy = self.con.clone();
+
+                                //TODO: something something what happens if hset fails.
+
+                                let f: RedisFuture<()>  = client_copy.hset_multiple(pk, insert_values.as_slice());
+
+                                // TODO: We update the cache asynchronously - currently errors on cache update are ignored
+                                let res = self.call_next_transform(qd, t).await;
+
+                                if let Err(e) = f.await {
+                                    println!("Cache update failed {:?} !", e);
+                                } else {
+                                    println!("Cache update success !");
+
+                                }
+
+                                return res;
                             }
                         }
-                        //TODO: Dunno how great this is, but the underlying socket is shared between
-                        // all clones, so now tcp session establishment overhead.
-                        let mut client_copy = self.con.clone();
 
-                        //TODO: something something what happens if hset fails.
-                        let key = build_key(namespace,pk_cols,&colmap);
-                        let f: RedisFuture<()>  = client_copy.hset_multiple(key.clone(), insert_values.as_slice());
-
-                        // TODO: We update the cache asynchronously - currently errors on cache update are ignored
-                        let res = self.call_next_transform(qd, t);
-
-                        let cache_update = block_on(f);
-
-                        return res;
-
+                        return self.call_next_transform(qd, t).await;
 
                     },
                     Update {table_name, assignments, selection} => {},
@@ -377,7 +396,7 @@ impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
             }
         }
 //        match message.
-        self.call_next_transform(qd, t)
+        self.call_next_transform(qd, t).await
     }
 
 

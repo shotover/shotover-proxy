@@ -3,6 +3,10 @@ use crate::message::Message;
 use tokio::time::Instant;
 use metrics::{timing};
 use std::borrow::BorrowMut;
+use std::future::Future;
+use futures::future::BoxFuture;
+use async_trait::async_trait;
+
 
 #[derive(Debug, Clone)]
 struct QueryData {
@@ -11,13 +15,13 @@ struct QueryData {
 
 //TODO change this to be generic to messages type
 #[derive(Debug)]
-pub struct Wrapper<'a> {
-    pub message: Message<'a>,
+pub struct Wrapper {
+    pub message: Message,
     next_transform: usize
 }
 
-impl <'a> Wrapper<'a>  {
-    pub fn new(m: Message<'a>) -> Self {
+impl Wrapper  {
+    pub fn new(m: Message) -> Self {
         Wrapper {
             message: m,
             next_transform: 0
@@ -26,8 +30,8 @@ impl <'a> Wrapper<'a>  {
 }
 
 #[derive(Debug)]
-struct ResponseData<'a> {
-    response: Message<'a>,
+struct ResponseData {
+    response: Message,
 }
 
 
@@ -55,25 +59,26 @@ pub type InnerChain<'a, 'c> = Vec<&'a dyn Transform<'a, 'c>>;
 
 //Option 2
 
+#[async_trait]
 pub trait Transform<'a, 'c>: Send + Sync  {
-    fn transform(&self, mut qd: Wrapper<'c>, t: &TransformChain<'a,'c>) -> ChainResponse<'c>;
+    async fn transform(&self, mut qd: Wrapper, t: &TransformChain<'a,'c>) -> ChainResponse<'c>;
 
     fn get_name(&self) -> &'static str;
 
-    fn instrument_transform(&self, mut qd: Wrapper<'c>, t: &TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn instrument_transform(&self, mut qd: Wrapper, t: &TransformChain<'a,'c>) -> ChainResponse<'c> {
         let start = Instant::now();
-        let result = self.transform(qd, t);
+        let result = self.transform(qd, t).await;
         let end = Instant::now();
         timing!("", start, end, "transform" => self.get_name(), "" => "");
         return result;
     }
 
-    fn call_next_transform(&self, mut qd: Wrapper<'c>, transforms: &TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn call_next_transform(&self, mut qd: Wrapper, transforms: &TransformChain<'a,'c>) -> ChainResponse<'c> {
         let next = qd.next_transform;
         qd.next_transform += 1;
         return match transforms.chain.get(next) {
             Some(t) => {
-                t.instrument_transform(qd, transforms)
+                t.instrument_transform(qd, transforms).await
             },
             None => {
                 Err(RequestError{})
@@ -88,7 +93,7 @@ pub struct TransformChain<'a, 'c> {
     chain: InnerChain<'a, 'c>
 }
 
-pub type ChainResponse<'a> = Result<Message<'a>, RequestError>;
+pub type ChainResponse<'a> = Result<Message, RequestError>;
 
 impl <'a, 'c> TransformChain<'a, 'c> {
     pub fn new(transform_list: Vec<&'a dyn Transform<'a, 'c>>, name: &'static str) -> Self {
@@ -98,19 +103,17 @@ impl <'a, 'c> TransformChain<'a, 'c> {
         }
     }
 
-    pub fn process_request(&self, mut wrapper: Wrapper<'c>) -> ChainResponse<'c> {
+    pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse<'c> {
         let start = Instant::now();
         let result = match self.chain.get(wrapper.next_transform) {
             Some(t) => {
                 wrapper.next_transform += 1;
-                t.instrument_transform(wrapper, &self)
+                t.instrument_transform(wrapper, &self).await
             },
             None => ChainResponse::Err(RequestError{})
         };
         let end = Instant::now();
         timing!("", start, end, "chain" => self.name, "" => "");
-        return result.clone();
-
-
+        return result;
     }
 }

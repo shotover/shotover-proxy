@@ -14,7 +14,7 @@ use std::error::Error;
 
 use rust_practice::cassandra_protocol::{CassandraCodec, CassandraFrame, MessageType, Direction, RawFrame};
 use rust_practice::transforms::chain::{Transform, TransformChain, Wrapper, ChainResponse};
-use rust_practice::transforms::{NoOp, Printer, QueryTypeFilter, Forward};
+use rust_practice::transforms::{NoOp, Printer, QueryTypeFilter, Forward, SimpleRedisCache};
 use rust_practice::message::{QueryType, Message, QueryMessage, QueryResponse, Value};
 use rust_practice::message::Message::{Query, Response};
 use rust_practice::cassandra_protocol::RawFrame::CASSANDRA;
@@ -23,19 +23,23 @@ use tokio::net::{TcpListener, TcpStream};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::collections::HashMap;
-use sqlparser::ast::{SetExpr, TableFactor, Value as SQLValue, Expr, Statement};
+use sqlparser::ast::{SetExpr, TableFactor, Value as SQLValue, Expr, Statement, BinaryOperator};
 use sqlparser::ast::Statement::{Insert, Update, Delete};
 use sqlparser::ast::Expr::{Identifier, BinaryOp};
 use std::borrow::{Borrow, BorrowMut};
 use chrono::DateTime;
 use std::str::FromStr;
+use bytes::Buf;
+use futures::executor::block_on;
+use redis::aio::MultiplexedConnection;
+use tokio::runtime::Runtime;
 
 
 struct Config {
 
 }
 
-#[tokio::main]
+#[tokio::main(core_threads = 2)]
 async fn main() -> Result<(), Box<dyn Error>> {
     let listen_addr = env::args()
         .nth(1)
@@ -50,10 +54,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut listener = TcpListener::bind(listen_addr).await?;
 
     while let Ok((inbound, _)) = listener.accept().await {
+        println!("Connection received from {:?}", inbound.peer_addr());
+
         let messages = Framed::new(inbound, CassandraCodec::new());
         let outbound_stream = TcpStream::connect(server_addr.clone()).await?;
         let outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec::new());
-        println!("Connection received");
 
         let transfer = transfer(messages, outbound_framed_codec).map(|r| {
             if let Err(e) = r {
@@ -127,11 +132,11 @@ fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a mut HashMap<String, Value>
     match node {
         BinaryOp{left, op, right} => {
             match op {
-                AND => {
+                BinaryOperator::And => {
                     binary_ops_to_hashmap(left, map);
                     binary_ops_to_hashmap(right, map);
                 }
-                EQUAL=> {
+                BinaryOperator::Eq=> {
                     if let Identifier(i) = left.borrow() {
                         if let Expr::Value(v) = right.borrow() {
                             map.insert(i.to_string(), expr_to_value(v));
@@ -139,6 +144,7 @@ fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a mut HashMap<String, Value>
 
                     }
                 }
+                _ => {}
             }
         },
         _ => {}
@@ -152,12 +158,12 @@ fn expr_value_to_string(node: &Expr) -> String {
     "".to_string()
 }
 
-struct ParsedCassandraQueryString<'a> {
+struct ParsedCassandraQueryString {
     namespace: Option<Vec<String>>,
     colmap: Option<HashMap<String, Value>>,
     projection: Option<Vec<String>>,
     primary_key: HashMap<String, Value>,
-    ast: Option<&'a Statement>
+    ast: Option<Statement>
 }
 
 fn getColumnValues(expr: &SetExpr) -> Vec<String> {
@@ -181,84 +187,100 @@ fn getColumnValues(expr: &SetExpr) -> Vec<String> {
 }
 
 
-fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec<String>>) -> ParsedCassandraQueryString<'a> {
+fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec<String>>) -> ParsedCassandraQueryString {
+
     let dialect = GenericDialect {}; //TODO write CQL dialect
-    let ast_list = Parser::parse_sql(&dialect, query_string.clone()).unwrap(); //TODO eat the error properly
+
 
     let mut namespace: Vec<String> = Vec::new();
     let mut colmap: HashMap<String, Value> = HashMap::new();
     let mut projection: Vec<String> = Vec::new();
     let mut primary_key: HashMap<String, Value> = HashMap::new();
-    let mut ast: Option<&Statement> = None;
+    let mut ast: Option<Statement> = None;
+    let foo = Parser::parse_sql(&dialect, query_string.clone());
     //TODO handle pks
+    // println!("{:#?}", foo);
 
     //TODO: We absolutely don't handle multiple statements despite this loop indicating otherwise
     // for statement in ast_list.iter() {
-    if let Some(statement) = ast_list.get(0) {
-        ast = Some(statement);
-        match statement {
-            Statement::Query(q) => {
-                match q.body.borrow() {
-                    SetExpr::Select(s) => {
-                        projection = s.projection.iter().map(|s| {s.to_string()}).collect();
-                        if let TableFactor::Table{name, alias, args, with_hints }  = &s.from.get(0).unwrap().relation {
-                            namespace = name.0.clone();
-                        }
-                        if let Some(sel) = &s.selection {
-                            binary_ops_to_hashmap(sel, colmap.borrow_mut());
-                        }
-                        let pk_col_names = pk_col_map.get(&namespace.join(".")).unwrap();
-                        for pk_component in pk_col_names {
-                            primary_key.insert(pk_component.clone(), colmap.get(pk_component).unwrap().clone());
-                        }
-                    },
-                    _ => {}
-                }
-            },
-            Insert {table_name, columns, source} => {
-                namespace = table_name.0.clone();
-                let values = getColumnValues(&source.body);
-                for (i, c) in columns.iter().enumerate() {
-                    projection.push(c.clone());
-                    match values.get(i) {
-                        Some(v) => {
-                            let key = c.to_string();
-                            colmap.insert(c.to_string(), Value::Strings(v.clone()));
+    if let Ok(ast_list) = foo {
+        if let Some(statement) = ast_list.get(0) {
+            ast = Some(statement.clone());
+            match statement {
+                Statement::Query(q) => {
+                    match q.body.borrow() {
+                        SetExpr::Select(s) => {
+                            projection = s.projection.iter().map(|s| {s.to_string()}).collect();
+                            if let TableFactor::Table{name, alias, args, with_hints }  = &s.from.get(0).unwrap().relation {
+                                namespace = name.0.clone();
+                            }
+                            if let Some(sel) = &s.selection {
+                                binary_ops_to_hashmap(sel, colmap.borrow_mut());
+                            }
+                            if let Some(pk_col_names) = pk_col_map.get(&namespace.join(".")) {
+                                for pk_component in pk_col_names {
+                                    if let Some(value) = colmap.get(pk_component) {
+                                        primary_key.insert(pk_component.clone(), value.clone());
+                                    } else {
+                                        primary_key.insert(pk_component.clone(), Value::NULL);
+                                    }
+                                }
+                            }
                         },
-                        None => {}, //TODO some error
+                        _ => {}
                     }
-                }
-
-                let pk_col_names = pk_col_map.get(&namespace.join(".")).unwrap();
-                for pk_component in pk_col_names {
-                    primary_key.insert(pk_component.clone(), colmap.get(pk_component).unwrap().clone());
-                }
-
-            },
-            Update {table_name, assignments, selection} => {
-                namespace = table_name.0.clone();
-                for assignment in assignments {
-                    if let Expr::Value(v) = assignment.clone().value {
-                        let converted_value = expr_to_value(v.borrow());
-                        colmap.insert(assignment.id.clone(), converted_value);
-
+                },
+                Insert {table_name, columns, source} => {
+                    namespace = table_name.0.clone();
+                    let values = getColumnValues(&source.body);
+                    for (i, c) in columns.iter().enumerate() {
+                        projection.push(c.clone());
+                        match values.get(i) {
+                            Some(v) => {
+                                let key = c.to_string();
+                                colmap.insert(c.to_string(), Value::Strings(v.clone()));
+                            },
+                            None => {}, //TODO some error
+                        }
                     }
-                }
-                if let Some(s) = selection {
-                    binary_ops_to_hashmap(s, &mut primary_key);
-                }
-                // projection = ;
 
-            },
-            Delete {table_name, selection} => {
-                namespace = table_name.0.clone();
-                if let Some(s) = selection {
-                    binary_ops_to_hashmap(s, &mut primary_key);
-                }
-                // projection = None;
-            },
-            _ => {},
+                    if let Some(pk_col_names) = pk_col_map.get(&namespace.join(".")) {
+                        for pk_component in pk_col_names {
+                            if let Some(value) = colmap.get(pk_component) {
+                                primary_key.insert(pk_component.clone(), value.clone());
+                            } else {
+                                primary_key.insert(pk_component.clone(), Value::NULL);
+                            }
+                        }
+                    }
+
+                },
+                Update {table_name, assignments, selection} => {
+                    namespace = table_name.0.clone();
+                    for assignment in assignments {
+                        if let Expr::Value(v) = assignment.clone().value {
+                            let converted_value = expr_to_value(v.borrow());
+                            colmap.insert(assignment.id.clone(), converted_value);
+
+                        }
+                    }
+                    if let Some(s) = selection {
+                        binary_ops_to_hashmap(s, &mut primary_key);
+                    }
+                    // projection = ;
+
+                },
+                Delete {table_name, selection} => {
+                    namespace = table_name.0.clone();
+                    if let Some(s) = selection {
+                        binary_ops_to_hashmap(s, &mut primary_key);
+                    }
+                    // projection = None;
+                },
+                _ => {},
+            }
         }
+
     }
 
     return ParsedCassandraQueryString{
@@ -266,7 +288,7 @@ fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec
         colmap: Some(colmap),
         projection: Some(projection),
         primary_key,
-        ast: None
+        ast: ast
     }
 
 }
@@ -275,7 +297,7 @@ fn process_cassandra_frame(mut frame: CassandraFrame, pk_col_map: &HashMap<Strin
     if frame.header.direction == Direction::Request {
         match frame.get_query() {
             Some(q) => {
-                let query_string = format!("{:?}",  q.query_string);
+                let query_string = String::from(String::from_utf8_lossy(q.query_string.bytes()));
                 let other = query_string.clone();
                 let parsed_string = parse_query_string(other, pk_col_map);
 
@@ -287,7 +309,7 @@ fn process_cassandra_frame(mut frame: CassandraFrame, pk_col_map: &HashMap<Strin
                     query_values: parsed_string.colmap,
                     projection: parsed_string.projection,
                     query_type: QueryType::Read,
-                    ast: None
+                    ast: parsed_string.ast
                 })
             },
             None => {
@@ -305,6 +327,7 @@ fn process_cassandra_frame(mut frame: CassandraFrame, pk_col_map: &HashMap<Strin
         }
     } else {
         Message::Response(QueryResponse{
+            matching_query: None,
             original: RawFrame::CASSANDRA(frame),
             result: None,
             error: None
@@ -315,8 +338,8 @@ fn process_cassandra_frame(mut frame: CassandraFrame, pk_col_map: &HashMap<Strin
 
 // TODO we should allow users to build and define their own topology of transforms/tasks to perform on a single request
 // however for the poc we'll just decode the C* frame to a common format, run through a lua script then write to C* and REDIS
-fn process_message<'a, 'c>(mut frame: Wrapper<'c>, transforms: &'c TransformChain<'a, 'c>) -> ChainResponse<'c> {
-    return transforms.process_request(frame);
+async fn process_message<'a, 'c>(mut frame: Wrapper, transforms: &'c TransformChain<'a, 'c>) -> ChainResponse<'c> {
+    return transforms.process_request(frame).await
 }
 
 async fn transfer<'a>(
@@ -327,9 +350,20 @@ async fn transfer<'a>(
     let printer_transform = Printer::new();
     let query_transform = QueryTypeFilter::new(vec![QueryType::Write]);
     let forward = Forward::new();
-    let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
+    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let mut con = block_on(client.get_multiplexed_tokio_connection())?;
 
-    let chain = TransformChain::new(vec![&noop_transformer, &printer_transform, &query_transform, &forward], "test");
+    let response = redis::cmd("PING").query_async(&mut con).await?;
+    println!("REDIS: {:?}", response);
+
+    let redis_cache = SimpleRedisCache::new(con);
+    let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
+    // cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);
+    cassandra_ks.insert("test.simple".to_string(), vec!["pk".to_string()]);
+    cassandra_ks.insert("test.clustering".to_string(), vec!["pk".to_string(), "clustering".to_string()]);
+
+
+    let chain = TransformChain::new(vec![&noop_transformer, &printer_transform, &query_transform, &redis_cache, &forward], "test");
     // Holy snappers this is terrible - seperate out inbound and outbound loops
     // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
     loop {
@@ -345,7 +379,7 @@ async fn transfer<'a>(
                             // return it to the client instead of forwarding.
                             // This could be something like a spoofed success.
                             let mut frame = Wrapper::new(process_cassandra_frame(message, &cassandra_ks));
-                            let pm = process_message(frame, &chain);
+                            let pm = process_message(frame, &chain).await;
                             println!("{:?}", pm);
                             if let Ok(modified_message) = pm {
                                 match modified_message {

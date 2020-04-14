@@ -35,6 +35,24 @@ pub enum Flag {
     USE_BETA,
 }
 
+#[derive(IntoPrimitive, TryFromPrimitive, Eq, PartialEq, Debug, Copy, Clone, Hash)]
+#[repr(u8)]
+#[allow(non_camel_case_types)]
+pub enum ConsistencyLevel {
+    ANY,
+    ONE,
+    TWO,
+    THREE,
+    QUORUM,
+    ALL,
+    LOCAL_QUORUM,
+    EACH_QUORUM,
+    SERIAL,
+    LOCAL_SERIAL,
+    LOCAL_ONE,
+}
+
+
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub enum RawFrame {
     CASSANDRA(CassandraFrame),
