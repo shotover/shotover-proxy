@@ -11,6 +11,8 @@ use std::iter::{Iterator};
 use futures::future::{join, Join};
 
 pub mod chain;
+pub mod cassandra_destination;
+pub mod codec_destination;
 
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
 use std::borrow::{Borrow, BorrowMut};

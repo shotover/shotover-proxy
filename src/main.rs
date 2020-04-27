@@ -33,6 +33,9 @@ use bytes::Buf;
 use futures::executor::block_on;
 use redis::aio::MultiplexedConnection;
 use tokio::runtime::Runtime;
+use rust_practice::transforms::codec_destination::CodecDestination;
+use tokio::sync::Mutex;
+use std::sync::Arc;
 
 
 struct Config {
@@ -356,14 +359,16 @@ async fn transfer<'a>(
     let response = redis::cmd("PING").query_async(&mut con).await?;
     println!("REDIS: {:?}", response);
 
+    let protected_outbound = Arc::new(Mutex::new(outbound));
     let redis_cache = SimpleRedisCache::new(con);
+    let cassandra_dest = CodecDestination::new(protected_outbound);
     let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
     // cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);
     cassandra_ks.insert("test.simple".to_string(), vec!["pk".to_string()]);
     cassandra_ks.insert("test.clustering".to_string(), vec!["pk".to_string(), "clustering".to_string()]);
 
 
-    let chain = TransformChain::new(vec![&noop_transformer, &printer_transform, &query_transform, &redis_cache, &forward], "test");
+    let chain = TransformChain::new(vec![&noop_transformer, &printer_transform, &query_transform, &redis_cache, &cassandra_dest], "test");
     // Holy snappers this is terrible - seperate out inbound and outbound loops
     // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
     loop {
@@ -384,10 +389,7 @@ async fn transfer<'a>(
                             if let Ok(modified_message) = pm {
                                 match modified_message {
                                     Query(query)    =>  {
-                                        //Unwrap c* frame
-                                        if let CASSANDRA(f) = query.original {
-                                            outbound.send(f).await?
-                                        }
+                                        //Now handled by a transform
                                     },
                                     Response(resp)  =>  {
                                         if let CASSANDRA(f) = resp.original {
@@ -403,22 +405,7 @@ async fn transfer<'a>(
                         }
                     }
                 }
-            },
-
-            // TODO - allow us to filter responses from the server.
-            o = outbound.next().fuse() => {
-                if let Some(result) = o {
-                    match result {
-                        Ok(message) => {
-                            // let modified_message = process_message(message, &topology);
-                            inbound.send(message).await?;
-                        }
-                        Err(e) => {
-                            println!("uh oh! {}", e)
-                        }
-                    }
-                }
-            },
+            }
         };
     }
 }
