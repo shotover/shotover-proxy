@@ -6,9 +6,15 @@ use sqlparser::ast::Statement;
 
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Message {
-   Query(QueryMessage),
-   Response(QueryResponse)
+pub enum Message { 
+    Bypass(RawMessage),
+    Query(QueryMessage),
+    Response(QueryResponse)
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct RawMessage {
+    pub original: RawFrame,
 }
 
 #[derive(PartialEq, Debug, Clone)]

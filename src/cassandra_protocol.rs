@@ -14,6 +14,7 @@ use cdrs::frame::traits::FromCursor;
 use cdrs::types::rows::Row;
 use serde::export::fmt::Debug;
 use crate::message::{Message, Value};
+use cassandra_proto::frame::Frame;
 
 // use rust_praxctice::generic_protocol::{MessageContainer};
 
@@ -56,7 +57,7 @@ pub enum ConsistencyLevel {
 
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub enum RawFrame {
-    CASSANDRA(CassandraFrame),
+    CASSANDRA(Frame),
     NONE
 }
 
@@ -305,49 +306,53 @@ enum CassandraResponseType {
     SchemaChange = 0x0005
 }
 
-async fn message_to_cassandra_frame(m: Message) -> CassandraFrame {
-    match m {
-        Message::Query(qm) => {
-            //TODO build the frame rather than just passing the original
-            if let RawFrame::CASSANDRA(f) = qm.original {
-                return f;
-            }
-        }
-        Message::Response(qr) => {
-            if RawFrame::NONE == qr.original {
-                let query_type: CassandraResponseType;
-                //        <flags><columns_count>[<paging_state>][<global_table_spec>?<col_spec_1>...<col_spec_n>]
-                let flags = 0x001; //We set global table spec, no paging (TODO) and we include metadata
-                let column_count: i32;
-                let row_count: i32;
-                let body = BytesMut::new();
-                let mut global_table_spec: BytesMut = BytesMut::new();
-                if let Some(r)  = qr.result {
-                    match r {
-                        Value::Rows(v) => {
-                            row_count = v.len() as i32;
-                            if row_count == 0 {
-                                query_type = CassandraResponseType::Void;
-                            } else {
-                                query_type = CassandraResponseType::Rows;
-                                column_count = v.get(0).unwrap().len() as i32;
-                                qr.matching_query.unwrap()
-                                    .namespace
-                                    .into_iter()
-                                    .map(|s| global_table_spec.put(build_cassandra_string(s.as_str())));
-
-                            }
-                        },
-                        _ => {
-                            //TODO - implement support for other datatypes
-                        }
-                    }
-                }
-            }
-        }
-    }
-    unimplemented!()
-}
+// async fn message_to_cassandra_frame(m: Message) -> Frame {
+//     match m {
+//         Message::Query(qm) => {
+//             //TODO build the frame rather than just passing the original
+//             if let RawFrame::CASSANDRA(f) = qm.original {
+//                 return f;
+//             }
+//         }
+//         Message::Response(qr) => {
+//             if RawFrame::NONE == qr.original {
+//                 let query_type: CassandraResponseType;
+//                 //        <flags><columns_count>[<paging_state>][<global_table_spec>?<col_spec_1>...<col_spec_n>]
+//                 let flags = 0x001; //We set global table spec, no paging (TODO) and we include metadata
+//                 let column_count: i32;
+//                 let row_count: i32;
+//                 let body = BytesMut::new();
+//                 let mut global_table_spec: BytesMut = BytesMut::new();
+//                 if let Some(r)  = qr.result {
+//                     match r {
+//                         Value::Rows(v) => {
+//                             row_count = v.len() as i32;
+//                             if row_count == 0 {
+//                                 query_type = CassandraResponseType::Void;
+//                             } else {
+//                                 query_type = CassandraResponseType::Rows;
+//                                 column_count = v.get(0).unwrap().len() as i32;
+//                                 qr.matching_query.unwrap()
+//                                     .namespace
+//                                     .into_iter()
+//                                     .map(|s| global_table_spec.put(build_cassandra_string(s.as_str())));
+//
+//                             }
+//                         },
+//                         _ => {
+//                             //TODO - implement support for other datatypes
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//         _ => {
+//             if let RawFrame::CASSANDRA(f) = qm.original {
+//                 return f;
+//             }
+//         }
+//     }
+// }
 
 impl Decoder for CassandraCodec {
    type Item = CassandraFrame;

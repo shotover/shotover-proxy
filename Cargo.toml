@@ -29,6 +29,7 @@ metrics = "0.12.1"
 # Sink deps
 redis = {version = "0.15.1", features = ["tokio-rt-core"]}
 cdrs = { version = "2" }
+cassandra-proto = { path = "/Users/ben/git/cassandra-proto", features = ["v4"]}
 # elasticsearch = "7.6.0-alpha.1"
 
 

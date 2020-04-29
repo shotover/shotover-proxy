@@ -15,8 +15,8 @@ use std::error::Error;
 use rust_practice::cassandra_protocol::{CassandraCodec, CassandraFrame, MessageType, Direction, RawFrame};
 use rust_practice::transforms::chain::{Transform, TransformChain, Wrapper, ChainResponse};
 use rust_practice::transforms::{NoOp, Printer, QueryTypeFilter, Forward, SimpleRedisCache};
-use rust_practice::message::{QueryType, Message, QueryMessage, QueryResponse, Value};
-use rust_practice::message::Message::{Query, Response};
+use rust_practice::message::{QueryType, Message, QueryMessage, QueryResponse, Value, RawMessage};
+use rust_practice::message::Message::{Query, Response, Bypass};
 use rust_practice::cassandra_protocol::RawFrame::CASSANDRA;
 
 use tokio::net::{TcpListener, TcpStream};
@@ -36,6 +36,9 @@ use tokio::runtime::Runtime;
 use rust_practice::transforms::codec_destination::CodecDestination;
 use tokio::sync::Mutex;
 use std::sync::Arc;
+use cassandra_proto::frame::{Frame, Opcode};
+use cassandra_proto::frame::frame_response::ResponseBody;
+use rust_practice::cassandra_protocol2::CassandraCodec2;
 
 
 struct Config {
@@ -59,9 +62,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     while let Ok((inbound, _)) = listener.accept().await {
         println!("Connection received from {:?}", inbound.peer_addr());
 
-        let messages = Framed::new(inbound, CassandraCodec::new());
+        let messages = Framed::new(inbound, CassandraCodec2::new());
         let outbound_stream = TcpStream::connect(server_addr.clone()).await?;
-        let outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec::new());
+        let outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec2::new());
 
         let transfer = transfer(messages, outbound_framed_codec).map(|r| {
             if let Err(e) = r {
@@ -296,45 +299,42 @@ fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec
 
 }
 
-fn process_cassandra_frame(mut frame: CassandraFrame, pk_col_map: &HashMap<String, Vec<String>>) -> Message {
-    if frame.header.direction == Direction::Request {
-        match frame.get_query() {
-            Some(q) => {
-                let query_string = String::from(String::from_utf8_lossy(q.query_string.bytes()));
-                let other = query_string.clone();
-                let parsed_string = parse_query_string(other, pk_col_map);
-
-                Message::Query(QueryMessage{
-                    original: RawFrame::CASSANDRA(frame),
-                    query_string,
-                    namespace: parsed_string.namespace.unwrap(),
-                    primary_key: parsed_string.primary_key,
-                    query_values: parsed_string.colmap,
-                    projection: parsed_string.projection,
-                    query_type: QueryType::Read,
-                    ast: parsed_string.ast
-                })
-            },
-            None => {
-                Message::Query(QueryMessage{
-                    original: RawFrame::CASSANDRA(frame),
-                    query_string: "".to_string(),
-                    namespace: Vec::new(),
-                    primary_key: HashMap::new(),
-                    query_values: None,
-                    projection: None,
-                    query_type: QueryType::Read,
-                    ast: None
-                })
+fn process_cassandra_frame(mut frame: Frame, pk_col_map: &HashMap<String, Vec<String>>) -> Message {
+    return match frame.opcode {
+        Opcode::Query => {
+            if let Ok(body) = frame.get_body() {
+                if let ResponseBody::Query(brq) = body {
+                    let parsed_string = parse_query_string(brq.query.clone().into_plain(), pk_col_map);
+                    return Message::Query(QueryMessage{
+                        original: RawFrame::CASSANDRA(frame),
+                        query_string: brq.query.into_plain(),
+                        namespace: parsed_string.namespace.unwrap(),
+                        primary_key: parsed_string.primary_key,
+                        query_values: parsed_string.colmap,
+                        projection: parsed_string.projection,
+                        query_type: QueryType::Read,
+                        ast: parsed_string.ast
+                    });
+                }
             }
+            return Message::Bypass(RawMessage{
+                original: RawFrame::CASSANDRA(frame)
+            })
+
+        },
+        Opcode::Result => {
+            Message::Response(QueryResponse{
+                matching_query: None,
+                original: RawFrame::CASSANDRA(frame.clone()),
+                result: None,
+                error: None
+            })
         }
-    } else {
-        Message::Response(QueryResponse{
-            matching_query: None,
-            original: RawFrame::CASSANDRA(frame),
-            result: None,
-            error: None
-        })
+        _ => {
+            return Message::Bypass(RawMessage{
+                original: RawFrame::CASSANDRA(frame)
+            })
+        }
     }
 }
 
@@ -346,8 +346,8 @@ async fn process_message<'a, 'c>(mut frame: Wrapper, transforms: &'c TransformCh
 }
 
 async fn transfer<'a>(
-    mut inbound: Framed<TcpStream, CassandraCodec>,
-    mut outbound: Framed<TcpStream, CassandraCodec>,
+    mut inbound: Framed<TcpStream, CassandraCodec2>,
+    mut outbound: Framed<TcpStream, CassandraCodec2>,
 ) -> Result<(), Box<dyn Error>> {
     let noop_transformer = NoOp::new();
     let printer_transform = Printer::new();
@@ -368,44 +368,48 @@ async fn transfer<'a>(
     cassandra_ks.insert("test.clustering".to_string(), vec!["pk".to_string(), "clustering".to_string()]);
 
 
-    let chain = TransformChain::new(vec![&noop_transformer, &printer_transform, &query_transform, &redis_cache, &cassandra_dest], "test");
+    let chain = TransformChain::new(vec![&noop_transformer, &cassandra_dest], "test");
     // Holy snappers this is terrible - seperate out inbound and outbound loops
     // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
     loop {
-        select! {
-            i = inbound.next().fuse() => {
-                if let Some(result) = i {
-                    match result {
-                        Ok(message) => {
-                            // Current logic assumes that if a message is to be forward upstream, expect something
-                            // If the message is going somewhere else, and the original (modified or otherwise) shouldn't be
-                            // fowarded, then we should not do anything
-                            // If we don't want to forward upstream, then process message should return a response and we'll just
-                            // return it to the client instead of forwarding.
-                            // This could be something like a spoofed success.
-                            let mut frame = Wrapper::new(process_cassandra_frame(message, &cassandra_ks));
-                            let pm = process_message(frame, &chain).await;
-                            println!("{:?}", pm);
-                            if let Ok(modified_message) = pm {
-                                match modified_message {
-                                    Query(query)    =>  {
-                                        //Now handled by a transform
-                                    },
-                                    Response(resp)  =>  {
-                                        if let CASSANDRA(f) = resp.original {
-                                            inbound.send(f).await?
-                                        }
-                                    }
+        if let Some(result) = inbound.next().fuse().await {
+            match result {
+                Ok(message) => {
+                    // Current logic assumes that if a message is to be forward upstream, expect something
+                    // If the message is going somewhere else, and the original (modified or otherwise) shouldn't be
+                    // fowarded, then we should not do anything
+                    // If we don't want to forward upstream, then process message should return a response and we'll just
+                    // return it to the client instead of forwarding.
+                    // This could be something like a spoofed success.
+                    println!("-> {:?}", message);
+                    let mut frame = Wrapper::new(process_cassandra_frame(message, &cassandra_ks));
+                    let pm = process_message(frame, &chain).await;
+                    println!("<- {:?}", pm);
+                    if let Ok(modified_message) = pm {
+                        match modified_message {
+                            Query(query)    =>  {
+                                if let CASSANDRA(f) = query.original {
+                                    inbound.send(f).await?
+                                }
+                            },
+                            Response(resp)  =>  {
+                                if let CASSANDRA(f) = resp.original {
+                                    inbound.send(f).await?
+                                }
+                            },
+                            Bypass(resp)  =>  {
+                                if let CASSANDRA(f) = resp.original {
+                                    inbound.send(f).await?
                                 }
                             }
-                            // Process message decided to drop the message so do nothing (warning this may cause client timeouts)
-                        }
-                        Err(e) => {
-                            println!("uh oh! {}", e)
                         }
                     }
+                    // Process message decided to drop the message so do nothing (warning this may cause client timeouts)
+                }
+                Err(e) => {
+                    println!("uh oh! {}", e)
                 }
             }
-        };
+        }
     }
 }
