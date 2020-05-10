@@ -368,7 +368,7 @@ async fn transfer<'a>(
     cassandra_ks.insert("test.clustering".to_string(), vec!["pk".to_string(), "clustering".to_string()]);
 
 
-    let chain = TransformChain::new(vec![&noop_transformer, &cassandra_dest], "test");
+    let chain = TransformChain::new(vec![&noop_transformer, &redis_cache, &cassandra_dest], "test");
     // Holy snappers this is terrible - seperate out inbound and outbound loops
     // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
     loop {
@@ -381,20 +381,19 @@ async fn transfer<'a>(
                     // If we don't want to forward upstream, then process message should return a response and we'll just
                     // return it to the client instead of forwarding.
                     // This could be something like a spoofed success.
-                    println!("-> {:?}", message);
                     let mut frame = Wrapper::new(process_cassandra_frame(message, &cassandra_ks));
                     let pm = process_message(frame, &chain).await;
-                    println!("<- {:?}", pm);
                     if let Ok(modified_message) = pm {
                         match modified_message {
                             Query(query)    =>  {
-                                if let CASSANDRA(f) = query.original {
-                                    inbound.send(f).await?
-                                }
+                                // We now forward queries to the server via the chain
                             },
                             Response(resp)  =>  {
                                 if let CASSANDRA(f) = resp.original {
                                     inbound.send(f).await?
+                                } else {
+                                    let c_frame: Frame = CassandraCodec2::build_cassandra_response_frame(resp);
+                                    inbound.send(c_frame).await?
                                 }
                             },
                             Bypass(resp)  =>  {

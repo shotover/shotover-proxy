@@ -306,9 +306,7 @@ impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
                         if let Some(pk) = qm.get_namespaced_primary_key() {
                             if let Some(values) = &qm.projection {
                                 for v in values {
-                                    if let None = qm.primary_key.get(v) {
-                                        p.hget(&pk, v);
-                                    }
+                                    p.hget(&pk, v);
                                 }
                             }
                         }
@@ -321,7 +319,7 @@ impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
                             if !ok_result.is_empty() {
 
                                 //TODO a type translation function should be generalised here
-                                let some = ok_result.into_iter().map(|x| MValue::Strings(x)).collect::<Vec<MValue>>();
+                                let some = ok_result.into_iter().map(|x| serde_json::from_str(x.as_str()).unwrap()).collect::<Vec<MValue>>();
                                 return ChainResponse::Ok(Message::Response(QueryResponse{
                                     matching_query: Some(qm.clone()),
                                     original: RawFrame::NONE,
@@ -361,9 +359,7 @@ impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
                         if let Some(pk) = qm.get_namespaced_primary_key() {
                             if let Some(value_map) = qm.query_values.borrow()  {
                                 for (k, v) in value_map {
-                                    if !qm.primary_key.contains_key(k) {
-                                        insert_values.push((k.clone(), format!("{:?}", v.clone())));
-                                    }
+                                    insert_values.push((k.clone(), serde_json::to_string(&v).unwrap()));
                                 }
 
                                 let mut client_copy = self.con.clone();
@@ -396,6 +392,8 @@ impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
 
                 }
             }
+
+
         }
 //        match message.
         self.call_next_transform(qd, t).await

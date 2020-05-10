@@ -1,8 +1,10 @@
 use bytes::Bytes;
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use crate::cassandra_protocol::{RawFrame};
 use sqlparser::ast::Statement;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
 
 #[derive(PartialEq, Debug, Clone)]
@@ -31,7 +33,7 @@ pub struct QueryMessage {
 
 impl QueryMessage {
     pub fn get_primary_key(&self) -> Option<String> {
-        let f: Vec<String> = self.primary_key.iter().map(|(k,v) | {format!("{:?}", v)}).collect();
+        let f: Vec<String> = self.primary_key.iter().map(|(k,v) | {serde_json::to_string(&v).unwrap()}).collect();
         return Some(f.join("."));
     }
 
@@ -41,7 +43,7 @@ impl QueryMessage {
             let f: String = self.namespace.join(".");
             buffer.push_str(f.as_str());
             buffer.push_str(".");
-            buffer.push_str(pk.as_str());
+            buffer.push_str(serde_json::to_string(&pk).unwrap().as_str());
             return Some(buffer);
         }
         return None;
@@ -69,20 +71,61 @@ impl QueryResponse {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum QueryType {
-   Read,
-   Write,
-   ReadWrite,
+    Read,
+    Write,
+    ReadWrite,
+    SchemaChange
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
     NULL,
+    #[serde(with = "my_bytes")]
     Bytes(Bytes),
     Strings(String),
     Integer(i64),
     Float(f64),
     Boolean(bool),
+    #[serde(serialize_with = "to_nano_ts")]
     Timestamp(DateTime<Utc>),
     Rows(Vec<Vec<Value>>),
     Document(HashMap<String, Value>),
 }
+
+mod my_bytes {
+    use bytes::{Bytes, Buf};
+    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(val: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        serializer.serialize_bytes(val.bytes())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        let val: Vec<u8> = Deserialize::deserialize(deserializer)?;
+        Ok(Bytes::from(val))
+    }
+}
+
+//
+// impl Serialize for Value {
+//     fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+//         S: Serializer {
+//         match *self {
+//             Value::NULL => serializer.serialize_unit_variant("Value", 0, "NULL"),
+//             Value::Bytes(ref b) => serializer.serialize_newtype_variant("Value", 1, "Bytes", b),
+//             Value::Strings(ref s) => serializer.serialize_newtype_variant("Value", 1, "Strings", s),
+//             Value::Integer(i) => serializer.serialize_newtype_variant("Value", 1, "Integer", &i),
+//             Value::Float(f) => serializer.serialize_newtype_variant("Value", 1, "Float", &f),
+//             Value::Boolean(b) => serializer.serialize_newtype_variant("Value", 1, "Boolean", &b),
+//             Value::Timestamp(ref t) => serializer.serialize_newtype_variant("Value", 1, "Timestamp", t),
+//             Value::Rows(ref r) => serializer.serialize_newtype_variant("Value", 1, "Rows", r),
+//             Value::Document(ref d) => serializer.serialize_newtype_variant("Value", 1, "Document", d),
+//         }
+//     }
+// }
