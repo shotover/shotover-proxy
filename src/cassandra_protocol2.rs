@@ -2,20 +2,15 @@ use cassandra_proto::frame::{parser, Frame, IntoBytes, Version, Opcode};
 use std::io::{Cursor, Read};
 use bytes::{Buf, BufMut, BytesMut, Bytes};
 use tokio_util::codec::{Decoder, Encoder};
-use std::cell::RefCell;
-use cassandra_proto::compression::Compressor;
 use std::borrow::{Borrow, BorrowMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::error::Error;
 use cassandra_proto::frame::parser::FrameHeader;
-use crate::message::{Message, Value, QueryResponse};
+use crate::message::{ Value, QueryResponse};
 use crate::cassandra_protocol::RawFrame;
 use cassandra_proto::frame::frame_result::{ResResultBody, BodyResResultRows, RowsMetadata, ColSpec, ColTypeOption, ColType};
-use cassandra_proto::frame::frame_response::ResponseBody;
 use cassandra_proto::types::{CString, CBytes, CInt};
-use futures::StreamExt;
-use cassandra_proto::types::prelude::Decimal;
-use cassandra_proto::types::list::List;
+use byteorder::{WriteBytesExt, BigEndian};
 
 #[derive(Debug)]
 pub struct CassandraCodec2 {
@@ -65,22 +60,31 @@ impl CassandraCodec2 {
                                             (-1 as CInt).into_cbytes()
                                         },
                                         Value::Bytes(x) => {
-                                            CBytes::new(x.to_vec()).into_cbytes()
+                                            x.to_vec()
                                         },
                                         Value::Strings(x) => {
-                                            CString::new(x.clone()).into_cbytes()
+                                            Vec::from(x.clone().as_bytes())
+                                            // CString::new(x.clone()).into_cbytes()
                                         },
                                         Value::Integer(x) => {
-                                            Decimal::new(*x, 0).into_cbytes()
+                                            let mut temp: Vec<u8> = Vec::new();
+                                            let _ = temp.write_i64::<BigEndian>(*x).unwrap();
+                                            temp
+                                            // Decimal::new(*x, 0).into_cbytes()
                                         },
                                         Value::Float(x) => {
-                                            (x.clone() as CInt).into_cbytes()
+                                            let mut temp: Vec<u8> = Vec::new();
+                                            let _ = temp.write_f64::<BigEndian>(*x).unwrap();
+                                            temp
                                         },
                                         Value::Boolean(x) => {
-                                            (x.clone() as CInt).into_cbytes()
+                                            let mut temp: Vec<u8> = Vec::new();
+                                            let _ = temp.write_i32::<BigEndian>(*x as i32).unwrap();
+                                            temp
+                                                // (x.clone() as CInt).into_cbytes()
                                         },
                                         Value::Timestamp(x) => {
-                                            CString::new(x.to_rfc2822()).into_cbytes()
+                                            Vec::from(x.to_rfc2822().clone().as_bytes())
                                         },
                                         Value::Rows(x) => {
                                             unreachable!()

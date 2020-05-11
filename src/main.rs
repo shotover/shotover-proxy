@@ -1,20 +1,17 @@
 #![warn(rust_2018_idioms)]
 #![recursion_limit="256"]
 
-use tokio::prelude::*;
 use tokio::stream::{ StreamExt};
 use tokio_util::codec::{Framed};
 
 use futures::FutureExt;
 use futures::SinkExt;
-use futures::{pin_mut, select};
 
 use std::env;
 use std::error::Error;
 
-use rust_practice::cassandra_protocol::{CassandraCodec, CassandraFrame, MessageType, Direction, RawFrame};
+use rust_practice::cassandra_protocol::{CassandraFrame, MessageType, Direction, RawFrame};
 use rust_practice::transforms::chain::{Transform, TransformChain, Wrapper, ChainResponse};
-use rust_practice::transforms::{NoOp, Printer, QueryTypeFilter, Forward, SimpleRedisCache};
 use rust_practice::message::{QueryType, Message, QueryMessage, QueryResponse, Value, RawMessage};
 use rust_practice::message::Message::{Query, Response, Bypass};
 use rust_practice::cassandra_protocol::RawFrame::CASSANDRA;
@@ -29,16 +26,18 @@ use sqlparser::ast::Expr::{Identifier, BinaryOp};
 use std::borrow::{Borrow, BorrowMut};
 use chrono::DateTime;
 use std::str::FromStr;
-use bytes::Buf;
 use futures::executor::block_on;
-use redis::aio::MultiplexedConnection;
-use tokio::runtime::Runtime;
 use rust_practice::transforms::codec_destination::CodecDestination;
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use cassandra_proto::frame::{Frame, Opcode};
 use cassandra_proto::frame::frame_response::ResponseBody;
 use rust_practice::cassandra_protocol2::CassandraCodec2;
+use rust_practice::transforms::noop::NoOp;
+use rust_practice::transforms::printer::Printer;
+use rust_practice::transforms::query::QueryTypeFilter;
+use rust_practice::transforms::forward::Forward;
+use rust_practice::transforms::redis_cache::SimpleRedisCache;
 
 
 struct Config {
