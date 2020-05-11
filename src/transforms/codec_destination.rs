@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
 use tokio_util::codec::Framed;
 use tokio::net::TcpStream;
-use crate::cassandra_protocol2::CassandraCodec2;
+use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use futures::{SinkExt, FutureExt};
 use crate::message::Message::Query;
 use crate::cassandra_protocol::RawFrame::CASSANDRA;
