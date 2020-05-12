@@ -6,3 +6,5 @@ pub mod noop;
 pub mod printer;
 pub mod query;
 pub mod redis_cache;
+pub mod mpsc;
+pub mod kafka_destination;

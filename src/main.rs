@@ -39,12 +39,14 @@ use rust_practice::transforms::query::QueryTypeFilter;
 use rust_practice::transforms::forward::Forward;
 use rust_practice::transforms::redis_cache::SimpleRedisCache;
 use rust_practice::protocols::cassandra_helper::process_cassandra_frame;
+use rust_practice::transforms::mpsc::{AsyncMpsc, AsyncMpscTee};
+use std::sync::mpsc::Receiver;
 
 struct Config {
 
 }
 
-#[tokio::main(core_threads = 2)]
+#[tokio::main(core_threads = 4)]
 async fn main() -> Result<(), Box<dyn Error>> {
     let listen_addr = env::args()
         .nth(1)
@@ -56,7 +58,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Listening on: {}", listen_addr);
     println!("Proxying to: {}", server_addr);
 
+    //TODO: Setup MPSC receiver threads here.
+    //TODO: move all transform setups to outside of the tokio loop
+    // unimplemented!();
+
     let mut listener = TcpListener::bind(listen_addr).await?;
+    // let t_list:Vec<&'static dyn Transform> = ;
+    // TransformChain::new(t_list, "test")
+    let mut topic = AsyncMpsc::new();
 
     while let Ok((inbound, _)) = listener.accept().await {
         println!("Connection received from {:?}", inbound.peer_addr());
@@ -65,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let outbound_stream = TcpStream::connect(server_addr.clone()).await?;
         let outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec2::new());
 
-        let transfer = transfer(messages, outbound_framed_codec).map(|r| {
+        let transfer = transfer(messages, outbound_framed_codec, topic.get_async_mpsc_tee()).map(|r| {
             if let Err(e) = r {
                 println!("Failed to transfer; error={}", e);
             }
@@ -87,13 +96,14 @@ async fn process_message<'a, 'c>(mut frame: Wrapper, transforms: &'c TransformCh
 async fn transfer<'a>(
     mut inbound: Framed<TcpStream, CassandraCodec2>,
     mut outbound: Framed<TcpStream, CassandraCodec2>,
+    topic_map: AsyncMpscTee
 ) -> Result<(), Box<dyn Error>> {
     let noop_transformer = NoOp::new();
     let printer_transform = Printer::new();
     let query_transform = QueryTypeFilter::new(vec![QueryType::Write]);
     let forward = Forward::new();
     let client = redis::Client::open("redis://127.0.0.1/")?;
-    let mut con = block_on(client.get_multiplexed_tokio_connection())?;
+    let mut con = client.get_multiplexed_tokio_connection().await?;
 
     let response = redis::cmd("PING").query_async(&mut con).await?;
     println!("REDIS: {:?}", response);
@@ -107,7 +117,7 @@ async fn transfer<'a>(
     cassandra_ks.insert("test.clustering".to_string(), vec!["pk".to_string(), "clustering".to_string()]);
 
 
-    let chain = TransformChain::new(vec![&noop_transformer, &redis_cache, &cassandra_dest], "test");
+    let chain = TransformChain::new(vec![&noop_transformer, &topic_map, &redis_cache, &cassandra_dest], "test");
     // Holy snappers this is terrible - seperate out inbound and outbound loops
     // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
     loop {

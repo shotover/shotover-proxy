@@ -111,21 +111,3 @@ mod my_bytes {
         Ok(Bytes::from(val))
     }
 }
-
-//
-// impl Serialize for Value {
-//     fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
-//         S: Serializer {
-//         match *self {
-//             Value::NULL => serializer.serialize_unit_variant("Value", 0, "NULL"),
-//             Value::Bytes(ref b) => serializer.serialize_newtype_variant("Value", 1, "Bytes", b),
-//             Value::Strings(ref s) => serializer.serialize_newtype_variant("Value", 1, "Strings", s),
-//             Value::Integer(i) => serializer.serialize_newtype_variant("Value", 1, "Integer", &i),
-//             Value::Float(f) => serializer.serialize_newtype_variant("Value", 1, "Float", &f),
-//             Value::Boolean(b) => serializer.serialize_newtype_variant("Value", 1, "Boolean", &b),
-//             Value::Timestamp(ref t) => serializer.serialize_newtype_variant("Value", 1, "Timestamp", t),
-//             Value::Rows(ref r) => serializer.serialize_newtype_variant("Value", 1, "Rows", r),
-//             Value::Document(ref d) => serializer.serialize_newtype_variant("Value", 1, "Document", d),
-//         }
-//     }
-// }

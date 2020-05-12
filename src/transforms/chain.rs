@@ -6,6 +6,7 @@ use std::borrow::BorrowMut;
 use std::future::Future;
 use futures::future::BoxFuture;
 use async_trait::async_trait;
+use tokio::task;
 
 
 #[derive(Debug, Clone)]
@@ -60,6 +61,7 @@ pub type InnerChain<'a, 'c> = Vec<&'a dyn Transform<'a, 'c>>;
 //Option 2
 
 #[async_trait]
+// pub trait Transform<'a, 'c>: Send+ Sync  {
 pub trait Transform<'a, 'c>: Send + Sync  {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain<'a,'c>) -> ChainResponse<'c>;
 
@@ -86,6 +88,10 @@ pub trait Transform<'a, 'c>: Send + Sync  {
         }
     }
 }
+
+// TODO: Remove thread safe requirements for transforms
+// Currently the way this chain struct is built, requires that all Transforms are thread safe and
+// implement with Sync
 
 #[derive(Clone)]
 pub struct TransformChain<'a, 'c> {

@@ -32,6 +32,7 @@ metrics = "0.12.1"
 redis = {version = "0.15.1", features = ["tokio-rt-core"]}
 cdrs = { version = "2" }
 cassandra-proto = { path = "/Users/ben/git/cassandra-proto", features = ["v4"]}
+rdkafka = { version = "0.23", features = ["cmake-build"] }
 # elasticsearch = "7.6.0-alpha.1"
 
 
