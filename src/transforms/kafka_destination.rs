@@ -3,20 +3,43 @@ use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::get_rdkafka_version;
+use serde::{Deserialize};
 
 use async_trait::async_trait;
 use crate::message::{Message, QueryResponse};
+use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
+#[serde(from = "KafkaConfig")]
 pub struct KafkaDestination {
-    name: &'static str,
     producer: FutureProducer,
 }
 
+#[derive(Deserialize)]
+pub struct KafkaConfig {
+    #[serde(rename = "config_values")]
+    pub keys: HashMap<String, String>
+}
+
+impl From<KafkaConfig> for KafkaDestination {
+    fn from(k: KafkaConfig) -> Self {
+        KafkaDestination::new_from_config(&k.keys)
+    }
+}
+
 impl KafkaDestination {
+    pub fn new_from_config(config_map: &HashMap<String, String>) -> KafkaDestination {
+        let mut config = ClientConfig::new();
+        for (k, v) in config_map.iter() {
+            config.set(k.as_str(), v.as_str());
+        }
+        return KafkaDestination {
+            producer: config.create().expect("Producer creation error")
+        }
+    }
+
     pub fn new() -> KafkaDestination {
         KafkaDestination{
-            name: "Kafka",
             producer: ClientConfig::new()
                 .set("bootstrap.servers", "127.0.0.1:9092")
                 .set("message.timeout.ms", "5000")
@@ -27,8 +50,8 @@ impl KafkaDestination {
 }
 
 #[async_trait]
-impl<'a, 'c> Transform<'a, 'c> for KafkaDestination {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+impl Transform for KafkaDestination {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
         if let Message::Query(qm) = qd.message {
             if let Some(ref key) = qm.get_namespaced_primary_key() {
                 if let Some(values) = qm.query_values {
@@ -45,6 +68,6 @@ impl<'a, 'c> Transform<'a, 'c> for KafkaDestination {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "Kafka"
     }
 }

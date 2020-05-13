@@ -21,8 +21,8 @@ impl QueryTypeFilter {
 }
 
 #[async_trait]
-impl<'a, 'c> Transform<'a, 'c> for QueryTypeFilter {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+impl Transform for QueryTypeFilter {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
         // TODO this is likely the wrong way to get around the borrow from the match statement
         let message  = qd.message.borrow();
 

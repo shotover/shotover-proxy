@@ -17,8 +17,8 @@ impl Printer {
 }
 
 #[async_trait]
-impl<'a, 'c> Transform<'a, 'c> for Printer {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+impl Transform for Printer {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
         println!("Message content: {:?}", qd.message);
         return self.call_next_transform(qd, t).await
     }

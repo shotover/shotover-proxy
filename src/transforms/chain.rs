@@ -7,6 +7,7 @@ use std::future::Future;
 use futures::future::BoxFuture;
 use async_trait::async_trait;
 use tokio::task;
+use crate::transforms::Transforms;
 
 
 #[derive(Debug, Clone)]
@@ -56,18 +57,18 @@ impl error::Error for RequestError {
 // Option 1
 
 //TODO change Transform to maintain the InnerChain internally so we don't have to expose this
-pub type InnerChain<'a, 'c> = Vec<&'a dyn Transform<'a, 'c>>;
+pub type InnerChain = Vec<Transforms>;
 
 //Option 2
 
 #[async_trait]
 // pub trait Transform<'a, 'c>: Send+ Sync  {
-pub trait Transform<'a, 'c>: Send + Sync  {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain<'a,'c>) -> ChainResponse<'c>;
+pub trait Transform: Send + Sync  {
+    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
 
-    async fn instrument_transform(&self, mut qd: Wrapper, t: &TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn instrument_transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let start = Instant::now();
         let result = self.transform(qd, t).await;
         let end = Instant::now();
@@ -75,7 +76,7 @@ pub trait Transform<'a, 'c>: Send + Sync  {
         return result;
     }
 
-    async fn call_next_transform(&self, mut qd: Wrapper, transforms: &TransformChain<'a,'c>) -> ChainResponse<'c> {
+    async fn call_next_transform(&self, mut qd: Wrapper, transforms: &TransformChain) -> ChainResponse {
         let next = qd.next_transform;
         qd.next_transform += 1;
         return match transforms.chain.get(next) {
@@ -94,22 +95,22 @@ pub trait Transform<'a, 'c>: Send + Sync  {
 // implement with Sync
 
 #[derive(Clone)]
-pub struct TransformChain<'a, 'c> {
+pub struct TransformChain {
     name: &'static str,
-    chain: InnerChain<'a, 'c>
+    chain: InnerChain
 }
 
-pub type ChainResponse<'a> = Result<Message, RequestError>;
+pub type ChainResponse = Result<Message, RequestError>;
 
-impl <'a, 'c> TransformChain<'a, 'c> {
-    pub fn new(transform_list: Vec<&'a dyn Transform<'a, 'c>>, name: &'static str) -> Self {
+impl TransformChain {
+    pub fn new(transform_list: Vec<Transforms>, name: &'static str) -> Self {
         TransformChain {
             name,
             chain: transform_list
         }
     }
 
-    pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse<'c> {
+    pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse {
         let start = Instant::now();
         let result = match self.chain.get(wrapper.next_transform) {
             Some(t) => {

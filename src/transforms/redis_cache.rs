@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::message::Message::{Query as MessageQuery};
 use crate::message::{Message, QueryResponse};
-use redis::{AsyncCommands, RedisFuture, pipe, RedisResult};
+use redis::{AsyncCommands, RedisFuture, pipe, RedisResult, Commands};
 use sqlparser::ast::Statement::*;
 use sqlparser::ast::{SetExpr::Values, Expr, SetExpr, Expr::Value as EValue};
 use sqlparser::ast::Value;
@@ -17,9 +17,28 @@ use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use crate::cassandra_protocol::RawFrame;
+use serde::{Deserialize};
 
 use async_trait::async_trait;
+use futures::executor::block_on;
+use tokio::runtime::{Runtime, Handle};
 
+
+#[derive(Deserialize)]
+pub struct RedisConfig {
+    #[serde(rename = "config_values")]
+    pub uri: String
+}
+
+impl From<RedisConfig> for SimpleRedisCache {
+    fn from(k: RedisConfig) -> Self {
+        SimpleRedisCache::new_from_config(&k.uri)
+    }
+}
+
+
+#[derive(Clone, Deserialize)]
+#[serde(from = "RedisConfig")]
 pub struct SimpleRedisCache {
     name: &'static str,
     con: MultiplexedConnection,
@@ -34,6 +53,16 @@ impl SimpleRedisCache {
             con: connection,
             tables_to_pks: HashMap::new(),
         };
+    }
+
+    pub fn new_from_config(params: &String) -> SimpleRedisCache {
+        let client = redis::Client::open(params.clone()).unwrap();
+        let con = Handle::current().block_on(client.get_multiplexed_tokio_connection()).unwrap();
+        return SimpleRedisCache {
+            name: "SimpleRedisCache",
+            con,
+            tables_to_pks: HashMap::new(),
+        }
     }
 
 
@@ -114,8 +143,8 @@ fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a Rc<RefCell<HashMap<String,
 
 
 #[async_trait]
-impl<'a, 'c> Transform<'a, 'c> for SimpleRedisCache {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+impl Transform for SimpleRedisCache {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
         let message  = qd.message.borrow();
 
         // Only handle client requests

@@ -17,8 +17,8 @@ impl Forward {
 
 
 #[async_trait]
-impl<'a, 'c> Transform<'a, 'c> for Forward {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+impl Transform for Forward {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
         return ChainResponse::Ok(qd.message.clone());
     }
 

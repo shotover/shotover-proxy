@@ -16,8 +16,8 @@ impl NoOp {
 }
 
 #[async_trait]
-impl<'a, 'c> Transform<'a, 'c> for NoOp {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain<'a,'c>) -> ChainResponse<'c> {
+impl Transform for NoOp {
+    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
         return self.call_next_transform(qd, t).await
     }
 
