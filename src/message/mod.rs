@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use crate::cassandra_protocol::{RawFrame};
 use sqlparser::ast::Statement;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::{Serialize, Deserialize};
 
 
 #[derive(PartialEq, Debug, Clone)]
@@ -94,7 +94,7 @@ pub enum Value {
 
 mod my_bytes {
     use bytes::{Bytes, Buf};
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(val: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
         where

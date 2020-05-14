@@ -1,6 +1,6 @@
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
 use crate::message::QueryType;
-use std::borrow::{Borrow, BorrowMut};
+use std::borrow::{Borrow};
 use crate::message::{Message, QueryResponse};
 
 use async_trait::async_trait;

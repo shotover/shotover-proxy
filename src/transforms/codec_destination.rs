@@ -2,17 +2,13 @@ use async_trait::async_trait;
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
 use tokio_util::codec::Framed;
 use tokio::net::TcpStream;
-use tokio::task::spawn_blocking;
 use serde::Deserialize;
 
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use futures::{SinkExt, FutureExt};
-use crate::message::Message::Query;
 use crate::cassandra_protocol::RawFrame::CASSANDRA;
 use tokio::stream::StreamExt;
-use crate::message::{Message, QueryResponse, QueryMessage, RawMessage};
-use std::cell::RefCell;
-use std::borrow::BorrowMut;
+use crate::message::{Message, QueryMessage, RawMessage};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::transforms::chain::RequestError;

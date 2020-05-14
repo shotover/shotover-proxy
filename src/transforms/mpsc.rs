@@ -4,7 +4,6 @@ use tokio::sync::mpsc::{Sender, Receiver, channel};
 use async_trait::async_trait;
 use crate::message::{Message, QueryResponse};
 use tokio::task::JoinHandle;
-use crate::transforms::kafka_destination::KafkaDestination;
 use tokio::sync::mpsc::error::RecvError;
 use tokio::runtime::Handle;
 use crate::transforms::Transforms;

@@ -1,8 +1,6 @@
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain, RequestError};
 use rdkafka::config::ClientConfig;
-use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::util::get_rdkafka_version;
 use serde::{Deserialize};
 
 use async_trait::async_trait;

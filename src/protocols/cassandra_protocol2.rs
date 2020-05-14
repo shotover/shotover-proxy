@@ -1,8 +1,6 @@
 use cassandra_proto::frame::{parser, Frame, IntoBytes, Version, Opcode};
-use std::io::{Cursor, Read};
-use bytes::{Buf, BufMut, BytesMut, Bytes};
+use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
-use std::borrow::{Borrow, BorrowMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::error::Error;
 use cassandra_proto::frame::parser::FrameHeader;

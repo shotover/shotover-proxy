@@ -6,7 +6,6 @@ use sqlparser::ast::Statement::*;
 use sqlparser::ast::{SetExpr::Values, Expr, SetExpr, Expr::Value as EValue};
 use sqlparser::ast::Value;
 use std::iter::{Iterator};
-use futures::future::{Join};
 
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
 use std::borrow::{Borrow};
@@ -20,8 +19,7 @@ use crate::cassandra_protocol::RawFrame;
 use serde::{Deserialize};
 
 use async_trait::async_trait;
-use futures::executor::block_on;
-use tokio::runtime::{Runtime, Handle};
+use tokio::runtime::{Handle};
 
 
 #[derive(Deserialize)]

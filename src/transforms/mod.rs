@@ -2,12 +2,6 @@ use crate::transforms::codec_destination::{CodecConfiguration, CodecDestination}
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::redis_cache::{RedisConfig, SimpleRedisCache};
 use crate::transforms::chain::{Transform, Wrapper, ChainResponse, TransformChain};
-use tokio::runtime::Handle;
-use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
-use crate::protocols::cassandra_protocol2::CassandraCodec2;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use async_trait::async_trait;
 use crate::transforms::mpsc::{AsyncMpscForwarder, AsyncMpscTee};
 

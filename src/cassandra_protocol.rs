@@ -13,10 +13,8 @@ use cdrs::frame::frame_result::*;
 use cdrs::frame::traits::FromCursor;
 use cdrs::types::rows::Row;
 use serde::export::fmt::Debug;
-use crate::message::{Message, Value};
 use cassandra_proto::frame::Frame;
 
-// use rust_praxctice::generic_protocol::{MessageContainer};
 
 const PROTOCOL_VERSION_MASK: u8 = 0x7f;
 
@@ -431,6 +429,7 @@ impl From<io::Error> for CassandraCodecError {
 impl std::error::Error for CassandraCodecError {}
 
 #[derive(PartialEq, Debug, Copy, Clone, Hash, Eq)]
+#[allow(non_camel_case_types)]
 pub enum ResultKind {
     Void = 0x0001,
     Rows = 0x0002,

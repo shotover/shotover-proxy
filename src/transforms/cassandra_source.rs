@@ -1,13 +1,11 @@
-use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
-use tokio::sync::mpsc::{Sender, Receiver, channel};
+use crate::transforms::chain::{ChainResponse, Wrapper, TransformChain};
 use tokio::stream::{ StreamExt};
 
 use tokio_util::codec::{Framed};
 
 use futures::FutureExt;
 
-use async_trait::async_trait;
-use crate::message::{Message, QueryResponse};
+use crate::message::{Message};
 use tokio::task::JoinHandle;
 use tokio::runtime::Handle;
 use tokio::net::{TcpListener, TcpStream};

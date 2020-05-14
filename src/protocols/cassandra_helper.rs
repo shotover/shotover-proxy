@@ -1,40 +1,17 @@
-
-use tokio::stream::{ StreamExt};
-use tokio_util::codec::{Framed};
-
-use futures::FutureExt;
-use futures::SinkExt;
-
-use std::env;
-use std::error::Error;
-
-use crate::cassandra_protocol::{CassandraFrame, MessageType, Direction, RawFrame};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper, ChainResponse};
-use crate::message::{QueryType, Message, QueryMessage, QueryResponse, Value, RawMessage};
-use crate::message::Message::{Query, Response, Bypass};
-use crate::cassandra_protocol::RawFrame::CASSANDRA;
-
-use tokio::net::{TcpListener, TcpStream};
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
-use std::collections::HashMap;
-use sqlparser::ast::{SetExpr, TableFactor, Value as SQLValue, Expr, Statement, BinaryOperator};
-use sqlparser::ast::Statement::{Insert, Update, Delete};
-use sqlparser::ast::Expr::{Identifier, BinaryOp};
 use std::borrow::{Borrow, BorrowMut};
-use chrono::DateTime;
+use std::collections::HashMap;
 use std::str::FromStr;
-use futures::executor::block_on;
-use crate::transforms::codec_destination::CodecDestination;
-use tokio::sync::Mutex;
-use std::sync::Arc;
+
 use cassandra_proto::frame::{Frame, Opcode};
 use cassandra_proto::frame::frame_response::ResponseBody;
-use crate::transforms::noop::NoOp;
-use crate::transforms::printer::Printer;
-use crate::transforms::query::QueryTypeFilter;
-use crate::transforms::forward::Forward;
-use crate::transforms::redis_cache::SimpleRedisCache;
+use chrono::DateTime;
+use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, TableFactor, Value as SQLValue};
+use sqlparser::ast::Expr::{BinaryOp, Identifier};
+use sqlparser::ast::Statement::{Delete, Insert, Update};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
+use crate::message::{Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value};
+use crate::cassandra_protocol::RawFrame;
 
 
 fn expr_to_value(v: &SQLValue) -> Value {
@@ -46,7 +23,7 @@ fn expr_to_value(v: &SQLValue) -> Value {
         SQLValue::Date(v) |
         SQLValue::Time(v) => {
             Value::Strings(format!("{:?}", v))
-        },
+        }
         SQLValue::Timestamp(v) => {
             if let Ok(r) = DateTime::from_str(v.as_str()) {
                 return Value::Timestamp(r);
@@ -59,7 +36,7 @@ fn expr_to_value(v: &SQLValue) -> Value {
         _ => {
             Value::Strings("NULL".to_string())
         }
-    }
+    };
 }
 
 fn expr_to_string<'a>(v: &'a SQLValue) -> String {
@@ -72,14 +49,14 @@ fn expr_to_string<'a>(v: &'a SQLValue) -> String {
         SQLValue::Time(v) |
         SQLValue::Timestamp(v) => {
             format!("{:?}", v)
-        },
+        }
         SQLValue::Boolean(v) => {
             format!("{:?}", v)
         }
         _ => {
             "NULL".to_string()
         }
-    }
+    };
 }
 
 fn build_key(namespace: String, pks: &Vec<String>, col_map: &HashMap<String, &String>) -> String {
@@ -93,25 +70,24 @@ fn build_key(namespace: String, pks: &Vec<String>, col_map: &HashMap<String, &St
     return s;
 }
 
-fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a mut HashMap<String, Value>)  {
+fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a mut HashMap<String, Value>) {
     match node {
-        BinaryOp{left, op, right} => {
+        BinaryOp { left, op, right } => {
             match op {
                 BinaryOperator::And => {
                     binary_ops_to_hashmap(left, map);
                     binary_ops_to_hashmap(right, map);
                 }
-                BinaryOperator::Eq=> {
+                BinaryOperator::Eq => {
                     if let Identifier(i) = left.borrow() {
                         if let Expr::Value(v) = right.borrow() {
                             map.insert(i.to_string(), expr_to_value(v));
                         }
-
                     }
                 }
                 _ => {}
             }
-        },
+        }
         _ => {}
     }
 }
@@ -128,7 +104,7 @@ struct ParsedCassandraQueryString {
     colmap: Option<HashMap<String, Value>>,
     projection: Option<Vec<String>>,
     primary_key: HashMap<String, Value>,
-    ast: Option<Statement>
+    ast: Option<Statement>,
 }
 
 fn getColumnValues(expr: &SetExpr) -> Vec<String> {
@@ -140,12 +116,12 @@ fn getColumnValues(expr: &SetExpr) -> Vec<String> {
                     match ex {
                         Expr::Value(v) => {
                             cumulator.push(expr_to_string(v).clone());
-                        },
+                        }
                         _ => {}
                     }
                 }
             }
-        },
+        }
         _ => {}
     }
     return cumulator;
@@ -153,7 +129,6 @@ fn getColumnValues(expr: &SetExpr) -> Vec<String> {
 
 
 fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec<String>>) -> ParsedCassandraQueryString {
-
     let dialect = GenericDialect {}; //TODO write CQL dialect
 
 
@@ -175,8 +150,8 @@ fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec
                 Statement::Query(q) => {
                     match q.body.borrow() {
                         SetExpr::Select(s) => {
-                            projection = s.projection.iter().map(|s| {s.to_string()}).collect();
-                            if let TableFactor::Table{name, alias, args, with_hints }  = &s.from.get(0).unwrap().relation {
+                            projection = s.projection.iter().map(|s| { s.to_string() }).collect();
+                            if let TableFactor::Table { name, alias, args, with_hints } = &s.from.get(0).unwrap().relation {
                                 namespace = name.0.clone();
                             }
                             if let Some(sel) = &s.selection {
@@ -191,11 +166,11 @@ fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec
                                     }
                                 }
                             }
-                        },
+                        }
                         _ => {}
                     }
-                },
-                Insert {table_name, columns, source} => {
+                }
+                Insert { table_name, columns, source } => {
                     namespace = table_name.0.clone();
                     let values = getColumnValues(&source.body);
                     for (i, c) in columns.iter().enumerate() {
@@ -204,8 +179,8 @@ fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec
                             Some(v) => {
                                 let key = c.to_string();
                                 colmap.insert(c.to_string(), Value::Strings(v.clone()));
-                            },
-                            None => {}, //TODO some error
+                            }
+                            None => {} //TODO some error
                         }
                     }
 
@@ -218,43 +193,39 @@ fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec
                             }
                         }
                     }
-
-                },
-                Update {table_name, assignments, selection} => {
+                }
+                Update { table_name, assignments, selection } => {
                     namespace = table_name.0.clone();
                     for assignment in assignments {
                         if let Expr::Value(v) = assignment.clone().value {
                             let converted_value = expr_to_value(v.borrow());
                             colmap.insert(assignment.id.clone(), converted_value);
-
                         }
                     }
                     if let Some(s) = selection {
                         binary_ops_to_hashmap(s, &mut primary_key);
                     }
                     // projection = ;
-
-                },
-                Delete {table_name, selection} => {
+                }
+                Delete { table_name, selection } => {
                     namespace = table_name.0.clone();
                     if let Some(s) = selection {
                         binary_ops_to_hashmap(s, &mut primary_key);
                     }
                     // projection = None;
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
-
     }
 
-    return ParsedCassandraQueryString{
+    return ParsedCassandraQueryString {
         namespace: Some(namespace),
         colmap: Some(colmap),
         projection: Some(projection),
         primary_key,
-        ast: ast
-    }
+        ast: ast,
+    };
 
 }
 
@@ -264,7 +235,14 @@ pub fn process_cassandra_frame(mut frame: Frame, pk_col_map: &HashMap<String, Ve
             if let Ok(body) = frame.get_body() {
                 if let ResponseBody::Query(brq) = body {
                     let parsed_string = parse_query_string(brq.query.clone().into_plain(), pk_col_map);
-                    return Message::Query(QueryMessage{
+                    if parsed_string.ast.is_none() {
+                        // TODO: Currently this will probably catch schema changes that don't match
+                        // what the SQL parser expects
+                        return Message::Bypass(RawMessage {
+                            original: RawFrame::CASSANDRA(frame)
+                        });
+                    }
+                    return Message::Query(QueryMessage {
                         original: RawFrame::CASSANDRA(frame),
                         query_string: brq.query.into_plain(),
                         namespace: parsed_string.namespace.unwrap(),
@@ -272,27 +250,27 @@ pub fn process_cassandra_frame(mut frame: Frame, pk_col_map: &HashMap<String, Ve
                         query_values: parsed_string.colmap,
                         projection: parsed_string.projection,
                         query_type: QueryType::Read,
-                        ast: parsed_string.ast
+                        ast: parsed_string.ast,
                     });
                 }
             }
-            return Message::Bypass(RawMessage{
+            return Message::Bypass(RawMessage {
                 original: RawFrame::CASSANDRA(frame)
-            })
+            });
 
-        },
+        }
         Opcode::Result => {
-            Message::Response(QueryResponse{
+            Message::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::CASSANDRA(frame.clone()),
                 result: None,
-                error: None
+                error: None,
             })
         }
         _ => {
-            return Message::Bypass(RawMessage{
+            return Message::Bypass(RawMessage {
                 original: RawFrame::CASSANDRA(frame)
-            })
+            });
         }
-    }
+    };
 }
