@@ -20,6 +20,7 @@ use crate::cassandra_protocol::RawFrame;
 use cassandra_proto::frame::Frame;
 use tokio::runtime::Handle;
 use tokio::task;
+use crate::transforms::Transforms;
 
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +57,10 @@ impl CodecDestination {
         let outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec2::new());
         let protected_outbound =  Arc::new(Mutex::new(outbound_framed_codec));
         CodecDestination::new(protected_outbound, address.clone())
+    }
+
+    pub async fn get_transform_enum_from_config(address: String) -> Transforms {
+        Transforms::CodecDestination(CodecDestination::new_from_config(address).await)
     }
 
     pub fn new_from_config_sync(address: String) -> CodecDestination {

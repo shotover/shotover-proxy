@@ -7,11 +7,12 @@ use tokio::task::JoinHandle;
 use crate::transforms::kafka_destination::KafkaDestination;
 use tokio::sync::mpsc::error::RecvError;
 use tokio::runtime::Handle;
+use crate::transforms::Transforms;
 
 pub struct AsyncMpsc {
-    name: &'static str,
-    tx: Sender<Message>,
-    rx_handle: JoinHandle<Result<(), RecvError>>
+    pub name: &'static str,
+    pub tx: Sender<Message>,
+    pub rx_handle: JoinHandle<Result<(), RecvError>>
 }
 
 #[derive(Debug, Clone)]
@@ -27,12 +28,8 @@ pub struct AsyncMpscTee {
 }
 
 impl AsyncMpsc {
-    fn test_tee_loop(mut rx: Receiver<Message>, chain: TransformChain) -> JoinHandle<Result<(), RecvError>> {
+    fn tee_loop(mut rx: Receiver<Message>, chain: TransformChain) -> JoinHandle<Result<(), RecvError>> {
         Handle::current().spawn(async move {
-            // let noop_transformer = NoOp::new();
-            let printer_transform = KafkaDestination::new();
-            // let printer_transform = Printer::new();
-            //TODO provide a way to build the chain from config externally
             loop {
                 if let Some(m) = rx.recv().await {
                     let w: Wrapper = Wrapper::new(m.clone());
@@ -47,8 +44,16 @@ impl AsyncMpsc {
         return AsyncMpsc {
             name: "AsyncMpsc",
             tx,
-            rx_handle: AsyncMpsc::test_tee_loop(rx, chain)
+            rx_handle: AsyncMpsc::tee_loop(rx, chain)
         };
+    }
+
+    pub fn get_async_mpsc_forwarder_enum(&self) -> Transforms {
+        Transforms::MPSCForwarder(self.get_async_mpsc_forwarder())
+    }
+
+    pub fn get_async_mpsc_tee_enum(&self) -> Transforms {
+        Transforms::MPSCTee(self.get_async_mpsc_tee())
     }
 
     pub fn get_async_mpsc_forwarder(&self) -> AsyncMpscForwarder {

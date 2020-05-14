@@ -23,11 +23,12 @@ pub struct CassandraSource {
     pub name: &'static str,
     pub join_handle: JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>,
     pub listen_addr: String,
+    // pub cassandra_ks: HashMap<String, Vec<String>>,
 }
 
 
 impl CassandraSource {
-    fn test_listen_loop(chain: TransformChain, listen_addr: String) -> JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
+    fn listen_loop(chain: TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>) -> JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
         Handle::current().spawn(async move {
             let mut listener = TcpListener::bind(listen_addr).await.unwrap();
             loop {
@@ -36,7 +37,7 @@ impl CassandraSource {
 
                     let messages = Framed::new(inbound, CassandraCodec2::new());
 
-                    let transfer = CassandraSource::transfer(messages, chain.clone()).map(|r| {
+                    let transfer = CassandraSource::transfer(messages, chain.clone(), cassandra_ks.clone()).map(|r| {
                         if let Err(e) = r {
                             println!("Failed to transfer; error={}", e);
                         }
@@ -50,10 +51,10 @@ impl CassandraSource {
 
 
     //"127.0.0.1:9043
-    pub fn new(chain: TransformChain, listen_addr: String) -> CassandraSource {
+    pub fn new(chain: TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>) -> CassandraSource {
         CassandraSource {
             name: "Cassandra",
-            join_handle: CassandraSource::test_listen_loop(chain, listen_addr),
+            join_handle: CassandraSource::listen_loop(chain, listen_addr, cassandra_ks),
             listen_addr: "".to_string()
         }
     }
@@ -64,15 +65,9 @@ impl CassandraSource {
 
     async fn transfer(
         mut inbound: Framed<TcpStream, CassandraCodec2>,
-        chain: TransformChain
+        chain: TransformChain,
+        mut cassandra_ks: HashMap<String, Vec<String>>,
     ) -> Result<(), Box<dyn Error>> {
-
-        let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
-        // cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);
-        cassandra_ks.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        cassandra_ks.insert("test.clustering".to_string(), vec!["pk".to_string(), "clustering".to_string()]);
-
-        // let chain = TransformChain::new(vec![&noop_transformer, &topic_map, &redis_cache, &cassandra_dest], "test");
         // Holy snappers this is terrible - seperate out inbound and outbound loops
         // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
         loop {

@@ -9,6 +9,7 @@ use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use async_trait::async_trait;
+use crate::transforms::mpsc::{AsyncMpscForwarder, AsyncMpscTee};
 
 pub mod chain;
 pub mod codec_destination;
@@ -32,7 +33,9 @@ pub enum TransformConfigs {
 pub enum Transforms {
     CodecDestination(CodecDestination),
     KafkaDestination(KafkaDestination),
-    RedisCache(SimpleRedisCache)
+    RedisCache(SimpleRedisCache),
+    MPSCTee(AsyncMpscTee),
+    MPSCForwarder(AsyncMpscForwarder)
 }
 
 #[async_trait]
@@ -42,6 +45,8 @@ impl Transform for Transforms {
             Transforms::CodecDestination(c) => {c.transform(qd, t).await},
             Transforms::KafkaDestination(k) => {k.transform(qd, t).await},
             Transforms::RedisCache(r) => {r.transform(qd, t).await},
+            Transforms::MPSCTee(m) => {m.transform(qd, t).await},
+            Transforms::MPSCForwarder(m) => {m.transform(qd, t).await},
         }
     }
 
@@ -50,6 +55,8 @@ impl Transform for Transforms {
             Transforms::CodecDestination(c) => {c.get_name()},
             Transforms::KafkaDestination(k) => {k.get_name()},
             Transforms::RedisCache(r) => {r.get_name()},
+            Transforms::MPSCTee(m) => {m.get_name()},
+            Transforms::MPSCForwarder(m) => {m.get_name()},
         }
     }
 }
