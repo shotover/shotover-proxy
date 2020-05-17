@@ -4,10 +4,13 @@ use crate::transforms::redis_cache::{RedisConfig, SimpleRedisCache};
 use crate::transforms::chain::{Transform, Wrapper, ChainResponse, TransformChain};
 use async_trait::async_trait;
 use crate::transforms::mpsc::{AsyncMpscForwarder, AsyncMpscTee};
+use crate::transforms::route::Route;
+use crate::transforms::scatter::Scatter;
 
 pub mod chain;
 pub mod codec_destination;
-pub mod forward;
+pub mod route;
+pub mod scatter;
 pub mod noop;
 pub mod printer;
 pub mod query;
@@ -29,7 +32,10 @@ pub enum Transforms {
     KafkaDestination(KafkaDestination),
     RedisCache(SimpleRedisCache),
     MPSCTee(AsyncMpscTee),
-    MPSCForwarder(AsyncMpscForwarder)
+    MPSCForwarder(AsyncMpscForwarder),
+    Route(Route),
+    Scatter(Scatter)
+
 }
 
 #[async_trait]
@@ -41,6 +47,8 @@ impl Transform for Transforms {
             Transforms::RedisCache(r) => {r.transform(qd, t).await},
             Transforms::MPSCTee(m) => {m.transform(qd, t).await},
             Transforms::MPSCForwarder(m) => {m.transform(qd, t).await},
+            Transforms::Route(r) => {r.transform(qd, t).await},
+            Transforms::Scatter(s) => {s.transform(qd, t).await}
         }
     }
 
@@ -51,6 +59,8 @@ impl Transform for Transforms {
             Transforms::RedisCache(r) => {r.get_name()},
             Transforms::MPSCTee(m) => {m.get_name()},
             Transforms::MPSCForwarder(m) => {m.get_name()},
+            Transforms::Route(r) => {r.get_name()},
+            Transforms::Scatter(s) => {s.get_name()}
         }
     }
 }

@@ -12,7 +12,7 @@ struct QueryData {
 }
 
 //TODO change this to be generic to messages type
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Wrapper {
     pub message: Message,
     next_transform: usize
@@ -24,6 +24,10 @@ impl Wrapper  {
             message: m,
             next_transform: 0
         }
+    }
+
+    pub fn reset(& mut self) {
+        self.next_transform = 0;
     }
 }
 

@@ -35,6 +35,9 @@ cassandra-proto = { path = "/Users/ben/git/cassandra-proto", features = ["v4"]}
 rdkafka = { version = "0.23", features = ["cmake-build"] }
 # elasticsearch = "7.6.0-alpha.1"
 
+#test deps
+hex-literal = "0.2.1"
+
 
 [patch.crates-io]
 cdrs = { path = "/Users/ben/git/cdrs", branch="release/2.2.3"}
