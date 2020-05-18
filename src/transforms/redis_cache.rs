@@ -16,16 +16,25 @@ use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use crate::cassandra_protocol::RawFrame;
-use serde::{Deserialize};
+use serde::{Serialize, Deserialize};
 
 use async_trait::async_trait;
 use tokio::runtime::{Handle};
+use crate::transforms::{TransformsFromConfig, Transforms};
 
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct RedisConfig {
     #[serde(rename = "config_values")]
     pub uri: String
+}
+
+
+#[async_trait]
+impl TransformsFromConfig for RedisConfig {
+    async fn get_source(&self) -> Transforms {
+        unimplemented!()
+    }
 }
 
 impl From<RedisConfig> for SimpleRedisCache {

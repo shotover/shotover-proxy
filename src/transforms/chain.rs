@@ -54,12 +54,9 @@ impl error::Error for RequestError {
     }
 }
 
-// Option 1
 
 //TODO change Transform to maintain the InnerChain internally so we don't have to expose this
 pub type InnerChain = Vec<Transforms>;
-
-//Option 2
 
 #[async_trait]
 // pub trait Transform<'a, 'c>: Send+ Sync  {

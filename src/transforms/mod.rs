@@ -3,9 +3,10 @@ use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::redis_cache::{RedisConfig, SimpleRedisCache};
 use crate::transforms::chain::{Transform, Wrapper, ChainResponse, TransformChain};
 use async_trait::async_trait;
-use crate::transforms::mpsc::{AsyncMpscForwarder, AsyncMpscTee};
-use crate::transforms::route::Route;
-use crate::transforms::scatter::Scatter;
+use crate::transforms::mpsc::{AsyncMpscForwarder, AsyncMpscTee, AsyncMpscTeeConfig, AsyncMpscForwarderConfig};
+use crate::transforms::route::{Route, RouteConfig};
+use crate::transforms::scatter::{Scatter, ScatterConfig};
+use serde::{Serialize, Deserialize};
 
 pub mod chain;
 pub mod codec_destination;
@@ -17,14 +18,6 @@ pub mod query;
 pub mod redis_cache;
 pub mod mpsc;
 pub mod kafka_destination;
-pub mod cassandra_source;
-
-
-pub enum TransformConfigs {
-    CodecDestination(CodecConfiguration),
-    KafkaDestination(KafkaConfig),
-    RedisCache(RedisConfig)
-}
 
 #[derive(Clone)]
 pub enum Transforms {
@@ -35,7 +28,6 @@ pub enum Transforms {
     MPSCForwarder(AsyncMpscForwarder),
     Route(Route),
     Scatter(Scatter)
-
 }
 
 #[async_trait]
@@ -64,23 +56,21 @@ impl Transform for Transforms {
         }
     }
 }
-//
-// impl Transforms {
-//     pub fn get_chain(&self) ->
-// }
 
-impl TransformConfigs {
-    pub async fn get_transform(&self) -> Transforms {
-        match self {
-            TransformConfigs::CodecDestination(c) => {
-                Transforms::CodecDestination(CodecDestination::new_from_config(c.address.clone()).await)
-            },
-            TransformConfigs::KafkaDestination(k) => {
-                Transforms::KafkaDestination(KafkaDestination::new_from_config(&k.keys))
-            },
-            TransformConfigs::RedisCache(r) => {
-                Transforms::RedisCache(SimpleRedisCache::new_from_config(&r.uri))
-            },
-        }
-    }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum TransformsConfig {
+    CodecDestination(CodecConfiguration),
+    KafkaDestination(KafkaConfig),
+    RedisCache(RedisConfig),
+    MPSCTee(AsyncMpscTeeConfig),
+    MPSCForwarder(AsyncMpscForwarderConfig),
+    Route(RouteConfig),
+    Scatter(ScatterConfig)
+}
+
+
+
+#[async_trait]
+pub trait TransformsFromConfig: Send + Sync {
+    async fn get_source(&self) -> Transforms;
 }

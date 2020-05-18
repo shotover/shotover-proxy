@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
 use async_trait::async_trait;
+use serde::{Serialize, Deserialize};
+use crate::transforms::{TransformsFromConfig, Transforms};
+
 
 pub type RoutingFunc = fn (w: &Wrapper, available_routes: &Vec<&String>) -> String;
 pub type HandleResultFunc = fn (c: ChainResponse, chosen_route: &String) -> ChainResponse;
@@ -13,6 +16,18 @@ pub struct Route {
     result_func: Option<HandleResultFunc>
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct RouteConfig {
+    #[serde(rename = "config_values")]
+    pub route_map: HashMap<String, String>,
+}
+
+#[async_trait]
+impl TransformsFromConfig for RouteConfig {
+    async fn get_source(&self) -> Transforms {
+        unimplemented!()
+    }
+}
 
 impl Route {
     fn new(route_map: HashMap<String, TransformChain>, routing_func: RoutingFunc, result_func: Option<HandleResultFunc>) -> Self {

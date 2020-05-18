@@ -1,23 +1,39 @@
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain, RequestError};
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use serde::{Deserialize};
+use serde::{Deserialize, Serialize};
 
 use async_trait::async_trait;
 use crate::message::{Message, QueryResponse};
 use std::collections::HashMap;
+use crate::transforms::{TransformsFromConfig, Transforms};
 
-#[derive(Clone, Deserialize)]
-#[serde(from = "KafkaConfig")]
+#[derive(Clone)]
 pub struct KafkaDestination {
     producer: FutureProducer,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct KafkaConfig {
     #[serde(rename = "config_values")]
     pub keys: HashMap<String, String>
 }
+
+#[async_trait]
+impl TransformsFromConfig for KafkaConfig {
+    async fn get_source(&self) -> Transforms {
+        unimplemented!()
+    }
+}
+
+
+
+
+
+
+
+
+
 
 impl From<KafkaConfig> for KafkaDestination {
     fn from(k: KafkaConfig) -> Self {

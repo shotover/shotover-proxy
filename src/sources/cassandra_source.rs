@@ -16,6 +16,24 @@ use cassandra_proto::frame::Frame;
 use futures::SinkExt;
 use crate::protocols::cassandra_helper::process_cassandra_frame;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use crate::transforms::{Transforms};
+use async_trait::async_trait;
+use crate::sources::{SourcesFromConfig, Sources};
+
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CassandraConfig {
+    pub listen_addr: String,
+    pub cassandra_ks: HashMap<String, Vec<String>>
+}
+
+#[async_trait]
+impl SourcesFromConfig for CassandraConfig {
+    async fn get_source(&self, chain: TransformChain) -> Sources {
+        unimplemented!()
+    }
+}
 
 pub struct CassandraSource {
     pub name: &'static str,

@@ -1,15 +1,12 @@
 use std::collections::HashMap;
 use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
-use crate::transforms::Transforms;
 
 use async_trait::async_trait;
-use futures::future::{try_join_all};
-use futures_core::{Future, TryFuture};
 use crate::message::{QueryResponse, Message};
-use std::pin::Pin;
 use futures::stream::FuturesUnordered;
-// use futures::StreamExt;
 use tokio::stream::StreamExt;
+use serde::{Serialize, Deserialize};
+use crate::transforms::{TransformsFromConfig, Transforms};
 
 pub type ScatterFunc = fn (w: &Wrapper, available_routes: &Vec<&String>) -> Vec<String>;
 pub type GatherFunc = fn (c: Vec<ChainResponse>, chosen_route: &Vec<String>) -> ChainResponse;
@@ -21,6 +18,20 @@ pub struct Scatter {
     route_map: HashMap<String, TransformChain>,
     scatter_func: ScatterFunc,
     gather_func: Option<GatherFunc>
+}
+
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ScatterConfig {
+    #[serde(rename = "config_values")]
+    pub route_map: HashMap<String, String>,
+}
+
+#[async_trait]
+impl TransformsFromConfig for ScatterConfig {
+    async fn get_source(&self) -> Transforms {
+        unimplemented!()
+    }
 }
 
 impl Scatter {

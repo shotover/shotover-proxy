@@ -9,9 +9,9 @@ use rust_practice::transforms::chain::{TransformChain};
 use std::collections::HashMap;
 use rust_practice::transforms::codec_destination::{CodecDestination};
 use rust_practice::transforms::Transforms;
-use rust_practice::transforms::mpsc::{AsyncMpsc};
-use rust_practice::transforms::cassandra_source::CassandraSource;
 use rust_practice::transforms::kafka_destination::KafkaDestination;
+use rust_practice::sources::mpsc_source::AsyncMpsc;
+use rust_practice::sources::cassandra_source::CassandraSource;
 
 
 #[tokio::main(core_threads = 4)]

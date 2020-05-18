@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
 use tokio_util::codec::Framed;
 use tokio::net::TcpStream;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use futures::{SinkExt, FutureExt};
@@ -16,33 +16,42 @@ use crate::cassandra_protocol::RawFrame;
 use cassandra_proto::frame::Frame;
 use tokio::runtime::Handle;
 use tokio::task;
-use crate::transforms::Transforms;
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 
-#[derive(Debug, Deserialize)]
-#[serde(from = "CodecConfiguration")]
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CodecConfiguration {
+    #[serde(rename = "remote_address")]
+    pub address: String
+}
+
+#[async_trait]
+impl TransformsFromConfig for CodecConfiguration {
+    async fn get_source(&self) -> Transforms {
+        unimplemented!()
+    }
+}
+
+
+impl From<CodecConfiguration> for CodecDestination {
+    fn from(c: CodecConfiguration) -> Self {
+        Handle::current().block_on(CodecDestination::new_from_config(c.address))
+    }
+}
+
+#[derive(Debug)]
 pub struct CodecDestination {
     name: &'static str,
     address: String,
     outbound: Arc<Mutex<Framed<TcpStream, CassandraCodec2>>>
 }
 
-#[derive(Deserialize)]
-pub struct CodecConfiguration {
-    #[serde(rename = "remote_address")]
-    pub address: String
-}
 
 impl Clone for CodecDestination {
     fn clone(&self) -> Self {
         let f = self.address.clone();
         CodecDestination::new_from_config_sync(f)
-    }
-}
-
-impl From<CodecConfiguration> for CodecDestination {
-    fn from(c: CodecConfiguration) -> Self {
-        Handle::current().block_on(CodecDestination::new_from_config(c.address))
     }
 }
 
