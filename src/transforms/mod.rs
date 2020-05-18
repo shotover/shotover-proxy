@@ -7,6 +7,8 @@ use crate::transforms::mpsc::{AsyncMpscForwarder, AsyncMpscTee, AsyncMpscTeeConf
 use crate::transforms::route::{Route, RouteConfig};
 use crate::transforms::scatter::{Scatter, ScatterConfig};
 use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
+use crate::config::ConfigError;
 
 pub mod chain;
 pub mod codec_destination;
@@ -72,5 +74,5 @@ pub enum TransformsConfig {
 
 #[async_trait]
 pub trait TransformsFromConfig: Send + Sync {
-    async fn get_source(&self) -> Transforms;
+    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError>;
 }

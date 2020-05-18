@@ -17,7 +17,8 @@ use cassandra_proto::frame::Frame;
 use tokio::runtime::Handle;
 use tokio::task;
 use crate::transforms::{Transforms, TransformsFromConfig};
-
+use std::collections::HashMap;
+use crate::config::ConfigError;
 
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -28,7 +29,7 @@ pub struct CodecConfiguration {
 
 #[async_trait]
 impl TransformsFromConfig for CodecConfiguration {
-    async fn get_source(&self) -> Transforms {
+    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
         unimplemented!()
     }
 }

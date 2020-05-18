@@ -5,6 +5,9 @@ use async_trait::async_trait;
 use crate::message::{Message, QueryResponse};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
+use std::collections::hash_map::RandomState;
+use crate::config::ConfigError;
 
 
 /*
@@ -25,7 +28,7 @@ pub struct AsyncMpscForwarderConfig {
 
 #[async_trait]
 impl TransformsFromConfig for AsyncMpscForwarderConfig {
-    async fn get_source(&self) -> Transforms {
+    async fn get_source(&self, transforms: &HashMap<String, TransformChain, RandomState>) -> Result<Transforms, ConfigError> {
         unimplemented!()
     }
 }
@@ -42,7 +45,7 @@ pub struct AsyncMpscTeeConfig {
 
 #[async_trait]
 impl TransformsFromConfig for AsyncMpscTeeConfig {
-    async fn get_source(&self) -> Transforms {
+    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
         unimplemented!()
     }
 }

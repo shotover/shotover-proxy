@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use crate::message::{Message, QueryResponse};
 use std::collections::HashMap;
 use crate::transforms::{TransformsFromConfig, Transforms};
+use crate::config::ConfigError;
 
 #[derive(Clone)]
 pub struct KafkaDestination {
@@ -21,7 +22,7 @@ pub struct KafkaConfig {
 
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
-    async fn get_source(&self) -> Transforms {
+    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
         unimplemented!()
     }
 }

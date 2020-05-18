@@ -7,17 +7,16 @@ use futures::stream::FuturesUnordered;
 use tokio::stream::StreamExt;
 use serde::{Serialize, Deserialize};
 use crate::transforms::{TransformsFromConfig, Transforms};
-
-pub type ScatterFunc = fn (w: &Wrapper, available_routes: &Vec<&String>) -> Vec<String>;
-pub type GatherFunc = fn (c: Vec<ChainResponse>, chosen_route: &Vec<String>) -> ChainResponse;
+use crate::runtimes::rhai::RhaiEnvironment;
+use crate::config::ConfigError;
 
 
 #[derive(Clone)]
 pub struct Scatter {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
-    scatter_func: ScatterFunc,
-    gather_func: Option<GatherFunc>
+    function_env: RhaiEnvironment,
+    reduce_scatter_results: bool
 }
 
 
@@ -29,27 +28,16 @@ pub struct ScatterConfig {
 
 #[async_trait]
 impl TransformsFromConfig for ScatterConfig {
-    async fn get_source(&self) -> Transforms {
+    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
         unimplemented!()
-    }
-}
-
-impl Scatter {
-    fn new(route_map: HashMap<String, TransformChain>, scatter_func: ScatterFunc, gather_func: Option<GatherFunc>) -> Self {
-        Scatter {
-            name: "route",
-            route_map,
-            scatter_func,
-            gather_func
-        }
     }
 }
 
 #[async_trait]
 impl Transform for Scatter {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        let routes: Vec<&String> = self.route_map.keys().map(|x| x).collect();
-        let chosen_route = (self.scatter_func)(&qd, &routes);
+        let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
+        let chosen_route = self.function_env.call_scatter_route(qd.clone(), routes)?;
         if chosen_route.len() == 1 {
             return self.route_map.get(chosen_route.get(0).unwrap().as_str()).unwrap().process_request(qd).await;
         } else if chosen_route.len() == 0 {
@@ -63,8 +51,8 @@ impl Transform for Scatter {
                 fu.push(chain.process_request(wrapper));
             }
             // TODO I feel like there should be some streamext function that does this for me
-            return if let Some(f) = self.gather_func {
-                (f)(fu.collect().await, &chosen_route)
+            return if self.reduce_scatter_results {
+                self.function_env.call_scatter_handle_func(fu.collect().await, chosen_route)
             } else {
                 while let Some(r) = fu.next().await {
                     if let Err(e) = r {
