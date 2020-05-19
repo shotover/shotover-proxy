@@ -69,10 +69,22 @@ impl RhaiEnvironment {
         }
     }
 
-    pub fn build_rhai_routing_func(&self, script: String) {
-        let engine = Engine::new();
-        let script = "";
-
-        unimplemented!()
+    pub async fn call_rhai_transform_func(&self, qd: Wrapper) -> Result<Wrapper, RequestError> {
+        let mut scope = Scope::new();
+        return if let Ok(result) = self.engine.call_fn(&mut scope, &self.ast, "rhai_transform_func", (qd,)) {
+            Ok(result)
+        } else {
+            Err(RequestError {})
+        }
     }
+
+    pub async fn call_rhai_transform_response_func(&self, c: ChainResponse) -> Result<ChainResponse, RequestError> {
+        let mut scope = Scope::new();
+        return if let Ok(result) = self.engine.call_fn(&mut scope, &self.ast, "rhai_transform_response_func", (c,)) {
+            Ok(result)
+        } else {
+            Err(RequestError {})
+        }
+    }
+
 }

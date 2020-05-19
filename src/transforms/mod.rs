@@ -10,7 +10,9 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use crate::transforms::rhai::RhaiTransform;
 
+pub mod rhai;
 pub mod chain;
 pub mod codec_destination;
 pub mod route;
@@ -30,7 +32,8 @@ pub enum Transforms {
     MPSCTee(AsyncMpscTee),
     MPSCForwarder(AsyncMpscForwarder),
     Route(Route),
-    Scatter(Scatter)
+    Scatter(Scatter),
+    Rhai(RhaiTransform)
 }
 
 #[async_trait]
@@ -43,7 +46,8 @@ impl Transform for Transforms {
             Transforms::MPSCTee(m) => {m.transform(qd, t).await},
             Transforms::MPSCForwarder(m) => {m.transform(qd, t).await},
             Transforms::Route(r) => {r.transform(qd, t).await},
-            Transforms::Scatter(s) => {s.transform(qd, t).await}
+            Transforms::Scatter(s) => {s.transform(qd, t).await},
+            Transforms::Rhai(r) => {r.transform(qd, t).await}
         }
     }
 
@@ -55,7 +59,8 @@ impl Transform for Transforms {
             Transforms::MPSCTee(m) => {m.get_name()},
             Transforms::MPSCForwarder(m) => {m.get_name()},
             Transforms::Route(r) => {r.get_name()},
-            Transforms::Scatter(s) => {s.get_name()}
+            Transforms::Scatter(s) => {s.get_name()},
+            Transforms::Rhai(r) => {r.get_name()}
         }
     }
 }
