@@ -33,7 +33,7 @@ pub struct CassandraConfig {
 #[async_trait]
 impl SourcesFromConfig for CassandraConfig {
     async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError> {
-        unimplemented!()
+        Ok(Sources::Cassandra(CassandraSource::new(chain, self.listen_addr.clone(), self.cassandra_ks.clone())))
     }
 }
 
@@ -69,10 +69,10 @@ impl CassandraSource {
 
 
     //"127.0.0.1:9043
-    pub fn new(chain: TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>) -> CassandraSource {
+    pub fn new(chain: &TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>) -> CassandraSource {
         CassandraSource {
             name: "Cassandra",
-            join_handle: CassandraSource::listen_loop(chain, listen_addr, cassandra_ks),
+            join_handle: CassandraSource::listen_loop(chain.clone(), listen_addr, cassandra_ks),
             listen_addr: "".to_string()
         }
     }

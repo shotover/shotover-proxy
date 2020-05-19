@@ -35,7 +35,7 @@ pub struct RedisConfig {
 #[async_trait]
 impl TransformsFromConfig for RedisConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
-        unimplemented!()
+        Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(&self.uri)))
     }
 }
 

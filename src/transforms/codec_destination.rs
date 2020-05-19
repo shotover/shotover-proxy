@@ -20,6 +20,8 @@ use crate::transforms::{Transforms, TransformsFromConfig};
 use std::collections::HashMap;
 use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use std::ops::{Deref, DerefMut};
+use std::borrow::BorrowMut;
 
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -31,14 +33,7 @@ pub struct CodecConfiguration {
 #[async_trait]
 impl TransformsFromConfig for CodecConfiguration {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
-        unimplemented!()
-    }
-}
-
-
-impl From<CodecConfiguration> for CodecDestination {
-    fn from(c: CodecConfiguration) -> Self {
-        Handle::current().block_on(CodecDestination::new_from_config(c.address))
+        Ok(Transforms::CodecDestination(CodecDestination::new(self.address.clone())))
     }
 }
 
@@ -46,43 +41,22 @@ impl From<CodecConfiguration> for CodecDestination {
 pub struct CodecDestination {
     name: &'static str,
     address: String,
-    outbound: Arc<Mutex<Framed<TcpStream, CassandraCodec2>>>
+    outbound: Arc<Mutex<Option<Framed<TcpStream, CassandraCodec2>>>>
 }
 
 
 impl Clone for CodecDestination {
     fn clone(&self) -> Self {
-        let f = self.address.clone();
-        CodecDestination::new_from_config_sync(f)
+        CodecDestination::new(self.address.clone())
     }
 }
 
 
 impl CodecDestination {
-    pub async fn new_from_config(address: String) -> CodecDestination {
-        let outbound_stream = TcpStream::connect(address.clone()).await.unwrap();
-        let outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec2::new());
-        let protected_outbound =  Arc::new(Mutex::new(outbound_framed_codec));
-        CodecDestination::new(protected_outbound, address.clone())
-    }
-
-    pub async fn get_transform_enum_from_config(address: String) -> Transforms {
-        Transforms::CodecDestination(CodecDestination::new_from_config(address).await)
-    }
-
-    pub fn new_from_config_sync(address: String) -> CodecDestination {
-        task::block_in_place(|| {
-            Handle::current().block_on(tokio::spawn(async {
-                CodecDestination::new_from_config(address).await
-            }))
-        }).unwrap()
-    }
-
-
-    pub fn new(outbound: Arc<Mutex<Framed<TcpStream, CassandraCodec2>>>, address: String) -> CodecDestination {
+    pub fn new(address: String) -> CodecDestination {
         CodecDestination {
             address,
-            outbound,
+            outbound: Arc::new(Mutex::new(None)),
             name: "CodecDestination",
         }
     }
@@ -97,15 +71,36 @@ multi-consumer, single producer threadsafe queue
 impl CodecDestination {
     async fn send_frame(&self, frame: Frame, matching_query: Option<QueryMessage>) -> ChainResponse {
         println!("      C -> S {:?}", frame.opcode);
-        if let Ok(mut outbound) = self.outbound.try_lock() {
-            outbound.send(frame).await;
-            if let Some(o) = outbound.next().fuse().await {
-                if let Ok(resp) = o {
-                    println!("      S -> C {:?}", resp.opcode);
-                    return ChainResponse::Ok(Message::Bypass(RawMessage{
-                        original: RawFrame::CASSANDRA(resp),
-                    }));
-                }
+        if let Ok(mut mg) = self.outbound.try_lock() {
+            match *mg {
+                None => {
+                    let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
+                    let mut outbound_framed_codec = Framed::new(outbound_stream, CassandraCodec2::new());
+                    outbound_framed_codec.send(frame).await;
+                    if let Some(o) = outbound_framed_codec.next().fuse().await {
+                        if let Ok(resp) = o {
+                            println!("      S -> C {:?}", resp.opcode);
+                            mg.replace(outbound_framed_codec);
+                            drop(mg);
+                            return ChainResponse::Ok(Message::Bypass(RawMessage{
+                                original: RawFrame::CASSANDRA(resp),
+                            }));
+                        }
+                    }
+                    mg.replace(outbound_framed_codec);
+                    drop(mg);
+                },
+                Some(ref mut outbound_framed_codec) => {
+                    outbound_framed_codec.send(frame).await;
+                    if let Some(o) = outbound_framed_codec.next().fuse().await {
+                        if let Ok(resp) = o {
+                            println!("      S -> C {:?}", resp.opcode);
+                            return ChainResponse::Ok(Message::Bypass(RawMessage{
+                                original: RawFrame::CASSANDRA(resp),
+                            }));
+                        }
+                    }
+                },
             }
         }
         return ChainResponse::Err(RequestError{});

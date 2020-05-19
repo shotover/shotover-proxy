@@ -27,7 +27,6 @@ impl SourcesFromConfig for AsyncMpscConfig {
             return Ok(Sources::Mpsc(AsyncMpsc::new(chain.clone(), rx)))
         }
         Err(ConfigError{})
-
     }
 }
 

@@ -24,7 +24,7 @@ pub struct KafkaConfig {
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
-        unimplemented!()
+        Ok(Transforms::KafkaDestination(KafkaDestination::new_from_config(&self.keys)))
     }
 }
 
