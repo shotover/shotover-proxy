@@ -19,9 +19,10 @@ use tokio::task;
 use crate::transforms::{Transforms, TransformsFromConfig};
 use std::collections::HashMap;
 use crate::config::ConfigError;
+use crate::config::topology::TopicHolder;
 
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CodecConfiguration {
     #[serde(rename = "remote_address")]
     pub address: String
@@ -29,7 +30,7 @@ pub struct CodecConfiguration {
 
 #[async_trait]
 impl TransformsFromConfig for CodecConfiguration {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
         unimplemented!()
     }
 }

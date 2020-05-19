@@ -20,9 +20,11 @@ use serde::{Serialize, Deserialize};
 use crate::transforms::{Transforms};
 use async_trait::async_trait;
 use crate::sources::{SourcesFromConfig, Sources};
+use crate::config::topology::TopicHolder;
+use crate::config::ConfigError;
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CassandraConfig {
     pub listen_addr: String,
     pub cassandra_ks: HashMap<String, Vec<String>>
@@ -30,7 +32,7 @@ pub struct CassandraConfig {
 
 #[async_trait]
 impl SourcesFromConfig for CassandraConfig {
-    async fn get_source(&self, chain: TransformChain) -> Sources {
+    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError> {
         unimplemented!()
     }
 }

@@ -3,6 +3,10 @@ use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
 use async_trait::async_trait;
 use crate::transforms::chain::TransformChain;
 use serde::{Serialize, Deserialize};
+use crate::config::topology::TopicHolder;
+use crate::config::ConfigError;
+use tokio::task::JoinHandle;
+use std::error::Error;
 
 pub mod cassandra_source;
 pub mod mpsc_source;
@@ -13,20 +17,29 @@ pub enum Sources {
     Mpsc(AsyncMpsc)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+impl Sources {
+    pub fn get_join_handles<T>(&self) -> &JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
+        match self {
+            Sources::Cassandra(c) => {&c.join_handle},
+            Sources::Mpsc(m) => {&m.rx_handle},
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum SourcesConfig {
     Cassandra(CassandraConfig),
     Mpsc(AsyncMpscConfig)
 }
 
 impl SourcesConfig {
-    async fn get_source(&self, chain: TransformChain) -> Sources {
+    pub(crate) async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError> {
         match self {
             SourcesConfig::Cassandra(c) => {
-                c.get_source(chain).await
+                c.get_source(chain, topics).await
             },
             SourcesConfig::Mpsc(m) => {
-                m.get_source(chain).await
+                m.get_source(chain, topics).await
             },
         }
     }
@@ -35,5 +48,5 @@ impl SourcesConfig {
 
 #[async_trait]
 pub trait SourcesFromConfig: Send + Sync {
-    async fn get_source(&self, chain: TransformChain) -> Sources;
+    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError>;
 }

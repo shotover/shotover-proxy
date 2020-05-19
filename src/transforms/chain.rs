@@ -93,14 +93,14 @@ pub trait Transform: Send + Sync  {
 
 #[derive(Clone)]
 pub struct TransformChain {
-    name: &'static str,
+    name: String,
     chain: InnerChain
 }
 
 pub type ChainResponse = Result<Message, RequestError>;
 
 impl TransformChain {
-    pub fn new(transform_list: Vec<Transforms>, name: &'static str) -> Self {
+    pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
         TransformChain {
             name,
             chain: transform_list
@@ -117,7 +117,7 @@ impl TransformChain {
             None => ChainResponse::Err(RequestError{})
         };
         let end = Instant::now();
-        timing!("", start, end, "chain" => self.name, "" => "");
+        timing!("", start, end, "chain" => self.name.clone(), "" => "");
         return result;
     }
 }

@@ -6,15 +6,16 @@ use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
 use crate::message::{Message, QueryResponse};
 use std::collections::HashMap;
-use crate::transforms::{TransformsFromConfig, Transforms};
+use crate::transforms::{Transforms, TransformsFromConfig};
 use crate::config::ConfigError;
+use crate::config::topology::TopicHolder;
 
 #[derive(Clone)]
 pub struct KafkaDestination {
     producer: FutureProducer,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct KafkaConfig {
     #[serde(rename = "config_values")]
     pub keys: HashMap<String, String>
@@ -22,15 +23,10 @@ pub struct KafkaConfig {
 
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
         unimplemented!()
     }
 }
-
-
-
-
-
 
 
 

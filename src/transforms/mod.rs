@@ -9,6 +9,7 @@ use crate::transforms::scatter::{Scatter, ScatterConfig};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use crate::config::ConfigError;
+use crate::config::topology::TopicHolder;
 
 pub mod chain;
 pub mod codec_destination;
@@ -59,7 +60,7 @@ impl Transform for Transforms {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum TransformsConfig {
     CodecDestination(CodecConfiguration),
     KafkaDestination(KafkaConfig),
@@ -71,8 +72,29 @@ pub enum TransformsConfig {
 }
 
 
+impl TransformsConfig {
+    pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+        match self {
+            TransformsConfig::CodecDestination(c) => {c.get_source(topics).await},
+            TransformsConfig::KafkaDestination(k) => {k.get_source(topics).await},
+            TransformsConfig::RedisCache(r) => {r.get_source(topics).await},
+            TransformsConfig::MPSCTee(t) => {t.get_source(topics).await},
+            TransformsConfig::MPSCForwarder(f) => {f.get_source(topics).await},
+            TransformsConfig::Route(r) => {r.get_source(topics).await},
+            TransformsConfig::Scatter(s) => {s.get_source(topics).await},
+        }
+    }
+}
+
+pub async fn build_chain_from_config(name: String, transform_configs: &Vec<TransformsConfig>, topics: &TopicHolder) -> Result<TransformChain, ConfigError> {
+    let mut transforms: Vec<Transforms> = Vec::new();
+    for tc in transform_configs {
+        transforms.push(tc.get_transforms(topics).await?)
+    }
+    return Ok(TransformChain::new(transforms, name));
+}
 
 #[async_trait]
 pub trait TransformsFromConfig: Send + Sync {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError>;
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError>;
 }

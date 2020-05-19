@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
+use futures::future::join_all;
 
 use async_trait::async_trait;
 use crate::message::{QueryResponse, Message};
 use futures::stream::FuturesUnordered;
 use tokio::stream::StreamExt;
 use serde::{Serialize, Deserialize};
-use crate::transforms::{TransformsFromConfig, Transforms};
+use crate::transforms::{Transforms, TransformsConfig, build_chain_from_config, TransformsFromConfig};
 use crate::runtimes::rhai::RhaiEnvironment;
 use crate::config::ConfigError;
+use crate::config::topology::TopicHolder;
 
 
 #[derive(Clone)]
@@ -20,16 +22,27 @@ pub struct Scatter {
 }
 
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct ScatterConfig {
     #[serde(rename = "config_values")]
-    pub route_map: HashMap<String, String>,
+    pub route_map: HashMap<String, Vec<TransformsConfig>>,
+    pub rhai_script: String,
+    reduce_scatter_results: bool
 }
 
 #[async_trait]
 impl TransformsFromConfig for ScatterConfig {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
-        unimplemented!()
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+        let mut temp: HashMap<String, TransformChain> = HashMap::new();
+        for (key, value) in self.route_map.clone() {
+            temp.insert(key.clone(), build_chain_from_config(key, &value, topics).await?);
+        }
+        Ok(Transforms::Scatter(Scatter{
+            name: "scatter",
+            route_map: temp,
+            function_env: RhaiEnvironment::new(&self.rhai_script)?,
+            reduce_scatter_results: self.reduce_scatter_results
+        }))
     }
 }
 

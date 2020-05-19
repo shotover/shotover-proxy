@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
-use crate::transforms::{TransformsFromConfig, Transforms};
+use crate::transforms::{Transforms, TransformsConfig, build_chain_from_config, TransformsFromConfig};
 use crate::config::ConfigError;
 use crate::runtimes::rhai::RhaiEnvironment;
+use crate::config::topology::TopicHolder;
 
 #[derive(Clone)]
 pub struct Route {
@@ -13,32 +14,24 @@ pub struct Route {
     function_env: RhaiEnvironment,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RouteConfig {
     #[serde(rename = "config_values")]
-    pub route_map: HashMap<String, String>,
-    pub script: String
+    pub route_map: HashMap<String, Vec<TransformsConfig>>,
+    pub rhai_script: String
 }
 
 #[async_trait]
 impl TransformsFromConfig for RouteConfig {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
-        let mut temp : HashMap<String, TransformChain> = HashMap::new();
-        for (k, v) in &self.route_map {
-            if let Some(t) = transforms.get(v.as_str()) {
-                temp.insert(k.clone(), t.clone());
-
-            } else {
-                return Err(ConfigError{})
-            }
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+        let mut temp: HashMap<String, TransformChain> = HashMap::new();
+        for (key, value) in self.route_map.clone() {
+            temp.insert(key.clone(), build_chain_from_config(key, &value, &topics).await?);
         }
-
-        let script_env = RhaiEnvironment::new(&self.script)?;
-
-        Ok(Transforms::Route(Route{
-            name: "Route",
+        Ok(Transforms::Route(Route {
+            name: "scatter",
             route_map: temp,
-            function_env: script_env
+            function_env: RhaiEnvironment::new(&self.rhai_script)?,
         }))
     }
 }

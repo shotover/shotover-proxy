@@ -8,6 +8,7 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
 use crate::config::ConfigError;
+use crate::config::topology::TopicHolder;
 
 
 /*
@@ -22,14 +23,21 @@ pub struct AsyncMpscForwarder {
 }
 
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct AsyncMpscForwarderConfig {
+    pub topic_name: String
 }
 
 #[async_trait]
 impl TransformsFromConfig for AsyncMpscForwarderConfig {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain, RandomState>) -> Result<Transforms, ConfigError> {
-        unimplemented!()
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+        if let Some(tx) = topics.get_tx(self.topic_name.clone()) {
+            return Ok(Transforms::MPSCForwarder(AsyncMpscForwarder{
+                name: "forward",
+                tx
+            }));
+        }
+        Err(ConfigError{})
     }
 }
 
@@ -39,14 +47,20 @@ pub struct AsyncMpscTee {
     pub tx: Sender<Message>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct AsyncMpscTeeConfig {
+    pub topic_name: String
 }
-
 #[async_trait]
 impl TransformsFromConfig for AsyncMpscTeeConfig {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
-        unimplemented!()
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+        if let Some(tx) = topics.get_tx(self.topic_name.clone()) {
+            return Ok(Transforms::MPSCTee(AsyncMpscTee{
+                name: "tee",
+                tx
+            }));
+        }
+        Err(ConfigError{})
     }
 }
 

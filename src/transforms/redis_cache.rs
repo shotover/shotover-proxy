@@ -20,11 +20,12 @@ use serde::{Serialize, Deserialize};
 
 use async_trait::async_trait;
 use tokio::runtime::{Handle};
-use crate::transforms::{TransformsFromConfig, Transforms};
+use crate::transforms::{Transforms, TransformsFromConfig};
 use crate::config::ConfigError;
+use crate::config::topology::TopicHolder;
 
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
     #[serde(rename = "config_values")]
     pub uri: String
@@ -33,7 +34,7 @@ pub struct RedisConfig {
 
 #[async_trait]
 impl TransformsFromConfig for RedisConfig {
-    async fn get_source(&self, transforms: &HashMap<String, TransformChain>) -> Result<Transforms, ConfigError> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
         unimplemented!()
     }
 }
