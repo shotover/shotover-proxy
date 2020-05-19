@@ -21,7 +21,7 @@ pub struct RhaiConfig {
 
 #[async_trait]
 impl TransformsFromConfig for RhaiConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms, ConfigError> {
         Ok(Transforms::Rhai(RhaiTransform {
             name: "rhai",
             function_env: RhaiEnvironment::new(&self.rhai_script)?,

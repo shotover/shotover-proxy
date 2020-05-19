@@ -11,7 +11,6 @@ use tokio::runtime::Handle;
 use tokio::net::{TcpListener, TcpStream};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use std::error::Error;
-use crate::cassandra_protocol::RawFrame::CASSANDRA;
 use cassandra_proto::frame::Frame;
 use futures::SinkExt;
 use crate::protocols::cassandra_helper::process_cassandra_frame;
@@ -22,6 +21,7 @@ use async_trait::async_trait;
 use crate::sources::{SourcesFromConfig, Sources};
 use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
+use crate::protocols::cassandra_protocol2::RawFrame::CASSANDRA;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

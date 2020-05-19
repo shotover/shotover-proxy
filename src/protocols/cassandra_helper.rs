@@ -11,7 +11,7 @@ use sqlparser::ast::Statement::{Delete, Insert, Update};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use crate::message::{Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value};
-use crate::cassandra_protocol::RawFrame;
+use crate::protocols::cassandra_protocol2::RawFrame;
 
 
 fn expr_to_value(v: &SQLValue) -> Value {

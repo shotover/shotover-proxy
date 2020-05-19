@@ -5,7 +5,6 @@ use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::error::Error;
 use cassandra_proto::frame::parser::FrameHeader;
 use crate::message::{ Value, QueryResponse};
-use crate::cassandra_protocol::RawFrame;
 use cassandra_proto::frame::frame_result::{ResResultBody, BodyResResultRows, RowsMetadata, ColSpec, ColTypeOption, ColType};
 use cassandra_proto::types::{CString, CBytes, CInt};
 use byteorder::{WriteBytesExt, BigEndian};
@@ -14,6 +13,12 @@ use byteorder::{WriteBytesExt, BigEndian};
 pub struct CassandraCodec2 {
     compressor: NoCompression,
     current_head: Option<FrameHeader>
+}
+
+#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+pub enum RawFrame {
+    CASSANDRA(Frame),
+    NONE
 }
 
 impl CassandraCodec2 {

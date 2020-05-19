@@ -2,7 +2,7 @@ use bytes::Bytes;
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
-use crate::cassandra_protocol::{RawFrame};
+use crate::protocols::cassandra_protocol2::RawFrame;
 use sqlparser::ast::Statement;
 use serde::{Serialize, Deserialize};
 
@@ -33,7 +33,7 @@ pub struct QueryMessage {
 
 impl QueryMessage {
     pub fn get_primary_key(&self) -> Option<String> {
-        let f: Vec<String> = self.primary_key.iter().map(|(k,v) | {serde_json::to_string(&v).unwrap()}).collect();
+        let f: Vec<String> = self.primary_key.iter().map(|(_,v) | {serde_json::to_string(&v).unwrap()}).collect();
         return Some(f.join("."));
     }
 

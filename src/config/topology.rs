@@ -8,6 +8,12 @@ use indexmap::IndexSet;
 use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::{Sender, Receiver, channel};
 use crate::message::Message;
+use crate::transforms::mpsc::AsyncMpscTeeConfig;
+use crate::sources::cassandra_source::CassandraConfig;
+use crate::sources::mpsc_source::AsyncMpscConfig;
+use crate::transforms::codec_destination::CodecConfiguration;
+use std::env;
+use crate::transforms::kafka_destination::KafkaConfig;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -79,57 +85,8 @@ impl Topology {
         }
         Ok(sources_list)
     }
-}
 
-#[cfg(test)]
-mod topology_tests {
-    use crate::config::topology::Topology;
-    use std::collections::HashMap;
-    use std::env;
-    use crate::transforms::kafka_destination::KafkaConfig;
-    use crate::transforms::codec_destination::CodecConfiguration;
-    use crate::sources::cassandra_source::CassandraConfig;
-    use crate::sources::SourcesConfig::Mpsc;
-    use crate::sources::mpsc_source::AsyncMpscConfig;
-    use crate::sources::{Sources, SourcesConfig};
-    use crate::transforms::TransformsConfig;
-    use crate::transforms::mpsc::AsyncMpscTeeConfig;
-
-    const TEST_STRING: &str = r###"---
-sources:
-  cassandra_prod:
-    Cassandra:
-      listen_addr: "config::topology::topology_tests::new_test"
-      cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
-  mpsc_chan:
-    Mpsc:
-      topic_name: testtopic
-chain_config:
-  main_chain:
-    - MPSCTee:
-        topic_name: testtopic
-    - CodecDestination:
-        remote_address: "--exact"
-  async_chain:
-    - KafkaDestination:
-        config_values:
-          bootstrap.servers: "127.0.0.1:9092"
-          message.timeout.ms: "5000"
-named_topics:
-  - testtopic
-source_to_chain_mapping:
-  cassandra_prod: main_chain
-  mpsc_chan: async_chain"###;
-
-    #[test]
-    fn new_test() -> Result<(), serde_yaml::Error> {
+    pub fn get_demo_config() -> Topology {
         let kafka_transform_config_obj = TransformsConfig::KafkaDestination(KafkaConfig {
             keys: [("bootstrap.servers", "127.0.0.1:9092"),
                 ("message.timeout.ms", "5000")].iter()
@@ -137,13 +94,9 @@ source_to_chain_mapping:
                 .collect(),
         });
 
-        let listen_addr = env::args()
-            .nth(1)
-            .unwrap_or_else(|| "127.0.0.1:9043".to_string());
+        let listen_addr = "127.0.0.1:9043".to_string();
 
-        let server_addr = env::args()
-            .nth(2)
-            .unwrap_or_else(|| "127.0.0.1:9042".to_string());
+        let server_addr = "127.0.0.1:9042".to_string();
 
         let codec_config = TransformsConfig::CodecDestination(CodecConfiguration {
             address: server_addr,
@@ -179,13 +132,67 @@ source_to_chain_mapping:
         source_to_chain_mapping.insert(String::from("cassandra_prod"), String::from("main_chain"));
         source_to_chain_mapping.insert(String::from("mpsc_chan"), String::from("async_chain"));
 
-        let topology = Topology {
+        Topology {
             sources,
             chain_config,
             named_topics,
             source_to_chain_mapping
-        };
-        assert_eq!(Topology::new_from_yaml(String::from(TEST_STRING))?, topology);
+        }
+    }
+}
+
+#[cfg(test)]
+mod topology_tests {
+    use crate::config::topology::Topology;
+    use std::collections::HashMap;
+    use std::env;
+    use crate::transforms::kafka_destination::KafkaConfig;
+    use crate::transforms::codec_destination::CodecConfiguration;
+    use crate::sources::cassandra_source::CassandraConfig;
+    use crate::sources::SourcesConfig::Mpsc;
+    use crate::sources::mpsc_source::AsyncMpscConfig;
+    use crate::sources::{Sources, SourcesConfig};
+    use crate::transforms::TransformsConfig;
+    use crate::transforms::mpsc::AsyncMpscTeeConfig;
+
+    const TEST_STRING: &str = r###"---
+sources:
+  cassandra_prod:
+    Cassandra:
+      listen_addr: "127.0.0.1:9043"
+      cassandra_ks:
+        system.local:
+          - key
+        test.simple:
+          - pk
+        test.clustering:
+          - pk
+          - clustering
+  mpsc_chan:
+    Mpsc:
+      topic_name: testtopic
+chain_config:
+  main_chain:
+    - MPSCTee:
+        topic_name: testtopic
+    - CodecDestination:
+        remote_address: "127.0.0.1:9042"
+  async_chain:
+    - KafkaDestination:
+        config_values:
+          bootstrap.servers: "127.0.0.1:9092"
+          message.timeout.ms: "5000"
+named_topics:
+  - testtopic
+source_to_chain_mapping:
+  cassandra_prod: main_chain
+  mpsc_chan: async_chain"###;
+
+    #[test]
+    fn new_test() -> Result<(), serde_yaml::Error> {
+        let topology = Topology::get_demo_config();
+        let topology2 = Topology::new_from_yaml(String::from(TEST_STRING))?;
+        assert_eq!(topology2, topology);
         Ok(())
     }
 

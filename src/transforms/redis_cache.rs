@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::message::Message::{Query as MessageQuery};
 use crate::message::{Message, QueryResponse};
-use redis::{AsyncCommands, RedisFuture, pipe, RedisResult, Commands};
+use redis::{AsyncCommands, RedisFuture, pipe, RedisResult};
 use sqlparser::ast::Statement::*;
 use sqlparser::ast::{SetExpr::Values, Expr, SetExpr, Expr::Value as EValue};
 use sqlparser::ast::Value;
@@ -15,7 +15,7 @@ use redis::aio::{MultiplexedConnection};
 use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
-use crate::cassandra_protocol::RawFrame;
+use crate::protocols::cassandra_protocol2::RawFrame;
 use serde::{Serialize, Deserialize};
 
 use async_trait::async_trait;
@@ -136,7 +136,7 @@ fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a Rc<RefCell<HashMap<String,
             AND => {
                 binary_ops_to_hashmap(left, map);
                 binary_ops_to_hashmap(right, map);
-            }
+            },
             EQUAL=> {
                 if let Identifier(i) = left.borrow() {
                     if let EValue(v) = right.borrow() {

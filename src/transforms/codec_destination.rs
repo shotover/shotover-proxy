@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use futures::{SinkExt, FutureExt};
-use crate::cassandra_protocol::RawFrame::CASSANDRA;
+use crate::protocols::cassandra_protocol2::RawFrame::CASSANDRA;
 use tokio::stream::StreamExt;
 use crate::message::{Message, QueryMessage, RawMessage};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::transforms::chain::RequestError;
-use crate::cassandra_protocol::RawFrame;
+use crate::protocols::cassandra_protocol2::RawFrame;
 use cassandra_proto::frame::Frame;
 use tokio::runtime::Handle;
 use tokio::task;
@@ -32,7 +32,7 @@ pub struct CodecConfiguration {
 
 #[async_trait]
 impl TransformsFromConfig for CodecConfiguration {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms, ConfigError> {
         Ok(Transforms::CodecDestination(CodecDestination::new(self.address.clone())))
     }
 }
@@ -110,7 +110,7 @@ impl CodecDestination {
 
 #[async_trait]
 impl Transform for CodecDestination {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
+    async fn transform(&self, mut qd: Wrapper, _: & TransformChain) -> ChainResponse {
         let return_query = qd.message.clone();
         match qd.message {
             Message::Bypass(rm) => {
