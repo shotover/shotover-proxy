@@ -107,7 +107,7 @@ struct ParsedCassandraQueryString {
     ast: Option<Statement>,
 }
 
-fn getColumnValues(expr: &SetExpr) -> Vec<String> {
+fn get_column_values(expr: &SetExpr) -> Vec<String> {
     let mut cumulator: Vec<String> = Vec::new();
     match expr {
         SetExpr::Values(v) => {
@@ -172,7 +172,7 @@ fn parse_query_string<'a>(query_string: String, pk_col_map: &HashMap<String, Vec
                 }
                 Insert { table_name, columns, source } => {
                     namespace = table_name.0.clone();
-                    let values = getColumnValues(&source.body);
+                    let values = get_column_values(&source.body);
                     for (i, c) in columns.iter().enumerate() {
                         projection.push(c.clone());
                         match values.get(i) {

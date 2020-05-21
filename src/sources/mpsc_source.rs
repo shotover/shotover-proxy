@@ -1,19 +1,17 @@
-use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
-use tokio::sync::mpsc::{Sender, Receiver, channel};
+use crate::transforms::chain::{Wrapper, TransformChain};
+use tokio::sync::mpsc::{Receiver};
 
 use async_trait::async_trait;
-use crate::message::{Message, QueryResponse};
+use crate::message::{Message};
 use tokio::task::JoinHandle;
-use tokio::sync::mpsc::error::RecvError;
 use tokio::runtime::Handle;
-use crate::transforms::Transforms;
-use crate::transforms::mpsc::{AsyncMpscForwarder, AsyncMpscTee};
 use serde::{Serialize, Deserialize};
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
 use std::error::Error;
-
+use slog::Logger;
+use slog::info;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AsyncMpscConfig {
@@ -22,17 +20,19 @@ pub struct AsyncMpscConfig {
 
 #[async_trait]
 impl SourcesFromConfig for AsyncMpscConfig {
-    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError> {
-        if let Some(rx) = topics.get_rx(self.topic_name.clone()) {
-            return Ok(Sources::Mpsc(AsyncMpsc::new(chain.clone(), rx)))
+    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder, logger: &Logger) -> Result<Sources, ConfigError> {
+        if let Some(rx) = topics.get_rx(&self.topic_name) {
+            return Ok(Sources::Mpsc(AsyncMpsc::new(chain.clone(), rx, &self.topic_name , logger)))
         }
-        Err(ConfigError{})
+        Err(ConfigError::new(format!("Could not find the topic {} in [{:#?}]", self.topic_name, topics.topics_rx.keys()).as_str()))
     }
 }
 
 pub struct AsyncMpsc {
     pub name: &'static str,
-    pub rx_handle: JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>
+    pub rx_handle: JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>,
+    topic_name: String,
+    logger: Logger,
 }
 
 impl AsyncMpsc {
@@ -41,16 +41,21 @@ impl AsyncMpsc {
             loop {
                 if let Some(m) = rx.recv().await {
                     let w: Wrapper = Wrapper::new(m.clone());
-                    chain.process_request(w).await;
+                    if let Err(e) = chain.process_request(w).await {
+
+                    }
                 }
             }
         })
     }
 
-    pub fn new(chain: TransformChain, mut rx: Receiver<Message>) -> AsyncMpsc {
+    pub fn new(chain: TransformChain, rx: Receiver<Message>, name: &String, logger: &Logger) -> AsyncMpsc {
+        info!(logger, "Starting MPSC source for the topic [{}] ", name.clone());
         return AsyncMpsc {
             name: "AsyncMpsc",
-            rx_handle: AsyncMpsc::tee_loop(rx, chain)
+            rx_handle: AsyncMpsc::tee_loop(rx, chain),
+            topic_name: name.clone(),
+            logger: logger.clone()
         };
     }
     // pub fn new_old(chain: TransformChain) -> AsyncMpsc {

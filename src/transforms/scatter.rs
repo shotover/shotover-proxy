@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
-use futures::future::join_all;
-
 use async_trait::async_trait;
 use crate::message::{QueryResponse, Message};
 use futures::stream::FuturesUnordered;
@@ -11,6 +9,8 @@ use crate::transforms::{Transforms, TransformsConfig, build_chain_from_config, T
 use crate::runtimes::rhai::RhaiEnvironment;
 use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use slog::Logger;
+
 
 
 #[derive(Clone)]
@@ -18,7 +18,8 @@ pub struct Scatter {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
     function_env: RhaiEnvironment,
-    reduce_scatter_results: bool
+    reduce_scatter_results: bool,
+    logger: Logger
 }
 
 
@@ -32,16 +33,17 @@ pub struct ScatterConfig {
 
 #[async_trait]
 impl TransformsFromConfig for ScatterConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
+    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
-            temp.insert(key.clone(), build_chain_from_config(key, &value, topics).await?);
+            temp.insert(key.clone(), build_chain_from_config(key, &value, topics, logger).await?);
         }
         Ok(Transforms::Scatter(Scatter{
             name: "scatter",
             route_map: temp,
             function_env: RhaiEnvironment::new(&self.rhai_script)?,
-            reduce_scatter_results: self.reduce_scatter_results
+            reduce_scatter_results: self.reduce_scatter_results,
+            logger: logger.clone()
         }))
     }
 }

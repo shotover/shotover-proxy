@@ -3,13 +3,36 @@
 
 use std::error::Error;
 
+use clap::Clap;
+
 use rust_practice::sources::{Sources};
 use rust_practice::config::topology::Topology;
+use slog::info;
+use sloggers::Build;
+use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::types::Severity;
 
+#[derive(Clap)]
+#[clap(version = "0.1", author = "Ben B. <ben.bromhead@gmail.com>")]
+struct ConfigOpts {
+    #[clap(short, long, default_value = "config/config.yaml")]
+    pub config_file: String,
+}
 
 #[tokio::main(core_threads = 4)]
 async fn main() -> Result<(), Box<dyn Error>> {
-    if let Ok(sources) = Topology::get_demo_config().run_chains().await {
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Debug);
+    builder.destination(Destination::Stderr);
+
+    let logger = builder.build().unwrap();
+    info!(logger, "Loading configuration");
+
+    let configuration = ConfigOpts::parse();
+    info!(logger, "Starting loaded topology");
+
+
+    if let Ok(sources) = Topology::from_file(configuration.config_file)?.run_chains(&logger).await {
         //TODO: probably a better way to handle various join handles / threads
         for s in sources {
             let _ = match s {
@@ -17,6 +40,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Sources::Mpsc(m) => {tokio::join!(m.rx_handle)},
             };
         }
+        info!(logger, "Goodbye!");
     }
     Ok(())
 }

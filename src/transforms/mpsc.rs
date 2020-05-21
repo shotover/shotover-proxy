@@ -1,14 +1,14 @@
 use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
-use tokio::sync::mpsc::{Sender, Receiver, channel};
+use tokio::sync::mpsc::{Sender};
 
 use async_trait::async_trait;
 use crate::message::{Message, QueryResponse};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
-use std::collections::hash_map::RandomState;
 use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use slog::Logger;
+
 
 
 /*
@@ -20,6 +20,7 @@ It's the thing that owns tx and rx handles :D
 pub struct AsyncMpscForwarder {
     pub name: &'static str,
     pub tx: Sender<Message>,
+    logger: Logger
 }
 
 
@@ -30,14 +31,15 @@ pub struct AsyncMpscForwarderConfig {
 
 #[async_trait]
 impl TransformsFromConfig for AsyncMpscForwarderConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
-        if let Some(tx) = topics.get_tx(self.topic_name.clone()) {
+    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
+        if let Some(tx) = topics.get_tx(&self.topic_name) {
             return Ok(Transforms::MPSCForwarder(AsyncMpscForwarder{
                 name: "forward",
-                tx
+                tx,
+                logger: logger.clone()
             }));
         }
-        Err(ConfigError{})
+        Err(ConfigError::new(format!("Could not find the topic {} in [{:#?}]", self.topic_name.clone(), &topics.topics_rx.keys()).as_str()))
     }
 }
 
@@ -45,6 +47,7 @@ impl TransformsFromConfig for AsyncMpscForwarderConfig {
 pub struct AsyncMpscTee {
     pub name: &'static str,
     pub tx: Sender<Message>,
+    logger: Logger
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -53,14 +56,15 @@ pub struct AsyncMpscTeeConfig {
 }
 #[async_trait]
 impl TransformsFromConfig for AsyncMpscTeeConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
-        if let Some(tx) = topics.get_tx(self.topic_name.clone()) {
+    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
+        if let Some(tx) = topics.get_tx(&self.topic_name) {
             return Ok(Transforms::MPSCTee(AsyncMpscTee{
                 name: "tee",
-                tx
+                tx,
+                logger: logger.clone()
             }));
         }
-        Err(ConfigError{})
+        Err(ConfigError::new(format!("Could not find the topic {} in [{:#?}]", &self.topic_name, topics.topics_rx.keys()).as_str()))
     }
 }
 

@@ -1,6 +1,7 @@
-use rhai::{Engine, Func, EvalAltResult, ParseError, Scope, AST};
-use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
+use rhai::{Engine, Scope, AST, RegisterFn};
+use crate::transforms::chain::{Wrapper, ChainResponse, RequestError};
 use crate::config::ConfigError;
+use crate::message::{Message, QueryMessage};
 
 
 pub struct RhaiEnvironment {
@@ -22,15 +23,19 @@ impl Clone for RhaiEnvironment {
 
 impl RhaiEnvironment {
     pub fn new(plain_script: &String) -> Result<Self, ConfigError>  {
-        let engine = Engine::new();
-        if let Ok(ast) = engine.compile(plain_script.as_str()) {
-            return Ok(RhaiEnvironment {
-                engine,
-                plain_script: plain_script.clone(),
-                ast
-            });
-        }
-        Err(ConfigError{})
+        let mut engine = Engine::new();
+        engine.register_type::<Wrapper>();
+        engine.register_type::<Message>();
+        engine.register_type::<QueryMessage>();
+
+        engine.register_fn("get_namespace", QueryMessage::get_namespace);
+        engine.register_fn("set_namespace_elem", QueryMessage::set_namespace_elem);
+        let ast = engine.compile(plain_script.as_str())?;
+        return Ok(RhaiEnvironment {
+            engine,
+            plain_script: plain_script.clone(),
+            ast
+        });
     }
 
     pub fn call_routing_func(&self, w: Wrapper, available_routes: Vec<String>) -> Result<String, RequestError> {
@@ -53,6 +58,7 @@ impl RhaiEnvironment {
 
     pub fn call_route_handle_func(&self, c: ChainResponse, chosen_route: String) -> ChainResponse {
         let mut scope = Scope::new();
+
         return if let Ok(result) = self.engine.call_fn(&mut scope, &self.ast, "process_result", (c, chosen_route)) {
             Ok(result)
         } else {

@@ -16,12 +16,14 @@ use futures::SinkExt;
 use crate::protocols::cassandra_helper::process_cassandra_frame;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use crate::transforms::{Transforms};
 use async_trait::async_trait;
 use crate::sources::{SourcesFromConfig, Sources};
 use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
 use crate::protocols::cassandra_protocol2::RawFrame::CASSANDRA;
+use slog::Logger;
+use slog::info;
+use slog::error;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -32,8 +34,8 @@ pub struct CassandraConfig {
 
 #[async_trait]
 impl SourcesFromConfig for CassandraConfig {
-    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError> {
-        Ok(Sources::Cassandra(CassandraSource::new(chain, self.listen_addr.clone(), self.cassandra_ks.clone())))
+    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder, logger: &Logger) -> Result<Sources, ConfigError> {
+        Ok(Sources::Cassandra(CassandraSource::new(chain, self.listen_addr.clone(), self.cassandra_ks.clone(), logger)))
     }
 }
 
@@ -41,23 +43,26 @@ pub struct CassandraSource {
     pub name: &'static str,
     pub join_handle: JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>,
     pub listen_addr: String,
+    logger: Logger,
     // pub cassandra_ks: HashMap<String, Vec<String>>,
 }
 
 
 impl CassandraSource {
-    fn listen_loop(chain: TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>) -> JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
+    fn listen_loop(chain: TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>, logger_p: &Logger) -> JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
+        let logger = logger_p.clone();
         Handle::current().spawn(async move {
-            let mut listener = TcpListener::bind(listen_addr).await.unwrap();
+            let mut listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+            info!(logger, "Starting Cassandra source on [{}]", listen_addr);
             loop {
                 while let Ok((inbound, _)) = listener.accept().await {
-                    println!("Connection received from {:?}", inbound.peer_addr());
+                    info!(logger, "Connection received from {:?}", inbound.peer_addr());
 
                     let messages = Framed::new(inbound, CassandraCodec2::new());
 
-                    let transfer = CassandraSource::transfer(messages, chain.clone(), cassandra_ks.clone()).map(|r| {
+                    let transfer = CassandraSource::transfer(messages, chain.clone(), cassandra_ks.clone(), logger.clone()).map(|r| {
                         if let Err(e) = r {
-                            println!("Failed to transfer; error={}", e);
+                            //TODO I don't actually think we really get an error back
                         }
                     });
 
@@ -69,22 +74,24 @@ impl CassandraSource {
 
 
     //"127.0.0.1:9043
-    pub fn new(chain: &TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>) -> CassandraSource {
+    pub fn new(chain: &TransformChain, listen_addr: String, cassandra_ks: HashMap<String, Vec<String>>, logger: &Logger) -> CassandraSource {
         CassandraSource {
             name: "Cassandra",
-            join_handle: CassandraSource::listen_loop(chain.clone(), listen_addr, cassandra_ks),
-            listen_addr: "".to_string()
+            join_handle: CassandraSource::listen_loop(chain.clone(), listen_addr.clone(), cassandra_ks, logger),
+            listen_addr: listen_addr.clone(),
+            logger: logger.clone()
         }
     }
 
-    async fn process_message(mut frame: Wrapper, transforms: &TransformChain) -> ChainResponse {
+    async fn process_message(frame: Wrapper, transforms: &TransformChain) -> ChainResponse {
         return transforms.process_request(frame).await
     }
 
     async fn transfer(
         mut inbound: Framed<TcpStream, CassandraCodec2>,
         chain: TransformChain,
-        mut cassandra_ks: HashMap<String, Vec<String>>,
+        cassandra_ks: HashMap<String, Vec<String>>,
+        logger: Logger
     ) -> Result<(), Box<dyn Error>> {
         // Holy snappers this is terrible - seperate out inbound and outbound loops
         // We should probably have a seperate thread for inbound and outbound, but this will probably do. Also not sure on select behavior.
@@ -99,7 +106,7 @@ impl CassandraSource {
                         // return it to the client instead of forwarding.
                         // This could be something like a spoofed success.
                         // TODO: Decouple C* frame processing / codec enabled sockets from the main tokio thread loop
-                        let mut frame = Wrapper::new(process_cassandra_frame(message, &cassandra_ks));
+                        let frame = Wrapper::new(process_cassandra_frame(message, &cassandra_ks));
                         let pm = CassandraSource::process_message(frame, &chain).await;
                         if let Ok(modified_message) = pm {
                             match modified_message {
@@ -124,7 +131,7 @@ impl CassandraSource {
                         // Process message decided to drop the message so do nothing (warning this may cause client timeouts)
                     }
                     Err(e) => {
-                        println!("uh oh! {}", e)
+                        error!(logger, "Error handling message in Cassandra source: {}", e);
                     }
                 }
             }

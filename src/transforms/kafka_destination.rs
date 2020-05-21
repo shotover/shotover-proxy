@@ -9,10 +9,13 @@ use std::collections::HashMap;
 use crate::transforms::{Transforms, TransformsFromConfig};
 use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use slog::Logger;
+
 
 #[derive(Clone)]
 pub struct KafkaDestination {
     producer: FutureProducer,
+    logger: Logger
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -23,39 +26,32 @@ pub struct KafkaConfig {
 
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
-        Ok(Transforms::KafkaDestination(KafkaDestination::new_from_config(&self.keys)))
+    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
+        Ok(Transforms::KafkaDestination(KafkaDestination::new_from_config(&self.keys, logger)))
     }
 }
 
-
-
-
-
-impl From<KafkaConfig> for KafkaDestination {
-    fn from(k: KafkaConfig) -> Self {
-        KafkaDestination::new_from_config(&k.keys)
-    }
-}
 
 impl KafkaDestination {
-    pub fn new_from_config(config_map: &HashMap<String, String>) -> KafkaDestination {
+    pub fn new_from_config(config_map: &HashMap<String, String>, logger: &Logger) -> KafkaDestination {
         let mut config = ClientConfig::new();
         for (k, v) in config_map.iter() {
             config.set(k.as_str(), v.as_str());
         }
         return KafkaDestination {
-            producer: config.create().expect("Producer creation error")
+            producer: config.create().expect("Producer creation error"),
+            logger: logger.clone()
         }
     }
 
-    pub fn new() -> KafkaDestination {
+    pub fn new(logger: Logger) -> KafkaDestination {
         KafkaDestination{
             producer: ClientConfig::new()
                 .set("bootstrap.servers", "127.0.0.1:9092")
                 .set("message.timeout.ms", "5000")
                 .create()
-                .expect("Producer creation error")
+                .expect("Producer creation error"),
+            logger
         }
     }
 }

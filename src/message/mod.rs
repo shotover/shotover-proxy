@@ -32,6 +32,16 @@ pub struct QueryMessage {
 }
 
 impl QueryMessage {
+    pub fn get_namespace(&self) -> Vec<String> {
+        return self.namespace.clone()
+    }
+
+    pub fn set_namespace_elem(& mut self, index: usize, elem: String) -> String {
+        let old = self.namespace.remove(index);
+        self.namespace.insert(index, elem);
+        return old;
+    }
+
     pub fn get_primary_key(&self) -> Option<String> {
         let f: Vec<String> = self.primary_key.iter().map(|(_,v) | {serde_json::to_string(&v).unwrap()}).collect();
         return Some(f.join("."));

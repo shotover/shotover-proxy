@@ -7,6 +7,7 @@ use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
 use tokio::task::JoinHandle;
 use std::error::Error;
+use slog::Logger;
 
 pub mod cassandra_source;
 pub mod mpsc_source;
@@ -33,13 +34,13 @@ pub enum SourcesConfig {
 }
 
 impl SourcesConfig {
-    pub(crate) async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError> {
+    pub(crate) async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder, logger: &Logger) -> Result<Sources, ConfigError> {
         match self {
             SourcesConfig::Cassandra(c) => {
-                c.get_source(chain, topics).await
+                c.get_source(chain, topics, logger).await
             },
             SourcesConfig::Mpsc(m) => {
-                m.get_source(chain, topics).await
+                m.get_source(chain, topics, logger).await
             },
         }
     }
@@ -48,5 +49,5 @@ impl SourcesConfig {
 
 #[async_trait]
 pub trait SourcesFromConfig: Send + Sync {
-    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder) -> Result<Sources, ConfigError>;
+    async fn get_source(&self, chain: &TransformChain, topics: &mut TopicHolder, logger: &Logger) -> Result<Sources, ConfigError>;
 }

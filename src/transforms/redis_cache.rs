@@ -24,6 +24,10 @@ use crate::transforms::{Transforms, TransformsFromConfig};
 use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
 
+use slog::Logger;
+use slog::trace;
+
+
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -34,49 +38,44 @@ pub struct RedisConfig {
 
 #[async_trait]
 impl TransformsFromConfig for RedisConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms, ConfigError> {
-        Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(&self.uri)))
+    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
+        Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(&self.uri, logger)))
     }
 }
 
-impl From<RedisConfig> for SimpleRedisCache {
-    fn from(k: RedisConfig) -> Self {
-        SimpleRedisCache::new_from_config(&k.uri)
-    }
-}
-
-
-#[derive(Clone, Deserialize)]
-#[serde(from = "RedisConfig")]
+#[derive(Clone)]
 pub struct SimpleRedisCache {
     name: &'static str,
     con: MultiplexedConnection,
     tables_to_pks: HashMap<String, Vec<String>>,
+    logger: Logger
 }
 
 impl SimpleRedisCache {
     //"redis://127.0.0.1/"
-    pub fn new(connection: MultiplexedConnection) -> SimpleRedisCache {
+    pub fn new(connection: MultiplexedConnection, logger: Logger) -> SimpleRedisCache {
         return SimpleRedisCache {
             name: "SimpleRedisCache",
             con: connection,
             tables_to_pks: HashMap::new(),
+            logger
         };
     }
 
-    pub fn new_from_config(params: &String) -> SimpleRedisCache {
+    pub fn new_from_config(params: &String, logger: &Logger) -> SimpleRedisCache {
         let client = redis::Client::open(params.clone()).unwrap();
         let con = Handle::current().block_on(client.get_multiplexed_tokio_connection()).unwrap();
         return SimpleRedisCache {
             name: "SimpleRedisCache",
             con,
             tables_to_pks: HashMap::new(),
+            logger: logger.clone()
         }
     }
 
 
     // TODO: learn rust macros as this will probably make parsing ASTs a million times easier
-    fn getColumnValues(&self, expr: &SetExpr) -> Vec<String> {
+    fn get_column_values(&self, expr: &SetExpr) -> Vec<String> {
         let mut cumulator: Vec<String> = Vec::new();
         match expr {
             Values(v) => {
@@ -114,38 +113,6 @@ fn expr_to_string<'a>(v: &'a Value) -> String {
         }
         _ => {
             "NULL".to_string()
-        }
-    }
-}
-
-fn build_key(namespace: String, pks: &Vec<String>, col_map: &HashMap<String, &String>) -> String {
-    let mut s: String = String::new();
-    s.push_str(namespace.as_str());
-    for pk in pks {
-        if let Some(v) = col_map.get(pk) {
-            s.push_str(v);
-        }
-    }
-    return s;
-}
-
-
-fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a Rc<RefCell<HashMap<String, String>>>)  {
-    if let BinaryOp{left, op, right} = node {
-        match op {
-            AND => {
-                binary_ops_to_hashmap(left, map);
-                binary_ops_to_hashmap(right, map);
-            },
-            EQUAL=> {
-                if let Identifier(i) = left.borrow() {
-                    if let EValue(v) = right.borrow() {
-                        let mut mut_map: RefMut<_> = (**map).borrow_mut();
-                        mut_map.insert(i.to_string(), expr_to_string(v));
-                    }
-
-                }
-            }
         }
     }
 }
@@ -206,7 +173,7 @@ impl Transform for SimpleRedisCache {
                         }
 
                         // println!("{:?}", p);
-                        let result: RedisResult<(Vec<String>)> = p.query_async(&mut client_copy).await;
+                        let result: RedisResult<Vec<String>> = p.query_async(&mut client_copy).await;
                         println!("{:?}", result);
 
                         if let Ok(ok_result) = result {
@@ -266,9 +233,9 @@ impl Transform for SimpleRedisCache {
                                 let res = self.call_next_transform(qd, t).await;
 
                                 if let Err(e) = f.await {
-                                    println!("Cache update failed {:?} !", e);
+                                    trace!(self.logger, "Cache update failed {:?} !", e);
                                 } else {
-                                    println!("Cache update success !");
+                                    trace!(self.logger, "Cache update success !");
 
                                 }
 
