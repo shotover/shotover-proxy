@@ -6,15 +6,13 @@ use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
 use slog::Logger;
 use crate::message::{Message, QueryMessage, QueryResponse};
-use pyo3::prelude::*;
-use pyo3::{PyCell};
-use pyo3::types::{IntoPyDict};
 use core::mem;
-use crate::runtimes::python::PythonEnvironment;
+use rlua::{Lua, UserData, UserDataMethods, ToLua};
+use rlua_serde;
 
 
 #[derive(Clone)]
-pub struct PythonFilterTransform {
+pub struct LuaFilterTransform {
     name: &'static str,
     logger: Logger,
     pub query_filter: Option<String>,
@@ -22,16 +20,16 @@ pub struct PythonFilterTransform {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
-pub struct PythonConfig {
+pub struct LuaConfig {
     pub query_filter: Option<String>,
     pub response_filter: Option<String>
 }
 
 #[async_trait]
-impl TransformsFromConfig for PythonConfig {
+impl TransformsFromConfig for LuaConfig {
     async fn get_source(&self, _: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
-        Ok(Transforms::Python(PythonFilterTransform {
-            name: "python",
+        Ok(Transforms::Lua(LuaFilterTransform {
+            name: "lua",
             logger: logger.clone(),
             query_filter: self.query_filter.clone(),
             response_filter: self.response_filter.clone()
@@ -39,63 +37,49 @@ impl TransformsFromConfig for PythonConfig {
     }
 }
 
-
 #[async_trait]
-impl Transform for PythonFilterTransform {
+impl Transform for LuaFilterTransform {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+        let lua = Lua::new();
         if let Some(query_script) = &self.query_filter {
-            if let Message::Query(qm) = &qd.message {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-
-                // TODO: these can probably get marshalled without a ref to py
-                let query_message_py = PyCell::new(py, qm.clone()).unwrap();
-                let locals = [("qm", query_message_py.to_object(py))].into_py_dict(py);
-
-                PythonEnvironment::eval_script(locals, query_script.as_str(), py)?;
-
-                let mod_qm = locals.get_item("qm").unwrap().extract::<QueryMessage>()?;
-                let _ = mem::replace(& mut qd.message, Message::Query(mod_qm));
+            if let Message::Query(qm) = & mut qd.message {
+                let mut qm_clone = qm.clone();
+                lua.context(|lua_ctx| {
+                    let globals = lua_ctx.globals();
+                    let lval = rlua_serde::to_value(lua_ctx, qm_clone).unwrap();
+                    globals.set("qm", lval).unwrap();
+                    let chunk = lua_ctx.load(query_script.as_str()).set_name("test").unwrap();
+                    let result: QueryMessage = rlua_serde::from_value(chunk.eval().unwrap()).unwrap();
+                    let _ = mem::replace(& mut qd.message, Message::Query(result));
+                });
             }
         }
-        // Note we do this so we don't hold the GIL during downstream chain execution
-        // We could try pyo3 support for rust functions and use process_threaded to release the GIL
-        // when the python script calls back into a rest backed  call_next_transform
-        // but as its across an await barrier we might deadlock ourselves.
-        // Ideally we need to wait until https://github.com/PyO3/pyo3/issues/576
-        // Which would depend on https://mail.python.org/archives/list/python-dev@python.org/thread/ZSE2G37E24YYLNMQKOQSBM46F7KLAOZF/
-        // As pythons FFI doesn't lend itself to multiple interpreters per process space
-        // We could try a multi-process path... but IPC is gross
-        // Or we could do Lua instead of python which probably is the best bet
-        // Or... if you want speed and no bottlenecks... just implement the transform in Rust
         let mut result = self.call_next_transform(qd, t).await?;
         if let Some(response_script) = &self.response_filter {
             if let Message::Response(rm) = & mut result {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-                let response_message_py = PyCell::new(py, rm.clone()).unwrap();
-
-                let locals = [("qr", response_message_py.to_object(py))].into_py_dict(py);
-
-                PythonEnvironment::eval_script(locals, response_script.as_str(), py)?;
-
-                let mod_qr = locals.get_item("qr").unwrap().extract::<QueryResponse>()?;
-
-                let _ = mem::replace(& mut rm.error, mod_qr.error);
-                let _ = mem::replace(& mut rm.result, mod_qr.result);
+                let mut rm_clone = rm.clone();
+                lua.context(|lua_ctx| {
+                    let globals = lua_ctx.globals();
+                    let lval = rlua_serde::to_value(lua_ctx, rm_clone).unwrap();
+                    globals.set("qr", lval).unwrap();
+                    let chunk = lua_ctx.load(response_script.as_str()).set_name("test").unwrap();
+                    let result: QueryResponse = rlua_serde::from_value(chunk.eval().unwrap()).unwrap();
+                    let _ = mem::replace(& mut rm.error, result.error);
+                    let _ = mem::replace(& mut rm.result, result.result);
+                });
             }
         }
         return Ok(result);
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "lua"
     }
 }
 
+
 #[cfg(test)]
-mod python_transform_tests {
-    use super::PythonConfig;
+mod lua_transform_tests {
     use crate::transforms::{TransformsFromConfig, Transforms};
     use crate::config::topology::TopicHolder;
     use std::error::Error;
@@ -110,24 +94,27 @@ mod python_transform_tests {
     use crate::transforms::null::Null;
     use async_trait::async_trait;
     use crate::transforms::printer::Printer;
+    use crate::transforms::lua::LuaConfig;
 
 
     const REQUEST_STRING: &str = r###"
-qm.namespace = ["aaaaaaaaaa", "bbbbb"]
+qm.namespace = {"aaaaaaaaaa", "bbbbb"}
+return qm
 "###;
 
     const RESPONSE_STRING: &str = r###"
-qr.result = 42
+qr.result = {Integer=42}
+return qr
 "###;
 
 
     #[tokio::test(threaded_scheduler)]
-    async fn test_python_script() -> Result<(), Box<dyn Error>> {
+    async fn test_lua_script() -> Result<(), Box<dyn Error>> {
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default()
         };
-        let python_t = PythonConfig {
+        let lua_t = LuaConfig {
             query_filter: Some(String::from(REQUEST_STRING)),
             response_filter: Some(String::from(RESPONSE_STRING))
         };
@@ -153,7 +140,7 @@ qr.result = 42
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
-        if let Transforms::Python(mut python) = python_t.get_source(&t_holder, &logger).await? {
+        if let Transforms::Lua(mut python) = lua_t.get_source(&t_holder, &logger).await? {
             let result = python.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse{ matching_query: Some(oq), original: _, result: _, error: _ }) = &m {

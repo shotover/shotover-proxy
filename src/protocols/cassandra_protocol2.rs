@@ -8,6 +8,8 @@ use crate::message::{ Value, QueryResponse};
 use cassandra_proto::frame::frame_result::{ResResultBody, BodyResResultRows, RowsMetadata, ColSpec, ColTypeOption, ColType};
 use cassandra_proto::types::{CString, CBytes, CInt};
 use byteorder::{WriteBytesExt, BigEndian};
+use serde::{Serialize, Deserialize};
+
 
 #[derive(Debug)]
 pub struct CassandraCodec2 {
@@ -15,7 +17,7 @@ pub struct CassandraCodec2 {
     current_head: Option<FrameHeader>
 }
 
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+#[derive(Eq, PartialEq, Debug, Clone, Hash, Serialize, Deserialize)]
 pub enum RawFrame {
     CASSANDRA(Frame),
     NONE

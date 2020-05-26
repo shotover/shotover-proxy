@@ -35,7 +35,7 @@ struct Struct {
 }
 
 #[pyclass]
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
     pub original: RawFrame,
     #[pyo3(get, set)]
@@ -49,6 +49,7 @@ pub struct QueryMessage {
     #[pyo3(get, set)]
     pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
+    #[serde(skip)]
     pub ast: Option<Statement>
 }
 
@@ -82,7 +83,7 @@ impl QueryMessage {
 }
 
 #[pyclass]
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResponse {
     pub matching_query: Option<QueryMessage>,
     pub original: RawFrame,
@@ -112,7 +113,7 @@ impl QueryResponse {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum QueryType {
     Read,
     Write,
