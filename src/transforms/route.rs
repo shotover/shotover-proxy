@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
 use crate::transforms::{Transforms, TransformsConfig, build_chain_from_config, TransformsFromConfig};
 use crate::config::ConfigError;
-use crate::runtimes::rhai::RhaiEnvironment;
 use crate::config::topology::TopicHolder;
 use slog::Logger;
 
@@ -13,7 +12,7 @@ use slog::Logger;
 pub struct Route {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
-    function_env: RhaiEnvironment,
+    python_script: String,
     logger: Logger
 }
 
@@ -21,7 +20,7 @@ pub struct Route {
 pub struct RouteConfig {
     #[serde(rename = "config_values")]
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
-    pub rhai_script: String
+    pub python_script: String
 }
 
 #[async_trait]
@@ -34,7 +33,7 @@ impl TransformsFromConfig for RouteConfig {
         Ok(Transforms::Route(Route {
             name: "scatter",
             route_map: temp,
-            function_env: RhaiEnvironment::new(&self.rhai_script)?,
+            python_script: self.python_script.clone(),
             logger: logger.clone()
         }))
     }
@@ -44,11 +43,12 @@ impl TransformsFromConfig for RouteConfig {
 #[async_trait]
 impl Transform for Route {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
-        let mut chosen_route = self.function_env.call_routing_func(qd.clone(), routes)?;
-        qd.reset();
-        let result = self.route_map.get(chosen_route.as_str()).unwrap().process_request(qd).await;
-        return self.function_env.call_route_handle_func(result, chosen_route)
+        // let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
+        // let mut chosen_route = self.function_env.call_routing_func(qd.clone(), routes)?;
+        // qd.reset();
+        // let result = self.route_map.get(chosen_route.as_str()).unwrap().process_request(qd).await;
+        // return self.function_env.call_route_handle_func(result, chosen_route)
+        self.call_next_transform(qd, t).await
     }
 
     fn get_name(&self) -> &'static str {

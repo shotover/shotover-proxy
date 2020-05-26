@@ -4,6 +4,7 @@ use tokio::time::Instant;
 use metrics::{timing};
 use async_trait::async_trait;
 use crate::transforms::Transforms;
+use pyo3::PyErr;
 
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,12 @@ struct ResponseData {
 
 #[derive(Debug, Clone)]
 pub struct RequestError;
+
+impl From<pyo3::PyErr> for RequestError {
+    fn from(e: PyErr) -> Self {
+        return RequestError{}
+    }
+}
 
 impl fmt::Display for RequestError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

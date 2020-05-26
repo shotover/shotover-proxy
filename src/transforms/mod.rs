@@ -9,10 +9,13 @@ use crate::transforms::scatter::{Scatter, ScatterConfig};
 use serde::{Serialize, Deserialize};
 use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
-use crate::transforms::rhai::RhaiTransform;
+use crate::transforms::python::PythonFilterTransform;
 use slog::Logger;
+use crate::transforms::printer::Printer;
+use crate::transforms::noop::NoOp;
+use crate::transforms::null::Null;
 
-pub mod rhai;
+pub mod python;
 pub mod chain;
 pub mod codec_destination;
 pub mod route;
@@ -23,6 +26,7 @@ pub mod query;
 pub mod redis_cache;
 pub mod mpsc;
 pub mod kafka_destination;
+pub mod null;
 
 #[derive(Clone)]
 pub enum Transforms {
@@ -33,7 +37,9 @@ pub enum Transforms {
     MPSCForwarder(AsyncMpscForwarder),
     Route(Route),
     Scatter(Scatter),
-    Rhai(RhaiTransform)
+    Python(PythonFilterTransform),
+    Printer(Printer),
+    Null(Null),
 }
 
 #[async_trait]
@@ -47,7 +53,9 @@ impl Transform for Transforms {
             Transforms::MPSCForwarder(m) => {m.transform(qd, t).await},
             Transforms::Route(r) => {r.transform(qd, t).await},
             Transforms::Scatter(s) => {s.transform(qd, t).await},
-            Transforms::Rhai(r) => {r.transform(qd, t).await}
+            Transforms::Python(r) => {r.transform(qd, t).await}
+            Transforms::Printer(p) => {p.transform(qd, t).await}
+            Transforms::Null(n) => {n.transform(qd, t).await}
         }
     }
 
@@ -60,7 +68,9 @@ impl Transform for Transforms {
             Transforms::MPSCForwarder(m) => {m.get_name()},
             Transforms::Route(r) => {r.get_name()},
             Transforms::Scatter(s) => {s.get_name()},
-            Transforms::Rhai(r) => {r.get_name()}
+            Transforms::Python(r) => {r.get_name()}
+            Transforms::Printer(p) => {p.get_name()}
+            Transforms::Null(n) => {n.get_name()}
         }
     }
 }

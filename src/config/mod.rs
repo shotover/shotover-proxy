@@ -1,5 +1,4 @@
 use std::{fmt, error};
-use rhai::ParseError;
 
 pub mod topology;
 
@@ -23,18 +22,6 @@ impl ConfigError {
             message: error.to_string(),
             source: Some(error)
         }
-    }
-}
-
-impl From<rhai::ParseError> for ConfigError {
-    fn from(e: ParseError) -> Self {
-        return ConfigError::from(Box::new(e))
-    }
-}
-
-impl From<std::boxed::Box<rhai::ParseError>> for ConfigError {
-    fn from(e: Box<ParseError>) -> Self {
-        return ConfigError::from(e)
     }
 }
 

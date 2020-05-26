@@ -95,6 +95,9 @@ impl CassandraCodec2 {
                                         Value::Document(x) => {
                                             unreachable!()
                                         },
+                                        Value::List(_) => {
+                                            unreachable!()
+                                        }
                                     });
                                     return rb;
                                 }).collect();

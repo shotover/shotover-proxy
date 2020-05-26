@@ -19,7 +19,7 @@ impl Printer {
 #[async_trait]
 impl Transform for Printer {
     async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
-        println!("Message content: {:?}", qd.message);
+        println!("Message content: {:#?}", qd.message);
         return self.call_next_transform(qd, t).await
     }
 

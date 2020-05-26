@@ -19,6 +19,9 @@ struct ConfigOpts {
     pub config_file: String,
 }
 
+//TODO: manually build the tokio engine so users can configure thread count and scheduling properties
+#[cfg(not(feature = "no_index"))]
+#[cfg(not(feature = "no_object"))]
 #[tokio::main(core_threads = 4)]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut builder = TerminalLoggerBuilder::new();
