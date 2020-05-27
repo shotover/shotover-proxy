@@ -1,5 +1,7 @@
 pub mod python;
+pub mod lua;
 
 pub enum Script {
-    Rhai,
+    Python,
+    Lua
 }
