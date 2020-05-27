@@ -44,3 +44,6 @@ pyo3 = "0.10.1"
 #lua
 rlua = "0.17.0"
 rlua_serde = "0.4"
+
+#Crypto
+sodiumoxide = "0.2.5"

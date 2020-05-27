@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Bytes, Buf};
 use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc, Datelike, Timelike};
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
@@ -10,6 +10,10 @@ use pyo3::types::{IntoPyDict, PyDateTime, PyUnicode, PyBytes, PyBool, PyLong, Py
 use pyo3::type_object::PyTypeInfo;
 use std::borrow::Cow;
 use pyo3::PyErrValue;
+use sodiumoxide::crypto::secretbox;
+use sodiumoxide::crypto::secretbox::{Key, Nonce};
+use std::error::Error;
+use crate::transforms::chain::RequestError;
 
 
 #[derive(PartialEq, Debug, Clone)]
@@ -119,6 +123,66 @@ pub enum QueryType {
     Write,
     ReadWrite,
     SchemaChange
+}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub enum Protected {
+    Plaintext(Value),
+    Ciphertext { cipher: Vec<u8>, nonce: Nonce},
+}
+
+fn encrypt(plaintext: String, sym_key: &Key) -> (Vec<u8>, Nonce) {
+    let nonce = secretbox::gen_nonce();
+    let ciphertext = secretbox::seal(plaintext.as_bytes(), &nonce, sym_key);
+    return (ciphertext, nonce)
+}
+
+fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value, ()> {
+    let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key)?;
+    let decrypted_value: Value = serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|e| {()})?;
+    return Ok(decrypted_value);
+}
+
+impl From<Protected> for Value {
+    fn from(p: Protected) -> Self {
+        match p {
+            //TODO: error out on trying to coerce plaintext protected back to Value
+            Protected::Plaintext(_) => {panic!("tried to move unencrypted value to plaintext without explicitly calling decrypt")},
+            Protected::Ciphertext { .. } => {Value::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))},
+        }
+    }
+}
+
+impl Protected {
+    pub fn from_encrypted_bytes_value(value: Value) -> Result<Protected, Box<dyn Error>> {
+        match value {
+            Value::Bytes(b ) => {
+                return Ok(serde_json::from_slice(b.bytes())?);
+            },
+            _ => {
+                return Err(Box::new(RequestError{}));
+            }
+        }
+    }
+
+    pub fn protect(self, sym_key: &Key) -> Protected {
+        match &self {
+            Protected::Plaintext(p) => {
+                let (cipher, nonce) = encrypt(serde_json::to_string(p).unwrap(), sym_key);
+                Protected::Ciphertext{cipher, nonce}
+            },
+            Protected::Ciphertext { cipher: _, nonce: _ } => {
+                self
+            }
+        }
+    }
+
+    pub fn unprotect(self, sym_key: &Key) -> Value {
+        return match self {
+            Protected::Plaintext(p) => { p },
+            Protected::Ciphertext { cipher, nonce } => { decrypt(cipher, nonce , sym_key).unwrap()}
+        };
+    }
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -237,4 +301,39 @@ mod my_bytes {
         let val: Vec<u8> = Deserialize::deserialize(deserializer)?;
         Ok(Bytes::from(val))
     }
+}
+
+
+#[cfg(test)]
+mod crypto_tests {
+    use crate::message::{Value, Protected};
+    use sodiumoxide::crypto::secretbox;
+    use std::error::Error;
+    use rdkafka::message::ToBytes;
+
+    #[test]
+    fn test_crypto() -> Result<(), Box<dyn Error>>  {
+        let key = secretbox::gen_key();
+
+        let test_value = Value::Strings(String::from("Hello I am a string to be encrypted!!!!"));
+
+        let mut protected = Protected::Plaintext(test_value.clone());
+        protected = protected.protect(&key); //TODO look at https://crates.io/crates/replace_with to make this inplace
+        let protected_value: Value = protected.into();
+
+        if let (Value::Strings(s), Value::Bytes(b)) = (test_value.clone(), protected_value.clone()) {
+            assert_ne!(s.as_bytes(), b.to_bytes())
+        }
+
+        //Go back the other way now
+
+        let d_protected = Protected::from_encrypted_bytes_value(protected_value)?;
+        let d_value = d_protected.unprotect(&key);
+
+        assert_eq!(test_value, d_value);
+
+        Ok(())
+
+    }
+
 }
