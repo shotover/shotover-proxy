@@ -125,6 +125,10 @@ pub enum QueryType {
     SchemaChange
 }
 
+// A protected value meets the following properties:
+// https://doc.libsodium.org/secret-key_cryptography/secretbox
+// This all relies on crypto_secretbox_easy which takes care of
+// all padding, copying and timing issues associated with crypto
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Protected {
     Plaintext(Value),
@@ -139,6 +143,7 @@ fn encrypt(plaintext: String, sym_key: &Key) -> (Vec<u8>, Nonce) {
 
 fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value, ()> {
     let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key)?;
+    //todo make error handing better here - failure here indicates a authenticity failure
     let decrypted_value: Value = serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|e| {()})?;
     return Ok(decrypted_value);
 }
@@ -154,7 +159,7 @@ impl From<Protected> for Value {
 }
 
 impl Protected {
-    pub fn from_encrypted_bytes_value(value: Value) -> Result<Protected, Box<dyn Error>> {
+    pub fn from_encrypted_bytes_value(value: &Value) -> Result<Protected, Box<dyn Error>> {
         match value {
             Value::Bytes(b ) => {
                 return Ok(serde_json::from_slice(b.bytes())?);
@@ -327,7 +332,7 @@ mod crypto_tests {
 
         //Go back the other way now
 
-        let d_protected = Protected::from_encrypted_bytes_value(protected_value)?;
+        let d_protected = Protected::from_encrypted_bytes_value(&protected_value)?;
         let d_value = d_protected.unprotect(&key);
 
         assert_eq!(test_value, d_value);

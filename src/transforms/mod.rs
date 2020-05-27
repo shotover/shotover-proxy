@@ -15,6 +15,7 @@ use crate::transforms::printer::Printer;
 use crate::transforms::noop::NoOp;
 use crate::transforms::null::Null;
 use crate::transforms::lua::LuaFilterTransform;
+use crate::transforms::protect::Protect;
 
 pub mod python;
 pub mod chain;
@@ -29,6 +30,7 @@ pub mod mpsc;
 pub mod kafka_destination;
 pub mod null;
 pub mod lua;
+pub mod protect;
 
 #[derive(Clone)]
 pub enum Transforms {
@@ -42,7 +44,8 @@ pub enum Transforms {
     Python(PythonFilterTransform),
     Printer(Printer),
     Null(Null),
-    Lua(LuaFilterTransform)
+    Lua(LuaFilterTransform),
+    Protect(Protect)
 }
 
 #[async_trait]
@@ -60,6 +63,7 @@ impl Transform for Transforms {
             Transforms::Printer(p) => {p.transform(qd, t).await}
             Transforms::Null(n) => {n.transform(qd, t).await}
             Transforms::Lua(l) => {l.transform(qd, t).await}
+            Transforms::Protect(p) => {p.transform(qd, t).await}
         }
     }
 
@@ -76,6 +80,7 @@ impl Transform for Transforms {
             Transforms::Printer(p) => {p.get_name()}
             Transforms::Null(n) => {n.get_name()}
             Transforms::Lua(l) => {l.get_name()}
+            Transforms::Protect(p) => {p.get_name()}
         }
     }
 }
