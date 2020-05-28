@@ -1,16 +1,16 @@
 #![warn(rust_2018_idioms)]
-#![recursion_limit="256"]
+#![recursion_limit = "256"]
 
 use std::error::Error;
 
 use clap::Clap;
 
-use rust_practice::sources::{Sources};
 use rust_practice::config::topology::Topology;
+use rust_practice::sources::Sources;
 use slog::info;
-use sloggers::Build;
-use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::types::Severity;
+use sloggers::Build;
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "Ben B. <ben.bromhead@gmail.com>")]
@@ -34,13 +34,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let configuration = ConfigOpts::parse();
     info!(logger, "Starting loaded topology");
 
-
-    if let Ok(sources) = Topology::from_file(configuration.config_file)?.run_chains(&logger).await {
+    if let Ok(sources) = Topology::from_file(configuration.config_file)?
+        .run_chains(&logger)
+        .await
+    {
         //TODO: probably a better way to handle various join handles / threads
         for s in sources {
             let _ = match s {
-                Sources::Cassandra(c) => {tokio::join!(c.join_handle)},
-                Sources::Mpsc(m) => {tokio::join!(m.rx_handle)},
+                Sources::Cassandra(c) => tokio::join!(c.join_handle),
+                Sources::Mpsc(m) => tokio::join!(m.rx_handle),
             };
         }
         info!(logger, "Goodbye!");

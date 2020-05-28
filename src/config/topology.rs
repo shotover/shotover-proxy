@@ -1,27 +1,26 @@
-use crate::transforms::{TransformsConfig, build_chain_from_config};
-use std::collections::HashMap;
-use crate::sources::{SourcesConfig, Sources};
-use serde::{Serialize, Deserialize};
 use crate::config::ConfigError;
-use crate::transforms::chain::TransformChain;
-use tokio::sync::mpsc::{Sender, Receiver, channel};
 use crate::message::Message;
-use crate::transforms::mpsc::AsyncMpscTeeConfig;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::mpsc_source::AsyncMpscConfig;
+use crate::sources::{Sources, SourcesConfig};
+use crate::transforms::chain::TransformChain;
 use crate::transforms::codec_destination::CodecConfiguration;
 use crate::transforms::kafka_destination::KafkaConfig;
-use std::error::Error;
-use slog::Logger;
+use crate::transforms::mpsc::AsyncMpscTeeConfig;
+use crate::transforms::{build_chain_from_config, TransformsConfig};
+use serde::{Deserialize, Serialize};
 use slog::info;
-
+use slog::Logger;
+use std::collections::HashMap;
+use std::error::Error;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Topology {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
     pub named_topics: Vec<String>,
-    pub source_to_chain_mapping: HashMap<String, String>
+    pub source_to_chain_mapping: HashMap<String, String>,
 }
 
 pub struct TopicHolder {
@@ -51,8 +50,8 @@ impl Topology {
         let mut topics_tx: HashMap<String, Sender<Message>> = HashMap::new();
         for name in &self.named_topics {
             let (tx, rx) = channel::<Message>(5);
-            topics_rx.insert(name.clone(),  rx);
-            topics_tx.insert(name.clone(),  tx);
+            topics_rx.insert(name.clone(), rx);
+            topics_tx.insert(name.clone(), tx);
         }
         return TopicHolder {
             topics_rx,
@@ -60,10 +59,17 @@ impl Topology {
         };
     }
 
-    async fn build_chains(&self, topics: &TopicHolder, logger: &Logger) -> Result<HashMap<String, TransformChain>, ConfigError> {
+    async fn build_chains(
+        &self,
+        topics: &TopicHolder,
+        logger: &Logger,
+    ) -> Result<HashMap<String, TransformChain>, ConfigError> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.chain_config.clone() {
-            temp.insert(key.clone(), build_chain_from_config(key, &value, &topics, logger).await?);
+            temp.insert(
+                key.clone(),
+                build_chain_from_config(key, &value, &topics, logger).await?,
+            );
         }
         Ok(temp)
     }
@@ -95,25 +101,34 @@ impl Topology {
                                                     self.sources.keys().cloned().collect::<Vec<_>>()).as_str()));
             }
         }
-        info!(logger, "Loaded sources [{:?}] and linked to chains", &self.source_to_chain_mapping.keys());
+        info!(
+            logger,
+            "Loaded sources [{:?}] and linked to chains",
+            &self.source_to_chain_mapping.keys()
+        );
         Ok(sources_list)
     }
 
     pub fn from_file(filepath: String) -> Result<Topology, Box<dyn Error>> {
         if let Ok(f) = std::fs::File::open(filepath.clone()) {
             let config: Topology = serde_yaml::from_reader(f)?;
-            return Ok(config)
+            return Ok(config);
         }
         //TODO: Make Config errors implement the From trait for IO errors
-        Err(Box::new(ConfigError::new(format!("Couldn't open the file {}", &filepath).as_str())))
+        Err(Box::new(ConfigError::new(
+            format!("Couldn't open the file {}", &filepath).as_str(),
+        )))
     }
 
     pub fn get_demo_config() -> Topology {
         let kafka_transform_config_obj = TransformsConfig::KafkaDestination(KafkaConfig {
-            keys: [("bootstrap.servers", "127.0.0.1:9092"),
-                ("message.timeout.ms", "5000")].iter()
-                .map(|(x,y)| (String::from(*x), String::from(*y)))
-                .collect(),
+            keys: [
+                ("bootstrap.servers", "127.0.0.1:9092"),
+                ("message.timeout.ms", "5000"),
+            ]
+            .iter()
+            .map(|(x, y)| (String::from(*x), String::from(*y)))
+            .collect(),
         });
 
         let listen_addr = "127.0.0.1:9043".to_string();
@@ -127,19 +142,22 @@ impl Topology {
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
         cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);
         cassandra_ks.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        cassandra_ks.insert("test.clustering".to_string(), vec!["pk".to_string(), "clustering".to_string()]);
+        cassandra_ks.insert(
+            "test.clustering".to_string(),
+            vec!["pk".to_string(), "clustering".to_string()],
+        );
 
-        let mpsc_config = SourcesConfig::Mpsc(AsyncMpscConfig{
-            topic_name: String::from("testtopic")
+        let mpsc_config = SourcesConfig::Mpsc(AsyncMpscConfig {
+            topic_name: String::from("testtopic"),
         });
 
-        let cassandra_source = SourcesConfig::Cassandra(CassandraConfig{
+        let cassandra_source = SourcesConfig::Cassandra(CassandraConfig {
             listen_addr,
-            cassandra_ks
+            cassandra_ks,
         });
 
-        let tee_conf = TransformsConfig::MPSCTee(AsyncMpscTeeConfig{
-            topic_name: String::from("testtopic")
+        let tee_conf = TransformsConfig::MPSCTee(AsyncMpscTeeConfig {
+            topic_name: String::from("testtopic"),
         });
 
         let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
@@ -148,7 +166,10 @@ impl Topology {
 
         let mut chain_config: HashMap<String, Vec<TransformsConfig>> = HashMap::new();
         chain_config.insert(String::from("main_chain"), vec![tee_conf, codec_config]);
-        chain_config.insert(String::from("async_chain"), vec![kafka_transform_config_obj]);
+        chain_config.insert(
+            String::from("async_chain"),
+            vec![kafka_transform_config_obj],
+        );
         let named_topics: Vec<String> = vec![String::from("testtopic")];
         let mut source_to_chain_mapping: HashMap<String, String> = HashMap::new();
         source_to_chain_mapping.insert(String::from("cassandra_prod"), String::from("main_chain"));
@@ -158,7 +179,7 @@ impl Topology {
             sources,
             chain_config,
             named_topics,
-            source_to_chain_mapping
+            source_to_chain_mapping,
         }
     }
 }

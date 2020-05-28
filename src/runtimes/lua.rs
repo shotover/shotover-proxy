@@ -1,27 +1,31 @@
-use rlua::{Lua, Context, Function, UserData, Value};
 use rlua::prelude::*;
+use rlua::{Context, Function, Lua, UserData, Value};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::mem;
-use tokio::sync::Mutex;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct LuaRuntime {
     pub vm: Arc<Mutex<Lua>>,
 }
 
-
 impl LuaRuntime {
     pub fn new() -> LuaRuntime {
         return LuaRuntime {
-            vm : Arc::new(Mutex::new(Lua::new()))
-        }
+            vm: Arc::new(Mutex::new(Lua::new())),
+        };
     }
-    
-    pub fn new_with_script(function_name: &str, function_definition: &str) -> Result<LuaRuntime, LuaError> {
+
+    pub fn new_with_script(
+        function_name: &str,
+        function_definition: &str,
+    ) -> Result<LuaRuntime, LuaError> {
         let vm = Lua::new();
-        vm.context(|ctx | -> LuaResult<()> {
-            ctx.load(function_definition).set_name(function_name)?.exec()?;
+        vm.context(|ctx| -> LuaResult<()> {
+            ctx.load(function_definition)
+                .set_name(function_name)?
+                .exec()?;
             Ok(())
         })?;
         return Ok(LuaRuntime {
@@ -31,8 +35,10 @@ impl LuaRuntime {
 
     pub fn build_function(&self, function_name: &str, function_definition: &str) -> LuaResult<()> {
         if let Ok(vm) = self.vm.try_lock() {
-            vm.context(|ctx | -> LuaResult<()> {
-                ctx.load(function_definition).set_name(function_name)?.exec()?;
+            vm.context(|ctx| -> LuaResult<()> {
+                ctx.load(function_definition)
+                    .set_name(function_name)?
+                    .exec()?;
                 Ok(())
             })?;
         }

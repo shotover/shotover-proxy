@@ -1,44 +1,46 @@
-use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
-use async_trait::async_trait;
-use serde::{Serialize, Deserialize};
-use crate::transforms::{Transforms, TransformsFromConfig};
-use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
-use slog::Logger;
+use crate::config::ConfigError;
 use crate::message::{Message, QueryMessage, QueryResponse};
-use pyo3::prelude::*;
-use pyo3::{PyCell};
-use pyo3::types::{IntoPyDict};
-use core::mem;
 use crate::runtimes::python::PythonEnvironment;
-
+use crate::transforms::chain::{ChainResponse, RequestError, Transform, TransformChain, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
+use async_trait::async_trait;
+use core::mem;
+use pyo3::prelude::*;
+use pyo3::types::IntoPyDict;
+use pyo3::PyCell;
+use serde::{Deserialize, Serialize};
+use slog::Logger;
 
 #[derive(Clone)]
 pub struct PythonFilterTransform {
     name: &'static str,
     logger: Logger,
     pub query_filter: Option<String>,
-    pub response_filter: Option<String>
+    pub response_filter: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct PythonConfig {
     pub query_filter: Option<String>,
-    pub response_filter: Option<String>
+    pub response_filter: Option<String>,
 }
 
 #[async_trait]
 impl TransformsFromConfig for PythonConfig {
-    async fn get_source(&self, _: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
+    async fn get_source(
+        &self,
+        _: &TopicHolder,
+        logger: &Logger,
+    ) -> Result<Transforms, ConfigError> {
         Ok(Transforms::Python(PythonFilterTransform {
             name: "python",
             logger: logger.clone(),
             query_filter: self.query_filter.clone(),
-            response_filter: self.response_filter.clone()
+            response_filter: self.response_filter.clone(),
         }))
     }
 }
-
 
 #[async_trait]
 impl Transform for PythonFilterTransform {
@@ -55,7 +57,7 @@ impl Transform for PythonFilterTransform {
                 PythonEnvironment::eval_script(locals, query_script.as_str(), py)?;
 
                 let mod_qm = locals.get_item("qm").unwrap().extract::<QueryMessage>()?;
-                let _ = mem::replace(& mut qd.message, Message::Query(mod_qm));
+                let _ = mem::replace(&mut qd.message, Message::Query(mod_qm));
             }
         }
         // Note we do this so we don't hold the GIL during downstream chain execution
@@ -70,7 +72,7 @@ impl Transform for PythonFilterTransform {
         // Or... if you want speed and no bottlenecks... just implement the transform in Rust
         let mut result = self.call_next_transform(qd, t).await?;
         if let Some(response_script) = &self.response_filter {
-            if let Message::Response(rm) = & mut result {
+            if let Message::Response(rm) = &mut result {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
                 let response_message_py = PyCell::new(py, rm.clone()).unwrap();
@@ -81,8 +83,8 @@ impl Transform for PythonFilterTransform {
 
                 let mod_qr = locals.get_item("qr").unwrap().extract::<QueryResponse>()?;
 
-                let _ = mem::replace(& mut rm.error, mod_qr.error);
-                let _ = mem::replace(& mut rm.result, mod_qr.result);
+                let _ = mem::replace(&mut rm.error, mod_qr.error);
+                let _ = mem::replace(&mut rm.result, mod_qr.result);
             }
         }
         return Ok(result);
@@ -96,21 +98,20 @@ impl Transform for PythonFilterTransform {
 #[cfg(test)]
 mod python_transform_tests {
     use super::PythonConfig;
-    use crate::transforms::{TransformsFromConfig, Transforms};
     use crate::config::topology::TopicHolder;
-    use std::error::Error;
-    use crate::transforms::chain::{Wrapper, Transform, TransformChain, ChainResponse};
-    use crate::message::{Message, QueryMessage, QueryType, QueryResponse, Value};
+    use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::RawFrame;
-    use slog::info;
-    use sloggers::Build;
-    use sloggers::terminal::{TerminalLoggerBuilder, Destination};
-    use sloggers::types::Severity;
-    use std::sync::Arc;
+    use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
     use crate::transforms::null::Null;
-    use async_trait::async_trait;
     use crate::transforms::printer::Printer;
-
+    use crate::transforms::{Transforms, TransformsFromConfig};
+    use async_trait::async_trait;
+    use slog::info;
+    use sloggers::terminal::{Destination, TerminalLoggerBuilder};
+    use sloggers::types::Severity;
+    use sloggers::Build;
+    use std::error::Error;
+    use std::sync::Arc;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = ["aaaaaaaaaa", "bbbbb"]
@@ -120,16 +121,15 @@ qm.namespace = ["aaaaaaaaaa", "bbbbb"]
 qr.result = 42
 "###;
 
-
     #[tokio::test(threaded_scheduler)]
     async fn test_python_script() -> Result<(), Box<dyn Error>> {
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
-            topics_tx: Default::default()
+            topics_tx: Default::default(),
         };
         let python_t = PythonConfig {
             query_filter: Some(String::from(REQUEST_STRING)),
-            response_filter: Some(String::from(RESPONSE_STRING))
+            response_filter: Some(String::from(RESPONSE_STRING)),
         };
 
         let wrapper = Wrapper::new(Message::Query(QueryMessage {
@@ -140,7 +140,7 @@ qr.result = 42
             query_values: None,
             projection: None,
             query_type: QueryType::Read,
-            ast: None
+            ast: None,
         }));
 
         let mut builder = TerminalLoggerBuilder::new();
@@ -149,26 +149,40 @@ qr.result = 42
 
         let logger = builder.build().unwrap();
 
-        let transforms: Vec<Transforms> = vec![Transforms::Printer(Printer::new()), Transforms::Null(Null::new())];
+        let transforms: Vec<Transforms> = vec![
+            Transforms::Printer(Printer::new()),
+            Transforms::Null(Null::new()),
+        ];
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
         if let Transforms::Python(mut python) = python_t.get_source(&t_holder, &logger).await? {
             let result = python.transform(wrapper, &chain).await;
             if let Ok(m) = result {
-                if let Message::Response(QueryResponse{ matching_query: Some(oq), original: _, result: _, error: _ }) = &m {
+                if let Message::Response(QueryResponse {
+                    matching_query: Some(oq),
+                    original: _,
+                    result: _,
+                    error: _,
+                }) = &m
+                {
                     assert_eq!(oq.namespace.get(0).unwrap(), "aaaaaaaaaa");
                 } else {
                     panic!()
                 }
-                if let Message::Response(QueryResponse{ matching_query: _, original: _, result: Some(x), error: _ }) = m {
+                if let Message::Response(QueryResponse {
+                    matching_query: _,
+                    original: _,
+                    result: Some(x),
+                    error: _,
+                }) = m
+                {
                     assert_eq!(x, Value::Integer(42));
                 } else {
                     panic!()
                 }
                 return Ok(());
             }
-
         } else {
             panic!()
         }

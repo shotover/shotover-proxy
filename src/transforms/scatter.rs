@@ -1,16 +1,16 @@
-use std::collections::HashMap;
-use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse, RequestError};
-use async_trait::async_trait;
-use crate::message::{QueryResponse, Message};
-use futures::stream::FuturesUnordered;
-use tokio::stream::StreamExt;
-use serde::{Serialize, Deserialize};
-use crate::transforms::{Transforms, TransformsConfig, build_chain_from_config, TransformsFromConfig};
-use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use crate::config::ConfigError;
+use crate::message::{Message, QueryResponse};
+use crate::transforms::chain::{ChainResponse, RequestError, Transform, TransformChain, Wrapper};
+use crate::transforms::{
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+};
+use async_trait::async_trait;
+use futures::stream::FuturesUnordered;
+use serde::{Deserialize, Serialize};
 use slog::Logger;
-
-
+use std::collections::HashMap;
+use tokio::stream::StreamExt;
 
 #[derive(Clone)]
 pub struct Scatter {
@@ -18,31 +18,37 @@ pub struct Scatter {
     route_map: HashMap<String, TransformChain>,
     python_script: String,
     reduce_scatter_results: bool,
-    logger: Logger
+    logger: Logger,
 }
-
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct ScatterConfig {
     #[serde(rename = "config_values")]
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub python_script: String,
-    reduce_scatter_results: bool
+    reduce_scatter_results: bool,
 }
 
 #[async_trait]
 impl TransformsFromConfig for ScatterConfig {
-    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
+    async fn get_source(
+        &self,
+        topics: &TopicHolder,
+        logger: &Logger,
+    ) -> Result<Transforms, ConfigError> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
-            temp.insert(key.clone(), build_chain_from_config(key, &value, topics, logger).await?);
+            temp.insert(
+                key.clone(),
+                build_chain_from_config(key, &value, topics, logger).await?,
+            );
         }
-        Ok(Transforms::Scatter(Scatter{
+        Ok(Transforms::Scatter(Scatter {
             name: "scatter",
             route_map: temp,
             python_script: self.python_script.clone(),
             reduce_scatter_results: self.reduce_scatter_results,
-            logger: logger.clone()
+            logger: logger.clone(),
         }))
     }
 }
@@ -77,7 +83,6 @@ impl Transform for Scatter {
         //     }
         // }
         self.call_next_transform(qd, t).await
-
     }
 
     fn get_name(&self) -> &'static str {

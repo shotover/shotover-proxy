@@ -1,11 +1,10 @@
-use std::{error, fmt};
 use crate::message::Message;
-use tokio::time::Instant;
-use metrics::{timing};
-use async_trait::async_trait;
 use crate::transforms::Transforms;
+use async_trait::async_trait;
+use metrics::timing;
 use pyo3::PyErr;
-
+use std::{error, fmt};
+use tokio::time::Instant;
 
 #[derive(Debug, Clone)]
 struct QueryData {
@@ -16,18 +15,20 @@ struct QueryData {
 #[derive(Debug, Clone)]
 pub struct Wrapper {
     pub message: Message,
-    next_transform: usize
+    next_transform: usize,
+    pub modified: bool,
 }
 
-impl Wrapper  {
+impl Wrapper {
     pub fn new(m: Message) -> Self {
         Wrapper {
             message: m,
-            next_transform: 0
+            next_transform: 0,
+            modified: false,
         }
     }
 
-    pub fn reset(& mut self) {
+    pub fn reset(&mut self) {
         self.next_transform = 0;
     }
 }
@@ -37,13 +38,12 @@ struct ResponseData {
     response: Message,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct RequestError;
 
 impl From<pyo3::PyErr> for RequestError {
     fn from(e: PyErr) -> Self {
-        return RequestError{}
+        return RequestError {};
     }
 }
 
@@ -61,13 +61,12 @@ impl error::Error for RequestError {
     }
 }
 
-
 //TODO change Transform to maintain the InnerChain internally so we don't have to expose this
 pub type InnerChain = Vec<Transforms>;
 
 #[async_trait]
 // pub trait Transform<'a, 'c>: Send+ Sync  {
-pub trait Transform: Send + Sync  {
+pub trait Transform: Send + Sync {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
@@ -80,17 +79,17 @@ pub trait Transform: Send + Sync  {
         return result;
     }
 
-    async fn call_next_transform(&self, mut qd: Wrapper, transforms: &TransformChain) -> ChainResponse {
+    async fn call_next_transform(
+        &self,
+        mut qd: Wrapper,
+        transforms: &TransformChain,
+    ) -> ChainResponse {
         let next = qd.next_transform;
         qd.next_transform += 1;
         return match transforms.chain.get(next) {
-            Some(t) => {
-                t.instrument_transform(qd, transforms).await
-            },
-            None => {
-                Err(RequestError{})
-            }
-        }
+            Some(t) => t.instrument_transform(qd, transforms).await,
+            None => Err(RequestError {}),
+        };
     }
 }
 
@@ -101,7 +100,7 @@ pub trait Transform: Send + Sync  {
 #[derive(Clone)]
 pub struct TransformChain {
     name: String,
-    chain: InnerChain
+    chain: InnerChain,
 }
 
 pub type ChainResponse = Result<Message, RequestError>;
@@ -110,7 +109,7 @@ impl TransformChain {
     pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
         TransformChain {
             name,
-            chain: transform_list
+            chain: transform_list,
         }
     }
 
@@ -120,8 +119,8 @@ impl TransformChain {
             Some(t) => {
                 wrapper.next_transform += 1;
                 t.instrument_transform(wrapper, &self).await
-            },
-            None => ChainResponse::Err(RequestError{})
+            }
+            None => ChainResponse::Err(RequestError {}),
         };
         let end = Instant::now();
         timing!("", start, end, "chain" => self.name.clone(), "" => "");

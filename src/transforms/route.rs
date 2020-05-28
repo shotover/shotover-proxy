@@ -1,44 +1,51 @@
-use std::collections::HashMap;
-use crate::transforms::chain::{TransformChain, Wrapper, Transform, ChainResponse};
-use async_trait::async_trait;
-use serde::{Serialize, Deserialize};
-use crate::transforms::{Transforms, TransformsConfig, build_chain_from_config, TransformsFromConfig};
-use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use crate::config::ConfigError;
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::{
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+};
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use slog::Logger;
-
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct Route {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
     python_script: String,
-    logger: Logger
+    logger: Logger,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RouteConfig {
     #[serde(rename = "config_values")]
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
-    pub python_script: String
+    pub python_script: String,
 }
 
 #[async_trait]
 impl TransformsFromConfig for RouteConfig {
-    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
+    async fn get_source(
+        &self,
+        topics: &TopicHolder,
+        logger: &Logger,
+    ) -> Result<Transforms, ConfigError> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
-            temp.insert(key.clone(), build_chain_from_config(key, &value, &topics, logger).await?);
+            temp.insert(
+                key.clone(),
+                build_chain_from_config(key, &value, &topics, logger).await?,
+            );
         }
         Ok(Transforms::Route(Route {
             name: "scatter",
             route_map: temp,
             python_script: self.python_script.clone(),
-            logger: logger.clone()
+            logger: logger.clone(),
         }))
     }
 }
-
 
 #[async_trait]
 impl Transform for Route {
@@ -55,4 +62,3 @@ impl Transform for Route {
         self.name
     }
 }
-

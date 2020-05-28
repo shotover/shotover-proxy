@@ -1,45 +1,48 @@
-use std::collections::HashMap;
-use crate::message::Message::{Query as MessageQuery};
+use crate::message::Message::Query as MessageQuery;
 use crate::message::{Message, QueryResponse};
-use redis::{AsyncCommands, RedisFuture, pipe, RedisResult};
+use redis::{pipe, AsyncCommands, RedisFuture, RedisResult};
 use sqlparser::ast::Statement::*;
-use sqlparser::ast::{SetExpr::Values, Expr, SetExpr, Expr::Value as EValue};
 use sqlparser::ast::Value;
-use std::iter::{Iterator};
+use sqlparser::ast::{Expr, Expr::Value as EValue, SetExpr, SetExpr::Values};
+use std::collections::HashMap;
+use std::iter::Iterator;
 
-use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
-use std::borrow::{Borrow};
-use crate::message::{Value as MValue};
+use crate::message::Value as MValue;
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use std::borrow::Borrow;
 
-use redis::aio::{MultiplexedConnection};
+use crate::protocols::cassandra_protocol2::RawFrame;
+use redis::aio::MultiplexedConnection;
+use serde::{Deserialize, Serialize};
 use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
-use crate::protocols::cassandra_protocol2::RawFrame;
-use serde::{Serialize, Deserialize};
 
-use async_trait::async_trait;
-use tokio::runtime::{Handle};
-use crate::transforms::{Transforms, TransformsFromConfig};
-use crate::config::ConfigError;
 use crate::config::topology::TopicHolder;
+use crate::config::ConfigError;
+use crate::transforms::{Transforms, TransformsFromConfig};
+use async_trait::async_trait;
+use tokio::runtime::Handle;
 
-use slog::Logger;
 use slog::trace;
-
-
+use slog::Logger;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
     #[serde(rename = "config_values")]
-    pub uri: String
+    pub uri: String,
 }
-
 
 #[async_trait]
 impl TransformsFromConfig for RedisConfig {
-    async fn get_source(&self, topics: &TopicHolder, logger: &Logger) -> Result<Transforms, ConfigError> {
-        Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(&self.uri, logger)))
+    async fn get_source(
+        &self,
+        topics: &TopicHolder,
+        logger: &Logger,
+    ) -> Result<Transforms, ConfigError> {
+        Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(
+            &self.uri, logger,
+        )))
     }
 }
 
@@ -48,7 +51,7 @@ pub struct SimpleRedisCache {
     name: &'static str,
     con: MultiplexedConnection,
     tables_to_pks: HashMap<String, Vec<String>>,
-    logger: Logger
+    logger: Logger,
 }
 
 impl SimpleRedisCache {
@@ -58,21 +61,22 @@ impl SimpleRedisCache {
             name: "SimpleRedisCache",
             con: connection,
             tables_to_pks: HashMap::new(),
-            logger
+            logger,
         };
     }
 
     pub fn new_from_config(params: &String, logger: &Logger) -> SimpleRedisCache {
         let client = redis::Client::open(params.clone()).unwrap();
-        let con = Handle::current().block_on(client.get_multiplexed_tokio_connection()).unwrap();
+        let con = Handle::current()
+            .block_on(client.get_multiplexed_tokio_connection())
+            .unwrap();
         return SimpleRedisCache {
             name: "SimpleRedisCache",
             con,
             tables_to_pks: HashMap::new(),
-            logger: logger.clone()
-        }
+            logger: logger.clone(),
+        };
     }
-
 
     // TODO: learn rust macros as this will probably make parsing ASTs a million times easier
     fn get_column_values(&self, expr: &SetExpr) -> Vec<String> {
@@ -84,44 +88,36 @@ impl SimpleRedisCache {
                         match ex {
                             EValue(v) => {
                                 cumulator.push(expr_to_string(v).clone());
-                            },
+                            }
                             _ => {}
                         }
                     }
                 }
-            },
+            }
             _ => {}
         }
         return cumulator;
     }
-
 }
 
 fn expr_to_string<'a>(v: &'a Value) -> String {
     return match v {
-        Value::Number(v) |
-        Value::SingleQuotedString(v) |
-        Value::NationalStringLiteral(v) |
-        Value::HexStringLiteral(v) |
-        Value::Date(v) |
-        Value::Time(v) |
-        Value::Timestamp(v) => {
-            format!("{:?}", v)
-        },
-        Value::Boolean(v) => {
-            format!("{:?}", v)
-        }
-        _ => {
-            "NULL".to_string()
-        }
-    }
+        Value::Number(v)
+        | Value::SingleQuotedString(v)
+        | Value::NationalStringLiteral(v)
+        | Value::HexStringLiteral(v)
+        | Value::Date(v)
+        | Value::Time(v)
+        | Value::Timestamp(v) => format!("{:?}", v),
+        Value::Boolean(v) => format!("{:?}", v),
+        _ => "NULL".to_string(),
+    };
 }
-
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
-        let message  = qd.message.borrow();
+    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+        let message = qd.message.borrow();
 
         // Only handle client requests
         if let MessageQuery(qm) = message {
@@ -173,27 +169,28 @@ impl Transform for SimpleRedisCache {
                         }
 
                         // println!("{:?}", p);
-                        let result: RedisResult<Vec<String>> = p.query_async(&mut client_copy).await;
+                        let result: RedisResult<Vec<String>> =
+                            p.query_async(&mut client_copy).await;
                         println!("{:?}", result);
 
                         if let Ok(ok_result) = result {
                             if !ok_result.is_empty() {
-
                                 //TODO a type translation function should be generalised here
-                                let some = ok_result.into_iter().map(|x| serde_json::from_str(x.as_str()).unwrap()).collect::<Vec<MValue>>();
-                                return ChainResponse::Ok(Message::Response(QueryResponse{
+                                let some = ok_result
+                                    .into_iter()
+                                    .map(|x| serde_json::from_str(x.as_str()).unwrap())
+                                    .collect::<Vec<MValue>>();
+                                return ChainResponse::Ok(Message::Response(QueryResponse {
                                     matching_query: Some(qm.clone()),
                                     original: RawFrame::NONE,
                                     result: Some(MValue::Rows(vec![some])), //todo: Translate function
                                     error: None,
-                                }))
+                                }));
                             }
-
                         }
 
-                        return self.call_next_transform(qd, t).await
-
-                    },
+                        return self.call_next_transform(qd, t).await;
+                    }
 
                     /*
                     Query String: INSERT INTO cycling.cyclist_name (id, lastname, firstname) VALUES ('6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47', 'KRUIKSWIJK', 'Steven')
@@ -214,20 +211,26 @@ impl Transform for SimpleRedisCache {
                             }]
 
                     */
-                    Insert {table_name, columns, source} => {
+                    Insert {
+                        table_name,
+                        columns,
+                        source,
+                    } => {
                         let mut insert_values: Vec<(String, String)> = Vec::new();
 
                         if let Some(pk) = qm.get_namespaced_primary_key() {
-                            if let Some(value_map) = qm.query_values.borrow()  {
+                            if let Some(value_map) = qm.query_values.borrow() {
                                 for (k, v) in value_map {
-                                    insert_values.push((k.clone(), serde_json::to_string(&v).unwrap()));
+                                    insert_values
+                                        .push((k.clone(), serde_json::to_string(&v).unwrap()));
                                 }
 
                                 let mut client_copy = self.con.clone();
 
                                 //TODO: something something what happens if hset fails.
 
-                                let f: RedisFuture<()>  = client_copy.hset_multiple(pk, insert_values.as_slice());
+                                let f: RedisFuture<()> =
+                                    client_copy.hset_multiple(pk, insert_values.as_slice());
 
                                 // TODO: We update the cache asynchronously - currently errors on cache update are ignored
                                 let res = self.call_next_transform(qd, t).await;
@@ -236,7 +239,6 @@ impl Transform for SimpleRedisCache {
                                     trace!(self.logger, "Cache update failed {:?} !", e);
                                 } else {
                                     trace!(self.logger, "Cache update success !");
-
                                 }
 
                                 return res;
@@ -244,25 +246,25 @@ impl Transform for SimpleRedisCache {
                         }
 
                         return self.call_next_transform(qd, t).await;
-
-                    },
-                    Update {table_name, assignments, selection} => {},
-                    Delete {table_name, selection} => {},
-                    _ => {},
-
-
+                    }
+                    Update {
+                        table_name,
+                        assignments,
+                        selection,
+                    } => {}
+                    Delete {
+                        table_name,
+                        selection,
+                    } => {}
+                    _ => {}
                 }
             }
-
-
         }
-//        match message.
+        //        match message.
         self.call_next_transform(qd, t).await
     }
-
 
     fn get_name(&self) -> &'static str {
         self.name
     }
 }
-

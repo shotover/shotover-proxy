@@ -1,4 +1,4 @@
-use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
 
 use async_trait::async_trait;
 
@@ -9,16 +9,14 @@ pub struct NoOp {
 
 impl NoOp {
     pub fn new() -> NoOp {
-        NoOp{
-            name: "NoOp",
-        }
+        NoOp { name: "NoOp" }
     }
 }
 
 #[async_trait]
 impl Transform for NoOp {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
-        return self.call_next_transform(qd, t).await
+    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+        return self.call_next_transform(qd, t).await;
     }
 
     fn get_name(&self) -> &'static str {

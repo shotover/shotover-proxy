@@ -1,26 +1,25 @@
-use std::{fmt, error};
+use std::{error, fmt};
 
 pub mod topology;
-
 
 #[derive(Debug)]
 pub struct ConfigError {
     pub message: String,
-    pub source: Option<Box<dyn error::Error + 'static>>
+    pub source: Option<Box<dyn error::Error + 'static>>,
 }
 
 impl ConfigError {
     pub fn new(message: &str) -> Self {
-        ConfigError{
+        ConfigError {
             message: String::from(message),
-            source: None
+            source: None,
         }
     }
 
     pub fn from(error: Box<dyn error::Error + 'static>) -> Self {
         ConfigError {
             message: error.to_string(),
-            source: Some(error)
+            source: Some(error),
         }
     }
 }

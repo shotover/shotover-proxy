@@ -1,7 +1,6 @@
-use crate::transforms::chain::{Transform, ChainResponse, Wrapper, TransformChain};
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
 
 use async_trait::async_trait;
-
 
 #[derive(Debug, Clone)]
 pub struct Printer {
@@ -10,17 +9,15 @@ pub struct Printer {
 
 impl Printer {
     pub fn new() -> Printer {
-        Printer{
-            name: "Printer",
-        }
+        Printer { name: "Printer" }
     }
 }
 
 #[async_trait]
 impl Transform for Printer {
-    async fn transform(&self, mut qd: Wrapper, t: & TransformChain) -> ChainResponse {
+    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         println!("Message content: {:#?}", qd.message);
-        return self.call_next_transform(qd, t).await
+        return self.call_next_transform(qd, t).await;
     }
 
     fn get_name(&self) -> &'static str {
