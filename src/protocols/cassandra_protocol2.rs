@@ -151,6 +151,8 @@ impl CassandraCodec2 {
                                             Value::Rows(x) => unreachable!(),
                                             Value::Document(x) => unreachable!(),
                                             Value::List(_) => unreachable!(),
+                                            Value::Inet(i) => {unreachable!()}
+                                            Value::NamedRows(_) => {unreachable!()}
                                         });
                                         return rb;
                                     })

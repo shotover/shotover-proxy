@@ -6,7 +6,7 @@ use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
-use crate::message::{Message, QueryMessage, QueryResponse, RawMessage};
+use crate::message::{Message, QueryMessage, QueryResponse, RawMessage, Value};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::protocols::cassandra_protocol2::RawFrame;
 use crate::protocols::cassandra_protocol2::RawFrame::CASSANDRA;
@@ -20,6 +20,10 @@ use slog::Logger;
 use std::sync::Arc;
 use tokio::stream::StreamExt;
 use tokio::sync::Mutex;
+use cassandra_proto::frame::frame_response::ResponseBody;
+use cassandra_proto::frame::frame_result::ResResultBody;
+use cassandra_proto::types::ByName;
+use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CodecConfiguration {
@@ -72,6 +76,43 @@ it may be worthwhile putting the inbound and outbound tcp streams behind a
 multi-consumer, single producer threadsafe queue
 */
 
+fn build_response_message(frame: Frame, matching_query: Option<QueryMessage>) -> ChainResponse {
+    let mut result: Option<Value> = None;
+    let mut error: Option<Value> = None;
+    match frame.get_body().unwrap() {
+        ResponseBody::Error(e) => {
+            error = Some(Value::Strings(e.message.into_plain()))
+        },
+        ResponseBody::Result(r) => {
+            if let Some(rows) = r.into_rows() {
+                let mut converted_rows : Vec<HashMap<String, Value>> = Vec::new();
+                for row in rows {
+                    let x = row.metadata
+                        .col_specs
+                        .iter()
+                        .enumerate()
+                        .map(|(i, col)| {
+                            let ref col_spec = row.metadata.col_specs[i];
+                            let data: Value = Value::build_value_from_cstar_col_type(col_spec, &row.row_content[i]);
+
+                            (col_spec.name.clone().into_plain(), data)
+                        }).collect::<HashMap<String,Value>>();
+                    converted_rows.push(x);
+                }
+                result = Some(Value::NamedRows(converted_rows));
+            }
+        },
+        _ => {},
+    }
+
+    return Ok(Message::Response(QueryResponse {
+        matching_query,
+        original: RawFrame::CASSANDRA(frame),
+        result,
+        error
+    }));
+}
+
 impl CodecDestination {
     async fn send_frame(
         &self,
@@ -91,16 +132,14 @@ impl CodecDestination {
                             trace!(self.logger, "      S -> C {:?}", resp.opcode);
                             mg.replace(outbound_framed_codec);
                             drop(mg);
-                            //TODO build proper response
-                            // return ChainResponse::Ok(Message::Response(QueryResponse{
-                            //     matching_query,
+                            return build_response_message(resp, matching_query);
+                            //TODO - this codec should return a response/query, but a transform should be responsible
+                            // for encriching / creating the meta data about it
+                            // that way users can easily just build straight proxies that are not messing with frames as
+                            // they transit the chain
+                            // return ChainResponse::Ok(Message::Bypass(RawMessage {
                             //     original: RawFrame::CASSANDRA(resp),
-                            //     result: resp.get_body().unwrap().,
-                            //     error: None
-                            // }))
-                            return ChainResponse::Ok(Message::Bypass(RawMessage {
-                                original: RawFrame::CASSANDRA(resp),
-                            }));
+                            // }));
                         }
                     }
                     mg.replace(outbound_framed_codec);

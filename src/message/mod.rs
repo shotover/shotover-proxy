@@ -3,7 +3,7 @@ use crate::transforms::chain::RequestError;
 use bytes::{Buf, Bytes};
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::{DateTime, Datelike, Timelike, Utc, TimeZone};
 use pyo3::prelude::*;
 use pyo3::type_object::PyTypeInfo;
 use pyo3::types::{
@@ -17,6 +17,9 @@ use sqlparser::ast::Statement;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
+use cassandra_proto::frame::frame_result::{ColSpec, ColType};
+use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigint, decode_blob, decode_boolean, decode_int, decode_decimal, decode_double, decode_float, decode_timestamp, decode_varchar, decode_varint, decode_inet, decode_date, decode_smallint, decode_tinyint, decode_list};
+use std::net::IpAddr;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Message {
@@ -213,9 +216,83 @@ pub enum Value {
     Boolean(bool),
     #[serde(serialize_with = "to_nano_ts")]
     Timestamp(DateTime<Utc>),
+    Inet(IpAddr),
     List(Vec<Value>),
     Rows(Vec<Vec<Value>>),
+    NamedRows(Vec<HashMap<String, Value>>),
     Document(HashMap<String, Value>),
+}
+
+impl Value {
+    pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> Value {
+        if let Some(actual_bytes) = data.as_slice() {
+            return match spec.col_type.id {
+                ColType::Ascii => {
+                    return Value::Strings(decode_ascii(actual_bytes).unwrap())
+                },
+                ColType::Bigint => {
+                    return Value::Integer(decode_bigint(actual_bytes).unwrap())
+                },
+                ColType::Blob => {
+                    return Value::Bytes(Bytes::copy_from_slice(actual_bytes))
+                },
+                ColType::Boolean => {
+                    return Value::Boolean(decode_boolean(actual_bytes).unwrap())
+                },
+                ColType::Counter => {
+                    Value::Integer(decode_int(actual_bytes).unwrap() as i64)
+                },
+                ColType::Decimal => {
+                    Value::Float(decode_decimal(actual_bytes).unwrap().as_plain())
+                },
+                ColType::Double => {
+                    Value::Float(decode_double(actual_bytes).unwrap())
+                },
+                ColType::Float => {
+                    Value::Float(decode_float(actual_bytes).unwrap() as f64)
+                },
+                ColType::Int => {
+                    Value::Integer(decode_int(actual_bytes).unwrap() as i64)
+                },
+                ColType::Timestamp => {
+                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap()))
+                },
+                ColType::Uuid => {
+                    Value::Bytes(Bytes::copy_from_slice(actual_bytes))
+                },
+                ColType::Varchar => {
+                    Value::Strings(decode_varchar(actual_bytes).unwrap())
+                },
+                ColType::Varint => {
+                    Value::Integer(decode_varint(actual_bytes).unwrap())
+                },
+                ColType::Timeuuid => {
+                    Value::Bytes(Bytes::copy_from_slice(actual_bytes))
+                },
+                ColType::Inet => {
+                    Value::Inet(decode_inet(actual_bytes).unwrap())
+                },
+                ColType::Date => {
+                    Value::NULL
+                },
+                ColType::Time => {
+                    Value::NULL
+                },
+                ColType::Smallint => {
+                    Value::Integer(decode_smallint(actual_bytes).unwrap() as i64)
+                },
+                ColType::Tinyint => {
+                    Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64)
+                },
+                _ => {
+                    Value::NULL
+                    // todo: process collection types based on ColTypeOption
+                    // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
+                },
+            }
+        }
+        Value::NULL
+    }
 }
 
 impl Into<cassandra_proto::types::value::Bytes> for Value {
@@ -230,7 +307,9 @@ impl Into<cassandra_proto::types::value::Bytes> for Value {
             Value::Timestamp(t) => t.timestamp().into(),
             Value::List(l) => cassandra_proto::types::value::Bytes::from(l),
             Value::Rows(r) => cassandra_proto::types::value::Bytes::from(r),
+            Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),
             Value::Document(d) => cassandra_proto::types::value::Bytes::from(d),
+            Value::Inet(i) => {i.into()}
         };
     }
 }
@@ -254,8 +333,10 @@ impl<'p> ToPyObject for Value {
                     .to_object(py)
             }
             Value::Rows(r) => return r.to_object(py),
+            Value::NamedRows(n) => return n.to_object(py),
             Value::List(r) => return r.to_object(py),
             Value::Document(d) => return d.to_object(py),
+            Value::Inet(i) => return i.to_string().to_object(py)
         }
     }
 }
