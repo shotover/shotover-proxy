@@ -4,6 +4,7 @@ use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper
 use crate::transforms::codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::lua::LuaFilterTransform;
+use crate::transforms::test_transforms::ReturnerTransform;
 use crate::transforms::mpsc::{
     AsyncMpscForwarder, AsyncMpscForwarderConfig, AsyncMpscTee, AsyncMpscTeeConfig,
 };
@@ -33,6 +34,7 @@ pub mod query;
 pub mod redis_cache;
 pub mod route;
 pub mod scatter;
+pub mod test_transforms;
 
 #[derive(Clone)]
 pub enum Transforms {
@@ -48,6 +50,8 @@ pub enum Transforms {
     Null(Null),
     Lua(LuaFilterTransform),
     Protect(Protect),
+    // The below variants are mainly for testing
+    RepeatMessage(ReturnerTransform)
 }
 
 #[async_trait]
@@ -66,6 +70,7 @@ impl Transform for Transforms {
             Transforms::Null(n) => n.transform(qd, t).await,
             Transforms::Lua(l) => l.transform(qd, t).await,
             Transforms::Protect(p) => p.transform(qd, t).await,
+            Transforms::RepeatMessage(p) => p.transform(qd, t).await,
         }
     }
 
@@ -83,6 +88,7 @@ impl Transform for Transforms {
             Transforms::Null(n) => n.get_name(),
             Transforms::Lua(l) => l.get_name(),
             Transforms::Protect(p) => p.get_name(),
+            Transforms::RepeatMessage(p) => p.get_name(),
         }
     }
 }

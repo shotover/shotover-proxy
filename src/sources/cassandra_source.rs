@@ -18,6 +18,7 @@ use futures::SinkExt;
 use serde::{Deserialize, Serialize};
 use slog::error;
 use slog::info;
+use slog::warn;
 use slog::Logger;
 use std::collections::HashMap;
 use std::error::Error;
@@ -72,6 +73,7 @@ impl CassandraSource {
                     info!(logger, "Connection received from {:?}", inbound.peer_addr());
 
                     let messages = Framed::new(inbound, CassandraCodec2::new());
+                    let e_logger = logger.clone();
 
                     let transfer = CassandraSource::transfer(
                         messages,
@@ -79,8 +81,9 @@ impl CassandraSource {
                         cassandra_ks.clone(),
                         logger.clone(),
                     )
-                    .map(|r| {
+                    .map( move |r| {
                         if let Err(e) = r {
+                            warn!(e_logger, "Oh oh {}", e);
                             //TODO I don't actually think we really get an error back
                         }
                     });

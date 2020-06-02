@@ -8,6 +8,7 @@ use crate::sources::{Sources, SourcesFromConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use slog::info;
+use slog::warn;
 use slog::Logger;
 use std::error::Error;
 use tokio::runtime::Handle;
@@ -56,12 +57,15 @@ impl AsyncMpsc {
     fn tee_loop(
         mut rx: Receiver<Message>,
         chain: TransformChain,
+        logger: Logger
     ) -> JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
         Handle::current().spawn(async move {
             loop {
                 if let Some(m) = rx.recv().await {
                     let w: Wrapper = Wrapper::new(m.clone());
-                    if let Err(e) = chain.process_request(w).await {}
+                    if let Err(e) = chain.process_request(w).await {
+                        warn!(logger, "Something went wrong {}", e)
+                    }
                 }
             }
         })
@@ -80,7 +84,7 @@ impl AsyncMpsc {
         );
         return AsyncMpsc {
             name: "AsyncMpsc",
-            rx_handle: AsyncMpsc::tee_loop(rx, chain),
+            rx_handle: AsyncMpsc::tee_loop(rx, chain, logger.clone()),
             topic_name: name.clone(),
             logger: logger.clone(),
         };

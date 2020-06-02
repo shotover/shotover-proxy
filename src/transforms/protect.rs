@@ -162,6 +162,10 @@ mod protect_transform_tests {
     use std::collections::HashMap;
     use std::error::Error;
     use std::sync::Arc;
+    use crate::transforms::test_transforms::ReturnerTransform;
+    use cassandra_proto::frame::{Frame, Flag};
+    use cassandra_proto::consistency::Consistency;
+    use crate::protocols::cassandra_helper::process_cassandra_frame;
 
     #[tokio::test(threaded_scheduler)]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
@@ -221,7 +225,6 @@ mod protect_transform_tests {
         let logger = builder.build().unwrap();
 
         let transforms: Vec<Transforms> = vec![
-            Transforms::Printer(Printer::new()),
             Transforms::Null(Null::new()),
         ];
 
@@ -247,20 +250,55 @@ mod protect_transform_tests {
                     error: _,
                 }) = &mut m
                 {
-                    println!("{:#?}", query_values.get("col1").unwrap());
-
+                    let encrypted_val = query_values.remove("col1").unwrap();
                     assert_ne!(
-                        query_values.remove("col1").unwrap(),
+                        encrypted_val.clone(),
                         Value::Strings(secret_data.clone())
                     );
-                } else {
-                    panic!()
+
+                    let cframe = Frame::new_req_query(
+                        "SELECT col1 FROM keyspace.old WHERE pk = 'pk1' AND cluster = 'cluster';".to_string(),
+                        Consistency::LocalQuorum,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        vec![]
+                    );
+
+                    let mut colk_map: HashMap<String, Vec<String>> = HashMap::new();
+                    colk_map.insert("keyspace.old".to_string(), vec!["pk".to_string(), "cluster".to_string()]);
+
+
+                    if let Message::Query(qm) = process_cassandra_frame(cframe.clone(), &colk_map) {
+                        let returner_message = QueryResponse {
+                            matching_query: Some(qm.clone()),
+                            original: RawFrame::NONE,
+                            result: Some(Value::Rows(vec![vec![encrypted_val]])),
+                            error: None
+                        };
+
+                        let ret_transforms: Vec<Transforms> = vec![
+                            Transforms::RepeatMessage(ReturnerTransform{
+                                message: Message::Response(returner_message.clone())
+                            }),
+                        ];
+
+                        let ret_chain = TransformChain::new(ret_transforms, String::from("test_chain2"));
+
+                        let mut resultr = protect.transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain).await;
+                        if let Ok(Message::Response(QueryResponse{ matching_query, original, result:Some(Value::Rows(r)), error })) = resultr {
+                            if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
+                                assert_eq!(s.clone(), secret_data);
+                                return Ok(())
+                            }
+                        }
+                    }
                 }
-                return Ok(());
             }
-        } else {
-            panic!()
         }
-        Ok(())
+    panic!()
     }
 }

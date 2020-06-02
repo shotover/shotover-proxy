@@ -405,6 +405,21 @@ pub fn process_cassandra_frame(
             result: None,
             error: None,
         }),
+        Opcode::Error => {
+            if let Ok(body) = frame.get_body() {
+                if let ResponseBody::Error(e) = body {
+                    return Message::Response(QueryResponse {
+                        matching_query: None,
+                        original: RawFrame::CASSANDRA(frame.clone()),
+                        result: None,
+                        error: Some(Value::Strings(e.message.as_plain())),
+                    });
+                }
+            }
+            return Message::Bypass(RawMessage {
+                original: RawFrame::CASSANDRA(frame),
+            })
+        },
         _ => {
             return Message::Bypass(RawMessage {
                 original: RawFrame::CASSANDRA(frame),

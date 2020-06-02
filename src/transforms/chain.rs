@@ -88,7 +88,11 @@ pub trait Transform: Send + Sync {
         qd.next_transform += 1;
         return match transforms.chain.get(next) {
             Some(t) => t.instrument_transform(qd, transforms).await,
-            None => Err(RequestError {}),
+            None => {
+                println!("No more transforms left in the chain");
+
+                Err(RequestError {})
+            },
         };
     }
 }
@@ -120,7 +124,11 @@ impl TransformChain {
                 wrapper.next_transform += 1;
                 t.instrument_transform(wrapper, &self).await
             }
-            None => ChainResponse::Err(RequestError {}),
+            None => {
+                println!("No more transforms left in the chain");
+
+                Err(RequestError {})
+            },
         };
         let end = Instant::now();
         timing!("", start, end, "chain" => self.name.clone(), "" => "");

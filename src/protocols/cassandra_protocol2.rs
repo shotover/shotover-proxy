@@ -195,6 +195,7 @@ impl Decoder for CassandraCodec2 {
                 self.current_head = h;
                 return Ok(r);
             }
+            // Note these should be parse errors, not actual protocol errors
             Err(e) => {
                 return Err(e);
             }
