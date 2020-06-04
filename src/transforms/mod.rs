@@ -1,14 +1,13 @@
 use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
 use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
-use crate::transforms::codec_destination::{CodecConfiguration, CodecDestination};
+use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::lua::LuaFilterTransform;
 use crate::transforms::test_transforms::ReturnerTransform;
 use crate::transforms::mpsc::{
     AsyncMpscForwarder, AsyncMpscForwarderConfig, AsyncMpscTee, AsyncMpscTeeConfig,
 };
-use crate::transforms::noop::NoOp;
 use crate::transforms::null::Null;
 use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
@@ -19,9 +18,12 @@ use crate::transforms::scatter::{Scatter, ScatterConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use slog::Logger;
+use crate::transforms::redis_codec_destination::RedisCodecDestination;
+
 
 pub mod chain;
-pub mod codec_destination;
+pub mod cassandra_codec_destination;
+pub mod redis_codec_destination;
 pub mod kafka_destination;
 pub mod lua;
 pub mod mpsc;
@@ -39,6 +41,7 @@ pub mod test_transforms;
 #[derive(Clone)]
 pub enum Transforms {
     CodecDestination(CodecDestination),
+    RedisCodecDestination(RedisCodecDestination),
     KafkaDestination(KafkaDestination),
     RedisCache(SimpleRedisCache),
     MPSCTee(AsyncMpscTee),
@@ -56,7 +59,7 @@ pub enum Transforms {
 
 #[async_trait]
 impl Transform for Transforms {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         match self {
             Transforms::CodecDestination(c) => c.transform(qd, t).await,
             Transforms::KafkaDestination(k) => k.transform(qd, t).await,
@@ -71,6 +74,7 @@ impl Transform for Transforms {
             Transforms::Lua(l) => l.transform(qd, t).await,
             Transforms::Protect(p) => p.transform(qd, t).await,
             Transforms::RepeatMessage(p) => p.transform(qd, t).await,
+            Transforms::RedisCodecDestination(r) => r.transform(qd, t).await
         }
     }
 
@@ -89,6 +93,7 @@ impl Transform for Transforms {
             Transforms::Lua(l) => l.get_name(),
             Transforms::Protect(p) => p.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
+            Transforms::RedisCodecDestination(r) => r.get_name()
         }
     }
 }

@@ -3,23 +3,22 @@ use crate::transforms::chain::RequestError;
 use bytes::{Buf, Bytes};
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
-use chrono::{DateTime, Datelike, Timelike, Utc, TimeZone};
+use chrono::{DateTime, Utc, TimeZone};
 use pyo3::prelude::*;
 use pyo3::type_object::PyTypeInfo;
 use pyo3::types::{
-    IntoPyDict, PyBool, PyBytes, PyDateTime, PyDict, PyFloat, PyList, PyLong, PySet, PyUnicode,
+    PyBool, PyBytes, PyDateTime, PyDict, PyFloat, PyList, PyLong, PySet, PyUnicode,
 };
-use pyo3::PyErrValue;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use sqlparser::ast::Statement;
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::error::Error;
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
-use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigint, decode_blob, decode_boolean, decode_int, decode_decimal, decode_double, decode_float, decode_timestamp, decode_varchar, decode_varint, decode_inet, decode_date, decode_smallint, decode_tinyint, decode_list};
+use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigint, decode_boolean, decode_int, decode_decimal, decode_double, decode_float, decode_timestamp, decode_varchar, decode_varint, decode_inet, decode_smallint, decode_tinyint};
 use std::net::IpAddr;
+use redis_protocol::types::Frame;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Message {
@@ -116,7 +115,7 @@ impl QueryResponse {
         };
     }
 
-    pub fn emptyWithOriginal(original: QueryMessage) -> Self {
+    pub fn empty_with_original(original: QueryMessage) -> Self {
         return QueryResponse {
             matching_query: Some(original),
             original: RawFrame::NONE,
@@ -132,6 +131,7 @@ pub enum QueryType {
     Write,
     ReadWrite,
     SchemaChange,
+    PubSubMessage
 }
 
 // A protected value meets the following properties:
@@ -154,14 +154,13 @@ fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value, ()
     let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key)?;
     //todo make error handing better here - failure here indicates a authenticity failure
     let decrypted_value: Value =
-        serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|e| ())?;
+        serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| ())?;
     return Ok(decrypted_value);
 }
 
 impl From<Protected> for Value {
     fn from(p: Protected) -> Self {
         match p {
-            //TODO: error out on trying to coerce plaintext protected back to Value
             Protected::Plaintext(_) => panic!(
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
@@ -221,6 +220,25 @@ pub enum Value {
     Rows(Vec<Vec<Value>>),
     NamedRows(Vec<HashMap<String, Value>>),
     Document(HashMap<String, Value>),
+}
+
+impl Into<Frame> for Value {
+    fn into(self) -> Frame {
+        match self {
+            Value::NULL => {Frame::Null},
+            Value::Bytes(b) => {Frame::BulkString(b.to_vec())},
+            Value::Strings(s) => {Frame::SimpleString(s)},
+            Value::Integer(i) => {Frame::Integer(i)},
+            Value::Float(f) => {Frame::SimpleString(f.to_string())},
+            Value::Boolean(b) => {Frame::Integer(i64::from(b))},
+            Value::Timestamp(t) => {Frame::SimpleString(t.to_rfc2822())},
+            Value::Inet(i) => {Frame::SimpleString(i.to_string())},
+            Value::List(l) => {Frame::Array(l.iter().cloned().map(|v|v.into()).collect())},
+            Value::Rows(r) => {Frame::Array(r.iter().cloned().map(|v|Value::List(v).into()).collect())},
+            Value::NamedRows(_) => {unimplemented!()},
+            Value::Document(_) => {unimplemented!()},
+        }
+    }
 }
 
 impl Value {

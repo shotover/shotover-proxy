@@ -21,8 +21,6 @@ use std::sync::Arc;
 use tokio::stream::StreamExt;
 use tokio::sync::Mutex;
 use cassandra_proto::frame::frame_response::ResponseBody;
-use cassandra_proto::frame::frame_result::ResResultBody;
-use cassandra_proto::types::ByName;
 use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -91,7 +89,7 @@ fn build_response_message(frame: Frame, matching_query: Option<QueryMessage>) ->
                         .col_specs
                         .iter()
                         .enumerate()
-                        .map(|(i, col)| {
+                        .map(|(i, _col)| {
                             let ref col_spec = row.metadata.col_specs[i];
                             let data: Value = Value::build_value_from_cstar_col_type(col_spec, &row.row_content[i]);
 
@@ -164,7 +162,7 @@ impl CodecDestination {
 
 #[async_trait]
 impl Transform for CodecDestination {
-    async fn transform(&self, mut qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         // let return_query = qd.message.clone();
         match qd.message {
             Message::Bypass(rm) => {

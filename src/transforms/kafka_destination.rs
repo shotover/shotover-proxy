@@ -27,7 +27,7 @@ pub struct KafkaConfig {
 impl TransformsFromConfig for KafkaConfig {
     async fn get_source(
         &self,
-        topics: &TopicHolder,
+        _topics: &TopicHolder,
         logger: &Logger,
     ) -> Result<Transforms, ConfigError> {
         Ok(Transforms::KafkaDestination(
@@ -65,11 +65,11 @@ impl KafkaDestination {
 
 #[async_trait]
 impl Transform for KafkaDestination {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         if let Message::Query(qm) = qd.message {
             if let Some(ref key) = qm.get_namespaced_primary_key() {
                 if let Some(values) = qm.query_values {
-                    let message = serde_json::to_string(&values).map_err(|x| RequestError {})?;
+                    let message = serde_json::to_string(&values).map_err(|_| RequestError {})?;
                     let a = FutureRecord::to("test_topic").payload(&message).key(&key);
                     self.producer.send(a, 0);
                     return ChainResponse::Ok(Message::Response(QueryResponse::empty()));

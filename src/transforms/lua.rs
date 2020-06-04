@@ -2,11 +2,10 @@ use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
 use crate::message::{Message, QueryMessage, QueryResponse};
 use crate::runtimes::lua::LuaRuntime;
-use crate::transforms::chain::{ChainResponse, RequestError, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use core::mem;
-use rlua::{Lua, ToLua, UserData, UserDataMethods};
 use rlua_serde;
 use serde::{Deserialize, Serialize};
 use slog::Logger;
@@ -61,7 +60,7 @@ impl Transform for LuaFilterTransform {
         if let Ok(lua) = self.lua.vm.try_lock() {
             if let Some(query_script) = &self.query_filter {
                 if let Message::Query(qm) = &mut qd.message {
-                    let mut qm_clone = qm.clone();
+                    let qm_clone = qm.clone();
                     lua.context(|lua_ctx| {
                         let globals = lua_ctx.globals();
                         let lval = rlua_serde::to_value(lua_ctx, qm_clone).unwrap();
@@ -83,7 +82,7 @@ impl Transform for LuaFilterTransform {
         if let Ok(lua) = self.lua.vm.try_lock() {
             if let Some(response_script) = &self.response_filter {
                 if let Message::Response(rm) = &mut result {
-                    let mut rm_clone = rm.clone();
+                    let rm_clone = rm.clone();
                     lua.context(|lua_ctx| {
                         let globals = lua_ctx.globals();
                         let lval = rlua_serde::to_value(lua_ctx, rm_clone).unwrap();
@@ -113,18 +112,15 @@ mod lua_transform_tests {
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::RawFrame;
-    use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::lua::LuaConfig;
     use crate::transforms::null::Null;
     use crate::transforms::printer::Printer;
     use crate::transforms::{Transforms, TransformsFromConfig};
-    use async_trait::async_trait;
-    use slog::info;
     use sloggers::terminal::{Destination, TerminalLoggerBuilder};
     use sloggers::types::Severity;
     use sloggers::Build;
     use std::error::Error;
-    use std::sync::Arc;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}
@@ -171,8 +167,8 @@ return qr
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
-        if let Transforms::Lua(mut python) = lua_t.get_source(&t_holder, &logger).await? {
-            let result = python.transform(wrapper, &chain).await;
+        if let Transforms::Lua(lua) = lua_t.get_source(&t_holder, &logger).await? {
+            let result = lua.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse {
                     matching_query: Some(oq),

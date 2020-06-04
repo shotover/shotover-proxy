@@ -43,6 +43,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let _ = match s {
                 Sources::Cassandra(c) => tokio::join!(c.join_handle),
                 Sources::Mpsc(m) => tokio::join!(m.rx_handle),
+                Sources::Redis(r) => tokio::join!(r.join_handle)
             };
         }
         info!(logger, "Goodbye!");

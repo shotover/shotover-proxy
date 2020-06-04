@@ -9,7 +9,7 @@ pub struct ReturnerTransform {
 
 #[async_trait]
 impl Transform for ReturnerTransform {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, _qd: Wrapper, _t: &TransformChain) -> ChainResponse {
         return Ok(self.message.clone())
     }
 

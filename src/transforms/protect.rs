@@ -3,21 +3,16 @@ use crate::config::ConfigError;
 use crate::message::Value;
 use crate::message::Value::Rows;
 use crate::message::{Message, Protected, QueryMessage, QueryResponse, QueryType};
-use crate::runtimes::lua::LuaRuntime;
-use crate::transforms::chain::{ChainResponse, RequestError, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use core::mem;
-use rlua::{Lua, ToLua, UserData, UserDataMethods};
-use rlua_serde;
 use serde::{Deserialize, Serialize};
 use slog::Logger;
-use slog::{info, warn};
-use sodiumoxide::crypto::secretbox;
+use slog::{ warn};
 use sodiumoxide::crypto::secretbox::Key;
-use std::borrow::{Borrow, BorrowMut};
+use std::borrow::{Borrow};
 use std::collections::HashMap;
-use std::ops::Deref;
 
 #[derive(Clone)]
 pub struct Protect {
@@ -61,11 +56,11 @@ impl Transform for Protect {
             // Encrypt the writes
             if QueryType::Write == qm.query_type {
                 if qm.namespace.len() == 2 {
-                    if let Some((keyspace, tables)) = self
+                    if let Some((_, tables)) = self
                         .keyspace_table_columns
                         .get_key_value(qm.namespace.get(0).unwrap())
                     {
-                        if let Some((table, columns)) =
+                        if let Some((_, columns)) =
                             tables.get_key_value(qm.namespace.get(1).unwrap())
                         {
                             if let Some(query_values) = &mut qm.query_values {
@@ -89,13 +84,13 @@ impl Transform for Protect {
             matching_query:
                 Some(QueryMessage {
                     original: _,
-                    query_string,
+                    query_string: _,
                     namespace,
-                    primary_key,
-                    query_values,
+                    primary_key: _,
+                    query_values: _,
                     projection: Some(projection),
-                    query_type,
-                    ast,
+                    query_type: _,
+                    ast: _,
                 }),
             original: _,
             result: Some(Rows(rows)),
@@ -103,11 +98,11 @@ impl Transform for Protect {
         }) = &mut result
         {
             if namespace.len() == 2 {
-                if let Some((keyspace, tables)) = self
+                if let Some((_keyspace, tables)) = self
                     .keyspace_table_columns
                     .get_key_value(namespace.get(0).unwrap())
                 {
-                    if let Some((table, protect_columns)) =
+                    if let Some((_table, protect_columns)) =
                         tables.get_key_value(namespace.get(1).unwrap())
                     {
                         let mut positions: Vec<usize> = Vec::new();
@@ -120,7 +115,7 @@ impl Transform for Protect {
                             for index in &positions {
                                 if let Some(v) = row.get_mut(*index) {
                                     if let Value::Bytes(_) = v {
-                                        let mut protected =
+                                        let protected =
                                             Protected::from_encrypted_bytes_value(v.borrow())
                                                 .unwrap();
                                         let new_value: Value = protected.unprotect(&self.key);
@@ -148,22 +143,18 @@ mod protect_transform_tests {
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::RawFrame;
-    use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::null::Null;
-    use crate::transforms::printer::Printer;
     use crate::transforms::protect::ProtectConfig;
     use crate::transforms::{Transforms, TransformsFromConfig};
-    use async_trait::async_trait;
-    use slog::info;
     use sloggers::terminal::{Destination, TerminalLoggerBuilder};
     use sloggers::types::Severity;
     use sloggers::Build;
     use sodiumoxide::crypto::secretbox;
     use std::collections::HashMap;
     use std::error::Error;
-    use std::sync::Arc;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use cassandra_proto::frame::{Frame, Flag};
+    use cassandra_proto::frame::{Frame};
     use cassandra_proto::consistency::Consistency;
     use crate::protocols::cassandra_helper::process_cassandra_frame;
 
@@ -230,20 +221,20 @@ mod protect_transform_tests {
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
-        if let Transforms::Protect(mut protect) = protect_t.get_source(&t_holder, &logger).await? {
-            let mut result = protect.transform(wrapper, &chain).await;
+        if let Transforms::Protect(protect) = protect_t.get_source(&t_holder, &logger).await? {
+            let result = protect.transform(wrapper, &chain).await;
             if let Ok(mut m) = result {
                 if let Message::Response(QueryResponse {
                     matching_query:
                         Some(QueryMessage {
-                            original,
-                            query_string,
-                            namespace,
-                            primary_key,
+                            original: _,
+                            query_string: _,
+                            namespace: _,
+                            primary_key: _,
                             query_values: Some(query_values),
-                            projection,
-                            query_type,
-                            ast,
+                            projection: _,
+                            query_type: _,
+                            ast: _,
                         }),
                     original: _,
                     result: _,
@@ -288,8 +279,8 @@ mod protect_transform_tests {
 
                         let ret_chain = TransformChain::new(ret_transforms, String::from("test_chain2"));
 
-                        let mut resultr = protect.transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain).await;
-                        if let Ok(Message::Response(QueryResponse{ matching_query, original, result:Some(Value::Rows(r)), error })) = resultr {
+                        let resultr = protect.transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain).await;
+                        if let Ok(Message::Response(QueryResponse{ matching_query: _, original: _, result:Some(Value::Rows(r)), error: _ })) = resultr {
                             if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
                                 assert_eq!(s.clone(), secret_data);
                                 return Ok(())

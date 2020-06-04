@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
 use crate::message::{Message, QueryMessage, QueryResponse};
 use crate::runtimes::python::PythonEnvironment;
-use crate::transforms::chain::{ChainResponse, RequestError, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use core::mem;
@@ -101,17 +101,14 @@ mod python_transform_tests {
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::RawFrame;
-    use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::null::Null;
     use crate::transforms::printer::Printer;
     use crate::transforms::{Transforms, TransformsFromConfig};
-    use async_trait::async_trait;
-    use slog::info;
     use sloggers::terminal::{Destination, TerminalLoggerBuilder};
     use sloggers::types::Severity;
     use sloggers::Build;
     use std::error::Error;
-    use std::sync::Arc;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = ["aaaaaaaaaa", "bbbbb"]
@@ -156,7 +153,7 @@ qr.result = 42
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
-        if let Transforms::Python(mut python) = python_t.get_source(&t_holder, &logger).await? {
+        if let Transforms::Python(python) = python_t.get_source(&t_holder, &logger).await? {
             let result = python.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse {

@@ -16,9 +16,9 @@ impl Null {
 
 #[async_trait]
 impl Transform for Null {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         if let Message::Query(qm) = qd.message {
-            return ChainResponse::Ok(Message::Response(QueryResponse::emptyWithOriginal(qm)));
+            return ChainResponse::Ok(Message::Response(QueryResponse::empty_with_original(qm)));
         }
         return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
     }

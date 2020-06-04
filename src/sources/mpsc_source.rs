@@ -49,8 +49,6 @@ impl SourcesFromConfig for AsyncMpscConfig {
 pub struct AsyncMpsc {
     pub name: &'static str,
     pub rx_handle: JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>,
-    topic_name: String,
-    logger: Logger,
 }
 
 impl AsyncMpsc {
@@ -85,38 +83,6 @@ impl AsyncMpsc {
         return AsyncMpsc {
             name: "AsyncMpsc",
             rx_handle: AsyncMpsc::tee_loop(rx, chain, logger.clone()),
-            topic_name: name.clone(),
-            logger: logger.clone(),
         };
     }
-    // pub fn new_old(chain: TransformChain) -> AsyncMpsc {
-    //     let (tx, rx) = channel::<Message>(5);
-    //     return AsyncMpsc {
-    //         name: "AsyncMpsc",
-    //         tx,
-    //         rx_handle: AsyncMpsc::tee_loop(rx, chain)
-    //     };
-    // }
-
-    // pub fn get_async_mpsc_forwarder_enum(&self) -> Transforms {
-    //     Transforms::MPSCForwarder(self.get_async_mpsc_forwarder())
-    // }
-    //
-    // pub fn get_async_mpsc_tee_enum(&self) -> Transforms {
-    //     Transforms::MPSCTee(self.get_async_mpsc_tee())
-    // }
-    //
-    // pub fn get_async_mpsc_forwarder(&self) -> AsyncMpscForwarder {
-    //     AsyncMpscForwarder{
-    //         name: "Forward",
-    //         tx: self.tx.clone(),
-    //     }
-    // }
-    //
-    // pub fn get_async_mpsc_tee(&self) -> AsyncMpscTee {
-    //     AsyncMpscTee{
-    //         name: "Tee",
-    //         tx: self.tx.clone(),
-    //     }
-    // }
 }

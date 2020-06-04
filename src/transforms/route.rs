@@ -49,7 +49,7 @@ impl TransformsFromConfig for RouteConfig {
 
 #[async_trait]
 impl Transform for Route {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         // let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
         // let mut chosen_route = self.function_env.call_routing_func(qd.clone(), routes)?;
         // qd.reset();

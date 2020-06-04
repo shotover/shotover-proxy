@@ -2,8 +2,6 @@ use crate::message::Message::Query as MessageQuery;
 use crate::message::{Message, QueryResponse};
 use redis::{pipe, AsyncCommands, RedisFuture, RedisResult};
 use sqlparser::ast::Statement::*;
-use sqlparser::ast::Value;
-use sqlparser::ast::{Expr, Expr::Value as EValue, SetExpr, SetExpr::Values};
 use std::collections::HashMap;
 use std::iter::Iterator;
 
@@ -14,9 +12,6 @@ use std::borrow::Borrow;
 use crate::protocols::cassandra_protocol2::RawFrame;
 use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
-use sqlparser::ast::Expr::{BinaryOp, Identifier};
-use std::cell::{RefCell, RefMut};
-use std::rc::Rc;
 
 use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
@@ -37,7 +32,7 @@ pub struct RedisConfig {
 impl TransformsFromConfig for RedisConfig {
     async fn get_source(
         &self,
-        topics: &TopicHolder,
+        _topics: &TopicHolder,
         logger: &Logger,
     ) -> Result<Transforms, ConfigError> {
         Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(
@@ -77,46 +72,11 @@ impl SimpleRedisCache {
             logger: logger.clone(),
         };
     }
-
-    // TODO: learn rust macros as this will probably make parsing ASTs a million times easier
-    fn get_column_values(&self, expr: &SetExpr) -> Vec<String> {
-        let mut cumulator: Vec<String> = Vec::new();
-        match expr {
-            Values(v) => {
-                for value in &v.0 {
-                    for ex in value {
-                        match ex {
-                            EValue(v) => {
-                                cumulator.push(expr_to_string(v).clone());
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-        return cumulator;
-    }
-}
-
-fn expr_to_string<'a>(v: &'a Value) -> String {
-    return match v {
-        Value::Number(v)
-        | Value::SingleQuotedString(v)
-        | Value::NationalStringLiteral(v)
-        | Value::HexStringLiteral(v)
-        | Value::Date(v)
-        | Value::Time(v)
-        | Value::Timestamp(v) => format!("{:?}", v),
-        Value::Boolean(v) => format!("{:?}", v),
-        _ => "NULL".to_string(),
-    };
 }
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let message = qd.message.borrow();
 
         // Only handle client requests
@@ -154,12 +114,12 @@ impl Transform for SimpleRedisCache {
                     })]
 
                     */
-                    Query(q) => {
+                    Query(_) => {
                         let mut client_copy = self.con.clone();
 
                         //TODO: something something what happens if hset fails.
                         // let f: RedisFuture<HashMap<String, String>> = client_copy.hgetall(&qm.get_primary_key());
-                        let mut p = &mut pipe();
+                        let p = &mut pipe();
                         if let Some(pk) = qm.get_namespaced_primary_key() {
                             if let Some(values) = &qm.projection {
                                 for v in values {
@@ -168,7 +128,6 @@ impl Transform for SimpleRedisCache {
                             }
                         }
 
-                        // println!("{:?}", p);
                         let result: RedisResult<Vec<String>> =
                             p.query_async(&mut client_copy).await;
                         println!("{:?}", result);
@@ -209,12 +168,11 @@ impl Transform for SimpleRedisCache {
                                       offset: None,
                                       fetch: None }
                             }]
-
                     */
                     Insert {
-                        table_name,
-                        columns,
-                        source,
+                        table_name: _,
+                        columns: _,
+                        source: _,
                     } => {
                         let mut insert_values: Vec<(String, String)> = Vec::new();
 
@@ -248,14 +206,64 @@ impl Transform for SimpleRedisCache {
                         return self.call_next_transform(qd, t).await;
                     }
                     Update {
-                        table_name,
-                        assignments,
-                        selection,
-                    } => {}
-                    Delete {
-                        table_name,
-                        selection,
-                    } => {}
+                        table_name: _,
+                        assignments: _,
+                        selection: _,
+                    } => {
+                        let mut insert_values: Vec<(String, String)> = Vec::new();
+
+                        if let Some(pk) = qm.get_namespaced_primary_key() {
+                            if let Some(value_map) = qm.query_values.borrow() {
+                                for (k, v) in value_map {
+                                    insert_values
+                                        .push((k.clone(), serde_json::to_string(&v).unwrap()));
+                                }
+
+                                let mut client_copy = self.con.clone();
+
+                                //TODO: something something what happens if hset fails.
+
+                                let f: RedisFuture<()> =
+                                    client_copy.hset_multiple(pk, insert_values.as_slice());
+
+                                // TODO: We update the cache asynchronously - currently errors on cache update are ignored
+                                let res = self.call_next_transform(qd, t).await;
+
+                                if let Err(e) = f.await {
+                                    trace!(self.logger, "Cache update failed {:?} !", e);
+                                } else {
+                                    trace!(self.logger, "Cache update success !");
+                                }
+
+                                return res;
+                            }
+                        }
+                        return self.call_next_transform(qd, t).await;
+                    }
+                    Delete{ table_name: _, selection: _ } => {
+                        let p = &mut pipe();
+                        if let Some(pk) = qm.get_namespaced_primary_key() {
+                            if let Some(value_map) = qm.query_values.borrow() {
+                                for (k, _) in value_map {
+                                    p.hdel(pk.clone(), k.clone());
+                                }
+
+                                let mut client_copy = self.con.clone();
+
+                                //TODO: await these using a join.
+                                let f: RedisResult<Vec<i32>> = p.query_async(&mut client_copy).await;
+                                let res = self.call_next_transform(qd, t).await;
+
+                                if let Err(e) = f {
+                                    trace!(self.logger, "Cache update failed {:?} !", e);
+                                } else {
+                                    trace!(self.logger, "Cache update success !");
+                                }
+                                return res;
+                            }
+                        }
+                        return self.call_next_transform(qd, t).await;
+                    }
                     _ => {}
                 }
             }

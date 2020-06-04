@@ -23,9 +23,8 @@ impl PythonEnvironment {
 }
 
 //TODO instead of panicing, log the error.
-fn emit_compile_error_msg(py: Python, error: &PyErr, script: &str) {
+fn emit_compile_error_msg(py: Python, error: &PyErr, _script: &str) {
     use pyo3::type_object::PyTypeObject;
-    use pyo3::AsPyRef;
 
     let value = error.to_object(py);
 

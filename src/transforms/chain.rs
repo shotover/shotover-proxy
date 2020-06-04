@@ -3,8 +3,9 @@ use crate::transforms::Transforms;
 use async_trait::async_trait;
 use metrics::timing;
 use pyo3::PyErr;
-use std::{error, fmt};
+use std::{error, fmt, io};
 use tokio::time::Instant;
+use futures::io::Error;
 
 #[derive(Debug, Clone)]
 struct QueryData {
@@ -41,8 +42,14 @@ struct ResponseData {
 #[derive(Debug, Clone)]
 pub struct RequestError;
 
+impl From<io::Error> for RequestError {
+    fn from(_: Error) -> Self {
+        return RequestError {}
+    }
+}
+
 impl From<pyo3::PyErr> for RequestError {
-    fn from(e: PyErr) -> Self {
+    fn from(_: PyErr) -> Self {
         return RequestError {};
     }
 }
@@ -71,7 +78,7 @@ pub trait Transform: Send + Sync {
 
     fn get_name(&self) -> &'static str;
 
-    async fn instrument_transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn instrument_transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let start = Instant::now();
         let result = self.transform(qd, t).await;
         let end = Instant::now();

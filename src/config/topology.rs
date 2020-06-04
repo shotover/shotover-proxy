@@ -4,7 +4,7 @@ use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::mpsc_source::AsyncMpscConfig;
 use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::chain::TransformChain;
-use crate::transforms::codec_destination::CodecConfiguration;
+use crate::transforms::cassandra_codec_destination::CodecConfiguration;
 use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::AsyncMpscTeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};

@@ -1,8 +1,6 @@
 use rlua::prelude::*;
-use rlua::{Context, Function, Lua, UserData, Value};
+use rlua::{Lua};
 
-use serde::{Deserialize, Serialize};
-use std::mem;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

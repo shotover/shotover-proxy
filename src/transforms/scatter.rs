@@ -1,16 +1,13 @@
 use crate::config::topology::TopicHolder;
 use crate::config::ConfigError;
-use crate::message::{Message, QueryResponse};
-use crate::transforms::chain::{ChainResponse, RequestError, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
 use crate::transforms::{
     build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
 };
 use async_trait::async_trait;
-use futures::stream::FuturesUnordered;
 use serde::{Deserialize, Serialize};
 use slog::Logger;
 use std::collections::HashMap;
-use tokio::stream::StreamExt;
 
 #[derive(Clone)]
 pub struct Scatter {
@@ -55,7 +52,7 @@ impl TransformsFromConfig for ScatterConfig {
 
 #[async_trait]
 impl Transform for Scatter {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         // let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
         // let chosen_route = self.function_env.call_scatter_route(qd.clone(), routes)?;
         // if chosen_route.len() == 1 {

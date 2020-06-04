@@ -1,4 +1,4 @@
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper, RequestError};
 use tokio::sync::mpsc::Sender;
 
 use crate::config::topology::TopicHolder;
@@ -8,6 +8,8 @@ use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use slog::Logger;
+use slog::warn;
+use futures::TryFutureExt;
 
 /*
 AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,
@@ -89,8 +91,11 @@ impl TransformsFromConfig for AsyncMpscTeeConfig {
 
 #[async_trait]
 impl Transform for AsyncMpscForwarder {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        self.tx.clone().send(qd.message).await;
+    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
+        self.tx.clone().send(qd.message).map_err(|e| {
+            warn!(self.logger, "MPSC error {}", e);
+            RequestError{}
+        }).await?;
         return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
     }
 
@@ -101,9 +106,12 @@ impl Transform for AsyncMpscForwarder {
 
 #[async_trait]
 impl Transform for AsyncMpscTee {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let m = qd.message.clone();
-        self.tx.clone().send(m).await;
+        self.tx.clone().send(m).map_err(|e| {
+            warn!(self.logger, "MPSC error {}", e);
+            RequestError{}
+        }).await?;
         self.call_next_transform(qd, t).await
     }
 

@@ -2,16 +2,16 @@ use crate::message::{QueryMessage, QueryResponse, Value};
 use crate::protocols::cassandra_helper::{rebuild_ast_in_message, rebuild_query_string_from_ast};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
+use redis_protocol::prelude::Frame as Rframe;
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::consistency::Consistency;
 use cassandra_proto::error::Error;
-use cassandra_proto::frame::frame_response::ResponseBody;
 use cassandra_proto::frame::frame_result::{
     BodyResResultRows, ColSpec, ColType, ColTypeOption, ResResultBody, RowsMetadata,
 };
 use cassandra_proto::frame::parser::FrameHeader;
 use cassandra_proto::frame::{parser, Flag, Frame, IntoBytes, Opcode, Version};
-use cassandra_proto::query::{QueryParams, QueryValues};
+use cassandra_proto::query::{QueryValues};
 use cassandra_proto::types::value::Value as CValue;
 use cassandra_proto::types::{CBytes, CInt, CString};
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,7 @@ pub struct CassandraCodec2 {
 #[derive(Eq, PartialEq, Debug, Clone, Hash, Serialize, Deserialize)]
 pub enum RawFrame {
     CASSANDRA(Frame),
+    Redis(Rframe),
     NONE,
 }
 
@@ -44,14 +45,14 @@ impl CassandraCodec2 {
         rebuild_ast_in_message(&mut query);
         rebuild_query_string_from_ast(&mut query);
         let QueryMessage {
-            original,
+            original: _,
             query_string,
-            namespace,
-            primary_key,
+            namespace: _,
+            primary_key: _,
             query_values,
-            projection,
-            query_type,
-            ast,
+            projection: _,
+            query_type: _,
+            ast: _,
         } = query;
 
         let values: Option<QueryValues> = Some(QueryValues::SimpleValues(
@@ -148,10 +149,10 @@ impl CassandraCodec2 {
                                             Value::Timestamp(x) => {
                                                 Vec::from(x.to_rfc2822().clone().as_bytes())
                                             }
-                                            Value::Rows(x) => unreachable!(),
-                                            Value::Document(x) => unreachable!(),
+                                            Value::Rows(_) => unreachable!(),
+                                            Value::Document(_) => unreachable!(),
                                             Value::List(_) => unreachable!(),
-                                            Value::Inet(i) => {unreachable!()}
+                                            Value::Inet(_) => {unreachable!()}
                                             Value::NamedRows(_) => {unreachable!()}
                                         });
                                         return rb;
@@ -308,13 +309,13 @@ mod cassandra_protocol_tests {
         if let Ok(Some(frame)) = codec.decode(&mut bytes) {
             let message = process_cassandra_frame(frame, &pk_map);
             if let Message::Query(QueryMessage {
-                original,
+                original: _,
                 query_string,
-                namespace,
-                primary_key,
-                query_values,
-                projection,
-                query_type,
+                namespace: _,
+                primary_key: _,
+                query_values: _,
+                projection: _,
+                query_type: _,
                 ast: Some(ast),
             }) = message
             {

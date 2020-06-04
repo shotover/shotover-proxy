@@ -1,5 +1,3 @@
-#![feature(box_patterns)]
-
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -10,7 +8,7 @@ use cassandra_proto::frame::frame_response::ResponseBody;
 use cassandra_proto::frame::{Frame, Opcode};
 use chrono::DateTime;
 use sqlparser::ast::Expr::{BinaryOp, Identifier};
-use sqlparser::ast::Statement::{Delete, Insert, Query, Update};
+use sqlparser::ast::Statement::{Delete, Insert, Update};
 use sqlparser::ast::{
     BinaryOperator, Expr, ObjectName, Select, SelectItem, SetExpr, Statement, TableFactor,
     Value as SQLValue,
@@ -32,7 +30,8 @@ fn value_to_expr(v: &Value) -> SQLValue {
     };
 }
 
-fn value_to_bind(v: &Value) -> SQLValue {
+fn value_to_bind(_v: &Value) -> SQLValue {
+    //TODO fix bind handling
     SQLValue::SingleQuotedString("XYz-1-zYX".to_string())
 }
 
@@ -69,17 +68,6 @@ fn expr_to_string<'a>(v: &'a SQLValue) -> String {
     };
 }
 
-fn build_key(namespace: String, pks: &Vec<String>, col_map: &HashMap<String, &String>) -> String {
-    let mut s: String = String::new();
-    s.push_str(namespace.as_str());
-    for pk in pks {
-        if let Some(v) = col_map.get(pk) {
-            s.push_str(v);
-        }
-    }
-    return s;
-}
-
 fn rebuild_binops_tree<'a>(
     node: &'a mut Expr,
     map: &'a mut HashMap<String, Value>,
@@ -94,7 +82,7 @@ fn rebuild_binops_tree<'a>(
             BinaryOperator::Eq => {
                 if let Identifier(i) = left.borrow_mut() {
                     if let Expr::Value(v) = right.borrow_mut() {
-                        if let Some((new_i, new_v)) = map.get_key_value(&i.to_string()) {
+                        if let Some((_, new_v)) = map.get_key_value(&i.to_string()) {
                             if use_bind {
                                 let _ = std::mem::replace(v, value_to_bind(new_v));
                             } else {
@@ -130,13 +118,6 @@ fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a mut HashMap<String, Value>
     }
 }
 
-fn expr_value_to_string(node: &Expr) -> String {
-    if let Expr::Value(v) = node {
-        return expr_to_string(v).clone();
-    }
-    "".to_string()
-}
-
 struct ParsedCassandraQueryString {
     namespace: Option<Vec<String>>,
     colmap: Option<HashMap<String, Value>>,
@@ -167,13 +148,13 @@ fn get_column_values(expr: &SetExpr) -> Vec<String> {
 
 pub fn rebuild_query_string_from_ast(message: &mut QueryMessage) {
     if let QueryMessage {
-        original,
+        original:_,
         query_string,
-        namespace,
-        primary_key,
-        query_values: Some(query_values),
-        projection: Some(qm_projection),
-        query_type,
+        namespace:_,
+        primary_key:_,
+        query_values: _,
+        projection: _,
+        query_type:_,
         ast: Some(ast),
     } = message
     {
@@ -184,13 +165,13 @@ pub fn rebuild_query_string_from_ast(message: &mut QueryMessage) {
 
 pub fn rebuild_ast_in_message(message: &mut QueryMessage) {
     if let QueryMessage {
-        original,
-        query_string,
+        original:_,
+        query_string:_,
         namespace,
-        primary_key,
+        primary_key:_,
         query_values: Some(query_values),
         projection: Some(qm_projection),
-        query_type,
+        query_type:_,
         ast: Some(ast),
     } = message
     {
@@ -198,12 +179,12 @@ pub fn rebuild_ast_in_message(message: &mut QueryMessage) {
             Statement::Query(query) => {
                 if let SetExpr::Select(select) = &mut query.body {
                     let Select {
-                        distinct,
+                        distinct:_,
                         projection,
                         from,
                         selection,
-                        group_by,
-                        having,
+                        group_by:_,
+                        having:_,
                     } = select.deref_mut();
 
                     // Rebuild projection
@@ -221,9 +202,9 @@ pub fn rebuild_ast_in_message(message: &mut QueryMessage) {
                     if let Some(table_ref) = from.get_mut(0) {
                         if let TableFactor::Table {
                             name,
-                            alias,
-                            args,
-                            with_hints,
+                            alias:_,
+                            args:_,
+                            with_hints:_,
                         } = &mut table_ref.relation
                         {
                             let _ = std::mem::replace(
@@ -275,9 +256,9 @@ fn parse_query_string<'a>(
                         projection = s.projection.iter().map(|s| s.to_string()).collect();
                         if let TableFactor::Table {
                             name,
-                            alias,
-                            args,
-                            with_hints,
+                            alias: _,
+                            args: _,
+                            with_hints: _,
                         } = &s.from.get(0).unwrap().relation
                         {
                             namespace = name.0.clone();
@@ -308,7 +289,6 @@ fn parse_query_string<'a>(
                         projection.push(c.clone());
                         match values.get(i) {
                             Some(v) => {
-                                let key = c.to_string();
                                 colmap.insert(c.to_string(), Value::Strings(v.clone()));
                             }
                             None => {} //TODO some error
@@ -367,7 +347,7 @@ fn parse_query_string<'a>(
 }
 
 pub fn process_cassandra_frame(
-    mut frame: Frame,
+    frame: Frame,
     pk_col_map: &HashMap<String, Vec<String>>,
 ) -> Message {
     return match frame.opcode {
