@@ -18,7 +18,7 @@ use crate::transforms::scatter::{Scatter, ScatterConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use slog::Logger;
-use crate::transforms::redis_codec_destination::RedisCodecDestination;
+use crate::transforms::redis_codec_destination::{RedisCodecDestination, RedisCodecConfiguration};
 
 
 pub mod chain;
@@ -101,6 +101,7 @@ impl Transform for Transforms {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum TransformsConfig {
     CodecDestination(CodecConfiguration),
+    RedisDestination(RedisCodecConfiguration),
     KafkaDestination(KafkaConfig),
     RedisCache(RedisConfig),
     MPSCTee(AsyncMpscTeeConfig),
@@ -123,6 +124,7 @@ impl TransformsConfig {
             TransformsConfig::MPSCForwarder(f) => f.get_source(topics, logger).await,
             TransformsConfig::Route(r) => r.get_source(topics, logger).await,
             TransformsConfig::Scatter(s) => s.get_source(topics, logger).await,
+            TransformsConfig::RedisDestination(r) => r.get_source(topics, logger).await,
         }
     }
 }

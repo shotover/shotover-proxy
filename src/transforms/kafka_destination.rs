@@ -66,17 +66,20 @@ impl KafkaDestination {
 #[async_trait]
 impl Transform for KafkaDestination {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        if let Message::Query(qm) = qd.message {
-            if let Some(ref key) = qm.get_namespaced_primary_key() {
-                if let Some(values) = qm.query_values {
-                    let message = serde_json::to_string(&values).map_err(|_| RequestError {})?;
-                    let a = FutureRecord::to("test_topic").payload(&message).key(&key);
-                    self.producer.send(a, 0);
-                    return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
+        match qd.message {
+            Message::Bypass(b) => {},
+            Message::Query(qm) => {
+                if let Some(ref key) = qm.get_namespaced_primary_key() {
+                    if let Some(values) = qm.query_values {
+                        let message = serde_json::to_string(&values).map_err(|_| RequestError {})?;
+                        let a = FutureRecord::to("test_topic").payload(&message).key(&key);
+                        self.producer.send(a, 0);
+                    }
                 }
-            }
+            },
+            Message::Response(qr) => {},
         }
-        return ChainResponse::Err(RequestError {});
+        return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
     }
 
     fn get_name(&self) -> &'static str {

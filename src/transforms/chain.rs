@@ -6,6 +6,8 @@ use pyo3::PyErr;
 use std::{error, fmt, io};
 use tokio::time::Instant;
 use futures::io::Error;
+use std::fmt::Display;
+use serde::export::Formatter;
 
 #[derive(Debug, Clone)]
 struct QueryData {
@@ -18,6 +20,12 @@ pub struct Wrapper {
     pub message: Message,
     next_transform: usize,
     pub modified: bool,
+}
+
+impl Display for Wrapper {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("{:#?}", self.message))
+    }
 }
 
 impl Wrapper {

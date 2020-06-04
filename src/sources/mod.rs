@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use slog::Logger;
 use std::error::Error;
 use tokio::task::JoinHandle;
-use crate::sources::redis_source::RedisSource;
+use crate::sources::redis_source::{RedisSource, RedisConfig};
 
 pub mod cassandra_source;
 pub mod mpsc_source;
@@ -34,6 +34,7 @@ impl Sources {
 pub enum SourcesConfig {
     Cassandra(CassandraConfig),
     Mpsc(AsyncMpscConfig),
+    Redis(RedisConfig)
 }
 
 impl SourcesConfig {
@@ -46,6 +47,7 @@ impl SourcesConfig {
         match self {
             SourcesConfig::Cassandra(c) => c.get_source(chain, topics, logger).await,
             SourcesConfig::Mpsc(m) => m.get_source(chain, topics, logger).await,
+            SourcesConfig::Redis(r) => r.get_source(chain, topics, logger).await
         }
     }
 }

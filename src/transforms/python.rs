@@ -96,7 +96,7 @@ impl Transform for PythonFilterTransform {
 }
 
 #[cfg(test)]
-mod python_transform_tests {
+pub mod python_transform_tests {
     use super::PythonConfig;
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
@@ -119,7 +119,7 @@ qr.result = 42
 "###;
 
     #[tokio::test(threaded_scheduler)]
-    async fn test_python_script() -> Result<(), Box<dyn Error>> {
+    pub async fn test_python_script() -> Result<(), Box<dyn Error>> {
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),

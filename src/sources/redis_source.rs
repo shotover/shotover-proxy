@@ -19,7 +19,33 @@ use tokio::task::JoinHandle;
 use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::redis_helpers::process_redis_frame;
 use redis_protocol::prelude::Frame;
+use crate::sources::{Sources, SourcesFromConfig};
+use serde::{Deserialize, Serialize};
+use async_trait::async_trait;
+use crate::config::ConfigError;
+use crate::config::topology::TopicHolder;
 
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct RedisConfig {
+    pub listen_addr: String,
+}
+
+#[async_trait]
+impl SourcesFromConfig for RedisConfig {
+    async fn get_source(
+        &self,
+        chain: &TransformChain,
+        _topics: &mut TopicHolder,
+        logger: &Logger,
+    ) -> Result<Sources, ConfigError> {
+        Ok(Sources::Redis(RedisSource::new(
+            chain,
+            self.listen_addr.clone(),
+            logger,
+        )))
+    }
+}
 
 pub struct RedisSource {
     pub name: &'static str,

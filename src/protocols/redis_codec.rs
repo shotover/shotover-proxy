@@ -41,8 +41,9 @@ impl Decoder for RedisCodec {
         })? {
             src.advance(size);
             return Ok(Some(frame));
+        } else {
+            return Ok(None);
         }
-        Err(RequestError {})
     }
 }
 
@@ -50,8 +51,11 @@ impl Encoder<Frame> for RedisCodec {
     type Error = RequestError;
 
     fn encode(&mut self, item: Frame, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        encode(dst, &item).map(|_| {()}).map_err(|e| {
-            warn!(self.logger, "Uh oh {}",e);
+        // if dst.capacity() < 1000 {
+        //     dst.reserve(1000);
+        // }
+        encode_bytes(dst, &item).map(|_| {()}).map_err(|e| {
+            warn!(self.logger, "Uh - oh {} - {:#?}",e, item);
             RequestError{}
         })
     }

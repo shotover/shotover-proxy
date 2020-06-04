@@ -20,7 +20,7 @@ clap = "3.0.0-beta.1"
 
 # Parsers
 sqlparser = "0.5.0"
-serde = { version = "1.0.110", features = ["derive"] }
+serde = { version = "1.0.111", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.8"
 
@@ -32,6 +32,7 @@ sloggers = "1.0.1"
 
 # Transform dependencies
 redis = {version = "0.15.1", features = ["tokio-rt-core"]}
+redis-protocol = { path = "/Users/ben/git/redis-protocol.rs" }
 #cdrs = { version = "2" }
 cassandra-proto = { path = "/Users/ben/git/cassandra-proto", features = ["v4"]}
 rdkafka = { version = "0.23", features = ["cmake-build"] }
@@ -48,3 +49,10 @@ rlua_serde = "0.4"
 
 #Crypto
 sodiumoxide = "0.2.5"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "chain_benches"
+harness = false
