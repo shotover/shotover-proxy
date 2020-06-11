@@ -1,4 +1,3 @@
-use crate::config::ConfigError;
 use crate::message::Message;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::mpsc_source::AsyncMpscConfig;
@@ -9,11 +8,13 @@ use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::AsyncMpscTeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use serde::{Deserialize, Serialize};
-use slog::info;
-use slog::Logger;
+use tracing::info;
 use std::collections::HashMap;
 use std::error::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::{broadcast, mpsc};
+use crate::error::{ChainResponse, RequestError, ConfigError};
+use anyhow::{anyhow, Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Topology {
@@ -41,8 +42,8 @@ impl TopicHolder {
 }
 
 impl Topology {
-    pub fn new_from_yaml(yaml_contents: String) -> Result<Topology, serde_yaml::Error> {
-        serde_yaml::from_str(&yaml_contents)
+    pub fn new_from_yaml(yaml_contents: String) -> Result<Topology> {
+        serde_yaml::from_str(&yaml_contents).map_err(|e| anyhow!(e))
     }
 
     fn build_topics(&self) -> TopicHolder {
@@ -62,62 +63,65 @@ impl Topology {
     async fn build_chains(
         &self,
         topics: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<HashMap<String, TransformChain>, ConfigError> {
+    ) -> Result<HashMap<String, TransformChain>> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.chain_config.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, &topics, logger).await?,
+                build_chain_from_config(key, &value, &topics).await?,
             );
         }
         Ok(temp)
     }
 
-    pub async fn run_chains(&self, logger: &Logger) -> Result<Vec<Sources>, ConfigError> {
+    pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
         let mut topics = self.build_topics();
-        info!(logger, "Loaded topics {:?}", topics.topics_tx.keys());
+        info!("Loaded topics {:?}", topics.topics_tx.keys());
 
-        let chains = self.build_chains(&topics, logger).await?;
-        info!(logger, "Loaded chains {:?}", chains.keys());
+        let chains = self.build_chains(&topics).await?;
+        info!("Loaded chains {:?}", chains.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
+
+        // Signal handling goes here... why not?
+        let (notify_shutdown, _) = broadcast::channel(1);
+        let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
+
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {
                 if let Some(chain) = chains.get(chain_name.as_str()) {
-                    sources_list.push(source_config.get_source(chain, &mut topics, logger).await?);
+                    sources_list.push(source_config.get_source(chain, &mut topics, notify_shutdown.clone(), shutdown_complete_tx.clone()).await?);
                 } else {
-                    return Err(ConfigError::new(format!("Could not find the [{}] chain from \
+                    return Err(anyhow!("Could not find the [{}] chain from \
                     the source to chain mapping definition [{:?}] in list of configured chains [{:?}].",
                                                         chain_name.as_str(),
                                                         &self.source_to_chain_mapping.values().cloned().collect::<Vec<_>>(),
-                                                        chains.keys().cloned().collect::<Vec<_>>()).as_str()));
+                                                        chains.keys().cloned().collect::<Vec<_>>()));
                 }
             } else {
-                return Err(ConfigError::new(format!("Could not find the [{}] source from \
+                return Err(anyhow!("Could not find the [{}] source from \
                     the source to chain mapping definition [{:?}] in list of configured sources [{:?}].",
                                                     source_name.as_str(),
                                                     &self.source_to_chain_mapping.keys().cloned().collect::<Vec<_>>(),
-                                                    self.sources.keys().cloned().collect::<Vec<_>>()).as_str()));
+                                                    self.sources.keys().cloned().collect::<Vec<_>>()));
             }
         }
         info!(
-            logger,
             "Loaded sources [{:?}] and linked to chains",
             &self.source_to_chain_mapping.keys()
         );
-        Ok(sources_list)
+        Ok((sources_list, shutdown_complete_rx))
     }
 
-    pub fn from_file(filepath: String) -> Result<Topology, Box<dyn Error>> {
+    pub fn from_file(filepath: String) -> Result<Topology> {
         if let Ok(f) = std::fs::File::open(filepath.clone()) {
             let config: Topology = serde_yaml::from_reader(f)?;
             return Ok(config);
         }
         //TODO: Make Config errors implement the From trait for IO errors
-        Err(Box::new(ConfigError::new(
-            format!("Couldn't open the file {}", &filepath).as_str(),
-        )))
+        Err(
+            anyhow!("Couldn't open the file {}", &filepath),
+        )
     }
 
     pub fn get_demo_config() -> Topology {
@@ -137,6 +141,7 @@ impl Topology {
 
         let codec_config = TransformsConfig::CodecDestination(CodecConfiguration {
             address: server_addr,
+            cassandra_ks: Default::default() //TODO!!!!!!!
         });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
@@ -187,6 +192,7 @@ impl Topology {
 #[cfg(test)]
 mod topology_tests {
     use crate::config::topology::Topology;
+    use anyhow::Result;
 
     const TEST_STRING: &str = r###"---
 sources:
@@ -222,7 +228,7 @@ source_to_chain_mapping:
   mpsc_chan: async_chain"###;
 
     #[test]
-    fn new_test() -> Result<(), serde_yaml::Error> {
+    fn new_test() -> Result<()> {
         let topology = Topology::get_demo_config();
         let topology2 = Topology::new_from_yaml(String::from(TEST_STRING))?;
         assert_eq!(topology2, topology);
@@ -230,7 +236,7 @@ source_to_chain_mapping:
     }
 
     #[test]
-    fn test_config_parse_format() -> Result<(), serde_yaml::Error> {
+    fn test_config_parse_format() -> Result<()> {
         let _ = Topology::new_from_yaml(String::from(TEST_STRING))?;
         Ok(())
     }

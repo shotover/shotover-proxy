@@ -1,18 +1,18 @@
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
 use crate::message::{Message, QueryMessage, QueryResponse};
 use crate::runtimes::lua::LuaRuntime;
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use core::mem;
 use rlua_serde;
 use serde::{Deserialize, Serialize};
-use slog::Logger;
+
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
 
 pub struct LuaFilterTransform {
     name: &'static str,
-    logger: Logger,
     pub query_filter: Option<String>,
     pub response_filter: Option<String>,
     pub lua: LuaRuntime,
@@ -23,7 +23,6 @@ impl Clone for LuaFilterTransform {
         //TODO: we may need to reload the preloaded scripts
         return LuaFilterTransform {
             name: self.name.clone(),
-            logger: self.logger.clone(),
             query_filter: self.query_filter.clone(),
             response_filter: self.response_filter.clone(),
             lua: LuaRuntime::new(),
@@ -42,11 +41,9 @@ impl TransformsFromConfig for LuaConfig {
     async fn get_source(
         &self,
         _: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<Transforms, ConfigError> {
+    ) -> Result<Transforms> {
         Ok(Transforms::Lua(LuaFilterTransform {
             name: "lua",
-            logger: logger.clone(),
             query_filter: self.query_filter.clone(),
             response_filter: self.response_filter.clone(),
             lua: LuaRuntime::new(),
@@ -111,16 +108,13 @@ impl Transform for LuaFilterTransform {
 mod lua_transform_tests {
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::cassandra_protocol2::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::lua::LuaConfig;
     use crate::transforms::null::Null;
     use crate::transforms::printer::Printer;
     use crate::transforms::{Transforms, TransformsFromConfig};
-    use sloggers::terminal::{Destination, TerminalLoggerBuilder};
-    use sloggers::types::Severity;
-    use sloggers::Build;
     use std::error::Error;
+    use crate::protocols::RawFrame;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}
@@ -154,11 +148,6 @@ return qr
             ast: None,
         }));
 
-        let mut builder = TerminalLoggerBuilder::new();
-        builder.level(Severity::Debug);
-        builder.destination(Destination::Stderr);
-
-        let logger = builder.build().unwrap();
 
         let transforms: Vec<Transforms> = vec![
             Transforms::Printer(Printer::new()),
@@ -167,7 +156,7 @@ return qr
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
-        if let Transforms::Lua(lua) = lua_t.get_source(&t_holder, &logger).await? {
+        if let Transforms::Lua(lua) = lua_t.get_source(&t_holder).await? {
             let result = lua.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse {

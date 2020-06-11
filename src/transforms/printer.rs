@@ -1,6 +1,7 @@
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ Transform, TransformChain, Wrapper};
 
 use async_trait::async_trait;
+use crate::error::ChainResponse;
 
 #[derive(Debug, Clone)]
 pub struct Printer {

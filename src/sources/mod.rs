@@ -1,19 +1,42 @@
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
 use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
 use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, Wrapper};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use slog::Logger;
 use std::error::Error;
 use tokio::task::JoinHandle;
 use crate::sources::redis_source::{RedisSource, RedisConfig};
+use crate::server::Handler;
+use tokio::sync::{broadcast, mpsc};
+
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
 
 pub mod cassandra_source;
 pub mod mpsc_source;
 pub mod redis_source;
 
+/*
+    notify_shutdown: broadcast::Sender<()>,
+
+    /// Used as part of the graceful shutdown process to wait for client
+    /// connections to complete processing.
+    ///
+    /// Tokio channels are closed once all `Sender` handles go out of scope.
+    /// When a channel is closed, the receiver receives `None`. This is
+    /// leveraged to detect all connection handlers completing. When a
+    /// connection handler is initialized, it is assigned a clone of
+    /// `shutdown_complete_tx`. When the listener shuts down, it drops the
+    /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
+    /// complete, all clones of the `Sender` are also dropped. This results in
+    /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
+    /// is safe to exit the server process.
+    shutdown_complete_rx: mpsc::Receiver<()>,
+    shutdown_complete_tx: mpsc::Sender<()>,
+ */
+
+#[derive(Debug)]
 pub enum Sources {
     Cassandra(CassandraSource),
     Mpsc(AsyncMpsc),
@@ -21,7 +44,7 @@ pub enum Sources {
 }
 
 impl Sources {
-    pub fn get_join_handles<T>(&self) -> &JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
+    pub fn get_join_handles<T>(&self) -> &JoinHandle<Result<()>> {
         match self {
             Sources::Cassandra(c) => &c.join_handle,
             Sources::Mpsc(m) => &m.rx_handle,
@@ -42,12 +65,13 @@ impl SourcesConfig {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        logger: &Logger,
-    ) -> Result<Sources, ConfigError> {
+        notify_shutdown: broadcast::Sender<()>,
+        shutdown_complete_tx: mpsc::Sender<()>,
+    ) -> Result<Sources> {
         match self {
-            SourcesConfig::Cassandra(c) => c.get_source(chain, topics, logger).await,
-            SourcesConfig::Mpsc(m) => m.get_source(chain, topics, logger).await,
-            SourcesConfig::Redis(r) => r.get_source(chain, topics, logger).await
+            SourcesConfig::Cassandra(c) => c.get_source(chain, topics, notify_shutdown, shutdown_complete_tx).await,
+            SourcesConfig::Mpsc(m) => m.get_source(chain, topics, notify_shutdown,  shutdown_complete_tx).await,
+            SourcesConfig::Redis(r) => r.get_source(chain, topics,  notify_shutdown, shutdown_complete_tx).await
         }
     }
 }
@@ -58,6 +82,9 @@ pub trait SourcesFromConfig: Send + Sync {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        logger: &Logger,
-    ) -> Result<Sources, ConfigError>;
+        notify_shutdown: broadcast::Sender<()>,
+        shutdown_complete_tx: mpsc::Sender<()>,
+    ) -> Result<Sources>;
+
+
 }

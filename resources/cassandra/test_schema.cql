@@ -21,6 +21,17 @@ CREATE TABLE test.clustering2 (
     PRIMARY KEY ( pk, clustering, clustering2 )
 );
 
+
+CREATE TABLE test.encryption (
+    pk text,
+    clustering int,
+    value blob,
+    PRIMARY KEY ( pk, clustering)
+);
+
+INSERT INTO test.encryption (pk, clustering, value) VALUES ('pk1', 1, 'TOPSECRET');
+
+
 INSERT INTO test.simple (pk, value) VALUES ('pk1', 'value1');
 INSERT INTO test.simple (pk, value) VALUES ('pk2', 'value2');
 INSERT INTO test.simple (pk, value) VALUES ('pk3', 'value3');

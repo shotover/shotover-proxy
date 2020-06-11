@@ -1,23 +1,23 @@
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
 use crate::message::Value;
 use crate::message::Value::Rows;
 use crate::message::{Message, Protected, QueryMessage, QueryResponse, QueryType};
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use core::mem;
 use serde::{Deserialize, Serialize};
-use slog::Logger;
-use slog::{ warn};
+use tracing::{ warn};
 use sodiumoxide::crypto::secretbox::Key;
 use std::borrow::{Borrow};
 use std::collections::HashMap;
 
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
+
 #[derive(Clone)]
 pub struct Protect {
     name: &'static str,
-    logger: Logger,
     key: Key,
     keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
 }
@@ -33,8 +33,7 @@ impl TransformsFromConfig for ProtectConfig {
     async fn get_source(
         &self,
         _: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<Transforms, ConfigError> {
+    ) -> Result<Transforms> {
         let key = match &self.key {
             None => panic!("No encryption key provided"),
             Some(k) => k.clone(),
@@ -42,7 +41,6 @@ impl TransformsFromConfig for ProtectConfig {
 
         Ok(Transforms::Protect(Protect {
             name: "protect",
-            logger: logger.clone(),
             key,
             keyspace_table_columns: self.keyspace_table_columns.clone(),
         }))
@@ -121,7 +119,7 @@ impl Transform for Protect {
                                         let new_value: Value = protected.unprotect(&self.key);
                                         let _ = mem::replace(v, new_value);
                                     } else {
-                                        warn!(self.logger, "Tried decrypting non-blob column")
+                                        warn!("Tried decrypting non-blob column")
                                     }
                                 }
                             }
@@ -142,21 +140,18 @@ impl Transform for Protect {
 mod protect_transform_tests {
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::cassandra_protocol2::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::null::Null;
     use crate::transforms::protect::ProtectConfig;
     use crate::transforms::{Transforms, TransformsFromConfig};
-    use sloggers::terminal::{Destination, TerminalLoggerBuilder};
-    use sloggers::types::Severity;
-    use sloggers::Build;
     use sodiumoxide::crypto::secretbox;
     use std::collections::HashMap;
     use std::error::Error;
     use crate::transforms::test_transforms::ReturnerTransform;
     use cassandra_proto::frame::{Frame};
     use cassandra_proto::consistency::Consistency;
-    use crate::protocols::cassandra_helper::process_cassandra_frame;
+    use crate::protocols::RawFrame;
+    use crate::protocols::cassandra_protocol2::CassandraCodec2;
 
     #[tokio::test(threaded_scheduler)]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
@@ -209,19 +204,13 @@ mod protect_transform_tests {
             ast: None
         }));
 
-        let mut builder = TerminalLoggerBuilder::new();
-        builder.level(Severity::Debug);
-        builder.destination(Destination::Stderr);
-
-        let logger = builder.build().unwrap();
-
         let transforms: Vec<Transforms> = vec![
             Transforms::Null(Null::new()),
         ];
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
-        if let Transforms::Protect(protect) = protect_t.get_source(&t_holder, &logger).await? {
+        if let Transforms::Protect(protect) = protect_t.get_source(&t_holder).await? {
             let result = protect.transform(wrapper, &chain).await;
             if let Ok(mut m) = result {
                 if let Message::Response(QueryResponse {
@@ -262,8 +251,9 @@ mod protect_transform_tests {
                     let mut colk_map: HashMap<String, Vec<String>> = HashMap::new();
                     colk_map.insert("keyspace.old".to_string(), vec!["pk".to_string(), "cluster".to_string()]);
 
+                    let mut codec = CassandraCodec2::new(colk_map);
 
-                    if let Message::Query(qm) = process_cassandra_frame(cframe.clone(), &colk_map) {
+                    if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
                         let returner_message = QueryResponse {
                             matching_query: Some(qm.clone()),
                             original: RawFrame::NONE,

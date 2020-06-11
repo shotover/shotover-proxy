@@ -6,21 +6,20 @@ use std::collections::HashMap;
 use std::iter::Iterator;
 
 use crate::message::Value as MValue;
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ Transform, TransformChain, Wrapper};
 use std::borrow::Borrow;
 
-use crate::protocols::cassandra_protocol2::RawFrame;
 use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
-use tokio::runtime::Handle;
 
-use slog::trace;
-use slog::Logger;
+use tracing::trace;
+use crate::protocols::RawFrame;
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -33,11 +32,10 @@ impl TransformsFromConfig for RedisConfig {
     async fn get_source(
         &self,
         _topics: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<Transforms, ConfigError> {
+    ) -> Result<Transforms> {
         Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(
-            &self.uri, logger,
-        )))
+            &self.uri,
+        ).await))
     }
 }
 
@@ -46,30 +44,25 @@ pub struct SimpleRedisCache {
     name: &'static str,
     con: MultiplexedConnection,
     tables_to_pks: HashMap<String, Vec<String>>,
-    logger: Logger,
 }
 
 impl SimpleRedisCache {
     //"redis://127.0.0.1/"
-    pub fn new(connection: MultiplexedConnection, logger: Logger) -> SimpleRedisCache {
+    pub fn new(connection: MultiplexedConnection) -> SimpleRedisCache {
         return SimpleRedisCache {
             name: "SimpleRedisCache",
             con: connection,
             tables_to_pks: HashMap::new(),
-            logger,
         };
     }
 
-    pub fn new_from_config(params: &String, logger: &Logger) -> SimpleRedisCache {
+    pub async fn new_from_config(params: &String) -> SimpleRedisCache {
         let client = redis::Client::open(params.clone()).unwrap();
-        let con = Handle::current()
-            .block_on(client.get_multiplexed_tokio_connection())
-            .unwrap();
+        let con = client.get_multiplexed_tokio_connection().await.unwrap();
         return SimpleRedisCache {
             name: "SimpleRedisCache",
             con,
             tables_to_pks: HashMap::new(),
-            logger: logger.clone(),
         };
     }
 }
@@ -194,9 +187,9 @@ impl Transform for SimpleRedisCache {
                                 let res = self.call_next_transform(qd, t).await;
 
                                 if let Err(e) = f.await {
-                                    trace!(self.logger, "Cache update failed {:?} !", e);
+                                    trace!( "Cache update failed {:?} !", e);
                                 } else {
-                                    trace!(self.logger, "Cache update success !");
+                                    trace!( "Cache update success !");
                                 }
 
                                 return res;
@@ -230,9 +223,9 @@ impl Transform for SimpleRedisCache {
                                 let res = self.call_next_transform(qd, t).await;
 
                                 if let Err(e) = f.await {
-                                    trace!(self.logger, "Cache update failed {:?} !", e);
+                                    trace!("Cache update failed {:?} !", e);
                                 } else {
-                                    trace!(self.logger, "Cache update success !");
+                                    trace!("Cache update success !");
                                 }
 
                                 return res;
@@ -255,9 +248,9 @@ impl Transform for SimpleRedisCache {
                                 let res = self.call_next_transform(qd, t).await;
 
                                 if let Err(e) = f {
-                                    trace!(self.logger, "Cache update failed {:?} !", e);
+                                    trace!("Cache update failed {:?} !", e);
                                 } else {
-                                    trace!(self.logger, "Cache update success !");
+                                    trace!("Cache update success !");
                                 }
                                 return res;
                             }

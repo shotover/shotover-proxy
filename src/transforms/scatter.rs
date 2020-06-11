@@ -1,13 +1,15 @@
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
     build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use slog::Logger;
 use std::collections::HashMap;
+use crate::error::ChainResponse;
+use anyhow::{anyhow, Result};
+
 
 #[derive(Clone)]
 pub struct Scatter {
@@ -15,7 +17,6 @@ pub struct Scatter {
     route_map: HashMap<String, TransformChain>,
     python_script: String,
     reduce_scatter_results: bool,
-    logger: Logger,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -31,13 +32,12 @@ impl TransformsFromConfig for ScatterConfig {
     async fn get_source(
         &self,
         topics: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<Transforms, ConfigError> {
+    ) -> Result<Transforms> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, topics, logger).await?,
+                build_chain_from_config(key, &value, topics).await?,
             );
         }
         Ok(Transforms::Scatter(Scatter {
@@ -45,7 +45,6 @@ impl TransformsFromConfig for ScatterConfig {
             route_map: temp,
             python_script: self.python_script.clone(),
             reduce_scatter_results: self.reduce_scatter_results,
-            logger: logger.clone(),
         }))
     }
 }

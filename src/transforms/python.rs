@@ -1,8 +1,7 @@
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
 use crate::message::{Message, QueryMessage, QueryResponse};
 use crate::runtimes::python::PythonEnvironment;
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use core::mem;
@@ -10,12 +9,13 @@ use pyo3::prelude::*;
 use pyo3::types::IntoPyDict;
 use pyo3::PyCell;
 use serde::{Deserialize, Serialize};
-use slog::Logger;
+use crate::error::ChainResponse;
+use anyhow::{anyhow, Result};
+
 
 #[derive(Clone)]
 pub struct PythonFilterTransform {
     name: &'static str,
-    logger: Logger,
     pub query_filter: Option<String>,
     pub response_filter: Option<String>,
 }
@@ -31,11 +31,9 @@ impl TransformsFromConfig for PythonConfig {
     async fn get_source(
         &self,
         _: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<Transforms, ConfigError> {
+    ) -> Result<Transforms> {
         Ok(Transforms::Python(PythonFilterTransform {
             name: "python",
-            logger: logger.clone(),
             query_filter: self.query_filter.clone(),
             response_filter: self.response_filter.clone(),
         }))
@@ -54,9 +52,9 @@ impl Transform for PythonFilterTransform {
                 let query_message_py = PyCell::new(py, qm.clone()).unwrap();
                 let locals = [("qm", query_message_py.to_object(py))].into_py_dict(py);
 
-                PythonEnvironment::eval_script(locals, query_script.as_str(), py)?;
+                PythonEnvironment::eval_script(locals, query_script.as_str(), py).map_err(|e| anyhow!("{:?}", e))?;
 
-                let mod_qm = locals.get_item("qm").unwrap().extract::<QueryMessage>()?;
+                let mod_qm = locals.get_item("qm").unwrap().extract::<QueryMessage>().map_err(|e| anyhow!("{:?}", e))?;
                 let _ = mem::replace(&mut qd.message, Message::Query(mod_qm));
             }
         }
@@ -79,9 +77,9 @@ impl Transform for PythonFilterTransform {
 
                 let locals = [("qr", response_message_py.to_object(py))].into_py_dict(py);
 
-                PythonEnvironment::eval_script(locals, response_script.as_str(), py)?;
+                PythonEnvironment::eval_script(locals, response_script.as_str(), py).map_err(|e| anyhow!("{:?}", e))?;
 
-                let mod_qr = locals.get_item("qr").unwrap().extract::<QueryResponse>()?;
+                let mod_qr = locals.get_item("qr").unwrap().extract::<QueryResponse>().map_err(|e| anyhow!("{:?}", e))?;
 
                 let _ = mem::replace(&mut rm.error, mod_qr.error);
                 let _ = mem::replace(&mut rm.result, mod_qr.result);
@@ -100,15 +98,12 @@ pub mod python_transform_tests {
     use super::PythonConfig;
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::cassandra_protocol2::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::null::Null;
     use crate::transforms::printer::Printer;
     use crate::transforms::{Transforms, TransformsFromConfig};
-    use sloggers::terminal::{Destination, TerminalLoggerBuilder};
-    use sloggers::types::Severity;
-    use sloggers::Build;
     use std::error::Error;
+    use crate::protocols::RawFrame;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = ["aaaaaaaaaa", "bbbbb"]
@@ -140,12 +135,6 @@ qr.result = 42
             ast: None,
         }));
 
-        let mut builder = TerminalLoggerBuilder::new();
-        builder.level(Severity::Debug);
-        builder.destination(Destination::Stderr);
-
-        let logger = builder.build().unwrap();
-
         let transforms: Vec<Transforms> = vec![
             Transforms::Printer(Printer::new()),
             Transforms::Null(Null::new()),
@@ -153,7 +142,7 @@ qr.result = 42
 
         let chain = TransformChain::new(transforms, String::from("test_chain"));
 
-        if let Transforms::Python(python) = python_t.get_source(&t_holder, &logger).await? {
+        if let Transforms::Python(python) = python_t.get_source(&t_holder).await? {
             let result = python.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse {

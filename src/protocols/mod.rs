@@ -1,4 +1,14 @@
-pub mod cassandra_helper;
+use cassandra_proto::frame::Frame;
+
 pub mod cassandra_protocol2;
 pub mod redis_codec;
-pub mod redis_helpers;
+use redis_protocol::prelude::Frame as Rframe;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Eq, PartialEq, Debug, Clone, Hash, Serialize, Deserialize)]
+pub enum RawFrame {
+    CASSANDRA(Frame),
+    Redis(Rframe),
+    NONE,
+}

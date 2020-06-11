@@ -1,6 +1,7 @@
 use crate::message::Message;
-use crate::transforms::chain::{Transform, Wrapper, TransformChain, ChainResponse};
+use crate::transforms::chain::{Transform, Wrapper, TransformChain};
 use async_trait::async_trait;
+use crate::error::ChainResponse;
 
 #[derive(Debug, Clone)]
 pub struct ReturnerTransform {

@@ -8,6 +8,9 @@ use tokio::time::Instant;
 use futures::io::Error;
 use std::fmt::Display;
 use serde::export::Formatter;
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
+
 
 #[derive(Debug, Clone)]
 struct QueryData {
@@ -23,7 +26,7 @@ pub struct Wrapper {
 }
 
 impl Display for Wrapper {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         f.write_fmt(format_args!("{:#?}", self.message))
     }
 }
@@ -47,34 +50,6 @@ struct ResponseData {
     response: Message,
 }
 
-#[derive(Debug, Clone)]
-pub struct RequestError;
-
-impl From<io::Error> for RequestError {
-    fn from(_: Error) -> Self {
-        return RequestError {}
-    }
-}
-
-impl From<pyo3::PyErr> for RequestError {
-    fn from(_: PyErr) -> Self {
-        return RequestError {};
-    }
-}
-
-impl fmt::Display for RequestError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Error!!R!!")
-        // unimplemented!()
-    }
-}
-
-impl error::Error for RequestError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        // Generic error, underlying cause isn't tracked.
-        None
-    }
-}
 
 //TODO change Transform to maintain the InnerChain internally so we don't have to expose this
 pub type InnerChain = Vec<Transforms>;
@@ -104,9 +79,7 @@ pub trait Transform: Send + Sync {
         return match transforms.chain.get(next) {
             Some(t) => t.instrument_transform(qd, transforms).await,
             None => {
-                println!("No more transforms left in the chain");
-
-                Err(RequestError {})
+                Err(anyhow!(RequestError::ChainProcessingError("No more transforms left in the chain".to_string())))
             },
         };
     }
@@ -121,8 +94,6 @@ pub struct TransformChain {
     name: String,
     chain: InnerChain,
 }
-
-pub type ChainResponse = Result<Message, RequestError>;
 
 impl TransformChain {
     pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
@@ -140,9 +111,7 @@ impl TransformChain {
                 t.instrument_transform(wrapper, &self).await
             }
             None => {
-                println!("No more transforms left in the chain");
-
-                Err(RequestError {})
+                return Err(anyhow!(RequestError::ChainProcessingError("No more transforms left in the chain".to_string())));
             },
         };
         let end = Instant::now();

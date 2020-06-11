@@ -1,6 +1,6 @@
-use crate::protocols::cassandra_protocol2::RawFrame;
-use crate::transforms::chain::RequestError;
 use bytes::{Buf, Bytes};
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, Utc, TimeZone};
@@ -19,12 +19,14 @@ use cassandra_proto::frame::frame_result::{ColSpec, ColType};
 use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigint, decode_boolean, decode_int, decode_decimal, decode_double, decode_float, decode_timestamp, decode_varchar, decode_varint, decode_inet, decode_smallint, decode_tinyint};
 use std::net::IpAddr;
 use redis_protocol::types::Frame;
+use crate::protocols::RawFrame;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Message {
     Bypass(RawMessage),
     Query(QueryMessage),
     Response(QueryResponse),
+    Modified(Box<Message>) //The box is to put the nested Message on the heap so we can have a recursive Message
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -150,11 +152,11 @@ fn encrypt(plaintext: String, sym_key: &Key) -> (Vec<u8>, Nonce) {
     return (ciphertext, nonce);
 }
 
-fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value, ()> {
-    let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key)?;
+fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
+    let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key).map_err(|_| anyhow!("couldn't open box"))?;
     //todo make error handing better here - failure here indicates a authenticity failure
     let decrypted_value: Value =
-        serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| ())?;
+        serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
     return Ok(decrypted_value);
 }
 
@@ -172,13 +174,13 @@ impl From<Protected> for Value {
 }
 
 impl Protected {
-    pub fn from_encrypted_bytes_value(value: &Value) -> Result<Protected, Box<dyn Error>> {
+    pub fn from_encrypted_bytes_value(value: &Value) -> Result<Protected> {
         match value {
             Value::Bytes(b) => {
                 return Ok(serde_json::from_slice(b.bytes())?);
             }
             _ => {
-                return Err(Box::new(RequestError {}));
+                return Err(anyhow!("Could not get bytes to decrypt - wrong value type {:?}", value));
             }
         }
     }

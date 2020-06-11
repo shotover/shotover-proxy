@@ -2,17 +2,21 @@ use crate::transforms::chain::{TransformChain, Wrapper};
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
 use crate::message::Message;
 use crate::sources::{Sources, SourcesFromConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use slog::info;
-use slog::warn;
-use slog::Logger;
+use tracing::info;
+use tracing::warn;
 use std::error::Error;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
+use crate::server::{Handler, Shutdown};
+use tokio::sync::{broadcast, mpsc};
+use crate::error::ConfigError;
+
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AsyncMpscConfig {
@@ -25,64 +29,63 @@ impl SourcesFromConfig for AsyncMpscConfig {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        logger: &Logger,
-    ) -> Result<Sources, ConfigError> {
+        notify_shutdown: broadcast::Sender<()>,
+        shutdown_complete_tx: mpsc::Sender<()>,
+    ) -> Result<Sources> {
         if let Some(rx) = topics.get_rx(&self.topic_name) {
             return Ok(Sources::Mpsc(AsyncMpsc::new(
                 chain.clone(),
                 rx,
                 &self.topic_name,
-                logger,
+                Shutdown::new(notify_shutdown.subscribe()),
+                shutdown_complete_tx.clone(),
             )));
         }
-        Err(ConfigError::new(
-            format!(
+        Err(anyhow!(
                 "Could not find the topic {} in [{:#?}]",
                 self.topic_name,
                 topics.topics_rx.keys()
             )
-            .as_str(),
-        ))
+        )
     }
 }
 
+#[derive(Debug)]
 pub struct AsyncMpsc {
     pub name: &'static str,
-    pub rx_handle: JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>,
+    pub rx_handle: JoinHandle<Result<()>>,
 }
 
 impl AsyncMpsc {
-    fn tee_loop(
-        mut rx: Receiver<Message>,
-        chain: TransformChain,
-        logger: Logger
-    ) -> JoinHandle<Result<(), Box<dyn Error + Send + Sync>>> {
-        Handle::current().spawn(async move {
-            loop {
-                if let Some(m) = rx.recv().await {
-                    let w: Wrapper = Wrapper::new(m.clone());
-                    if let Err(e) = chain.process_request(w).await {
-                        warn!(logger, "Something went wrong {}", e)
-                    }
-                }
-            }
-        })
-    }
-
     pub fn new(
         chain: TransformChain,
-        rx: Receiver<Message>,
+        mut rx: Receiver<Message>,
         name: &String,
-        logger: &Logger,
+        shutdown: Shutdown,
+        shutdown_complete: mpsc::Sender<()>
     ) -> AsyncMpsc {
         info!(
-            logger,
             "Starting MPSC source for the topic [{}] ",
             name.clone()
         );
+
+        let jh = Handle::current().spawn(async move {
+            /// This will go out of scope once we exit the loop below, indicating we are done and shutdown
+            let _notifier = shutdown_complete.clone();
+            while !shutdown.is_shutdown() {
+                if let Some(m) = rx.recv().await {
+                    let w: Wrapper = Wrapper::new(m.clone());
+                    if let Err(e) = chain.process_request(w).await {
+                        warn!("Something went wrong {}", e)
+                    }
+                }
+            }
+            Ok(())
+        });
+
         return AsyncMpsc {
             name: "AsyncMpsc",
-            rx_handle: AsyncMpsc::tee_loop(rx, chain, logger.clone()),
+            rx_handle: jh
         };
     }
 }

@@ -1,20 +1,20 @@
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
-use crate::transforms::chain::{ChainResponse, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{ Transform, TransformChain, Wrapper};
 use crate::transforms::{
     build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use slog::Logger;
 use std::collections::HashMap;
+use crate::error::ChainResponse;
+use anyhow::{anyhow, Result};
+
 
 #[derive(Clone)]
 pub struct Route {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
     python_script: String,
-    logger: Logger,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -29,20 +29,18 @@ impl TransformsFromConfig for RouteConfig {
     async fn get_source(
         &self,
         topics: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<Transforms, ConfigError> {
+    ) -> Result<Transforms> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, &topics, logger).await?,
+                build_chain_from_config(key, &value, &topics).await?,
             );
         }
         Ok(Transforms::Route(Route {
             name: "scatter",
             route_map: temp,
             python_script: self.python_script.clone(),
-            logger: logger.clone(),
         }))
     }
 }

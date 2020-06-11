@@ -3,14 +3,12 @@ use rust_practice::transforms::chain::{TransformChain, Wrapper};
 use rust_practice::transforms::{Transforms, TransformsFromConfig};
 use rust_practice::transforms::null::Null;
 use rust_practice::message::{Message, QueryMessage, QueryType};
-use rust_practice::protocols::cassandra_protocol2::RawFrame;
 use std::collections::HashMap;
-use sloggers::terminal::{TerminalLoggerBuilder, Destination};
-use sloggers::types::Severity;
-use sloggers::Build;
+
 use rust_practice::config::topology::TopicHolder;
 use rust_practice::transforms::python::PythonConfig;
 use rust_practice::transforms::lua::LuaConfig;
+use rust_practice::protocols::RawFrame;
 
 const REQUEST_STRING: &str = r###"
 qm.namespace = ["aaaaaaaaaa", "bbbbb"]
@@ -77,14 +75,10 @@ fn python_benchmark(c: &mut Criterion) {
         ast: None,
     }));
 
-    let mut builder = TerminalLoggerBuilder::new();
-    builder.level(Severity::Debug);
-    builder.destination(Destination::Stderr);
 
-    let logger = builder.build().unwrap();
     let mut rt = tokio::runtime::Runtime::new().unwrap();
 
-    let transform = rt.block_on(python_t.get_source(&t_holder, &logger)).unwrap();
+    let transform = rt.block_on(python_t.get_source(&t_holder)).unwrap();
 
 
     let transforms: Vec<Transforms> = vec![
@@ -125,14 +119,10 @@ fn lua_benchmark(c: &mut Criterion) {
         ast: None,
     }));
 
-    let mut builder = TerminalLoggerBuilder::new();
-    builder.level(Severity::Debug);
-    builder.destination(Destination::Stderr);
 
-    let logger = builder.build().unwrap();
     let mut rt = tokio::runtime::Runtime::new().unwrap();
 
-    let transform = rt.block_on(lua_t.get_source(&t_holder, &logger)).unwrap();
+    let transform = rt.block_on(lua_t.get_source(&t_holder)).unwrap();
 
 
     let transforms: Vec<Transforms> = vec![

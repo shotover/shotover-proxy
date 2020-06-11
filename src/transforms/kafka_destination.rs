@@ -1,20 +1,19 @@
-use crate::transforms::chain::{ChainResponse, RequestError, Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
-use crate::config::ConfigError;
 use crate::message::{Message, QueryResponse};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
-use slog::Logger;
 use std::collections::HashMap;
+use crate::error::{ChainResponse, RequestError};
+use anyhow::{anyhow, Result};
 
 #[derive(Clone)]
 pub struct KafkaDestination {
     producer: FutureProducer,
-    logger: Logger,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -28,10 +27,9 @@ impl TransformsFromConfig for KafkaConfig {
     async fn get_source(
         &self,
         _topics: &TopicHolder,
-        logger: &Logger,
-    ) -> Result<Transforms, ConfigError> {
+    ) -> Result<Transforms> {
         Ok(Transforms::KafkaDestination(
-            KafkaDestination::new_from_config(&self.keys, logger),
+            KafkaDestination::new_from_config(&self.keys),
         ))
     }
 }
@@ -39,7 +37,6 @@ impl TransformsFromConfig for KafkaConfig {
 impl KafkaDestination {
     pub fn new_from_config(
         config_map: &HashMap<String, String>,
-        logger: &Logger,
     ) -> KafkaDestination {
         let mut config = ClientConfig::new();
         for (k, v) in config_map.iter() {
@@ -47,18 +44,16 @@ impl KafkaDestination {
         }
         return KafkaDestination {
             producer: config.create().expect("Producer creation error"),
-            logger: logger.clone(),
         };
     }
 
-    pub fn new(logger: Logger) -> KafkaDestination {
+    pub fn new() -> KafkaDestination {
         KafkaDestination {
             producer: ClientConfig::new()
                 .set("bootstrap.servers", "127.0.0.1:9092")
                 .set("message.timeout.ms", "5000")
                 .create()
                 .expect("Producer creation error"),
-            logger,
         }
     }
 }
@@ -71,13 +66,13 @@ impl Transform for KafkaDestination {
             Message::Query(qm) => {
                 if let Some(ref key) = qm.get_namespaced_primary_key() {
                     if let Some(values) = qm.query_values {
-                        let message = serde_json::to_string(&values).map_err(|_| RequestError {})?;
+                        let message = serde_json::to_string(&values)?;
                         let a = FutureRecord::to("test_topic").payload(&message).key(&key);
                         self.producer.send(a, 0);
                     }
                 }
             },
-            Message::Response(qr) => {},
+            _ => {},
         }
         return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
     }
