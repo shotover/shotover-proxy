@@ -1,5 +1,4 @@
-use crate::transforms::chain::{TransformChain, Wrapper};
-use tokio::stream::StreamExt;
+use crate::transforms::chain::{TransformChain};
 
 
 use crate::config::topology::TopicHolder;
@@ -9,7 +8,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use std::collections::HashMap;
-use std::error::Error;
 use tokio::net::{TcpListener};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -17,8 +15,7 @@ use crate::server::{TcpCodecListener};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use std::sync::Arc;
 
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use anyhow::{Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CassandraConfig {
@@ -61,10 +58,9 @@ impl CassandraSource {
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> CassandraSource {
-        let mut listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+        let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
 
         info!("Starting Cassandra source on [{}]", listen_addr);
-
 
         let mut listener = TcpCodecListener {
             chain: chain.clone(),

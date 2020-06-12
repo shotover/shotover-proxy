@@ -8,8 +8,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 use futures::TryFutureExt;
-use crate::error::ConfigError;
-use crate::error::{ChainResponse, RequestError};
+use crate::error::{ChainResponse};
 use anyhow::{anyhow, Result};
 
 /*

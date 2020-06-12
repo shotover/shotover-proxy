@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::error::ChainResponse;
-use anyhow::{anyhow, Result};
+use anyhow::{Result};
 
 
 #[derive(Clone)]

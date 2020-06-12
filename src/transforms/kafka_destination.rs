@@ -8,8 +8,8 @@ use crate::message::{Message, QueryResponse};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use std::collections::HashMap;
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use crate::error::{ChainResponse};
+use anyhow::{Result};
 
 #[derive(Clone)]
 pub struct KafkaDestination {
@@ -62,7 +62,7 @@ impl KafkaDestination {
 impl Transform for KafkaDestination {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         match qd.message {
-            Message::Bypass(b) => {},
+            Message::Bypass(_) => {},
             Message::Query(qm) => {
                 if let Some(ref key) = qm.get_namespaced_primary_key() {
                     if let Some(values) = qm.query_values {

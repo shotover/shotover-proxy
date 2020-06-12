@@ -18,8 +18,8 @@ use async_trait::async_trait;
 
 use tracing::trace;
 use crate::protocols::RawFrame;
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use crate::error::{ChainResponse};
+use anyhow::{Result};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -56,8 +56,8 @@ impl SimpleRedisCache {
         };
     }
 
-    pub async fn new_from_config(params: &String) -> SimpleRedisCache {
-        let client = redis::Client::open(params.clone()).unwrap();
+    pub async fn new_from_config(params: &str) -> SimpleRedisCache {
+        let client = redis::Client::open(params).unwrap();
         let con = client.get_multiplexed_tokio_connection().await.unwrap();
         return SimpleRedisCache {
             name: "SimpleRedisCache",
@@ -237,7 +237,7 @@ impl Transform for SimpleRedisCache {
                         let p = &mut pipe();
                         if let Some(pk) = qm.get_namespaced_primary_key() {
                             if let Some(value_map) = qm.query_values.borrow() {
-                                for (k, _) in value_map {
+                                for k in value_map.keys() {
                                     p.hdel(pk.clone(), k.clone());
                                 }
 

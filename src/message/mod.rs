@@ -1,5 +1,4 @@
 use bytes::{Buf, Bytes};
-use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow, Result};
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
@@ -14,7 +13,6 @@ use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use sqlparser::ast::Statement;
 use std::collections::{HashMap};
-use std::error::Error;
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
 use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigint, decode_boolean, decode_int, decode_decimal, decode_double, decode_float, decode_timestamp, decode_varchar, decode_varint, decode_inet, decode_smallint, decode_tinyint};
 use std::net::IpAddr;

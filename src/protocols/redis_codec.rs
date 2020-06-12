@@ -1,14 +1,11 @@
 use tokio_util::codec::{Decoder, Encoder};
 use bytes::{BytesMut, Buf};
 use redis_protocol::prelude::*;
-use tracing::warn;
 use crate::message::{QueryResponse, QueryMessage, Message, QueryType, RawMessage, Value};
 use std::collections::HashMap;
 use crate::protocols::RawFrame;
-use std::error::Error;
-use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow, Result};
-use std::borrow::{Borrow, BorrowMut};
+use std::borrow::{BorrowMut};
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
@@ -42,7 +39,7 @@ impl RedisCodec {
                         let mut map: HashMap<String, Value> = HashMap::new();
                         map.insert(channel.clone(), Value::Strings(message.clone()));
                         Message::Query(QueryMessage {
-                            original: RawFrame::Redis(Frame::Array(vec![Frame::SimpleString(channel.clone()), Frame::SimpleString(message.clone()), Frame::SimpleString(kind.clone())])),
+                            original: RawFrame::Redis(Frame::Array(vec![Frame::SimpleString(channel.clone()), Frame::SimpleString(message), Frame::SimpleString(kind)])),
                             query_string: "".to_string(),
                             namespace: vec![channel],
                             primary_key: Default::default(),

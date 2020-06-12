@@ -12,8 +12,8 @@ use sodiumoxide::crypto::secretbox::Key;
 use std::borrow::{Borrow};
 use std::collections::HashMap;
 
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use crate::error::{ChainResponse};
+use anyhow::{ Result};
 
 #[derive(Clone)]
 pub struct Protect {
@@ -251,7 +251,7 @@ mod protect_transform_tests {
                     let mut colk_map: HashMap<String, Vec<String>> = HashMap::new();
                     colk_map.insert("keyspace.old".to_string(), vec!["pk".to_string(), "cluster".to_string()]);
 
-                    let mut codec = CassandraCodec2::new(colk_map);
+                    let codec = CassandraCodec2::new(colk_map);
 
                     if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
                         let returner_message = QueryResponse {
@@ -262,9 +262,9 @@ mod protect_transform_tests {
                         };
 
                         let ret_transforms: Vec<Transforms> = vec![
-                            Transforms::RepeatMessage(ReturnerTransform{
+                            Transforms::RepeatMessage(Box::new(ReturnerTransform{
                                 message: Message::Response(returner_message.clone())
-                            }),
+                            })),
                         ];
 
                         let ret_chain = TransformChain::new(ret_transforms, String::from("test_chain2"));

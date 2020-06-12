@@ -1,6 +1,5 @@
 use pyo3::PyErr;
-use std::{fmt, io, error};
-use anyhow::{anyhow, Result};
+use std::{fmt, error};
 use crate::message::Message;
 use thiserror::Error;
 

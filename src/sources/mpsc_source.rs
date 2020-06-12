@@ -8,14 +8,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use tracing::warn;
-use std::error::Error;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
-use crate::server::{Handler, Shutdown};
+use crate::server::{Shutdown};
 use tokio::sync::{broadcast, mpsc};
-use crate::error::ConfigError;
-
-use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow, Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -38,7 +34,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
                 rx,
                 &self.topic_name,
                 Shutdown::new(notify_shutdown.subscribe()),
-                shutdown_complete_tx.clone(),
+                shutdown_complete_tx,
             )));
         }
         Err(anyhow!(
@@ -60,17 +56,17 @@ impl AsyncMpsc {
     pub fn new(
         chain: TransformChain,
         mut rx: Receiver<Message>,
-        name: &String,
+        name: &str,
         shutdown: Shutdown,
         shutdown_complete: mpsc::Sender<()>
     ) -> AsyncMpsc {
         info!(
             "Starting MPSC source for the topic [{}] ",
-            name.clone()
+            name
         );
 
         let jh = Handle::current().spawn(async move {
-            /// This will go out of scope once we exit the loop below, indicating we are done and shutdown
+            // This will go out of scope once we exit the loop below, indicating we are done and shutdown
             let _notifier = shutdown_complete.clone();
             while !shutdown.is_shutdown() {
                 if let Some(m) = rx.recv().await {

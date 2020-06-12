@@ -4,11 +4,11 @@
 use std::error::Error;
 
 use clap::Clap;
-use tracing::info;
+use tracing::{info, Level};
 
 use rust_practice::config::topology::Topology;
 use tokio::runtime;
-use rust_practice::sources::Sources;
+use tracing_subscriber;
 
 
 #[derive(Clap)]
@@ -26,12 +26,16 @@ struct ConfigOpts {
 #[cfg(not(feature = "no_index"))]
 #[cfg(not(feature = "no_object"))]
 fn main() -> Result<(), Box<dyn Error>> {
+    let _subscriber = tracing_subscriber::fmt()
+        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(Level::DEBUG)
+        // completes the builder and sets the constructed `Subscriber` as the default.
+        .init();
 
     info!("Loading configuration");
-
     let configuration = ConfigOpts::parse();
     info!( "Starting loaded topology");
-
     let mut rt = runtime::Builder::new()
         .enable_all()
         .thread_name("RPProxy-Thread")
@@ -44,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //todo: https://github.com/tokio-rs/mini-redis/blob/master/src/server.rs
 
     return rt.block_on(async {
-        if let Ok((sources, mut shutdown_complete_rx)) = Topology::from_file(configuration.config_file)?
+        if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(configuration.config_file)?
             .run_chains()
             .await
         {

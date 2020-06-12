@@ -8,8 +8,8 @@ use core::mem;
 use rlua_serde;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use crate::error::{ChainResponse};
+use anyhow::{Result};
 
 pub struct LuaFilterTransform {
     name: &'static str,
@@ -22,7 +22,7 @@ impl Clone for LuaFilterTransform {
     fn clone(&self) -> Self {
         //TODO: we may need to reload the preloaded scripts
         return LuaFilterTransform {
-            name: self.name.clone(),
+            name: self.name,
             query_filter: self.query_filter.clone(),
             response_filter: self.response_filter.clone(),
             lua: LuaRuntime::new(),

@@ -1,17 +1,15 @@
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, broadcast, mpsc};
 use std::sync::Arc;
-use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::chain::{TransformChain, Wrapper};
 use tokio_util::codec::{Framed, Decoder, Encoder};
-use tracing::{debug, error, info, instrument};
+use tracing::{error, info};
 use tokio::prelude::{AsyncRead, AsyncWrite};
-use futures::{StreamExt, FutureExt, SinkExt, TryFutureExt};
+use futures::{StreamExt, FutureExt, SinkExt};
 use crate::message::Message;
 use tokio::time;
 use tokio::time::Duration;
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use anyhow::{Result};
 
 
 pub struct TcpCodecListener<C>
@@ -139,7 +137,6 @@ impl <C> TcpCodecListener<C>
                 }
             });
         }
-        Ok(())
     }
 
     /// Accept an inbound connection.

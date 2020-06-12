@@ -2,14 +2,11 @@ use crate::message::Message;
 use crate::transforms::Transforms;
 use async_trait::async_trait;
 use metrics::timing;
-use pyo3::PyErr;
-use std::{error, fmt, io};
 use tokio::time::Instant;
-use futures::io::Error;
 use std::fmt::Display;
 use serde::export::Formatter;
 use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow};
 
 
 #[derive(Debug, Clone)]

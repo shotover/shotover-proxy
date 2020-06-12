@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
-use crate::message::{Message, QueryMessage, RawMessage, Value};
+use crate::message::{Message, QueryMessage};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::transforms::{Transforms, TransformsFromConfig};
 use tracing::trace;
@@ -14,10 +14,9 @@ use tokio::sync::Mutex;
 use tokio::stream::StreamExt;
 
 use std::sync::Arc;
-use redis_protocol::prelude::Frame;
-use futures::{FutureExt, SinkExt, TryFutureExt};
+use futures::{FutureExt, SinkExt};
 
-use crate::error::{ChainResponse, RequestError};
+use crate::error::{ChainResponse};
 use anyhow::{anyhow, Result};
 
 
@@ -65,7 +64,7 @@ impl RedisCodecDestination {
     async fn send_message(
         &self,
         message: Message,
-        matching_query: Option<QueryMessage>,
+        _matching_query: Option<QueryMessage>,
     ) -> ChainResponse {
         trace!("      C -> S {:?}", message);
         if let Ok(mut mg) = self.outbound.try_lock() {

@@ -17,8 +17,8 @@ use crate::transforms::scatter::{Scatter, ScatterConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use crate::transforms::redis_codec_destination::{RedisCodecDestination, RedisCodecConfiguration};
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use crate::error::{ChainResponse};
+use anyhow::{Result};
 
 
 pub mod chain;
@@ -54,7 +54,7 @@ pub enum Transforms {
     Lua(LuaFilterTransform),
     Protect(Protect),
     // The below variants are mainly for testing
-    RepeatMessage(ReturnerTransform)
+    RepeatMessage(Box<ReturnerTransform>)
 }
 
 #[async_trait]
@@ -130,7 +130,7 @@ impl TransformsConfig {
 
 pub async fn build_chain_from_config(
     name: String,
-    transform_configs: &Vec<TransformsConfig>,
+    transform_configs: &[TransformsConfig],
     topics: &TopicHolder,
 ) -> Result<TransformChain> {
     let mut transforms: Vec<Transforms> = Vec::new();

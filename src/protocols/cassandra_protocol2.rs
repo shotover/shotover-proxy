@@ -3,7 +3,6 @@ use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::consistency::Consistency;
-use cassandra_proto::error::Error;
 use cassandra_proto::frame::frame_result::{
     BodyResResultRows, ColSpec, ColType, ColTypeOption, ResResultBody, RowsMetadata,
 };
@@ -12,7 +11,6 @@ use cassandra_proto::frame::{parser, Flag, Frame, IntoBytes, Opcode, Version};
 use cassandra_proto::query::{QueryValues};
 use cassandra_proto::types::value::Value as CValue;
 use cassandra_proto::types::{CBytes, CInt, CString};
-use serde::{Deserialize, Serialize};
 use tokio_util::codec::{Decoder, Encoder};
 
 use std::borrow::{Borrow, BorrowMut};
@@ -33,7 +31,6 @@ use sqlparser::parser::Parser;
 use std::ops::{Deref, DerefMut};
 use crate::protocols::RawFrame;
 
-use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow, Result};
 
 #[derive(Debug, Clone)]
@@ -170,7 +167,7 @@ impl CassandraCodec2 {
                                                 // (x.clone() as CInt).into_cbytes()
                                             }
                                             Value::Timestamp(x) => {
-                                                Vec::from(x.to_rfc2822().clone().as_bytes())
+                                                Vec::from(x.to_rfc2822().as_bytes())
                                             }
                                             Value::Rows(_) => unreachable!(),
                                             Value::Document(_) => unreachable!(),
@@ -210,7 +207,7 @@ impl CassandraCodec2 {
 
 
 impl CassandraCodec2 {
-    fn decode_raw<'a>(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
         let v = parser::parse_frame(src, &self.compressor, &self.current_head);
         match v {
             Ok((r, h)) => {
@@ -237,7 +234,7 @@ impl CassandraCodec2 {
             Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
             Value::Integer(i) => SQLValue::Number(i.to_string()),
             Value::Float(f) => SQLValue::Number(f.to_string()),
-            Value::Boolean(b) => SQLValue::Boolean(b.clone()),
+            Value::Boolean(b) => SQLValue::Boolean(*b),
             Value::Timestamp(t) => SQLValue::Timestamp(t.to_rfc2822()),
             _ => SQLValue::Null,
         };
@@ -436,7 +433,7 @@ impl CassandraCodec2 {
         }
     }
 
-    fn parse_query_string<'a>(
+    fn parse_query_string(
         query_string: String,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> ParsedCassandraQueryString {
@@ -446,13 +443,13 @@ impl CassandraCodec2 {
         let mut projection: Vec<String> = Vec::new();
         let mut primary_key: HashMap<String, Value> = HashMap::new();
         let mut ast: Option<Statement> = None;
-        let foo = Parser::parse_sql(&dialect, query_string.clone());
+        let parsed_sql = Parser::parse_sql(&dialect, query_string);
         //TODO handle pks
         // println!("{:#?}", foo);
 
         //TODO: We absolutely don't handle multiple statements despite this loop indicating otherwise
         // for statement in ast_list.iter() {
-        if let Ok(ast_list) = foo {
+        if let Ok(ast_list) = parsed_sql {
             if let Some(statement) = ast_list.get(0) {
                 ast = Some(statement.clone());
                 match statement {
@@ -567,7 +564,7 @@ impl CassandraCodec2 {
                             .iter()
                             .enumerate()
                             .map(|(i, _col)| {
-                                let ref col_spec = row.metadata.col_specs[i];
+                                let col_spec = &row.metadata.col_specs[i];
                                 let data: Value = Value::build_value_from_cstar_col_type(col_spec, &row.row_content[i]);
 
                                 (col_spec.name.clone().into_plain(), data)
@@ -627,7 +624,7 @@ impl CassandraCodec2 {
                     if let ResponseBody::Error(e) = body {
                         return Message::Response(QueryResponse {
                             matching_query: None,
-                            original: RawFrame::CASSANDRA(frame.clone()),
+                            original: RawFrame::CASSANDRA(frame),
                             result: None,
                             error: Some(Value::Strings(e.message.as_plain())),
                         });

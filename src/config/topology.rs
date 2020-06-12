@@ -10,10 +10,8 @@ use crate::transforms::{build_chain_from_config, TransformsConfig};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use std::collections::HashMap;
-use std::error::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{broadcast, mpsc};
-use crate::error::{ChainResponse, RequestError, ConfigError};
 use anyhow::{anyhow, Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -30,13 +28,13 @@ pub struct TopicHolder {
 }
 
 impl TopicHolder {
-    pub fn get_rx(&mut self, name: &String) -> Option<Receiver<Message>> {
-        let rx = self.topics_rx.remove(name.as_str())?;
+    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<Message>> {
+        let rx = self.topics_rx.remove(name)?;
         return Some(rx);
     }
 
-    pub fn get_tx(&self, name: &String) -> Option<Sender<Message>> {
-        let tx = self.topics_tx.get(name.as_str())?;
+    pub fn get_tx(&self, name: &str) -> Option<Sender<Message>> {
+        let tx = self.topics_tx.get(name)?;
         return Some(tx.clone());
     }
 }
@@ -141,7 +139,6 @@ impl Topology {
 
         let codec_config = TransformsConfig::CodecDestination(CodecConfiguration {
             address: server_addr,
-            cassandra_ks: Default::default() //TODO!!!!!!!
         });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();

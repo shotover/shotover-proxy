@@ -1,9 +1,7 @@
-use crate::transforms::chain::{TransformChain, Wrapper};
-use tokio::stream::StreamExt;
+use crate::transforms::chain::{TransformChain};
 
 
 use tracing::info;
-use std::error::Error;
 use tokio::net::{TcpListener};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -16,8 +14,7 @@ use crate::server::{TcpCodecListener};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use std::sync::Arc;
 
-use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow, Result};
+use anyhow::{Result};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -58,7 +55,7 @@ impl RedisSource {
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> RedisSource {
-        let mut listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+        let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
 
         info!("Starting Redis source on [{}]", listen_addr);
 

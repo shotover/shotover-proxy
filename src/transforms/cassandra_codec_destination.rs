@@ -5,24 +5,23 @@ use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
-use crate::message::{Message, QueryMessage, RawMessage, Value};
+use crate::message::{Message, QueryMessage};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::transforms::{Transforms, TransformsFromConfig};
-use futures::{FutureExt, SinkExt, TryFutureExt};
+use futures::{FutureExt, SinkExt};
 use tracing::trace;
 use std::sync::Arc;
 use tokio::stream::StreamExt;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
 
-use crate::error::{ChainResponse, RequestError};
+use crate::error::{ChainResponse};
 use anyhow::{anyhow, Result};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CodecConfiguration {
     #[serde(rename = "remote_address")]
     pub address: String,
-    pub cassandra_ks: HashMap<String, Vec<String>>,
 
 }
 
@@ -34,7 +33,6 @@ impl TransformsFromConfig for CodecConfiguration {
     ) -> Result<Transforms> {
         Ok(Transforms::CodecDestination(CodecDestination::new(
             self.address.clone(),
-            self.cassandra_ks.clone(),
         )))
     }
 }
@@ -49,17 +47,17 @@ pub struct CodecDestination {
 
 impl Clone for CodecDestination {
     fn clone(&self) -> Self {
-        CodecDestination::new(self.address.clone(), self.cassandra_ks.clone())
+        CodecDestination::new(self.address.clone())
     }
 }
 
 impl CodecDestination {
-    pub fn new(address: String, cassandra_ks: HashMap<String, Vec<String>>) -> CodecDestination {
+    pub fn new(address: String) -> CodecDestination {
         CodecDestination {
             address,
             outbound: Arc::new(Mutex::new(None)),
             name: "CodecDestination",
-            cassandra_ks
+            cassandra_ks: HashMap::new()
         }
     }
 }
@@ -75,7 +73,7 @@ impl CodecDestination {
     async fn send_message(
         &self,
         message: Message,
-        matching_query: Option<QueryMessage>,
+        _matching_query: Option<QueryMessage>,
     ) -> ChainResponse {
         trace!("      C -> S {:?}", message);
         if let Ok(mut mg) = self.outbound.try_lock() {
