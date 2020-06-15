@@ -1,11 +1,12 @@
 ---
 sources:
-  redis_prod:
-    Redis:
-      listen_addr: "127.0.0.1:6378"
+#  redis_prod:
+#    Redis:
+#      listen_addr: "127.0.0.1:6378"
   cassandra_prod:
     Cassandra:
       listen_addr: "127.0.0.1:9043"
+      bypass_query_processing: true
       cassandra_ks:
         system.local:
           - key
@@ -14,30 +15,39 @@ sources:
         test.clustering:
           - pk
           - clustering
-  mpsc_chan:
-    Mpsc:
-      topic_name: testtopic
+#  mpsc_chan:
+#    Mpsc:
+#      topic_name: testtopic
 chain_config:
-  redis_chain:
-    - MPSCTee:
-        topic_name: testtopic
-    - RedisDestination:
-        remote_address: "127.0.0.1:6379"
+#  redis_chain:
+#    - MPSCTee:
+#        topic_name: testtopic
+#    - RedisDestination:
+#        remote_address: "127.0.0.1:6379"
   main_chain:
-    - MPSCTee:
-        topic_name: testtopic
-    - RedisCache:
-        config_values: "redis://127.0.0.1/"
+#    - MPSCTee:
+#        topic_name: testtopic
+#    - RedisCache:
+#        config_values: "redis://127.0.0.1/"
     - CodecDestination:
         remote_address: "127.0.0.1:9042"
-  async_chain:
-    - KafkaDestination:
-        config_values:
-          bootstrap.servers: "127.0.0.1:9092"
-          message.timeout.ms: "5000"
+        bypass_result_processing: true
+        cassandra_ks:
+          system.local:
+            - key
+          test.simple:
+            - pk
+          test.clustering:
+            - pk
+            - clustering
+#  async_chain:
+#    - KafkaDestination:
+#        config_values:
+#          bootstrap.servers: "127.0.0.1:9092"
+#          message.timeout.ms: "5000"
 named_topics:
   - testtopic
 source_to_chain_mapping:
   cassandra_prod: main_chain
-  redis_prod: redis_chain
-  mpsc_chan: async_chain
+#  redis_prod: redis_chain
+#  mpsc_chan: async_chain
