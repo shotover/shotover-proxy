@@ -3,14 +3,14 @@ use tokio::sync::{Semaphore, broadcast, mpsc};
 use std::sync::Arc;
 use crate::transforms::chain::{TransformChain, Wrapper};
 use tokio_util::codec::{Framed, Decoder, Encoder};
-use tracing::{error, info};
+use tracing::{error, info, trace};
 use tokio::prelude::{AsyncRead, AsyncWrite};
 use futures::{StreamExt, FutureExt, SinkExt};
 use crate::message::Message;
 use tokio::time;
 use tokio::time::Duration;
 use anyhow::{Result};
-
+use tracing::{instrument};
 
 pub struct TcpCodecListener<C>
 where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send + Sync,
@@ -106,6 +106,8 @@ impl <C> TcpCodecListener<C>
             let socket = self.accept().await?;
 
             // Create the necessary per-connection handler state.
+            info!("New connection from {:?}", socket.peer_addr());
+
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an
                 // `Arc`, so a clone only increments the ref count.
@@ -229,17 +231,19 @@ impl <S, C> Handler<S, C>
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    // #[instrument(skip(self))]
+    #[instrument(skip(self))]
     pub async fn run(&mut self) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
+
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown
             // signal
 
             // let foo = self.connection.next().fuse().await?;
-
+            trace!("Waiting for message");
             let frame = tokio::select! {
+                // Some(res) = self.connection.next() => res,
                 Some(res) = self.connection.next().fuse() => res,
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.

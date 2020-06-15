@@ -21,6 +21,7 @@ use anyhow::{Result};
 pub struct CassandraConfig {
     pub listen_addr: String,
     pub cassandra_ks: HashMap<String, Vec<String>>,
+    pub bypass_query_processing: bool
 }
 
 #[async_trait]
@@ -38,6 +39,7 @@ impl SourcesFromConfig for CassandraConfig {
             self.cassandra_ks.clone(),
             notify_shutdown,
             shutdown_complete_tx,
+            self.bypass_query_processing
         ).await))
     }
 }
@@ -57,6 +59,7 @@ impl CassandraSource {
         cassandra_ks: HashMap<String, Vec<String>>,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
+        bypass: bool
     ) -> CassandraSource {
         let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
 
@@ -65,7 +68,7 @@ impl CassandraSource {
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
             listener,
-            codec: CassandraCodec2::new(cassandra_ks),
+            codec: CassandraCodec2::new(cassandra_ks, bypass),
             limit_connections: Arc::new(Semaphore::new(50)),
             notify_shutdown,
             shutdown_complete_tx

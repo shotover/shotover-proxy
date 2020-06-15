@@ -17,9 +17,14 @@ use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 
 use tracing::trace;
+use tracing::instrument;
+
 use crate::protocols::RawFrame;
 use crate::error::{ChainResponse};
 use anyhow::{Result};
+use std::fmt::Debug;
+use serde::export::Formatter;
+use core::fmt;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -46,6 +51,12 @@ pub struct SimpleRedisCache {
     tables_to_pks: HashMap<String, Vec<String>>,
 }
 
+impl Debug for SimpleRedisCache {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Name: {}, conversions: {:?}", self.name, self.tables_to_pks)
+    }
+}
+
 impl SimpleRedisCache {
     //"redis://127.0.0.1/"
     pub fn new(connection: MultiplexedConnection) -> SimpleRedisCache {
@@ -69,6 +80,7 @@ impl SimpleRedisCache {
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
+    #[instrument]
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let message = qd.message.borrow();
 

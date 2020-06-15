@@ -7,6 +7,7 @@ use std::fmt::Display;
 use serde::export::Formatter;
 use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow};
+use tracing::{trace_span, instrument};
 
 
 #[derive(Debug, Clone)]
@@ -86,7 +87,7 @@ pub trait Transform: Send + Sync {
 // Currently the way this chain struct is built, requires that all Transforms are thread safe and
 // implement with Sync
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TransformChain {
     name: String,
     chain: InnerChain,
@@ -100,7 +101,9 @@ impl TransformChain {
         }
     }
 
+    #[instrument(skip(self))]
     pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse {
+        // let span = trace_span!("processing request", );
         let start = Instant::now();
         let result = match self.chain.get(wrapper.next_transform) {
             Some(t) => {

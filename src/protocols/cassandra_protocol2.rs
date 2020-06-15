@@ -16,6 +16,7 @@ use tokio_util::codec::{Decoder, Encoder};
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::str::FromStr;
+use tracing::trace;
 
 use crate::message::{Message, QueryType, RawMessage};
 use cassandra_proto::frame::frame_response::ResponseBody;
@@ -38,6 +39,7 @@ pub struct CassandraCodec2 {
     compressor: NoCompression,
     current_head: Option<FrameHeader>,
     pk_col_map: HashMap<String, Vec<String>>,
+    bypass: bool
 }
 
 struct ParsedCassandraQueryString {
@@ -50,11 +52,12 @@ struct ParsedCassandraQueryString {
 
 
 impl CassandraCodec2 {
-    pub fn new(pk_col_map: HashMap<String, Vec<String>>) -> CassandraCodec2 {
+    pub fn new(pk_col_map: HashMap<String, Vec<String>>, bypass: bool) -> CassandraCodec2 {
         return CassandraCodec2 {
             compressor: NoCompression::new(),
             current_head: None,
-            pk_col_map
+            pk_col_map,
+            bypass
         };
     }
 
@@ -208,6 +211,7 @@ impl CassandraCodec2 {
 
 impl CassandraCodec2 {
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
+        trace!("Parsing C* frame");
         let v = parser::parse_frame(src, &self.compressor, &self.current_head);
         match v {
             Ok((r, h)) => {
@@ -589,6 +593,12 @@ impl CassandraCodec2 {
         &self,
         frame: Frame,
     ) -> Message {
+        if self.bypass {
+            return Message::Bypass(RawMessage {
+                original: RawFrame::CASSANDRA(frame),
+            });
+        }
+
         return match frame.opcode {
             Opcode::Query => {
                 if let Ok(body) = frame.get_body() {
@@ -663,6 +673,7 @@ impl Encoder<Message> for CassandraCodec2 {
                 match *modified_message {
                     Message::Bypass(_) => {
                         //TODO: throw error -> we should not be modifing a bypass message
+                        unimplemented!()
                     },
                     Message::Query(q) => {
                             return self.encode_raw(CassandraCodec2::build_cassandra_query_frame(q,Consistency::LocalQuorum ), dst);
@@ -672,6 +683,7 @@ impl Encoder<Message> for CassandraCodec2 {
                     },
                     Message::Modified(_) => {
                         //TODO: throw error -> we should not have a nested modified message
+                        unimplemented!()
                     },
                 }
             }
@@ -681,6 +693,8 @@ impl Encoder<Message> for CassandraCodec2 {
                     return self.encode_raw(frame, dst)
                 } else {
                     //TODO throw error
+                    unimplemented!()
+
                 }
             }
             Message::Response(resp) => {
@@ -688,6 +702,8 @@ impl Encoder<Message> for CassandraCodec2 {
                     return self.encode_raw(frame, dst)
                 } else {
                     //TODO throw error
+                    unimplemented!()
+
                 }
             }
             Message::Bypass(resp) => {
@@ -695,6 +711,8 @@ impl Encoder<Message> for CassandraCodec2 {
                     return self.encode_raw(frame, dst)
                 } else {
                     //TODO throw error
+                    unimplemented!()
+
                 }
             }
         }
@@ -760,7 +778,7 @@ mod cassandra_protocol_tests {
             "test.clustering".to_string(),
             vec!["pk".to_string(), "clustering".to_string()],
         );
-        let mut codec = CassandraCodec2::new(pk_map);
+        let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &STARTUP_BYTES);
     }
 
@@ -772,7 +790,7 @@ mod cassandra_protocol_tests {
             "test.clustering".to_string(),
             vec!["pk".to_string(), "clustering".to_string()],
         );
-        let mut codec = CassandraCodec2::new(pk_map);
+        let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &READY_BYTES);
     }
 
@@ -784,7 +802,7 @@ mod cassandra_protocol_tests {
             "test.clustering".to_string(),
             vec!["pk".to_string(), "clustering".to_string()],
         );
-        let mut codec = CassandraCodec2::new(pk_map);
+        let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &REGISTER_BYTES);
     }
 
@@ -796,7 +814,7 @@ mod cassandra_protocol_tests {
             "test.clustering".to_string(),
             vec!["pk".to_string(), "clustering".to_string()],
         );
-        let mut codec = CassandraCodec2::new(pk_map);
+        let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &RESULT_BYTES);
     }
 
@@ -808,7 +826,7 @@ mod cassandra_protocol_tests {
             "test.clustering".to_string(),
             vec!["pk".to_string(), "clustering".to_string()],
         );
-        let mut codec = CassandraCodec2::new(pk_map);
+        let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &QUERY_BYTES);
     }
 
@@ -821,7 +839,7 @@ mod cassandra_protocol_tests {
             vec!["pk".to_string(), "clustering".to_string()],
         );
 
-        let mut codec = CassandraCodec2::new(pk_map);
+        let mut codec = CassandraCodec2::new(pk_map, false);
         let mut bytes: BytesMut = build_bytesmut(&QUERY_BYTES);
         if let Ok(Some(message)) = codec.decode(&mut bytes) {
             if let Message::Query(QueryMessage {

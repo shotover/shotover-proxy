@@ -251,7 +251,7 @@ mod protect_transform_tests {
                     let mut colk_map: HashMap<String, Vec<String>> = HashMap::new();
                     colk_map.insert("keyspace.old".to_string(), vec!["pk".to_string(), "cluster".to_string()]);
 
-                    let codec = CassandraCodec2::new(colk_map);
+                    let codec = CassandraCodec2::new(colk_map, false);
 
                     if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
                         let returner_message = QueryResponse {

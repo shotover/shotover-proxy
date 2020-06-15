@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 use crate::transforms::redis_codec_destination::{RedisCodecDestination, RedisCodecConfiguration};
 use crate::error::{ChainResponse};
 use anyhow::{Result};
+use std::fmt::Debug;
+use serde::export::Formatter;
+use core::fmt;
 
 
 pub mod chain;
@@ -55,6 +58,12 @@ pub enum Transforms {
     Protect(Protect),
     // The below variants are mainly for testing
     RepeatMessage(Box<ReturnerTransform>)
+}
+
+impl Debug for Transforms {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Transform: {}", self.get_name())
+    }
 }
 
 #[async_trait]
