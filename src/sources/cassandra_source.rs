@@ -75,7 +75,18 @@ impl CassandraSource {
         };
 
         let jh = Handle::current().spawn(async move {
-            listener.run().await
+            listener.run().await;
+
+            let TcpCodecListener {
+                notify_shutdown,
+                shutdown_complete_tx,
+                ..
+            } = listener;
+
+            drop(shutdown_complete_tx);
+            drop(notify_shutdown);
+
+            Ok(())
         });
 
         return CassandraSource {
