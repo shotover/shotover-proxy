@@ -84,7 +84,7 @@ impl <C> TcpCodecListener<C>
     /// The process is not able to detect when a transient error resolves
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
-    pub async fn run(&mut self) -> Result<()> where <C as Decoder>::Error: std::marker::Send {
+    pub async fn run(&mut self) -> Result<()> where <C as Decoder>::Error: std::marker::Send + std::fmt::Debug {
         info!("accepting inbound connections");
 
         loop {
@@ -232,7 +232,9 @@ impl <S, C> Handler<S, C>
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
     #[instrument(skip(self))]
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()>
+        where <C as Decoder>::Error: std::fmt::Debug
+    {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
 
@@ -244,7 +246,12 @@ impl <S, C> Handler<S, C>
             trace!("Waiting for message");
             let frame = tokio::select! {
                 // Some(res) = self.connection.next() => res,
-                Some(res) = self.connection.next().fuse() => res,
+                res = self.connection.next().fuse() => {
+                    match res {
+                        Some(m) => m,
+                        None => return Ok(())
+                    }
+                },
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
                     // This will result in the task terminating.
@@ -264,8 +271,9 @@ impl <S, C> Handler<S, C>
                         error!("chain processing error")
                     }
                 }
-                Err(_) => {
-                    error!("Error handling message in Cassandra source:");
+                Err(e) => {
+                    trace!("Error handling message in TcpStream source: {:?}", e);
+                    return Ok(());
                 }
             }
         }
