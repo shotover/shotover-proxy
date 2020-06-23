@@ -62,7 +62,7 @@ impl RedisSource {
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
             listener,
-            codec: RedisCodec::new(),
+            codec: RedisCodec::new(false),
             limit_connections: Arc::new(Semaphore::new(50)),
             notify_shutdown,
             shutdown_complete_tx

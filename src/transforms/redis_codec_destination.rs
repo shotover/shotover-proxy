@@ -74,7 +74,7 @@ impl RedisCodecDestination {
                 None => {
                     let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
                     let mut outbound_framed_codec =
-                        Framed::new(outbound_stream, RedisCodec::new());
+                        Framed::new(outbound_stream, RedisCodec::new(true));
                     let _ = outbound_framed_codec.send(message).await;
                     if let Some(o) = outbound_framed_codec.next().fuse().await {
                         if let Ok(resp) = &o {

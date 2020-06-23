@@ -6,33 +6,49 @@ use std::collections::HashMap;
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
 use std::borrow::{BorrowMut};
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
+    // Redis doesn't have an explicit "Response" type as part of the protocol
+    decode_as_response: bool
 }
 
 impl RedisCodec {
-    pub fn new() -> RedisCodec {
-        RedisCodec {}
+    pub fn new(decode_as_response: bool) -> RedisCodec {
+        RedisCodec {
+            decode_as_response
+        }
     }
 
-    fn handle_redis_string(string: String, _frame: Frame) -> Message {
-        return Message::Query(QueryMessage {
-            original: RawFrame::NONE,
-            query_string: string,
-            namespace: vec![],
-            primary_key: Default::default(),
-            query_values: None,
-            projection: None,
-            query_type: QueryType::Read,
-            ast: None,
-        });
+    fn handle_redis_string(&self, string: String, frame: Frame) -> Message {
+        let message = if self.decode_as_response {
+            Message::Response(QueryResponse{
+                matching_query: None,
+                original: RawFrame::Redis(frame),
+                result: Some(Value::Strings(string)),
+                error: None
+            })
+        } else {
+            Message::Query(QueryMessage {
+                original: RawFrame::Redis(frame),
+                query_string: string,
+                namespace: vec![],
+                primary_key: Default::default(),
+                query_values: None,
+                projection: None,
+                query_type: QueryType::Read,
+                ast: None,
+            })
+        };
+
+        return message
     }
 
-    pub fn process_redis_frame(frame: Frame) -> Message {
+    pub fn process_redis_frame(&self, frame: Frame) -> Message {
         return match &frame {
-            Frame::SimpleString(s) => { RedisCodec::handle_redis_string(s.clone(), frame) }
-            Frame::BulkString(bs) => { RedisCodec::handle_redis_string(String::from_utf8(bs.clone()).unwrap_or("invalid utf-8".to_string()), frame) }
+            Frame::SimpleString(s) => { self.handle_redis_string(s.clone(), frame) }
+            Frame::BulkString(bs) => { self.handle_redis_string(String::from_utf8(bs.clone()).unwrap_or("invalid utf-8".to_string()), frame) }
             Frame::Array(_) => {
                 match frame.parse_as_pubsub(){
                     Ok((channel, message, kind)) => {
@@ -52,8 +68,8 @@ impl RedisCodec {
                     Err(frame) => {Message::Bypass(RawMessage { original: RawFrame::Redis(frame)})},
                 }
             }
-            Frame::Moved(m) => { RedisCodec::handle_redis_string(m.clone(), frame) }
-            Frame::Ask(a) => { RedisCodec::handle_redis_string(a.clone(), frame) }
+            Frame::Moved(m) => { self.handle_redis_string(m.clone(), frame) }
+            Frame::Ask(a) => { self.handle_redis_string(a.clone(), frame) }
             _ => {
                 Message::Bypass(RawMessage {
                     original: RawFrame::Redis(frame)
@@ -75,6 +91,7 @@ impl RedisCodec {
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
         if let (Some(frame), size) = decode_bytes(&*src)
             .map_err(|e| {
+                info!("Error decoding redis frame {:?}", e);
                 anyhow!("Error decoding redis frame {}", e)
             })? {
             src.advance(size);
@@ -97,7 +114,7 @@ impl Decoder for RedisCodec {
 
     fn decode(&mut self, src: &mut BytesMut) -> std::result::Result<Option<Self::Item>, Self::Error> {
         return Ok(self.decode_raw(src)?.map(|f| {
-            RedisCodec::process_redis_frame(f)
+            self.process_redis_frame(f)
         }));
     }
 }
