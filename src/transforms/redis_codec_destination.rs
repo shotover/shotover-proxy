@@ -106,7 +106,8 @@ impl Transform for RedisCodecDestination {
             Message::Query(q) => {Some(q.clone())},
             _ => {None},
         };
-        self.send_message(qd.message, return_query).await
+        let r = self.send_message(qd.message, return_query).await;
+        r
     }
 
     fn get_name(&self) -> &'static str {

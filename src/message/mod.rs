@@ -115,6 +115,17 @@ impl QueryResponse {
         };
     }
 
+    pub fn empty_with_error(error: Option<Value>) -> Self {
+        return QueryResponse {
+            matching_query: None,
+            original: RawFrame::NONE,
+            result: None,
+            error,
+        };
+    }
+
+
+
     pub fn empty_with_original(original: QueryMessage) -> Self {
         return QueryResponse {
             matching_query: Some(original),

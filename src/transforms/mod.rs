@@ -22,7 +22,7 @@ use anyhow::{Result};
 use std::fmt::Debug;
 use serde::export::Formatter;
 use core::fmt;
-
+use crate::transforms::tuneable_consistency_scatter::{TuneableConsistency, TuneableConsistencyConfig};
 
 pub mod chain;
 pub mod cassandra_codec_destination;
@@ -40,6 +40,7 @@ pub mod redis_cache;
 pub mod route;
 pub mod scatter;
 pub mod test_transforms;
+pub mod tuneable_consistency_scatter;
 
 #[derive(Clone)]
 pub enum Transforms {
@@ -56,6 +57,7 @@ pub enum Transforms {
     Null(Null),
     Lua(LuaFilterTransform),
     Protect(Protect),
+    TuneableConsistency(TuneableConsistency),
     // The below variants are mainly for testing
     RepeatMessage(Box<ReturnerTransform>)
 }
@@ -83,6 +85,7 @@ impl Transform for Transforms {
             Transforms::Lua(l) => l.transform(qd, t).await,
             Transforms::Protect(p) => p.transform(qd, t).await,
             Transforms::RepeatMessage(p) => p.transform(qd, t).await,
+            Transforms::TuneableConsistency(tc) => tc.transform(qd, t).await,
             Transforms::RedisCodecDestination(r) => r.transform(qd, t).await
         }
     }
@@ -101,6 +104,7 @@ impl Transform for Transforms {
             Transforms::Null(n) => n.get_name(),
             Transforms::Lua(l) => l.get_name(),
             Transforms::Protect(p) => p.get_name(),
+            Transforms::TuneableConsistency(t) => t.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
             Transforms::RedisCodecDestination(r) => r.get_name()
         }
@@ -116,6 +120,7 @@ pub enum TransformsConfig {
     MPSCTee(AsyncMpscTeeConfig),
     MPSCForwarder(AsyncMpscForwarderConfig),
     Route(RouteConfig),
+    ConsistentScatter(TuneableConsistencyConfig),
     Scatter(ScatterConfig),
 }
 
@@ -133,6 +138,7 @@ impl TransformsConfig {
             TransformsConfig::Route(r) => r.get_source(topics).await,
             TransformsConfig::Scatter(s) => s.get_source(topics).await,
             TransformsConfig::RedisDestination(r) => r.get_source(topics).await,
+            TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
         }
     }
 }

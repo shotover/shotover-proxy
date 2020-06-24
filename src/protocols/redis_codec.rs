@@ -82,7 +82,12 @@ impl RedisCodec {
         if let Some(result) = &resp.result {
             return result.clone().into();
         }
-        Frame::Null
+        if let Some(result) = &resp.error {
+            if let Value::Strings(s) = result {
+                return Frame::Error(s.clone());
+            }
+        }
+        Frame::SimpleString("OK".to_string())
     }
     pub fn build_redis_query_frame(query: &mut QueryMessage) -> Frame {
         return Frame::SimpleString(query.query_string.clone());
