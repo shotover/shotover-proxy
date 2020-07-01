@@ -13,6 +13,8 @@ use crate::error::ChainResponse;
 use anyhow::{Result};
 use futures::stream::FuturesUnordered;
 use tokio::stream::StreamExt;
+use tokio::time::timeout;
+
 use crate::message::{Message, QueryResponse, Value};
 use crate::concurrency::*;
 use crate::scope;
@@ -24,6 +26,7 @@ pub struct TuneableConsistency {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
     number_of_successes: i32,
+    timeout: u64
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -49,6 +52,7 @@ impl TransformsFromConfig for TuneableConsistencyConfig {
             name: "TuneableConsistency",
             route_map: temp,
             number_of_successes: self.number_of_successes,
+            timeout: 50
         }))
     }
 }
@@ -58,32 +62,32 @@ impl Transform for TuneableConsistency {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let handle = tokio::runtime::Handle::current();
         let sref = self;
-        let result = unsafe {scope_impl(handle, |scope| {
+        let func = |scope| {
             async move {
-                let fu: FuturesUnordered<_> = sref.route_map.iter()
-                    .map(|(_, c)| {
-                        let mut wrapper = qd.clone();
-                        wrapper.reset();
-                        scope.spawn(c.process_request(wrapper))
-                    })
-                    .collect();
-
                 let mut successes: i32 = 0;
+                {
+                    let fu: FuturesUnordered<_> = sref.route_map.iter()
+                        .map(|(_, c)| {
+                            let mut wrapper = qd.clone();
+                            wrapper.reset();
+                            scope.spawn(timout(Duration::from_millis(sref.timeout) , c.process_request(wrapper)))
+                        })
+                        .collect();
 
-                let mut r = fu.take_while(|x| {
-                    if let Ok(Ok(_)) = x {
-                        successes += 1;
-                    }
-                    successes < self.number_of_successes
-                });
 
-                while let Ok(Some(_))= r.try_next().await {
+                    let mut r = fu.take_while(|x| {
+                        if let Ok(Ok(_)) = x {
+                            successes += 1;
+                        }
+                        successes < self.number_of_successes
+                    });
 
+                    while let Ok(Some(_))= r.try_next().await {}
                 }
-
                 return successes >= self.number_of_successes;
             }
-        }).await};
+        };
+        let result = unsafe {scope_impl(handle, func).await};
 
         return if result {
             drop(result);
