@@ -115,6 +115,7 @@ mod lua_transform_tests {
     use crate::transforms::{Transforms, TransformsFromConfig};
     use std::error::Error;
     use crate::protocols::RawFrame;
+    use tokio::sync::mpsc::channel;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}
@@ -128,10 +129,11 @@ return qr
 
     #[tokio::test(threaded_scheduler)]
     async fn test_lua_script() -> Result<(), Box<dyn Error>> {
-        let t_holder = TopicHolder {
-            topics_rx: Default::default(),
-            topics_tx: Default::default(),
-        };
+        // let (mut global_map_r, mut global_map_w) = evmap::new();
+        // let (global_tx, mut global_rx) = channel(1);
+
+        let t_holder = TopicHolder::get_test_holder();
+
         let lua_t = LuaConfig {
             query_filter: Some(String::from(REQUEST_STRING)),
             response_filter: Some(String::from(RESPONSE_STRING)),
@@ -154,7 +156,7 @@ return qr
             Transforms::Null(Null::new()),
         ];
 
-        let chain = TransformChain::new(transforms, String::from("test_chain"));
+        let chain = TransformChain::new(transforms, String::from("test_chain"), t_holder.get_global_map_handle(), t_holder.get_global_tx());
 
         if let Transforms::Lua(lua) = lua_t.get_source(&t_holder).await? {
             let result = lua.transform(wrapper, &chain).await;

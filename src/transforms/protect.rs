@@ -152,13 +152,20 @@ mod protect_transform_tests {
     use cassandra_proto::consistency::Consistency;
     use crate::protocols::RawFrame;
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
+    use tokio::sync::mpsc::channel;
 
     #[tokio::test(threaded_scheduler)]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
+        let (mut global_map_r, mut global_map_w) = evmap::new();
+        let (global_tx, mut global_rx) = channel(1);
+
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),
+            global_tx: global_tx,
+            global_map_handle: global_map_r.factory()
         };
+
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
             .iter()
             .map(|&x| String::from(x))
@@ -208,7 +215,7 @@ mod protect_transform_tests {
             Transforms::Null(Null::new()),
         ];
 
-        let chain = TransformChain::new(transforms, String::from("test_chain"));
+        let chain = TransformChain::new(transforms, String::from("test_chain"), t_holder.get_global_map_handle(), t_holder.get_global_tx());
 
         if let Transforms::Protect(protect) = protect_t.get_source(&t_holder).await? {
             let result = protect.transform(wrapper, &chain).await;
@@ -263,11 +270,12 @@ mod protect_transform_tests {
 
                         let ret_transforms: Vec<Transforms> = vec![
                             Transforms::RepeatMessage(Box::new(ReturnerTransform{
-                                message: Message::Response(returner_message.clone())
+                                message: Message::Response(returner_message.clone()),
+                                ok: true
                             })),
                         ];
 
-                        let ret_chain = TransformChain::new(ret_transforms, String::from("test_chain2"));
+                        let ret_chain = TransformChain::new(ret_transforms, String::from("test_chain"), t_holder.get_global_map_handle(), t_holder.get_global_tx());
 
                         let resultr = protect.transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain).await;
                         if let Ok(Message::Response(QueryResponse{ matching_query: _, original: _, result:Some(Value::Rows(r)), error: _ })) = resultr {

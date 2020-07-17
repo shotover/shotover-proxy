@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{broadcast, mpsc};
 use anyhow::{anyhow, Result};
+use evmap::ReadHandleFactory;
+use bytes::Bytes;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Topology {
@@ -25,6 +27,8 @@ pub struct Topology {
 pub struct TopicHolder {
     pub topics_rx: HashMap<String, Receiver<Message>>,
     pub topics_tx: HashMap<String, Sender<Message>>,
+    pub global_tx: Sender<(String, Bytes)>,
+    pub global_map_handle: ReadHandleFactory<String, Bytes>
 }
 
 impl TopicHolder {
@@ -37,6 +41,27 @@ impl TopicHolder {
         let tx = self.topics_tx.get(name)?;
         return Some(tx.clone());
     }
+
+    pub fn get_global_tx(&self) -> Sender<(String, Bytes)> {
+        return self.global_tx.clone();
+    }
+
+    pub fn get_global_map_handle(&self) -> ReadHandleFactory<String, Bytes> {
+        return self.global_map_handle.clone();
+    }
+
+    #[cfg(test)]
+    pub fn get_test_holder() -> Self {
+        let (mut global_map_r, mut global_map_w) = evmap::new();
+        let (global_tx, mut global_rx) = channel(1);
+
+        return TopicHolder {
+            topics_rx: Default::default(),
+            topics_tx: Default::default(),
+            global_tx: global_tx,
+            global_map_handle: global_map_r.factory()
+        };
+    }
 }
 
 impl Topology {
@@ -44,7 +69,7 @@ impl Topology {
         serde_yaml::from_str(&yaml_contents).map_err(|e| anyhow!(e))
     }
 
-    fn build_topics(&self) -> TopicHolder {
+    fn build_topics(&self, global_tx: Sender<(String, Bytes)>, global_map_handle: ReadHandleFactory<String, Bytes>) -> TopicHolder {
         let mut topics_rx: HashMap<String, Receiver<Message>> = HashMap::new();
         let mut topics_tx: HashMap<String, Sender<Message>> = HashMap::new();
         for name in &self.named_topics {
@@ -55,6 +80,8 @@ impl Topology {
         return TopicHolder {
             topics_rx,
             topics_tx,
+            global_tx,
+            global_map_handle
         };
     }
 
@@ -73,17 +100,33 @@ impl Topology {
     }
 
     pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
-        let mut topics = self.build_topics();
+        let (mut global_map_r, mut global_map_w) = evmap::new();
+        let (global_tx, mut global_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = channel::<(String, Bytes)>(1);
+
+        let mut topics = self.build_topics(global_tx, global_map_r.factory());
         info!("Loaded topics {:?}", topics.topics_tx.keys());
+
+        let mut sources_list: Vec<Sources> = Vec::new();
+
+        // Signal handling goes here... why not? TODO: Finish wiring it up
+        let (notify_shutdown, _) = broadcast::channel(1);
+        let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
+
+
+        let _ = tokio::spawn(async move {
+            // this loop will exit and the task will complete when all channel tx handles are dropped
+            while let Some((k,v)) = global_rx.recv().await {
+                global_map_w.insert(k, v);
+                global_map_w.refresh();
+            }
+        });
+
+
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
 
-        let mut sources_list: Vec<Sources> = Vec::new();
 
-        // Signal handling goes here... why not?
-        let (notify_shutdown, _) = broadcast::channel(1);
-        let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {
@@ -197,6 +240,7 @@ mod topology_tests {
 sources:
   cassandra_prod:
     Cassandra:
+      bypass_query_processing: false
       listen_addr: "127.0.0.1:9043"
       cassandra_ks:
         system.local:
@@ -214,6 +258,7 @@ chain_config:
     - MPSCTee:
         topic_name: testtopic
     - CodecDestination:
+        bypass_result_processing: false
         remote_address: "127.0.0.1:9042"
   async_chain:
     - KafkaDestination:

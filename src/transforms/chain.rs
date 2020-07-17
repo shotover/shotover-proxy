@@ -8,6 +8,13 @@ use serde::export::Formatter;
 use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow};
 use tracing::{trace_span, instrument};
+use tokio::sync::Mutex;
+use std::sync::Arc;
+use bytes::{BytesMut, Bytes};
+use std::collections::HashMap;
+use evmap::{ReadHandle, WriteHandle, ReadHandleFactory};
+use tokio::sync::mpsc::{channel, Sender, Receiver};
+use tokio::task::JoinHandle;
 
 
 #[derive(Debug, Clone)]
@@ -91,13 +98,33 @@ pub trait Transform: Send + Sync {
 pub struct TransformChain {
     name: String,
     chain: InnerChain,
+    global_map: ReadHandleFactory<String, Bytes>,
+    global_updater: Sender<(String, Bytes)>,
+    chain_local_map: ReadHandleFactory<String, Bytes>,
+    chain_local_map_updater: Sender<(String, Bytes)>
 }
 
 impl TransformChain {
-    pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
+    pub fn new(transform_list: Vec<Transforms>, name: String, global_map_handle: ReadHandleFactory<String, Bytes>, global_updater: Sender<(String, Bytes)>) -> Self {
+        let (local_tx, mut local_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = channel::<(String, Bytes)>(1);
+        let (rh, mut wh) = evmap::new::<String, Bytes>();
+        wh.refresh();
+
+        let _ = tokio::spawn(async move {
+            // this loop will exit and the task will complete when all channel tx handles are dropped
+            while let Some((k,v)) = local_rx.recv().await {
+                wh.insert(k, v);
+                wh.refresh();
+            }
+        });
+
         TransformChain {
             name,
             chain: transform_list,
+            global_map: global_map_handle,
+            global_updater,
+            chain_local_map: rh.factory(),
+            chain_local_map_updater: local_tx
         }
     }
 

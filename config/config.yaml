@@ -20,8 +20,10 @@ sources:
 #      topic_name: testtopic
 chain_config:
   redis_chain:
+    - ResponseResolver: []
     - ConsistentScatter:
-        number_of_successes: 2
+        write_consistency: 2
+        read_consistency: 2
         route_map:
           one:
             - RedisDestination:

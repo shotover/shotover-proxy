@@ -1,9 +1,11 @@
+#![feature(box_syntax, box_patterns)]
+
 use crate::config::topology::TopicHolder;
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::lua::LuaFilterTransform;
-use crate::transforms::test_transforms::ReturnerTransform;
+use crate::transforms::test_transforms::{ReturnerTransform, RandomDelayTransform};
 use crate::transforms::mpsc::{
     AsyncMpscForwarder, AsyncMpscForwarderConfig, AsyncMpscTee, AsyncMpscTeeConfig,
 };
@@ -23,6 +25,10 @@ use std::fmt::Debug;
 use serde::export::Formatter;
 use core::fmt;
 use crate::transforms::tuneable_consistency_scatter::{TuneableConsistency, TuneableConsistencyConfig};
+use evmap::ReadHandleFactory;
+use bytes::Bytes;
+use tokio::sync::mpsc::Sender;
+use crate::transforms::response_unifier::{ResponseUnifier, ResponseUnifierConfig};
 
 pub mod chain;
 pub mod cassandra_codec_destination;
@@ -41,6 +47,8 @@ pub mod route;
 pub mod scatter;
 pub mod test_transforms;
 pub mod tuneable_consistency_scatter;
+mod response_unifier;
+
 
 #[derive(Clone)]
 pub enum Transforms {
@@ -58,8 +66,10 @@ pub enum Transforms {
     Lua(LuaFilterTransform),
     Protect(Protect),
     TuneableConsistency(TuneableConsistency),
+    ResponseUnifier(ResponseUnifier),
     // The below variants are mainly for testing
-    RepeatMessage(Box<ReturnerTransform>)
+    RepeatMessage(Box<ReturnerTransform>),
+    RandomDelay(RandomDelayTransform)
 }
 
 impl Debug for Transforms {
@@ -85,8 +95,10 @@ impl Transform for Transforms {
             Transforms::Lua(l) => l.transform(qd, t).await,
             Transforms::Protect(p) => p.transform(qd, t).await,
             Transforms::RepeatMessage(p) => p.transform(qd, t).await,
+            Transforms::RandomDelay(p) => p.transform(qd, t).await,
             Transforms::TuneableConsistency(tc) => tc.transform(qd, t).await,
-            Transforms::RedisCodecDestination(r) => r.transform(qd, t).await
+            Transforms::RedisCodecDestination(r) => r.transform(qd, t).await,
+            Transforms::ResponseUnifier(r) => r.transform(qd, t).await
         }
     }
 
@@ -106,7 +118,9 @@ impl Transform for Transforms {
             Transforms::Protect(p) => p.get_name(),
             Transforms::TuneableConsistency(t) => t.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
-            Transforms::RedisCodecDestination(r) => r.get_name()
+            Transforms::RandomDelay(p) => p.get_name(),
+            Transforms::RedisCodecDestination(r) => r.get_name(),
+            Transforms::ResponseUnifier(r) => r.get_name()
         }
     }
 }
@@ -121,6 +135,7 @@ pub enum TransformsConfig {
     MPSCForwarder(AsyncMpscForwarderConfig),
     Route(RouteConfig),
     ConsistentScatter(TuneableConsistencyConfig),
+    ResponseResolver(ResponseUnifierConfig),
     Scatter(ScatterConfig),
 }
 
@@ -139,6 +154,7 @@ impl TransformsConfig {
             TransformsConfig::Scatter(s) => s.get_source(topics).await,
             TransformsConfig::RedisDestination(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
+            TransformsConfig::ResponseResolver(r) => r.get_source(topics).await,
         }
     }
 }
@@ -152,7 +168,7 @@ pub async fn build_chain_from_config(
     for tc in transform_configs {
         transforms.push(tc.get_transforms(topics).await?)
     }
-    return Ok(TransformChain::new(transforms, name));
+    return Ok(TransformChain::new(transforms, name, topics.get_global_map_handle(),  topics.get_global_tx()));
 }
 
 #[async_trait]

@@ -172,11 +172,7 @@ impl CassandraCodec2 {
                                             Value::Timestamp(x) => {
                                                 Vec::from(x.to_rfc2822().as_bytes())
                                             }
-                                            Value::Rows(_) => unreachable!(),
-                                            Value::Document(_) => unreachable!(),
-                                            Value::List(_) => unreachable!(),
-                                            Value::Inet(_) => {unreachable!()}
-                                            Value::NamedRows(_) => {unreachable!()}
+                                            _ => unreachable!(),
                                         });
                                         return rb;
                                     })
@@ -830,6 +826,10 @@ mod cassandra_protocol_tests {
         test_frame(&mut codec, &QUERY_BYTES);
     }
 
+    fn remove_whitespace(s: &mut String) {
+        s.retain(|c| !c.is_whitespace());
+    }
+
     #[test]
     fn test_query_codec_ast_builder() {
         let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
@@ -855,7 +855,7 @@ mod cassandra_protocol_tests {
             {
                 println!("{}", query_string);
                 println!("{}", ast);
-                assert_eq!(format!("{}", query_string), format!("{}", ast));
+                assert_eq!(remove_whitespace( &mut format!("{}", query_string)), remove_whitespace(& mut format!("{}", ast)));
             }
         } else {
             panic!("Could not decode frame");

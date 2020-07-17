@@ -1,3 +1,5 @@
+#![feature(box_syntax, box_patterns)]
+
 pub mod config;
 pub mod message;
 pub mod protocols;

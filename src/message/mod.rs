@@ -105,6 +105,8 @@ pub struct QueryResponse {
     pub error: Option<Value>,
 }
 
+
+//TODO this could use a Builder
 impl QueryResponse {
     pub fn empty() -> Self {
         return QueryResponse {
@@ -124,9 +126,25 @@ impl QueryResponse {
         };
     }
 
+    pub fn just_result(result: Value) -> Self {
+        return QueryResponse {
+            matching_query: None,
+            original: RawFrame::NONE,
+            result: Some(result),
+            error: None,
+        };
+    }
+    
+    pub fn result_with_matching(matching: Option<QueryMessage>, result: Value) -> Self {
+        return QueryResponse {
+            matching_query: matching,
+            original: RawFrame::NONE,
+            result: Some(result),
+            error: None,
+        };
+    }
 
-
-    pub fn empty_with_original(original: QueryMessage) -> Self {
+    pub fn empty_with_matching(original: QueryMessage) -> Self {
         return QueryResponse {
             matching_query: Some(original),
             original: RawFrame::NONE,
@@ -231,6 +249,7 @@ pub enum Value {
     Rows(Vec<Vec<Value>>),
     NamedRows(Vec<HashMap<String, Value>>),
     Document(HashMap<String, Value>),
+    FragmentedResponese(Vec<Value>),
 }
 
 impl Into<Frame> for Value {
@@ -248,6 +267,7 @@ impl Into<Frame> for Value {
             Value::Rows(r) => {Frame::Array(r.iter().cloned().map(|v|Value::List(v).into()).collect())},
             Value::NamedRows(_) => {unimplemented!()},
             Value::Document(_) => {unimplemented!()},
+            Value::FragmentedResponese(l) => {Frame::Array(l.iter().cloned().map(|v|v.into()).collect())}
         }
     }
 }
@@ -339,6 +359,7 @@ impl Into<cassandra_proto::types::value::Bytes> for Value {
             Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),
             Value::Document(d) => cassandra_proto::types::value::Bytes::from(d),
             Value::Inet(i) => {i.into()}
+            Value::FragmentedResponese(l) => cassandra_proto::types::value::Bytes::from(l)
         };
     }
 }
@@ -365,7 +386,8 @@ impl<'p> ToPyObject for Value {
             Value::NamedRows(n) => return n.to_object(py),
             Value::List(r) => return r.to_object(py),
             Value::Document(d) => return d.to_object(py),
-            Value::Inet(i) => return i.to_string().to_object(py)
+            Value::Inet(i) => return i.to_string().to_object(py),
+            Value::FragmentedResponese(r) => return r.to_object(py),
         }
     }
 }
