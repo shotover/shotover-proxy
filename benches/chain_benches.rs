@@ -9,6 +9,9 @@ use rust_practice::config::topology::TopicHolder;
 use rust_practice::transforms::python::PythonConfig;
 use rust_practice::transforms::lua::LuaConfig;
 use rust_practice::protocols::RawFrame;
+use tokio::sync::mpsc::channel;
+use tokio::runtime;
+use tokio::runtime::Runtime;
 
 const REQUEST_STRING: &str = r###"
 qm.namespace = ["aaaaaaaaaa", "bbbbb"]
@@ -29,12 +32,11 @@ return qr
 "###;
 
 fn criterion_benchmark(c: &mut Criterion) {
-
     let transforms: Vec<Transforms> = vec![
         Transforms::Null(Null::new_without_request()),
     ];
 
-    let chain = TransformChain::new(transforms, "bench".to_string());
+    let chain = TransformChain::new_no_shared_state(transforms, "bench".to_string());
     let wrapper = Wrapper::new(Message::Query(QueryMessage {
         original: RawFrame::NONE,
         query_string: "".to_string(),
@@ -55,10 +57,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 }
 
 fn python_benchmark(c: &mut Criterion) {
-    let t_holder = TopicHolder {
-        topics_rx: Default::default(),
-        topics_tx: Default::default(),
-    };
+    let t_holder = TopicHolder::get_test_holder();
+
     let python_t = PythonConfig {
         query_filter: Some(String::from(REQUEST_STRING)),
         response_filter: Some(String::from(RESPONSE_STRING)),
@@ -80,14 +80,13 @@ fn python_benchmark(c: &mut Criterion) {
 
     let transform = rt.block_on(python_t.get_source(&t_holder)).unwrap();
 
-
     let transforms: Vec<Transforms> = vec![
         transform,
         Transforms::Null(Null::new()),
     ];
 
 
-    let pychain = TransformChain::new(transforms, String::from("test_chain"));
+    let pychain = TransformChain::new_no_shared_state(transforms, String::from("test_chain"));
 
     c.bench_with_input(BenchmarkId::new("python processing", "Empty Message"), &pywrapper,  move |b,s| {
         let mut rt = tokio::runtime::Runtime::new().unwrap();
@@ -99,10 +98,8 @@ fn python_benchmark(c: &mut Criterion) {
 
 
 fn lua_benchmark(c: &mut Criterion) {
-    let t_holder = TopicHolder {
-        topics_rx: Default::default(),
-        topics_tx: Default::default(),
-    };
+    let t_holder = TopicHolder::get_test_holder();
+
     let lua_t = LuaConfig {
         query_filter: Some(String::from(LREQUEST_STRING)),
         response_filter: Some(String::from(LRESPONSE_STRING)),
@@ -130,11 +127,9 @@ fn lua_benchmark(c: &mut Criterion) {
         Transforms::Null(Null::new()),
     ];
 
-
-    let lchain = TransformChain::new(transforms, String::from("test_chain"));
+    let lchain = TransformChain::new_no_shared_state(transforms, String::from("test_chain"));
 
     c.bench_with_input(BenchmarkId::new("lua processing", "Empty Message"), &lwrapper,  move |b,s| {
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
         b.iter(|| {
             let _ = rt.block_on(lchain.process_request(s.clone()));
         })

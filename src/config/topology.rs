@@ -50,7 +50,7 @@ impl TopicHolder {
         return self.global_map_handle.clone();
     }
 
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn get_test_holder() -> Self {
         let (mut global_map_r, mut global_map_w) = evmap::new();
         let (global_tx, mut global_rx) = channel(1);

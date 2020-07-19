@@ -7,14 +7,10 @@ use std::fmt::Display;
 use serde::export::Formatter;
 use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow};
-use tracing::{trace_span, instrument};
-use tokio::sync::Mutex;
-use std::sync::Arc;
-use bytes::{BytesMut, Bytes};
-use std::collections::HashMap;
-use evmap::{ReadHandle, WriteHandle, ReadHandleFactory};
+use tracing::{instrument};
+use bytes::{Bytes};
+use evmap::{ReadHandleFactory};
 use tokio::sync::mpsc::{channel, Sender, Receiver};
-use tokio::task::JoinHandle;
 
 
 #[derive(Debug, Clone)]
@@ -59,8 +55,11 @@ struct ResponseData {
 //TODO change Transform to maintain the InnerChain internally so we don't have to expose this
 pub type InnerChain = Vec<Transforms>;
 
+
+//TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
+//Will also mean we can have `!Send` types  in our transform chain
+
 #[async_trait]
-// pub trait Transform<'a, 'c>: Send+ Sync  {
 pub trait Transform: Send + Sync {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
 
@@ -98,13 +97,24 @@ pub trait Transform: Send + Sync {
 pub struct TransformChain {
     name: String,
     chain: InnerChain,
-    global_map: ReadHandleFactory<String, Bytes>,
-    global_updater: Sender<(String, Bytes)>,
-    chain_local_map: ReadHandleFactory<String, Bytes>,
-    chain_local_map_updater: Sender<(String, Bytes)>
+    global_map: Option<ReadHandleFactory<String, Bytes>>,
+    global_updater: Option<Sender<(String, Bytes)>>,
+    chain_local_map: Option<ReadHandleFactory<String, Bytes>>,
+    chain_local_map_updater: Option<Sender<(String, Bytes)>>
 }
 
 impl TransformChain {
+    pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
+        return TransformChain {
+            name,
+            chain: transform_list,
+            global_map: None,
+            global_updater: None,
+            chain_local_map: None,
+            chain_local_map_updater: None
+        };
+    }
+
     pub fn new(transform_list: Vec<Transforms>, name: String, global_map_handle: ReadHandleFactory<String, Bytes>, global_updater: Sender<(String, Bytes)>) -> Self {
         let (local_tx, mut local_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = channel::<(String, Bytes)>(1);
         let (rh, mut wh) = evmap::new::<String, Bytes>();
@@ -121,10 +131,10 @@ impl TransformChain {
         TransformChain {
             name,
             chain: transform_list,
-            global_map: global_map_handle,
-            global_updater,
-            chain_local_map: rh.factory(),
-            chain_local_map_updater: local_tx
+            global_map: Some(global_map_handle),
+            global_updater: Some(global_updater),
+            chain_local_map: Some(rh.factory()),
+            chain_local_map_updater: Some(local_tx)
         }
     }
 
