@@ -16,14 +16,17 @@ use tokio::time::{timeout, Timeout};
 use crate::message::{Message, QueryResponse, Value, QueryMessage, QueryType};
 use std::time::Duration;
 use tracing::debug;
+use rand::prelude::*;
+use tokio::spawn;
 
 #[derive(Clone)]
 pub struct TuneableConsistency {
     name: &'static str,
-    route_map: HashMap<String, TransformChain>,
+    route_map: Vec<TransformChain>,
     write_consistency: i32,
     read_consistency: i32,
-    timeout: u64
+    timeout: u64,
+    count: u32
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -39,19 +42,17 @@ impl TransformsFromConfig for TuneableConsistencyConfig {
         &self,
         topics: &TopicHolder,
     ) -> Result<Transforms> {
-        let mut temp: HashMap<String, TransformChain> = HashMap::new();
+        let mut temp: Vec<TransformChain> = Vec::with_capacity(self.route_map.len());
         for (key, value) in self.route_map.clone() {
-            temp.insert(
-                key.clone(),
-                build_chain_from_config(key, &value, topics).await?,
-            );
+            temp.push(build_chain_from_config(key, &value, topics).await?);
         }
         Ok(Transforms::TuneableConsistency(TuneableConsistency {
             name: "TuneableConsistency",
             route_map: temp,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
-            timeout: 500 //todo this timeout needs to be longer for the initial connection...
+            timeout: 500, //todo this timeout needs to be longer for the initial connection...
+            count: 0
         }))
     }
 }
@@ -71,14 +72,28 @@ impl Transform for TuneableConsistency {
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
 
-        //TODO does the order of the FuturesUnordered matter (e.g. does the first route get hit first).
-        let fu: FuturesUnordered<_> = sref.route_map.iter()
-            .map(|(_, c)| {
+        let mut rng = StdRng::from_entropy();
+
+        let fu: FuturesUnordered<_> = FuturesUnordered::new();
+
+        for i in 0 .. sref.route_map.len() {
+            let u = ((qd.rnd + (i as u32)) % (sref.route_map.len() as u32)) as usize;
+            if let Some(c) = sref.route_map.get(u) {
                 let mut wrapper = qd.clone();
                 wrapper.reset();
-                timeout(Duration::from_millis(sref.timeout) , c.process_request(wrapper))
-            })
-            .collect();
+                fu.push(timeout(Duration::from_millis(sref.timeout) , c.process_request(wrapper)))
+            }
+        }
+
+
+        //TODO does the order of the FuturesUnordered matter (e.g. does the first route get hit first).
+        // let fu: FuturesUnordered<_> = sref.route_map.iter().shuffle(&mut rng)
+        //     .map(|(_, c)| {
+        //         let mut wrapper = qd.clone();
+        //         wrapper.reset();
+        //         timeout(Duration::from_millis(sref.timeout) , c.process_request(wrapper))
+        //     })
+        //     .collect();
 
 
         let mut r = fu.take_while(|x| {

@@ -17,7 +17,6 @@ use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 
 use tracing::trace;
-use tracing::instrument;
 
 use crate::protocols::RawFrame;
 use crate::error::{ChainResponse};
@@ -80,7 +79,7 @@ impl SimpleRedisCache {
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    #[instrument]
+    // #[instrument]
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let message = qd.message.borrow();
 

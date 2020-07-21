@@ -6,7 +6,7 @@ use std::error::Error;
 use clap::Clap;
 use tracing::{info, Level};
 
-use rust_practice::config::topology::Topology;
+use instaproxy::config::topology::Topology;
 use tokio::runtime;
 use tracing_subscriber;
 

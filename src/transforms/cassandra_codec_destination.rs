@@ -14,7 +14,6 @@ use std::sync::Arc;
 use tokio::stream::StreamExt;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
-use tracing::instrument;
 
 
 use crate::error::{ChainResponse};
@@ -125,7 +124,7 @@ impl CodecDestination {
 
 #[async_trait]
 impl Transform for CodecDestination {
-    #[instrument]
+    // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let return_query = match &qd.message {
             Message::Query(q) => {Some(q.clone())},

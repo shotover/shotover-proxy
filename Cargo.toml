@@ -1,5 +1,5 @@
 [package]
-name = "rust-practice"
+name = "instaproxy"
 version = "0.1.0"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2018"
@@ -71,3 +71,4 @@ harness = false
 [profile.release]
 lto = "fat"
 codegen-units = 1
+debug = true

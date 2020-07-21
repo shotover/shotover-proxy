@@ -1,14 +1,14 @@
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
-use rust_practice::transforms::chain::{TransformChain, Wrapper};
-use rust_practice::transforms::{Transforms, TransformsFromConfig};
-use rust_practice::transforms::null::Null;
-use rust_practice::message::{Message, QueryMessage, QueryType};
+use instaproxy::transforms::chain::{TransformChain, Wrapper};
+use instaproxy::transforms::{Transforms, TransformsFromConfig};
+use instaproxy::transforms::null::Null;
+use instaproxy::message::{Message, QueryMessage, QueryType};
 use std::collections::HashMap;
 
-use rust_practice::config::topology::TopicHolder;
-use rust_practice::transforms::python::PythonConfig;
-use rust_practice::transforms::lua::LuaConfig;
-use rust_practice::protocols::RawFrame;
+use instaproxy::config::topology::TopicHolder;
+use instaproxy::transforms::python::PythonConfig;
+use instaproxy::transforms::lua::LuaConfig;
+use instaproxy::protocols::RawFrame;
 use tokio::sync::mpsc::channel;
 use tokio::runtime;
 use tokio::runtime::Runtime;

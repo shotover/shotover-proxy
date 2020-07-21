@@ -10,7 +10,6 @@ use crate::message::Message;
 use tokio::time;
 use tokio::time::Duration;
 use anyhow::{Result};
-use tracing::{instrument};
 
 pub struct TcpCodecListener<C>
 where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send + Sync,
@@ -128,6 +127,8 @@ impl <C> TcpCodecListener<C>
                 // Notifies the receiver half once all clones are
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
+
+                connection_clock: 0
             };
 
             // Spawn a new task to process the connections. Tokio tasks are like
@@ -213,6 +214,8 @@ where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone +
 
     /// Not used directly. Instead, when `Handler` is dropped...?
     _shutdown_complete: mpsc::Sender<()>,
+
+    connection_clock: u32
 }
 
 impl <S, C> Handler<S, C>
@@ -231,7 +234,7 @@ impl <S, C> Handler<S, C>
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    #[instrument(skip(self))]
+    // #[instrument(skip(self))]
     pub async fn run(&mut self) -> Result<()>
         where <C as Decoder>::Error: std::fmt::Debug
     {
@@ -265,7 +268,8 @@ impl <S, C> Handler<S, C>
 
             match frame {
                 Ok(message) => {
-                    if let Ok(modified_message) = self.chain.process_request(Wrapper::new(message)).await {
+                    self.connection_clock += 1;
+                    if let Ok(modified_message) = self.chain.process_request(Wrapper::new_with_rnd(message, self.connection_clock.clone())).await {
                         self.connection.send(modified_message).await?
                     } else {
                         error!("chain processing error")

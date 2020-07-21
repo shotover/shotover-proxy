@@ -24,6 +24,7 @@ pub struct Wrapper {
     pub message: Message,
     next_transform: usize,
     pub modified: bool,
+    pub rnd: u32
 }
 
 impl Display for Wrapper {
@@ -38,6 +39,16 @@ impl Wrapper {
             message: m,
             next_transform: 0,
             modified: false,
+            rnd: 0
+        }
+    }
+
+    pub fn new_with_rnd(m: Message, rnd: u32) -> Self {
+        Wrapper {
+            message: m,
+            next_transform: 0,
+            modified: false,
+            rnd
         }
     }
 
@@ -138,7 +149,7 @@ impl TransformChain {
         }
     }
 
-    #[instrument(skip(self))]
+    // #[instrument(skip(self))]
     pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse {
         // let span = trace_span!("processing request", );
         let start = Instant::now();

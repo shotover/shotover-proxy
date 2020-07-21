@@ -29,7 +29,7 @@ CREATE TABLE test.encryption (
     PRIMARY KEY ( pk, clustering)
 );
 
-INSERT INTO test.encryption (pk, clustering, value) VALUES ('pk1', 1, 'TOPSECRET');
+-- INSERT INTO test.encryption (pk, clustering, value) VALUES ('pk1', 1, 'TOPSECRET');
 
 
 INSERT INTO test.simple (pk, value) VALUES ('pk1', 'value1');

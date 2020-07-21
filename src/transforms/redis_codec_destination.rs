@@ -18,7 +18,6 @@ use futures::{FutureExt, SinkExt};
 
 use crate::error::{ChainResponse};
 use anyhow::{anyhow, Result};
-use tracing::instrument;
 
 
 
@@ -100,7 +99,7 @@ impl RedisCodecDestination {
 
 #[async_trait]
 impl Transform for RedisCodecDestination {
-    #[instrument]
+    // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let return_query = match &qd.message {
             Message::Query(q) => {Some(q.clone())},
