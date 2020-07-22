@@ -163,76 +163,6 @@ pub enum QueryType {
     PubSubMessage
 }
 
-// A protected value meets the following properties:
-// https://doc.libsodium.org/secret-key_cryptography/secretbox
-// This all relies on crypto_secretbox_easy which takes care of
-// all padding, copying and timing issues associated with crypto
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub enum Protected {
-    Plaintext(Value),
-    Ciphertext { cipher: Vec<u8>, nonce: Nonce },
-}
-
-fn encrypt(plaintext: String, sym_key: &Key) -> (Vec<u8>, Nonce) {
-    let nonce = secretbox::gen_nonce();
-    let ciphertext = secretbox::seal(plaintext.as_bytes(), &nonce, sym_key);
-    return (ciphertext, nonce);
-}
-
-fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
-    let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key).map_err(|_| anyhow!("couldn't open box"))?;
-    //todo make error handing better here - failure here indicates a authenticity failure
-    let decrypted_value: Value =
-        serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
-    return Ok(decrypted_value);
-}
-
-impl From<Protected> for Value {
-    fn from(p: Protected) -> Self {
-        match p {
-            Protected::Plaintext(_) => panic!(
-                "tried to move unencrypted value to plaintext without explicitly calling decrypt"
-            ),
-            Protected::Ciphertext { .. } => {
-                Value::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
-            }
-        }
-    }
-}
-
-impl Protected {
-    pub fn from_encrypted_bytes_value(value: &Value) -> Result<Protected> {
-        match value {
-            Value::Bytes(b) => {
-                return Ok(serde_json::from_slice(b.bytes())?);
-            }
-            _ => {
-                return Err(anyhow!("Could not get bytes to decrypt - wrong value type {:?}", value));
-            }
-        }
-    }
-
-    pub fn protect(self, sym_key: &Key) -> Protected {
-        match &self {
-            Protected::Plaintext(p) => {
-                let (cipher, nonce) = encrypt(serde_json::to_string(p).unwrap(), sym_key);
-                Protected::Ciphertext { cipher, nonce }
-            }
-            Protected::Ciphertext {
-                cipher: _,
-                nonce: _,
-            } => self,
-        }
-    }
-
-    pub fn unprotect(self, sym_key: &Key) -> Value {
-        return match self {
-            Protected::Plaintext(p) => p,
-            Protected::Ciphertext { cipher, nonce } => decrypt(cipher, nonce, sym_key).unwrap(),
-        };
-    }
-}
-
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
     NULL,
@@ -471,35 +401,36 @@ mod my_bytes {
     }
 }
 
-#[cfg(test)]
-mod crypto_tests {
-    use crate::message::{Protected, Value};
-    use rdkafka::message::ToBytes;
-    use sodiumoxide::crypto::secretbox;
-    use std::error::Error;
-
-    #[test]
-    fn test_crypto() -> Result<(), Box<dyn Error>> {
-        let key = secretbox::gen_key();
-
-        let test_value = Value::Strings(String::from("Hello I am a string to be encrypted!!!!"));
-
-        let mut protected = Protected::Plaintext(test_value.clone());
-        protected = protected.protect(&key); //TODO look at https://crates.io/crates/replace_with to make this inplace
-        let protected_value: Value = protected.into();
-
-        if let (Value::Strings(s), Value::Bytes(b)) = (test_value.clone(), protected_value.clone())
-        {
-            assert_ne!(s.as_bytes(), b.to_bytes())
-        }
-
-        //Go back the other way now
-
-        let d_protected = Protected::from_encrypted_bytes_value(&protected_value)?;
-        let d_value = d_protected.unprotect(&key);
-
-        assert_eq!(test_value, d_value);
-
-        Ok(())
-    }
-}
+// #[cfg(test)]
+// mod crypto_tests {
+//     use crate::message::{Value};
+//     use rdkafka::message::ToBytes;
+//     use sodiumoxide::crypto::secretbox;
+//     use std::error::Error;
+//     use crate::transforms::protect::Protected;
+//
+//     #[test]
+//     fn test_crypto() -> Result<(), Box<dyn Error>> {
+//         let key = secretbox::gen_key();
+//
+//         let test_value = Value::Strings(String::from("Hello I am a string to be encrypted!!!!"));
+//
+//         let mut protected = Protected::Plaintext(test_value.clone());
+//         protected = protected.protect(&key); //TODO look at https://crates.io/crates/replace_with to make this inplace
+//         let protected_value: Value = protected.into();
+//
+//         if let (Value::Strings(s), Value::Bytes(b)) = (test_value.clone(), protected_value.clone())
+//         {
+//             assert_ne!(s.as_bytes(), b.to_bytes())
+//         }
+//
+//         //Go back the other way now
+//
+//         let d_protected = Protected::from_encrypted_bytes_value(&protected_value)?;
+//         let d_value = d_protected.unprotect(&key);
+//
+//         assert_eq!(test_value, d_value);
+//
+//         Ok(())
+//     }
+// }

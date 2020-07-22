@@ -188,34 +188,36 @@ mod scatter_transform_tests {
         let ok_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform{ message: response.clone(), ok: true }));
         let err_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform{ message: response.clone(), ok: false }));
 
-        let mut two_of_three = HashMap::new();
-        two_of_three.insert("one".to_string(), TransformChain::new(vec![ok_repeat.clone()], "one".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
-        two_of_three.insert("two".to_string(), TransformChain::new(vec![ok_repeat.clone()], "two".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
-        two_of_three.insert("three".to_string(), TransformChain::new(vec![err_repeat.clone()], "three".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
+        let mut two_of_three = Vec::new();
+        two_of_three.push(TransformChain::new(vec![ok_repeat.clone()], "one".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
+        two_of_three.push(TransformChain::new(vec![ok_repeat.clone()], "two".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
+        two_of_three.push(TransformChain::new(vec![err_repeat.clone()], "three".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
 
         let tuneable_success_consistency = Transforms::TuneableConsistency(TuneableConsistency {
             name: "TuneableConsistency",
             route_map: two_of_three,
             write_consistency: 2,
             read_consistency: 2,
-            timeout: 500 //todo this timeout needs to be longer for the initial connection...
+            timeout: 500, //todo this timeout needs to be longer for the initial connection...
+            count: 0
         });
 
         let expected_ok =  Value::Strings("OK".to_string());
 
         check_ok_responses(tuneable_success_consistency.transform(wrapper.clone(), &dummy_chain).await?, &expected_ok, 2)?;
 
-        let mut one_of_three = HashMap::new();
-        one_of_three.insert("one".to_string(), TransformChain::new(vec![ok_repeat.clone()], "one".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
-        one_of_three.insert("two".to_string(), TransformChain::new(vec![err_repeat.clone()], "two".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
-        one_of_three.insert("three".to_string(), TransformChain::new(vec![err_repeat.clone()], "three".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
+        let mut one_of_three = Vec::new();
+        one_of_three.push(TransformChain::new(vec![ok_repeat.clone()], "one".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
+        one_of_three.push(TransformChain::new(vec![err_repeat.clone()], "two".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
+        one_of_three.push( TransformChain::new(vec![err_repeat.clone()], "three".to_string(), t_holder.get_global_map_handle(),  t_holder.get_global_tx()));
 
         let tuneable_fail_consistency = Transforms::TuneableConsistency(TuneableConsistency {
             name: "TuneableConsistency",
             route_map: one_of_three,
             write_consistency: 2,
             read_consistency: 2,
-            timeout: 500 //todo this timeout needs to be longer for the initial connection...
+            timeout: 500, //todo this timeout needs to be longer for the initial connection...
+            count: 0
         });
 
         check_ok_responses(tuneable_fail_consistency.transform(wrapper.clone(), &dummy_chain).await?, &expected_ok, 1)?;

@@ -1,31 +1,126 @@
+mod local_kek;
+mod aws_kms;
+mod key_management;
+
 use crate::config::topology::TopicHolder;
 use crate::message::Value;
 use crate::message::Value::Rows;
-use crate::message::{Message, Protected, QueryMessage, QueryResponse, QueryType};
+use crate::message::{Message, QueryMessage, QueryResponse, QueryType};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use core::mem;
 use serde::{Deserialize, Serialize};
 use tracing::{ warn};
-use sodiumoxide::crypto::secretbox::Key;
 use std::borrow::{Borrow};
 use std::collections::HashMap;
+use sodiumoxide::crypto::secretbox;
+use sodiumoxide::crypto::secretbox::{Key, Nonce};
+use anyhow::anyhow;
 
 use crate::error::{ChainResponse};
 use anyhow::{ Result};
+use bytes::{Bytes, Buf};
+use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 
 #[derive(Clone)]
 pub struct Protect {
     name: &'static str,
-    key: Key,
     keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
+    key_source: KeyManager,
+    // TODO this should be a function to create key_ids based on "seomthing", e.g. primary key
+    // for the moment this is just a string
+    key_id: String
+}
+
+#[derive(Clone)]
+pub struct KeyMaterial {
+    pub ciphertext_blob: Bytes,
+    pub key_id: String,
+    pub plaintext: Key
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct ProtectConfig {
-    pub key: Option<Key>,
     pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
+    pub key_manager: KeyManagerConfig
+}
+
+
+// A protected value meets the following properties:
+// https://doc.libsodium.org/secret-key_cryptography/secretbox
+// This all relies on crypto_secretbox_easy which takes care of
+// all padding, copying and timing issues associated with crypto
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub enum Protected {
+    Plaintext(Value),
+    Ciphertext { cipher: Vec<u8>, nonce: Nonce, enc_dek: Vec<u8>, kek_id: String },
+}
+
+fn encrypt(plaintext: String, sym_key: &Key) -> (Vec<u8>, Nonce) {
+    let nonce = secretbox::gen_nonce();
+    let ciphertext = secretbox::seal(plaintext.as_bytes(), &nonce, sym_key);
+    return (ciphertext, nonce);
+}
+
+fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
+    let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key).map_err(|_| anyhow!("couldn't open box"))?;
+    //todo make error handing better here - failure here indicates a authenticity failure
+    let decrypted_value: Value =
+        serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
+    return Ok(decrypted_value);
+}
+
+impl From<Protected> for Value {
+    fn from(p: Protected) -> Self {
+        match p {
+            Protected::Plaintext(_) => panic!(
+                "tried to move unencrypted value to plaintext without explicitly calling decrypt"
+            ),
+            Protected::Ciphertext { .. } => {
+                Value::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
+            }
+        }
+    }
+}
+
+impl Protected {
+    pub async fn from_encrypted_bytes_value(value: &Value) -> Result<Protected> {
+        match value {
+            Value::Bytes(b) => {
+                let protected_something: Protected = serde_json::from_slice(b.bytes())?;
+                return Ok(protected_something);
+            }
+            _ => {
+                return Err(anyhow!("Could not get bytes to decrypt - wrong value type {:?}", value));
+            }
+        }
+    }
+// TODO should this actually return self (we are sealing the plaintext value, but we don't swap out the plaintext??
+    pub async fn protect(self, key_management: &KeyManager, key_id: &String) -> Result<Protected> {
+        let sym_key = key_management.cached_get_key(key_id.clone(), None, None).await?;
+        match &self {
+            Protected::Plaintext(p) => {
+                let (cipher, nonce) = encrypt(serde_json::to_string(p).unwrap(), &sym_key.plaintext);
+                Ok(Protected::Ciphertext {
+                    cipher,
+                    nonce,
+                    enc_dek: sym_key.ciphertext_blob.to_vec(),
+                    kek_id: sym_key.key_id.clone()})
+            }
+            Protected::Ciphertext{ cipher, nonce, enc_dek, kek_id } => Ok(self),
+        }
+    }
+
+    pub async fn unprotect(self, key_management: &KeyManager, key_id: &String) -> Result<Value> {
+        return match self {
+            Protected::Plaintext(p) => Ok(p),
+            Protected::Ciphertext { cipher, nonce, enc_dek, kek_id } => {
+                let sym_key = key_management.cached_get_key(key_id.clone(), Some(enc_dek), Some(kek_id)).await?;
+                decrypt(cipher, nonce, &sym_key.plaintext)
+            },
+        };
+    }
 }
 
 #[async_trait]
@@ -34,15 +129,11 @@ impl TransformsFromConfig for ProtectConfig {
         &self,
         _: &TopicHolder,
     ) -> Result<Transforms> {
-        let key = match &self.key {
-            None => panic!("No encryption key provided"),
-            Some(k) => k.clone(),
-        };
-
         Ok(Transforms::Protect(Protect {
             name: "protect",
-            key,
             keyspace_table_columns: self.keyspace_table_columns.clone(),
+            key_source: self.key_manager.build()?,
+            key_id: "XXXXXXX".to_string()
         }))
     }
 }
@@ -65,7 +156,7 @@ impl Transform for Protect {
                                 for col in columns {
                                     if let Some(value) = query_values.get_mut(col) {
                                         let mut protected = Protected::Plaintext(value.clone());
-                                        protected = protected.protect(&self.key);
+                                        protected = protected.protect(&self.key_source, &self.key_id).await?;
                                         let _ = mem::replace(value, protected.into());
                                     }
                                 }
@@ -114,9 +205,8 @@ impl Transform for Protect {
                                 if let Some(v) = row.get_mut(*index) {
                                     if let Value::Bytes(_) = v {
                                         let protected =
-                                            Protected::from_encrypted_bytes_value(v.borrow())
-                                                .unwrap();
-                                        let new_value: Value = protected.unprotect(&self.key);
+                                            Protected::from_encrypted_bytes_value(v.borrow()).await?;
+                                        let new_value: Value = protected.unprotect(&self.key_source, &self.key_id).await?;
                                         let _ = mem::replace(v, new_value);
                                     } else {
                                         warn!("Tried decrypting non-blob column")
@@ -153,6 +243,7 @@ mod protect_transform_tests {
     use crate::protocols::RawFrame;
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use tokio::sync::mpsc::channel;
+    use crate::transforms::protect::key_management::KeyManagerConfig;
 
     #[tokio::test(threaded_scheduler)]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
@@ -177,7 +268,7 @@ mod protect_transform_tests {
         protection_map.insert("keyspace".to_string(), protection_table_map);
 
         let protect_t = ProtectConfig {
-            key: Some(secretbox::gen_key()),
+            key_manager: KeyManagerConfig::LOCAL { kek: secretbox::gen_key(), kek_id: "".to_string() },
             keyspace_table_columns: protection_map,
         };
 
@@ -242,6 +333,10 @@ mod protect_transform_tests {
                         encrypted_val.clone(),
                         Value::Strings(secret_data.clone())
                     );
+
+                    // Let's make sure the plain text is not in the encrypted value when actually formated the same way!!!!!!!
+                    let encrypted_payload = format!("encrypted: {:?}", encrypted_val.clone());
+                    assert!(!encrypted_payload.contains(format!("plaintext {:?}", serde_json::to_string(&secret_data.clone().into_bytes())?).as_str()));
 
                     let cframe = Frame::new_req_query(
                         "SELECT col1 FROM keyspace.old WHERE pk = 'pk1' AND cluster = 'cluster';".to_string(),

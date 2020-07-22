@@ -10,7 +10,7 @@ edition = "2018"
 tokio = { version = "0.2.20", features = ["full", "macros"] }
 tokio-util = { version = "0.3.1", features = ["codec"]}
 bytes = "0.5.*"
-futures = "0.3.1"
+futures = "0.3.5"
 futures-core = "0.3.1"
 chrono = {version = "0.4.10",  features = ["serde"]}
 async-trait = "0.1.30"
@@ -22,6 +22,7 @@ evmap = {version = "10.0.2", features = ["bytes"]}
 itertools = "0.9.0"
 rand = "0.7.3"
 rand_distr = "0.2.2"
+cached = "0.16.0"
 
 
 # Error handling
@@ -59,6 +60,8 @@ rlua_serde = "0.4"
 
 #Crypto
 sodiumoxide = "0.2.5"
+rusoto_kms = "0.44.0"
+rusoto_signature = "0.44.0"
 
 [dev-dependencies]
 criterion = "0.3"
@@ -72,3 +75,7 @@ harness = false
 lto = "fat"
 codegen-units = 1
 debug = true
+
+# Patches
+[patch.crates-io]
+cached = { git = "https://github.com/drwilco/cached", branch = "cloneless-result" }
