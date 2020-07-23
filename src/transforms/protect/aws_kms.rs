@@ -53,29 +53,28 @@ impl AWSKeyManagement {
     async fn fetch_key(&self, dog: DecOrGen) -> Result<KeyMaterial> {
         match dog {
             DecOrGen::Gen(g) => {
-                if let Ok(resp) = self.client.generate_data_key(g).await {
-                    return Ok(KeyMaterial{
-                        ciphertext_blob: resp.ciphertext_blob.ok_or(anyhow!("no ciphertext DEK found"))?,
-                        key_id: resp.key_id.ok_or(anyhow!("no CMK id found"))?,
-                        plaintext: Key::from_slice(
-                            &resp.plaintext
-                                .ok_or(anyhow!("no plaintext DEK provided"))?.bytes())
-                            .ok_or(anyhow!("couldn't create secretbox key from dek bytes"))?
-                    });
-                }
+                let resp = self.client.generate_data_key(g).await?;
+                return Ok(KeyMaterial{
+                    ciphertext_blob: resp.ciphertext_blob.ok_or(anyhow!("no ciphertext DEK found"))?,
+                    key_id: resp.key_id.ok_or(anyhow!("no CMK id found"))?,
+                    plaintext: Key::from_slice(
+                        &resp.plaintext
+                            .ok_or(anyhow!("no plaintext DEK provided"))?.bytes())
+                        .ok_or(anyhow!("couldn't create secretbox key from dek bytes"))?
+                });
+
             },
             DecOrGen::Dec(d) => {
-                if let Ok(resp) = self.client.decrypt(d.clone()).await {
-                    return Ok(KeyMaterial{
-                        ciphertext_blob: d.ciphertext_blob.clone(),
-                        key_id: d.key_id.ok_or(anyhow!("seemed to have lost cmk id on the way???"))?,
-                        plaintext: Key::from_slice(
-                            &resp.plaintext
-                                .ok_or(anyhow!("no plaintext DEK provided"))?.bytes())
-                            .ok_or(anyhow!("couldn't create secretbox key from dek bytes")
-                            )?
-                    });
-                }
+                let resp = self.client.decrypt(d.clone()).await?;
+                return Ok(KeyMaterial{
+                    ciphertext_blob: d.ciphertext_blob.clone(),
+                    key_id: d.key_id.ok_or(anyhow!("seemed to have lost cmk id on the way???"))?,
+                    plaintext: Key::from_slice(
+                        &resp.plaintext
+                            .ok_or(anyhow!("no plaintext DEK provided"))?.bytes())
+                        .ok_or(anyhow!("couldn't create secretbox key from dek bytes")
+                        )?
+                });
             },
         }
         Err(anyhow!("oh o"))

@@ -1,3 +1,4 @@
+mod pkcs_11;
 mod local_kek;
 mod aws_kms;
 mod key_management;
@@ -244,6 +245,7 @@ mod protect_transform_tests {
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use tokio::sync::mpsc::channel;
     use crate::transforms::protect::key_management::KeyManagerConfig;
+    use std::env;
 
     #[tokio::test(threaded_scheduler)]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
@@ -385,4 +387,157 @@ mod protect_transform_tests {
         }
     panic!()
     }
+
+    #[tokio::test(threaded_scheduler)]
+    async fn test_protect_kms_transform() -> Result<(), Box<dyn Error>> {
+        let (mut global_map_r, mut global_map_w) = evmap::new();
+        let (global_tx, mut global_rx) = channel(1);
+
+        let t_holder = TopicHolder {
+            topics_rx: Default::default(),
+            topics_tx: Default::default(),
+            global_tx: global_tx,
+            global_map_handle: global_map_r.factory()
+        };
+
+        let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
+            .iter()
+            .map(|&x| String::from(x))
+            .collect();
+
+        let mut protection_map: HashMap<String, HashMap<String, Vec<String>>> = HashMap::new();
+        let mut protection_table_map: HashMap<String, Vec<String>> = HashMap::new();
+        protection_table_map.insert("old".to_string(), vec!["col1".to_string()]);
+        protection_map.insert("keyspace".to_string(), protection_table_map);
+
+        let aws_config = KeyManagerConfig::AWS_KMS {
+            region: env::var("CMK_REGION").or::<String>(Ok("US-EAST-1".to_string()))?,
+            cmk_id: env::var("CMK_ID").or::<String>(Ok("alias/InstaProxyDev".to_string()))?,
+            encryption_context: None,
+            key_spec: None,
+            number_of_bytes: Some(32), // 256-bit (it's specified in bytes)
+            grant_tokens: None
+        };
+
+        let protect_t = ProtectConfig {
+            key_manager: aws_config,
+            keyspace_table_columns: protection_map,
+        };
+
+        let secret_data: String = String::from("I am gonna get encrypted!!");
+
+        let mut query_values: HashMap<String, Value> = HashMap::new();
+        let mut primary_key: HashMap<String, Value> = HashMap::new();
+
+        query_values.insert(String::from("pk"), Value::Strings(String::from("pk1")));
+        primary_key.insert(String::from("pk"), Value::Strings(String::from("pk1")));
+        query_values.insert(
+            String::from("cluster"),
+            Value::Strings(String::from("cluster")),
+        );
+        primary_key.insert(
+            String::from("cluster"),
+            Value::Strings(String::from("cluster")),
+        );
+        query_values.insert(String::from("col1"), Value::Strings(secret_data.clone()));
+        query_values.insert(String::from("col2"), Value::Integer(42));
+        query_values.insert(String::from("col3"), Value::Boolean(true));
+
+        let wrapper = Wrapper::new(Message::Query(QueryMessage {
+            original: RawFrame::NONE,
+            query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
+            namespace: vec![String::from("keyspace"), String::from("old")],
+            primary_key,
+            query_values: Some(query_values),
+            projection: Some(projection),
+            query_type: QueryType::Write,
+            ast: None
+        }));
+
+        let transforms: Vec<Transforms> = vec![
+            Transforms::Null(Null::new()),
+        ];
+
+        let chain = TransformChain::new(transforms, String::from("test_chain"), t_holder.get_global_map_handle(), t_holder.get_global_tx());
+
+        let t = protect_t.get_source(&t_holder).await?;
+        if let Transforms::Protect(protect) = t {
+            let mut m = protect.transform(wrapper, &chain).await?;
+                if let Message::Response(QueryResponse {
+                                             matching_query:
+                                             Some(QueryMessage {
+                                                      original: _,
+                                                      query_string: _,
+                                                      namespace: _,
+                                                      primary_key: _,
+                                                      query_values: Some(query_values),
+                                                      projection: _,
+                                                      query_type: _,
+                                                      ast: _,
+                                                  }),
+                                             original: _,
+                                             result: _,
+                                             error: _,
+                                         }) = &mut m
+                {
+                    let encrypted_val = query_values.remove("col1").unwrap();
+                    assert_ne!(
+                        encrypted_val.clone(),
+                        Value::Strings(secret_data.clone())
+                    );
+
+                    // Let's make sure the plain text is not in the encrypted value when actually formated the same way!!!!!!!
+                    let encrypted_payload = format!("encrypted: {:?}", encrypted_val.clone());
+                    assert!(!encrypted_payload.contains(format!("plaintext {:?}", serde_json::to_string(&secret_data.clone().into_bytes())?).as_str()));
+
+                    let cframe = Frame::new_req_query(
+                        "SELECT col1 FROM keyspace.old WHERE pk = 'pk1' AND cluster = 'cluster';".to_string(),
+                        Consistency::LocalQuorum,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        vec![]
+                    );
+
+                    let mut colk_map: HashMap<String, Vec<String>> = HashMap::new();
+                    colk_map.insert("keyspace.old".to_string(), vec!["pk".to_string(), "cluster".to_string()]);
+
+                    let codec = CassandraCodec2::new(colk_map, false);
+
+                    if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
+                        let returner_message = QueryResponse {
+                            matching_query: Some(qm.clone()),
+                            original: RawFrame::NONE,
+                            result: Some(Value::Rows(vec![vec![encrypted_val]])),
+                            error: None
+                        };
+
+                        let ret_transforms: Vec<Transforms> = vec![
+                            Transforms::RepeatMessage(Box::new(ReturnerTransform{
+                                message: Message::Response(returner_message.clone()),
+                                ok: true
+                            })),
+                        ];
+
+                        let ret_chain = TransformChain::new(ret_transforms, String::from("test_chain"), t_holder.get_global_map_handle(), t_holder.get_global_tx());
+
+                        let resultr = protect.transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain).await;
+                        if let Ok(Message::Response(QueryResponse{ matching_query: _, original: _, result:Some(Value::Rows(r)), error: _ })) = resultr {
+                            if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
+                                assert_eq!(s.clone(), secret_data);
+                                return Ok(())
+                            }
+                        }
+                    }
+                }
+
+        }
+        panic!()
+    }
+
+
+
 }

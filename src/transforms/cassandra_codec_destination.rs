@@ -114,7 +114,6 @@ impl CodecDestination {
                     trace!("getting response");
                     let rv = outbound_framed_codec.next().fuse().await.ok_or(anyhow!("couldnt get frame"))?;
                     trace!("resp received");
-                    return rv;
                 }
             }
         }

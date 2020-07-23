@@ -166,6 +166,7 @@ pub enum QueryType {
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
     NULL,
+    None,
     #[serde(with = "my_bytes")]
     Bytes(Bytes),
     Strings(String),
@@ -186,6 +187,7 @@ impl Into<Frame> for Value {
     fn into(self) -> Frame {
         match self {
             Value::NULL => {Frame::Null},
+            Value::None => {unimplemented!()},
             Value::Bytes(b) => {Frame::BulkString(b.to_vec())},
             Value::Strings(s) => {Frame::SimpleString(s)},
             Value::Integer(i) => {Frame::Integer(i)},
@@ -278,6 +280,7 @@ impl Into<cassandra_proto::types::value::Bytes> for Value {
     fn into(self) -> cassandra_proto::types::value::Bytes {
         return match self {
             Value::NULL => (-1).into(),
+            Value::None => cassandra_proto::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_proto::types::value::Bytes::new(b.to_vec()),
             Value::Strings(s) => s.into(),
             Value::Integer(i) => i.into(),
@@ -298,6 +301,9 @@ impl<'p> ToPyObject for Value {
     fn to_object(&self, py: Python<'_>) -> PyObject {
         match self {
             Value::NULL => {
+                return None::<u8>.to_object(py);
+            },
+            Value::None => {
                 return None::<u8>.to_object(py);
             }
             Value::Bytes(b) => {
@@ -400,37 +406,3 @@ mod my_bytes {
         Ok(Bytes::from(val))
     }
 }
-
-// #[cfg(test)]
-// mod crypto_tests {
-//     use crate::message::{Value};
-//     use rdkafka::message::ToBytes;
-//     use sodiumoxide::crypto::secretbox;
-//     use std::error::Error;
-//     use crate::transforms::protect::Protected;
-//
-//     #[test]
-//     fn test_crypto() -> Result<(), Box<dyn Error>> {
-//         let key = secretbox::gen_key();
-//
-//         let test_value = Value::Strings(String::from("Hello I am a string to be encrypted!!!!"));
-//
-//         let mut protected = Protected::Plaintext(test_value.clone());
-//         protected = protected.protect(&key); //TODO look at https://crates.io/crates/replace_with to make this inplace
-//         let protected_value: Value = protected.into();
-//
-//         if let (Value::Strings(s), Value::Bytes(b)) = (test_value.clone(), protected_value.clone())
-//         {
-//             assert_ne!(s.as_bytes(), b.to_bytes())
-//         }
-//
-//         //Go back the other way now
-//
-//         let d_protected = Protected::from_encrypted_bytes_value(&protected_value)?;
-//         let d_value = d_protected.unprotect(&key);
-//
-//         assert_eq!(test_value, d_value);
-//
-//         Ok(())
-//     }
-// }
