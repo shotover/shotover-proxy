@@ -16,47 +16,43 @@ pub struct RedisCodec {
     decode_as_response: bool
 }
 
-fn get_keys(fields: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
+fn get_keys(fields: &mut HashMap<String, Value>, keys: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
+    let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
         if let Some(Frame::BulkString(v)) = commands.pop() {
-            fields.insert(String::from_utf8(v)?, Value::None);
+            let key = String::from_utf8(v)?;
+            fields.insert(key.clone(), Value::None);
+            keys_storage.push(Value::Strings(key));
         }
     }
+    keys.insert("key".to_string(), Value::List(keys_storage));
     Ok(())
 }
 
-
-fn get_key(key: &mut Vec<String>, commands: &mut Vec<Frame>) -> Result<()> {
+fn get_key_multi_values(fields: &mut HashMap<String, Value>, keys: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
+    let mut keys_storage: Vec<Value> = vec![];
     if let Some(Frame::BulkString(v)) = commands.pop() {
-        key.push(String::from_utf8(v)?);
-    }
-    Ok(())
-}
+        let key = String::from_utf8(v)?;
+        keys_storage.push(Value::Strings(key.clone()));
 
-fn get_fields(fields: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
-    while !commands.is_empty() {
-        if let Some(Frame::BulkString(v)) = commands.pop() {
-            fields.insert(String::from_utf8(v)?, Value::None);
-        }
-    }
-    Ok(())
-}
-
-fn get_key_multi_values(fields: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
-    if let Some(Frame::BulkString(key)) = commands.pop() {
         let mut values: Vec<Value> = vec![];
         while !commands.is_empty() {
             if let Some(Frame::BulkString(value)) = commands.pop() {
                 values.push(Value::Strings(String::from_utf8(value)?));
             }
         }
-        fields.insert(String::from_utf8(key)?, Value::List(values));
+        fields.insert(key, Value::List(values));
+        keys.insert("key".to_string(), Value::List(keys_storage));
     }
     Ok(())
 }
 
-fn get_key_map(fields: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
-    if let Some(Frame::BulkString(key)) = commands.pop() {
+fn get_key_map(fields: &mut HashMap<String, Value>, keys: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
+    let mut keys_storage: Vec<Value> = vec![];
+    if let Some(Frame::BulkString(v)) = commands.pop() {
+        let key = String::from_utf8(v)?;
+        keys_storage.push(Value::Strings(key.clone()));
+
         let mut values: HashMap<String, Value> = HashMap::new();
         while !commands.is_empty() {
             if let Some(Frame::BulkString(field)) = commands.pop() {
@@ -65,19 +61,24 @@ fn get_key_map(fields: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -
                 }
             }
         }
-        fields.insert(String::from_utf8(key)?, Value::Document(values));
+        fields.insert(key.clone(), Value::Document(values));
+        keys.insert("key".to_string(), Value::List(keys_storage));
     }
     Ok(())
 }
 
-fn get_key_values(fields: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
+fn get_key_values(fields: &mut HashMap<String, Value>, keys: &mut HashMap<String, Value>, commands: &mut Vec<Frame>) -> Result<()> {
+    let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
-        if let Some(Frame::BulkString(key)) = commands.pop() {
+        if let Some(Frame::BulkString(k)) = commands.pop() {
+            let key = String::from_utf8(k)?;
+            keys_storage.push(Value::Strings(key.clone()));
             if let Some(Frame::BulkString(value)) = commands.pop() {
-                fields.insert(String::from_utf8(key)?, Value::Strings(String::from_utf8(value)?));
+                fields.insert(key, Value::Strings(String::from_utf8(value)?));
             }
         }
     }
+    keys.insert("key".to_string(), Value::List(keys_storage));
     Ok(())
 }
 
@@ -90,90 +91,108 @@ impl RedisCodec {
 
 
     fn handle_redis_array(&self, mut commands_vec: Vec<Frame>, frame: Frame) -> Result<Message> {
-        let mut key_values_map: HashMap<String, Value> = HashMap::new();
-        let key_values = &mut key_values_map;
-        let query_string = commands_vec.clone().iter().filter_map(|f| f.as_str()).map(|s| s.to_string()).collect_vec();
+         if !self.decode_as_response {
+             let mut keys_map: HashMap<String, Value> = HashMap::new();
+             let mut values_map: HashMap<String, Value> = HashMap::new();
+             let values = &mut values_map;
+             let keys = &mut keys_map;
+             let mut query_type: QueryType = QueryType::Write;
+             let mut commands_reversed: Vec<Frame> = commands_vec.iter().cloned().rev().collect_vec();
+             let query_string = commands_vec
+                 .iter()
+                 .filter_map(|f| f.as_str())
+                 .map(|s| s.to_string()).collect_vec().join(" ");
 
-        let commands = & mut commands_vec;
-        if !self.decode_as_response {
-            // This should be a command from the server
-            // Behaviour cribbed from:
-            // https://redis.io/commands and
-            // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
-            if let Some(Frame::BulkString(v)) = commands.pop() {
-                match &String::from_utf8(v).unwrap_or("invalid utf-8".to_string()).to_uppercase()[..] {
-                    "APPEND" => { get_key_values(key_values, commands)?; }                         // append a value to a key
-                    "BITCOUNT" => { get_key_values(key_values, commands)?; }                       // count set bits in a string
-                    "SET" => { get_key_values(key_values, commands)?; }                            // set value in key
-                    "SETNX" => { get_key_values(key_values, commands)?; }                          // set if not exist value in key
-                    "SETRANGE" => { get_key_values(key_values, commands)?; }                       // overwrite part of a string at key starting at the specified offset
-                    "STRLEN" => { get_keys(key_values, commands)?; }                             // get the length of the value stored in a key
-                    "MSET" => { get_key_values(key_values, commands)?; }                           // set multiple keys to multiple values
-                    "MSETNX" => { get_key_values(key_values, commands)?; }                         // set multiple keys to multiple values, only if none of the keys exist
-                    "GET" => { get_keys(key_values, commands)?; }                                // get value in key
-                    "GETRANGE" => { get_key_values(key_values, commands)?; }                       // get a substring value of a key and return its old value
-                    "MGET" => { get_keys(key_values, commands)?; }                               // get the values of all the given keys
-                    "INCR" => { get_keys(key_values, commands)?; }                               // increment value in key
-                    "INCRBY" => { get_key_values(key_values, commands)?; }                         // increment the integer value of a key by the given amount
-                    "INCRBYFLOAT" => { get_key_values(key_values, commands)?; }                    // increment the float value of a key by the given amount
-                    "DECR" => { get_keys(key_values, commands)?; }                               // decrement the integer value of key by one
-                    "DECRBY" => { get_key_values(key_values, commands)?; }                         // decrement the integer value of a key by the given number
-                    "DEL" => { get_keys(key_values, commands)?; }                                // delete key
-                    "EXPIRE" => { get_key_values(key_values, commands)?; }                         // key will be deleted in 120 seconds
-                    "TTL" => { get_keys(key_values, commands)?; }                                // returns the number of seconds until a key is deleted
-                    "RPUSH" => { get_key_multi_values(key_values, commands)?; }                   // put the new value at the end of the list
-                    "RPUSHX" => { get_key_values(key_values, commands)?; }                         // append a value to a list, only if the exists
-                    "LPUSH" => { get_key_multi_values(key_values, commands)?; }                   // put the new value at the start of the list
-                    "LRANGE" => { get_key_multi_values(key_values, commands)?; }                   // give a subset of the list
-                    "LINDEX" => { get_key_multi_values(key_values, commands)?; }                   // get an element from a list by its index
-                    "LINSERT" => { get_key_multi_values(key_values, commands)?; }                  // insert an element before or after another element in a list
-                    "LLEN" => { get_keys(key_values, commands)?; }                               // return the current length of the list
-                    "LPOP" => { get_keys(key_values, commands)?; }                               // remove the first element from the list and returns it
-                    "LSET" => { get_key_multi_values(key_values, commands)?; }                     // set the value of an element in a list by its index
-                    "LTRIM" => { get_key_multi_values(key_values, commands)?; }                    // trim a list to the specified range
-                    "RPOP" => { get_keys(key_values, commands)?; }                               // remove the last element from the list and returns it
-                    "SADD" => { get_key_multi_values(key_values, commands)?; }                     // add the given value to the set
-                    "SCARD" => { get_keys(key_values, commands)?; }                              // get the number of members in a set
-                    "SREM" => { get_key_multi_values(key_values, commands)?; }                     // remove the given value from the set
-                    "SISMEMBER" => { get_keys(key_values, commands)?; }                            // test if the given value is in the set.
-                    "SMEMBERS" => { get_keys(key_values, commands)?; }                            // return a list of all the members of this set
-                    "SUNION" => { get_keys(key_values, commands)?; }                             // combine two or more sets and returns the list of all elements
-                    "SINTER" => { get_keys(key_values, commands)?; }                             // intersect multiple sets
-                    "SMOVE" => { get_key_values(key_values, commands)?; }                          // move a member from one set to another
-                    "SPOP" => { get_key_values(key_values, commands)?; }                           // remove and return one or multiple random members from a set
-                    "ZADD" => { get_key_multi_values(key_values, commands)?; }                     // add one or more members to a sorted set, or update its score if it already exists
-                    "ZCARD" => { get_keys(key_values, commands)?; }                              // get the number of members in a sorted set
-                    "ZCOUNT" => { get_key_multi_values(key_values, commands)?; }                   // count the members in a sorted set with scores within the given values
-                    "ZINCRBY" => { get_key_multi_values(key_values, commands)?; }                  // increment the score of a member in a sorted set
-                    "ZRANGE" => { get_key_multi_values(key_values, commands)?; }                   // returns a subset of the sorted set
-                    "ZRANK" => { get_keys(key_values, commands)?; }                              // determine the index of a member in a sorted set
-                    "ZREM" => { get_key_multi_values(key_values, commands)?; }                     // remove one or more members from a sorted set
-                    "ZREMRANGEBYRANK" => { get_key_multi_values(key_values, commands)?; }          // remove all members in a sorted set within the given indexes
-                    "ZREMRANGEBYSCORE" => { get_key_multi_values(key_values, commands)?; }         // remove all members in a sorted set, by index, with scores ordered from high to low
-                    "ZSCORE" => { get_keys(key_values, commands)?; }                              // get the score associated with the given mmeber in a sorted set
-                    "ZRANGEBYSCORE" => { get_key_multi_values(key_values, commands)?; }            // return a range of members in a sorted set, by score
-                    "HGET" => { get_keys(key_values, commands)?; }                                // get the value of a hash field
-                    "HGETALL" => { get_keys(key_values, commands)?; }                            // get all the fields and values in a hash
-                    "HSET" => { get_key_map(key_values, commands)?; }                             // set the string value of a hash field
-                    "HSETNX" => { get_key_map(key_values, commands)?; }                           // set the string value of a hash field, only if the field does not exists
-                    "HMSET" => { get_key_map(key_values, commands)?; }                            // set multiple fields at once
-                    "HINCRBY" => { get_key_multi_values(key_values, commands)?; }                  // increment value in hash by X
-                    "HDEL" => { get_key_multi_values(key_values, commands)?; }                     // delete one or more hash fields
-                    "HEXISTS" => { get_key_values(key_values, commands)?; }                        // determine if a hash field exists
-                    "HKEYS" => { get_keys(key_values, commands)?; }                              // get all the fields in a hash
-                    "HLEN" => { get_keys(key_values, commands)?; }                               // get all the fields in a hash
-                    "HSTRLEN" => { get_key_values(key_values, commands)?; }                        // get the length of the value of a hash field
-                    "HVALS" => { get_keys(key_values, commands)?; }                              // get all the values in a hash
-                    "PFADD" => { get_key_multi_values(key_values, commands)?; }                    // add the specified elements to the specified HyperLogLog
-                    "PFCOUNT" => { get_keys(key_values, commands)?; }                            // return the approximated cardinality of the set(s) observed by the HyperLogLog at key's)
-                    "PFMERGE" => { get_key_multi_values(key_values, commands)?; }                  // merge N HyperLogLogs into a single one
+             let commands = & mut commands_reversed;
+
+             // This should be a command from the server
+             // Behaviour cribbed from:
+             // https://redis.io/commands and
+             // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
+             if let Some(Frame::BulkString(v)) = commands.pop() {
+                 let comm = String::from_utf8(v).unwrap_or("invalid utf-8".to_string()).to_uppercase();
+                 match comm.as_str() {
+                    "APPEND" => { get_key_values(values, keys, commands)?; }                         // append a value to a key
+                    "BITCOUNT" => { query_type = QueryType::Read; get_key_values(values, keys, commands)?; }                       // count set bits in a string
+                    "SET" => { get_key_values(values, keys, commands)?; }                            // set value in key
+                    "SETNX" => { get_key_values(values, keys, commands)?; }                          // set if not exist value in key
+                    "SETRANGE" => { get_key_values(values, keys, commands)?; }                       // overwrite part of a string at key starting at the specified offset
+                    "STRLEN" => { query_type = QueryType::Read; get_keys(values, keys, commands)?; }                             // get the length of the value stored in a key
+                    "MSET" => { query_type = QueryType::Read; get_key_values(values, keys, commands)?; }                           // set multiple keys to multiple values
+                    "MSETNX" => {query_type = QueryType::Read;  get_key_values(values, keys, commands)?; }                         // set multiple keys to multiple values, only if none of the keys exist
+                    "GET" => { get_keys(values, keys, commands)?; }                                // get value in key
+                    "GETRANGE" => { get_key_values(values, keys, commands)?; }                       // get a substring value of a key and return its old value
+                    "MGET" => { query_type = QueryType::Read; get_keys(values, keys, commands)?; }                               // get the values of all the given keys
+                    "INCR" => { get_keys(values, keys, commands)?; }                               // increment value in key
+                    "INCRBY" => { get_key_values(values, keys, commands)?; }                         // increment the integer value of a key by the given amount
+                    "INCRBYFLOAT" => { get_key_values(values, keys, commands)?; }                    // increment the float value of a key by the given amount
+                    "DECR" => { get_keys(values, keys, commands)?; }                               // decrement the integer value of key by one
+                    "DECRBY" => { get_key_values(values, keys, commands)?; }                         // decrement the integer value of a key by the given number
+                    "DEL" => { get_keys(values, keys, commands)?; }                                // delete key
+                    "EXPIRE" => { get_key_values(values, keys, commands)?; }                         // key will be deleted in 120 seconds
+                    "TTL" => { get_keys(values, keys, commands)?; }                                // returns the number of seconds until a key is deleted
+                    "RPUSH" => { get_key_multi_values(values, keys, commands)?; }                   // put the new value at the end of the list
+                    "RPUSHX" => { get_key_values(values, keys, commands)?; }                         // append a value to a list, only if the exists
+                    "LPUSH" => { get_key_multi_values(values, keys, commands)?; }                   // put the new value at the start of the list
+                    "LRANGE" => { query_type = QueryType::Read; get_key_multi_values(values, keys, commands)?; }                   // give a subset of the list
+                    "LINDEX" => { query_type = QueryType::Read; get_key_multi_values(values, keys, commands)?; }                   // get an element from a list by its index
+                    "LINSERT" => { get_key_multi_values(values, keys, commands)?; }                  // insert an element before or after another element in a list
+                    "LLEN" => {query_type = QueryType::Read; get_keys(values, keys, commands)?; }                               // return the current length of the list
+                    "LPOP" => { query_type = QueryType::ReadWrite; get_keys(values, keys, commands)?; }                               // remove the first element from the list and returns it
+                    "LSET" => { get_key_multi_values(values, keys, commands)?; }                     // set the value of an element in a list by its index
+                    "LTRIM" => { get_key_multi_values(values, keys, commands)?; }                    // trim a list to the specified range
+                    "RPOP" => {query_type = QueryType::ReadWrite;  get_keys(values, keys, commands)?; }                               // remove the last element from the list and returns it
+                    "SADD" => { get_key_multi_values(values, keys, commands)?; }                     // add the given value to the set
+                    "SCARD" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                              // get the number of members in a set
+                    "SREM" => { get_key_multi_values(values, keys, commands)?; }                     // remove the given value from the set
+                    "SISMEMBER" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                            // test if the given value is in the set.
+                    "SMEMBERS" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                            // return a list of all the members of this set
+                    "SUNION" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                             // combine two or more sets and returns the list of all elements
+                    "SINTER" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                             // intersect multiple sets
+                    "SMOVE" => {query_type = QueryType::Write;  get_key_values(values, keys, commands)?; }                          // move a member from one set to another
+                    "SPOP" => {query_type = QueryType::ReadWrite;  get_key_values(values, keys, commands)?; }                           // remove and return one or multiple random members from a set
+                    "ZADD" => { get_key_multi_values(values, keys, commands)?; }                     // add one or more members to a sorted set, or update its score if it already exists
+                    "ZCARD" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                              // get the number of members in a sorted set
+                    "ZCOUNT" => {query_type = QueryType::Read;  get_key_multi_values(values, keys, commands)?; }                   // count the members in a sorted set with scores within the given values
+                    "ZINCRBY" => { get_key_multi_values(values, keys, commands)?; }                  // increment the score of a member in a sorted set
+                    "ZRANGE" => {query_type = QueryType::Read;  get_key_multi_values(values, keys, commands)?; }                   // returns a subset of the sorted set
+                    "ZRANK" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                              // determine the index of a member in a sorted set
+                    "ZREM" => {query_type = QueryType::Read;  get_key_multi_values(values, keys, commands)?; }                     // remove one or more members from a sorted set
+                    "ZREMRANGEBYRANK" => {query_type = QueryType::Read;  get_key_multi_values(values, keys, commands)?; }          // remove all members in a sorted set within the given indexes
+                    "ZREMRANGEBYSCORE" => {query_type = QueryType::Read;  get_key_multi_values(values, keys, commands)?; }         // remove all members in a sorted set, by index, with scores ordered from high to low
+                    "ZSCORE" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                              // get the score associated with the given mmeber in a sorted set
+                    "ZRANGEBYSCORE" => { query_type = QueryType::Read; get_key_multi_values(values, keys, commands)?; }            // return a range of members in a sorted set, by score
+                    "HGET" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                                // get the value of a hash field
+                    "HGETALL" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                            // get all the fields and values in a hash
+                    "HSET" => { get_key_map(values, keys, commands)?; }                             // set the string value of a hash field
+                    "HSETNX" => { get_key_map(values, keys, commands)?; }                           // set the string value of a hash field, only if the field does not exists
+                    "HMSET" => { get_key_map(values, keys, commands)?; }                            // set multiple fields at once
+                    "HINCRBY" => { get_key_multi_values(values, keys, commands)?; }                  // increment value in hash by X
+                    "HDEL" => { get_key_multi_values(values, keys, commands)?; }                     // delete one or more hash fields
+                    "HEXISTS" => {query_type = QueryType::Read;  get_key_values(values, keys, commands)?; }                        // determine if a hash field exists
+                    "HKEYS" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                              // get all the fields in a hash
+                    "HLEN" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                               // get all the fields in a hash
+                    "HSTRLEN" => {query_type = QueryType::Read;  get_key_values(values, keys, commands)?; }                        // get the length of the value of a hash field
+                    "HVALS" => {query_type = QueryType::Read;  get_keys(values, keys, commands)?; }                              // get all the values in a hash
+                    "PFADD" => { get_key_multi_values(values, keys, commands)?; }                    // add the specified elements to the specified HyperLogLog
+                    "PFCOUNT" => {query_type = QueryType::Read; get_keys(values, keys, commands)?; }                            // return the approximated cardinality of the set(s) observed by the HyperLogLog at key's)
+                    "PFMERGE" => { get_key_multi_values(values, keys, commands)?; }                  // merge N HyperLogLogs into a single one
                     _ => {}
                 }
+                // panic!(); //TODO AST for redis messages - right now just include the Vec of commands
+                 return Ok(Message::Query(QueryMessage{
+                     original: RawFrame::Redis(frame),
+                     query_string,
+                     namespace: vec![],
+                     primary_key: keys_map,
+                     query_values: Some(values_map),
+                     projection: None,
+                     query_type,
+                     ast: None
+                 }));
             }
         }
-
-
-        unimplemented!()
+        return Ok(Message::Bypass(RawMessage{ original: RawFrame::Redis(frame)}));
     }
 
     fn handle_redis_string(&self, string: String, frame: Frame) -> Message {
@@ -193,7 +212,7 @@ impl RedisCodec {
                 query_values: None,
                 projection: None,
                 query_type: QueryType::Read,
-                ast: None,
+                ast: None, //TODO: construct an AST for redis commands (this will be a bit of a task)
             })
         };
 
@@ -382,8 +401,50 @@ mod redis_tests {
 
     #[test]
     fn test_set_codec() {
-        let mut codec = RedisCodec::new(true);
+        let mut codec = RedisCodec::new(false);
         test_frame(&mut codec, &SET_MESSAGE);
+    }
+
+    #[test]
+    fn test_get_codec() {
+        let mut codec = RedisCodec::new(false);
+        test_frame(&mut codec, &GET_MESSAGE);
+    }
+
+    #[test]
+    fn test_inc_codec() {
+        let mut codec = RedisCodec::new(false);
+        test_frame(&mut codec, &INC_MESSAGE);
+    }
+
+    #[test]
+    fn test_lpush_codec() {
+        let mut codec = RedisCodec::new(false);
+        test_frame(&mut codec, &LPUSH_MESSAGE);
+    }
+
+    #[test]
+    fn test_rpush_codec() {
+        let mut codec = RedisCodec::new(false);
+        test_frame(&mut codec, &RPUSH_MESSAGE);
+    }
+
+    #[test]
+    fn test_lpop_codec() {
+        let mut codec = RedisCodec::new(false);
+        test_frame(&mut codec, &LPOP_MESSAGE);
+    }
+
+    #[test]
+    fn test_sadd_codec() {
+        let mut codec = RedisCodec::new(false);
+        test_frame(&mut codec, &SADD_MESSAGE);
+    }
+
+    #[test]
+    fn test_hset_codec() {
+        let mut codec = RedisCodec::new(false);
+        test_frame(&mut codec, &HSET_MESSAGE);
     }
 
 
