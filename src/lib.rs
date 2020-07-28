@@ -1,4 +1,4 @@
-#![feature(box_syntax, box_patterns)]
+#![feature(box_syntax, box_patterns, async_closure)]
 
 pub mod config;
 pub mod message;

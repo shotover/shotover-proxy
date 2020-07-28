@@ -46,7 +46,7 @@ redis = {version = "0.15.1", features = ["tokio-rt-core"]}
 redis-protocol = { path = "/Users/ben/git/redis-protocol.rs" }
 #cdrs = { version = "2" }
 cassandra-proto = { path = "/Users/ben/git/cassandra-proto", features = ["v4"]}
-rdkafka = { version = "0.23", features = ["cmake-build"] }
+rdkafka = { version = "0.24", features = ["cmake-build"] }
 
 #test deps
 hex-literal = "0.2.1"
@@ -55,8 +55,10 @@ hex-literal = "0.2.1"
 pyo3 = "0.10.1"
 
 #lua
-rlua = "0.17.0"
-rlua_serde = "0.4"
+#rlua = "0.17.0"
+#rlua_serde = "0.4"
+mlua = { version = "0.4.1", features = ["async","send", "vendored","lua53"] }
+mlua_serde = { version = "0.5", features = ["lua53"] }
 
 #Crypto
 sodiumoxide = "0.2.5"
@@ -79,3 +81,4 @@ debug = true
 # Patches
 [patch.crates-io]
 cached = { git = "https://github.com/drwilco/cached", branch = "cloneless-result" }
+mlua = { path= "/Users/ben/git/mlua", features = ["async","send", "vendored","lua53"]}

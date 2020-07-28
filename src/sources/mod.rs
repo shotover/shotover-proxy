@@ -74,7 +74,7 @@ impl SourcesConfig {
 }
 
 #[async_trait]
-pub trait SourcesFromConfig: Send + Sync {
+pub trait SourcesFromConfig: Send {
     async fn get_source(
         &self,
         chain: &TransformChain,

@@ -18,6 +18,8 @@ use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigi
 use std::net::IpAddr;
 use redis_protocol::types::Frame;
 use crate::protocols::RawFrame;
+use mlua::{FromLua, UserData};
+use mlua::FromLuaMulti;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Message {
@@ -26,6 +28,12 @@ pub enum Message {
     Response(QueryResponse),
     Modified(Box<Message>) //The box is to put the nested Message on the heap so we can have a recursive Message
 }
+
+impl UserData for Message {}
+
+impl UserData for QueryMessage {}
+impl UserData for QueryResponse {}
+impl UserData for RawMessage {}
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct RawMessage {

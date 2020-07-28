@@ -11,6 +11,7 @@ use tracing::{instrument};
 use bytes::{Bytes};
 use evmap::{ReadHandleFactory};
 use tokio::sync::mpsc::{channel, Sender, Receiver};
+use mlua::UserData;
 
 
 #[derive(Debug, Clone)]
@@ -22,10 +23,13 @@ struct QueryData {
 #[derive(Debug, Clone)]
 pub struct Wrapper {
     pub message: Message,
-    next_transform: usize,
+    pub next_transform: usize,
     pub modified: bool,
     pub rnd: u32
 }
+
+impl UserData for Wrapper {}
+
 
 impl Display for Wrapper {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
@@ -38,6 +42,15 @@ impl Wrapper {
         Wrapper {
             message: m,
             next_transform: 0,
+            modified: false,
+            rnd: 0
+        }
+    }
+
+    pub fn new_with_next_transform(m: Message, next_transform: usize) -> Self {
+        Wrapper {
+            message: m,
+            next_transform,
             modified: false,
             rnd: 0
         }
@@ -71,7 +84,7 @@ pub type InnerChain = Vec<Transforms>;
 //Will also mean we can have `!Send` types  in our transform chain
 
 #[async_trait]
-pub trait Transform: Send + Sync {
+pub trait Transform: Send {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
@@ -107,12 +120,15 @@ pub trait Transform: Send + Sync {
 #[derive(Clone, Debug)]
 pub struct TransformChain {
     name: String,
-    chain: InnerChain,
+    pub chain: InnerChain,
     global_map: Option<ReadHandleFactory<String, Bytes>>,
     global_updater: Option<Sender<(String, Bytes)>>,
     chain_local_map: Option<ReadHandleFactory<String, Bytes>>,
     chain_local_map_updater: Option<Sender<(String, Bytes)>>
 }
+
+unsafe impl Send for TransformChain {}
+unsafe impl Sync for TransformChain {}
 
 impl TransformChain {
     pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
@@ -149,7 +165,6 @@ impl TransformChain {
         }
     }
 
-    // #[instrument(skip(self))]
     pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse {
         // let span = trace_span!("processing request", );
         let start = Instant::now();

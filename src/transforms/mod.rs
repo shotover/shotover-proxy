@@ -172,7 +172,7 @@ pub async fn build_chain_from_config(
 }
 
 #[async_trait]
-pub trait TransformsFromConfig: Send + Sync {
+pub trait TransformsFromConfig: Send {
     async fn get_source(
         &self,
         topics: &TopicHolder,

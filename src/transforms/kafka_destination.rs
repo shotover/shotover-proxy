@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use crate::error::{ChainResponse};
 use anyhow::{Result};
+use rdkafka::util::Timeout;
 
 #[derive(Clone)]
 pub struct KafkaDestination {
@@ -68,7 +69,7 @@ impl Transform for KafkaDestination {
                     if let Some(values) = qm.query_values {
                         let message = serde_json::to_string(&values)?;
                         let a = FutureRecord::to("test_topic").payload(&message).key(&key);
-                        self.producer.send(a, 0);
+                        self.producer.send(a, Timeout::Never);
                     }
                 }
             },

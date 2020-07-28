@@ -101,8 +101,10 @@ fn lua_benchmark(c: &mut Criterion) {
     let t_holder = TopicHolder::get_test_holder();
 
     let lua_t = LuaConfig {
-        query_filter: Some(String::from(LREQUEST_STRING)),
-        response_filter: Some(String::from(LRESPONSE_STRING)),
+        function_def: "".to_string(),
+        // query_filter: Some(String::from(LREQUEST_STRING)),
+        // response_filter: Some(String::from(LRESPONSE_STRING)),
+        function_name: "".to_string()
     };
 
     let lwrapper = Wrapper::new(Message::Query(QueryMessage {
