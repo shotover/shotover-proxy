@@ -6,12 +6,13 @@ use tokio::time::Instant;
 use std::fmt::Display;
 use serde::export::Formatter;
 use crate::error::{ChainResponse, RequestError};
-use anyhow::{anyhow};
+use anyhow::{anyhow, Result};
 use tracing::{instrument};
 use bytes::{Bytes};
 use evmap::{ReadHandleFactory};
 use tokio::sync::mpsc::{channel, Sender, Receiver};
-use mlua::UserData;
+use mlua::{UserData, Lua};
+
 
 
 #[derive(Debug, Clone)]
@@ -88,6 +89,10 @@ pub trait Transform: Send {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
+    
+    async fn prep_transform_chain(& mut self, t: &mut TransformChain) -> Result<()> {
+        Ok(())
+    }
 
     async fn instrument_transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let start = Instant::now();
@@ -117,14 +122,21 @@ pub trait Transform: Send {
 // Currently the way this chain struct is built, requires that all Transforms are thread safe and
 // implement with Sync
 
-#[derive(Clone, Debug)]
+// #[derive(Debug)]
 pub struct TransformChain {
     name: String,
     pub chain: InnerChain,
     global_map: Option<ReadHandleFactory<String, Bytes>>,
     global_updater: Option<Sender<(String, Bytes)>>,
-    chain_local_map: Option<ReadHandleFactory<String, Bytes>>,
-    chain_local_map_updater: Option<Sender<(String, Bytes)>>
+    pub chain_local_map: Option<ReadHandleFactory<String, Bytes>>,
+    pub chain_local_map_updater: Option<Sender<(String, Bytes)>>,
+    pub lua_runtime: mlua::Lua
+}
+
+impl Clone for TransformChain{
+    fn clone(&self) -> Self {
+        TransformChain::new(self.chain.clone(), self.name.clone(), self.global_map.as_ref().unwrap().clone(), self.global_updater.as_ref().unwrap().clone())
+    }
 }
 
 unsafe impl Send for TransformChain {}
@@ -138,7 +150,8 @@ impl TransformChain {
             global_map: None,
             global_updater: None,
             chain_local_map: None,
-            chain_local_map_updater: None
+            chain_local_map_updater: None,
+            lua_runtime: Lua::new()
         };
     }
 
@@ -155,14 +168,21 @@ impl TransformChain {
             }
         });
 
-        TransformChain {
+        let chain = TransformChain {
             name,
             chain: transform_list,
             global_map: Some(global_map_handle),
             global_updater: Some(global_updater),
             chain_local_map: Some(rh.factory()),
-            chain_local_map_updater: Some(local_tx)
+            chain_local_map_updater: Some(local_tx),
+            lua_runtime: Lua::new()
+        };
+        
+        for t in chain.chain.iter() {
+            
         }
+        
+        return chain;
     }
 
     pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse {
@@ -171,7 +191,9 @@ impl TransformChain {
         let result = match self.chain.get(wrapper.next_transform) {
             Some(t) => {
                 wrapper.next_transform += 1;
-                t.instrument_transform(wrapper, &self).await
+                // self.lua_runtime.async_scope(|scope| async {
+                    t.instrument_transform(wrapper, &self).await
+                // }).await;
             }
             None => {
                 return Err(anyhow!(RequestError::ChainProcessingError("No more transforms left in the chain".to_string())));

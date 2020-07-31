@@ -121,17 +121,13 @@ impl Topology {
             }
         });
 
-
-
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
-
-
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {
                 if let Some(chain) = chains.get(chain_name.as_str()) {
-                    sources_list.push(source_config.get_source(chain, &mut topics, notify_shutdown.clone(), shutdown_complete_tx.clone()).await?);
+                    sources_list.append(& mut source_config.get_source(chain, &mut topics, notify_shutdown.clone(), shutdown_complete_tx.clone()).await?);
                 } else {
                     return Err(anyhow!("Could not find the [{}] chain from \
                     the source to chain mapping definition [{:?}] in list of configured chains [{:?}].",

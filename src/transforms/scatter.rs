@@ -8,23 +8,25 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::error::ChainResponse;
-use anyhow::{Result};
+use anyhow::{anyhow, Result};
+use crate::runtimes::{ScriptHolder, ScriptConfigurator, ScriptDefinition};
+use crate::message::{QueryMessage, Message, QueryResponse, Value};
+use futures::stream::FuturesUnordered;
+use futures::{StreamExt, TryStreamExt};
 
 
 #[derive(Clone)]
 pub struct Scatter {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
-    python_script: String,
-    reduce_scatter_results: bool,
+    route_script: ScriptHolder<QueryMessage, Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct ScatterConfig {
     #[serde(rename = "config_values")]
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
-    pub python_script: String,
-    reduce_scatter_results: bool,
+    pub route_script: ScriptConfigurator,
 }
 
 #[async_trait]
@@ -43,8 +45,7 @@ impl TransformsFromConfig for ScatterConfig {
         Ok(Transforms::Scatter(Scatter {
             name: "scatter",
             route_map: temp,
-            python_script: self.python_script.clone(),
-            reduce_scatter_results: self.reduce_scatter_results,
+            route_script: self.route_script.get_script_func()?,
         }))
     }
 }
@@ -52,36 +53,45 @@ impl TransformsFromConfig for ScatterConfig {
 #[async_trait]
 impl Transform for Scatter {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        // let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
-        // let chosen_route = self.function_env.call_scatter_route(qd.clone(), routes)?;
-        // if chosen_route.len() == 1 {
-        //     return self.route_map.get(chosen_route.get(0).unwrap().as_str()).unwrap().process_request(qd).await;
-        // } else if chosen_route.len() == 0 {
-        //     return ChainResponse::Err(RequestError{})
-        // } else {
-        //     let mut fu = FuturesUnordered::new();
-        //     for ref route in &chosen_route {
-        //         let chain = self.route_map.get(route.as_str()).unwrap();
-        //         let mut wrapper = qd.clone();
-        //         wrapper.reset();
-        //         fu.push(chain.process_request(wrapper));
-        //     }
-        //     // TODO I feel like there should be some streamext function that does this for me
-        //     return if self.reduce_scatter_results {
-        //         self.function_env.call_scatter_handle_func(fu.collect().await, chosen_route)
-        //     } else {
-        //         while let Some(r) = fu.next().await {
-        //             if let Err(e) = r {
-        //                 return ChainResponse::Err(RequestError{})
-        //             }
-        //         }
-        //         ChainResponse::Ok(Message::Response(QueryResponse::empty()))
-        //     }
-        // }
-        self.call_next_transform(qd, t).await
-    }
+        if let Message::Query(qm) = &qd.message {
+            let chosen_route = self.route_script.call(&t.lua_runtime, qm.clone())?;
+            if chosen_route.len() == 1 {
+                return self.route_map.get(chosen_route.get(0).unwrap().as_str()).unwrap().process_request(qd).await;
+            } else if chosen_route.len() == 0 {
+                return ChainResponse::Err(anyhow!("no routes found"))
+            } else {
+                let mut fu = FuturesUnordered::new();
+                for ref route in &chosen_route {
+                    let chain = self.route_map.get(route.as_str()).unwrap();
+                    let mut wrapper = qd.clone();
+                    wrapper.reset();
+                    fu.push(chain.process_request(wrapper));
+                }
+                // TODO I feel like there should be some streamext function that does this for me
+
+                let mut collated_results = vec![];
+
+                while let Some(Ok(m))= fu.next().await {
+                    if let Message::Response(QueryResponse{ matching_query, original, result, error }) = &m {
+                        if let Some(res) = result {
+                            collated_results.push(res.clone());
+                        }
+                    }
+                }
+                ChainResponse::Ok(Message::Response(QueryResponse::just_result(Value::FragmentedResponese(collated_results))))
+            }
+        } else {
+            Err(anyhow!("expected a query for the scatter"))
+        }
+
+}
 
     fn get_name(&self) -> &'static str {
         self.name
+    }
+
+    async fn prep_transform_chain(& mut self, t: &mut TransformChain) -> Result<()> {
+        self.route_script.prep_lua_runtime(&t.lua_runtime)?;
+        Ok(())
     }
 }

@@ -78,8 +78,36 @@ impl Debug for Transforms {
     }
 }
 
+unsafe impl Send for Transforms {}
+unsafe impl Sync for Transforms {}
+
 #[async_trait]
 impl Transform for Transforms {
+
+    async fn prep_transform_chain(& mut self, t: &mut TransformChain) -> Result<()> {
+        match self {
+            Transforms::CodecDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisCodecDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::KafkaDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
+            Transforms::MPSCTee(a) => a.prep_transform_chain(t).await,
+            Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
+            Transforms::Route(a) => a.prep_transform_chain(t).await,
+            Transforms::Scatter(a) => a.prep_transform_chain(t).await,
+            Transforms::Python(a) => a.prep_transform_chain(t).await,
+            Transforms::Printer(a) => a.prep_transform_chain(t).await,
+            Transforms::Null(a) => a.prep_transform_chain(t).await,
+            Transforms::Lua(a) => a.prep_transform_chain(t).await,
+            Transforms::Protect(a) => a.prep_transform_chain(t).await,
+            Transforms::TuneableConsistency(a) => a.prep_transform_chain(t).await,
+            Transforms::ResponseUnifier(a) => a.prep_transform_chain(t).await,
+            Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
+            Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
+        }
+    }
+    
+    
+    
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         match self {
             Transforms::CodecDestination(c) => c.transform(qd, t).await,

@@ -27,15 +27,15 @@ impl SourcesFromConfig for AsyncMpscConfig {
         topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
-    ) -> Result<Sources> {
+    ) -> Result<Vec<Sources>> {
         if let Some(rx) = topics.get_rx(&self.topic_name) {
-            return Ok(Sources::Mpsc(AsyncMpsc::new(
+            return Ok(vec![Sources::Mpsc(AsyncMpsc::new(
                 chain.clone(),
                 rx,
                 &self.topic_name,
                 Shutdown::new(notify_shutdown.subscribe()),
                 shutdown_complete_tx,
-            )));
+            ))]);
         }
         Err(anyhow!(
                 "Could not find the topic {} in [{:#?}]",

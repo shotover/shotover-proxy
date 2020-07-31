@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     //todo: https://github.com/tokio-rs/mini-redis/blob/master/src/server.rs
 
-    return rt.block_on(async {
+    return rt.block_on(async move {
         if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(configuration.config_file)?
             .run_chains()
             .await

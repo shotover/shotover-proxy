@@ -64,7 +64,7 @@ impl SourcesConfig {
         topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
-    ) -> Result<Sources> {
+    ) -> Result<Vec<Sources>> {
         match self {
             SourcesConfig::Cassandra(c) => c.get_source(chain, topics, notify_shutdown, shutdown_complete_tx).await,
             SourcesConfig::Mpsc(m) => m.get_source(chain, topics, notify_shutdown,  shutdown_complete_tx).await,
@@ -81,7 +81,7 @@ pub trait SourcesFromConfig: Send {
         topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
-    ) -> Result<Sources>;
+    ) -> Result<Vec<Sources>>;
 
 
 }

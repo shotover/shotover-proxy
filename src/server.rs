@@ -270,7 +270,9 @@ impl <S, C> Handler<S, C>
                 Ok(message) => {
                     self.connection_clock += 1;
                     if let Ok(modified_message) = self.chain.process_request(Wrapper::new_with_rnd(message, self.connection_clock.clone())).await {
-                        self.connection.send(modified_message).await?
+                        let r = self.connection.send(modified_message).await?;
+                        let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
+                        r
                     } else {
                         error!("chain processing error")
                     }

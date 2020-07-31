@@ -21,7 +21,7 @@ use crate::protocols::RawFrame;
 use mlua::{FromLua, UserData};
 use mlua::FromLuaMulti;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     Bypass(RawMessage),
     Query(QueryMessage),
@@ -35,7 +35,7 @@ impl UserData for QueryMessage {}
 impl UserData for QueryResponse {}
 impl UserData for RawMessage {}
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessage {
     pub original: RawFrame,
 }

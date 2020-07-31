@@ -7,16 +7,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ChainResponse};
 use anyhow::{anyhow, Result};
-use mlua::{Lua, MultiValue};
+use mlua::{Lua, MultiValue, Function, FromLuaMulti, ToLuaMulti, ToLua, FromLua, Nil};
+use mlua::impl_tuple;
+use mlua::push_reverse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use std::borrow::Borrow;
 
 
 pub struct LuaFilterTransform {
     name: &'static str,
     pub function_def: String,
     pub function_name: String,
-    pub lua: Arc<Mutex<Lua>>,
+    pub slua: &'static Lua,
+    // pub actual_function: Function,
 }
 
 impl Clone for LuaFilterTransform {
@@ -26,10 +30,15 @@ impl Clone for LuaFilterTransform {
             name: self.name,
             function_def: self.function_def.clone(),
             function_name: self.function_name.clone(),
-            lua: Arc::new(Mutex::new(Lua::new())),
+            slua: Lua::new().into_static(),
+            // actual_function
         };
     }
 }
+
+// TODO: Verify we can actually do this (mlua seems to think so)
+unsafe impl Send for LuaFilterTransform {}
+unsafe impl Sync for LuaFilterTransform {}
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct LuaConfig {
@@ -43,12 +52,11 @@ impl TransformsFromConfig for LuaConfig {
         &self,
         _: &TopicHolder,
     ) -> Result<Transforms> {
-        let foo = Lua::new();
         let mut lua_t = LuaFilterTransform {
             name: "lua",
             function_def: self.function_def.clone(),
             function_name: self.function_name.clone(),
-            lua: Arc::new(Mutex::new(Lua::new())),
+            slua: Lua::new().into_static(),
         };
         lua_t.build_lua();
         Ok(Transforms::Lua(lua_t))
@@ -72,13 +80,15 @@ async fn wrapped_next_transform(lua: &'static mlua::Lua, (mut qd, transforms): (
     };
 }
 
+type SomeRef = Arc<TransformChain>;
+
+
+
 impl LuaFilterTransform {
     fn build_lua(&mut self) -> Result<()> {
-        // let lua = self.lua.try_lock().map_err(|e| anyhow!("couldn't get lock for lua runtime"))?;
-        // let next_lua_func = lua.create_async_function(wrapped_next_transform).unwrap();
-        // lua.globals().set("call_next_transform", next_lua_func).map_err(|e| anyhow!("couldn't set next_transform function in globals"))?;
-        // let user_func = lua.load(self.function_def.as_str()).into_function().map_err(|e| anyhow!("couldn't build user function for wrapped transform"))?;
-        // lua.globals().set(self.function_name.clone(), user_func).map_err(|e| anyhow!("couldn't set user function in globals"))?;
+
+
+
         Ok(())
     }
 }
@@ -101,32 +111,31 @@ async fn temp_transform(mut qd: Wrapper,
 impl Transform for LuaFilterTransform {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let chain_count = qd.next_transform.clone();
-        let lua = self.lua.lock().await;
-        if let Message::Query(qm) = &mut qd.message {
-            let globals = lua.globals();
-            globals.set("qm", mlua_serde::to_value(&lua, qm.clone()).unwrap()).unwrap();
-            let result = lua.scope(|scope|{
+        let globals = self.slua.globals();
+        return if let Message::Query(qm) = &mut qd.message {
+            let qm_v = mlua_serde::to_value(&self.slua, qm.clone()).unwrap();
+            let result = self.slua.scope(|scope| {
                 let spawn_func = scope.create_function(|lua: &Lua, qm: QueryMessage| -> mlua::Result<Message> {
+                    //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
                     let result = tokio::runtime::Handle::current().block_on(async move {
                         let w = Wrapper::new_with_next_transform(Message::Query(qm), chain_count);
-                        return Ok(temp_transform( w, t).await.map_err(|e|{mlua::Error::RuntimeError("help!!@! - - TODO implement From anyhow to mlua errors".to_string())})?);
+                        return Ok(temp_transform(w, t).await.map_err(|e| { mlua::Error::RuntimeError("help!!@! - - TODO implement From anyhow to mlua errors".to_string()) })?);
                     });
                     return result;
                 })?;
-                globals.set("call_next_transform", spawn_func);
-
-                let func = scope.create_function( |lua: &Lua, qm: QueryMessage| -> mlua::Result<Message> {
+                globals.set("call_next_transform", spawn_func)?;
+                let func = scope.create_function(|lua: &Lua, qm: QueryMessage| -> mlua::Result<Message> {
                     let value = lua.load(self.function_name.clone().as_str()).set_name("fnc")?.eval()?;
                     let result: QueryResponse =
                         mlua_serde::from_value(value)?;
                     return Ok(Message::Response(result));
                 })?;
-                // This is safe as the message lasts for more than the life
-                return func.call(MultiValue::new());
+                return func.call(qm_v);
             });
-            return result.clone().map_err(|e| anyhow!("uh oh lua broke")).map(|x| Message::Response(x));
+            result.clone().map_err(|e| anyhow!("uh oh lua broke")).map(|x| Message::Response(x))
+        } else {
+            Err(anyhow!("expected a request"))
         }
-        Err(anyhow!("Couldn't get lua vm lock"))
     }
 
     fn get_name(&self) -> &'static str {
@@ -145,7 +154,6 @@ mod lua_transform_tests {
     use crate::transforms::{Transforms, TransformsFromConfig};
     use std::error::Error;
     use crate::protocols::RawFrame;
-    use tokio::sync::mpsc::channel;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}
