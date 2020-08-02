@@ -3,8 +3,6 @@ use std::marker::PhantomData;
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 
-
-pub mod lua;
 pub mod python;
 
 /*
@@ -17,6 +15,7 @@ Or get a ref to the Lua VM, maybe?
 pub enum Script {
     Python,
     Lua {function_name: String, function_def: String },
+    Wasm
 }
 
 impl Clone for Script {
@@ -26,6 +25,7 @@ impl Clone for Script {
             Script::Lua {function_name , function_def} => {
                 Script::new_lua(function_name.clone(), function_def.clone()).unwrap()
             },
+            Script::Wasm => {}
         }
     }
 }
@@ -91,6 +91,7 @@ impl <A, R> ScriptHolder<A, R> {
             Script::Lua { function_name, function_def } => {
                 lua.load(function_def.as_str()).exec()?;
             },
+            Script::Wasm => {}
         }
         Ok(())
     }
@@ -114,6 +115,7 @@ impl <A, R> ScriptDefinition<A,R> for ScriptHolder<A,R> {
                 let result: Self::Return = mlua_serde::from_value(foo).unwrap();
                 return Ok(result);
             },
+            Script::Wasm => {unimplemented!()}
         }
     }
 }

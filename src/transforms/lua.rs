@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ChainResponse};
 use anyhow::{anyhow, Result};
 use mlua::{Lua, MultiValue, Function, FromLuaMulti, ToLuaMulti, ToLua, FromLua, Nil};
-use mlua::impl_tuple;
-use mlua::push_reverse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::borrow::Borrow;
@@ -20,7 +18,6 @@ pub struct LuaFilterTransform {
     pub function_def: String,
     pub function_name: String,
     pub slua: &'static Lua,
-    // pub actual_function: Function,
 }
 
 impl Clone for LuaFilterTransform {
@@ -31,7 +28,6 @@ impl Clone for LuaFilterTransform {
             function_def: self.function_def.clone(),
             function_name: self.function_name.clone(),
             slua: Lua::new().into_static(),
-            // actual_function
         };
     }
 }
