@@ -712,7 +712,6 @@ impl Encoder<Message> for CassandraCodec2 {
                 }
             }
         }
-        Err(anyhow!("Could not process and send Cassandra Frame"))
     }
 }
 

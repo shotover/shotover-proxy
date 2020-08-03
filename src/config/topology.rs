@@ -52,8 +52,8 @@ impl TopicHolder {
 
     // #[cfg(test)]
     pub fn get_test_holder() -> Self {
-        let (mut global_map_r, mut global_map_w) = evmap::new();
-        let (global_tx, mut global_rx) = channel(1);
+        let (mut global_map_r, _global_map_w) = evmap::new();
+        let (global_tx,  _global_rx) = channel(1);
 
         return TopicHolder {
             topics_rx: Default::default(),
@@ -100,7 +100,7 @@ impl Topology {
     }
 
     pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
-        let (mut global_map_r, mut global_map_w) = evmap::new();
+        let (global_map_r, mut global_map_w) = evmap::new();
         let (global_tx, mut global_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = channel::<(String, Bytes)>(1);
 
         let mut topics = self.build_topics(global_tx, global_map_r.factory());

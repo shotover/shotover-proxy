@@ -69,7 +69,7 @@ impl Transform for KafkaDestination {
                     if let Some(values) = qm.query_values {
                         let message = serde_json::to_string(&values)?;
                         let a = FutureRecord::to("test_topic").payload(&message).key(&key);
-                        self.producer.send(a, Timeout::Never);
+                        self.producer.send(a, Timeout::Never).await;
                     }
                 }
             },

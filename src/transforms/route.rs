@@ -52,7 +52,7 @@ impl Transform for Route {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         if let Message::Query(qm) = &qd.message {
             let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
-            let mut chosen_route = self.route_script.call(&t.lua_runtime, (qm.clone(), routes))?;
+            let chosen_route = self.route_script.call(&t.lua_runtime, (qm.clone(), routes))?;
             qd.reset();
             return self.route_map.get(chosen_route.as_str()).unwrap().process_request(qd).await;
         }

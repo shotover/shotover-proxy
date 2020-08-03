@@ -12,7 +12,6 @@ use crate::transforms::mpsc::{
 use crate::transforms::null::Null;
 use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
-use crate::transforms::python::PythonFilterTransform;
 use crate::transforms::redis_cache::{RedisConfig, SimpleRedisCache};
 use crate::transforms::route::{Route, RouteConfig};
 use crate::transforms::scatter::{Scatter, ScatterConfig};
@@ -25,9 +24,6 @@ use std::fmt::Debug;
 use serde::export::Formatter;
 use core::fmt;
 use crate::transforms::tuneable_consistency_scatter::{TuneableConsistency, TuneableConsistencyConfig};
-use evmap::ReadHandleFactory;
-use bytes::Bytes;
-use tokio::sync::mpsc::Sender;
 use crate::transforms::response_unifier::{ResponseUnifier, ResponseUnifierConfig};
 
 pub mod chain;
@@ -40,7 +36,6 @@ pub mod noop;
 pub mod null;
 pub mod printer;
 pub mod protect;
-pub mod python;
 pub mod query;
 pub mod redis_cache;
 pub mod route;
@@ -60,7 +55,6 @@ pub enum Transforms {
     MPSCForwarder(AsyncMpscForwarder),
     Route(Route),
     Scatter(Scatter),
-    Python(PythonFilterTransform),
     Printer(Printer),
     Null(Null),
     Lua(LuaFilterTransform),
@@ -94,7 +88,6 @@ impl Transform for Transforms {
             Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
             Transforms::Route(a) => a.prep_transform_chain(t).await,
             Transforms::Scatter(a) => a.prep_transform_chain(t).await,
-            Transforms::Python(a) => a.prep_transform_chain(t).await,
             Transforms::Printer(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
             Transforms::Lua(a) => a.prep_transform_chain(t).await,
@@ -117,7 +110,6 @@ impl Transform for Transforms {
             Transforms::MPSCForwarder(m) => m.transform(qd, t).await,
             Transforms::Route(r) => r.transform(qd, t).await,
             Transforms::Scatter(s) => s.transform(qd, t).await,
-            Transforms::Python(r) => r.transform(qd, t).await,
             Transforms::Printer(p) => p.transform(qd, t).await,
             Transforms::Null(n) => n.transform(qd, t).await,
             Transforms::Lua(l) => l.transform(qd, t).await,
@@ -139,7 +131,6 @@ impl Transform for Transforms {
             Transforms::MPSCForwarder(m) => m.get_name(),
             Transforms::Route(r) => r.get_name(),
             Transforms::Scatter(s) => s.get_name(),
-            Transforms::Python(r) => r.get_name(),
             Transforms::Printer(p) => p.get_name(),
             Transforms::Null(n) => n.get_name(),
             Transforms::Lua(l) => l.get_name(),

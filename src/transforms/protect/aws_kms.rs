@@ -1,5 +1,5 @@
 use bytes::{Bytes, Buf};
-use rusoto_kms::{KmsClient, Kms, GenerateDataKeyRequest, GenerateDataKeyResponse, DecryptRequest};
+use rusoto_kms::{KmsClient, Kms, GenerateDataKeyRequest, DecryptRequest};
 use std::collections::HashMap;
 use crate::transforms::protect::KeyMaterial;
 use sodiumoxide::crypto::secretbox::Key;
@@ -77,6 +77,5 @@ impl AWSKeyManagement {
                 });
             },
         }
-        Err(anyhow!("oh o"))
     }
 }

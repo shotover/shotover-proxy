@@ -97,7 +97,7 @@ impl CodecDestination {
 
                     trace!("getting response");
                     if let Some(o) = outbound_framed_codec.next().fuse().await {
-                        if let Ok(resp) = &o {
+                        if let Ok(_resp) = &o {
                             trace!("resp received");
                             mg.replace(outbound_framed_codec);
                             drop(mg);

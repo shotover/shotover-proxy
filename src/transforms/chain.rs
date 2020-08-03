@@ -7,7 +7,6 @@ use std::fmt::Display;
 use serde::export::Formatter;
 use crate::error::{ChainResponse, RequestError};
 use anyhow::{anyhow, Result};
-use tracing::{instrument};
 use bytes::{Bytes};
 use evmap::{ReadHandleFactory};
 use tokio::sync::mpsc::{channel, Sender, Receiver};
@@ -90,7 +89,7 @@ pub trait Transform: Send {
 
     fn get_name(&self) -> &'static str;
     
-    async fn prep_transform_chain(& mut self, t: &mut TransformChain) -> Result<()> {
+    async fn prep_transform_chain(& mut self, _t: &mut TransformChain) -> Result<()> {
         Ok(())
     }
 

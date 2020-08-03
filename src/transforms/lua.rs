@@ -7,10 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ChainResponse};
 use anyhow::{anyhow, Result};
-use mlua::{Lua, MultiValue, Function, FromLuaMulti, ToLuaMulti, ToLua, FromLua, Nil};
+use mlua::{Lua};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::borrow::Borrow;
 
 
 pub struct LuaFilterTransform {
@@ -54,41 +53,10 @@ impl TransformsFromConfig for LuaConfig {
             function_name: self.function_name.clone(),
             slua: Lua::new().into_static(),
         };
-        lua_t.build_lua();
+        // lua_t.build_lua();
         Ok(Transforms::Lua(lua_t))
     }
 }
-
-async fn wrapped_next_transform(lua: &'static mlua::Lua, (mut qd, transforms): (Wrapper, &TransformChain)) -> mlua::Result<QueryResponse> {
-    let next = qd.next_transform;
-    qd.next_transform += 1;
-    return match transforms.chain.get(next) {
-        Some(t) => {
-            if let Message::Response(qr) = t.instrument_transform(qd, transforms).await.map_err(|e|{mlua::Error::RuntimeError("help!!@! - - TODO implement From anyhow to mlua errors".to_string())})? {
-                mlua::Result::Ok(qr)
-            } else {
-                mlua::Result::Err(mlua::Error::RuntimeError("No more chains - TODO implement From anyhow to mlua errors".to_string()))
-            }
-        },
-        None => {
-            mlua::Result::Err(mlua::Error::RuntimeError("No more chains - TODO implement From anyhow to mlua errors".to_string()))
-        },
-    };
-}
-
-type SomeRef = Arc<TransformChain>;
-
-
-
-impl LuaFilterTransform {
-    fn build_lua(&mut self) -> Result<()> {
-
-
-
-        Ok(())
-    }
-}
-
 
 async fn temp_transform(mut qd: Wrapper,
                         transforms: &TransformChain) -> ChainResponse {
@@ -115,12 +83,12 @@ impl Transform for LuaFilterTransform {
                     //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
                     let result = tokio::runtime::Handle::current().block_on(async move {
                         let w = Wrapper::new_with_next_transform(Message::Query(qm), chain_count);
-                        return Ok(temp_transform(w, t).await.map_err(|e| { mlua::Error::RuntimeError("help!!@! - - TODO implement From anyhow to mlua errors".to_string()) })?);
+                        return Ok(temp_transform(w, t).await.map_err(|_e| { mlua::Error::RuntimeError("help!!@! - - TODO implement From anyhow to mlua errors".to_string()) })?);
                     });
                     return result;
                 })?;
                 globals.set("call_next_transform", spawn_func)?;
-                let func = scope.create_function(|lua: &Lua, qm: QueryMessage| -> mlua::Result<Message> {
+                let func = scope.create_function(|lua: &Lua, _qm: QueryMessage| -> mlua::Result<Message> {
                     let value = lua.load(self.function_name.clone().as_str()).set_name("fnc")?.eval()?;
                     let result: QueryResponse =
                         mlua_serde::from_value(value)?;

@@ -11,13 +11,12 @@ use crate::error::ChainResponse;
 use anyhow::{Result};
 use futures::stream::FuturesUnordered;
 use tokio::stream::StreamExt;
-use tokio::time::{timeout, Timeout};
+use tokio::time::{timeout};
 
 use crate::message::{Message, QueryResponse, Value, QueryMessage, QueryType};
 use std::time::Duration;
 use tracing::debug;
 use rand::prelude::*;
-use tokio::spawn;
 
 #[derive(Clone)]
 pub struct TuneableConsistency {
@@ -59,9 +58,9 @@ impl TransformsFromConfig for TuneableConsistencyConfig {
 
 #[async_trait]
 impl Transform for TuneableConsistency {
-    async fn transform(&self, mut qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let sref = self;
-        let required_successes = if let Message::Query(QueryMessage { original, query_string, namespace, primary_key, query_values, projection, query_type, ast }) = &qd.message {
+        let required_successes = if let Message::Query(QueryMessage { original: _, query_string: _, namespace: _, primary_key: _, query_values: _, projection: _, query_type, ast: _ }) = &qd.message {
             match query_type {
                 QueryType::Read => self.read_consistency,
                 _ => self.write_consistency,
@@ -71,8 +70,6 @@ impl Transform for TuneableConsistency {
         };
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
-
-        let mut rng = StdRng::from_entropy();
 
         let fu: FuturesUnordered<_> = FuturesUnordered::new();
 
@@ -97,7 +94,7 @@ impl Transform for TuneableConsistency {
 
 
         let mut r = fu.take_while(|x| {
-            if let Ok(Ok(x)) = x {
+            if let Ok(Ok(_x)) = x {
                 successes += 1;
             }
             successes < required_successes
@@ -105,7 +102,7 @@ impl Transform for TuneableConsistency {
         let mut collated_results = vec![];
 
         while let Some(Ok(Ok(m)))= r.next().await {
-            if let Message::Response(QueryResponse{ matching_query, original, result, error }) = &m {
+            if let Message::Response(QueryResponse{ matching_query: _, original: _, result, error: _ }) = &m {
                 if let Some(res) = result {
                     collated_results.push(res.clone());
                 }

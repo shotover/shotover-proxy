@@ -34,6 +34,7 @@ sqlparser = "= 0.5.0"
 serde = { version = "1.0.111", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.8"
+bincode = "1.3.1"
 
 #Observability
 metrics = "0.12.1"
@@ -55,10 +56,11 @@ hex-literal = "0.2.1"
 pyo3 = "0.10.1"
 
 #lua
-#rlua = "0.17.0"
-#rlua_serde = "0.4"
 mlua = { version = "0.4.1", features = ["async","send", "vendored","lua53"] }
 mlua_serde = { version = "0.5", features = ["lua53"] }
+
+#wasm
+wasmer-runtime = "0.13.1"
 
 #Crypto
 sodiumoxide = "0.2.5"

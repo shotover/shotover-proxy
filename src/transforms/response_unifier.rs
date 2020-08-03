@@ -1,4 +1,3 @@
-#![feature(box_syntax, box_patterns)]
 
 use serde::{Deserialize, Serialize};
 use crate::transforms::{TransformsFromConfig, Transforms};
@@ -45,7 +44,7 @@ impl ResponseUnifier {
 
 #[async_trait]
 impl Transform for ResponseUnifier {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let mut chain_response = self.call_next_transform(qd, t).await?;
         match &mut chain_response {
             Message::Modified(box Message::Response(qr)) => self.resolve_fragments(qr),

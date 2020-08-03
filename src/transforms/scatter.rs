@@ -12,7 +12,7 @@ use anyhow::{anyhow, Result};
 use crate::runtimes::{ScriptHolder, ScriptConfigurator, ScriptDefinition};
 use crate::message::{QueryMessage, Message, QueryResponse, Value};
 use futures::stream::FuturesUnordered;
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt};
 
 
 #[derive(Clone)]
@@ -72,7 +72,7 @@ impl Transform for Scatter {
                 let mut collated_results = vec![];
 
                 while let Some(Ok(m))= fu.next().await {
-                    if let Message::Response(QueryResponse{ matching_query, original, result, error }) = &m {
+                    if let Message::Response(QueryResponse{ matching_query: _, original: _, result, error:_ }) = &m {
                         if let Some(res) = result {
                             collated_results.push(res.clone());
                         }

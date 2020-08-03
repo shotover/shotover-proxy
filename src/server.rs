@@ -1,5 +1,5 @@
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Semaphore, broadcast, mpsc, Mutex};
+use tokio::sync::{Semaphore, broadcast, mpsc};
 use std::sync::Arc;
 use crate::transforms::chain::{TransformChain, Wrapper};
 use tokio_util::codec::{Framed, Decoder, Encoder};
@@ -7,9 +7,9 @@ use tracing::{error, info, trace};
 use tokio::prelude::{AsyncRead, AsyncWrite};
 use futures::{StreamExt, FutureExt, SinkExt};
 use crate::message::Message;
-use tokio::{time, task};
+use tokio::{time};
 use tokio::time::Duration;
-use anyhow::{anyhow, Result};
+use anyhow::{Result};
 
 pub struct TcpCodecListener<C>
 where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
