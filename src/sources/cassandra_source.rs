@@ -32,15 +32,15 @@ impl SourcesFromConfig for CassandraConfig {
         _topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
-    ) -> Result<Sources> {
-        Ok(Sources::Cassandra(CassandraSource::new(
+    ) -> Result<Vec<Sources>> {
+        Ok(vec![Sources::Cassandra(CassandraSource::new(
             chain,
             self.listen_addr.clone(),
             self.cassandra_ks.clone(),
             notify_shutdown,
             shutdown_complete_tx,
             self.bypass_query_processing
-        ).await))
+        ).await)])
     }
 }
 

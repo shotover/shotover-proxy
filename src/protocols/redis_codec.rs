@@ -8,7 +8,6 @@ use anyhow::{anyhow, Result};
 use std::borrow::{BorrowMut};
 use tracing::info;
 use itertools::Itertools;
-use futures::StreamExt;
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
@@ -90,7 +89,7 @@ impl RedisCodec {
     }
 
 
-    fn handle_redis_array(&self, mut commands_vec: Vec<Frame>, frame: Frame) -> Result<Message> {
+    fn handle_redis_array(&self, commands_vec: Vec<Frame>, frame: Frame) -> Result<Message> {
          if !self.decode_as_response {
              let mut keys_map: HashMap<String, Value> = HashMap::new();
              let mut values_map: HashMap<String, Value> = HashMap::new();

@@ -7,12 +7,12 @@ use tracing::{error, info, trace};
 use tokio::prelude::{AsyncRead, AsyncWrite};
 use futures::{StreamExt, FutureExt, SinkExt};
 use crate::message::Message;
-use tokio::time;
+use tokio::{time};
 use tokio::time::Duration;
 use anyhow::{Result};
 
 pub struct TcpCodecListener<C>
-where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send + Sync,
+where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
 {
     /// Shared database handle.
     ///
@@ -65,7 +65,7 @@ where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone +
 
 
 impl <C> TcpCodecListener<C>
-    where C: 'static + Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send + Sync,
+    where C: 'static + Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
 
 {
     /// Run the server
@@ -177,7 +177,7 @@ impl <C> TcpCodecListener<C>
 
 
 pub struct Handler<S, C>
-where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send + Sync,
+where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
 {
     /// Shared source handle.
     ///
@@ -219,7 +219,7 @@ where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone +
 }
 
 impl <S, C> Handler<S, C>
-    where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send + Sync,
+    where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
           S: AsyncRead + AsyncWrite + Unpin,
 {
     /// Process a single connection.
@@ -270,7 +270,9 @@ impl <S, C> Handler<S, C>
                 Ok(message) => {
                     self.connection_clock += 1;
                     if let Ok(modified_message) = self.chain.process_request(Wrapper::new_with_rnd(message, self.connection_clock.clone())).await {
-                        self.connection.send(modified_message).await?
+                        let r = self.connection.send(modified_message).await?;
+                        let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
+                        r
                     } else {
                         error!("chain processing error")
                     }
@@ -282,12 +284,16 @@ impl <S, C> Handler<S, C>
             }
         }
 
+
+
+
+
         Ok(())
     }
 }
 
 impl <S, C> Drop for Handler<S, C>
-    where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send + Sync,
+    where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
     //       S: AsyncRead + AsyncWrite + Drop,
 {
     fn drop(&mut self) {

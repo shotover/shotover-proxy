@@ -3,10 +3,8 @@ use crate::transforms::chain::{Transform, Wrapper, TransformChain};
 use async_trait::async_trait;
 use crate::error::ChainResponse;
 use tokio::time::Duration;
-use futures::FutureExt;
 use rand::prelude::*;
-use rand_distr::{Normal, Float};
-use std::ops::Add;
+use rand_distr::{Normal};
 use anyhow::anyhow;
 
 #[derive(Debug, Clone)]
@@ -39,7 +37,7 @@ pub struct RandomDelayTransform {
 #[async_trait]
 impl Transform for RandomDelayTransform {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        let mut delay;
+        let delay;
         if let Some(dist) = self.distribution {
             delay = Duration::from_millis(dist.sample(&mut rand::thread_rng()) as u64 + self.delay);
         } else {

@@ -72,6 +72,7 @@ fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
     return Ok(decrypted_value);
 }
 
+// TODO: Switch to something smaller/more efficient like bincode
 impl From<Protected> for Value {
     fn from(p: Protected) -> Self {
         match p {
@@ -109,7 +110,7 @@ impl Protected {
                     enc_dek: sym_key.ciphertext_blob.to_vec(),
                     kek_id: sym_key.key_id.clone()})
             }
-            Protected::Ciphertext{ cipher, nonce, enc_dek, kek_id } => Ok(self),
+            Protected::Ciphertext{ .. } => Ok(self),
         }
     }
 

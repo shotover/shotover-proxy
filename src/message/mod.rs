@@ -1,5 +1,4 @@
-use bytes::{Buf, Bytes};
-use anyhow::{anyhow, Result};
+use bytes::{Bytes};
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, Utc, TimeZone};
@@ -9,8 +8,6 @@ use pyo3::types::{
     PyBool, PyBytes, PyDateTime, PyDict, PyFloat, PyList, PyLong, PySet, PyUnicode,
 };
 use serde::{Deserialize, Serialize};
-use sodiumoxide::crypto::secretbox;
-use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use sqlparser::ast::Statement;
 use std::collections::{HashMap};
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
@@ -18,8 +15,9 @@ use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigi
 use std::net::IpAddr;
 use redis_protocol::types::Frame;
 use crate::protocols::RawFrame;
+use mlua::{UserData};
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     Bypass(RawMessage),
     Query(QueryMessage),
@@ -27,7 +25,13 @@ pub enum Message {
     Modified(Box<Message>) //The box is to put the nested Message on the heap so we can have a recursive Message
 }
 
-#[derive(PartialEq, Debug, Clone)]
+impl UserData for Message {}
+
+impl UserData for QueryMessage {}
+impl UserData for QueryResponse {}
+impl UserData for RawMessage {}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessage {
     pub original: RawFrame,
 }

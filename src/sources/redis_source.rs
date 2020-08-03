@@ -30,13 +30,13 @@ impl SourcesFromConfig for RedisConfig {
         _topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
-    ) -> Result<Sources> {
-        Ok(Sources::Redis(RedisSource::new(
+    ) -> Result<Vec<Sources>> {
+        Ok(vec![Sources::Redis(RedisSource::new(
             chain,
             self.listen_addr.clone(),
             notify_shutdown,
             shutdown_complete_tx,
-        ).await))
+        ).await)])
     }
 }
 
