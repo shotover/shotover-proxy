@@ -58,17 +58,18 @@ pub enum Protected {
     Ciphertext { cipher: Vec<u8>, nonce: Nonce, enc_dek: Vec<u8>, kek_id: String },
 }
 
-fn encrypt(plaintext: String, sym_key: &Key) -> (Vec<u8>, Nonce) {
+fn encrypt(plaintext: Vec<u8>, sym_key: &Key) -> (Vec<u8>, Nonce) {
     let nonce = secretbox::gen_nonce();
-    let ciphertext = secretbox::seal(plaintext.as_bytes(), &nonce, sym_key);
+    let ciphertext = secretbox::seal(&plaintext, &nonce, sym_key);
     return (ciphertext, nonce);
 }
 
 fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
     let decrypted_bytes = secretbox::open(&ciphertext, &nonce, sym_key).map_err(|_| anyhow!("couldn't open box"))?;
     //todo make error handing better here - failure here indicates a authenticity failure
-    let decrypted_value: Value =
-        serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
+    // let decrypted_value: Value =
+    //     serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
+    let decrypted_value: Value = bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't open box"))?;
     return Ok(decrypted_value);
 }
 
@@ -80,7 +81,8 @@ impl From<Protected> for Value {
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
             Protected::Ciphertext { .. } => {
-                Value::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
+                // Value::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
+                Value::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
             }
         }
     }
@@ -90,7 +92,8 @@ impl Protected {
     pub async fn from_encrypted_bytes_value(value: &Value) -> Result<Protected> {
         match value {
             Value::Bytes(b) => {
-                let protected_something: Protected = serde_json::from_slice(b.bytes())?;
+                // let protected_something: Protected = serde_json::from_slice(b.bytes())?;
+                let protected_something: Protected = bincode::deserialize(b.bytes())?;
                 return Ok(protected_something);
             }
             _ => {
@@ -103,7 +106,8 @@ impl Protected {
         let sym_key = key_management.cached_get_key(key_id.clone(), None, None).await?;
         match &self {
             Protected::Plaintext(p) => {
-                let (cipher, nonce) = encrypt(serde_json::to_string(p).unwrap(), &sym_key.plaintext);
+                // let (cipher, nonce) = encrypt(serde_json::to_string(p).unwrap(), &sym_key.plaintext);
+                let (cipher, nonce) = encrypt(bincode::serialize(&p).unwrap(), &sym_key.plaintext);
                 Ok(Protected::Ciphertext {
                     cipher,
                     nonce,
@@ -339,7 +343,7 @@ mod protect_transform_tests {
 
                     // Let's make sure the plain text is not in the encrypted value when actually formated the same way!!!!!!!
                     let encrypted_payload = format!("encrypted: {:?}", encrypted_val.clone());
-                    assert!(!encrypted_payload.contains(format!("plaintext {:?}", serde_json::to_string(&secret_data.clone().into_bytes())?).as_str()));
+                    assert!(!encrypted_payload.contains(format!("plaintext {:?}", bincode::serialize(&secret_data.clone().into_bytes())?).as_str()));
 
                     let cframe = Frame::new_req_query(
                         "SELECT col1 FROM keyspace.old WHERE pk = 'pk1' AND cluster = 'cluster';".to_string(),
@@ -489,7 +493,7 @@ mod protect_transform_tests {
 
                     // Let's make sure the plain text is not in the encrypted value when actually formated the same way!!!!!!!
                     let encrypted_payload = format!("encrypted: {:?}", encrypted_val.clone());
-                    assert!(!encrypted_payload.contains(format!("plaintext {:?}", serde_json::to_string(&secret_data.clone().into_bytes())?).as_str()));
+                    assert!(!encrypted_payload.contains(format!("plaintext {:?}", bincode::serialize(&secret_data.clone().into_bytes())?).as_str()));
 
                     let cframe = Frame::new_req_query(
                         "SELECT col1 FROM keyspace.old WHERE pk = 'pk1' AND cluster = 'cluster';".to_string(),
