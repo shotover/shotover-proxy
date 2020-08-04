@@ -2,11 +2,6 @@ use bytes::{Bytes};
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, Utc, TimeZone};
-use pyo3::prelude::*;
-use pyo3::type_object::PyTypeInfo;
-use pyo3::types::{
-    PyBool, PyBytes, PyDateTime, PyDict, PyFloat, PyList, PyLong, PySet, PyUnicode,
-};
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::{HashMap};
@@ -36,29 +31,19 @@ pub struct RawMessage {
     pub original: RawFrame,
 }
 
-#[pyclass]
 struct Struct {
-    #[pyo3(get, set)]
     pub string: String,
-    #[pyo3(get, set)]
     pub number: u32,
-    #[pyo3(get, set)]
     pub vec: Vec<i32>,
 }
 
-#[pyclass]
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
     pub original: RawFrame,
-    #[pyo3(get, set)]
     pub query_string: String,
-    #[pyo3(get, set)]
     pub namespace: Vec<String>,
-    #[pyo3(get, set)]
     pub primary_key: HashMap<String, Value>,
-    #[pyo3(get, set)]
     pub query_values: Option<HashMap<String, Value>>,
-    #[pyo3(get, set)]
     pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
     #[serde(skip)]
@@ -98,14 +83,11 @@ impl QueryMessage {
     }
 }
 
-#[pyclass]
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResponse {
     pub matching_query: Option<QueryMessage>,
     pub original: RawFrame,
-    #[pyo3(get, set)]
     pub result: Option<Value>,
-    #[pyo3(get, set)]
     pub error: Option<Value>,
 }
 
@@ -301,95 +283,6 @@ impl Into<cassandra_proto::types::value::Bytes> for Value {
     }
 }
 
-impl<'p> ToPyObject for Value {
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        match self {
-            Value::NULL => {
-                return None::<u8>.to_object(py);
-            },
-            Value::None => {
-                return None::<u8>.to_object(py);
-            }
-            Value::Bytes(b) => {
-                return b.to_vec().to_object(py);
-            }
-            Value::Strings(s) => return s.to_object(py),
-            Value::Integer(i) => return i.to_object(py),
-            Value::Float(f) => return f.to_object(py),
-            Value::Boolean(b) => return b.to_object(py),
-            Value::Timestamp(t) => {
-                return PyDateTime::from_timestamp(py, t.timestamp() as f64, None)
-                    .unwrap()
-                    .to_object(py)
-            }
-            Value::Rows(r) => return r.to_object(py),
-            Value::NamedRows(n) => return n.to_object(py),
-            Value::List(r) => return r.to_object(py),
-            Value::Document(d) => return d.to_object(py),
-            Value::Inet(i) => return i.to_string().to_object(py),
-            Value::FragmentedResponese(r) => return r.to_object(py),
-        }
-    }
-}
-
-impl IntoPy<PyObject> for Value {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        self.to_object(py)
-    }
-}
-
-impl FromPyObject<'_> for Value {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        //TODO:: convert based on https://pyo3.rs/master/conversions.html
-        if PyUnicode::is_instance(ob) {
-            let f: &PyUnicode = ob.downcast()?;
-            return Ok(Value::Strings(String::from(f.to_string()?)));
-        } else if PyBytes::is_instance(ob) {
-            let f: &PyBytes = ob.downcast()?;
-            let e: Vec<u8> = f.extract()?;
-            return Ok(Value::Bytes(Bytes::from(e)));
-        } else if PyBool::is_instance(ob) {
-            let f: &PyBool = ob.downcast()?;
-            return Ok(Value::Boolean(f.extract()?));
-        } else if PyLong::is_instance(ob) {
-            let f: &PyLong = ob.downcast()?;
-            let e: i64 = f.extract()?;
-            return Ok(Value::Integer(e));
-        } else if PyFloat::is_instance(ob) {
-            let f: &PyLong = ob.downcast()?;
-            let e: f64 = f.extract()?;
-            return Ok(Value::Float(e));
-        } else if PyList::is_instance(ob) {
-            let i: &PyList = ob.downcast()?;
-            return if i.is_empty() {
-                Ok(Value::List(Vec::new()))
-            } else {
-                if PyList::is_instance(i.get_item(0)) {
-                    Ok(Value::Rows(i.extract()?))
-                } else {
-                    Ok(Value::List(i.extract()?))
-                }
-            };
-        } else if PyDict::is_instance(ob) {
-            let f: &PyDict = ob.downcast()?;
-            let e: HashMap<String, Value> = f.extract()?;
-            return Ok(Value::Document(e));
-        } else if PySet::is_instance(ob) {
-            let f: &PySet = ob.downcast()?;
-            let e: HashMap<String, Value> = f.extract()?; //HashSet is just a HashMap
-            return Ok(Value::Document(e));
-        } else if PyDict::is_instance(ob) {
-            let f: &PyDict = ob.downcast()?;
-            let e: HashMap<String, Value> = f.extract()?;
-            return Ok(Value::Document(e));
-        } else if PyDateTime::is_instance(ob) {
-            // let f: &PyDateTime = ob.downcast()?;
-            // let e: DateTime<Utc> = DateTime::
-            // return Ok(Value::Timestamp(e));
-        }
-        return Err(PyErr::from_instance(ob));
-    }
-}
 
 mod my_bytes {
     use bytes::{Buf, Bytes};

@@ -52,9 +52,6 @@ rdkafka = { version = "0.24", features = ["cmake-build"] }
 #test deps
 hex-literal = "0.2.1"
 
-#python
-pyo3 = "0.10.1"
-
 #lua
 mlua = { version = "0.4.1", features = ["async","send", "vendored","lua53"] }
 mlua_serde = { version = "0.5", features = ["lua53"] }

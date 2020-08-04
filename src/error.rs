@@ -1,4 +1,3 @@
-use pyo3::PyErr;
 use std::{fmt, error};
 use crate::message::Message;
 use thiserror::Error;
@@ -51,19 +50,6 @@ impl fmt::Display for ConfigError {
         write!(f, "An error occured: {:}", self.message)
     }
 }
-//
-// impl error::Error for ConfigError {
-//     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-//         self.source.as_ref().map(|e| e.as_ref())
-//     }
-// }
 
 
 pub type ChainResponse = anyhow::Result<Message>;
-
-
-impl From<pyo3::PyErr> for RequestError {
-    fn from(e: PyErr) -> Self {
-        return RequestError::ScriptProcessingError(format!("{:?}", e));
-    }
-}

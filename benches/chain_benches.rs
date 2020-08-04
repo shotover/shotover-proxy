@@ -6,7 +6,6 @@ use instaproxy::message::{Message, QueryMessage, QueryType};
 use std::collections::HashMap;
 
 use instaproxy::config::topology::TopicHolder;
-use instaproxy::transforms::python::PythonConfig;
 use instaproxy::transforms::lua::LuaConfig;
 use instaproxy::protocols::RawFrame;
 use tokio::sync::mpsc::channel;
@@ -56,47 +55,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 }
 
-fn python_benchmark(c: &mut Criterion) {
-    let t_holder = TopicHolder::get_test_holder();
-
-    let python_t = PythonConfig {
-        query_filter: Some(String::from(REQUEST_STRING)),
-        response_filter: Some(String::from(RESPONSE_STRING)),
-    };
-
-    let pywrapper = Wrapper::new(Message::Query(QueryMessage {
-        original: RawFrame::NONE,
-        query_string: "".to_string(),
-        namespace: vec![String::from("keyspace"), String::from("old")],
-        primary_key: Default::default(),
-        query_values: None,
-        projection: None,
-        query_type: QueryType::Read,
-        ast: None,
-    }));
-
-
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
-
-    let transform = rt.block_on(python_t.get_source(&t_holder)).unwrap();
-
-    let transforms: Vec<Transforms> = vec![
-        transform,
-        Transforms::Null(Null::new()),
-    ];
-
-
-    let pychain = TransformChain::new_no_shared_state(transforms, String::from("test_chain"));
-
-    c.bench_with_input(BenchmarkId::new("python processing", "Empty Message"), &pywrapper,  move |b,s| {
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
-        b.iter(|| {
-            let _ = rt.block_on(pychain.process_request(s.clone()));
-        })
-    });
-}
-
-
 fn lua_benchmark(c: &mut Criterion) {
     let t_holder = TopicHolder::get_test_holder();
 
@@ -138,5 +96,5 @@ fn lua_benchmark(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, criterion_benchmark, python_benchmark, lua_benchmark);
+criterion_group!(benches, criterion_benchmark, lua_benchmark);
 criterion_main!(benches);
