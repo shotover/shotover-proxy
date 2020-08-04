@@ -16,6 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Configure AWS Credentials
+      run: mkdir ~/.aws && echo "$AWS_CONFIG" > ~/.aws/credentials
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
       with:
