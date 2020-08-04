@@ -44,9 +44,9 @@ tracing-futures = "0.2.4"
 
 # Transform dependencies
 redis = {version = "0.15.1", features = ["tokio-rt-core"]}
-redis-protocol = { path = "/home/ben/git/redis-protocol.rs" }
+redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "changes" }
 #cdrs = { version = "2" }
-cassandra-proto = { path = "/home/ben/git/cassandra-proto", features = ["v4"]}
+cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
 rdkafka = { version = "0.24", features = ["cmake-build"] }
 
 #test deps
@@ -69,6 +69,7 @@ rusoto_signature = "0.44.0"
 
 [dev-dependencies]
 criterion = "0.3"
+proptest = "0.10.0"
 
 [[bench]]
 name = "chain_benches"
@@ -83,4 +84,3 @@ debug = true
 # Patches
 [patch.crates-io]
 cached = { git = "https://github.com/drwilco/cached", branch = "cloneless-result" }
-#mlua = { path= "/Users/ben/git/mlua", features = ["async","send", "vendored","lua53"]}
