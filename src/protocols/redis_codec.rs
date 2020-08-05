@@ -261,6 +261,20 @@ impl RedisCodec {
                 return Frame::Error(s.clone());
             }
         }
+        panic!("FIXME");
+        /*
+        Aug 04 23:44:21.853  INFO instaproxy::protocols::redis_codec: parsed None
+Aug 04 23:44:21.853  INFO instaproxy::protocols::redis_codec: orig NONE
+Aug 04 23:44:21.859  INFO instaproxy::protocols::redis_codec: parsed None
+Aug 04 23:44:21.859  INFO instaproxy::protocols::redis_codec: orig NONE
+Aug 04 23:44:21.863  INFO instaproxy::protocols::redis_codec: parsed None
+Aug 04 23:44:21.863  INFO instaproxy::protocols::redis_codec: orig NONE
+Aug 04 23:44:21.867  INFO instaproxy::protocols::redis_codec: parsed None
+Aug 04 23:44:21.867  INFO instaproxy::protocols::redis_codec: orig NONE
+
+         */
+        info!("parsed {:?}", resp.result);
+        info!("orig {:?}", resp.original);
         Frame::SimpleString("OK".to_string())
     }
     pub fn build_redis_query_frame(query: &mut QueryMessage) -> Frame {
