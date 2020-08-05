@@ -1,16 +1,23 @@
-use tokio::runtime;
-use instaproxy::config::topology::Topology;
-use std::error::Error;
-use tokio::task::JoinHandle;
 use anyhow::Result;
-use redis::{Connection, Commands, FromRedisValue, RedisFuture, RedisResult};
+use instaproxy::config::topology::Topology;
 use proptest::prelude::*;
+use redis::{Commands, Connection, FromRedisValue, RedisFuture, RedisResult, ToRedisArgs};
+use std::error::Error;
 use std::process::Command;
 use std::{thread, time};
+use tokio::runtime;
 use tokio::runtime::Runtime;
-use tracing::Level;
+use tokio::task::JoinHandle;
 use tracing::info;
+use tracing::Level;
 
+const lua1: &str = r###"
+return {KEYS[1],ARGV[1],ARGV[2]}
+"###;
+
+const lua2: &str = r###"
+return {KEYS[1],ARGV[1],ARGV[2]}
+"###;
 
 fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     let _subscriber = tracing_subscriber::fmt()
@@ -21,10 +28,7 @@ fn start_proxy(config: String) -> JoinHandle<Result<()>> {
         .init();
 
     return tokio::spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?
-            .run_chains()
-            .await
-        {
+        if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }
@@ -36,7 +40,6 @@ fn get_redis_conn() -> Result<Connection> {
     let client = redis::Client::open("redis://127.0.0.1:6379/")?;
     Ok(client.get_connection()?)
 }
-
 
 /*
 [0 127.0.0.1:52827] "TTL" "demo-36:channel1:user2"
@@ -64,62 +67,112 @@ Update/Ping
 [0 127.0.0.1:52827] "EXPIRE" "channels:demo-36" "640"
  */
 
-
-fn evalsha<RV>(con: &mut redis::Connection, sha: String, args: Vec<String>) -> RedisResult<RV>
-where RV: FromRedisValue
+fn load_lua<RV>(con: &mut redis::Connection, script: String) -> RedisResult<RV>
+where
+    RV: FromRedisValue,
 {
-    let mut command =  redis::cmd("EVALSHA");
-    command.arg(sha.as_str());
-
-    for arg in args {
-        command.arg(arg.as_str());
-    }
+    let mut command = redis::cmd("SCRIPT");
+    command.arg("LOAD");
+    command.arg(script.as_str());
 
     command.query(con)
 }
 
-
-fn run_register_flow<BK, BCK, BKU>(connection: &mut Connection, build_key: BK, build_c_key: BCK, build_key_user: BKU, channel: &str) -> Result<()> where
-BK: Fn() -> String,
-BCK: Fn() -> String,
-BKU: Fn() -> String
+fn run_register_flow<BK, BCK, BKU>(
+    connection: &mut Connection,
+    build_key: BK,
+    build_c_key: BCK,
+    build_key_user: BKU,
+    channel: &str,
+) -> Result<()>
+where
+    BK: Fn() -> String,
+    BCK: Fn() -> String,
+    BKU: Fn() -> String,
 {
-    let func_sha1 = "TODOSOMESHA";
-    let func_sha2 = "TODOSOMESHA";
-    let time: usize = 640;
+    let func_sha1: String = load_lua(connection, lua1.to_string())?;
+    let func_sha2: String = load_lua(connection, lua2.to_string())?;
 
-    let f: String = connection.ttl(build_key())?; // TODO: Should be ttl in seconds
+    let time: usize = 640;
+    panic!("Currently consistent scatter doesn't drain the late response when we are doing N < M required responses");
+    panic!("This test only works with N == M replicas are set as the consistency level");
+
+    info!("Loaded lua scripts -> {} and {}", func_sha1, func_sha2);
+
+    let f: i32 = connection.ttl(build_key())?; // TODO: Should be ttl in seconds
     info!("---> {}", f);
-    // let _: String = evalsha(connection, func_sha1.to_string(), vec!["1", build_c_key().as_str(), "640", "user2", "1509861014.276593"].iter().map(|s| s.to_string()).collect())?;
-    // let _: String = evalsha(connection, func_sha2.to_string(), vec!["52b7ca41781c75791909c2b6d372bc34dff3b532", "1", "updates", build_key().as_str(), "1509861014.276593"].iter().map(|s| s.to_string()).collect())?;
-    let _ = connection.sadd(build_key_user(), channel)?;
-    let _ = connection.expire(build_key_user(), time)?;
-    let _ = connection.sadd(build_key(), channel)?;
-    let _ = connection.expire(build_key(), time)?;
+
+    let test: RedisResult<String> = redis::cmd("EVALSHA")
+        .arg(func_sha1.to_string())
+        .arg(1)
+        .arg(build_c_key().as_str())
+        .arg(640)
+        .arg("user2")
+        .arg("1509861014.276593")
+        .query(connection);
+
+    let _ = redis::cmd("EVALSHA")
+        .arg(func_sha2.to_string())
+        .arg("52b7ca41781c75791909c2b6d372bc34dff3b532")
+        .arg(1)
+        .arg("updates")
+        .arg(build_key().as_str())
+        .arg("1509861014.276593")
+        .query(connection)?;
+
+    let _: i32 = connection.sadd(build_key_user(), channel)?;
+    let _: i32 = connection.expire(build_key_user(), time)?;
+    let _: i32 = connection.sadd(build_key(), channel)?;
+    let _: i32 = connection.expire(build_key(), time)?;
     Ok(())
 }
 
-
-fn run_register_flow_pipelined<BK, BCK, BKU>(connection: &mut Connection, build_key: BK, build_c_key: BCK, build_key_user: BKU, channel: &str) -> Result<()> where
+fn run_register_flow_pipelined<BK, BCK, BKU>(
+    connection: &mut Connection,
+    build_key: BK,
+    build_c_key: BCK,
+    build_key_user: BKU,
+    channel: &str,
+) -> Result<()>
+where
     BK: Fn() -> String,
     BCK: Fn() -> String,
-    BKU: Fn() -> String
+    BKU: Fn() -> String,
 {
     let func_sha1 = "TODOSOMESHA";
     let func_sha2 = "TODOSOMESHA";
     let time: usize = 640;
 
     let pipel = redis::pipe()
-        .ttl(build_key()).ignore()
-        .cmd("EVALSHA").arg(func_sha1.to_string()).arg("1").arg(build_c_key().as_str()).arg("640").arg("user2").arg("1509861014.276593").ignore()
-        .cmd("EVALSHA").arg(func_sha2.to_string()).arg("52b7ca41781c75791909c2b6d372bc34dff3b532").arg("1").arg("updates").arg(build_key().as_str()).arg("1509861014.276593").ignore()
-        .sadd(build_key_user(), channel).ignore()
-        .expire(build_key_user(), time).ignore()
-        .sadd(build_key(), channel).ignore()
-        .expire(build_key(), time).ignore();
+        .ttl(build_key())
+        .ignore()
+        .cmd("EVALSHA")
+        .arg(func_sha1.to_string())
+        .arg("1")
+        .arg(build_c_key().as_str())
+        .arg("640")
+        .arg("user2")
+        .arg("1509861014.276593")
+        .ignore()
+        .cmd("EVALSHA")
+        .arg(func_sha2.to_string())
+        .arg("52b7ca41781c75791909c2b6d372bc34dff3b532")
+        .arg("1")
+        .arg("updates")
+        .arg(build_key().as_str())
+        .arg("1509861014.276593")
+        .ignore()
+        .sadd(build_key_user(), channel)
+        .ignore()
+        .expire(build_key_user(), time)
+        .ignore()
+        .sadd(build_key(), channel)
+        .ignore()
+        .expire(build_key(), time)
+        .ignore()
+        .query(connection)?;
 
-    let foo = pipel.query(connection)?;
-    info!("pipelined --);
+    info!("pipelined --");
 
     Ok(())
 }
@@ -130,17 +183,11 @@ fn test_presence_fresh_join_single_workflow() -> Result<()> {
     let channel = "channel1";
     let user = "user2";
 
-    let build_key = || -> String {
-        format!("{}:{}", subkey, channel)
-    };
+    let build_key = || -> String { format!("{}:{}", subkey, channel) };
 
-    let build_c_key = || -> String {
-        format!("c:{}:{}", subkey, channel)
-    };
+    let build_c_key = || -> String { format!("c:{}:{}", subkey, channel) };
 
-    let build_key_user = || -> String {
-        format!("{}:{}:{}", subkey, channel, user)
-    };
+    let build_key_user = || -> String { format!("{}:{}:{}", subkey, channel, user) };
     let mut rt = runtime::Builder::new()
         .enable_all()
         .thread_name("RPProxy-Thread")
@@ -156,21 +203,30 @@ fn test_presence_fresh_join_single_workflow() -> Result<()> {
 
         thread::sleep(delaytime);
 
-
         let mut connection = get_redis_conn().unwrap();
 
-        run_register_flow(&mut connection, build_key, build_c_key, build_key_user, channel).unwrap();
+        // run_register_flow_pipelined(
+        //     &mut connection,
+        //     build_key,
+        //     build_c_key,
+        //     build_key_user,
+        //     channel,
+        // )
+        // .unwrap();
 
+        run_register_flow(
+            &mut connection,
+            build_key,
+            build_c_key,
+            build_key_user,
+            channel,
+        )
+        .unwrap();
     });
 
-
-
     let delaytime = time::Duration::from_secs(3);
-
-
 
     rt.shutdown_timeout(delaytime);
 
     Ok(())
-
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 # Get the script dir no matter where we exec this script from
 SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
