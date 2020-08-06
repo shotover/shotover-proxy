@@ -8,18 +8,24 @@ use crate::config::topology::TopicHolder;
 use crate::message::{Message, QueryMessage};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::transforms::{Transforms, TransformsFromConfig};
-use tracing::trace;
+use tracing::debug;
+use tracing::warn;
 
+use tokio::stream::{Stream, StreamExt};
 use tokio::sync::Mutex;
-use tokio::stream::StreamExt;
 
-use std::sync::Arc;
 use futures::{FutureExt, SinkExt};
+use std::sync::Arc;
 
-use crate::error::{ChainResponse};
+use crate::error::ChainResponse;
 use anyhow::{anyhow, Result};
-
-
+use futures_core::core_reexport::time::Duration;
+use std::borrow::Borrow;
+use std::fmt::Debug;
+use std::num::Wrapping;
+use std::ops::Sub;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {
@@ -29,23 +35,24 @@ pub struct RedisCodecConfiguration {
 
 #[async_trait]
 impl TransformsFromConfig for RedisCodecConfiguration {
-    async fn get_source(
-        &self,
-        _: &TopicHolder,
-    ) -> Result<Transforms> {
-        Ok(Transforms::RedisCodecDestination(RedisCodecDestination::new(
-            self.address.clone(),
-        )))
+    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+        Ok(Transforms::RedisCodecDestination(
+            RedisCodecDestination::new(self.address.clone()),
+        ))
     }
+}
+
+pub struct ClockedFramed {
+    framed: Framed<TcpStream, RedisCodec>,
 }
 
 #[derive(Debug)]
 pub struct RedisCodecDestination {
     name: &'static str,
     address: String,
-    outbound: Arc<Mutex<Option<Framed<TcpStream, RedisCodec>>>>,
+    outbound: Arc<Mutex<Option<(Framed<TcpStream, RedisCodec>, Wrapping<u32>)>>>,
+    // last_processed_clock: Arc<Wrapping<u32>>,
 }
-
 
 impl Clone for RedisCodecDestination {
     fn clone(&self) -> Self {
@@ -59,6 +66,23 @@ impl RedisCodecDestination {
             address,
             outbound: Arc::new(Mutex::new(None)),
             name: "CodecDestination",
+            // last_processed_clock: Arc::new(Wrapping(0)),
+        }
+    }
+
+    async fn maybe_fastforward<T, I>(
+        &self,
+        outbound_framed_codec: &mut T,
+        current_clock: Wrapping<u32>,
+        last_processed_clock: &mut Wrapping<u32>,
+    ) where
+        I: Debug,
+        T: StreamExt + Stream<Item = I> + Unpin,
+    {
+        while current_clock.sub(last_processed_clock.borrow()) > Wrapping(1) {
+            let r = outbound_framed_codec.next().await;
+            debug!("{} Discarding frame {:?}", self.address, r);
+            *last_processed_clock += Wrapping(1);
         }
     }
 
@@ -66,8 +90,8 @@ impl RedisCodecDestination {
         &self,
         message: Message,
         _matching_query: Option<QueryMessage>,
+        message_clock: Wrapping<u32>,
     ) -> ChainResponse {
-        trace!("      C -> S {:?}", message);
         if let Ok(mut mg) = self.outbound.try_lock() {
             match *mg {
                 None => {
@@ -77,24 +101,55 @@ impl RedisCodecDestination {
                     let _ = outbound_framed_codec.send(message).await;
                     if let Some(o) = outbound_framed_codec.next().fuse().await {
                         if let Ok(resp) = &o {
-                            trace!("      S -> C {:?}", resp);
-                            mg.replace(outbound_framed_codec);
+                            mg.replace((outbound_framed_codec, message_clock.clone()));
                             drop(mg);
                             return o;
                         }
                     }
-                    mg.replace(outbound_framed_codec);
+                    mg.replace((outbound_framed_codec, Wrapping(0)));
                     drop(mg);
                 }
-                Some(ref mut outbound_framed_codec) => {
+                Some((ref mut outbound_framed_codec, ref mut last_processed_clock)) => {
                     let _ = outbound_framed_codec.send(message).await;
-                    return outbound_framed_codec.next().fuse().await.ok_or(anyhow!("couldnt get frame"))?;
+
+                    debug!(
+                        "{} Redis message clock: current {} - last processed {}",
+                        self.address, message_clock, last_processed_clock.0
+                    );
+
+                    self.maybe_fastforward(
+                        outbound_framed_codec,
+                        message_clock,
+                        last_processed_clock,
+                    )
+                    .await;
+
+                    if message_clock.0 < last_processed_clock.0 {
+                        warn!(
+                            "{} Out of order detected current {}, last processed {}",
+                            self.address, message_clock, last_processed_clock
+                        )
+                    }
+
+                    let result = outbound_framed_codec
+                        .next()
+                        .fuse()
+                        .await
+                        .ok_or(anyhow!("couldnt get frame"))?;
+
+                    last_processed_clock.0 += 1;
+
+                    debug!(
+                        "Post answer - {} Redis message clock: current {} - last processed {}",
+                        self.address, message_clock, last_processed_clock.0
+                    );
+
+                    return result;
                 }
             }
         }
         return ChainResponse::Err(anyhow!("Something went wrong sending frame to Redis"));
     }
-
 }
 
 #[async_trait]
@@ -102,14 +157,70 @@ impl Transform for RedisCodecDestination {
     // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let return_query = match &qd.message {
-            Message::Query(q) => {Some(q.clone())},
-            _ => {None},
+            Message::Query(q) => Some(q.clone()),
+            _ => None,
         };
-        let r = self.send_message(qd.message, return_query).await;
+        let r = self.send_message(qd.message, return_query, qd.clock).await;
         r
     }
 
     fn get_name(&self) -> &'static str {
         self.name
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::protocols::redis_codec::RedisCodec;
+    use crate::transforms::redis_codec_destination::RedisCodecDestination;
+    use anyhow::Result;
+    use futures::future;
+    use futures::stream::{self};
+    use std::num::Wrapping;
+    use std::sync::Arc;
+    use tokio::stream::StreamExt;
+    use tokio::sync::Mutex;
+
+    #[tokio::test(threaded_scheduler)]
+    pub async fn test_clock_wrap() -> Result<()> {
+        let codec = RedisCodecDestination {
+            name: "",
+            address: "".to_string(),
+            outbound: Arc::new(Mutex::new(None)),
+        };
+
+        let mut stream = stream::iter(1..=10);
+
+        let _ = codec
+            .maybe_fastforward::<_, i32>(&mut stream, Wrapping(u32::MIN), &mut Wrapping(u32::MAX))
+            .await;
+
+        assert_eq!(stream.next().await, Some(1));
+
+        let mut stream = stream::iter(1..=10);
+
+        let _ = codec
+            .maybe_fastforward::<_, i32>(&mut stream, Wrapping(1), &mut Wrapping(u32::MAX))
+            .await;
+
+        assert_eq!(stream.next().await, Some(2));
+
+        let mut stream = stream::iter(1..=10);
+
+        let _ = codec
+            .maybe_fastforward::<_, i32>(&mut stream, Wrapping(1), &mut Wrapping(u32::MIN))
+            .await;
+
+        assert_eq!(stream.next().await, Some(1));
+
+        let mut stream = stream::iter(1..=10);
+
+        let _ = codec
+            .maybe_fastforward::<_, i32>(&mut stream, Wrapping(2), &mut Wrapping(u32::MIN))
+            .await;
+
+        assert_eq!(stream.next().await, Some(2));
+
+        Ok(())
     }
 }

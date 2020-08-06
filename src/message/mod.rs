@@ -1,23 +1,27 @@
-use bytes::{Bytes};
+use crate::protocols::RawFrame;
+use bytes::Bytes;
+use cassandra_proto::frame::frame_result::{ColSpec, ColType};
+use cassandra_proto::types::data_serialization_types::{
+    decode_ascii, decode_bigint, decode_boolean, decode_decimal, decode_double, decode_float,
+    decode_inet, decode_int, decode_smallint, decode_timestamp, decode_tinyint, decode_varchar,
+    decode_varint,
+};
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
-use chrono::{DateTime, Utc, TimeZone};
+use chrono::{DateTime, TimeZone, Utc};
+use mlua::UserData;
+use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
-use std::collections::{HashMap};
-use cassandra_proto::frame::frame_result::{ColSpec, ColType};
-use cassandra_proto::types::data_serialization_types::{decode_ascii, decode_bigint, decode_boolean, decode_int, decode_decimal, decode_double, decode_float, decode_timestamp, decode_varchar, decode_varint, decode_inet, decode_smallint, decode_tinyint};
+use std::collections::HashMap;
 use std::net::IpAddr;
-use redis_protocol::types::Frame;
-use crate::protocols::RawFrame;
-use mlua::{UserData};
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     Bypass(RawMessage),
     Query(QueryMessage),
     Response(QueryResponse),
-    Modified(Box<Message>) //The box is to put the nested Message on the heap so we can have a recursive Message
+    Modified(Box<Message>), //The box is to put the nested Message on the heap so we can have a recursive Message
 }
 
 impl UserData for Message {}
@@ -91,7 +95,6 @@ pub struct QueryResponse {
     pub error: Option<Value>,
 }
 
-
 //TODO this could use a Builder
 impl QueryResponse {
     pub fn empty() -> Self {
@@ -120,13 +123,35 @@ impl QueryResponse {
             error: None,
         };
     }
-    
+
     pub fn result_with_matching(matching: Option<QueryMessage>, result: Value) -> Self {
         return QueryResponse {
             matching_query: matching,
             original: RawFrame::NONE,
             result: Some(result),
             error: None,
+        };
+    }
+
+    pub fn result_error_with_matching(
+        matching: Option<QueryMessage>,
+        result: Option<Value>,
+        error: Option<Value>,
+    ) -> Self {
+        return QueryResponse {
+            matching_query: matching,
+            original: RawFrame::NONE,
+            result: result,
+            error: error,
+        };
+    }
+
+    pub fn error_with_matching(matching: Option<QueryMessage>, error: Value) -> Self {
+        return QueryResponse {
+            matching_query: matching,
+            original: RawFrame::NONE,
+            result: None,
+            error: Some(error),
         };
     }
 
@@ -146,7 +171,7 @@ pub enum QueryType {
     Write,
     ReadWrite,
     SchemaChange,
-    PubSubMessage
+    PubSubMessage,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -172,20 +197,24 @@ pub enum Value {
 impl Into<Frame> for Value {
     fn into(self) -> Frame {
         match self {
-            Value::NULL => {Frame::Null},
-            Value::None => {unimplemented!()},
-            Value::Bytes(b) => {Frame::BulkString(b.to_vec())},
-            Value::Strings(s) => {Frame::SimpleString(s)},
-            Value::Integer(i) => {Frame::Integer(i)},
-            Value::Float(f) => {Frame::SimpleString(f.to_string())},
-            Value::Boolean(b) => {Frame::Integer(i64::from(b))},
-            Value::Timestamp(t) => {Frame::SimpleString(t.to_rfc2822())},
-            Value::Inet(i) => {Frame::SimpleString(i.to_string())},
-            Value::List(l) => {Frame::Array(l.iter().cloned().map(|v|v.into()).collect())},
-            Value::Rows(r) => {Frame::Array(r.iter().cloned().map(|v|Value::List(v).into()).collect())},
-            Value::NamedRows(_) => {unimplemented!()},
-            Value::Document(_) => {unimplemented!()},
-            Value::FragmentedResponese(l) => {Frame::Array(l.iter().cloned().map(|v|v.into()).collect())}
+            Value::NULL => Frame::Null,
+            Value::None => unimplemented!(),
+            Value::Bytes(b) => Frame::BulkString(b.to_vec()),
+            Value::Strings(s) => Frame::SimpleString(s),
+            Value::Integer(i) => Frame::Integer(i),
+            Value::Float(f) => Frame::SimpleString(f.to_string()),
+            Value::Boolean(b) => Frame::Integer(i64::from(b)),
+            Value::Timestamp(t) => Frame::SimpleString(t.to_rfc2822()),
+            Value::Inet(i) => Frame::SimpleString(i.to_string()),
+            Value::List(l) => Frame::Array(l.iter().cloned().map(|v| v.into()).collect()),
+            Value::Rows(r) => {
+                Frame::Array(r.iter().cloned().map(|v| Value::List(v).into()).collect())
+            }
+            Value::NamedRows(_) => unimplemented!(),
+            Value::Document(_) => unimplemented!(),
+            Value::FragmentedResponese(l) => {
+                Frame::Array(l.iter().cloned().map(|v| v.into()).collect())
+            }
         }
     }
 }
@@ -194,69 +223,33 @@ impl Value {
     pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> Value {
         if let Some(actual_bytes) = data.as_slice() {
             return match spec.col_type.id {
-                ColType::Ascii => {
-                    return Value::Strings(decode_ascii(actual_bytes).unwrap())
-                },
-                ColType::Bigint => {
-                    return Value::Integer(decode_bigint(actual_bytes).unwrap())
-                },
-                ColType::Blob => {
-                    return Value::Bytes(Bytes::copy_from_slice(actual_bytes))
-                },
-                ColType::Boolean => {
-                    return Value::Boolean(decode_boolean(actual_bytes).unwrap())
-                },
-                ColType::Counter => {
-                    Value::Integer(decode_int(actual_bytes).unwrap() as i64)
-                },
-                ColType::Decimal => {
-                    Value::Float(decode_decimal(actual_bytes).unwrap().as_plain())
-                },
-                ColType::Double => {
-                    Value::Float(decode_double(actual_bytes).unwrap())
-                },
-                ColType::Float => {
-                    Value::Float(decode_float(actual_bytes).unwrap() as f64)
-                },
-                ColType::Int => {
-                    Value::Integer(decode_int(actual_bytes).unwrap() as i64)
-                },
+                ColType::Ascii => return Value::Strings(decode_ascii(actual_bytes).unwrap()),
+                ColType::Bigint => return Value::Integer(decode_bigint(actual_bytes).unwrap()),
+                ColType::Blob => return Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
+                ColType::Boolean => return Value::Boolean(decode_boolean(actual_bytes).unwrap()),
+                ColType::Counter => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
+                ColType::Decimal => Value::Float(decode_decimal(actual_bytes).unwrap().as_plain()),
+                ColType::Double => Value::Float(decode_double(actual_bytes).unwrap()),
+                ColType::Float => Value::Float(decode_float(actual_bytes).unwrap() as f64),
+                ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
                 ColType::Timestamp => {
                     Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap()))
-                },
-                ColType::Uuid => {
-                    Value::Bytes(Bytes::copy_from_slice(actual_bytes))
-                },
-                ColType::Varchar => {
-                    Value::Strings(decode_varchar(actual_bytes).unwrap())
-                },
-                ColType::Varint => {
-                    Value::Integer(decode_varint(actual_bytes).unwrap())
-                },
-                ColType::Timeuuid => {
-                    Value::Bytes(Bytes::copy_from_slice(actual_bytes))
-                },
-                ColType::Inet => {
-                    Value::Inet(decode_inet(actual_bytes).unwrap())
-                },
-                ColType::Date => {
-                    Value::NULL
-                },
-                ColType::Time => {
-                    Value::NULL
-                },
-                ColType::Smallint => {
-                    Value::Integer(decode_smallint(actual_bytes).unwrap() as i64)
-                },
-                ColType::Tinyint => {
-                    Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64)
-                },
+                }
+                ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
+                ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
+                ColType::Varint => Value::Integer(decode_varint(actual_bytes).unwrap()),
+                ColType::Timeuuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
+                ColType::Inet => Value::Inet(decode_inet(actual_bytes).unwrap()),
+                ColType::Date => Value::NULL,
+                ColType::Time => Value::NULL,
+                ColType::Smallint => Value::Integer(decode_smallint(actual_bytes).unwrap() as i64),
+                ColType::Tinyint => Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64),
                 _ => {
                     Value::NULL
                     // todo: process collection types based on ColTypeOption
                     // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
-                },
-            }
+                }
+            };
         }
         Value::NULL
     }
@@ -277,12 +270,11 @@ impl Into<cassandra_proto::types::value::Bytes> for Value {
             Value::Rows(r) => cassandra_proto::types::value::Bytes::from(r),
             Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),
             Value::Document(d) => cassandra_proto::types::value::Bytes::from(d),
-            Value::Inet(i) => {i.into()}
-            Value::FragmentedResponese(l) => cassandra_proto::types::value::Bytes::from(l)
+            Value::Inet(i) => i.into(),
+            Value::FragmentedResponese(l) => cassandra_proto::types::value::Bytes::from(l),
         };
     }
 }
-
 
 mod my_bytes {
     use bytes::{Buf, Bytes};

@@ -1,18 +1,20 @@
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Semaphore, broadcast, mpsc};
-use std::sync::Arc;
-use crate::transforms::chain::{TransformChain, Wrapper};
-use tokio_util::codec::{Framed, Decoder, Encoder};
-use tracing::{error, info, trace};
-use tokio::prelude::{AsyncRead, AsyncWrite};
-use futures::{StreamExt, FutureExt, SinkExt};
 use crate::message::Message;
-use tokio::{time};
+use crate::transforms::chain::{TransformChain, Wrapper};
+use anyhow::Result;
+use futures::{FutureExt, SinkExt, StreamExt};
+use std::num::Wrapping;
+use std::sync::Arc;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::prelude::{AsyncRead, AsyncWrite};
+use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::time;
 use tokio::time::Duration;
-use anyhow::{Result};
+use tokio_util::codec::{Decoder, Encoder, Framed};
+use tracing::{error, info, trace};
 
 pub struct TcpCodecListener<C>
-where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
+where
+    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
 {
     /// Shared database handle.
     ///
@@ -63,10 +65,9 @@ where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone +
     pub shutdown_complete_tx: mpsc::Sender<()>,
 }
 
-
-impl <C> TcpCodecListener<C>
-    where C: 'static + Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
-
+impl<C> TcpCodecListener<C>
+where
+    C: 'static + Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
 {
     /// Run the server
     ///
@@ -83,7 +84,10 @@ impl <C> TcpCodecListener<C>
     /// The process is not able to detect when a transient error resolves
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
-    pub async fn run(&mut self) -> Result<()> where <C as Decoder>::Error: std::marker::Send + std::fmt::Debug {
+    pub async fn run(&mut self) -> Result<()>
+    where
+        <C as Decoder>::Error: std::marker::Send + std::fmt::Debug,
+    {
         info!("accepting inbound connections");
 
         loop {
@@ -128,7 +132,7 @@ impl <C> TcpCodecListener<C>
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
 
-                connection_clock: 0
+                connection_clock: Wrapping(0),
             };
 
             // Spawn a new task to process the connections. Tokio tasks are like
@@ -175,9 +179,9 @@ impl <C> TcpCodecListener<C>
     }
 }
 
-
 pub struct Handler<S, C>
-where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
+where
+    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
 {
     /// Shared source handle.
     ///
@@ -215,12 +219,13 @@ where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone +
     /// Not used directly. Instead, when `Handler` is dropped...?
     _shutdown_complete: mpsc::Sender<()>,
 
-    connection_clock: u32
+    connection_clock: Wrapping<u32>,
 }
 
-impl <S, C> Handler<S, C>
-    where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
-          S: AsyncRead + AsyncWrite + Unpin,
+impl<S, C> Handler<S, C>
+where
+    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     /// Process a single connection.
     ///
@@ -236,10 +241,13 @@ impl <S, C> Handler<S, C>
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
     pub async fn run(&mut self) -> Result<()>
-        where <C as Decoder>::Error: std::fmt::Debug
+    where
+        <C as Decoder>::Error: std::fmt::Debug,
     {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
+
+        let one = Wrapping(1);
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown
@@ -268,8 +276,15 @@ impl <S, C> Handler<S, C>
 
             match frame {
                 Ok(message) => {
-                    self.connection_clock += 1;
-                    if let Ok(modified_message) = self.chain.process_request(Wrapper::new_with_rnd(message, self.connection_clock.clone())).await {
+                    self.connection_clock += one;
+                    if let Ok(modified_message) = self
+                        .chain
+                        .process_request(Wrapper::new_with_rnd(
+                            message,
+                            self.connection_clock.clone(),
+                        ))
+                        .await
+                    {
                         let r = self.connection.send(modified_message).await?;
                         let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                         r
@@ -284,16 +299,13 @@ impl <S, C> Handler<S, C>
             }
         }
 
-
-
-
-
         Ok(())
     }
 }
 
-impl <S, C> Drop for Handler<S, C>
-    where C: Decoder<Item=Message> + Encoder<Message, Error=anyhow::Error> + Clone + Send,
+impl<S, C> Drop for Handler<S, C>
+where
+    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
     //       S: AsyncRead + AsyncWrite + Drop,
 {
     fn drop(&mut self) {
