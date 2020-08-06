@@ -128,6 +128,43 @@ where
     Ok(())
 }
 
+fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
+    let pipel: Vec<i64> = redis::pipe()
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .query(connection)?;
+    info!("Got the following {:#?}", pipel);
+    let pipel: Vec<i64> = redis::pipe()
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .query(connection)?;
+    info!("Got the following {:#?}", pipel);
+    let pipel: Vec<i64> = redis::pipe()
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .cmd("INCR")
+        .arg("key")
+        .query(connection)?;
+    info!("Got the following {:#?}", pipel);
+    Ok(())
+}
+
 fn run_register_flow_pipelined<BK, BCK, BKU>(
     connection: &mut Connection,
     build_key: BK,
@@ -223,6 +260,35 @@ fn test_presence_fresh_join_single_workflow() -> Result<()> {
             channel,
         )
         .unwrap();
+    });
+
+    let delaytime = time::Duration::from_secs(3);
+
+    rt.shutdown_timeout(delaytime);
+
+    Ok(())
+}
+
+#[test]
+fn test_simple_pipeline_workflow() -> Result<()> {
+    let mut rt = runtime::Builder::new()
+        .enable_all()
+        .thread_name("RPProxy-Thread")
+        .threaded_scheduler()
+        .core_threads(4)
+        .build()
+        .unwrap();
+
+    let delaytime = time::Duration::from_secs(2);
+
+    rt.block_on(async {
+        let jh = start_proxy("examples/redis-multi/config.yaml".to_string());
+
+        thread::sleep(delaytime);
+
+        let mut connection = get_redis_conn().unwrap();
+
+        run_basic_pipelined(&mut connection).unwrap();
     });
 
     let delaytime = time::Duration::from_secs(3);
