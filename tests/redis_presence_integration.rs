@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use instaproxy::config::topology::Topology;
+use lazy_static::lazy_static;
 use proptest::prelude::*;
 use redis::{Commands, Connection, FromRedisValue, RedisFuture, RedisResult, ToRedisArgs};
 use std::error::Error;
@@ -20,13 +21,6 @@ return {KEYS[1],ARGV[1],ARGV[2]}
 "###;
 
 fn start_proxy(config: String) -> JoinHandle<Result<()>> {
-    let _subscriber = tracing_subscriber::fmt()
-        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
-        // will be written to stdout.
-        .with_max_level(Level::DEBUG)
-        // completes the builder and sets the constructed `Subscriber` as the default.
-        .init();
-
     return tokio::spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
@@ -78,56 +72,6 @@ where
     command.query(con)
 }
 
-fn run_register_flow<BK, BCK, BKU>(
-    connection: &mut Connection,
-    build_key: BK,
-    build_c_key: BCK,
-    build_key_user: BKU,
-    channel: &str,
-) -> Result<()>
-where
-    BK: Fn() -> String,
-    BCK: Fn() -> String,
-    BKU: Fn() -> String,
-{
-    let func_sha1: String = load_lua(connection, lua1.to_string())?;
-    let func_sha2: String = load_lua(connection, lua2.to_string())?;
-
-    let time: usize = 640;
-    // panic!("Currently consistent scatter doesn't drain the late response when we are doing N < M required responses");
-    // panic!("This test only works with N == M replicas are set as the consistency level");
-    // Maybe some sort of response tagging so the unifier knows what to discard???? but then things get weird.
-
-    info!("Loaded lua scripts -> {} and {}", func_sha1, func_sha2);
-
-    let f: i32 = connection.ttl(build_key())?; // TODO: Should be ttl in seconds
-    info!("---> {}", f);
-
-    let test: RedisResult<String> = redis::cmd("EVALSHA")
-        .arg(func_sha1.to_string())
-        .arg(1)
-        .arg(build_c_key().as_str())
-        .arg(640)
-        .arg("user2")
-        .arg("1509861014.276593")
-        .query(connection);
-
-    let _ = redis::cmd("EVALSHA")
-        .arg(func_sha2.to_string())
-        .arg("52b7ca41781c75791909c2b6d372bc34dff3b532")
-        .arg(1)
-        .arg("updates")
-        .arg(build_key().as_str())
-        .arg("1509861014.276593")
-        .query(connection)?;
-
-    let _: i32 = connection.sadd(build_key_user(), channel)?;
-    let _: i32 = connection.expire(build_key_user(), time)?;
-    let _: i32 = connection.sadd(build_key(), channel)?;
-    let _: i32 = connection.expire(build_key(), time)?;
-    Ok(())
-}
-
 fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
     let pipel: Vec<i64> = redis::pipe()
         .cmd("INCR")
@@ -177,8 +121,8 @@ where
     BCK: Fn() -> String,
     BKU: Fn() -> String,
 {
-    let func_sha1 = "TODOSOMESHA";
-    let func_sha2 = "TODOSOMESHA";
+    let func_sha1: String = load_lua(connection, lua1.to_string()).unwrap();
+    let func_sha2: String = load_lua(connection, lua2.to_string()).unwrap();
     let time: usize = 640;
 
     let pipel = redis::pipe()
@@ -186,16 +130,15 @@ where
         .ignore()
         .cmd("EVALSHA")
         .arg(func_sha1.to_string())
-        .arg("1")
+        .arg(1)
         .arg(build_c_key().as_str())
-        .arg("640")
+        .arg(640)
         .arg("user2")
         .arg("1509861014.276593")
         .ignore()
         .cmd("EVALSHA")
         .arg(func_sha2.to_string())
-        .arg("52b7ca41781c75791909c2b6d372bc34dff3b532")
-        .arg("1")
+        .arg(1)
         .arg("updates")
         .arg(build_key().as_str())
         .arg("1509861014.276593")
@@ -234,7 +177,79 @@ fn test_presence_fresh_join_single_workflow() -> Result<()> {
         .build()
         .unwrap();
 
+    let delaytime = time::Duration::from_secs(2);
+
+    rt.block_on(async {
+        let jh = start_proxy("examples/redis-multi/config.yaml".to_string());
+
+        thread::sleep(delaytime);
+
+        let mut connection = &mut get_redis_conn().unwrap();
+
+        let func_sha1: String = load_lua(connection, lua1.to_string()).unwrap();
+        let func_sha2: String = load_lua(connection, lua2.to_string()).unwrap();
+
+        let time: usize = 640;
+
+        info!("Loaded lua scripts -> {} and {}", func_sha1, func_sha2);
+
+        let f: i32 = connection.ttl(build_key()).unwrap(); // TODO: Should be ttl in seconds
+        info!("---> {}", f);
+
+        let test1: RedisResult<String> = redis::cmd("EVALSHA")
+            .arg(func_sha1.to_string())
+            .arg(1)
+            .arg(build_c_key().as_str())
+            .arg(640)
+            .arg("user2")
+            .arg("1509861014.276593")
+            .query(connection);
+
+        let test2: RedisResult<String> = redis::cmd("EVALSHA")
+            .arg(func_sha2.to_string())
+            .arg(1)
+            .arg("updates")
+            .arg(build_key().as_str())
+            .arg("1509861014.276593")
+            .query(connection);
+
+        let a: RedisResult<i32> = connection.sadd(build_key_user(), channel);
+        let b: RedisResult<i32> = connection.expire(build_key_user(), time);
+        let c: RedisResult<i32> = connection.sadd(build_key(), channel);
+        let d: RedisResult<i32> = connection.expire(build_key(), time);
+
+        info!("Got the following {:?}", a);
+        info!("Got the following {:?}", b);
+        info!("Got the following {:?}", c);
+        info!("Got the following {:?}", d);
+    });
+
     let delaytime = time::Duration::from_secs(3);
+
+    rt.shutdown_timeout(delaytime);
+
+    Ok(())
+}
+#[test]
+fn test_presence_fresh_join_pipeline_workflow() -> Result<()> {
+    let subkey = "demo-36";
+    let channel = "channel1";
+    let user = "user2";
+
+    let build_key = || -> String { format!("{}:{}", subkey, channel) };
+
+    let build_c_key = || -> String { format!("c:{}:{}", subkey, channel) };
+
+    let build_key_user = || -> String { format!("{}:{}:{}", subkey, channel, user) };
+    let mut rt = runtime::Builder::new()
+        .enable_all()
+        .thread_name("RPProxy-Thread")
+        .threaded_scheduler()
+        .core_threads(4)
+        .build()
+        .unwrap();
+
+    let delaytime = time::Duration::from_secs(2);
 
     rt.block_on(async {
         let jh = start_proxy("examples/redis-multi/config.yaml".to_string());
@@ -243,16 +258,7 @@ fn test_presence_fresh_join_single_workflow() -> Result<()> {
 
         let mut connection = get_redis_conn().unwrap();
 
-        // run_register_flow_pipelined(
-        //     &mut connection,
-        //     build_key,
-        //     build_c_key,
-        //     build_key_user,
-        //     channel,
-        // )
-        // .unwrap();
-
-        run_register_flow(
+        run_register_flow_pipelined(
             &mut connection,
             build_key,
             build_c_key,
@@ -262,7 +268,7 @@ fn test_presence_fresh_join_single_workflow() -> Result<()> {
         .unwrap();
     });
 
-    let delaytime = time::Duration::from_secs(3);
+    let delaytime = time::Duration::from_secs(2);
 
     rt.shutdown_timeout(delaytime);
 
@@ -295,5 +301,13 @@ fn test_simple_pipeline_workflow() -> Result<()> {
 
     rt.shutdown_timeout(delaytime);
 
+    Ok(())
+}
+
+#[test]
+fn run_all() -> Result<()> {
+    test_simple_pipeline_workflow()?;
+    test_presence_fresh_join_pipeline_workflow()?;
+    test_presence_fresh_join_single_workflow()?;
     Ok(())
 }
