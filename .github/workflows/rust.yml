@@ -27,7 +27,12 @@ jobs:
       with:
           toolchain: nightly
           override: true
+    - name: Start docker environment
+      run: docker-compose -f examples/redis-multi/docker-compose.yaml up -d
     - name: Build
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Stop docker environment
+      if: ${{ always() }}
+      run: docker-compose -f examples/redis-multi/docker-compose.yaml down
