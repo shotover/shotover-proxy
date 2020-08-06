@@ -23,7 +23,7 @@ fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     let _subscriber = tracing_subscriber::fmt()
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::DEBUG)
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
 
@@ -94,8 +94,9 @@ where
     let func_sha2: String = load_lua(connection, lua2.to_string())?;
 
     let time: usize = 640;
-    panic!("Currently consistent scatter doesn't drain the late response when we are doing N < M required responses");
-    panic!("This test only works with N == M replicas are set as the consistency level");
+    // panic!("Currently consistent scatter doesn't drain the late response when we are doing N < M required responses");
+    // panic!("This test only works with N == M replicas are set as the consistency level");
+    // Maybe some sort of response tagging so the unifier knows what to discard???? but then things get weird.
 
     info!("Loaded lua scripts -> {} and {}", func_sha1, func_sha2);
 

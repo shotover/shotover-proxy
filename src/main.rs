@@ -20,7 +20,7 @@ struct ConfigOpts {
     pub core_threads: usize,
     // 2,097,152 = 2 * 1024 * 1024 (2MiB)
     #[clap(long, default_value = "2097152")]
-    pub stack_size: usize
+    pub stack_size: usize,
 }
 
 #[cfg(not(feature = "no_index"))]
@@ -29,13 +29,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _subscriber = tracing_subscriber::fmt()
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::TRACE)
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
 
     info!("Loading configuration");
     let configuration = ConfigOpts::parse();
-    info!( "Starting loaded topology");
+    info!("Starting loaded topology");
     let mut rt = runtime::Builder::new()
         .enable_all()
         .thread_name("RPProxy-Thread")

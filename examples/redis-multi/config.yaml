@@ -7,8 +7,8 @@ chain_config:
   redis_chain:
     - ResponseResolver: []
     - ConsistentScatter:
-        write_consistency: 3
-        read_consistency: 3
+        write_consistency: 2
+        read_consistency: 2
         route_map:
           one:
             - RedisDestination:

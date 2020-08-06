@@ -82,7 +82,7 @@ impl Transform for TuneableConsistency {
         let fu: FuturesUnordered<_> = FuturesUnordered::new();
 
         for i in 0..sref.route_map.len() {
-            let u = ((qd.rnd + (i as u32)) % (sref.route_map.len() as u32)) as usize;
+            let u = ((qd.clock.0 + (i as u32)) % (sref.route_map.len() as u32)) as usize;
             if let Some(c) = sref.route_map.get(u) {
                 let mut wrapper = qd.clone();
                 wrapper.reset();
@@ -92,15 +92,6 @@ impl Transform for TuneableConsistency {
                 ))
             }
         }
-
-        //TODO does the order of the FuturesUnordered matter (e.g. does the first route get hit first).
-        // let fu: FuturesUnordered<_> = sref.route_map.iter().shuffle(&mut rng)
-        //     .map(|(_, c)| {
-        //         let mut wrapper = qd.clone();
-        //         wrapper.reset();
-        //         timeout(Duration::from_millis(sref.timeout) , c.process_request(wrapper))
-        //     })
-        //     .collect();
 
         let mut r = fu.take_while(|x| {
             if let Ok(Ok(x)) = x {
