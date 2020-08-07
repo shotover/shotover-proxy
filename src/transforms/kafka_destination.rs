@@ -1,16 +1,17 @@
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use std::collections::HashMap;
+
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::util::Timeout;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
+use crate::error::ChainResponse;
 use crate::message::{Message, QueryResponse};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
-use async_trait::async_trait;
-use std::collections::HashMap;
-use crate::error::{ChainResponse};
-use anyhow::{Result};
-use rdkafka::util::Timeout;
 
 #[derive(Clone)]
 pub struct KafkaDestination {
@@ -25,10 +26,7 @@ pub struct KafkaConfig {
 
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
-    async fn get_source(
-        &self,
-        _topics: &TopicHolder,
-    ) -> Result<Transforms> {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::KafkaDestination(
             KafkaDestination::new_from_config(&self.keys),
         ))
@@ -36,9 +34,7 @@ impl TransformsFromConfig for KafkaConfig {
 }
 
 impl KafkaDestination {
-    pub fn new_from_config(
-        config_map: &HashMap<String, String>,
-    ) -> KafkaDestination {
+    pub fn new_from_config(config_map: &HashMap<String, String>) -> KafkaDestination {
         let mut config = ClientConfig::new();
         for (k, v) in config_map.iter() {
             config.set(k.as_str(), v.as_str());
@@ -63,17 +59,20 @@ impl KafkaDestination {
 impl Transform for KafkaDestination {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         match qd.message {
-            Message::Bypass(_) => {},
+            Message::Bypass(_) => {}
             Message::Query(qm) => {
                 if let Some(ref key) = qm.get_namespaced_primary_key() {
                     if let Some(values) = qm.query_values {
                         let message = serde_json::to_string(&values)?;
                         let a = FutureRecord::to("test_topic").payload(&message).key(&key);
-                        self.producer.send(a, Timeout::Never).await;
+                        self.producer
+                            .send(a, Timeout::Never)
+                            .await
+                            .map_err(|(e, _o)| anyhow!("Couldn't send kafka message {}", e))?;
                     }
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
         return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
     }

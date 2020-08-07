@@ -1,27 +1,26 @@
-use crate::transforms::chain::{TransformChain};
+use std::collections::HashMap;
+use std::sync::Arc;
 
+use anyhow::Result;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use tokio::net::TcpListener;
+use tokio::runtime::Handle;
+use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::task::JoinHandle;
+use tracing::info;
 
 use crate::config::topology::TopicHolder;
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
+use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use tracing::info;
-use std::collections::HashMap;
-use tokio::net::{TcpListener};
-use tokio::runtime::Handle;
-use tokio::task::JoinHandle;
-use crate::server::{TcpCodecListener};
-use tokio::sync::{broadcast, mpsc, Semaphore};
-use std::sync::Arc;
-
-use anyhow::{Result};
+use crate::transforms::chain::TransformChain;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CassandraConfig {
     pub listen_addr: String,
     pub cassandra_ks: HashMap<String, Vec<String>>,
-    pub bypass_query_processing: bool
+    pub bypass_query_processing: bool,
 }
 
 #[async_trait]
@@ -33,14 +32,17 @@ impl SourcesFromConfig for CassandraConfig {
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
-        Ok(vec![Sources::Cassandra(CassandraSource::new(
-            chain,
-            self.listen_addr.clone(),
-            self.cassandra_ks.clone(),
-            notify_shutdown,
-            shutdown_complete_tx,
-            self.bypass_query_processing
-        ).await)])
+        Ok(vec![Sources::Cassandra(
+            CassandraSource::new(
+                chain,
+                self.listen_addr.clone(),
+                self.cassandra_ks.clone(),
+                notify_shutdown,
+                shutdown_complete_tx,
+                self.bypass_query_processing,
+            )
+            .await,
+        )])
     }
 }
 
@@ -59,7 +61,7 @@ impl CassandraSource {
         cassandra_ks: HashMap<String, Vec<String>>,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
-        bypass: bool
+        bypass: bool,
     ) -> CassandraSource {
         let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
 
@@ -71,11 +73,11 @@ impl CassandraSource {
             codec: CassandraCodec2::new(cassandra_ks, bypass),
             limit_connections: Arc::new(Semaphore::new(50)),
             notify_shutdown,
-            shutdown_complete_tx
+            shutdown_complete_tx,
         };
 
         let jh = Handle::current().spawn(async move {
-            listener.run().await;
+            listener.run().await?;
 
             let TcpCodecListener {
                 notify_shutdown,
@@ -93,6 +95,6 @@ impl CassandraSource {
             name: "Cassandra Source",
             join_handle: jh,
             listen_addr,
-        }
+        };
     }
 }

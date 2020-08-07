@@ -456,7 +456,7 @@ impl RedisCodec {
         return message;
     }
 
-    pub fn process_redis_frame(&self, mut frame: Frame) -> Result<Message> {
+    pub fn process_redis_frame(&self, frame: Frame) -> Result<Message> {
         if frame.is_pubsub_message() {
             if let Ok((channel, message, kind)) = frame.parse_as_pubsub() {
                 let mut map: HashMap<String, Value> = HashMap::new();
