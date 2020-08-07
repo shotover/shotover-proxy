@@ -24,7 +24,7 @@ Shotover aims to make these challenges simpler by providing a point where data l
 (somewhat) decoupled from the application, allowing for on the fly, easy changes to be made queries and data storage choices 
 without the need to change and redeploy your application.
 
-Longer term, shotover can also leverage the same capability to make operational tasks easier to solve a number of other 
+Longer term, Shotover can also leverage the same capability to make operational tasks easier to solve a number of other 
 challenges that come with working multiple databases. Some of these include:
 * Data encryption at the field level, with a common key management scheme between databases.
 * Routing the same data to databases that provide different query capabilities or performance characteristics (e.g. indexing data in Redis in 
@@ -57,36 +57,36 @@ Shotover proxy currently supports the following protocols as sources:
 * Cassandra (CQLv4)
 * Redis (RESP2)
 
-## shotover performance
+## Shotover performance
 Shotover compiles down to a single binary and just takes a single yaml file and some optional cmd line params to start up.
 When running a small topology (5 - 10 transforms, 1 or 2 sources, 200 or so TCP connections) memory consumptions is rather 
 small with a rough working set size between 10 - 20mb. 
 
 Currently benchmarking is limited but we see around 25k req/s inbound routed to an outbound 75k req/s max out a single logical core.
-However due to the way shotover is implemented, it will largely go as fast as your upstream datastore can go. Each tcp connection
-is driven by a single tokio thread and by default shotover will use 4 to 8 OS threads for the bulk of it's work (this is user configurable). 
+However due to the way Shotover is implemented, it will largely go as fast as your upstream datastore can go. Each tcp connection
+is driven by a single tokio thread and by default Shotover will use 4 to 8 OS threads for the bulk of it's work (this is user configurable). 
 Occasionally it will spawn additional OS threads for long running non-async code. These are practically unbounded (as defined by Tokio) but use is rare.
 
-shotover will not try to pipeline, aggregate or batch requests (though feel free to write a Transform to do so!!) unless 
+Shotover will not try to pipeline, aggregate or batch requests (though feel free to write a Transform to do so!!) unless 
 it is explicitly built into the source protocol (e.g. RESP2 supports cmd pipelining). This means single connection performance
 will not be as good as some other proxy implementations, we simply just do one request at a time. Most client drivers support
 connection pooling and multiple connections, so feel free to ramp up the number of outbound sockets to get the best throughput.
-shotover will happily work with 100's or 1000's of connections due to its threading model.
+Shotover will happily work with 100's or 1000's of connections due to its threading model.
 
 Performance hasn't been a primary focus during initial development and there are definitely some easy wins to improve things.
 
-## Deploying shotover
+## Deploying Shotover
 Shotover can be deployed in a number of ways, it will generally be based on the problem you are trying to solve, but they
 all fall into three categories:
 * As an application sidecar - Shotover is pretty lightweight, so feel free to deploy it as a sidecar to each of your application
 instances.
-* As a stand alone proxy - If you are building a Service/DBaaS/Common data layer, you can deploy shotover on standalone hardware
+* As a stand alone proxy - If you are building a Service/DBaaS/Common data layer, you can deploy Shotover on standalone hardware
 and really let it fly.\
-* As a sidecar to your database - You can also stick shotover on the same instance/server as your database is running on, we do it, so
+* As a sidecar to your database - You can also stick Shotover on the same instance/server as your database is running on, we do it, so
 we won't judge you. 
 
 ## TODO/Roadmap
-* Support relevant xDS APIs (so shotover can play nicely with service mesh implementations)
+* Support relevant xDS APIs (so Shotover can play nicely with service mesh implementations)
 * Support hot-reloads and a dynamic configuration API.
 * Additional sources (DynamoDB and PostgreSQL are good first candidates).
 * Add support for rate limiting, explicit back-pressure mechanisms etc
