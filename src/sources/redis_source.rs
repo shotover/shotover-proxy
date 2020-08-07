@@ -1,21 +1,19 @@
-use crate::transforms::chain::{TransformChain};
+use crate::transforms::chain::TransformChain;
 
-
-use tracing::info;
-use tokio::net::{TcpListener};
-use tokio::runtime::Handle;
-use tokio::task::JoinHandle;
-use crate::protocols::redis_codec::RedisCodec;
-use crate::sources::{Sources, SourcesFromConfig};
-use serde::{Deserialize, Serialize};
-use async_trait::async_trait;
 use crate::config::topology::TopicHolder;
-use crate::server::{TcpCodecListener};
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use crate::protocols::redis_codec::RedisCodec;
+use crate::server::TcpCodecListener;
+use crate::sources::{Sources, SourcesFromConfig};
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio::runtime::Handle;
+use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::task::JoinHandle;
+use tracing::info;
 
-use anyhow::{Result};
-
+use anyhow::Result;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -31,12 +29,15 @@ impl SourcesFromConfig for RedisConfig {
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
-        Ok(vec![Sources::Redis(RedisSource::new(
-            chain,
-            self.listen_addr.clone(),
-            notify_shutdown,
-            shutdown_complete_tx,
-        ).await)])
+        Ok(vec![Sources::Redis(
+            RedisSource::new(
+                chain,
+                self.listen_addr.clone(),
+                notify_shutdown,
+                shutdown_complete_tx,
+            )
+            .await,
+        )])
     }
 }
 
@@ -65,16 +66,16 @@ impl RedisSource {
             codec: RedisCodec::new(false),
             limit_connections: Arc::new(Semaphore::new(50)),
             notify_shutdown,
-            shutdown_complete_tx
+            shutdown_complete_tx,
         };
 
         let jh = Handle::current().spawn(async move {
-            listener.run().await;
+            listener.run().await?;
 
             let TcpCodecListener {
                 notify_shutdown,
                 shutdown_complete_tx,
-                    ..
+                ..
             } = listener;
 
             drop(shutdown_complete_tx);

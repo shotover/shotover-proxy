@@ -1,23 +1,21 @@
-use crate::config::topology::TopicHolder;
+use std::collections::HashMap;
+use std::time::Duration;
 
-use crate::error::ChainResponse;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
-};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::stream::StreamExt;
 use tokio::time::timeout;
-
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
-use itertools::Itertools;
-use rand::prelude::*;
-use std::time::Duration;
 use tracing::{debug, info};
+
+use crate::config::topology::TopicHolder;
+use crate::error::ChainResponse;
+use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::{
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+};
 
 #[derive(Clone)]
 pub struct TuneableConsistency {
@@ -169,16 +167,16 @@ impl Transform for TuneableConsistency {
 
 #[cfg(test)]
 mod scatter_transform_tests {
+    use anyhow::anyhow;
+    use anyhow::Result;
+
     use crate::config::topology::TopicHolder;
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::test_transforms::ReturnerTransform;
     use crate::transforms::tuneable_consistency_scatter::TuneableConsistency;
-    use crate::transforms::{Transforms, TransformsFromConfig};
-    use anyhow::anyhow;
-    use anyhow::Result;
-    use std::collections::HashMap;
+    use crate::transforms::Transforms;
 
     fn check_ok_responses(
         message: Message,
@@ -186,10 +184,10 @@ mod scatter_transform_tests {
         expected_count: usize,
     ) -> Result<()> {
         if let Message::Response(QueryResponse {
-            matching_query,
-            original,
+            matching_query: _,
+            original: _,
             result: Some(r),
-            error,
+            error: _,
         }) = message
         {
             if let Value::FragmentedResponese(v) = r {

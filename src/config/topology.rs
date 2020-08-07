@@ -2,19 +2,19 @@ use crate::message::Message;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::mpsc_source::AsyncMpscConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::chain::TransformChain;
 use crate::transforms::cassandra_codec_destination::CodecConfiguration;
+use crate::transforms::chain::TransformChain;
 use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::AsyncMpscTeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
+use anyhow::{anyhow, Result};
+use bytes::Bytes;
+use evmap::ReadHandleFactory;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{broadcast, mpsc};
-use anyhow::{anyhow, Result};
-use evmap::ReadHandleFactory;
-use bytes::Bytes;
+use tracing::info;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Topology {
@@ -28,7 +28,7 @@ pub struct TopicHolder {
     pub topics_rx: HashMap<String, Receiver<Message>>,
     pub topics_tx: HashMap<String, Sender<Message>>,
     pub global_tx: Sender<(String, Bytes)>,
-    pub global_map_handle: ReadHandleFactory<String, Bytes>
+    pub global_map_handle: ReadHandleFactory<String, Bytes>,
 }
 
 impl TopicHolder {
@@ -52,14 +52,14 @@ impl TopicHolder {
 
     // #[cfg(test)]
     pub fn get_test_holder() -> Self {
-        let (mut global_map_r, _global_map_w) = evmap::new();
-        let (global_tx,  _global_rx) = channel(1);
+        let (global_map_r, _global_map_w) = evmap::new();
+        let (global_tx, _global_rx) = channel(1);
 
         return TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),
             global_tx: global_tx,
-            global_map_handle: global_map_r.factory()
+            global_map_handle: global_map_r.factory(),
         };
     }
 }
@@ -69,7 +69,11 @@ impl Topology {
         serde_yaml::from_str(&yaml_contents).map_err(|e| anyhow!(e))
     }
 
-    fn build_topics(&self, global_tx: Sender<(String, Bytes)>, global_map_handle: ReadHandleFactory<String, Bytes>) -> TopicHolder {
+    fn build_topics(
+        &self,
+        global_tx: Sender<(String, Bytes)>,
+        global_map_handle: ReadHandleFactory<String, Bytes>,
+    ) -> TopicHolder {
         let mut topics_rx: HashMap<String, Receiver<Message>> = HashMap::new();
         let mut topics_tx: HashMap<String, Sender<Message>> = HashMap::new();
         for name in &self.named_topics {
@@ -81,14 +85,11 @@ impl Topology {
             topics_rx,
             topics_tx,
             global_tx,
-            global_map_handle
+            global_map_handle,
         };
     }
 
-    async fn build_chains(
-        &self,
-        topics: &TopicHolder,
-    ) -> Result<HashMap<String, TransformChain>> {
+    async fn build_chains(&self, topics: &TopicHolder) -> Result<HashMap<String, TransformChain>> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.chain_config.clone() {
             temp.insert(
@@ -101,7 +102,8 @@ impl Topology {
 
     pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
         let (global_map_r, mut global_map_w) = evmap::new();
-        let (global_tx, mut global_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) = channel::<(String, Bytes)>(1);
+        let (global_tx, mut global_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) =
+            channel::<(String, Bytes)>(1);
 
         let mut topics = self.build_topics(global_tx, global_map_r.factory());
         info!("Loaded topics {:?}", topics.topics_tx.keys());
@@ -112,10 +114,9 @@ impl Topology {
         let (notify_shutdown, _) = broadcast::channel(1);
         let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
 
-
         let _ = tokio::spawn(async move {
             // this loop will exit and the task will complete when all channel tx handles are dropped
-            while let Some((k,v)) = global_rx.recv().await {
+            while let Some((k, v)) = global_rx.recv().await {
                 global_map_w.insert(k, v);
                 global_map_w.refresh();
             }
@@ -127,7 +128,16 @@ impl Topology {
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {
                 if let Some(chain) = chains.get(chain_name.as_str()) {
-                    sources_list.append(& mut source_config.get_source(chain, &mut topics, notify_shutdown.clone(), shutdown_complete_tx.clone()).await?);
+                    sources_list.append(
+                        &mut source_config
+                            .get_source(
+                                chain,
+                                &mut topics,
+                                notify_shutdown.clone(),
+                                shutdown_complete_tx.clone(),
+                            )
+                            .await?,
+                    );
                 } else {
                     return Err(anyhow!("Could not find the [{}] chain from \
                     the source to chain mapping definition [{:?}] in list of configured chains [{:?}].",
@@ -156,9 +166,7 @@ impl Topology {
             return Ok(config);
         }
         //TODO: Make Config errors implement the From trait for IO errors
-        Err(
-            anyhow!("Couldn't open the file {}", &filepath),
-        )
+        Err(anyhow!("Couldn't open the file {}", &filepath))
     }
 
     pub fn get_demo_config() -> Topology {
@@ -178,7 +186,7 @@ impl Topology {
 
         let codec_config = TransformsConfig::CodecDestination(CodecConfiguration {
             address: server_addr,
-            bypass_result_processing: false
+            bypass_result_processing: false,
         });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
@@ -196,7 +204,7 @@ impl Topology {
         let cassandra_source = SourcesConfig::Cassandra(CassandraConfig {
             listen_addr,
             cassandra_ks,
-            bypass_query_processing: false
+            bypass_query_processing: false,
         });
 
         let tee_conf = TransformsConfig::MPSCTee(AsyncMpscTeeConfig {

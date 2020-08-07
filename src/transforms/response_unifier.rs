@@ -17,7 +17,7 @@ pub struct ResponseUnifierConfig {}
 
 #[async_trait]
 impl TransformsFromConfig for ResponseUnifierConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         return Ok(Transforms::ResponseUnifier(ResponseUnifier {}));
     }
 }

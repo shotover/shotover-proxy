@@ -40,9 +40,9 @@ impl<'env, R> Future for ScopedJoinHandle<'env, R> {
 
 impl<'env> Scope<'env> {
     pub fn spawn<'scope, T, R>(&'scope self, task: T) -> ScopedJoinHandle<'scope, R>
-        where
-            T: Future<Output = R> + Send + 'env,
-            R: Send + 'static, // TODO: weaken to 'env
+    where
+        T: Future<Output = R> + Send + 'env,
+        R: Send + 'static, // TODO: weaken to 'env
     {
         let chan = self.chan.clone();
         let (abortable, abort_handle) = abortable(task);
@@ -89,10 +89,10 @@ impl Drop for AbortOnDrop {
 // TODO: if `F` takes a reference to the scope, `scope.spawn` will generate a cryptic error
 #[doc(hidden)]
 pub async unsafe fn scope_impl<'env, F, T, R>(handle: tokio::runtime::Handle, f: F) -> R
-    where
-        F: FnOnce(Scope<'env>) -> T,
-        T: Future<Output = R> + Send,
-        R: Send,
+where
+    F: FnOnce(Scope<'env>) -> T,
+    T: Future<Output = R> + Send,
+    R: Send,
 {
     let mut _abort_on_drop = AbortOnDrop::default();
 
@@ -127,7 +127,6 @@ macro_rules! scope {
 
 #[cfg(test)]
 mod test {
-    use crate::concurrency::*;
     use std::time::Duration;
     use tokio::time::delay_for;
 

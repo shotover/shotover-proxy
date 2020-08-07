@@ -35,12 +35,6 @@ pub struct RawMessage {
     pub original: RawFrame,
 }
 
-struct Struct {
-    pub string: String,
-    pub number: u32,
-    pub vec: Vec<i32>,
-}
-
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
     pub original: RawFrame,

@@ -184,8 +184,6 @@ impl TransformChain {
             lua_runtime: Lua::new(),
         };
 
-        for t in chain.chain.iter() {}
-
         return chain;
     }
 

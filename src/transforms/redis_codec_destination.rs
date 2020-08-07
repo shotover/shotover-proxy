@@ -1,31 +1,26 @@
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
-
-use crate::config::topology::TopicHolder;
-use crate::message::{Message, QueryMessage};
-use crate::protocols::redis_codec::RedisCodec;
-use crate::transforms::{Transforms, TransformsFromConfig};
-use tracing::debug;
-use tracing::warn;
-
-use tokio::stream::{Stream, StreamExt};
-use tokio::sync::Mutex;
-
-use futures::{FutureExt, SinkExt};
-use std::sync::Arc;
-
-use crate::error::ChainResponse;
-use anyhow::{anyhow, Result};
-use futures_core::core_reexport::time::Duration;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::num::Wrapping;
 use std::ops::Sub;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
+use futures::{FutureExt, SinkExt};
+use serde::{Deserialize, Serialize};
+use tokio::net::TcpStream;
+use tokio::stream::{Stream, StreamExt};
+use tokio::sync::Mutex;
+use tokio_util::codec::Framed;
+use tracing::debug;
+use tracing::warn;
+
+use crate::config::topology::TopicHolder;
+use crate::error::ChainResponse;
+use crate::message::{Message, QueryMessage};
+use crate::protocols::redis_codec::RedisCodec;
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {
@@ -40,10 +35,6 @@ impl TransformsFromConfig for RedisCodecConfiguration {
             RedisCodecDestination::new(self.address.clone()),
         ))
     }
-}
-
-pub struct ClockedFramed {
-    framed: Framed<TcpStream, RedisCodec>,
 }
 
 #[derive(Debug)]
@@ -100,7 +91,7 @@ impl RedisCodecDestination {
                         Framed::new(outbound_stream, RedisCodec::new(true));
                     let _ = outbound_framed_codec.send(message).await;
                     if let Some(o) = outbound_framed_codec.next().fuse().await {
-                        if let Ok(resp) = &o {
+                        if let Ok(_resp) = &o {
                             mg.replace((outbound_framed_codec, message_clock.clone()));
                             drop(mg);
                             return o;
@@ -171,15 +162,15 @@ impl Transform for RedisCodecDestination {
 
 #[cfg(test)]
 mod test {
-    use crate::protocols::redis_codec::RedisCodec;
-    use crate::transforms::redis_codec_destination::RedisCodecDestination;
-    use anyhow::Result;
-    use futures::future;
-    use futures::stream::{self};
     use std::num::Wrapping;
     use std::sync::Arc;
+
+    use anyhow::Result;
+    use futures::stream::{self};
     use tokio::stream::StreamExt;
     use tokio::sync::Mutex;
+
+    use crate::transforms::redis_codec_destination::RedisCodecDestination;
 
     #[tokio::test(threaded_scheduler)]
     pub async fn test_clock_wrap() -> Result<()> {

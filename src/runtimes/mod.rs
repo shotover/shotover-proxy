@@ -1,10 +1,11 @@
+use std::fs;
+use std::marker::PhantomData;
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use anyhow::Result;
 use mlua::{Function, Lua};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::marker::PhantomData;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 use wasmer_runtime::{imports, instantiate, Instance};
 
@@ -147,7 +148,7 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
         match &self.env {
             Script::Lua {
                 function_name,
-                function_def,
+                function_def: _,
             } => {
                 // TODO: fix lifetimes going on here
                 let lval = mlua_serde::to_value(lua, args.clone()).unwrap();
@@ -193,7 +194,7 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                     let new_len = u32::from_ne_bytes(new_len_bytes) as usize;
                     let end = start as usize + new_len;
 
-                    let mut updated_bytes: Vec<u8> = new_view[start as usize..end]
+                    let updated_bytes: Vec<u8> = new_view[start as usize..end]
                         .iter()
                         .map(|c| c.get())
                         .collect();
@@ -210,9 +211,10 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
 
 #[cfg(test)]
 mod test {
-    use crate::runtimes::{Script, ScriptConfigurator, ScriptDefinition, ScriptHolder};
     use anyhow::Result;
     use mlua::Lua;
+
+    use crate::runtimes::{Script, ScriptConfigurator, ScriptDefinition, ScriptHolder};
 
     #[test]
     fn script() -> Result<()> {
@@ -223,7 +225,7 @@ mod test {
         .to_string();
         let sh: ScriptHolder<i32, i32> =
             ScriptHolder::new(Script::new_lua("identity".to_string(), script_definition)?);
-        sh.prep_lua_runtime(&lua);
+        sh.prep_lua_runtime(&lua)?;
         assert_eq!(400, sh.call(&lua, 400)?);
         Ok(())
     }
@@ -240,7 +242,7 @@ mod test {
             .to_string(),
         };
         let sh: ScriptHolder<i32, i32> = config.get_script_func()?;
-        sh.prep_lua_runtime(&lua);
+        sh.prep_lua_runtime(&lua)?;
         assert_eq!(400, sh.call(&lua, 400)?);
         Ok(())
     }
