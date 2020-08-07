@@ -54,3 +54,12 @@ passing control to the upstream transform.
  
  Generally if you want to build blocking behaviour in your chain, you will use transforms that have child transform chains.
  For non-blocking behaviour (e.g. copying a query to a kafka queue while sending it the upstream service) use topic based transforms.
+
+## Scripts
+Some transforms let you specify a script that gets called by the transform to define its internal behaviour. Currently shotover
+supports Lua (5.3) with std libs enabled and WebAssembly (WASI ABI). For Lua scripts, you can define the script itself and the entry
+function to call within the yaml file itself. For WebAssembly you can define the location of your compiled wasm file and the entry point
+to call. Each transform will document the function signature you need to implement.
+
+Script support is currently rudimentary, but fairly performant. A no-op transform in rust generally takes up a few NS of cpu time, 
+a no-op Lua script adds about 50NS to the critical path. 
