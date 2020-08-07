@@ -23,7 +23,7 @@ Shotover aims to make these challenges simpler by providing a point where data l
 (somewhat) decoupled from the application, allowing for on the fly, easy changes to be made queries and data storage choices 
 without the need to change and redeploy your application.
 
-Longer term, shotevover can also leverage the same capability to make operational tasks easier to solve a number of other 
+Longer term, shotover can also leverage the same capability to make operational tasks easier to solve a number of other 
 challenges that come with working multiple databases. Some of these include:
 * Data encryption at the field level, with a common key management scheme between databases.
 * Routing the same data to databases that provide different query capabilities or performance characteristics (e.g. indexing data in Redis in 
