@@ -118,7 +118,6 @@ impl<A, R> ScriptHolder<A, R> {
 
     pub fn prep_lua_runtime(&self, lua: &Lua) -> Result<()> {
         match &self.env {
-            Script::Python => unimplemented!(),
             Script::Lua {
                 function_name: _,
                 function_def,
