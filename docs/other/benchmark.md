@@ -1,7 +1,7 @@
 ## Benchmarking
-Currently republic-proxy carries a 27% overhead on pure throughput in bypass mode (no query enrichment).
+Currently shotover-proxy carries a 27% overhead on pure throughput in bypass mode (no query enrichment).
 Not surprising as we are still copying a lot of bytes around and its quite hard to just pass a shared buffer around.
-republic-proxy is a message based proxy, so we still process the C* frame and do stuff with it (e.g. create native rust types
+shotover-proxy is a message based proxy, so we still process the C* frame and do stuff with it (e.g. create native rust types
 from the underlying byte stream).
 
 The plan to improve (reduce) the amount of copying that occurs, is to introduce a "branded" lifetime that spans the entire
@@ -10,7 +10,7 @@ Only when we need to consume, modify or explicitly copy the bytes will we then d
 
 
 
-Running republic-proxy - 4 threads, cassandra source and cassandra-destination codec - debug build
+Running shotover-proxy - 4 threads, cassandra source and cassandra-destination codec - debug build
 - `./tools/bin/cassandra-stress write no-warmup -mode native cql3 connectionsPerHost=8 -rate threads=8 -node 127.0.0.1 -port native=9043`
 
 ```
@@ -227,7 +227,7 @@ END
 ```
 
 
-16 thread - republic-proxy - with release optimisations
+16 thread - shotover-proxy - with release optimisations
 ```
 Running WRITE with 8 threads until stderr of mean < 0.02
 type       total ops,    op/s,    pk/s,   row/s,    mean,     med,     .95,     .99,    .999,     max,   time,   stderr, errors,  gc: #,  max ms,  sum ms,  sdv ms,      mb
