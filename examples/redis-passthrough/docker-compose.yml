@@ -1,0 +1,6 @@
+version: "3.3"
+services:
+  redis-one:
+    image: library/redis:5.0.9
+    ports:
+      - "1111:6379"

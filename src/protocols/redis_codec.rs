@@ -1,7 +1,7 @@
 use crate::message::{Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value};
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
 use redis_protocol::prelude::*;
 use std::borrow::BorrowMut;
@@ -378,6 +378,15 @@ impl RedisCodec {
                     ast: None,
                 }));
             }
+        } else {
+            return Ok(Message::Response(QueryResponse {
+                matching_query: None,
+                original: RawFrame::Redis(frame),
+                result: Some(Value::List(
+                    commands_vec.iter().map(|f| f.into()).collect_vec(),
+                )),
+                error: None,
+            }));
         }
         return Ok(Message::Bypass(RawMessage {
             original: RawFrame::Redis(frame),
@@ -396,6 +405,30 @@ impl RedisCodec {
             Message::Query(QueryMessage {
                 original: RawFrame::Redis(frame),
                 query_string: string,
+                namespace: vec![],
+                primary_key: Default::default(),
+                query_values: None,
+                projection: None,
+                query_type: QueryType::Read,
+                ast: None, //TODO: construct an AST for redis commands (this will be a bit of a task)
+            })
+        };
+
+        return message;
+    }
+
+    fn handle_redis_bulkstring(&self, bulkstring: Vec<u8>, frame: Frame) -> Message {
+        let message = if self.decode_as_response {
+            Message::Response(QueryResponse {
+                matching_query: None,
+                original: RawFrame::Redis(frame),
+                result: Some(Value::Bytes(Bytes::from(bulkstring))),
+                error: None,
+            })
+        } else {
+            Message::Query(QueryMessage {
+                original: RawFrame::Redis(frame),
+                query_string: unsafe { String::from_utf8_unchecked(bulkstring) },
                 namespace: vec![],
                 primary_key: Default::default(),
                 query_values: None,
@@ -481,10 +514,7 @@ impl RedisCodec {
         } else {
             return Ok(match frame.clone() {
                 Frame::SimpleString(s) => self.handle_redis_string(s, frame),
-                Frame::BulkString(bs) => self.handle_redis_string(
-                    String::from_utf8(bs).unwrap_or("invalid utf-8".to_string()),
-                    frame,
-                ),
+                Frame::BulkString(bs) => self.handle_redis_bulkstring(bs, frame),
                 Frame::Array(frames) => self.handle_redis_array(frames, frame)?,
                 Frame::Moved(m) => self.handle_redis_string(m, frame),
                 Frame::Ask(a) => self.handle_redis_string(a, frame),

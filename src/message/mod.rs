@@ -188,6 +188,38 @@ pub enum Value {
     FragmentedResponese(Vec<Value>),
 }
 
+impl From<Frame> for Value {
+    fn from(f: Frame) -> Self {
+        // panic!("Aug 07 15:56:49.621  INFO instaproxy::transforms::tuneable_consistency_scatter: Response(QueryResponse { matching_query: None, original: Redis(BulkString([102, 111, 111])), result: Some(Strings("foo")), error: None })
+        // ");
+        //         panic!("This should be a bulk_string(byte array) and not be a string"); // I wonder if the bytes themselves need to get serialised differently....?
+        match f {
+            Frame::SimpleString(s) => Value::Strings(s),
+            Frame::Error(e) => Value::Strings(e),
+            Frame::Integer(i) => Value::Integer(i),
+            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::Array(a) => Value::List(a.iter().cloned().map(|i| Value::from(i)).collect()),
+            Frame::Moved(m) => Value::Strings(m),
+            Frame::Ask(a) => Value::Strings(a),
+            Frame::Null => Value::NULL,
+        }
+    }
+}
+impl From<&Frame> for Value {
+    fn from(f: &Frame) -> Self {
+        match f.clone() {
+            Frame::SimpleString(s) => Value::Strings(s),
+            Frame::Error(e) => Value::Strings(e),
+            Frame::Integer(i) => Value::Integer(i),
+            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::Array(a) => Value::List(a.iter().cloned().map(|i| Value::from(i)).collect()),
+            Frame::Moved(m) => Value::Strings(m),
+            Frame::Ask(a) => Value::Strings(a),
+            Frame::Null => Value::NULL,
+        }
+    }
+}
+
 impl Into<Frame> for Value {
     fn into(self) -> Frame {
         match self {

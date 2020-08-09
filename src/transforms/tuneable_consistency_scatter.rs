@@ -118,11 +118,6 @@ impl Transform for TuneableConsistency {
             }
         }
 
-        // tokio::spawn(async {
-        //     // TODO check that we are actually asynchronously draining the late response
-        //
-        // });
-
         return if successes >= required_successes {
             let matching = if let Message::Query(qm) = qd.message {
                 Some(qm)
