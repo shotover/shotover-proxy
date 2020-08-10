@@ -47,6 +47,34 @@ pub enum ASTHolder {
     Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
 }
 
+impl ASTHolder {
+    pub fn get_command(&self) -> String {
+        match self {
+            ASTHolder::SQL(statement) => {
+                return match statement {
+                    Statement::Query(_) => "SELECT",
+                    Statement::Insert { .. } => "INSERT",
+                    Statement::Update { .. } => "UPDATE",
+                    Statement::Delete { .. } => "DELETE",
+                    Statement::CreateView { .. } => "CREATE VIEW",
+                    Statement::CreateTable { .. } => "CREATE TABLE",
+                    Statement::AlterTable { .. } => "ALTER TABLE",
+                    Statement::Drop { .. } => "DROP",
+                    _ => "UKNOWN"
+                }.to_string();
+            },
+            ASTHolder::Commands(commands) => {
+                if let Value::List(coms) = commands {
+                    if let Some(Value::Bytes(b)) = coms.get(0) {
+                        return String::from_utf8(b.to_vec()).unwrap_or_else(|e| "couldn't decode".to_string());
+                    }
+                }
+            },
+        }
+        "UNKNOWN".to_string()
+    } 
+}
+
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
     pub original: RawFrame,

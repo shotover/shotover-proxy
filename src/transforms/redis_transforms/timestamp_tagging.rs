@@ -101,7 +101,7 @@ fn unwrap_response(qr: &mut QueryResponse) {
         });
         // This means the result is likely from a transaction or something that returns
         // lots of things
-        panic!("this doesn't seem to work on the test_pass_through_one test")
+        // panic!("this doesn't seem to work on the test_pass_through_one test")
         if all_lists && values.len() > 1 {
             let mut timestamps: Vec<Value> = vec![];
             let mut results: Vec<Value> = vec![];
@@ -123,16 +123,14 @@ fn unwrap_response(qr: &mut QueryResponse) {
             std::mem::swap(&mut qr.response_meta, &mut timestamps_holder);
             std::mem::swap(&mut qr.result, &mut results_holder);
         } else if values.len() == 2 {
-            if let Some(Value::Integer(i)) = values.get(1) {
-                let mut timestamp = values.pop().map(|v| {
-                    let mut hm: HashMap<String, Value> = HashMap::new();
-                    hm.insert("timestamp".to_string(), v);
-                    Value::Document(hm)
-                });
-                let mut actual = values.pop();
-                std::mem::swap(&mut qr.response_meta, &mut timestamp);
-                std::mem::swap(&mut qr.result, &mut actual);
-            }
+            let mut timestamp = values.pop().map(|v| {
+                let mut hm: HashMap<String, Value> = HashMap::new();
+                hm.insert("timestamp".to_string(), v);
+                Value::Document(hm)
+            });
+            let mut actual = values.pop();
+            std::mem::swap(&mut qr.response_meta, &mut timestamp);
+            std::mem::swap(&mut qr.result, &mut actual);
         }
     }
 }
@@ -141,17 +139,31 @@ fn unwrap_response(qr: &mut QueryResponse) {
 impl Transform for RedisTimestampTagger {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let mut tagged_success: bool = false;
+        let mut exec_block = false;
         match &qd.message {
             Message::Query(qm) => {
-                let (tagged, message) = try_tag_query_message(qm);
-                qd.swap_message(message);
-                tagged_success = tagged;
-            }
-            Message::Modified(m) => {
-                if let Message::Query(ref qm) = **m {
+                if let Some(a) = &qm.ast {
+                    if a.get_command() == "EXEC".to_string() {
+                        tagged_success = true;
+                    }
+                } else {
                     let (tagged, message) = try_tag_query_message(qm);
                     qd.swap_message(message);
                     tagged_success = tagged;
+                }
+
+            }
+            Message::Modified(m) => {
+                if let Message::Query(ref qm) = **m {
+                    if let Some(a) = &qm.ast {
+                        if a.get_command() == "EXEC".to_string() {
+                            tagged_success = true;
+                        }
+                    } else {
+                        let (tagged, message) = try_tag_query_message(qm);
+                        qd.swap_message(message);
+                        tagged_success = tagged;
+                    }
                 }
             }
             _ => {}
