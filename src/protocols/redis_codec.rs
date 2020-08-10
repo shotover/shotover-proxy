@@ -1,4 +1,6 @@
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value};
+use crate::message::{
+    ASTHolder, Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value,
+};
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
@@ -123,6 +125,10 @@ impl RedisCodec {
                 .map(|s| s.to_string())
                 .collect_vec()
                 .join(" ");
+
+            let ast = ASTHolder::Commands(Value::List(
+                commands_vec.iter().cloned().map(|f| f.into()).collect_vec(),
+            ));
 
             let commands = &mut commands_reversed;
 
@@ -366,7 +372,6 @@ impl RedisCodec {
                     } // merge N HyperLogLogs into a single one
                     _ => {}
                 }
-                // panic!(); //TODO AST for redis messages - right now just include the Vec of commands
                 return Ok(Message::Query(QueryMessage {
                     original: RawFrame::Redis(frame),
                     query_string,
@@ -375,7 +380,7 @@ impl RedisCodec {
                     query_values: Some(values_map),
                     projection: None,
                     query_type,
-                    ast: None,
+                    ast: Some(ast),
                 }));
             }
         } else {
@@ -540,7 +545,12 @@ impl RedisCodec {
         info!("{:?}", resp);
         Frame::SimpleString("OK".to_string())
     }
+
     pub fn build_redis_query_frame(query: &mut QueryMessage) -> Frame {
+        if let Some(ASTHolder::Commands(Value::List(ast))) = &query.ast {
+            let commands: Vec<Frame> = ast.iter().cloned().map(|v| v.into()).collect_vec();
+            return Frame::Array(commands);
+        }
         return Frame::SimpleString(query.query_string.clone());
     }
 

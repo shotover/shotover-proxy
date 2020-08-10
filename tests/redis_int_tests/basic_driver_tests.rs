@@ -4,16 +4,14 @@ use redis;
 use redis::{Commands, ControlFlow, PubSubCommands};
 
 use crate::redis_int_tests::support::TestContext;
-use crate::{load_docker_compose, start_proxy, stop_docker_compose};
+use crate::{load_docker_compose, stop_docker_compose};
 use instaproxy::config::topology::Topology;
-use lazy_static::lazy_static;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 use tokio::runtime;
-use tokio::task::JoinHandle;
 use tracing::Level;
 //
 // lazy_static! {
@@ -815,6 +813,38 @@ fn test_pass_through() -> Result<()> {
 }
 
 #[test]
+fn test_pass_through_one() -> Result<()> {
+    let rt = runtime::Builder::new()
+        .enable_all()
+        .thread_name("RPProxy-Thread")
+        .threaded_scheduler()
+        .core_threads(4)
+        .build()
+        .unwrap();
+    let _jh: _ = rt.spawn(async move {
+        if let Ok((_, mut shutdown_complete_rx)) =
+            Topology::from_file("examples/redis-passthrough/config.yaml".to_string())
+                .unwrap()
+                .run_chains()
+                .await
+        {
+            //TODO: probably a better way to handle various join handles / threads
+            let _ = shutdown_complete_rx.recv().await;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+
+    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
+    load_docker_compose(compose_config.clone())?;
+
+    test_pipeline();
+
+    stop_docker_compose(compose_config.clone())?;
+    return Ok(());
+}
+
+#[test]
 fn test_active_active_redis() -> Result<()> {
     let _subscriber = tracing_subscriber::fmt().with_max_level(Level::INFO).init();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
@@ -833,7 +863,7 @@ fn test_active_one_active_redis() -> Result<()> {
         .core_threads(4)
         .build()
         .unwrap();
-    let jh: _ = rt.spawn(async move {
+    let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
             Topology::from_file("examples/redis-multi/config.yaml".to_string())
                 .unwrap()
@@ -868,7 +898,7 @@ fn run_all(config: String) -> Result<()> {
         .core_threads(4)
         .build()
         .unwrap();
-    let jh: _ = rt.spawn(async move {
+    let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
             Topology::from_file(config).unwrap().run_chains().await
         {

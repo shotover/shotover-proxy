@@ -1,7 +1,8 @@
-use crate::transforms::chain::{ Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use tracing::info;
 
-use async_trait::async_trait;
 use crate::error::ChainResponse;
+use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct Printer {
@@ -17,8 +18,10 @@ impl Printer {
 #[async_trait]
 impl Transform for Printer {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        println!("Message content: {:#?}", qd.message);
-        return self.call_next_transform(qd, t).await;
+        info!("Request content: {:?}", qd.message);
+        let response = self.call_next_transform(qd, t).await;
+        info!("Response content: {:?}", response);
+        return response;
     }
 
     fn get_name(&self) -> &'static str {

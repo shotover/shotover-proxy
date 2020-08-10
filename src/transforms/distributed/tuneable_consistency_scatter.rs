@@ -91,6 +91,12 @@ impl Transform for TuneableConsistency {
             }
         }
 
+        /*
+        Tuneable consistent scatter follows these rules:
+        - When a downstream chain returns a Result::Ok for the ChainResponse, that counts as a success
+        - This transform doesn't try to resolve data consistency issues, it just waits for successes
+         */
+
         let mut r = fu.take_while(|x| {
             if let Ok(Ok(x)) = x {
                 info!("{:?}", x);
@@ -169,8 +175,8 @@ mod scatter_transform_tests {
     use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+    use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::tuneable_consistency_scatter::TuneableConsistency;
     use crate::transforms::Transforms;
 
     fn check_ok_responses(

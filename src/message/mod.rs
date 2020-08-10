@@ -35,6 +35,18 @@ pub struct RawMessage {
     pub original: RawFrame,
 }
 
+// Transforms should not try to directly serialize the AST - it's purely an in-memory representation
+// query_string is also mainly there from a debugging / logging perspective as its a utf8
+// encoded represntation of the query.
+// Statement can be "serialized"/rendered through it's display methods
+// Commands can be serialized by getting the underlying Value
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum ASTHolder {
+    SQL(Statement),
+    Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
+}
+
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
     pub original: RawFrame,
@@ -45,7 +57,7 @@ pub struct QueryMessage {
     pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
     #[serde(skip)]
-    pub ast: Option<Statement>,
+    pub ast: Option<ASTHolder>,
 }
 
 impl QueryMessage {
@@ -87,6 +99,7 @@ pub struct QueryResponse {
     pub original: RawFrame,
     pub result: Option<Value>,
     pub error: Option<Value>,
+    pub response_meta: Option<Value>,
 }
 
 //TODO this could use a Builder
@@ -97,6 +110,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error: None,
+            response_meta: None,
         };
     }
 
@@ -106,6 +120,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error,
+            response_meta: None,
         };
     }
 
@@ -115,6 +130,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: Some(result),
             error: None,
+            response_meta: None,
         };
     }
 
@@ -124,6 +140,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: Some(result),
             error: None,
+            response_meta: None,
         };
     }
 
@@ -137,6 +154,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: result,
             error: error,
+            response_meta: None,
         };
     }
 
@@ -146,6 +164,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error: Some(error),
+            response_meta: None,
         };
     }
 
@@ -155,6 +174,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error: None,
+            response_meta: None,
         };
     }
 }

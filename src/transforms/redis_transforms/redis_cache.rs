@@ -1,12 +1,12 @@
 use crate::message::Message::Query as MessageQuery;
-use crate::message::{Message, QueryResponse};
+use crate::message::{ASTHolder, Message, QueryResponse};
 use redis::{pipe, AsyncCommands, RedisFuture, RedisResult};
 use sqlparser::ast::Statement::*;
 use std::collections::HashMap;
 use std::iter::Iterator;
 
 use crate::message::Value as MValue;
-use crate::transforms::chain::{ Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use std::borrow::Borrow;
 
 use redis::aio::MultiplexedConnection;
@@ -18,12 +18,12 @@ use async_trait::async_trait;
 
 use tracing::trace;
 
+use crate::error::ChainResponse;
 use crate::protocols::RawFrame;
-use crate::error::{ChainResponse};
-use anyhow::{Result};
-use std::fmt::Debug;
-use serde::export::Formatter;
+use anyhow::Result;
 use core::fmt;
+use serde::export::Formatter;
+use std::fmt::Debug;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -33,13 +33,10 @@ pub struct RedisConfig {
 
 #[async_trait]
 impl TransformsFromConfig for RedisConfig {
-    async fn get_source(
-        &self,
-        _topics: &TopicHolder,
-    ) -> Result<Transforms> {
-        Ok(Transforms::RedisCache(SimpleRedisCache::new_from_config(
-            &self.uri,
-        ).await))
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+        Ok(Transforms::RedisCache(
+            SimpleRedisCache::new_from_config(&self.uri).await,
+        ))
     }
 }
 
@@ -52,7 +49,11 @@ pub struct SimpleRedisCache {
 
 impl Debug for SimpleRedisCache {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Name: {}, conversions: {:?}", self.name, self.tables_to_pks)
+        write!(
+            f,
+            "Name: {}, conversions: {:?}",
+            self.name, self.tables_to_pks
+        )
     }
 }
 
@@ -89,8 +90,8 @@ impl Transform for SimpleRedisCache {
                 return self.call_next_transform(qd, t).await;
             }
 
-            for statement in qm.ast.iter() {
-                match statement {
+            if let Some(ASTHolder::SQL(ast)) = &qm.ast {
+                match ast {
                     /*
                      Query String: SELECT id, lastname, teams FROM cycling.cyclist_career_teams WHERE id='5b6962dd-3f90-4c93-8f61-eabfa4a803e2'
                      AST: [Query(Query {
@@ -198,9 +199,9 @@ impl Transform for SimpleRedisCache {
                                 let res = self.call_next_transform(qd, t).await;
 
                                 if let Err(e) = f.await {
-                                    trace!( "Cache update failed {:?} !", e);
+                                    trace!("Cache update failed {:?} !", e);
                                 } else {
-                                    trace!( "Cache update success !");
+                                    trace!("Cache update success !");
                                 }
 
                                 return res;
@@ -244,7 +245,10 @@ impl Transform for SimpleRedisCache {
                         }
                         return self.call_next_transform(qd, t).await;
                     }
-                    Delete{ table_name: _, selection: _ } => {
+                    Delete {
+                        table_name: _,
+                        selection: _,
+                    } => {
                         let p = &mut pipe();
                         if let Some(pk) = qm.get_namespaced_primary_key() {
                             if let Some(value_map) = qm.query_values.borrow() {
@@ -255,7 +259,8 @@ impl Transform for SimpleRedisCache {
                                 let mut client_copy = self.con.clone();
 
                                 //TODO: await these using a join.
-                                let f: RedisResult<Vec<i32>> = p.query_async(&mut client_copy).await;
+                                let f: RedisResult<Vec<i32>> =
+                                    p.query_async(&mut client_copy).await;
                                 let res = self.call_next_transform(qd, t).await;
 
                                 if let Err(e) = f {
