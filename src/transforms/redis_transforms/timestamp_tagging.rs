@@ -139,38 +139,38 @@ fn unwrap_response(qr: &mut QueryResponse) {
 impl Transform for RedisTimestampTagger {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let mut tagged_success: bool = false;
-        let mut exec_block = false;
+        let mut exec_block: bool = false;
         match &qd.message {
             Message::Query(qm) => {
                 if let Some(a) = &qm.ast {
                     if a.get_command() == "EXEC".to_string() {
-                        tagged_success = true;
+                        exec_block = true;
                     }
-                } else {
-                    let (tagged, message) = try_tag_query_message(qm);
-                    qd.swap_message(message);
-                    tagged_success = tagged;
                 }
+
+                let (tagged, message) = try_tag_query_message(qm);
+                qd.swap_message(message);
+                tagged_success = tagged;
 
             }
             Message::Modified(m) => {
                 if let Message::Query(ref qm) = **m {
                     if let Some(a) = &qm.ast {
                         if a.get_command() == "EXEC".to_string() {
-                            tagged_success = true;
+                            exec_block = true;
                         }
-                    } else {
-                        let (tagged, message) = try_tag_query_message(qm);
-                        qd.swap_message(message);
-                        tagged_success = tagged;
                     }
+
+                    let (tagged, message) = try_tag_query_message(qm);
+                    qd.swap_message(message);
+                    tagged_success = tagged;
                 }
             }
             _ => {}
         }
         let mut response = self.call_next_transform(qd, t).await;
         debug!("tagging transform got {:?}", response);
-        if tagged_success {
+        if tagged_success || exec_block {
             if let Ok(Message::Response(qr)) = &mut response {
                 unwrap_response(qr);
                 response = response.map(|m| Message::Modified(Box::new(m)));
