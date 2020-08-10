@@ -585,6 +585,7 @@ impl CassandraCodec2 {
             original: RawFrame::CASSANDRA(frame),
             result,
             error,
+            response_meta: None,
         });
     }
 
@@ -635,6 +636,7 @@ impl CassandraCodec2 {
                             original: RawFrame::CASSANDRA(frame),
                             result: None,
                             error: Some(Value::Strings(e.message.as_plain())),
+                            response_meta: None,
                         });
                     }
                 }

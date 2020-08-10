@@ -30,6 +30,7 @@ impl Clone for LuaFilterTransform {
 
 // TODO: Verify we can actually do this (mlua seems to think so)
 unsafe impl Send for LuaFilterTransform {}
+
 unsafe impl Sync for LuaFilterTransform {}
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -171,22 +172,24 @@ return call_next_transform(qm)
             let result = lua.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse {
-                    matching_query: Some(oq),
-                    original: _,
-                    result: _,
-                    error: _,
-                }) = &m
+                                             matching_query: Some(oq),
+                                             original: _,
+                                             result: _,
+                                             error: _, 
+                                             response_meta: _,
+                                         }) = &m
                 {
                     assert_eq!(oq.namespace.get(0).unwrap(), "aaaaaaaaaa");
                 } else {
                     panic!()
                 }
                 if let Message::Response(QueryResponse {
-                    matching_query: _,
-                    original: _,
-                    result: Some(x),
-                    error: _,
-                }) = m
+                                             matching_query: _,
+                                             original: _,
+                                             result: Some(x),
+                                             error: _, 
+                                             response_meta: _,
+                                         }) = m
                 {
                     assert_eq!(x, Value::Integer(42));
                 } else {

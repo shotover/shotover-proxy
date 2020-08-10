@@ -5,7 +5,8 @@ sources:
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
-    - Printer:
+    - RedisTimestampTagger
+    - Printer
     - RedisDestination:
         remote_address: "127.0.0.1:1111"
 named_topics:

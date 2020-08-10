@@ -209,6 +209,7 @@ impl Transform for Protect {
             original: _,
             result: Some(Rows(rows)),
             error: None,
+            response_meta: _,
         }) = &mut result
         {
             if namespace.len() == 2 {
@@ -333,7 +334,7 @@ mod protect_transform_tests {
             query_values: Some(query_values),
             projection: Some(projection),
             query_type: QueryType::Write,
-            ast: None
+            ast: None,
         }));
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
@@ -363,6 +364,7 @@ mod protect_transform_tests {
                     original: _,
                     result: _,
                     error: _,
+                    response_meta: _,
                 }) = &mut m
                 {
                     let encrypted_val = query_values.remove("col1").unwrap();
@@ -405,6 +407,7 @@ mod protect_transform_tests {
                             original: RawFrame::NONE,
                             result: Some(Value::Rows(vec![vec![encrypted_val]])),
                             error: None,
+                            response_meta: None,
                         };
 
                         let ret_transforms: Vec<Transforms> =
@@ -428,6 +431,7 @@ mod protect_transform_tests {
                             original: _,
                             result: Some(Value::Rows(r)),
                             error: _,
+                            response_meta: _,
                         })) = resultr
                         {
                             if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
@@ -505,7 +509,7 @@ mod protect_transform_tests {
             query_values: Some(query_values),
             projection: Some(projection),
             query_type: QueryType::Write,
-            ast: None
+            ast: None,
         }));
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
@@ -535,6 +539,7 @@ mod protect_transform_tests {
                 original: _,
                 result: _,
                 error: _,
+                response_meta: _,
             }) = &mut m
             {
                 let encrypted_val = query_values.remove("col1").unwrap();
@@ -577,6 +582,7 @@ mod protect_transform_tests {
                         original: RawFrame::NONE,
                         result: Some(Value::Rows(vec![vec![encrypted_val]])),
                         error: None,
+                        response_meta: None,
                     };
 
                     let ret_transforms: Vec<Transforms> =
@@ -600,6 +606,7 @@ mod protect_transform_tests {
                         original: _,
                         result: Some(Value::Rows(r)),
                         error: _,
+                        response_meta: _,
                     })) = resultr
                     {
                         if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {

@@ -165,7 +165,7 @@ pub enum TransformsConfig {
     ConsistentScatter(TuneableConsistencyConfig),
     ResponseResolver(ResponseUnifierConfig),
     Scatter(ScatterConfig),
-    RedisTimestampTagger(RedisTimestampTaggerConfig),
+    RedisTimestampTagger,
     Printer,
 }
 
@@ -182,7 +182,9 @@ impl TransformsConfig {
             TransformsConfig::RedisDestination(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::ResponseResolver(r) => r.get_source(topics).await,
-            TransformsConfig::RedisTimestampTagger(r) => r.get_source(topics).await,
+            TransformsConfig::RedisTimestampTagger => {
+                Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
+            }
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
         }
     }

@@ -834,11 +834,13 @@ fn test_pass_through_one() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     });
 
-    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .init();
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
 
-    test_pipeline();
+    test_pipeline_transaction();
 
     stop_docker_compose(compose_config.clone())?;
     return Ok(());

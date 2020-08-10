@@ -113,6 +113,7 @@ impl Transform for TuneableConsistency {
                 original: _,
                 result,
                 error,
+                response_meta: _,
             }) = &m
             {
                 if let Some(res) = result {
@@ -189,6 +190,7 @@ mod scatter_transform_tests {
             original: _,
             result: Some(r),
             error: _,
+            response_meta: _,
         }) = message
         {
             if let Value::FragmentedResponese(v) = r {

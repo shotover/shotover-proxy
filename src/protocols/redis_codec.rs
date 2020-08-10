@@ -25,9 +25,9 @@ fn get_keys(
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
         if let Some(Frame::BulkString(v)) = commands.pop() {
-            let key = String::from_utf8(v)?;
+            let key = String::from_utf8(v.clone())?;
             fields.insert(key.clone(), Value::None);
-            keys_storage.push(Value::Strings(key));
+            keys_storage.push(Frame::BulkString(v).into());
         }
     }
     keys.insert("key".to_string(), Value::List(keys_storage));
@@ -41,13 +41,13 @@ fn get_key_multi_values(
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     if let Some(Frame::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8(v)?;
-        keys_storage.push(Value::Strings(key.clone()));
+        let key = String::from_utf8(v.clone())?;
+        keys_storage.push(Frame::BulkString(v).into());
 
         let mut values: Vec<Value> = vec![];
         while !commands.is_empty() {
-            if let Some(Frame::BulkString(value)) = commands.pop() {
-                values.push(Value::Strings(String::from_utf8(value)?));
+            if let Some(frame) = commands.pop() {
+                values.push(frame.into());
             }
         }
         fields.insert(key, Value::List(values));
@@ -63,17 +63,14 @@ fn get_key_map(
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     if let Some(Frame::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8(v)?;
-        keys_storage.push(Value::Strings(key.clone()));
+        let key = String::from_utf8(v.clone())?;
+        keys_storage.push(Frame::BulkString(v).into());
 
         let mut values: HashMap<String, Value> = HashMap::new();
         while !commands.is_empty() {
             if let Some(Frame::BulkString(field)) = commands.pop() {
-                if let Some(Frame::BulkString(value)) = commands.pop() {
-                    values.insert(
-                        String::from_utf8(field)?,
-                        Value::Strings(String::from_utf8(value)?),
-                    );
+                if let Some(frame) = commands.pop() {
+                    values.insert(String::from_utf8(field)?, frame.into());
                 }
             }
         }
@@ -91,10 +88,10 @@ fn get_key_values(
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
         if let Some(Frame::BulkString(k)) = commands.pop() {
-            let key = String::from_utf8(k)?;
-            keys_storage.push(Value::Strings(key.clone()));
-            if let Some(Frame::BulkString(value)) = commands.pop() {
-                fields.insert(key, Value::Strings(String::from_utf8(value)?));
+            let key = String::from_utf8(k.clone())?;
+            keys_storage.push(Frame::BulkString(k).into());
+            if let Some(frame) = commands.pop() {
+                fields.insert(key, frame.into());
             }
         }
     }
@@ -391,6 +388,7 @@ impl RedisCodec {
                     commands_vec.iter().map(|f| f.into()).collect_vec(),
                 )),
                 error: None,
+                response_meta: None,
             }));
         }
         return Ok(Message::Bypass(RawMessage {
@@ -405,6 +403,7 @@ impl RedisCodec {
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Strings(string)),
                 error: None,
+                response_meta: None,
             })
         } else {
             Message::Query(QueryMessage {
@@ -429,6 +428,7 @@ impl RedisCodec {
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Bytes(Bytes::from(bulkstring))),
                 error: None,
+                response_meta: None,
             })
         } else {
             Message::Query(QueryMessage {
@@ -453,6 +453,7 @@ impl RedisCodec {
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Integer(integer)),
                 error: None,
+                response_meta: None,
             })
         } else {
             Message::Query(QueryMessage {
@@ -477,6 +478,7 @@ impl RedisCodec {
                 original: RawFrame::Redis(frame),
                 result: None,
                 error: Some(Value::Strings(error)),
+                response_meta: None,
             })
         } else {
             Message::Query(QueryMessage {

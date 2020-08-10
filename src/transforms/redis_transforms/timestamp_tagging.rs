@@ -3,15 +3,14 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, Value};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
-};
+use crate::transforms::{Transforms, TransformsFromConfig};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use std::collections::HashMap;
+use tracing::debug;
 
 #[derive(Clone)]
 pub struct RedisTimestampTagger {
@@ -21,9 +20,17 @@ pub struct RedisTimestampTagger {
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisTimestampTaggerConfig {}
 
+impl RedisTimestampTagger {
+    pub fn new() -> Self {
+        RedisTimestampTagger {
+            name: "RedisTimestampTagger",
+        }
+    }
+}
+
 #[async_trait]
 impl TransformsFromConfig for RedisTimestampTaggerConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger {
             name: "RedisTimeStampTagger",
         }))
@@ -49,7 +56,7 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
                     .iter()
                     .map(|v| {
                         if let Value::Bytes(b) = v {
-                            unsafe { String::from_utf8_unchecked(b.to_vec()) }
+                            unsafe { format!("'{}'", String::from_utf8_unchecked(b.to_vec())) }
                         } else {
                             // TODO this might not be right... but we should only be dealing with bytes
                             format!("{:?}", v)
@@ -57,16 +64,15 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
                     })
                     .join(",");
 
-                let original_pcall = format!(r###"redis.call({})""###, original_command);
-                let last_used_pcall = r###"redis.call('OBJECT', 'IDLETIME', KEYS[1])""###;
+                let original_pcall = format!(r###"redis.call({})"###, original_command);
+                let last_used_pcall = r###"redis.call('OBJECT', 'IDLETIME', KEYS[1])"###;
 
                 let script = format!("return {{{},{}}}", original_pcall, last_used_pcall);
-                debug!("Generated eval script for timestamp: {}", script);
-                let key_count = keys.len();
+                debug!("\n\nGenerated eval script for timestamp: {}\n\n", script);
                 let commands: Vec<Value> = vec![
                     value_byte_string("EVAL".to_string()),
                     value_byte_string(script),
-                    value_byte_string(format!("{}", key_count)),
+                    value_byte_string("1".to_string()),
                     first.clone(),
                 ];
                 return Ok(Value::List(commands));
@@ -78,34 +84,87 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
     // redis.call('set','foo','bar')"
 }
 
-fn try_tag_query_message(qm: &QueryMessage) -> Message {
+fn try_tag_query_message(qm: &QueryMessage) -> (bool, Message) {
     let mut m = qm.clone();
     if let Ok(wrapped) = wrap_command(qm) {
         std::mem::swap(&mut m.ast, &mut Some(ASTHolder::Commands(wrapped)));
-        return Message::Modified(Box::new(Message::Query(m)));
+        return (true, Message::Modified(Box::new(Message::Query(m))));
     }
-    return Message::Query(m);
+    return (false, Message::Query(m));
+}
+
+fn unwrap_response(qr: &mut QueryResponse) {
+    if let Some(Value::List(mut values)) = qr.result.clone() {
+        let all_lists = values.iter().all(|v| match v {
+            Value::List(_) => true,
+            _ => false,
+        });
+        // This means the result is likely from a transaction or something that returns
+        // lots of things
+        panic!("this doesn't seem to work on the test_pass_through_one test")
+        if all_lists && values.len() > 1 {
+            let mut timestamps: Vec<Value> = vec![];
+            let mut results: Vec<Value> = vec![];
+            for v_u in values {
+                if let Value::List(mut v) = v_u {
+                    if v.len() == 2 {
+                        let mut timestamp = v.pop().unwrap();
+                        let mut actual = v.pop().unwrap();
+                        timestamps.push(timestamp);
+                        results.push(actual);
+                    }
+                }
+            }
+            let mut hm: HashMap<String, Value> = HashMap::new();
+            hm.insert("timestamp".to_string(), Value::List(timestamps));
+
+            let mut timestamps_holder = Some(Value::Document(hm));
+            let mut results_holder = Some(Value::List(results));
+            std::mem::swap(&mut qr.response_meta, &mut timestamps_holder);
+            std::mem::swap(&mut qr.result, &mut results_holder);
+        } else if values.len() == 2 {
+            if let Some(Value::Integer(i)) = values.get(1) {
+                let mut timestamp = values.pop().map(|v| {
+                    let mut hm: HashMap<String, Value> = HashMap::new();
+                    hm.insert("timestamp".to_string(), v);
+                    Value::Document(hm)
+                });
+                let mut actual = values.pop();
+                std::mem::swap(&mut qr.response_meta, &mut timestamp);
+                std::mem::swap(&mut qr.result, &mut actual);
+            }
+        }
+    }
 }
 
 #[async_trait]
 impl Transform for RedisTimestampTagger {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+        let mut tagged_success: bool = false;
         match &qd.message {
             Message::Query(qm) => {
-                let tagged = try_tag_query_message(qm);
-                qd.swap_message(tagged);
+                let (tagged, message) = try_tag_query_message(qm);
+                qd.swap_message(message);
+                tagged_success = tagged;
             }
             Message::Modified(m) => {
                 if let Message::Query(ref qm) = **m {
-                    let tagged = try_tag_query_message(qm);
-                    qd.swap_message(tagged);
+                    let (tagged, message) = try_tag_query_message(qm);
+                    qd.swap_message(message);
+                    tagged_success = tagged;
                 }
             }
             _ => {}
         }
-        let response = self.call_next_transform(qd, t).await;
+        let mut response = self.call_next_transform(qd, t).await;
         debug!("tagging transform got {:?}", response);
-
+        if tagged_success {
+            if let Ok(Message::Response(qr)) = &mut response {
+                unwrap_response(qr);
+                response = response.map(|m| Message::Modified(Box::new(m)));
+            }
+        }
+        debug!("response after trying to unwrap -> {:?}", response);
         return response;
     }
 

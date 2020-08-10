@@ -149,6 +149,7 @@ impl Transform for SimpleRedisCache {
                                     original: RawFrame::NONE,
                                     result: Some(MValue::Rows(vec![some])), //todo: Translate function
                                     error: None,
+                                    response_meta: None,
                                 }));
                             }
                         }
