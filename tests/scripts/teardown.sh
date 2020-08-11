@@ -2,4 +2,7 @@
 
 SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-docker-compose -f $SCRIPT_DIR/../../examples/redis-multi/docker-compose.yml down
+find $SCRIPT_DIR/../../examples/ -name 'docker-compose.yml' -exec docker-compose -f {} rm -f -s \;
+
+yes | docker volume prune
+yes | docker network prune

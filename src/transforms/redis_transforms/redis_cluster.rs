@@ -7,7 +7,6 @@ use crate::error::ChainResponse;
 use crate::message::{ASTHolder, Message, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::redis_transforms::redis_codec_destination::RedisCodecConfiguration;
 
 use redis::cluster::{ClusterClient, ClusterConnection};
 use redis::ErrorKind;

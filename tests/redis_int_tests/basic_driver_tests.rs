@@ -1,20 +1,19 @@
 #![allow(clippy::let_unit_value)]
 use anyhow::Result;
 use redis;
-use redis::{Commands, ControlFlow, PubSubCommands};
+use redis::Commands;
 
+use crate::load_docker_compose;
 use crate::redis_int_tests::support::TestContext;
-use crate::{load_docker_compose, stop_docker_compose};
 use instaproxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
-use std::thread::{sleep, spawn};
+use std::thread::sleep;
 use std::time::Duration;
 use tokio::runtime;
 use tracing::Level;
 
-#[test]
 fn test_args() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -28,7 +27,6 @@ fn test_args() {
     );
 }
 
-#[test]
 fn test_getset() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -43,7 +41,6 @@ fn test_getset() {
     );
 }
 
-#[test]
 fn test_incr() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -52,7 +49,6 @@ fn test_incr() {
     assert_eq!(redis::cmd("INCR").arg("foo").query(&mut con), Ok(43usize));
 }
 
-#[test]
 fn test_info() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -68,7 +64,6 @@ fn test_info() {
     assert!(info.contains_key(&"role"));
 }
 
-#[test]
 fn test_hash_ops() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -95,7 +90,6 @@ fn test_hash_ops() {
     assert_eq!(h.get("key_2"), Some(&2i32));
 }
 
-#[test]
 fn test_set_ops() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -122,7 +116,6 @@ fn test_set_ops() {
     assert!(set.contains(&3i32));
 }
 
-#[test]
 fn test_scan() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -142,7 +135,6 @@ fn test_scan() {
     assert_eq!(&s, &[1, 2, 3]);
 }
 
-#[test]
 fn test_optionals() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -164,7 +156,6 @@ fn test_optionals() {
     assert_eq!(a, 0i32);
 }
 
-#[test]
 fn test_scanning() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -197,7 +188,6 @@ fn test_scanning() {
     assert_eq!(unseen.len(), 0);
 }
 
-#[test]
 fn test_filtered_scanning() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -223,7 +213,6 @@ fn test_filtered_scanning() {
     assert_eq!(unseen.len(), 0);
 }
 
-#[test]
 fn test_pipeline() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -246,7 +235,6 @@ fn test_pipeline() {
     assert_eq!(k2, 43);
 }
 
-#[test]
 fn test_empty_pipeline() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -256,7 +244,6 @@ fn test_empty_pipeline() {
     let _: () = redis::pipe().query(&mut con).unwrap();
 }
 
-#[test]
 fn test_pipeline_transaction() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -280,7 +267,6 @@ fn test_pipeline_transaction() {
     assert_eq!(k2, 43);
 }
 
-#[test]
 fn test_pipeline_reuse_query() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -318,7 +304,6 @@ fn test_pipeline_reuse_query() {
     assert_eq!(k3, 43);
 }
 
-#[test]
 fn test_pipeline_reuse_query_clear() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -356,7 +341,6 @@ fn test_pipeline_reuse_query_clear() {
     assert_eq!(k2, 45);
 }
 
-#[test]
 fn test_real_transaction() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -390,7 +374,6 @@ fn test_real_transaction() {
     }
 }
 
-#[test]
 fn test_real_transaction_highlevel() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -413,7 +396,6 @@ fn test_real_transaction_highlevel() {
     assert_eq!(response, (43,));
 }
 
-#[test]
 fn test_script() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -434,7 +416,6 @@ fn test_script() {
     assert_eq!(response, Ok(("foo".to_string(), 42)));
 }
 
-#[test]
 fn test_tuple_args() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -460,7 +441,6 @@ fn test_tuple_args() {
     );
 }
 
-#[test]
 fn test_nice_api() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -483,7 +463,6 @@ fn test_nice_api() {
     assert_eq!(k2, 43);
 }
 
-#[test]
 fn test_auto_m_versions() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -492,7 +471,6 @@ fn test_auto_m_versions() {
     assert_eq!(con.get(&["key1", "key2"]), Ok((1, 2)));
 }
 
-#[test]
 fn test_nice_hash_api() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -545,7 +523,6 @@ fn test_nice_hash_api() {
     assert_eq!(found.contains(&("f4".to_string(), 8)), true);
 }
 
-#[test]
 fn test_nice_list_api() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -563,7 +540,6 @@ fn test_nice_list_api() {
     assert_eq!(con.lrange("my_list", 0, 2), Ok((4, 3, 4)));
 }
 
-#[test]
 fn test_tuple_decoding_regression() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -581,7 +557,6 @@ fn test_tuple_decoding_regression() {
     assert_eq!(vec.len(), 0);
 }
 
-#[test]
 fn test_bit_operations() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -590,7 +565,6 @@ fn test_bit_operations() {
     assert_eq!(con.getbit("bitvec", 10), Ok(true));
 }
 
-#[test]
 fn test_invalid_protocol() {
     use redis::{Parser, RedisResult};
     use std::error::Error;
@@ -626,7 +600,6 @@ fn test_invalid_protocol() {
     child.join().unwrap().unwrap();
 }
 
-#[test]
 fn test_cluster_basics() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -645,7 +618,6 @@ fn test_cluster_basics() {
     );
 }
 
-#[test]
 fn test_cluster_eval() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -666,7 +638,7 @@ fn test_cluster_eval() {
     assert_eq!(rv, Ok(("1".to_string(), "2".to_string())));
 }
 
-#[test]
+#[allow(dead_code)]
 fn test_cluster_script() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -683,7 +655,7 @@ fn test_cluster_script() {
     assert_eq!(rv, Ok(("1".to_string(), "2".to_string())));
 }
 
-#[test]
+#[allow(dead_code)]
 fn test_cluster_pipeline() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -704,15 +676,17 @@ fn test_cluster_pipeline() {
 
 #[test]
 fn test_pass_through() -> Result<()> {
-    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
     run_all("examples/redis-passthrough/config.yaml".to_string())?;
-    stop_docker_compose(compose_config.clone())?;
     return Ok(());
 }
 
-#[test]
+// #[test]
+#[allow(dead_code)]
 fn test_pass_through_one() -> Result<()> {
     let rt = runtime::Builder::new()
         .enable_all()
@@ -735,29 +709,33 @@ fn test_pass_through_one() -> Result<()> {
     });
 
     let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .init();
+        .with_max_level(Level::INFO)
+        .try_init();
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
 
     test_real_transaction();
 
-    stop_docker_compose(compose_config.clone())?;
     return Ok(());
 }
 
 #[test]
 fn test_active_active_redis() -> Result<()> {
-    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
     run_all("examples/redis-multi/config.yaml".to_string())?;
-    stop_docker_compose(compose_config.clone())?;
     return Ok(());
 }
 
-#[test]
+// #[test]
+#[allow(dead_code)]
 fn test_active_one_active_redis() -> Result<()> {
+    let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
+    load_docker_compose(compose_config.clone())?;
+
     let rt = runtime::Builder::new()
         .enable_all()
         .thread_name("RPProxy-Thread")
@@ -778,9 +756,9 @@ fn test_active_one_active_redis() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     });
 
-    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::WARN).init();
-    let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
 
     // test_args();
     test_scanning();
@@ -788,11 +766,11 @@ fn test_active_one_active_redis() -> Result<()> {
     //     test_getset();
     // }
 
-    stop_docker_compose(compose_config.clone())?;
     return Ok(());
 }
 
-#[test]
+// #[test]
+#[allow(dead_code)]
 fn test_pass_redis_cluster_one() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
@@ -818,13 +796,12 @@ fn test_pass_redis_cluster_one() -> Result<()> {
     });
 
     let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .init();
+        .with_max_level(Level::INFO)
+        .try_init();
 
     // test_args()test_args;
     test_set_ops();
 
-    stop_docker_compose(compose_config.clone())?;
     return Ok(());
 }
 
@@ -832,9 +809,10 @@ fn test_pass_redis_cluster_one() -> Result<()> {
 fn test_cluster_all_redis() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
-    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
     run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string())?;
-    stop_docker_compose(compose_config.clone())?;
     return Ok(());
 }
 

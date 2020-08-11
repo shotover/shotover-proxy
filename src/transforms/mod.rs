@@ -27,9 +27,7 @@ use crate::transforms::redis_transforms::redis_cluster::{RedisCluster, RedisClus
 use crate::transforms::redis_transforms::redis_codec_destination::{
     RedisCodecConfiguration, RedisCodecDestination,
 };
-use crate::transforms::redis_transforms::timestamp_tagging::{
-    RedisTimestampTagger, RedisTimestampTaggerConfig,
-};
+use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::route::{Route, RouteConfig};
 use crate::transforms::scatter::{Scatter, ScatterConfig};
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};

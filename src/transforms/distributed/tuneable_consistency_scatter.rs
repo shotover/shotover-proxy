@@ -8,12 +8,11 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::stream::StreamExt;
 use tokio::time::timeout;
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, QueryType, Value};
-use crate::protocols::RawFrame;
+use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
     build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
@@ -34,12 +33,6 @@ pub struct TuneableConsistencyConfig {
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub write_consistency: i32,
     pub read_consistency: i32,
-}
-
-struct ResponseRefHolder<'a> {
-    pub results: &'a Option<Value>,
-    pub errors: &'a Option<Value>,
-    pub metadata: &'a Option<Value>,
 }
 
 #[async_trait]
@@ -90,7 +83,7 @@ fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResp
             let candidate = get_timestamp(&fragment);
             if candidate > 0 {
                 match newest_fragment {
-                    None => newest_fragment = { Some(fragment) },
+                    None => newest_fragment = Some(fragment),
                     Some(ref frag) => {
                         let current = get_timestamp(frag);
                         if candidate > current {
@@ -101,7 +94,7 @@ fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResp
             } else {
                 let candidate = get_size(&fragment);
                 match newest_fragment {
-                    None => newest_fragment = { Some(fragment) },
+                    None => newest_fragment = Some(fragment),
                     Some(ref frag) => {
                         let current = get_size(frag);
                         if candidate > current {
@@ -115,34 +108,9 @@ fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResp
     return if newest_fragment.is_some() {
         newest_fragment
     } else {
-        panic!("shouldn't happen");
+        // panic!("shouldn't happen");
         biggest_fragment
     };
-    // let mut ptr: Option<Value> = None;
-    // debug!("{:?}", qr.result);
-    // if let Some(Value::FragmentedResponese(list)) = &mut qr.result {
-    //     if list.len() == 0 {
-    //         ptr = None; // We shouldn't hit this point
-    //     } else if list.iter().all_equal() {
-    //         ptr = Some(list.remove(0));
-    //     } else {
-    //         //TODO: Call resolver - logic to resolve inconsistencies between responses
-    //         ptr = Some(list.remove(0));
-    //     }
-    // }
-    // std::mem::swap(&mut qr.result, &mut ptr);
-    //
-    // if let Some(Value::FragmentedResponese(list)) = &mut qr.error {
-    //     if list.len() == 0 {
-    //         ptr = None; // We shouldn't hit this point
-    //     } else if list.iter().all_equal() {
-    //         ptr = Some(list.remove(0));
-    //     } else {
-    //         //TODO: Call resolver - logic to resolve inconsistencies between responses
-    //         ptr = Some(list.remove(0));
-    //     }
-    // }
-    // std::mem::swap(&mut qr.error, &mut ptr);
 }
 
 impl TuneableConsistency {}
@@ -244,7 +212,7 @@ impl Transform for TuneableConsistency {
                             if a.get_command().to_ascii_lowercase()
                                 == "SSCAN".to_string().to_ascii_lowercase()
                             {
-                                warn!(
+                                debug!(
                                     "\nquery: {:?}\nresult {:?}",
                                     mq.query_string, collated_response.result
                                 );

@@ -9,6 +9,7 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
+use itertools::Itertools;
 use mlua::UserData;
 use redis::{RedisResult, RedisWrite, Value as RValue};
 use redis_protocol::types::Frame;
@@ -16,7 +17,6 @@ use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::net::IpAddr;
-use itertools::Itertools;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
@@ -70,7 +70,7 @@ impl ASTHolder {
                 if let Value::List(coms) = commands {
                     if let Some(Value::Bytes(b)) = coms.get(0) {
                         return String::from_utf8(b.to_vec())
-                            .unwrap_or_else(|e| "couldn't decode".to_string());
+                            .unwrap_or_else(|_| "couldn't decode".to_string());
                     }
                 }
             }
@@ -247,7 +247,7 @@ fn parse_redis(v: &RValue) -> Value {
         RValue::Data(d) => Value::Bytes(Bytes::from(d.clone())),
         RValue::Bulk(b) => Value::List(b.iter().map(|v| parse_redis(v)).collect_vec()),
         RValue::Status(s) => Value::Strings(s.clone()),
-        RValue::Okay => {Value::Strings("OK".to_string())},
+        RValue::Okay => Value::Strings("OK".to_string()),
     }
 }
 

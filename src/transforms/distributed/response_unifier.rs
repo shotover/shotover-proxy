@@ -1,13 +1,10 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryResponse, Value};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use anyhow::Result;
 use async_trait::async_trait;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 #[derive(Clone)]
 pub struct ResponseUnifier {}
@@ -24,7 +21,7 @@ impl TransformsFromConfig for ResponseUnifierConfig {
 
 #[async_trait]
 impl Transform for ResponseUnifier {
-    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, _qd: Wrapper, _t: &TransformChain) -> ChainResponse {
         unimplemented!()
     }
 

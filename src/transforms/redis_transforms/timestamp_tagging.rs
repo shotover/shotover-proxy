@@ -109,8 +109,8 @@ fn unwrap_response(qr: &mut QueryResponse) {
             for v_u in values {
                 if let Value::List(mut v) = v_u {
                     if v.len() == 2 {
-                        let mut timestamp = v.pop().unwrap();
-                        let mut actual = v.pop().unwrap();
+                        let timestamp = v.pop().unwrap();
+                        let actual = v.pop().unwrap();
                         timestamps.push(timestamp);
                         results.push(actual);
                     }
