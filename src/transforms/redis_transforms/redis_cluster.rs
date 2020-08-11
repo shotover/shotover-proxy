@@ -1,48 +1,61 @@
-use std::collections::HashMap;
-use std::time::Duration;
-
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use futures::stream::FuturesUnordered;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tokio::stream::StreamExt;
-use tokio::time::timeout;
-use tracing::{debug, info, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, QueryType, Value};
+use crate::message::{ASTHolder, Message, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
-};
+use crate::transforms::redis_transforms::redis_codec_destination::RedisCodecConfiguration;
 
-#[derive(Clone)]
+use redis::cluster::{ClusterClient, ClusterConnection};
+use redis::ErrorKind;
+use redis::RedisResult;
+
+use crate::transforms::{Transforms, TransformsFromConfig};
+use std::ops::DerefMut;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+//TODO this may be worth implementing with a redis codec destination
+// buttt... the driver already supported a ton of stuff that didn't make sense
+// to reimplement. It may be worth reworking the redis driver and redis protocol
+// to use the same types. j
+
 pub struct RedisCluster {
-    name: &'static str,
-    route_map: Vec<TransformChain>,
-    timeout: u64,
+    pub name: &'static str,
+    pub client: ClusterClient,
+    pub connection: Arc<Mutex<ClusterConnection>>,
+}
+
+impl Clone for RedisCluster {
+    fn clone(&self) -> Self {
+        let connection = self.client.get_connection().unwrap();
+        return RedisCluster {
+            name: self.name.clone(),
+            client: self.client.clone(),
+            connection: Arc::new(Mutex::new(connection)),
+        };
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisClusterConfig {
-    pub route_map: HashMap<String, Vec<TransformsConfig>>,
+    pub first_contact_points: Vec<String>,
 }
 
 #[async_trait]
 impl TransformsFromConfig for RedisClusterConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let mut temp: Vec<TransformChain> = Vec::with_capacity(self.route_map.len());
-        for (key, value) in self.route_map.clone() {
-            temp.push(build_chain_from_config(key, &value, topics).await?);
-        }
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+        let client = ClusterClient::open(self.first_contact_points.clone()).unwrap();
+
+        let connection = client.get_connection().unwrap();
 
         Ok(Transforms::RedisCluster(RedisCluster {
             name: "RedisCluster",
-            route_map: temp,
-            timeout: 50,
+            client,
+            connection: Arc::new(Mutex::new(connection)),
         }))
     }
 }
@@ -50,63 +63,56 @@ impl TransformsFromConfig for RedisClusterConfig {
 #[async_trait]
 impl Transform for RedisCluster {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        let sref = self;
-
-        // Bias towards the write_consistency value for everything else
-        let mut successes: i32 = 0;
-
-        let fu: FuturesUnordered<_> = FuturesUnordered::new();
-
-        for i in 0..sref.route_map.len() {
-            let u = ((qd.clock.0 + (i as u32)) % (sref.route_map.len() as u32)) as usize;
-            if let Some(c) = sref.route_map.get(u) {
-                let mut wrapper = qd.clone();
-                wrapper.reset();
-                fu.push(timeout(
-                    Duration::from_millis(sref.timeout),
-                    c.process_request(wrapper),
-                ))
-            }
-        }
-
-        /*
-        Tuneable consistent scatter follows these rules:
-        - When a downstream chain returns a Result::Ok for the ChainResponse, that counts as a success
-        - This transform doesn't try to resolve data consistency issues, it just waits for successes
-         */
-
-        let mut r = fu.take_while(|x| {
-            let resp = successes < required_successes;
-            if let Ok(Ok(x)) = x {
-                debug!("{:?}", x);
-                successes += 1;
-            }
-            resp
-        });
-        let mut message_holder = vec![];
-
-        while let Some(Ok(Ok(m))) = r.next().await {
-            debug!("{:#?}", m);
-            message_holder.push(m);
-        }
-
-        let mut collated_results = message_holder
-            .iter()
-            .cloned()
-            .filter_map(move |m| match m {
-                Message::Response(qr) => Some(qr),
-                Message::Modified(m) => {
-                    if let Message::Response(qr) = *m {
-                        Some(qr)
-                    } else {
-                        None
+        if let Message::Query(qm) = qd.message {
+            let original = qm.clone();
+            if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
+                if commands.len() > 0 {
+                    let command = commands.remove(0);
+                    if let Value::Bytes(b) = &command {
+                        let command_string = String::from_utf8(b.to_vec())
+                            .unwrap_or_else(|_| "couldn't decode".to_string());
+                        if let Ok(mut conn) = self.connection.try_lock() {
+                            let mut cmd = redis::cmd(command_string.as_str());
+                            for args in commands {
+                                cmd.arg(args);
+                            }
+                            let response_res: RedisResult<Value> = cmd.query(conn.deref_mut());
+                            return match response_res {
+                                Ok(result) => Ok(Message::Modified(Box::new(Message::Response(
+                                    QueryResponse {
+                                        matching_query: Some(original),
+                                        original: RawFrame::NONE,
+                                        result: Some(result),
+                                        error: None,
+                                        response_meta: None,
+                                    },
+                                )))),
+                                Err(error) => match error.kind() {
+                                    ErrorKind::MasterDown
+                                    | ErrorKind::IoError
+                                    | ErrorKind::ClientError
+                                    | ErrorKind::ExtensionError => {
+                                        Err(anyhow!("Got connection error with cluster {}", error))
+                                    }
+                                    _ => Ok(Message::Modified(Box::new(Message::Response(
+                                        QueryResponse {
+                                            matching_query: Some(original),
+                                            original: RawFrame::NONE,
+                                            result: None,
+                                            error: Some(Value::Strings(format!("{}", error))),
+                                            response_meta: None,
+                                        },
+                                    )))),
+                                },
+                            };
+                        }
                     }
                 }
-                _ => None,
-            })
-            .collect_vec();
-
-        unimplemented!()
+            }
+        }
+        return Err(anyhow!(
+            "Redis Cluster transform did not have enough information to build a request"
+        ));
     }
 
     fn get_name(&self) -> &'static str {

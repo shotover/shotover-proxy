@@ -10,11 +10,13 @@ use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
 use mlua::UserData;
+use redis::{RedisResult, RedisWrite, Value as RValue};
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use itertools::Itertools;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
@@ -60,19 +62,21 @@ impl ASTHolder {
                     Statement::CreateTable { .. } => "CREATE TABLE",
                     Statement::AlterTable { .. } => "ALTER TABLE",
                     Statement::Drop { .. } => "DROP",
-                    _ => "UKNOWN"
-                }.to_string();
-            },
+                    _ => "UKNOWN",
+                }
+                .to_string();
+            }
             ASTHolder::Commands(commands) => {
                 if let Value::List(coms) = commands {
                     if let Some(Value::Bytes(b)) = coms.get(0) {
-                        return String::from_utf8(b.to_vec()).unwrap_or_else(|e| "couldn't decode".to_string());
+                        return String::from_utf8(b.to_vec())
+                            .unwrap_or_else(|e| "couldn't decode".to_string());
                     }
                 }
-            },
+            }
         }
         "UNKNOWN".to_string()
-    } 
+    }
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +240,45 @@ pub enum Value {
     FragmentedResponese(Vec<Value>),
 }
 
+fn parse_redis(v: &RValue) -> Value {
+    match v {
+        RValue::Nil => Value::NULL,
+        RValue::Int(i) => Value::Integer(i.clone()),
+        RValue::Data(d) => Value::Bytes(Bytes::from(d.clone())),
+        RValue::Bulk(b) => Value::List(b.iter().map(|v| parse_redis(v)).collect_vec()),
+        RValue::Status(s) => Value::Strings(s.clone()),
+        RValue::Okay => {Value::Strings("OK".to_string())},
+    }
+}
+
+impl redis::FromRedisValue for Value {
+    fn from_redis_value(v: &RValue) -> RedisResult<Self> {
+        return RedisResult::Ok(parse_redis(v));
+    }
+}
+
+impl redis::ToRedisArgs for Value {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + RedisWrite,
+    {
+        match self {
+            Value::NULL => {}
+            Value::None => {}
+            Value::Bytes(b) => out.write_arg(b),
+            Value::Strings(s) => s.write_redis_args(out),
+            Value::Integer(i) => i.write_redis_args(out),
+            Value::Float(f) => f.write_redis_args(out),
+            Value::Boolean(b) => b.write_redis_args(out),
+            Value::Timestamp(t) => format!("{}", t).write_redis_args(out),
+            Value::Inet(i) => format!("{}", i).write_redis_args(out),
+            Value::List(l) => l.write_redis_args(out),
+            Value::Rows(r) => r.write_redis_args(out),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl From<Frame> for Value {
     fn from(f: Frame) -> Self {
         // panic!("Aug 07 15:56:49.621  INFO instaproxy::transforms::tuneable_consistency_scatter: Response(QueryResponse { matching_query: None, original: Redis(BulkString([102, 111, 111])), result: Some(Strings("foo")), error: None })
@@ -294,6 +337,14 @@ impl Into<Frame> for Value {
 }
 
 impl Value {
+    pub fn value_byte_string(string: String) -> Value {
+        Value::Bytes(Bytes::from(string))
+    }
+
+    pub fn value_byte_str(str: &'static str) -> Value {
+        Value::Bytes(Bytes::from(str))
+    }
+
     pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> Value {
         if let Some(actual_bytes) = data.as_slice() {
             return match spec.col_type.id {

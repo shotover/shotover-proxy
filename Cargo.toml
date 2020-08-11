@@ -43,7 +43,7 @@ tracing-subscriber = "0.2.5"
 tracing-futures = "0.2.4"
 
 # Transform dependencies
-redis = {version = "0.15.1", features = ["tokio-rt-core"]}
+redis = {version = "0.15.1", features = ["tokio-rt-core", "cluster"]}
 redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "changes" }
 #cdrs = { version = "2" }
 cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
