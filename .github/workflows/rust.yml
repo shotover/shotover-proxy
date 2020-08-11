@@ -16,6 +16,20 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+
+    - name: Cache node modules
+        uses: actions/cache@v2
+        env:
+          cache-name: cache-node-modules
+        with:
+          # cargo cache files are stored in `~/.cargo` on Linux/macOS
+          path: ~/.cargo
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
