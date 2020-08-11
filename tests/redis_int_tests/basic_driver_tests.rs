@@ -199,9 +199,15 @@ fn test_scanning() {
     let mut unseen = HashSet::new();
 
     for x in 0..1000 {
-        redis::cmd("SADD").arg("foo").arg(x).execute(&mut con);
+        let _a: i64 = redis::cmd("SADD")
+            .arg("foo")
+            .arg(x)
+            .query(&mut con)
+            .unwrap();
         unseen.insert(x);
     }
+
+    assert_eq!(unseen.len(), 1000);
 
     let iter = redis::cmd("SSCAN")
         .arg("foo")
@@ -878,15 +884,15 @@ fn test_active_one_active_redis() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     });
 
-    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    let _subscriber = tracing_subscriber::fmt().with_max_level(Level::WARN).init();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
 
     // test_args();
-
-    for _ in 1..10000 {
-        test_getset();
-    }
+    test_scanning();
+    // for _ in 1..10000 {
+    //     test_getset();
+    // }
 
     stop_docker_compose(compose_config.clone())?;
     return Ok(());

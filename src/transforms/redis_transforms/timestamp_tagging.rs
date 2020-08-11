@@ -10,6 +10,7 @@ use bytes::Bytes;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
 
 #[derive(Clone)]
@@ -125,7 +126,18 @@ fn unwrap_response(qr: &mut QueryResponse) {
         } else if values.len() == 2 {
             let mut timestamp = values.pop().map(|v| {
                 let mut hm: HashMap<String, Value> = HashMap::new();
-                hm.insert("timestamp".to_string(), v);
+                if let Value::Integer(i) = v {
+                    let start = SystemTime::now();
+                    let since_the_epoch = start
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards");
+                    hm.insert(
+                        "timestamp".to_string(),
+                        Value::Integer(since_the_epoch.as_secs() as i64 - i),
+                    );
+                } else {
+                    hm.insert("timestamp".to_string(), v);
+                }
                 Value::Document(hm)
             });
             let mut actual = values.pop();
@@ -151,7 +163,6 @@ impl Transform for RedisTimestampTagger {
                 let (tagged, message) = try_tag_query_message(qm);
                 qd.swap_message(message);
                 tagged_success = tagged;
-
             }
             Message::Modified(m) => {
                 if let Message::Query(ref qm) = **m {

@@ -4,14 +4,16 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::stream::StreamExt;
 use tokio::time::timeout;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, QueryType, Value};
+use crate::protocols::RawFrame;
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
     build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
@@ -34,6 +36,12 @@ pub struct TuneableConsistencyConfig {
     pub read_consistency: i32,
 }
 
+struct ResponseRefHolder<'a> {
+    pub results: &'a Option<Value>,
+    pub errors: &'a Option<Value>,
+    pub metadata: &'a Option<Value>,
+}
+
 #[async_trait]
 impl TransformsFromConfig for TuneableConsistencyConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
@@ -51,6 +59,93 @@ impl TransformsFromConfig for TuneableConsistencyConfig {
         }))
     }
 }
+
+fn get_timestamp(frag: &QueryResponse) -> i64 {
+    debug!("\n\n {:#?} \n\n", frag.response_meta);
+    if let Some(Value::Document(meta)) = frag.response_meta.as_ref() {
+        if let Some(t) = meta.get("timestamp") {
+            if let Value::Integer(i) = t {
+                return i.clone();
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
+
+fn get_size(frag: &QueryResponse) -> usize {
+    return frag.result.as_ref().map_or(0, |v| std::mem::size_of_val(v));
+}
+
+fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse> {
+    let mut newest_fragment: Option<QueryResponse> = None;
+    let mut biggest_fragment: Option<QueryResponse> = None;
+
+    // Check the age of the response, store most recent
+    // If we don't have an age, store the biggest one.
+    // Return newest, otherwise biggest. Returns newest, even
+    // if we have a bigger response.
+    while fragments.len() != 0 {
+        if let Some(fragment) = fragments.pop() {
+            let candidate = get_timestamp(&fragment);
+            if candidate > 0 {
+                match newest_fragment {
+                    None => newest_fragment = { Some(fragment) },
+                    Some(ref frag) => {
+                        let current = get_timestamp(frag);
+                        if candidate > current {
+                            newest_fragment.replace(fragment);
+                        }
+                    }
+                }
+            } else {
+                let candidate = get_size(&fragment);
+                match newest_fragment {
+                    None => newest_fragment = { Some(fragment) },
+                    Some(ref frag) => {
+                        let current = get_size(frag);
+                        if candidate > current {
+                            biggest_fragment.replace(fragment);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return if newest_fragment.is_some() {
+        newest_fragment
+    } else {
+        panic!("shouldn't happen");
+        biggest_fragment
+    };
+    // let mut ptr: Option<Value> = None;
+    // debug!("{:?}", qr.result);
+    // if let Some(Value::FragmentedResponese(list)) = &mut qr.result {
+    //     if list.len() == 0 {
+    //         ptr = None; // We shouldn't hit this point
+    //     } else if list.iter().all_equal() {
+    //         ptr = Some(list.remove(0));
+    //     } else {
+    //         //TODO: Call resolver - logic to resolve inconsistencies between responses
+    //         ptr = Some(list.remove(0));
+    //     }
+    // }
+    // std::mem::swap(&mut qr.result, &mut ptr);
+    //
+    // if let Some(Value::FragmentedResponese(list)) = &mut qr.error {
+    //     if list.len() == 0 {
+    //         ptr = None; // We shouldn't hit this point
+    //     } else if list.iter().all_equal() {
+    //         ptr = Some(list.remove(0));
+    //     } else {
+    //         //TODO: Call resolver - logic to resolve inconsistencies between responses
+    //         ptr = Some(list.remove(0));
+    //     }
+    // }
+    // std::mem::swap(&mut qr.error, &mut ptr);
+}
+
+impl TuneableConsistency {}
 
 #[async_trait]
 impl Transform for TuneableConsistency {
@@ -98,56 +193,72 @@ impl Transform for TuneableConsistency {
          */
 
         let mut r = fu.take_while(|x| {
+            let resp = successes < required_successes;
             if let Ok(Ok(x)) = x {
-                info!("{:?}", x);
+                debug!("{:?}", x);
                 successes += 1;
             }
-            successes < required_successes
+            resp
         });
-        let mut collated_results = vec![];
-        let mut collated_errors = vec![];
+        let mut message_holder = vec![];
 
         while let Some(Ok(Ok(m))) = r.next().await {
-            if let Message::Response(QueryResponse {
-                matching_query: _,
-                original: _,
-                result,
-                error,
-                response_meta: _,
-            }) = &m
-            {
-                if let Some(res) = result {
-                    collated_results.push(res.clone());
-                }
-                if let Some(res) = error {
-                    collated_errors.push(res.clone());
-                }
-            }
+            debug!("{:#?}", m);
+            message_holder.push(m);
         }
 
+        let mut collated_results = message_holder
+            .iter()
+            .cloned()
+            .filter_map(move |m| match m {
+                Message::Response(qr) => Some(qr),
+                Message::Modified(m) => {
+                    if let Message::Response(qr) = *m {
+                        Some(qr)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect_vec();
+
+        // warn!(
+        //     "s: {} r: {}, v: {}",
+        //     successes,
+        //     required_successes,
+        //     collated_results.len()
+        // );
+
         return if successes >= required_successes {
-            let matching = if let Message::Query(qm) = qd.message {
+            let mut matching = if let Message::Query(qm) = qd.message {
                 Some(qm)
             } else {
                 None
             };
 
-            if collated_results.len() > 0 || collated_errors.len() > 0 {
-                return ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
-                    QueryResponse::result_error_with_matching(
-                        matching,
-                        if collated_results.len() > 0 {
-                            Some(Value::FragmentedResponese(collated_results))
-                        } else {
-                            None
-                        },
-                        if collated_errors.len() > 0 {
-                            Some(Value::FragmentedResponese(collated_errors))
-                        } else {
-                            None
-                        },
-                    ),
-                ))));
+            if collated_results.len() > 0 {
+                if let Some(mut collated_response) = resolve_fragments(&mut collated_results) {
+                    if let Some(mq) = &matching {
+                        if let Some(a) = &mq.ast {
+                            if a.get_command().to_ascii_lowercase()
+                                == "SSCAN".to_string().to_ascii_lowercase()
+                            {
+                                warn!(
+                                    "\nquery: {:?}\nresult {:?}",
+                                    mq.query_string, collated_response.result
+                                );
+                            }
+                        }
+                    }
+
+                    std::mem::swap(&mut collated_response.matching_query, &mut matching);
+                    let res = ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
+                        collated_response,
+                    ))));
+
+                    return res;
+                }
             }
             ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
                 QueryResponse::empty(),

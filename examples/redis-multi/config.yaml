@@ -5,20 +5,23 @@ sources:
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
-    - ResponseResolver: []
+    - Printer
     - ConsistentScatter:
-        write_consistency: 2
-        read_consistency: 2
+        write_consistency: 1
+        read_consistency: 1
         route_map:
           one:
+            - RedisTimestampTagger
             - RedisDestination:
                 remote_address: "127.0.0.1:1111"
-          two:
-            - RedisDestination:
-                remote_address: "127.0.0.1:2222"
-          three:
-            - RedisDestination:
-                remote_address: "127.0.0.1:3333"
+#          two:
+#            - RedisTimestampTagger
+#            - RedisDestination:
+#                remote_address: "127.0.0.1:2222"
+#          three:
+#            - RedisTimestampTagger
+#            - RedisDestination:
+#                remote_address: "127.0.0.1:3333"
 named_topics:
   - testtopic
 source_to_chain_mapping:
