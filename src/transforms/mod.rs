@@ -23,6 +23,7 @@ use crate::transforms::null::Null;
 use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
 use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
+use crate::transforms::redis_transforms::redis_cluster::{RedisCluster, RedisClusterConfig};
 use crate::transforms::redis_transforms::redis_codec_destination::{
     RedisCodecConfiguration, RedisCodecDestination,
 };
@@ -67,6 +68,7 @@ pub enum Transforms {
     TuneableConsistency(TuneableConsistency),
     ResponseUnifier(ResponseUnifier),
     RedisTimeStampTagger(RedisTimestampTagger),
+    RedisCluster(RedisCluster),
     // The below variants are mainly for testing
     RepeatMessage(Box<ReturnerTransform>),
     RandomDelay(RandomDelayTransform),
@@ -105,6 +107,7 @@ impl Transform for Transforms {
             Transforms::RedisCodecDestination(r) => r.transform(qd, t).await,
             Transforms::ResponseUnifier(r) => r.transform(qd, t).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(qd, t).await,
+            Transforms::RedisCluster(r) => r.transform(qd, t).await,
         }
     }
 
@@ -127,6 +130,7 @@ impl Transform for Transforms {
             Transforms::RedisCodecDestination(r) => r.get_name(),
             Transforms::ResponseUnifier(r) => r.get_name(),
             Transforms::RedisTimeStampTagger(r) => r.get_name(),
+            Transforms::RedisCluster(r) => r.get_name(),
         }
     }
 
@@ -149,6 +153,7 @@ impl Transform for Transforms {
             Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
             Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisCluster(r) => r.prep_transform_chain(t).await,
         }
     }
 }
@@ -165,6 +170,7 @@ pub enum TransformsConfig {
     ConsistentScatter(TuneableConsistencyConfig),
     ResponseResolver(ResponseUnifierConfig),
     Scatter(ScatterConfig),
+    RedisCluster(RedisClusterConfig),
     RedisTimestampTagger,
     Printer,
 }
@@ -186,6 +192,7 @@ impl TransformsConfig {
                 Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
             }
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
+            TransformsConfig::RedisCluster(r) => r.get_source(topics).await,
         }
     }
 }
