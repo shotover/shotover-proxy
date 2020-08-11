@@ -20,7 +20,6 @@ pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
 
 pub fn load_docker_compose(file_path: String) -> Result<()> {
     // stop_docker_compose(file_path.clone())?;
-    thread::sleep(time::Duration::from_secs(1));
     let mut command = Command::new("sh");
     command
         .arg("-c")
@@ -31,6 +30,8 @@ pub fn load_docker_compose(file_path: String) -> Result<()> {
     let output = command
         .status()
         .expect("could not exec process docker-compose");
+    thread::sleep(time::Duration::from_secs(4));
+
     if output.success() {
         return Ok(());
     }
