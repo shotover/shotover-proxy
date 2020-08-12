@@ -36,6 +36,10 @@ impl Display for Wrapper {
 }
 
 impl Wrapper {
+    pub fn swap_message(&mut self, mut m: Message) {
+        std::mem::swap(&mut self.message, &mut m);
+    }
+
     pub fn new(m: Message) -> Self {
         Wrapper {
             message: m,

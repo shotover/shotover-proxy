@@ -1,7 +1,19 @@
+use core::fmt;
+use std::fmt::Debug;
+
+use anyhow::Result;
+use async_trait::async_trait;
+use serde::export::Formatter;
+use serde::{Deserialize, Serialize};
+
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::distributed::response_unifier::{ResponseUnifier, ResponseUnifierConfig};
+use crate::transforms::distributed::tuneable_consistency_scatter::{
+    TuneableConsistency, TuneableConsistencyConfig,
+};
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::lua::LuaFilterTransform;
 use crate::transforms::mpsc::{
@@ -10,24 +22,19 @@ use crate::transforms::mpsc::{
 use crate::transforms::null::Null;
 use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
-use crate::transforms::redis_cache::{RedisConfig, SimpleRedisCache};
-use crate::transforms::redis_codec_destination::{RedisCodecConfiguration, RedisCodecDestination};
-use crate::transforms::response_unifier::{ResponseUnifier, ResponseUnifierConfig};
+use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
+use crate::transforms::redis_transforms::redis_cluster::{RedisCluster, RedisClusterConfig};
+use crate::transforms::redis_transforms::redis_codec_destination::{
+    RedisCodecConfiguration, RedisCodecDestination,
+};
+use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::route::{Route, RouteConfig};
 use crate::transforms::scatter::{Scatter, ScatterConfig};
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
-use crate::transforms::tuneable_consistency_scatter::{
-    TuneableConsistency, TuneableConsistencyConfig,
-};
-use anyhow::Result;
-use async_trait::async_trait;
-use core::fmt;
-use serde::export::Formatter;
-use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
 
 pub mod cassandra_codec_destination;
 pub mod chain;
+pub mod distributed;
 pub mod kafka_destination;
 pub mod lua;
 pub mod mpsc;
@@ -36,13 +43,12 @@ pub mod null;
 pub mod printer;
 pub mod protect;
 pub mod query;
-pub mod redis_cache;
-pub mod redis_codec_destination;
-mod response_unifier;
+pub mod redis_transforms;
 pub mod route;
 pub mod scatter;
 pub mod test_transforms;
-pub mod tuneable_consistency_scatter;
+
+//TODO Generate the trait implementation for this passthrough enum via a macro
 
 #[derive(Clone)]
 pub enum Transforms {
@@ -54,15 +60,17 @@ pub enum Transforms {
     MPSCForwarder(AsyncMpscForwarder),
     Route(Route),
     Scatter(Scatter),
-    Printer(Printer),
     Null(Null),
     Lua(LuaFilterTransform),
     Protect(Protect),
     TuneableConsistency(TuneableConsistency),
     ResponseUnifier(ResponseUnifier),
+    RedisTimeStampTagger(RedisTimestampTagger),
+    RedisCluster(RedisCluster),
     // The below variants are mainly for testing
     RepeatMessage(Box<ReturnerTransform>),
     RandomDelay(RandomDelayTransform),
+    Printer(Printer),
 }
 
 impl Debug for Transforms {
@@ -71,32 +79,13 @@ impl Debug for Transforms {
     }
 }
 
+//TODO fix this grossness
 unsafe impl Send for Transforms {}
+
 unsafe impl Sync for Transforms {}
 
 #[async_trait]
 impl Transform for Transforms {
-    async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
-        match self {
-            Transforms::CodecDestination(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisCodecDestination(a) => a.prep_transform_chain(t).await,
-            Transforms::KafkaDestination(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
-            Transforms::MPSCTee(a) => a.prep_transform_chain(t).await,
-            Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
-            Transforms::Route(a) => a.prep_transform_chain(t).await,
-            Transforms::Scatter(a) => a.prep_transform_chain(t).await,
-            Transforms::Printer(a) => a.prep_transform_chain(t).await,
-            Transforms::Null(a) => a.prep_transform_chain(t).await,
-            Transforms::Lua(a) => a.prep_transform_chain(t).await,
-            Transforms::Protect(a) => a.prep_transform_chain(t).await,
-            Transforms::TuneableConsistency(a) => a.prep_transform_chain(t).await,
-            Transforms::ResponseUnifier(a) => a.prep_transform_chain(t).await,
-            Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
-            Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
-        }
-    }
-
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         match self {
             Transforms::CodecDestination(c) => c.transform(qd, t).await,
@@ -115,6 +104,8 @@ impl Transform for Transforms {
             Transforms::TuneableConsistency(tc) => tc.transform(qd, t).await,
             Transforms::RedisCodecDestination(r) => r.transform(qd, t).await,
             Transforms::ResponseUnifier(r) => r.transform(qd, t).await,
+            Transforms::RedisTimeStampTagger(r) => r.transform(qd, t).await,
+            Transforms::RedisCluster(r) => r.transform(qd, t).await,
         }
     }
 
@@ -136,6 +127,31 @@ impl Transform for Transforms {
             Transforms::RandomDelay(p) => p.get_name(),
             Transforms::RedisCodecDestination(r) => r.get_name(),
             Transforms::ResponseUnifier(r) => r.get_name(),
+            Transforms::RedisTimeStampTagger(r) => r.get_name(),
+            Transforms::RedisCluster(r) => r.get_name(),
+        }
+    }
+
+    async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
+        match self {
+            Transforms::CodecDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisCodecDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::KafkaDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
+            Transforms::MPSCTee(a) => a.prep_transform_chain(t).await,
+            Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
+            Transforms::Route(a) => a.prep_transform_chain(t).await,
+            Transforms::Scatter(a) => a.prep_transform_chain(t).await,
+            Transforms::Printer(a) => a.prep_transform_chain(t).await,
+            Transforms::Null(a) => a.prep_transform_chain(t).await,
+            Transforms::Lua(a) => a.prep_transform_chain(t).await,
+            Transforms::Protect(a) => a.prep_transform_chain(t).await,
+            Transforms::TuneableConsistency(a) => a.prep_transform_chain(t).await,
+            Transforms::ResponseUnifier(a) => a.prep_transform_chain(t).await,
+            Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
+            Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisCluster(r) => r.prep_transform_chain(t).await,
         }
     }
 }
@@ -152,6 +168,9 @@ pub enum TransformsConfig {
     ConsistentScatter(TuneableConsistencyConfig),
     ResponseResolver(ResponseUnifierConfig),
     Scatter(ScatterConfig),
+    RedisCluster(RedisClusterConfig),
+    RedisTimestampTagger,
+    Printer,
 }
 
 impl TransformsConfig {
@@ -167,6 +186,11 @@ impl TransformsConfig {
             TransformsConfig::RedisDestination(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::ResponseResolver(r) => r.get_source(topics).await,
+            TransformsConfig::RedisTimestampTagger => {
+                Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
+            }
+            TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
+            TransformsConfig::RedisCluster(r) => r.get_source(topics).await,
         }
     }
 }

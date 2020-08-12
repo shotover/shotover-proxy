@@ -170,7 +170,7 @@ mod test {
     use tokio::stream::StreamExt;
     use tokio::sync::Mutex;
 
-    use crate::transforms::redis_codec_destination::RedisCodecDestination;
+    use crate::transforms::redis_transforms::redis_codec_destination::RedisCodecDestination;
 
     #[tokio::test(threaded_scheduler)]
     pub async fn test_clock_wrap() -> Result<()> {

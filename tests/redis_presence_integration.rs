@@ -13,7 +13,7 @@ const LUA2: &str = r###"
 return {KEYS[1],ARGV[1],ARGV[2]}
 "###;
 
-fn start_proxy(config: String) -> JoinHandle<Result<()>> {
+pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     return tokio::spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
@@ -27,32 +27,6 @@ fn get_redis_conn() -> Result<Connection> {
     let client = redis::Client::open("redis://127.0.0.1:6379/")?;
     Ok(client.get_connection()?)
 }
-
-/*
-[0 127.0.0.1:52827] "TTL" "demo-36:channel1:user2"
-[0 127.0.0.1:52827] "EVALSHA" "b69f00dd93d2e307021730efc81ead4fb194181d" "1" "c:demo-36:channel1" "640"
-"user2" "1509861014.276593"
-[0 lua] "zadd" "c:demo-36:channel1" "1509861014.276593" "user2"
-[0 lua] "zcard" "c:demo-36:channel1"
-[0 lua] "expire" "c:demo-36:channel1" "640"
-[0 127.0.0.1:52827] "EVALSHA" "52b7ca41781c75791909c2b6d372bc34dff3b532" "1" "updates" "demo-36:channel1"
-"1509861014.276593"
-[0 lua] "zscore" "updates" "demo-36:channel1"
-[0 127.0.0.1:52827] "SADD" "demo-36:uuids:user2" "channel1"
-[0 127.0.0.1:52827] "EXPIRE" "demo-36:uuids:user2" "640"
-[0 127.0.0.1:52827] "SADD" "channels:demo-36" "channel1"
-[0 127.0.0.1:52827] "EXPIRE" "channels:demo-36" "640"
-
-Update/Ping
-
-[0 127.0.0.1:52827] "TTL" "demo-36:channel1:user2"
-[0 127.0.0.1:52827] "EVALSHA" "b69f00dd93d2e307021730efc81ead4fb194181d" "1" "c:demo-36:channel1" "640"
-"user2" "1509861050.767142"
-[0 lua] "zadd" "c:demo-36:channel1" "1509861050.767142" "user2"
-[0 lua] "expire" "c:demo-36:channel1" "640"
-[0 127.0.0.1:52827] "EXPIRE" "demo-36:uuids:user2" "640"
-[0 127.0.0.1:52827] "EXPIRE" "channels:demo-36" "640"
- */
 
 fn load_lua<RV>(con: &mut redis::Connection, script: String) -> RedisResult<RV>
 where

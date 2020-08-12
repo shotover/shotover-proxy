@@ -1,19 +1,18 @@
 use crate::config::topology::TopicHolder;
 
+use crate::error::ChainResponse;
+use crate::message::{Message, QueryMessage, QueryResponse, Value};
+use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
     build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
 };
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::error::ChainResponse;
-use anyhow::{anyhow, Result};
-use crate::runtimes::{ScriptHolder, ScriptConfigurator, ScriptDefinition};
-use crate::message::{QueryMessage, Message, QueryResponse, Value};
-use futures::stream::FuturesUnordered;
-use futures::{StreamExt};
-
 
 #[derive(Clone)]
 pub struct Scatter {
@@ -31,10 +30,7 @@ pub struct ScatterConfig {
 
 #[async_trait]
 impl TransformsFromConfig for ScatterConfig {
-    async fn get_source(
-        &self,
-        topics: &TopicHolder,
-    ) -> Result<Transforms> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
             temp.insert(
@@ -56,9 +52,14 @@ impl Transform for Scatter {
         if let Message::Query(qm) = &qd.message {
             let chosen_route = self.route_script.call(&t.lua_runtime, qm.clone())?;
             if chosen_route.len() == 1 {
-                return self.route_map.get(chosen_route.get(0).unwrap().as_str()).unwrap().process_request(qd).await;
+                return self
+                    .route_map
+                    .get(chosen_route.get(0).unwrap().as_str())
+                    .unwrap()
+                    .process_request(qd)
+                    .await;
             } else if chosen_route.len() == 0 {
-                return ChainResponse::Err(anyhow!("no routes found"))
+                return ChainResponse::Err(anyhow!("no routes found"));
             } else {
                 let mut fu = FuturesUnordered::new();
                 for ref route in &chosen_route {
@@ -71,26 +72,34 @@ impl Transform for Scatter {
 
                 let mut collated_results = vec![];
 
-                while let Some(Ok(m))= fu.next().await {
-                    if let Message::Response(QueryResponse{ matching_query: _, original: _, result, error:_ }) = &m {
+                while let Some(Ok(m)) = fu.next().await {
+                    if let Message::Response(QueryResponse {
+                        matching_query: _,
+                        original: _,
+                        result,
+                        error: _,
+                        response_meta: _,
+                    }) = &m
+                    {
                         if let Some(res) = result {
                             collated_results.push(res.clone());
                         }
                     }
                 }
-                ChainResponse::Ok(Message::Response(QueryResponse::just_result(Value::FragmentedResponese(collated_results))))
+                ChainResponse::Ok(Message::Response(QueryResponse::just_result(
+                    Value::FragmentedResponese(collated_results),
+                )))
             }
         } else {
             Err(anyhow!("expected a query for the scatter"))
         }
-
-}
+    }
 
     fn get_name(&self) -> &'static str {
         self.name
     }
 
-    async fn prep_transform_chain(& mut self, t: &mut TransformChain) -> Result<()> {
+    async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         self.route_script.prep_lua_runtime(&t.lua_runtime)?;
         Ok(())
     }

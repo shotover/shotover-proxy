@@ -1,7 +1,9 @@
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value};
+use crate::message::{
+    ASTHolder, Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value,
+};
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
 use redis_protocol::prelude::*;
 use std::borrow::BorrowMut;
@@ -23,9 +25,9 @@ fn get_keys(
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
         if let Some(Frame::BulkString(v)) = commands.pop() {
-            let key = String::from_utf8(v)?;
+            let key = String::from_utf8(v.clone())?;
             fields.insert(key.clone(), Value::None);
-            keys_storage.push(Value::Strings(key));
+            keys_storage.push(Frame::BulkString(v).into());
         }
     }
     keys.insert("key".to_string(), Value::List(keys_storage));
@@ -39,13 +41,13 @@ fn get_key_multi_values(
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     if let Some(Frame::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8(v)?;
-        keys_storage.push(Value::Strings(key.clone()));
+        let key = String::from_utf8(v.clone())?;
+        keys_storage.push(Frame::BulkString(v).into());
 
         let mut values: Vec<Value> = vec![];
         while !commands.is_empty() {
-            if let Some(Frame::BulkString(value)) = commands.pop() {
-                values.push(Value::Strings(String::from_utf8(value)?));
+            if let Some(frame) = commands.pop() {
+                values.push(frame.into());
             }
         }
         fields.insert(key, Value::List(values));
@@ -61,17 +63,14 @@ fn get_key_map(
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     if let Some(Frame::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8(v)?;
-        keys_storage.push(Value::Strings(key.clone()));
+        let key = String::from_utf8(v.clone())?;
+        keys_storage.push(Frame::BulkString(v).into());
 
         let mut values: HashMap<String, Value> = HashMap::new();
         while !commands.is_empty() {
             if let Some(Frame::BulkString(field)) = commands.pop() {
-                if let Some(Frame::BulkString(value)) = commands.pop() {
-                    values.insert(
-                        String::from_utf8(field)?,
-                        Value::Strings(String::from_utf8(value)?),
-                    );
+                if let Some(frame) = commands.pop() {
+                    values.insert(String::from_utf8(field)?, frame.into());
                 }
             }
         }
@@ -89,10 +88,10 @@ fn get_key_values(
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
         if let Some(Frame::BulkString(k)) = commands.pop() {
-            let key = String::from_utf8(k)?;
-            keys_storage.push(Value::Strings(key.clone()));
-            if let Some(Frame::BulkString(value)) = commands.pop() {
-                fields.insert(key, Value::Strings(String::from_utf8(value)?));
+            let key = String::from_utf8(k.clone())?;
+            keys_storage.push(Frame::BulkString(k).into());
+            if let Some(frame) = commands.pop() {
+                fields.insert(key, frame.into());
             }
         }
     }
@@ -123,6 +122,10 @@ impl RedisCodec {
                 .map(|s| s.to_string())
                 .collect_vec()
                 .join(" ");
+
+            let ast = ASTHolder::Commands(Value::List(
+                commands_vec.iter().cloned().map(|f| f.into()).collect_vec(),
+            ));
 
             let commands = &mut commands_reversed;
 
@@ -366,7 +369,6 @@ impl RedisCodec {
                     } // merge N HyperLogLogs into a single one
                     _ => {}
                 }
-                // panic!(); //TODO AST for redis messages - right now just include the Vec of commands
                 return Ok(Message::Query(QueryMessage {
                     original: RawFrame::Redis(frame),
                     query_string,
@@ -375,9 +377,19 @@ impl RedisCodec {
                     query_values: Some(values_map),
                     projection: None,
                     query_type,
-                    ast: None,
+                    ast: Some(ast),
                 }));
             }
+        } else {
+            return Ok(Message::Response(QueryResponse {
+                matching_query: None,
+                original: RawFrame::Redis(frame),
+                result: Some(Value::List(
+                    commands_vec.iter().map(|f| f.into()).collect_vec(),
+                )),
+                error: None,
+                response_meta: None,
+            }));
         }
         return Ok(Message::Bypass(RawMessage {
             original: RawFrame::Redis(frame),
@@ -391,11 +403,37 @@ impl RedisCodec {
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Strings(string)),
                 error: None,
+                response_meta: None,
             })
         } else {
             Message::Query(QueryMessage {
                 original: RawFrame::Redis(frame),
                 query_string: string,
+                namespace: vec![],
+                primary_key: Default::default(),
+                query_values: None,
+                projection: None,
+                query_type: QueryType::Read,
+                ast: None, //TODO: construct an AST for redis commands (this will be a bit of a task)
+            })
+        };
+
+        return message;
+    }
+
+    fn handle_redis_bulkstring(&self, bulkstring: Vec<u8>, frame: Frame) -> Message {
+        let message = if self.decode_as_response {
+            Message::Response(QueryResponse {
+                matching_query: None,
+                original: RawFrame::Redis(frame),
+                result: Some(Value::Bytes(Bytes::from(bulkstring))),
+                error: None,
+                response_meta: None,
+            })
+        } else {
+            Message::Query(QueryMessage {
+                original: RawFrame::Redis(frame),
+                query_string: unsafe { String::from_utf8_unchecked(bulkstring) },
                 namespace: vec![],
                 primary_key: Default::default(),
                 query_values: None,
@@ -415,6 +453,7 @@ impl RedisCodec {
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Integer(integer)),
                 error: None,
+                response_meta: None,
             })
         } else {
             Message::Query(QueryMessage {
@@ -439,6 +478,7 @@ impl RedisCodec {
                 original: RawFrame::Redis(frame),
                 result: None,
                 error: Some(Value::Strings(error)),
+                response_meta: None,
             })
         } else {
             Message::Query(QueryMessage {
@@ -481,10 +521,7 @@ impl RedisCodec {
         } else {
             return Ok(match frame.clone() {
                 Frame::SimpleString(s) => self.handle_redis_string(s, frame),
-                Frame::BulkString(bs) => self.handle_redis_string(
-                    String::from_utf8(bs).unwrap_or("invalid utf-8".to_string()),
-                    frame,
-                ),
+                Frame::BulkString(bs) => self.handle_redis_bulkstring(bs, frame),
                 Frame::Array(frames) => self.handle_redis_array(frames, frame)?,
                 Frame::Moved(m) => self.handle_redis_string(m, frame),
                 Frame::Ask(a) => self.handle_redis_string(a, frame),
@@ -510,7 +547,12 @@ impl RedisCodec {
         info!("{:?}", resp);
         Frame::SimpleString("OK".to_string())
     }
+
     pub fn build_redis_query_frame(query: &mut QueryMessage) -> Frame {
+        if let Some(ASTHolder::Commands(Value::List(ast))) = &query.ast {
+            let commands: Vec<Frame> = ast.iter().cloned().map(|v| v.into()).collect_vec();
+            return Frame::Array(commands);
+        }
         return Frame::SimpleString(query.query_string.clone());
     }
 

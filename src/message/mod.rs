@@ -9,7 +9,9 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
+use itertools::Itertools;
 use mlua::UserData;
+use redis::{RedisResult, RedisWrite, Value as RValue};
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -35,6 +37,48 @@ pub struct RawMessage {
     pub original: RawFrame,
 }
 
+// Transforms should not try to directly serialize the AST - it's purely an in-memory representation
+// query_string is also mainly there from a debugging / logging perspective as its a utf8
+// encoded represntation of the query.
+// Statement can be "serialized"/rendered through it's display methods
+// Commands can be serialized by getting the underlying Value
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum ASTHolder {
+    SQL(Statement),
+    Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
+}
+
+impl ASTHolder {
+    pub fn get_command(&self) -> String {
+        match self {
+            ASTHolder::SQL(statement) => {
+                return match statement {
+                    Statement::Query(_) => "SELECT",
+                    Statement::Insert { .. } => "INSERT",
+                    Statement::Update { .. } => "UPDATE",
+                    Statement::Delete { .. } => "DELETE",
+                    Statement::CreateView { .. } => "CREATE VIEW",
+                    Statement::CreateTable { .. } => "CREATE TABLE",
+                    Statement::AlterTable { .. } => "ALTER TABLE",
+                    Statement::Drop { .. } => "DROP",
+                    _ => "UKNOWN",
+                }
+                .to_string();
+            }
+            ASTHolder::Commands(commands) => {
+                if let Value::List(coms) = commands {
+                    if let Some(Value::Bytes(b)) = coms.get(0) {
+                        return String::from_utf8(b.to_vec())
+                            .unwrap_or_else(|_| "couldn't decode".to_string());
+                    }
+                }
+            }
+        }
+        "UNKNOWN".to_string()
+    }
+}
+
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
     pub original: RawFrame,
@@ -45,7 +89,7 @@ pub struct QueryMessage {
     pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
     #[serde(skip)]
-    pub ast: Option<Statement>,
+    pub ast: Option<ASTHolder>,
 }
 
 impl QueryMessage {
@@ -87,6 +131,7 @@ pub struct QueryResponse {
     pub original: RawFrame,
     pub result: Option<Value>,
     pub error: Option<Value>,
+    pub response_meta: Option<Value>,
 }
 
 //TODO this could use a Builder
@@ -97,6 +142,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error: None,
+            response_meta: None,
         };
     }
 
@@ -106,6 +152,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error,
+            response_meta: None,
         };
     }
 
@@ -115,6 +162,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: Some(result),
             error: None,
+            response_meta: None,
         };
     }
 
@@ -124,6 +172,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: Some(result),
             error: None,
+            response_meta: None,
         };
     }
 
@@ -137,6 +186,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: result,
             error: error,
+            response_meta: None,
         };
     }
 
@@ -146,6 +196,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error: Some(error),
+            response_meta: None,
         };
     }
 
@@ -155,6 +206,7 @@ impl QueryResponse {
             original: RawFrame::NONE,
             result: None,
             error: None,
+            response_meta: None,
         };
     }
 }
@@ -188,6 +240,77 @@ pub enum Value {
     FragmentedResponese(Vec<Value>),
 }
 
+fn parse_redis(v: &RValue) -> Value {
+    match v {
+        RValue::Nil => Value::NULL,
+        RValue::Int(i) => Value::Integer(i.clone()),
+        RValue::Data(d) => Value::Bytes(Bytes::from(d.clone())),
+        RValue::Bulk(b) => Value::List(b.iter().map(|v| parse_redis(v)).collect_vec()),
+        RValue::Status(s) => Value::Strings(s.clone()),
+        RValue::Okay => Value::Strings("OK".to_string()),
+    }
+}
+
+impl redis::FromRedisValue for Value {
+    fn from_redis_value(v: &RValue) -> RedisResult<Self> {
+        return RedisResult::Ok(parse_redis(v));
+    }
+}
+
+impl redis::ToRedisArgs for Value {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + RedisWrite,
+    {
+        match self {
+            Value::NULL => {}
+            Value::None => {}
+            Value::Bytes(b) => out.write_arg(b),
+            Value::Strings(s) => s.write_redis_args(out),
+            Value::Integer(i) => i.write_redis_args(out),
+            Value::Float(f) => f.write_redis_args(out),
+            Value::Boolean(b) => b.write_redis_args(out),
+            Value::Timestamp(t) => format!("{}", t).write_redis_args(out),
+            Value::Inet(i) => format!("{}", i).write_redis_args(out),
+            Value::List(l) => l.write_redis_args(out),
+            Value::Rows(r) => r.write_redis_args(out),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl From<Frame> for Value {
+    fn from(f: Frame) -> Self {
+        // panic!("Aug 07 15:56:49.621  INFO instaproxy::transforms::tuneable_consistency_scatter: Response(QueryResponse { matching_query: None, original: Redis(BulkString([102, 111, 111])), result: Some(Strings("foo")), error: None })
+        // ");
+        //         panic!("This should be a bulk_string(byte array) and not be a string"); // I wonder if the bytes themselves need to get serialised differently....?
+        match f {
+            Frame::SimpleString(s) => Value::Strings(s),
+            Frame::Error(e) => Value::Strings(e),
+            Frame::Integer(i) => Value::Integer(i),
+            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::Array(a) => Value::List(a.iter().cloned().map(|i| Value::from(i)).collect()),
+            Frame::Moved(m) => Value::Strings(m),
+            Frame::Ask(a) => Value::Strings(a),
+            Frame::Null => Value::NULL,
+        }
+    }
+}
+impl From<&Frame> for Value {
+    fn from(f: &Frame) -> Self {
+        match f.clone() {
+            Frame::SimpleString(s) => Value::Strings(s),
+            Frame::Error(e) => Value::Strings(e),
+            Frame::Integer(i) => Value::Integer(i),
+            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::Array(a) => Value::List(a.iter().cloned().map(|i| Value::from(i)).collect()),
+            Frame::Moved(m) => Value::Strings(m),
+            Frame::Ask(a) => Value::Strings(a),
+            Frame::Null => Value::NULL,
+        }
+    }
+}
+
 impl Into<Frame> for Value {
     fn into(self) -> Frame {
         match self {
@@ -214,6 +337,14 @@ impl Into<Frame> for Value {
 }
 
 impl Value {
+    pub fn value_byte_string(string: String) -> Value {
+        Value::Bytes(Bytes::from(string))
+    }
+
+    pub fn value_byte_str(str: &'static str) -> Value {
+        Value::Bytes(Bytes::from(str))
+    }
+
     pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> Value {
         if let Some(actual_bytes) = data.as_slice() {
             return match spec.col_type.id {
