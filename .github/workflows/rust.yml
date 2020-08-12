@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: sccache
+  RUST_BACKTRACE: 1
 
 jobs:
   build:
@@ -41,6 +43,22 @@ jobs:
       with:
           toolchain: nightly
           override: true
+    - name: Install sccache
+      env:
+        LINK: https://github.com/mozilla/sccache/releases/download
+        SCCACHE_VERSION: 0.2.12
+      run: |
+        curl -L "$LINK/$SCCACHE_VERSION/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl.tar.gz" | tar xz
+        echo "::add-path::$PWD/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl/"
+
+    - name: Start sccache
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        SCCACHE_BUCKET: shotover-build-caches
+        SCCACHE_IDLE_TIMEOUT: 0
+      run: sccache --start-server
+
     - name: Start docker environment
       run: docker-compose -f examples/redis-multi/docker-compose.yml up -d
     - name: Build
