@@ -12,6 +12,8 @@ use redis::cluster::{ClusterClient, ClusterConnection};
 use redis::ErrorKind;
 use redis::RedisResult;
 
+use tracing::info;
+
 use crate::transforms::{Transforms, TransformsFromConfig};
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -77,32 +79,46 @@ impl Transform for RedisCluster {
                             }
                             let response_res: RedisResult<Value> = cmd.query(conn.deref_mut());
                             return match response_res {
-                                Ok(result) => Ok(Message::Modified(Box::new(Message::Response(
-                                    QueryResponse {
-                                        matching_query: Some(original),
-                                        original: RawFrame::NONE,
-                                        result: Some(result),
-                                        error: None,
-                                        response_meta: None,
-                                    },
-                                )))),
-                                Err(error) => match error.kind() {
-                                    ErrorKind::MasterDown
-                                    | ErrorKind::IoError
-                                    | ErrorKind::ClientError
-                                    | ErrorKind::ExtensionError => {
-                                        Err(anyhow!("Got connection error with cluster {}", error))
-                                    }
-                                    _ => Ok(Message::Modified(Box::new(Message::Response(
+                                Ok(result) => {
+                                    info!("{:#?}", result);
+                                    Ok(Message::Modified(Box::new(Message::Response(
                                         QueryResponse {
                                             matching_query: Some(original),
                                             original: RawFrame::NONE,
-                                            result: None,
-                                            error: Some(Value::Strings(format!("{}", error))),
+                                            result: Some(result),
+                                            error: None,
                                             response_meta: None,
                                         },
-                                    )))),
-                                },
+                                    ))))
+                                }
+                                Err(error) => {
+                                    info!("e: {}", error);
+                                    match error.kind() {
+                                        ErrorKind::MasterDown
+                                        | ErrorKind::IoError
+                                        | ErrorKind::ClientError
+                                        | ErrorKind::ExtensionError => Err(anyhow!(
+                                            "Got connection error with cluster {}",
+                                            error
+                                        )),
+                                        _ => Ok(Message::Modified(Box::new(Message::Response(
+                                            QueryResponse {
+                                                matching_query: Some(original),
+                                                original: RawFrame::NONE,
+                                                result: None,
+                                                error: Some(Value::Strings(format!(
+                                                    "{} {}",
+                                                    error.code().unwrap_or("ERR").to_string(),
+                                                    error
+                                                        .detail()
+                                                        .unwrap_or("something went wrong?")
+                                                        .to_string(),
+                                                ))),
+                                                response_meta: None,
+                                            },
+                                        )))),
+                                    }
+                                }
                             };
                         }
                     }

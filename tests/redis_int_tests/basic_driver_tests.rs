@@ -219,15 +219,15 @@ fn test_pipeline() {
 
     let ((k1, k2),): ((i32, i32),) = redis::pipe()
         .cmd("SET")
-        .arg("key_1")
+        .arg("k{x}ey_1")
         .arg(42)
         .ignore()
         .cmd("SET")
-        .arg("key_2")
+        .arg("k{x}ey_2")
         .arg(43)
         .ignore()
         .cmd("MGET")
-        .arg(&["key_1", "key_2"])
+        .arg(&["k{x}ey_1", "k{x}ey_2"])
         .query(&mut con)
         .unwrap();
 
@@ -251,15 +251,15 @@ fn test_pipeline_transaction() {
     let ((k1, k2),): ((i32, i32),) = redis::pipe()
         .atomic()
         .cmd("SET")
-        .arg("key_1")
+        .arg("k{x}ey_1")
         .arg(42)
         .ignore()
         .cmd("SET")
-        .arg("key_2")
+        .arg("k{x}ey_2")
         .arg(43)
         .ignore()
         .cmd("MGET")
-        .arg(&["key_1", "key_2"])
+        .arg(&["k{x}ey_1", "k{x}ey_2"])
         .query(&mut con)
         .unwrap();
 
@@ -275,27 +275,27 @@ fn test_pipeline_reuse_query() {
 
     let ((k1,),): ((i32,),) = pl
         .cmd("SET")
-        .arg("pkey_1")
+        .arg("p{x}key_1")
         .arg(42)
         .ignore()
         .cmd("MGET")
-        .arg(&["pkey_1"])
+        .arg(&["p{x}key_1"])
         .query(&mut con)
         .unwrap();
 
     assert_eq!(k1, 42);
 
-    redis::cmd("DEL").arg("pkey_1").execute(&mut con);
+    redis::cmd("DEL").arg("p{x}key_1").execute(&mut con);
 
     // The internal commands vector of the pipeline still contains the previous commands.
     let ((k1,), (k2, k3)): ((i32,), (i32, i32)) = pl
         .cmd("SET")
-        .arg("pkey_2")
+        .arg("p{x}key_2")
         .arg(43)
         .ignore()
         .cmd("MGET")
-        .arg(&["pkey_1"])
-        .arg(&["pkey_2"])
+        .arg(&["p{x}key_1"])
+        .arg(&["p{x}key_2"])
         .query(&mut con)
         .unwrap();
 
@@ -312,27 +312,27 @@ fn test_pipeline_reuse_query_clear() {
 
     let ((k1,),): ((i32,),) = pl
         .cmd("SET")
-        .arg("pkey_1")
+        .arg("p{x}key_1")
         .arg(44)
         .ignore()
         .cmd("MGET")
-        .arg(&["pkey_1"])
+        .arg(&["p{x}key_1"])
         .query(&mut con)
         .unwrap();
     pl.clear();
 
     assert_eq!(k1, 44);
 
-    redis::cmd("DEL").arg("pkey_1").execute(&mut con);
+    redis::cmd("DEL").arg("p{x}key_1").execute(&mut con);
 
     let ((k1, k2),): ((bool, i32),) = pl
         .cmd("SET")
-        .arg("pkey_2")
+        .arg("p{x}key_2")
         .arg(45)
         .ignore()
         .cmd("MGET")
-        .arg(&["pkey_1"])
-        .arg(&["pkey_2"])
+        .arg(&["p{x}key_1"])
+        .arg(&["p{x}key_2"])
         .query(&mut con)
         .unwrap();
     pl.clear();
@@ -769,7 +769,7 @@ fn test_active_one_active_redis() -> Result<()> {
     return Ok(());
 }
 
-// #[test]
+#[test]
 #[allow(dead_code)]
 fn test_pass_redis_cluster_one() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
@@ -800,7 +800,7 @@ fn test_pass_redis_cluster_one() -> Result<()> {
         .try_init();
 
     // test_args()test_args;
-    test_set_ops();
+    test_cluster_script();
 
     return Ok(());
 }
@@ -836,8 +836,8 @@ fn run_all_cluster_safe(config: String) -> Result<()> {
 
     test_cluster_basics();
     test_cluster_eval();
-    // test_cluster_script(); //TODO: script does not seem to be loading in the server?
-    // test_cluster_pipeline(); // we do support pipelining!!
+    test_cluster_script(); //TODO: script does not seem to be loading in the server?
+                           // test_cluster_pipeline(); // we do support pipelining!!
     test_getset();
     test_incr();
     // test_info();
@@ -847,14 +847,18 @@ fn run_all_cluster_safe(config: String) -> Result<()> {
     // test_optionals();
     test_scanning();
     test_filtered_scanning();
-    // test_pipeline(); // TODO BULK ERROR AS well!
+    test_pipeline(); // NGET Issues
     test_empty_pipeline();
+    // TODO: Pipeline transactions currently don't work (though it tries very hard)
+    // Current each cmd in a pipeline is treated as a single request, which means on a cluster
+    // basis they end up getting routed to different masters. This results in very occasionally will
+    // the transaction resolve (the exec and the multi both go to the right server).
     // test_pipeline_transaction();
-    // test_pipeline_reuse_query();
-    // test_pipeline_reuse_query_clear();
+    test_pipeline_reuse_query();
+    test_pipeline_reuse_query_clear();
     // test_real_transaction();
-    // test_real_transaction_highlevel(); // TODO: Weird error = Bulk response of wrong dimension" (response was bulk())
-    // test_script();
+    // test_real_transaction_highlevel();
+    test_script();
     test_tuple_args();
     // test_nice_api();
     // test_auto_m_versions();
