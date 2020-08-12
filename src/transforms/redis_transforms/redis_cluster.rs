@@ -12,7 +12,7 @@ use redis::cluster::{ClusterClient, ClusterConnection};
 use redis::ErrorKind;
 use redis::RedisResult;
 
-use tracing::info;
+use tracing::trace;
 
 use crate::transforms::{Transforms, TransformsFromConfig};
 use std::ops::DerefMut;
@@ -80,7 +80,7 @@ impl Transform for RedisCluster {
                             let response_res: RedisResult<Value> = cmd.query(conn.deref_mut());
                             return match response_res {
                                 Ok(result) => {
-                                    info!("{:#?}", result);
+                                    trace!("{:#?}", result);
                                     Ok(Message::Modified(Box::new(Message::Response(
                                         QueryResponse {
                                             matching_query: Some(original),
@@ -92,7 +92,7 @@ impl Transform for RedisCluster {
                                     ))))
                                 }
                                 Err(error) => {
-                                    info!("e: {}", error);
+                                    trace!("e: {}", error);
                                     match error.kind() {
                                         ErrorKind::MasterDown
                                         | ErrorKind::IoError
