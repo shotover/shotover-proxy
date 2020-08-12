@@ -16,31 +16,34 @@ use crate::transforms::{Transforms, TransformsFromConfig};
 #[derive(Clone)]
 pub struct KafkaDestination {
     producer: FutureProducer,
+    pub topic: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct KafkaConfig {
     #[serde(rename = "config_values")]
     pub keys: HashMap<String, String>,
+    pub topic: String,
 }
 
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::KafkaDestination(
-            KafkaDestination::new_from_config(&self.keys),
+            KafkaDestination::new_from_config(&self.keys, self.topic.clone()),
         ))
     }
 }
 
 impl KafkaDestination {
-    pub fn new_from_config(config_map: &HashMap<String, String>) -> KafkaDestination {
+    pub fn new_from_config(config_map: &HashMap<String, String>, topic: String) -> KafkaDestination {
         let mut config = ClientConfig::new();
         for (k, v) in config_map.iter() {
             config.set(k.as_str(), v.as_str());
         }
         return KafkaDestination {
             producer: config.create().expect("Producer creation error"),
+            topic,
         };
     }
 
@@ -51,6 +54,7 @@ impl KafkaDestination {
                 .set("message.timeout.ms", "5000")
                 .create()
                 .expect("Producer creation error"),
+            topic: "test_Topic".to_string()
         }
     }
 }
@@ -64,7 +68,7 @@ impl Transform for KafkaDestination {
                 if let Some(ref key) = qm.get_namespaced_primary_key() {
                     if let Some(values) = qm.query_values {
                         let message = serde_json::to_string(&values)?;
-                        let a = FutureRecord::to("test_topic").payload(&message).key(&key);
+                        let a = FutureRecord::to(self.topic.as_str()).payload(&message).key(&key);
                         self.producer
                             .send(a, Timeout::Never)
                             .await
