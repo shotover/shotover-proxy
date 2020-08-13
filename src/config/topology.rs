@@ -261,12 +261,13 @@ sources:
 chain_config:
   main_chain:
     - MPSCTee:
-        topic_name: testtopic
+        topic_name: test_topic
     - CodecDestination:
         bypass_result_processing: false
         remote_address: "127.0.0.1:9042"
   async_chain:
     - KafkaDestination:
+        topic: "test_topic"
         config_values:
           bootstrap.servers: "127.0.0.1:9092"
           message.timeout.ms: "5000"
