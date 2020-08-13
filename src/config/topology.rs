@@ -178,6 +178,7 @@ impl Topology {
             .iter()
             .map(|(x, y)| (String::from(*x), String::from(*y)))
             .collect(),
+            topic: "test_topic".to_string(),
         });
 
         let listen_addr = "127.0.0.1:9043".to_string();

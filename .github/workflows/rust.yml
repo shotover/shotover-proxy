@@ -60,7 +60,7 @@ jobs:
       run: sccache --start-server
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build
     - name: Run tests
       run: cargo test -- --test-threads 1
     - name: Cleanup docker

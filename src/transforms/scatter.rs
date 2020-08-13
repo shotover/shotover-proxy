@@ -18,7 +18,7 @@ use std::collections::HashMap;
 pub struct Scatter {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
-    route_script: ScriptHolder<QueryMessage, Vec<String>>,
+    route_script: ScriptHolder<(QueryMessage, Vec<String>), Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -50,7 +50,10 @@ impl TransformsFromConfig for ScatterConfig {
 impl Transform for Scatter {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         if let Message::Query(qm) = &qd.message {
-            let chosen_route = self.route_script.call(&t.lua_runtime, qm.clone())?;
+            let routes: Vec<String> = self.route_map.keys().cloned().collect();
+            let chosen_route = self
+                .route_script
+                .call(&t.lua_runtime, (qm.clone(), routes))?;
             if chosen_route.len() == 1 {
                 return self
                     .route_map
