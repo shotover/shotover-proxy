@@ -199,7 +199,7 @@ impl Topology {
         );
 
         let mpsc_config = SourcesConfig::Mpsc(AsyncMpscConfig {
-            topic_name: String::from("testtopic"),
+            topic_name: String::from("test_topic"),
         });
 
         let cassandra_source = SourcesConfig::Cassandra(CassandraConfig {
@@ -209,7 +209,7 @@ impl Topology {
         });
 
         let tee_conf = TransformsConfig::MPSCTee(AsyncMpscTeeConfig {
-            topic_name: String::from("testtopic"),
+            topic_name: String::from("test_topic"),
         });
 
         let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
@@ -222,7 +222,7 @@ impl Topology {
             String::from("async_chain"),
             vec![kafka_transform_config_obj],
         );
-        let named_topics: Vec<String> = vec![String::from("testtopic")];
+        let named_topics: Vec<String> = vec![String::from("test_topic")];
         let mut source_to_chain_mapping: HashMap<String, String> = HashMap::new();
         source_to_chain_mapping.insert(String::from("cassandra_prod"), String::from("main_chain"));
         source_to_chain_mapping.insert(String::from("mpsc_chan"), String::from("async_chain"));
@@ -257,7 +257,7 @@ sources:
           - clustering
   mpsc_chan:
     Mpsc:
-      topic_name: testtopic
+      topic_name: test_topic
 chain_config:
   main_chain:
     - MPSCTee:
@@ -272,7 +272,7 @@ chain_config:
           bootstrap.servers: "127.0.0.1:9092"
           message.timeout.ms: "5000"
 named_topics:
-  - testtopic
+  - test_topic
 source_to_chain_mapping:
   cassandra_prod: main_chain
   mpsc_chan: async_chain"###;
