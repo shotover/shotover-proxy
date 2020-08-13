@@ -10,7 +10,6 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::distributed::response_unifier::{ResponseUnifier, ResponseUnifierConfig};
 use crate::transforms::distributed::tuneable_consistency_scatter::{
     TuneableConsistency, TuneableConsistencyConfig,
 };
@@ -64,7 +63,6 @@ pub enum Transforms {
     Lua(LuaFilterTransform),
     Protect(Protect),
     TuneableConsistency(TuneableConsistency),
-    ResponseUnifier(ResponseUnifier),
     RedisTimeStampTagger(RedisTimestampTagger),
     RedisCluster(RedisCluster),
     // The below variants are mainly for testing
@@ -103,7 +101,6 @@ impl Transform for Transforms {
             Transforms::RandomDelay(p) => p.transform(qd, t).await,
             Transforms::TuneableConsistency(tc) => tc.transform(qd, t).await,
             Transforms::RedisCodecDestination(r) => r.transform(qd, t).await,
-            Transforms::ResponseUnifier(r) => r.transform(qd, t).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(qd, t).await,
             Transforms::RedisCluster(r) => r.transform(qd, t).await,
         }
@@ -126,7 +123,6 @@ impl Transform for Transforms {
             Transforms::RepeatMessage(p) => p.get_name(),
             Transforms::RandomDelay(p) => p.get_name(),
             Transforms::RedisCodecDestination(r) => r.get_name(),
-            Transforms::ResponseUnifier(r) => r.get_name(),
             Transforms::RedisTimeStampTagger(r) => r.get_name(),
             Transforms::RedisCluster(r) => r.get_name(),
         }
@@ -147,7 +143,6 @@ impl Transform for Transforms {
             Transforms::Lua(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
             Transforms::TuneableConsistency(a) => a.prep_transform_chain(t).await,
-            Transforms::ResponseUnifier(a) => a.prep_transform_chain(t).await,
             Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
             Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
@@ -166,7 +161,6 @@ pub enum TransformsConfig {
     MPSCForwarder(AsyncMpscForwarderConfig),
     Route(RouteConfig),
     ConsistentScatter(TuneableConsistencyConfig),
-    ResponseResolver(ResponseUnifierConfig),
     Scatter(ScatterConfig),
     RedisCluster(RedisClusterConfig),
     RedisTimestampTagger,
@@ -185,7 +179,6 @@ impl TransformsConfig {
             TransformsConfig::Scatter(s) => s.get_source(topics).await,
             TransformsConfig::RedisDestination(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
-            TransformsConfig::ResponseResolver(r) => r.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
             }
