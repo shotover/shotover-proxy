@@ -48,7 +48,7 @@ This transform will take a query and push it to .
  Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
  ### RedisCluster
- *State: Alpha*
+ *State: Beta*
 
 
  This transform is a full featured redis driver that will connect to a redis-cluster and handle all discovery, sharding and routing operations.
@@ -66,7 +66,7 @@ _Note: Currently Redis-cluster does not support the following functionality:_
 
 
 ### MPSCForwarder
-*State: Alpha*
+*State: Beta*
 
 This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an
 empty success response if it was able to write to the channel succesfully. 
@@ -79,7 +79,7 @@ they may also perform some action on the response returned by the transform down
 
 
 ### MPSCTee
-*State: Alpha*
+*State: Beta*
 
 This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the 
 downstream transform.
@@ -178,7 +178,7 @@ datastore are performed sequentially.
 * `config_values` - A string with the redis connection url. E.g. `config_values: "redis://127.0.0.1/"`
 
 ### Protect
-*State: Alpha*
+*State: Beta*
 
 This transform will encrypt specific fields before passing them down-chain, it will also decrypt those same fields from a 
 response. The transform will create a data encryption key on an user defined basis (e.g. per primary key, per value, 
@@ -244,6 +244,8 @@ This is mainly used in conjunction with the `TuneableConsistency` to enable a Ca
 No configuration is required for this transform.
  
 ### Lua
+*State: Alpha*
+
 This transform executes a user defined lua function passing in the query/message. Within the global user environment you 
 have access to the following:
 
