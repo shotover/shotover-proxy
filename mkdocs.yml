@@ -15,6 +15,9 @@ markdown_extensions:
   - toc:
       permalink: "#"
 
+theme:
+  name: material
+
 #theme:
 #  name: readthedocs
 #  highlightjs: true

@@ -50,11 +50,13 @@ parsed AST representing the query.
 
 You can also implement your own transforms and sources using Lua, WASM (python, c, ruby, javascript etc) or natively with Rust. 
 For concrete examples of what you can achieve with shotover-proxy, see the following examples:
+
 * [Multi-region, active-active redis](../examples/redis-multi)
 * [Cassandra query caching in redis, with a query audit trail sent to kafka](../examples/cass-redis-kafka)
 * [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../examples/cassandra-encryption)
 
 Shotover proxy currently supports the following protocols as sources:
+
 * Cassandra (CQLv4)
 * Redis (RESP2)
 
