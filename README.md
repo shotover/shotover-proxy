@@ -1,6 +1,10 @@
 # Shotover
 ![Rust](https://github.com/benbromhead/proxy-poc/workflows/Rust/badge.svg)
 
+## Documentation
+For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
+
+## What is shotover
 Shotover-proxy is an open source, high performance L7 data-layer proxy for controlling, managing and modifying the flow 
 of database requests in transit. It can be used to solve many different operational and interoperability challenges for 
 teams where polyglot persistence (many different databases) is common.
@@ -33,21 +37,6 @@ Elasticsearch, easy caching of DynamoDB data in Redis).
 proprietary "open-core" implementations.
 * A common audit and AuthZ/AuthN point for SOX/PCI/HIPAA compliance.
 
-## Design principals / goals
-* Security, Durability, Availability and Performance (in that order).
-* Data layer / database queries and operations.
-* Easy extensibility by end users and the broader community
-* Ecosystem compatibility
-* Deployment flexability
-
-Shotover provides a set of predefined transforms that can modify, route and control queries from any number of sources 
-to a similar number of destinations. As the user you can construct chains of these transforms to acheive the behaviour required. 
-Each transform is configurable and functionality can generally be extended by Lua or WASM scripts. Each chain can then be attached
-to a "source" that speaks a the native protocol of you chosen database. The transform chain will process each request with access to
-a unified/simplified representation of a generic query, the original raw query and optionally (for SQL like protocols) a 
-parsed AST representing the query.
-
-You can also implement your own transforms and sources using Lua, WASM (python, c, ruby, javascript etc) or natively with Rust. 
 For concrete examples of what you can achieve with shotover-proxy, see the following examples:
 * [Multi-region, active-active redis](../examples/redis-multi)
 * [Cassandra query caching in redis, with a query audit trail sent to kafka](../examples/cass-redis-kafka)
@@ -56,24 +45,6 @@ For concrete examples of what you can achieve with shotover-proxy, see the follo
 Shotover proxy currently supports the following protocols as sources:
 * Cassandra (CQLv4)
 * Redis (RESP2)
-
-## Shotover performance
-Shotover compiles down to a single binary and just takes a single yaml file and some optional cmd line params to start up.
-When running a small topology (5 - 10 transforms, 1 or 2 sources, 200 or so TCP connections) memory consumptions is rather 
-small with a rough working set size between 10 - 20mb. 
-
-Currently benchmarking is limited but we see around 25k req/s inbound routed to an outbound 75k req/s max out a single logical core.
-However due to the way Shotover is implemented, it will largely go as fast as your upstream datastore can go. Each tcp connection
-is driven by a single tokio thread and by default Shotover will use 4 to 8 OS threads for the bulk of it's work (this is user configurable). 
-Occasionally it will spawn additional OS threads for long running non-async code. These are practically unbounded (as defined by Tokio) but use is rare.
-
-Shotover will not try to pipeline, aggregate or batch requests (though feel free to write a Transform to do so!!) unless 
-it is explicitly built into the source protocol (e.g. RESP2 supports cmd pipelining). This means single connection performance
-will not be as good as some other proxy implementations, we simply just do one request at a time. Most client drivers support
-connection pooling and multiple connections, so feel free to ramp up the number of outbound sockets to get the best throughput.
-Shotover will happily work with 100's or 1000's of connections due to its threading model.
-
-Performance hasn't been a primary focus during initial development and there are definitely some easy wins to improve things.
 
 ## Deploying Shotover
 Shotover can be deployed in a number of ways, it will generally be based on the problem you are trying to solve, but they
