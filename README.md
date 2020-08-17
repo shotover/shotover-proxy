@@ -4,11 +4,12 @@
 ## Documentation
 For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
 
-## What is shotover
+## What is shotover?
 Shotover-proxy is an open source, high performance L7 data-layer proxy for controlling, managing and modifying the flow 
 of database requests in transit. It can be used to solve many different operational and interoperability challenges for 
 teams where polyglot persistence (many different databases) is common.
 
+## What problems does shotover solve?
 The majority of operational problems associated with databases come down to a mismatch in the suitability of your data 
 model/queries for the workload or a mismatch in behaviour of your chosen database for a given workload. This can manifest 
 in many different ways, but commonly shows up as:
@@ -37,6 +38,7 @@ Elasticsearch, easy caching of DynamoDB data in Redis).
 proprietary "open-core" implementations.
 * A common audit and AuthZ/AuthN point for SOX/PCI/HIPAA compliance.
 
+## Examples
 For concrete examples of what you can achieve with shotover-proxy, see the following examples:
 * [Multi-region, active-active redis](../examples/redis-multi)
 * [Cassandra query caching in redis, with a query audit trail sent to kafka](../examples/cass-redis-kafka)
