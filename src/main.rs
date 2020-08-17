@@ -11,7 +11,7 @@ use tokio::runtime;
 use tracing_subscriber;
 
 #[derive(Clap)]
-#[clap(version = "0.1", author = "Ben B. <ben.bromhead@gmail.com>")]
+#[clap(version = "0.0.1", author = "Instaclustr")]
 struct ConfigOpts {
     #[clap(short, long, default_value = "config/config.yaml")]
     pub config_file: String,
