@@ -81,7 +81,7 @@ debug = true
 [profile.release]
 lto = "fat"
 codegen-units = 1
-#debug = true
+debug = true
 
 # Patches
 [patch.crates-io]
