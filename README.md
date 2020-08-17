@@ -1,5 +1,7 @@
 # Shotover
-![Rust](https://github.com/shotover/shotover-proxy/workflows/Rust/badge.svg)
+
+[![Rust](https://github.com/shotover/shotover-proxy/workflows/Rust/badge.svg)](https://github.com/shotover/shotover-proxy/actions?query=workflow%3ARust)
+
 
 ## Documentation
 For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
