@@ -564,41 +564,41 @@ fn test_bit_operations() {
     assert_eq!(con.setbit("bitvec", 10, true), Ok(false));
     assert_eq!(con.getbit("bitvec", 10), Ok(true));
 }
-
-fn test_invalid_protocol() {
-    use redis::{Parser, RedisResult};
-    use std::error::Error;
-    use std::io::Write;
-    use std::net::TcpListener;
-    use std::thread;
-
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-
-    let child = thread::spawn(move || -> Result<(), Box<dyn Error + Send + Sync>> {
-        let mut stream = BufReader::new(listener.incoming().next().unwrap()?);
-        // read the request and respond with garbage
-        let _: redis::Value = Parser::new(&mut stream).parse_value()?;
-        stream.get_mut().write_all(b"garbage ---!#!#\r\n\r\n\n\r")?;
-        // block until the stream is shutdown by the client
-        let _: RedisResult<redis::Value> = Parser::new(&mut stream).parse_value();
-        Ok(())
-    });
-    sleep(Duration::from_millis(100));
-    // some work here
-    let cli = redis::Client::open(&format!("redis://127.0.0.1:{}", port)[..]).unwrap();
-    let mut con = cli.get_connection().unwrap();
-
-    let mut result: redis::RedisResult<u8>;
-    // first requests returns ResponseError
-    result = con.del("my_zset");
-    assert_eq!(result.unwrap_err().kind(), redis::ErrorKind::ResponseError);
-    // from now on it's IoError due to the closed connection
-    result = con.del("my_zset");
-    assert_eq!(result.unwrap_err().kind(), redis::ErrorKind::IoError);
-
-    child.join().unwrap().unwrap();
-}
+//
+// fn test_invalid_protocol() {
+//     use redis::{Parser, RedisResult};
+//     use std::error::Error;
+//     use std::io::Write;
+//     use std::net::TcpListener;
+//     use std::thread;
+//
+//     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+//     let port = listener.local_addr().unwrap().port();
+//
+//     let child = thread::spawn(move || -> Result<(), Box<dyn Error + Send + Sync>> {
+//         let mut stream = BufReader::new(listener.incoming().next().unwrap()?);
+//         // read the request and respond with garbage
+//         let _: redis::Value = Parser::new(&mut stream).parse_value()?;
+//         stream.get_mut().write_all(b"garbage ---!#!#\r\n\r\n\n\r")?;
+//         // block until the stream is shutdown by the client
+//         let _: RedisResult<redis::Value> = Parser::new(&mut stream).parse_value();
+//         Ok(())
+//     });
+//     sleep(Duration::from_millis(100));
+//     // some work here
+//     let cli = redis::Client::open(&format!("redis://127.0.0.1:{}", port)[..]).unwrap();
+//     let mut con = cli.get_connection().unwrap();
+//
+//     let mut result: redis::RedisResult<u8>;
+//     // first requests returns ResponseError
+//     result = con.del("my_zset");
+//     assert_eq!(result.unwrap_err().kind(), redis::ErrorKind::ResponseError);
+//     // from now on it's IoError due to the closed connection
+//     result = con.del("my_zset");
+//     assert_eq!(result.unwrap_err().kind(), redis::ErrorKind::IoError);
+//
+//     child.join().unwrap().unwrap();
+// }
 
 fn test_cluster_basics() {
     let ctx = TestContext::new();
@@ -866,7 +866,7 @@ fn run_all_cluster_safe(config: String) -> Result<()> {
     test_nice_list_api();
     test_tuple_decoding_regression();
     test_bit_operations();
-    test_invalid_protocol();
+    // test_invalid_protocol();
     Ok(())
 }
 
@@ -919,6 +919,6 @@ fn run_all(config: String) -> Result<()> {
     test_nice_list_api();
     test_tuple_decoding_regression();
     test_bit_operations();
-    test_invalid_protocol();
+    // test_invalid_protocol();
     Ok(())
 }
