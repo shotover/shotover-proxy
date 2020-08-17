@@ -1,3 +1,4 @@
+# Functions
 Functions in shotover can be defined or used where ever a transform expects a ScriptConfigurator
 object. A ScriptConfigurator provides shotover with enough information to call and run your scripts.
 Currently shotover supports two ways of running user defined code.
@@ -12,8 +13,32 @@ The Transform or other area where you will provide a script, will provide docume
 function signature as well as any behavior to expect.
 
 ## Lua
+_State: Alpha_
+
+Within the global user environment you have access to the following:
+
+* CoRoutine std lib
+* Table std lib
+* IO std lib
+* OS std lib
+* String std lib
+* Bit std lib
+* Math std lib
+* Package std lib
+
+When configuring a Lua function, whether its for a function in a Transform, or the Lua transform itself, you may have
+additional access to other specific functions depending on the context of the lua script (e.g. defined by the transform
+it's attached to).
+
 * `script_type` - This is a string that is either the value `lua` or `wasm`
-* `function_name` - This is the function name to call. Your definition may have multiple functions. I
+* `function_name` - This is the function name to call. Your definition may have multiple functions. In
 Lua you are able to also just leave this blank and it will just execute the code fragment. Parameters will
 be passed in as globals.
 * `script_definition` - A string with your Lua code in it.
+
+## WASM 
+_State: Alpha_
+
+* `script_type` - This is a string that is either the value `lua` or `wasm`
+* `function_name` - This is the function name to call.
+* `script_definition` - A string with the full path that points to your wasm assembly code.

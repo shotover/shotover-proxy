@@ -8,16 +8,16 @@ all shotover transforms can understand. Under the hood it consists of an open so
 and converts them via a Codec. 
 
 If you want to implement your own source. You will generally need to build the following:
- * A Tokio codec that returns shotover `Messages` - See the [Cassandra codec](../src/protocols/cassandra_protocol2.rs) as an example.
- * A configuration struct that can be deserialised from YAML and generate and run a TcpCodecListener configured with your
- Codec (The trait to implement is `SourcesFromConfig`). - See the [Cassandra source](../src/sources/cassandra_source.rs) as an example
+* A Tokio codec that returns shotover `Messages` - See the [Cassandra codec](../../src/protocols/cassandra_protocol2.rs) as an example.
+* A configuration struct that can be deserialised from YAML and generate and run a TcpCodecListener configured with your
+Codec (The trait to implement is `SourcesFromConfig`). - See the [Cassandra source](../../src/sources/cassandra_source.rs) as an example
+
+With these two in place, shotover can generally wire-in any transform chain to your Source. To support passing messages
+to the upstream database (e.g. the database your application would normally talk to directly), you would implement a 
+`Transform` that opens a connection upstream and uses your Tokio codec to convert shotover `Messages` to the correct protocol
+representation. 
  
- With these two in place, shotover can generally wire-in any transform chain to your Source. To support passing messages
- to the upstream database (e.g. the database your application would normally talk to directly), you would implement a 
- `Transform` that opens a connection upstream and uses your Tokio codec to convert shotover `Messages` to the correct protocol
- representation. 
- 
- ## Transform
+## Transform
 Transforms a where the bulk of shotover does its work. A transform is a struct that implements the `Transform` trait. The trait
 has one function where you implement the majority of your logic:
 
@@ -35,25 +35,25 @@ This will return a ChainResponse which will include the upstream databases repon
 your transform can operate on both queries and responses. Once your transform is done handling the request and response, it will return 
 passing control to the upstream transform. 
 
- ## TransformChain
- A transform chain is a ordered list of transforms that a message will pass through. Transform chains can be of arbitary complexity 
- and a transform can even have its own set of child transform chains. Transform chains are defined by the user in shotovers
- configuration file and are linked to sources. 
+## TransformChain
+A transform chain is a ordered list of transforms that a message will pass through. Transform chains can be of arbitary complexity 
+and a transform can even have its own set of child transform chains. Transform chains are defined by the user in shotovers
+configuration file and are linked to sources. 
  
  ## Topology
  A topology is the final constructed set of transforms, transformchains and sources in their final state, ready to receive messages.
  
- # Other concepts
- ## Topics
- When a transform is first created, or cloned for a new connection. It gets access to a topic holder. A topic holder provides access
- to a map of multi-producer, single consumer channels. The transform can only access the sender part of the channel and can freely
- clone and share it as it sees fit. 
- A special source type called an MPSC source gets access to receiver side of the channel. This source can have a transform chain attached to it
- like any other source. This allows for complex routing and asynchonous passing of messages between trnasform chains in a topology.
- See [the cassandra and kafka example](../examples/cass-redis-kafka) as an example.
- 
- Generally if you want to build blocking behaviour in your chain, you will use transforms that have child transform chains.
- For non-blocking behaviour (e.g. copying a query to a kafka queue while sending it the upstream service) use topic based transforms.
+# Other concepts
+## Topics
+When a transform is first created, or cloned for a new connection. It gets access to a topic holder. A topic holder provides access
+to a map of multi-producer, single consumer channels. The transform can only access the sender part of the channel and can freely
+clone and share it as it sees fit. 
+A special source type called an MPSC source gets access to receiver side of the channel. This source can have a transform chain attached to it
+like any other source. This allows for complex routing and asynchonous passing of messages between trnasform chains in a topology.
+See [the cassandra and kafka example](../../examples/cass-redis-kafka) as an example.
+
+Generally if you want to build blocking behaviour in your chain, you will use transforms that have child transform chains.
+For non-blocking behaviour (e.g. copying a query to a kafka queue while sending it the upstream service) use topic based transforms.
 
 ## Scripts
 Some transforms let you specify a script that gets called by the transform to define its internal behaviour. Currently shotover

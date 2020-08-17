@@ -3,19 +3,18 @@ use redis;
 use redis::Commands;
 use tracing::info;
 
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use instaproxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
+use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
-use tokio::runtime;
-use tracing::Level;
-use tokio::task::JoinHandle;
-use std::process::Command;
 use std::{thread, time};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-
+use tokio::runtime;
+use tokio::task::JoinHandle;
+use tracing::Level;
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     return tokio::spawn(async move {
@@ -98,7 +97,6 @@ pub fn stop_docker_compose(file_path: String) -> Result<()> {
     ))
 }
 
-
 fn redis_active_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone()).unwrap();
@@ -117,18 +115,16 @@ fn redis_active_bench(c: &mut Criterion) {
 
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-        Topology::from_file("examples/redis-multi/config.yaml".to_string())
-            .unwrap()
-            .run_chains()
-            .await
+            Topology::from_file("examples/redis-multi/config.yaml".to_string())
+                .unwrap()
+                .run_chains()
+                .await
         {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }
         Ok::<(), anyhow::Error>(())
     });
-
-
 
     let client = redis::Client::open("redis://127.0.0.1:6379/").unwrap();
     let mut con;
@@ -151,13 +147,11 @@ fn redis_active_bench(c: &mut Criterion) {
     }
     redis::cmd("FLUSHDB").execute(&mut con);
 
-    c.bench_function("redis_speed",
-        move |b| {
-            b.iter(|| {
-                redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
-            })
-        },
-    );
+    c.bench_function("redis_speed", move |b| {
+        b.iter(|| {
+            redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
+        })
+    });
 
     rt.shutdown_timeout(time::Duration::from_secs(1));
 }
@@ -165,7 +159,6 @@ fn redis_active_bench(c: &mut Criterion) {
 fn redis_cluster_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone()).unwrap();
-
 
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
@@ -179,13 +172,12 @@ fn redis_cluster_bench(c: &mut Criterion) {
         .build()
         .unwrap();
 
-
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-        Topology::from_file("examples/redis-cluster/config.yaml".to_string())
-            .unwrap()
-            .run_chains()
-            .await
+            Topology::from_file("examples/redis-cluster/config.yaml".to_string())
+                .unwrap()
+                .run_chains()
+                .await
         {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
@@ -193,9 +185,7 @@ fn redis_cluster_bench(c: &mut Criterion) {
         Ok::<(), anyhow::Error>(())
     });
 
-
-
-    let client = redis::Client::open("redis://127.0.0.1:6378/").unwrap();
+    let client = redis::Client::open("redis://127.0.0.1:6379/").unwrap();
     let mut con;
 
     let millisecond = Duration::from_millis(1);
@@ -216,16 +206,13 @@ fn redis_cluster_bench(c: &mut Criterion) {
     }
     redis::cmd("FLUSHDB").execute(&mut con);
 
-    c.bench_function("redis_speed",
-        move |b| {
-            b.iter(|| {
-                redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
-            })
-        },
-    );
+    c.bench_function("redis_speed", move |b| {
+        b.iter(|| {
+            redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
+        })
+    });
 
     rt.shutdown_timeout(time::Duration::from_secs(1));
-
 }
 
 fn redis_passthrough_bench(c: &mut Criterion) {
@@ -246,10 +233,10 @@ fn redis_passthrough_bench(c: &mut Criterion) {
 
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-        Topology::from_file("examples/redis-passthrough/config.yaml".to_string())
-            .unwrap()
-            .run_chains()
-            .await
+            Topology::from_file("examples/redis-passthrough/config.yaml".to_string())
+                .unwrap()
+                .run_chains()
+                .await
         {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
@@ -257,9 +244,7 @@ fn redis_passthrough_bench(c: &mut Criterion) {
         Ok::<(), anyhow::Error>(())
     });
 
-
-
-    let client = redis::Client::open("redis://127.0.0.1:6378/").unwrap();
+    let client = redis::Client::open("redis://127.0.0.1:6379/").unwrap();
     let mut con;
 
     let millisecond = Duration::from_millis(1);
@@ -280,17 +265,19 @@ fn redis_passthrough_bench(c: &mut Criterion) {
     }
     redis::cmd("FLUSHDB").execute(&mut con);
 
-    c.bench_function("redis_speed",
-        move |b| {
-            b.iter(|| {
-                redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
-            })
-        },
-    );
+    c.bench_function("redis_speed", move |b| {
+        b.iter(|| {
+            redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
+        })
+    });
 
     rt.shutdown_timeout(time::Duration::from_secs(1));
-
 }
 
-criterion_group!(benches, redis_cluster_bench);
+criterion_group!(
+    benches,
+    redis_cluster_bench,
+    redis_passthrough_bench,
+    redis_active_bench
+);
 criterion_main!(benches);

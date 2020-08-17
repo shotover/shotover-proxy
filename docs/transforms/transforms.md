@@ -1,5 +1,6 @@
 # Transforms
-Currently shotover supports the following transforms:
+Currently shotover proxy supports the following transforms:
+
 * CodecDestination
 * KafkaDestination
 * RedisCodecDestination
@@ -24,6 +25,7 @@ get a request.
 
 This transform will take a query, serialise it into a CQL4 compatible format and send to the Cassandra compatible
 database at the defined address.
+
 * `remote_address` - A String containing the IP address and port of the upstream cassandra node/service. E.g. `remote_address: "127.0.0.1:9042"`
 * `bypass_result_processing` - A boolean to disable creating an Abstract Syntax Tree for the query. Saves CPU for straight
 passthrough cases (no processing on the query). E.g. `bypass_result_processing: false`.
@@ -33,27 +35,27 @@ Note: this will just pass the query to the remote node. No cluster discovery or 
 ### KafkaDestination
 *State: Alpha*
 
-This transform will take a query and push it to .
+This transform will take a query and push it to.
+
 * `topic` - A String containing the name of the kafka topic. E.g. `topic: "my_kafka_topic"`
 * `keys` - A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver. See
  [here for details](https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html) E.g `bootstrap.servers: "127.0.0.1:9092"`.
  
- ### RedisCodecDestination
- *State: Alpha*
+### RedisCodecDestination
+*State: Alpha*
 
- This transform will take a query, serialise it into a RESP2 compatible format and send to the Redis compatible
- database at the defined address.
- * `remote_address` - A String containing the IP address and port of the upstream redis node/service. E.g. `remote_address: "127.0.0.1:9042"`
- 
- Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
+This transform will take a query, serialise it into a RESP2 compatible format and send to the Redis compatible
+database at the defined address.
 
- ### RedisCluster
- *State: Beta*
+* `remote_address` - A String containing the IP address and port of the upstream redis node/service. E.g. `remote_address: "127.0.0.1:9042"`
 
+Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
+### RedisCluster
+*State: Beta*
+This transform is a full featured redis driver that will connect to a redis-cluster and handle all discovery, sharding and routing operations.
 
- This transform is a full featured redis driver that will connect to a redis-cluster and handle all discovery, sharding and routing operations.
- * `first_contact_points` - A list of string containing the IP address and port of the upstream redis nodes/service. 
- E.g. `first_contact_points: ["redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/"]
+* `first_contact_points` - A list of string containing the IP address and port of the upstream redis nodes/service. 
+E.g. `first_contact_points: ["redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/"]
 `
 
 Unlike other redis-cluster drivers, this Transform does support pipelining. It does however turn each command from the pipeline into a single
@@ -62,7 +64,7 @@ Redis node.
 
 _Note: Currently Redis-cluster does not support the following functionality:_
 * _Redis Transactions_
-
+* _*Scan based operations e.g. SSCAN_
 
 
 ### MPSCForwarder
@@ -96,20 +98,20 @@ it's route_map).
 
 * `route_map` - A map of named chains. The name will be the lookup key in which the Route transform expects from the lua script.
  E.g. 
- ```yaml
+```yaml
 route_map:
   main_cluster:
-    - CodecDestination:
-       remote_address: "127.0.0.1:9043"
+  - CodecDestination:
+      remote_address: "127.0.0.1:9043"
   customer1_cluster:
-   - CodecDestination:
+  - CodecDestination:
       remote_address: "127.1.0.2:9043"
   customer2_cluster:
-   - CodecDestination:
+  - CodecDestination:
       remote_address: "127.2.0.3:9043"
- ```
+```
 * `route_script` - A ScriptConfigurator object that expects a `script_type`, `function_name` and `script_definition`.The route script can 
-either by a Lua script or a WASM function. See [user defined functions](functions.md) for more details. The function expects a
+either by a Lua script or a WASM function. See [user defined functions](../user-guide/functions.md) for more details. The function expects a
 `QueryMessage` (the request/query) and a `Vec<String>` (a list of possible routes) and needs to return a string containing the name of the chosen sub-chain. E.g.
 ```yaml
 route_script:
@@ -133,22 +135,21 @@ to the up-chain transform.
 If the transform cannot find a route in its route_map, it will default to calling the next chain in it's own TransformChain (not
 it's route_map).
 
-* `route_map` - A map of named chains. The name will be the lookup key in which the Route transform expects from the lua script.
- E.g. 
- ```yaml
+* `route_map` - A map of named chains. The name will be the lookup key in which the Route transform expects from the lua script. E.g. 
+```yaml
 route_map:
   main_cluster:
-    - CodecDestination:
-       remote_address: "127.0.0.1:9043"
+  - CodecDestination:
+      remote_address: "127.0.0.1:9043"
   customer1_cluster:
-   - CodecDestination:
+  - CodecDestination:
       remote_address: "127.1.0.2:9043"
   customer2_cluster:
-   - CodecDestination:
+  - CodecDestination:
       remote_address: "127.2.0.3:9043"
- ```
+```
 * `route_script` - A ScriptConfigurator object that expects a `script_type`, `function_name` and `script_definition`.The route script can 
-either by a Lua script or a WASM function. See [user defined functions](functions.md) for more details. The function expects a
+either by a Lua script or a WASM function. See [user defined functions](../user-guide/functions.md) for more details. The function expects a
 `QueryMessage` (the request/query) and a `Vec<String>` (a list of possible routes) and needs to return array of strings (the chain names) to use. 
 E.g.
 ```yaml
@@ -216,18 +217,18 @@ simply return the largest response if no timestamp information is available.
 
 * `route_map` - A map of named chains. All chains will be used in each request.
  E.g. 
- ```yaml
+```yaml
 route_map:
   cluster1:
     - CodecDestination:
        remote_address: "127.0.0.1:9043"
   cluster2:
    - CodecDestination:
-      remote_address: "127.1.0.2:9043"
+       remote_address: "127.1.0.2:9043"
   cluster3:
    - CodecDestination:
-      remote_address: "127.2.0.3:9043"
- ```
+       remote_address: "127.2.0.3:9043"
+```
 * `write_consistency` - The number of chains to wait for a "write" response on.
 * `read_consistency` - The number of chains to wait for a "read" response on.
 
@@ -254,10 +255,12 @@ have access to the following:
 * Table std lib
 * IO std lib
 * OS std lib
-* string std lib
+* String std lib
 * Bit std lib
-* math std lib
-* package std lib
+* Math std lib
+* Package std lib
+
+When configuring the Lua Transform, you will provide the following:
 
 * `function_def` - The Lua script. The example script will change the namespace for the query 
 (e.g. keyspace/table in cassandra or database/table in MySQL). E.g. 
@@ -268,7 +271,7 @@ return call_next_transform(qm)
 * `function_name` - The lua function to call, this can be blank and the lua script will just be run. The `QueryMessage` will be available as 
  a global. E.g. `function_name: ""` or `function_name: "my_function"`
  
- Note: Currently the Lua transform stores a new Lua VM on a per transform basis, so no state is shared between connections or other transforms,
- in the future, a Lua VM will likely be created on a per connection basis. The Lua transform will also likely be migrated over to using 
- ScriptHolders which will manage the script definition and Lua VM interaction. This will be likely released as a seperate transform and 
- also support WASM defined modules. 
+Note: Currently the Lua transform stores a new Lua VM on a per transform basis, so no state is shared between connections or other transforms,
+in the future, a Lua VM will likely be created on a per connection basis. The Lua transform will also likely be migrated over to using 
+ScriptHolders which will manage the script definition and Lua VM interaction. This will be likely released as a seperate transform and 
+also support WASM defined modules. 
