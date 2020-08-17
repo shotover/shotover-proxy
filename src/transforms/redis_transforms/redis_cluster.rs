@@ -8,7 +8,7 @@ use crate::message::{ASTHolder, Message, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 
-use redis::cluster::{ClusterClient, ClusterConnection};
+use redis::cluster_async::{ClusterClient, ClusterConnection};
 use redis::ErrorKind;
 use redis::RedisResult;
 
@@ -27,16 +27,16 @@ use tokio::sync::Mutex;
 pub struct RedisCluster {
     pub name: &'static str,
     pub client: ClusterClient,
-    pub connection: Arc<Mutex<ClusterConnection>>,
+    pub connection: Arc<Mutex<Option<ClusterConnection>>>,
 }
 
 impl Clone for RedisCluster {
     fn clone(&self) -> Self {
-        let connection = self.client.get_connection().unwrap();
+        // let connection = self.client.get_connection().unwrap();
         return RedisCluster {
             name: self.name.clone(),
             client: self.client.clone(),
-            connection: Arc::new(Mutex::new(connection)),
+            connection: Arc::new(Mutex::new(None)),
         };
     }
 }
@@ -49,14 +49,16 @@ pub struct RedisClusterConfig {
 #[async_trait]
 impl TransformsFromConfig for RedisClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        let client = ClusterClient::open(self.first_contact_points.clone()).unwrap();
+        let client = ClusterClient::open(self.first_contact_points.clone())
+            .await
+            .unwrap();
 
-        let connection = client.get_connection().unwrap();
+        let connection = client.get_connection().await.unwrap();
 
         Ok(Transforms::RedisCluster(RedisCluster {
             name: "RedisCluster",
             client,
-            connection: Arc::new(Mutex::new(connection)),
+            connection: Arc::new(Mutex::new(Some(connection))),
         }))
     }
 }
@@ -72,12 +74,17 @@ impl Transform for RedisCluster {
                     if let Value::Bytes(b) = &command {
                         let command_string = String::from_utf8(b.to_vec())
                             .unwrap_or_else(|_| "couldn't decode".to_string());
-                        if let Ok(mut conn) = self.connection.try_lock() {
+                        let mut lock = self.connection.lock().await;
+                        if lock.is_none() {
+                            *lock = Some(self.client.get_connection().await.unwrap());
+                        }
+
+                        if let Some(conn) = lock.deref_mut() {
                             let mut cmd = redis::cmd(command_string.as_str());
                             for args in commands {
                                 cmd.arg(args);
                             }
-                            let response_res: RedisResult<Value> = cmd.query(conn.deref_mut());
+                            let response_res: RedisResult<Value> = cmd.query_async(conn).await;
                             return match response_res {
                                 Ok(result) => {
                                     trace!("{:#?}", result);

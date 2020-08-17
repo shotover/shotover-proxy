@@ -1,6 +1,6 @@
 [package]
 name = "shotover-proxy"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2018"
 
@@ -43,7 +43,9 @@ tracing-subscriber = "0.2.5"
 tracing-futures = "0.2.4"
 
 # Transform dependencies
-redis = {version = "0.15.1", features = ["tokio-rt-core", "cluster"]}
+#redis = {version = "0.15.1", features = ["tokio-rt-core", "cluster"]}
+redis = {git = "https://github.com/benbromhead/redis-rs", branch = "cluster-async", features = ["tokio-rt-core", "cluster"]}
+#redis = {path = "/home/ben/git/redis-rs", features = ["tokio-rt-core", "cluster"]}
 redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "changes" }
 #cdrs = { version = "2" }
 cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
