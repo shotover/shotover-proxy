@@ -1,6 +1,6 @@
 use anyhow::Result;
-use instaproxy::config::topology::Topology;
 use redis::{Commands, Connection, FromRedisValue, RedisResult};
+use shotover_proxy::config::topology::Topology;
 use std::{thread, time};
 use tokio::task::JoinHandle;
 use tracing::info;

@@ -5,7 +5,7 @@ use redis::Commands;
 
 use crate::load_docker_compose;
 use crate::redis_int_tests::support::TestContext;
-use instaproxy::config::topology::Topology;
+use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;

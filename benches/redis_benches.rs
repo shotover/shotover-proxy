@@ -4,7 +4,7 @@ use redis::Commands;
 use tracing::info;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use instaproxy::config::topology::Topology;
+use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;

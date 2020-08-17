@@ -56,13 +56,13 @@ If shotover can successfully contact your redis cluster, you should see the foll
 
 ```
 user@demo$ ./shotover-proxy --config-file redis-shotover.yml 
-Aug 17 12:11:42.867  INFO instaproxy: Loading configuration
-Aug 17 12:11:42.867  INFO instaproxy: Starting loaded topology
-Aug 17 12:11:42.867  INFO instaproxy::config::topology: Loaded topics ["testtopic"]
-Aug 17 12:11:42.876  INFO instaproxy::config::topology: Loaded chains ["redis_chain"]
-Aug 17 12:11:42.876  INFO instaproxy::sources::redis_source: Starting Redis source on [127.0.0.1:6379]
-Aug 17 12:11:42.878  INFO instaproxy::config::topology: Loaded sources [["redis_prod"]] and linked to chains
-Aug 17 12:11:42.878  INFO instaproxy::server: accepting inbound connections
+Aug 17 12:11:42.867  INFO shotover_proxy: Loading configuration
+Aug 17 12:11:42.867  INFO shotover_proxy: Starting loaded topology
+Aug 17 12:11:42.867  INFO shotover_proxy::config::topology: Loaded topics ["testtopic"]
+Aug 17 12:11:42.876  INFO shotover_proxy::config::topology: Loaded chains ["redis_chain"]
+Aug 17 12:11:42.876  INFO shotover_proxy::sources::redis_source: Starting Redis source on [127.0.0.1:6379]
+Aug 17 12:11:42.878  INFO shotover_proxy::config::topology: Loaded sources [["redis_prod"]] and linked to chains
+Aug 17 12:11:42.878  INFO shotover_proxy::server: accepting inbound connections
 ```
 
 Currently the RedisCluster transform, needs to be able to connect to the redis cluster when it starts up. If it cannot, shotover

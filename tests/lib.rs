@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use instaproxy::config::topology::Topology;
+use shotover_proxy::config::topology::Topology;
 use std::process::Command;
 use std::thread;
 use std::time;

@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
-use instaproxy::config::topology::TopicHolder;
-use instaproxy::message::{Message, QueryMessage, QueryType};
-use instaproxy::protocols::RawFrame;
-use instaproxy::transforms::chain::{TransformChain, Wrapper};
-use instaproxy::transforms::lua::LuaConfig;
-use instaproxy::transforms::null::Null;
-use instaproxy::transforms::{Transforms, TransformsFromConfig};
+use shotover_proxy::config::topology::TopicHolder;
+use shotover_proxy::message::{Message, QueryMessage, QueryType};
+use shotover_proxy::protocols::RawFrame;
+use shotover_proxy::transforms::chain::{TransformChain, Wrapper};
+use shotover_proxy::transforms::lua::LuaConfig;
+use shotover_proxy::transforms::null::Null;
+use shotover_proxy::transforms::{Transforms, TransformsFromConfig};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new_without_request())];

@@ -6,7 +6,7 @@ use std::error::Error;
 use clap::Clap;
 use tracing::{info, Level};
 
-use instaproxy::config::topology::Topology;
+use shotover_proxy::config::topology::Topology;
 use tokio::runtime;
 use tracing_subscriber;
 
