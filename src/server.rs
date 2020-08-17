@@ -286,7 +286,7 @@ where
                         .await
                     {
                         let r = self.connection.send(modified_message).await?;
-                        let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
+                        // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                         r
                     } else {
                         error!("chain processing error")

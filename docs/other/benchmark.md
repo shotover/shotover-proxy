@@ -8,8 +8,6 @@ The plan to improve (reduce) the amount of copying that occurs, is to introduce 
 request and response lifespan. The constructed underlying message will just be pointers into the buffer rather than copied values.
 Only when we need to consume, modify or explicitly copy the bytes will we then do so. 
 
-
-
 Running shotover-proxy - 4 threads, cassandra source and cassandra-destination codec - debug build
 - `./tools/bin/cassandra-stress write no-warmup -mode native cql3 connectionsPerHost=8 -rate threads=8 -node 127.0.0.1 -port native=9043`
 

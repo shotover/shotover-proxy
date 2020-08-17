@@ -83,15 +83,18 @@ chain_config:
 ``` 
 
 A query from a client will go:
-`Source` -> `One` -> `Two` -> `Three` -> `TerminatingTransform`
+
+* `Source` -> `One` -> `Two` -> `Three` -> `TerminatingTransform`
 
 The response (returned to the chain by the `TerminatingTransform`) will follow the reverse path:
-`TerminatingTransform` -> `Three` -> `Two` -> `One` -> `Source`
+
+* `TerminatingTransform` -> `Three` -> `Two` -> `One` -> `Source`
 
 Under the hood, each transform is able to call it's down-chain transform and wait on its response.
-Each Transform has its own set of configuration values, options and behavior. See [Transforms](transforms.md) for details.
+Each Transform has its own set of configuration values, options and behavior. See [Transforms](../transforms/transforms.md) for details.
 
 The following example `chain_config` has three chains:
+
 * `redis_chain` - Consists of a MPSCTee, a transform that will copy the query to the named topic and *also* pass the query
 down-chain to a terminating transform `RedisDestination` which sends to the query to a Redis server. Very similar to the `tee`
 linux program.
@@ -160,8 +163,9 @@ source_to_chain_mapping:
 ```
 
 This mapping would effectively create a solution that:
+
 * All Redis and Cassandra queries get logged to an external kafka cluster. This could be to meet audit or compliance requirements
 or even just as the start of an event bus or CQRS based architecture.
 * Cassandra queries will be cached and looked up in Redis, before being persisted to the Cassandra cluster. 
 
-The entire example configuration can be found [here](/examples/cass-redis-kafka/config.yaml).
+The entire example configuration can be found [here](/cass-redis-kafka/config.yaml).
