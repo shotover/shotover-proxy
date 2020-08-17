@@ -4,12 +4,12 @@
 ## Documentation
 For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
 
-## What is shotover?
+## What is Shotover?
 Shotover-proxy is an open source, high performance L7 data-layer proxy for controlling, managing and modifying the flow 
 of database requests in transit. It can be used to solve many different operational and interoperability challenges for 
 teams where polyglot persistence (many different databases) is common.
 
-## What problems does shotover solve?
+## What problems does Shotover solve?
 The majority of operational problems associated with databases come down to a mismatch in the suitability of your data 
 model/queries for the workload or a mismatch in behaviour of your chosen database for a given workload. This can manifest 
 in many different ways, but commonly shows up as:
