@@ -59,7 +59,8 @@ mlua = { version = "0.4.1", features = ["async","send", "vendored","lua53"] }
 mlua_serde = { version = "0.5", features = ["lua53"] }
 
 #wasm
-wasmer-runtime = "0.13.1"
+wasmer-runtime = "0.17.1"
+#wasmer-runtime = "0.13.1"
 
 #Crypto
 sodiumoxide = "0.2.5"
