@@ -4,3 +4,5 @@ Cargo.lock
 *.data
 *.data.old
 tests/soaktest-*
+*.svg
+*.gz

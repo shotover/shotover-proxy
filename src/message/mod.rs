@@ -26,6 +26,12 @@ pub enum Message {
     Modified(Box<Message>), //The box is to put the nested Message on the heap so we can have a recursive Message
 }
 
+impl Message {
+    pub fn new_mod(message: Message) -> Message {
+        return Message::Modified(Box::new(message));
+    }
+}
+
 impl UserData for Message {}
 
 impl UserData for QueryMessage {}

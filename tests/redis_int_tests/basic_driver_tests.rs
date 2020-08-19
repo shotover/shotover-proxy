@@ -806,6 +806,53 @@ fn test_pass_redis_cluster_one() -> Result<()> {
 }
 
 #[test]
+fn test_cluster_auth_redis() -> Result<()> {
+    let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();
+    load_docker_compose(compose_config.clone())?;
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
+
+    let rt = runtime::Builder::new()
+        .enable_all()
+        .thread_name("RPProxy-Thread")
+        .threaded_scheduler()
+        .core_threads(4)
+        .build()
+        .unwrap();
+    let _jh: _ = rt.spawn(async move {
+        if let Ok((_, mut shutdown_complete_rx)) =
+            Topology::from_file("examples/redis-cluster-auth/config.yaml".to_string())
+                .unwrap()
+                .run_chains()
+                .await
+        {
+            //TODO: probably a better way to handle various join handles / threads
+            let _ = shutdown_complete_rx.recv().await;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+
+    let ctx = TestContext::new_auth();
+    let mut con = ctx.connection();
+
+    redis::cmd("SET")
+        .arg("{x}key1")
+        .arg(b"foo")
+        .execute(&mut con);
+    redis::cmd("SET").arg(&["{x}key2", "bar"]).execute(&mut con);
+
+    assert_eq!(
+        redis::cmd("MGET")
+            .arg(&["{x}key1", "{x}key2"])
+            .query(&mut con),
+        Ok(("foo".to_string(), b"bar".to_vec()))
+    );
+
+    return Ok(());
+}
+
+#[test]
 fn test_cluster_all_redis() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
