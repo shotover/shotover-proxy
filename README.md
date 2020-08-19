@@ -11,6 +11,7 @@ Shotover-proxy is a high performance, configurable and extensible L7 data-layer 
 Shotover-proxy currently support intercepting requests for the following technologies (sources):
 * Cassandra (CQL4)
 * Redis (RESP2)
+
 It current supports writing output the to following technologies (sinks):
 Cassandra
 * Redis
