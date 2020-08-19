@@ -9,8 +9,16 @@ pub struct TestContext {
 }
 
 impl TestContext {
+    pub fn new_auth() -> TestContext {
+        TestContext::new_internal("redis://:shotover@127.0.0.1:6379/".to_string())
+    }
+
     pub fn new() -> TestContext {
-        let client = redis::Client::open("redis://127.0.0.1:6379/").unwrap();
+        TestContext::new_internal("redis://127.0.0.1:6379/".to_string())
+    }
+
+    pub fn new_internal(conn_string: String) -> TestContext {
+        let client = redis::Client::open(conn_string.as_str()).unwrap();
         let mut con;
 
         let millisecond = Duration::from_millis(1);

@@ -4,9 +4,11 @@
 use std::error::Error;
 
 use clap::Clap;
-use tracing::{info, Level};
+use tracing::{debug, info, Level};
 
 use shotover_proxy::config::topology::Topology;
+use shotover_proxy::transforms::chain::Wrapper;
+use shotover_proxy::transforms::Transforms;
 use tokio::runtime;
 use tracing_subscriber;
 
@@ -28,9 +30,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _subscriber = tracing_subscriber::fmt()
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::TRACE)
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
+
+    debug!(
+        "Transform overhead size on stack is {}",
+        std::mem::size_of::<Transforms>()
+    );
+
+    debug!(
+        "Wrapper overhead size on stack is {}",
+        std::mem::size_of::<Wrapper>()
+    );
 
     info!("Loading configuration");
     let configuration = ConfigOpts::parse();
