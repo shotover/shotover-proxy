@@ -13,7 +13,7 @@ Shotover-proxy currently support intercepting requests for the following technol
 * Redis (RESP2)
 
 It current supports writing output the to following technologies (sinks):
-Cassandra
+* Cassandra
 * Redis
 * Kafka
 
