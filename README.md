@@ -8,6 +8,7 @@ For full documentation please go to [https://docs.shotover.io/](https://docs.sho
 
 ## What is Shotover?
 Shotover-proxy is a high performance, configurable and extensible L7 data-layer proxy for controlling, managing and modifying the flow of database requests in transit. It can be used to solve many different operational and interoperability challenges by transparently intercepting and transforming queries. It is transparent in the sense that it can be plugged into your architecture without requiring application change..
+
 Shotover-proxy currently support intercepting requests for the following technologies (sources):
 * Cassandra (CQL4)
 * Redis (RESP2)
