@@ -39,7 +39,9 @@ struct ConfigOpts {
 fn main() -> Result<(), Box<dyn Error>> {
     let params = ConfigOpts::parse();
     let config = Config::from_file(params.config_file.clone())?;
+    let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
     let _subscriber = tracing_subscriber::fmt()
+        .with_writer(non_blocking)
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
         .with_max_level(Level::from_str(config.main_log_level.as_str())?)
