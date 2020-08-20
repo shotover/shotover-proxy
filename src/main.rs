@@ -4,6 +4,7 @@
 use std::error::Error;
 
 use clap::Clap;
+use metrics_runtime::Receiver;
 use tracing::{debug, info, Level};
 
 use shotover_proxy::config::topology::Topology;
@@ -33,6 +34,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_max_level(Level::TRACE)
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
+
+    Receiver::builder()
+        .build()
+        .expect("failed to create receiver")
+        .install();
 
     debug!(
         "Transform overhead size on stack is {}",

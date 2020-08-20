@@ -64,11 +64,13 @@ impl CassandraSource {
         bypass: bool,
     ) -> CassandraSource {
         let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+        let name = "Cassandra Source";
 
         info!("Starting Cassandra source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
+            source_name: name.to_string(),
             listener,
             codec: CassandraCodec2::new(cassandra_ks, bypass),
             limit_connections: Arc::new(Semaphore::new(50)),
@@ -92,7 +94,7 @@ impl CassandraSource {
         });
 
         return CassandraSource {
-            name: "Cassandra Source",
+            name,
             join_handle: jh,
             listen_addr,
         };

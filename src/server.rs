@@ -2,6 +2,7 @@ use crate::message::Message;
 use crate::transforms::chain::{TransformChain, Wrapper};
 use anyhow::Result;
 use futures::{FutureExt, SinkExt, StreamExt};
+use metrics::counter;
 use std::num::Wrapping;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
@@ -24,6 +25,8 @@ where
     /// This is a wrapper around an `Arc`. This enables `db` to be cloned and
     /// passed into the per connection state (`Handler`).
     pub chain: TransformChain,
+
+    pub source_name: String,
 
     /// TCP listener supplied by the `run` caller.
     pub listener: TcpListener,
@@ -108,13 +111,20 @@ where
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
+            let peer = socket
+                .peer_addr()
+                .map(|p| format!("{}", p))
+                .unwrap_or("Unknown peer".to_string());
+
             // Create the necessary per-connection handler state.
-            info!("New connection from {:?}", socket.peer_addr());
+            info!("New connection from {}", peer);
 
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an
                 // `Arc`, so a clone only increments the ref count.
                 chain: self.chain.clone(),
+                client_details: peer,
+                source_details: self.source_name.clone(),
 
                 // Initialize the connection state. This allocates read/write
                 // buffers to perform redis protocol frame parsing.
@@ -189,6 +199,10 @@ where
     /// The implementation of the command is in the `cmd` module. Each command
     /// will need to interact with `db` in order to complete the work.
     chain: TransformChain,
+
+    client_details: String,
+    source_details: String,
+
     connection: Framed<S, C>,
 
     /// The TCP connection decorated with the redis protocol encoder / decoder
@@ -279,10 +293,10 @@ where
                     self.connection_clock += one;
                     match self
                         .chain
-                        .process_request(Wrapper::new_with_rnd(
-                            message,
-                            self.connection_clock.clone(),
-                        ))
+                        .process_request(
+                            Wrapper::new_with_rnd(message, self.connection_clock.clone()),
+                            self.client_details.clone(),
+                        )
                         .await
                     {
                         Ok(modified_message) => {
@@ -337,7 +351,9 @@ where
         // If `add_permit` was called at the end of the `run` function and some
         // bug causes a panic. The permit would never be returned to the
         // semaphore.
+
         self.limit_connections.add_permits(1);
+        counter!("perf.connections_count", 1, "source" => self.source_details.clone())
     }
 }
 /// Listens for the server shutdown signal.

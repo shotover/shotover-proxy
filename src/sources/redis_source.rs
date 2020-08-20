@@ -59,9 +59,11 @@ impl RedisSource {
         let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
 
         info!("Starting Redis source on [{}]", listen_addr);
+        let name = "Redis Source";
 
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
+            source_name: name.to_string(),
             listener,
             codec: RedisCodec::new(false),
             limit_connections: Arc::new(Semaphore::new(50)),
@@ -87,7 +89,7 @@ impl RedisSource {
         });
 
         RedisSource {
-            name: "Redis",
+            name,
             join_handle: jh,
             listen_addr: listen_addr.clone(),
         }

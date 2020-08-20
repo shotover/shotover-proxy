@@ -31,7 +31,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         move |b, s| {
             let mut rt = tokio::runtime::Runtime::new().unwrap();
             b.iter(|| {
-                let _ = rt.block_on(chain.process_request(s.clone()));
+                let _ = rt.block_on(chain.process_request(s.clone(), "".to_string()));
             })
         },
     );
@@ -71,7 +71,7 @@ fn lua_benchmark(c: &mut Criterion) {
         &lwrapper,
         move |b, s| {
             b.iter(|| {
-                let _ = rt.block_on(lchain.process_request(s.clone()));
+                let _ = rt.block_on(lchain.process_request(s.clone(), "".to_string()));
             })
         },
     );

@@ -59,7 +59,7 @@ impl Transform for Scatter {
                     .route_map
                     .get(chosen_route.get(0).unwrap().as_str())
                     .unwrap()
-                    .process_request(qd)
+                    .process_request(qd, self.get_name().to_string())
                     .await;
             } else if chosen_route.len() == 0 {
                 return ChainResponse::Err(anyhow!("no routes found"));
@@ -69,7 +69,7 @@ impl Transform for Scatter {
                     let chain = self.route_map.get(route.as_str()).unwrap();
                     let mut wrapper = qd.clone();
                     wrapper.reset();
-                    fu.push(chain.process_request(wrapper));
+                    fu.push(chain.process_request(wrapper, self.get_name().to_string()));
                 }
                 // TODO I feel like there should be some streamext function that does this for me
 

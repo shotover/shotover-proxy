@@ -3,16 +3,16 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::TopicHolder;
 use crate::message::Message;
+use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Handle;
+use tokio::sync::{broadcast, mpsc};
+use tokio::task::JoinHandle;
 use tracing::info;
 use tracing::warn;
-use tokio::runtime::Handle;
-use tokio::task::JoinHandle;
-use crate::server::{Shutdown};
-use tokio::sync::{broadcast, mpsc};
-use anyhow::{anyhow, Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AsyncMpscConfig {
@@ -38,11 +38,10 @@ impl SourcesFromConfig for AsyncMpscConfig {
             ))]);
         }
         Err(anyhow!(
-                "Could not find the topic {} in [{:#?}]",
-                self.topic_name,
-                topics.topics_rx.keys()
-            )
-        )
+            "Could not find the topic {} in [{:#?}]",
+            self.topic_name,
+            topics.topics_rx.keys()
+        ))
     }
 }
 
@@ -58,12 +57,9 @@ impl AsyncMpsc {
         mut rx: Receiver<Message>,
         name: &str,
         shutdown: Shutdown,
-        shutdown_complete: mpsc::Sender<()>
+        shutdown_complete: mpsc::Sender<()>,
     ) -> AsyncMpsc {
-        info!(
-            "Starting MPSC source for the topic [{}] ",
-            name
-        );
+        info!("Starting MPSC source for the topic [{}] ", name);
 
         let jh = Handle::current().spawn(async move {
             // This will go out of scope once we exit the loop below, indicating we are done and shutdown
@@ -71,7 +67,7 @@ impl AsyncMpsc {
             while !shutdown.is_shutdown() {
                 if let Some(m) = rx.recv().await {
                     let w: Wrapper = Wrapper::new(m.clone());
-                    if let Err(e) = chain.process_request(w).await {
+                    if let Err(e) = chain.process_request(w, "AsyncMpsc".to_string()).await {
                         warn!("Something went wrong {}", e)
                     }
                 }
@@ -81,7 +77,7 @@ impl AsyncMpsc {
 
         return AsyncMpsc {
             name: "AsyncMpsc",
-            rx_handle: jh
+            rx_handle: jh,
         };
     }
 }

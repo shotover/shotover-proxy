@@ -1,11 +1,11 @@
 use crate::error::{ChainResponse, RequestError};
 use crate::message::Message;
 use crate::transforms::Transforms;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use evmap::ReadHandleFactory;
-use metrics::timing;
+use metrics::{counter, timing};
 use mlua::{Lua, UserData};
 use serde::export::Formatter;
 use std::fmt::Display;
@@ -97,7 +97,11 @@ pub trait Transform: Send {
         let start = Instant::now();
         let result = self.transform(qd, t).await;
         let end = Instant::now();
-        timing!("", start, end, "transform" => self.get_name(), "" => "");
+        match &result {
+            Ok(_) => counter!("perf.transform_successes", 1, "transform" => self.get_name()),
+            Err(_) => counter!("perf.transform_failures", 1, "transform" => self.get_name()),
+        }
+        timing!("perf.transform_latency", start, end, "transform" => self.get_name());
         return result;
     }
 
@@ -191,15 +195,16 @@ impl TransformChain {
         return chain;
     }
 
-    pub async fn process_request(&self, mut wrapper: Wrapper) -> ChainResponse {
-        // let span = trace_span!("processing request", );
+    pub async fn process_request(
+        &self,
+        mut wrapper: Wrapper,
+        client_details: String,
+    ) -> ChainResponse {
         let start = Instant::now();
         let result = match self.chain.get(wrapper.next_transform) {
             Some(t) => {
                 wrapper.next_transform += 1;
-                // self.lua_runtime.async_scope(|scope| async {
                 t.instrument_transform(wrapper, &self).await
-                // }).await;
             }
             None => {
                 return Err(anyhow!(RequestError::ChainProcessingError(
@@ -208,7 +213,11 @@ impl TransformChain {
             }
         };
         let end = Instant::now();
-        timing!("", start, end, "chain" => self.name.clone(), "" => "");
+        match &result {
+            Ok(_) => counter!("perf.transform_successes", 1, "chain" => self.name.clone()),
+            Err(_) => counter!("perf.transform_failures", 1, "chain" => self.name.clone()),
+        }
+        timing!("perf.request_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);
         return result;
     }
 }
