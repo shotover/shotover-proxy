@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _subscriber = tracing_subscriber::fmt()
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
-        .with_max_level(Level::TRACE)
+        .with_max_level(Level::INFO)
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
 
