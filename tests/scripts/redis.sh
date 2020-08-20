@@ -8,14 +8,13 @@ SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # and returns that instead. So if our tests fails, our CI system will still pick it up!
 
 function defer {
-	docker-compose -f $SCRIPT_DIR/../../examples/redis-multi/docker-compose.yml down
+	docker-compose -f $SCRIPT_DIR/../../examples/redis-cluster/docker-compose.yml down
 }
 
 trap defer EXIT
 
-docker-compose -f $SCRIPT_DIR/../../examples/redis-multi/docker-compose.yml up -d
+docker-compose -f $SCRIPT_DIR/../../examples/redis-cluster/docker-compose.yml up -d
 
-RUST_BACKTRACE=1 cargo test --verbose --test redis_presence_integration
-
+cargo run -- --topology-file $SCRIPT_DIR/../../examples/redis-cluster/config.yaml --config-file $SCRIPT_DIR/../../config/config.yaml
 
 

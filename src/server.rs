@@ -113,11 +113,17 @@ where
 
             let peer = socket
                 .peer_addr()
-                .map(|p| format!("{}", p))
+                .map(|p| format!("{}", p.ip()))
                 .unwrap_or("Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
-            info!("New connection from {}", peer);
+            info!(
+                "New connection from {}",
+                socket
+                    .peer_addr()
+                    .map(|p| format!("{}", p))
+                    .unwrap_or("Unknown peer".to_string())
+            );
 
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an

@@ -38,6 +38,7 @@ bincode = "1.3.1"
 
 #Observability
 metrics = "0.12.1"
+metrics-runtime = "0.13.1"
 tracing = { version = "0.1.15", features = ["max_level_info"]}
 tracing-subscriber = "0.2.5"
 tracing-futures = "0.2.4"
