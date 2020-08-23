@@ -71,7 +71,6 @@ impl Transform for Scatter {
                     wrapper.reset();
                     fu.push(chain.process_request(wrapper, self.get_name().to_string()));
                 }
-                // TODO I feel like there should be some streamext function that does this for me
 
                 let mut collated_results = vec![];
 

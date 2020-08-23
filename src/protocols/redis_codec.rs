@@ -99,9 +99,6 @@ fn get_key_values(
     Ok(())
 }
 
-//TODO: The current implementation has a weird understanding of the actual redis protocol (esp commands)
-//TODO: Fix this + handle pipelining
-
 impl RedisCodec {
     pub fn new(decode_as_response: bool) -> RedisCodec {
         RedisCodec { decode_as_response }
@@ -414,7 +411,7 @@ impl RedisCodec {
                 query_values: None,
                 projection: None,
                 query_type: QueryType::Read,
-                ast: None, //TODO: construct an AST for redis commands (this will be a bit of a task)
+                ast: None,
             })
         };
 
@@ -439,7 +436,7 @@ impl RedisCodec {
                 query_values: None,
                 projection: None,
                 query_type: QueryType::Read,
-                ast: None, //TODO: construct an AST for redis commands (this will be a bit of a task)
+                ast: None,
             })
         };
 
@@ -464,7 +461,7 @@ impl RedisCodec {
                 query_values: None,
                 projection: None,
                 query_type: QueryType::Read,
-                ast: None, //TODO: construct an AST for redis commands (this will be a bit of a task)
+                ast: None,
             })
         };
 
@@ -489,7 +486,7 @@ impl RedisCodec {
                 query_values: None,
                 projection: None,
                 query_type: QueryType::Read,
-                ast: None, //TODO: construct an AST for redis commands (this will be a bit of a task)
+                ast: None,
             })
         };
 

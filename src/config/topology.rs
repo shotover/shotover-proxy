@@ -16,8 +16,6 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 
-
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Topology {
     pub sources: HashMap<String, SourcesConfig>,
@@ -112,7 +110,6 @@ impl Topology {
 
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        // Signal handling goes here... why not? TODO: Finish wiring it up
         let (notify_shutdown, _) = broadcast::channel(1);
         let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
 
@@ -163,12 +160,9 @@ impl Topology {
     }
 
     pub fn from_file(filepath: String) -> Result<Topology> {
-        if let Ok(f) = std::fs::File::open(filepath.clone()) {
-            let config: Topology = serde_yaml::from_reader(f)?;
-            return Ok(config);
-        }
-        //TODO: Make Config errors implement the From trait for IO errors
-        Err(anyhow!("Couldn't open the file {}", &filepath))
+        let file = std::fs::File::open(filepath.clone())?;
+        let config: Topology = serde_yaml::from_reader(file)?;
+        return Ok(config);
     }
 
     pub fn get_demo_config() -> Topology {

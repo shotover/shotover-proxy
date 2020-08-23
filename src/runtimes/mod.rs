@@ -140,7 +140,7 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
     type Args = A;
     type Return = R;
 
-    fn call<'de>(&self, lua: &'de Lua, args: Self::Args) -> Result<Self::Return>
+    fn call(&self, lua: &Lua, args: Self::Args) -> Result<Self::Return>
     where
         A: serde::Serialize + Clone,
         R: serde::de::DeserializeOwned + Clone,
@@ -150,7 +150,6 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                 function_name,
                 function_def: _,
             } => {
-                // TODO: fix lifetimes going on here
                 let lval = mlua_serde::to_value(lua, args.clone()).unwrap();
                 let foo = lua
                     .globals()

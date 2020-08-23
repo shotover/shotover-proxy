@@ -2,7 +2,7 @@ use crate::message::Message;
 use crate::transforms::chain::{TransformChain, Wrapper};
 use anyhow::Result;
 use futures::{FutureExt, SinkExt, StreamExt};
-use metrics::counter;
+use metrics::gauge;
 use std::num::Wrapping;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
@@ -110,6 +110,8 @@ where
             // The `accept` method internally attempts to recover errors, so an
             // error here is non-recoverable.
             let socket = self.accept().await?;
+
+            gauge!("shotover_available_connections", self.limit_connections.available_permits() as i64 ,"source" => self.source_name.clone());
 
             let peer = socket
                 .peer_addr()
@@ -359,7 +361,6 @@ where
         // semaphore.
 
         self.limit_connections.add_permits(1);
-        counter!("perf.connections_count", 1, "source" => self.source_details.clone())
     }
 }
 /// Listens for the server shutdown signal.

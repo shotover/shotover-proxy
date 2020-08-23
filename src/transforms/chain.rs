@@ -18,7 +18,6 @@ struct QueryData {
     query: String,
 }
 
-//TODO change this to be generic to messages type
 #[derive(Debug, Clone)]
 pub struct Wrapper {
     pub message: Message,
@@ -97,11 +96,12 @@ pub trait Transform: Send {
         let start = Instant::now();
         let result = self.transform(qd, t).await;
         let end = Instant::now();
+        counter!("shotover_transform_total", 1, "transform" => self.get_name());
         match &result {
-            Ok(_) => counter!("perf.transform_successes", 1, "transform" => self.get_name()),
-            Err(_) => counter!("perf.transform_failures", 1, "transform" => self.get_name()),
+            Err(_) => counter!("shotover_transform_failures", 1, "transform" => self.get_name()),
+            _ => {}
         }
-        timing!("perf.transform_latency", start, end, "transform" => self.get_name());
+        timing!("shotover_transform_latency", start, end, "transform" => self.get_name());
         return result;
     }
 
@@ -213,11 +213,12 @@ impl TransformChain {
             }
         };
         let end = Instant::now();
+        counter!("shotover_chain_total", 1, "chain" => self.name.clone());
         match &result {
-            Ok(_) => counter!("perf.transform_successes", 1, "chain" => self.name.clone()),
-            Err(_) => counter!("perf.transform_failures", 1, "chain" => self.name.clone()),
+            Err(_) => counter!("shotover_chain_failures", 1, "chain" => self.name.clone()),
+            _ => {}
         }
-        timing!("perf.request_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);
+        timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);
         return result;
     }
 }

@@ -2,6 +2,7 @@
 #![recursion_limit = "256"]
 
 use std::error::Error;
+use tokio::signal;
 
 use clap::Clap;
 use metrics_runtime::Receiver;
@@ -48,6 +49,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
 
+    info!(
+        "Loaded the following configuration file: {}",
+        params.config_file.clone()
+    );
+    info!(configuration = ?config);
+
     let receiver = Receiver::builder()
         .build()
         .expect("failed to create receiver");
@@ -80,14 +87,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     rt.spawn(exporter.async_run());
 
-    //todo: https://github.com/tokio-rs/mini-redis/blob/master/src/server.rs
-
     return rt.block_on(async move {
-        if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(params.topology_file)?
-            .run_chains()
-            .await
-        {
-            //TODO: probably a better way to handle various join handles / threads
+        let topology = Topology::from_file(params.topology_file.clone())?;
+        info!(
+            "Loaded the following topology file: {}",
+            params.topology_file.clone()
+        );
+        info!(topology = ?topology);
+
+        if let Ok((_, mut shutdown_complete_rx)) = topology.run_chains().await {
             let _ = shutdown_complete_rx.recv().await;
             info!("Goodbye!");
         }
