@@ -1,13 +1,9 @@
 use anyhow::{anyhow, Result};
 use redis;
-use redis::Commands;
 use tracing::info;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use shotover_proxy::config::topology::Topology;
-use std::collections::{BTreeMap, BTreeSet};
-use std::collections::{HashMap, HashSet};
-use std::io::BufReader;
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;

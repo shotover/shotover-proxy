@@ -1,7 +1,7 @@
 use crate::error::{ChainResponse, RequestError};
 use crate::message::Message;
 use crate::transforms::Transforms;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use evmap::ReadHandleFactory;

@@ -2,7 +2,6 @@
 #![recursion_limit = "256"]
 
 use std::error::Error;
-use tokio::signal;
 
 use clap::Clap;
 use metrics_runtime::Receiver;

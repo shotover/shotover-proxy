@@ -15,7 +15,6 @@ use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::chain::TransformChain;
-use std::future::Future;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CassandraConfig {

@@ -209,6 +209,8 @@ where
     chain: TransformChain,
 
     client_details: String,
+
+    #[allow(dead_code)]
     source_details: String,
 
     connection: Framed<S, C>,
