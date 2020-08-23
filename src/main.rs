@@ -45,6 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
         .with_max_level(Level::from_str(config.main_log_level.as_str())?)
+
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
 

@@ -7,48 +7,31 @@
 For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
 
 ## What is Shotover?
-Shotover-proxy is an open source, high performance L7 data-layer proxy for controlling, managing and modifying the flow 
-of database requests in transit. It can be used to solve many different operational and interoperability challenges for 
-teams where polyglot persistence (many different databases) is common.
+Shotover-proxy is a high performance, configurable and extensible L7 data-layer proxy for controlling, managing and modifying the flow of database requests in transit. It can be used to solve many different operational and interoperability challenges by transparently intercepting and transforming queries. It is transparent in the sense that it can be plugged into your architecture without requiring application change.
+
+Shotover-proxy currently support intercepting requests for the following technologies (sources):
+* Cassandra (CQL4)
+* Redis (RESP2)
+
+It current supports writing output the to following technologies (sinks):
+* Cassandra
+* Redis
+* Kafka
+
 
 ## What problems does Shotover solve?
-The majority of operational problems associated with databases come down to a mismatch in the suitability of your data 
-model/queries for the workload or a mismatch in behaviour of your chosen database for a given workload. This can manifest 
-in many different ways, but commonly shows up as:
-* Some queries are slow for certain keys (customers/tenants etc)
-* Some queries could be implemented more efficiently (queries not quite right)
-* Some tables are too big or inefficient (data model not quite right)
-* Some queries are occur far more than others (hot partitions)
-* I have this sinking feeling I should have chosen a different database (hmmm yeah... )
-* My database slows down over time (wrong indexing scheme, compaction strategy, data no longer fits in memory)
-* My database slows down for a period of time (GC, autovacuum, flushes)
-* I don't understand where my queries are going and how they are performing (poor observability at the driver level).
-
-These challenges are all generally discovered in production environments rather than testing. So fixing and resolving these
-quickly can be tricky, often requiring application and/or schema level changes. 
-
-Shotover aims to make these challenges simpler by providing a point where data locality, performance and storage characteristics are 
-(somewhat) decoupled from the application, allowing for on the fly, easy changes to be made queries and data storage choices 
-without the need to change and redeploy your application.
-
-Longer term, Shotover can also leverage the same capability to make operational tasks easier to solve a number of other 
-challenges that come with working multiple databases. Some of these include:
-* Data encryption at the field level, with a common key management scheme between databases.
-* Routing the same data to databases that provide different query capabilities or performance characteristics (e.g. indexing data in Redis in 
-Elasticsearch, easy caching of DynamoDB data in Redis).
-* Routing/replicating data across regions for databases that don't support it natively or the functionality is gated behind
-proprietary "open-core" implementations.
-* A common audit and AuthZ/AuthN point for SOX/PCI/HIPAA compliance.
-
-## Examples
-For concrete examples of what you can achieve with shotover-proxy, see the following examples:
+Concrete examples where shotover-proxy has been applied include:
 * [Multi-region, active-active redis](../examples/redis-multi)
 * [Cassandra query caching in redis, with a query audit trail sent to kafka](../examples/cass-redis-kafka)
 * [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../examples/cassandra-encryption)
 
-Shotover proxy currently supports the following protocols as sources:
-* Cassandra (CQLv4)
-* Redis (RESP2)
+More broadly, shotover-proxy is designed to be used for a very wide ranging class of problems where it is useful to transparently intercept a database call and redirect it. This allows you to change the behaviour of running applications at the infrastructure level without change to the application code itself.
+Some examples where we envisage Shotover could be deployed include:
+* Moving very large or very hot tenants/customers/keys (that can cause unbalanced partition problems in some systems) to a separate data store by intercepting and redirecting queries for those particular keys
+* Dual writing and/or query translation to allow the underlying storage technology to be changed (for example, from DynamoDB to Apache Cassandra)
+* As an alternative to Change Data Capture technology to send writes to a message stream such as Apache Kafka in addition to the primary database
+* Adding auditing, encryption or other security measures
+Of course, shotover-proxy is designed to be configurable and extensible so use your imagination and let us know what uses you find!
 
 ## Deploying Shotover
 Shotover can be deployed in a number of ways, it will generally be based on the problem you are trying to solve, but they
@@ -63,6 +46,7 @@ we won't judge you.
 ## TODO/Roadmap
 * Support relevant xDS APIs (so Shotover can play nicely with service mesh implementations)
 * Support hot-reloads and a dynamic configuration API.
+* Performance metrics.
 * Additional sources (DynamoDB and PostgreSQL are good first candidates).
 * Add support for rate limiting, explicit back-pressure mechanisms etc
 * Additional Distributed algorithm transform primitives (e.g RAFT, 2PC, etc)
