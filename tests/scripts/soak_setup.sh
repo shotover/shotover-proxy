@@ -17,7 +17,7 @@ echo "Getting ready to run proxy"
 sleep 5
 echo "Running shotover"
 
-/usr/bin/time -v -o $SCRIPT_DIR/../../tests/soaktest-`date +%s` $SCRIPT_DIR/../../target/release/shotover-proxy --config-file $SCRIPT_DIR/../../examples/redis-cluster/config.yaml
+/usr/bin/time -v -o $SCRIPT_DIR/../../tests/soaktest-`date +%s` $SCRIPT_DIR/../../target/release/shotover-proxy --config-file $SCRIPT_DIR/../../examples/redis-cluster/config.yaml --topology-file $SCRIPT_DIR/../../examples/redis-cluster/topology.yaml
 
 
 

@@ -42,6 +42,7 @@ metrics-runtime = "0.13.1"
 tracing = { version = "0.1.15", features = ["max_level_info"]}
 tracing-subscriber = "0.2.5"
 tracing-futures = "0.2.4"
+tracing-appender = "0.1.1"
 
 # Transform dependencies
 #redis = {version = "0.15.1", features = ["tokio-rt-core", "cluster"]}

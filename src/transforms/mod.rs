@@ -77,11 +77,6 @@ impl Debug for Transforms {
     }
 }
 
-//TODO fix this grossness
-unsafe impl Send for Transforms {}
-
-unsafe impl Sync for Transforms {}
-
 #[async_trait]
 impl Transform for Transforms {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {

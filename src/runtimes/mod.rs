@@ -7,7 +7,7 @@ use anyhow::Result;
 use mlua::{Function, Lua};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use wasmer_runtime::{imports, instantiate, Instance};
+use wasmer_runtime::{imports, instantiate, Func, Instance};
 
 /*
 TODO:
@@ -140,7 +140,7 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
     type Args = A;
     type Return = R;
 
-    fn call<'de>(&self, lua: &'de Lua, args: Self::Args) -> Result<Self::Return>
+    fn call(&self, lua: &Lua, args: Self::Args) -> Result<Self::Return>
     where
         A: serde::Serialize + Clone,
         R: serde::de::DeserializeOwned + Clone,
@@ -150,7 +150,6 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                 function_name,
                 function_def: _,
             } => {
-                // TODO: fix lifetimes going on here
                 let lval = mlua_serde::to_value(lua, args.clone()).unwrap();
                 let foo = lua
                     .globals()
@@ -177,7 +176,9 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                     for (cell, byte) in view[5..len + 5].iter().zip(lval.iter()) {
                         cell.set(*byte);
                     }
-                    let func = wasm_inst.func::<(i32, u32), i32>(function_name.as_str())?;
+                    // let func = wasm_inst.func::<(i32, u32), i32>(function_name.as_str())?;
+                    let func: Func<(i32, u32), i32> =
+                        wasm_inst.exports.get(function_name.as_str())?;
                     let start = func
                         .call(5 as i32, len as u32)
                         .map_err(|e| anyhow!("wasm error: {}", e))?;

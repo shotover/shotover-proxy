@@ -149,7 +149,7 @@ impl Transform for TuneableConsistency {
                 wrapper.reset();
                 fu.push(timeout(
                     Duration::from_millis(sref.timeout),
-                    c.process_request(wrapper),
+                    c.process_request(wrapper, self.get_name().to_string()),
                 ))
             }
         }

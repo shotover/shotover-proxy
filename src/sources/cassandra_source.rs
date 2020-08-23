@@ -8,7 +8,7 @@ use tokio::net::TcpListener;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::config::topology::TopicHolder;
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
@@ -64,11 +64,13 @@ impl CassandraSource {
         bypass: bool,
     ) -> CassandraSource {
         let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+        let name = "Cassandra Source";
 
         info!("Starting Cassandra source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
+            source_name: name.to_string(),
             listener,
             codec: CassandraCodec2::new(cassandra_ks, bypass),
             limit_connections: Arc::new(Semaphore::new(50)),
@@ -77,7 +79,18 @@ impl CassandraSource {
         };
 
         let jh = Handle::current().spawn(async move {
-            listener.run().await?;
+            tokio::select! {
+                res = listener.run() => {
+                    if let Err(err) = res {
+                        error!(cause = %err, "failed to accept");
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Shutdown signal received - shutting down")
+                }
+            }
+
+            // listener.run().await?;
 
             let TcpCodecListener {
                 notify_shutdown,
@@ -92,7 +105,7 @@ impl CassandraSource {
         });
 
         return CassandraSource {
-            name: "Cassandra Source",
+            name,
             join_handle: jh,
             listen_addr,
         };

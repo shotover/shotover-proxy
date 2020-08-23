@@ -8,9 +8,6 @@ use crate::redis_int_tests::support::TestContext;
 use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
-use std::io::BufReader;
-use std::thread::sleep;
-use std::time::Duration;
 use tokio::runtime;
 use tracing::Level;
 
