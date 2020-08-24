@@ -102,10 +102,10 @@ fn get_key_values(
 }
 
 impl RedisCodec {
-    pub fn new(decode_as_response: bool) -> RedisCodec {
+    pub fn new(decode_as_response: bool, batch_hint: usize) -> RedisCodec {
         RedisCodec {
             decode_as_response,
-            batch_hint: 10,
+            batch_hint,
         }
     }
 
@@ -740,55 +740,55 @@ mod redis_tests {
 
     #[test]
     fn test_ok_codec() {
-        let mut codec = RedisCodec::new(true);
+        let mut codec = RedisCodec::new(true, 1);
         test_frame(&mut codec, &OK_MESSAGE);
     }
 
     #[test]
     fn test_set_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &SET_MESSAGE);
     }
 
     #[test]
     fn test_get_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &GET_MESSAGE);
     }
 
     #[test]
     fn test_inc_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &INC_MESSAGE);
     }
 
     #[test]
     fn test_lpush_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &LPUSH_MESSAGE);
     }
 
     #[test]
     fn test_rpush_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &RPUSH_MESSAGE);
     }
 
     #[test]
     fn test_lpop_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &LPOP_MESSAGE);
     }
 
     #[test]
     fn test_sadd_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &SADD_MESSAGE);
     }
 
     #[test]
     fn test_hset_codec() {
-        let mut codec = RedisCodec::new(false);
+        let mut codec = RedisCodec::new(false, 1);
         test_frame(&mut codec, &HSET_MESSAGE);
     }
 }
