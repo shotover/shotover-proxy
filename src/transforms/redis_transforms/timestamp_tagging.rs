@@ -203,9 +203,20 @@ impl Transform for RedisTimestampTagger {
         let mut response = self.call_next_transform(qd, t).await;
         debug!("tagging transform got {:?}", response);
         if tagged_success || exec_block {
-            if let Ok(Message::Response(qr)) = &mut response {
-                unwrap_response(qr);
-                response = response.map(|m| Message::Modified(Box::new(m)));
+            match &mut response {
+                Ok(Message::Response(qr)) => {
+                    unwrap_response(qr);
+                    response = response.map(|m| Message::Modified(Box::new(m)));
+                }
+                Ok(Message::Bulk(messages)) => {
+                    for message in messages {
+                        if let Message::Response(qr) = message {
+                            unwrap_response(qr);
+                        }
+                    }
+                    response = response.map(|m| Message::Modified(Box::new(m)));
+                }
+                _ => {}
             }
         }
         debug!("response after trying to unwrap -> {:?}", response);

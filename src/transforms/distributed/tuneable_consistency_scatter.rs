@@ -179,53 +179,65 @@ impl Transform for TuneableConsistency {
             .iter()
             .cloned()
             .filter_map(move |m| match m {
-                Message::Response(qr) => Some(qr),
-                Message::Modified(m) => {
-                    if let Message::Response(qr) = *m {
-                        Some(qr)
-                    } else {
-                        None
-                    }
-                }
+                Message::Response(qr) => Some(vec![qr]),
+                Message::Modified(m) => match *m {
+                    Message::Response(qr) => Some(vec![qr]),
+                    Message::Bulk(messages) => Some(
+                        messages
+                            .iter()
+                            .filter_map(move |m| {
+                                if let Message::Response(qr) = m {
+                                    Some(qr.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect_vec(),
+                    ),
+                    _ => None,
+                },
+                Message::Bulk(messages) => Some(
+                    messages
+                        .iter()
+                        .filter_map(move |m| {
+                            if let Message::Response(qr) = m {
+                                Some(qr.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect_vec(),
+                ),
                 _ => None,
             })
             .collect_vec();
 
-        // warn!(
-        //     "s: {} r: {}, v: {}",
-        //     successes,
-        //     required_successes,
-        //     collated_results.len()
-        // );
-
         return if successes >= required_successes {
-            let mut matching = if let Message::Query(qm) = qd.message {
-                Some(qm)
-            } else {
-                None
-            };
-
             if collated_results.len() > 0 {
-                if let Some(mut collated_response) = resolve_fragments(&mut collated_results) {
-                    if let Some(mq) = &matching {
-                        if let Some(a) = &mq.ast {
-                            if a.get_command().to_ascii_lowercase()
-                                == "SSCAN".to_string().to_ascii_lowercase()
-                            {
-                                debug!(
-                                    "\nquery: {:?}\nresult {:?}",
-                                    mq.query_string, collated_response.result
-                                );
-                            }
+                let mut responses: Vec<Message> = Vec::new();
+                if let Some(first_replica_response) = collated_results.get(0) {
+                    for i in 0..first_replica_response.len() {
+                        let mut fragments = Vec::new();
+                        for j in 0..collated_results.len() {
+                            unsafe { fragments.push(collated_results.get_unchecked(j).get(i)) }
+                        }
+                        let mut fragments = fragments
+                            .iter()
+                            .filter_map(|v| v.as_deref())
+                            .cloned()
+                            .collect_vec();
+                        if let Some(collated_response) = resolve_fragments(&mut fragments) {
+                            responses.push(Message::new_mod(Message::Response(collated_response)))
                         }
                     }
-
-                    std::mem::swap(&mut collated_response.matching_query, &mut matching);
-                    let res = ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
-                        collated_response,
-                    ))));
-
-                    return res;
+                }
+                if responses.len() == 1 {
+                    if let Some(m) = responses.pop() {
+                        let res = ChainResponse::Ok(m);
+                        return res;
+                    }
+                } else {
+                    return ChainResponse::Ok(Message::Bulk(responses));
                 }
             }
             ChainResponse::Ok(Message::Modified(Box::new(Message::Response(

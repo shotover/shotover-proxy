@@ -686,7 +686,7 @@ impl Encoder<Message> for RedisCodec {
                 return Ok(());
             }
         }
-        Err(anyhow!("Could not process and send Cassandra Frame"))
+        Err(anyhow!("Could not process and send Redis Frame"))
     }
 }
 
