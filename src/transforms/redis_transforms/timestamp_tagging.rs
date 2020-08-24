@@ -177,6 +177,27 @@ impl Transform for RedisTimestampTagger {
                     tagged_success = tagged;
                 }
             }
+            Message::Bulk(bulk_messages) => {
+                let new_messages: Result<Vec<Message>> = bulk_messages
+                    .iter()
+                    .map(|message| {
+                        if let Message::Query(ref qm) = message {
+                            if let Some(a) = &qm.ast {
+                                if a.get_command() == "EXEC".to_string() {
+                                    exec_block = true;
+                                }
+                            }
+
+                            let (tagged, message) = try_tag_query_message(qm);
+                            tagged_success = tagged;
+                            return Ok(message);
+                        }
+                        Err(anyhow!("not a query"))
+                    })
+                    .collect();
+
+                qd.swap_message(Message::Bulk(new_messages?));
+            }
             _ => {}
         }
         let mut response = self.call_next_transform(qd, t).await;

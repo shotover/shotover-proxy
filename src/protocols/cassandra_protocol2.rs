@@ -699,6 +699,12 @@ impl Encoder<Message> for CassandraCodec2 {
                         //TODO: throw error -> we should not have a nested modified message
                         unimplemented!()
                     }
+                    Message::Bulk(messages) => {
+                        for message in messages {
+                            self.encode(message, dst)?
+                        }
+                        return Ok(());
+                    }
                 }
             }
 
@@ -725,6 +731,12 @@ impl Encoder<Message> for CassandraCodec2 {
                     //TODO throw error
                     unimplemented!()
                 }
+            }
+            Message::Bulk(messages) => {
+                for message in messages {
+                    self.encode(message, dst)?
+                }
+                return Ok(());
             }
         }
     }

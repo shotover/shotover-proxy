@@ -6,15 +6,17 @@ use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
 use redis_protocol::prelude::*;
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
+use tracing::trace;
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
     // Redis doesn't have an explicit "Response" type as part of the protocol
     decode_as_response: bool,
+    batch_hint: usize,
 }
 
 fn get_keys(
@@ -101,7 +103,14 @@ fn get_key_values(
 
 impl RedisCodec {
     pub fn new(decode_as_response: bool) -> RedisCodec {
-        RedisCodec { decode_as_response }
+        RedisCodec {
+            decode_as_response,
+            batch_hint: 10,
+        }
+    }
+
+    pub fn get_batch_hint(&self) -> usize {
+        self.batch_hint
     }
 
     fn handle_redis_array(&self, commands_vec: Vec<Frame>, frame: Frame) -> Result<Message> {
@@ -493,6 +502,19 @@ impl RedisCodec {
         return message;
     }
 
+    pub fn process_redis_bulk(&self, mut frames: Vec<Frame>) -> Result<Message> {
+        trace!("processing bulk response {:?}", frames);
+        if frames.len() == 1 {
+            return self.process_redis_frame(frames.remove(0));
+        } else {
+            let result: Result<Vec<Message>> = frames
+                .into_iter()
+                .map(|f| self.process_redis_frame(f))
+                .collect();
+            return Ok(Message::Bulk(result?));
+        }
+    }
+
     pub fn process_redis_frame(&self, frame: Frame) -> Result<Message> {
         if frame.is_pubsub_message() {
             if let Ok((channel, message, kind)) = frame.parse_as_pubsub() {
@@ -531,7 +553,7 @@ impl RedisCodec {
         }
     }
 
-    pub fn build_redis_response_frame(resp: &mut QueryResponse) -> Frame {
+    pub fn build_redis_response_frame(resp: QueryResponse) -> Frame {
         if let Some(result) = &resp.result {
             return result.clone().into();
         }
@@ -545,7 +567,7 @@ impl RedisCodec {
         Frame::SimpleString("OK".to_string())
     }
 
-    pub fn build_redis_query_frame(query: &mut QueryMessage) -> Frame {
+    pub fn build_redis_query_frame(query: QueryMessage) -> Frame {
         if let Some(ASTHolder::Commands(Value::List(ast))) = &query.ast {
             let commands: Vec<Frame> = ast.iter().cloned().map(|v| v.into()).collect_vec();
             return Frame::Array(commands);
@@ -553,16 +575,33 @@ impl RedisCodec {
         return Frame::SimpleString(query.query_string.clone());
     }
 
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
-        if let (Some(frame), size) = decode_bytes(&*src).map_err(|e| {
-            info!("Error decoding redis frame {:?}", e);
-            anyhow!("Error decoding redis frame {}", e)
-        })? {
-            src.advance(size);
-            return Ok(Some(frame));
-        } else {
-            return Ok(None);
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<Frame>>> {
+        let mut frames: Vec<Frame> = Vec::with_capacity(self.get_batch_hint());
+        while src.remaining() != 0 && frames.len() < self.get_batch_hint() {
+            trace!("remaining {}", src.remaining());
+
+            if let (Some(frame), size) = decode_bytes(&*src).map_err(|e| {
+                info!("Error decoding redis frame {:?}", e);
+                anyhow!("Error decoding redis frame {}", e)
+            })? {
+                trace!("Got frame {:?}", frame);
+                src.advance(size);
+                frames.push(frame);
+            } else {
+                if frames.len() != 0 {
+                    return Ok(Some(frames));
+                }
+                trace!("Not enough bytes");
+                return Ok(None);
+            }
         }
+        trace!("frames {:?} - remaining {}", frames, src.remaining());
+
+        if frames.len() != 0 {
+            return Ok(Some(frames));
+        }
+
+        return Ok(None);
     }
 
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
@@ -582,7 +621,7 @@ impl Decoder for RedisCodec {
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
         return Ok(match self.decode_raw(src)? {
             None => None,
-            Some(f) => Some(self.process_redis_frame(f)?),
+            Some(f) => Some(self.process_redis_bulk(f)?),
         });
     }
 }
@@ -597,7 +636,7 @@ impl Encoder<Message> for RedisCodec {
     ) -> std::result::Result<(), Self::Error> {
         match item {
             Message::Modified(mut modified_message) => {
-                match modified_message.borrow_mut() {
+                match *modified_message {
                     Message::Bypass(_) => {
                         //TODO: throw error -> we should not be modifing a bypass message
                     }
@@ -609,6 +648,12 @@ impl Encoder<Message> for RedisCodec {
                     }
                     Message::Modified(_) => {
                         //TODO: throw error -> we should not have a nested modified message
+                    }
+                    Message::Bulk(messages) => {
+                        for message in messages {
+                            self.encode(message, dst)?
+                        }
+                        return Ok(());
                     }
                 }
             }
@@ -633,6 +678,12 @@ impl Encoder<Message> for RedisCodec {
                 } else {
                     //TODO throw error
                 }
+            }
+            Message::Bulk(messages) => {
+                for message in messages {
+                    self.encode(message, dst)?
+                }
+                return Ok(());
             }
         }
         Err(anyhow!("Could not process and send Cassandra Frame"))
@@ -670,7 +721,7 @@ mod redis_tests {
     const HSET_MESSAGE: [u8; 75] = hex!("2a340d0a24340d0a485345540d0a2431380d0a6d797365743a5f5f72616e645f696e745f5f0d0a2432300d0a656c656d656e743a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");
 
     fn build_bytesmut(slice: &[u8]) -> BytesMut {
-        let mut v: Vec<u8> = Vec::new();
+        let mut v: Vec<u8> = Vec::with_capacity(slice.len());
         v.extend_from_slice(slice);
         return BytesMut::from(v.to_bytes());
     }

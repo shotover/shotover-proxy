@@ -24,6 +24,7 @@ pub enum Message {
     Query(QueryMessage),
     Response(QueryResponse),
     Modified(Box<Message>), //The box is to put the nested Message on the heap so we can have a recursive Message
+    Bulk(Vec<Message>), // TODO: This enum is not the best place to put this, but it was the easiest integration point to build out pipelining support
 }
 
 impl Message {
