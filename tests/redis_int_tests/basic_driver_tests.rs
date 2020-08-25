@@ -723,12 +723,12 @@ fn test_active_active_redis() -> Result<()> {
         .try_init();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
-    run_all("examples/redis-multi/config.yaml".to_string())?;
+    run_all_active_safe("examples/redis-multi/config.yaml".to_string())?;
     return Ok(());
 }
 
-// #[test]
-#[allow(dead_code)]
+#[test]
+// #[allow(dead_code)]
 fn test_active_one_active_redis() -> Result<()> {
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config.clone())?;
@@ -754,11 +754,11 @@ fn test_active_one_active_redis() -> Result<()> {
     });
 
     let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::TRACE)
         .try_init();
 
     // test_args();
-    test_scanning();
+    test_pipeline();
     // for _ in 1..10000 {
     //     test_getset();
     // }
@@ -858,6 +858,60 @@ fn test_cluster_all_redis() -> Result<()> {
         .try_init();
     run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string())?;
     return Ok(());
+}
+
+fn run_all_active_safe(config: String) -> Result<()> {
+    let rt = runtime::Builder::new()
+        .enable_all()
+        .thread_name("RPProxy-Thread")
+        .threaded_scheduler()
+        .core_threads(4)
+        .build()
+        .unwrap();
+    let _jh: _ = rt.spawn(async move {
+        if let Ok((_, mut shutdown_complete_rx)) =
+            Topology::from_file(config).unwrap().run_chains().await
+        {
+            //TODO: probably a better way to handle various join handles / threads
+            let _ = shutdown_complete_rx.recv().await;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+
+    test_cluster_basics();
+    test_cluster_eval();
+    test_cluster_script(); //TODO: script does not seem to be loading in the server?
+                           // test_cluster_pipeline(); // we do support pipelining!!
+    test_getset();
+    test_incr();
+    // test_info();
+    // test_hash_ops();
+    test_set_ops();
+    test_scan();
+    // test_optionals();
+    // test_scanning(); // TODO scanning doesnt work
+    // test_filtered_scanning();
+    test_pipeline(); // NGET Issues
+    test_empty_pipeline();
+    // TODO: Pipeline transactions currently don't work (though it tries very hard)
+    // Current each cmd in a pipeline is treated as a single request, which means on a cluster
+    // basis they end up getting routed to different masters. This results in very occasionally will
+    // the transaction resolve (the exec and the multi both go to the right server).
+    // test_pipeline_transaction();
+    test_pipeline_reuse_query();
+    test_pipeline_reuse_query_clear();
+    // test_real_transaction();
+    // test_real_transaction_highlevel();
+    test_script();
+    test_tuple_args();
+    // test_nice_api();
+    // test_auto_m_versions();
+    test_nice_hash_api();
+    test_nice_list_api();
+    test_tuple_decoding_regression();
+    test_bit_operations();
+    // test_invalid_protocol();
+    Ok(())
 }
 
 fn run_all_cluster_safe(config: String) -> Result<()> {

@@ -576,8 +576,10 @@ impl RedisCodec {
     }
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<Frame>>> {
+        // TODO: get_batch_hint may be a premature optimisation
         let mut frames: Vec<Frame> = Vec::with_capacity(self.get_batch_hint());
-        while src.remaining() != 0 && frames.len() < self.get_batch_hint() {
+
+        while src.remaining() != 0 {
             trace!("remaining {}", src.remaining());
 
             if let (Some(frame), size) = decode_bytes(&*src).map_err(|e| {
@@ -589,6 +591,7 @@ impl RedisCodec {
                 frames.push(frame);
             } else {
                 if frames.len() != 0 {
+                    trace!("Batch size {:?}", frames.len());
                     return Ok(Some(frames));
                 }
                 trace!("Not enough bytes");
@@ -598,6 +601,7 @@ impl RedisCodec {
         trace!("frames {:?} - remaining {}", frames, src.remaining());
 
         if frames.len() != 0 {
+            trace!("Batch size {:?}", frames.len());
             return Ok(Some(frames));
         }
 
