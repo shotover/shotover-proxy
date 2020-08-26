@@ -14,13 +14,13 @@ return {KEYS[1],ARGV[1],ARGV[2]}
 "###;
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
-    return tokio::spawn(async move {
+    tokio::spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }
         Ok(())
-    });
+    })
 }
 
 fn get_redis_conn() -> Result<Connection> {
@@ -145,10 +145,10 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
     let connection = &mut get_redis_conn().unwrap();
 
     let func_sha1 = redis::Script::new(LUA1);
-    let some: RedisResult<Vec<String>> = func_sha1.invoke(connection);
+    let _some: RedisResult<Vec<String>> = func_sha1.invoke(connection);
 
     let func_sha2 = redis::Script::new(LUA2);
-    let other: RedisResult<Vec<String>> = func_sha1.invoke(connection);
+    let _other: RedisResult<Vec<String>> = func_sha1.invoke(connection);
 
     let time: usize = 640;
 
