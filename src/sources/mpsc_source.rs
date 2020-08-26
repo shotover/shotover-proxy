@@ -2,7 +2,7 @@ use crate::transforms::chain::{TransformChain, Wrapper};
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::TopicHolder;
-use crate::message::Message;
+use crate::message::Messages;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use anyhow::{anyhow, Result};
@@ -54,7 +54,7 @@ pub struct AsyncMpsc {
 impl AsyncMpsc {
     pub fn new(
         chain: TransformChain,
-        mut rx: Receiver<Message>,
+        mut rx: Receiver<Messages>,
         name: &str,
         shutdown: Shutdown,
         shutdown_complete: mpsc::Sender<()>,

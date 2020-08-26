@@ -1,4 +1,4 @@
-use crate::message::Message;
+use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, Wrapper};
 use anyhow::Result;
 use futures::{FutureExt, SinkExt, StreamExt};
@@ -15,7 +15,7 @@ use tracing::{error, info, trace};
 
 pub struct TcpCodecListener<C>
 where
-    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
+    C: Decoder<Item =Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
 {
     /// Shared database handle.
     ///
@@ -70,7 +70,7 @@ where
 
 impl<C> TcpCodecListener<C>
 where
-    C: 'static + Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
+    C: 'static + Decoder<Item =Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
 {
     /// Run the server
     ///
@@ -199,7 +199,7 @@ where
 
 pub struct Handler<S, C>
 where
-    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
+    C: Decoder<Item =Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
 {
     /// Shared source handle.
     ///
@@ -248,7 +248,7 @@ where
 
 impl<S, C> Handler<S, C>
 where
-    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
+    C: Decoder<Item =Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
     S: AsyncRead + AsyncWrite + Unpin,
 {
     /// Process a single connection.
@@ -347,7 +347,7 @@ where
 
 impl<S, C> Drop for Handler<S, C>
 where
-    C: Decoder<Item = Message> + Encoder<Message, Error = anyhow::Error> + Clone + Send,
+    C: Decoder<Item =Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
     //       S: AsyncRead + AsyncWrite + Drop,
 {
     fn drop(&mut self) {

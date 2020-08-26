@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage, QueryResponse, Value};
+use crate::message::{Messages, QueryMessage, QueryResponse, Value};
 use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
@@ -49,7 +49,7 @@ impl TransformsFromConfig for ScatterConfig {
 #[async_trait]
 impl Transform for Scatter {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        if let Message::Query(qm) = &qd.message {
+        if let Messages::Query(qm) = &qd.message {
             let routes: Vec<String> = self.route_map.keys().cloned().collect();
             let chosen_route = self
                 .route_script
@@ -75,7 +75,7 @@ impl Transform for Scatter {
                 let mut collated_results = vec![];
 
                 while let Some(Ok(m)) = fu.next().await {
-                    if let Message::Response(QueryResponse {
+                    if let Messages::Response(QueryResponse {
                         matching_query: _,
                         original: _,
                         result,
@@ -88,7 +88,7 @@ impl Transform for Scatter {
                         }
                     }
                 }
-                ChainResponse::Ok(Message::Response(QueryResponse::just_result(
+                ChainResponse::Ok(Messages::Response(QueryResponse::just_result(
                     Value::FragmentedResponese(collated_results),
                 )))
             }

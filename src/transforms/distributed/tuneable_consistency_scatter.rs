@@ -12,7 +12,7 @@ use tracing::debug;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+use crate::message::{Messages, QueryMessage, QueryResponse, QueryType, Value};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
     build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
@@ -119,7 +119,7 @@ impl TuneableConsistency {}
 impl Transform for TuneableConsistency {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let sref = self;
-        let required_successes = if let Message::Query(QueryMessage {
+        let required_successes = if let Messages::Query(QueryMessage {
             original: _,
             query_string: _,
             namespace: _,
@@ -179,14 +179,14 @@ impl Transform for TuneableConsistency {
             .iter()
             .cloned()
             .filter_map(move |m| match m {
-                Message::Response(qr) => Some(vec![qr]),
-                Message::Modified(m) => match *m {
-                    Message::Response(qr) => Some(vec![qr]),
-                    Message::Bulk(messages) => Some(
+                Messages::Response(qr) => Some(vec![qr]),
+                Messages::Modified(m) => match *m {
+                    Messages::Response(qr) => Some(vec![qr]),
+                    Messages::Bulk(messages) => Some(
                         messages
                             .iter()
                             .filter_map(move |m| {
-                                if let Message::Response(qr) = m {
+                                if let Messages::Response(qr) = m {
                                     Some(qr.clone())
                                 } else {
                                     None
@@ -196,11 +196,11 @@ impl Transform for TuneableConsistency {
                     ),
                     _ => None,
                 },
-                Message::Bulk(messages) => Some(
+                Messages::Bulk(messages) => Some(
                     messages
                         .iter()
                         .filter_map(move |m| {
-                            if let Message::Response(qr) = m {
+                            if let Messages::Response(qr) = m {
                                 Some(qr.clone())
                             } else {
                                 None
@@ -214,7 +214,7 @@ impl Transform for TuneableConsistency {
 
         if successes >= required_successes {
             if !collated_results.is_empty() {
-                let mut responses: Vec<Message> = Vec::new();
+                let mut responses: Vec<Messages> = Vec::new();
                 if let Some(first_replica_response) = collated_results.get(0) {
                     for i in 0..first_replica_response.len() {
                         let mut fragments = Vec::new();
@@ -227,7 +227,7 @@ impl Transform for TuneableConsistency {
                             .cloned()
                             .collect_vec();
                         if let Some(collated_response) = resolve_fragments(&mut fragments) {
-                            responses.push(Message::new_mod(Message::Response(collated_response)))
+                            responses.push(Messages::new_mod(Messages::Response(collated_response)))
                         }
                     }
                 }
@@ -237,15 +237,15 @@ impl Transform for TuneableConsistency {
                         return res;
                     }
                 } else {
-                    return ChainResponse::Ok(Message::Bulk(responses));
+                    return ChainResponse::Ok(Messages::Bulk(responses));
                 }
             }
-            ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
+            ChainResponse::Ok(Messages::Modified(Box::new(Messages::Response(
                 QueryResponse::empty(),
             ))))
         } else {
             debug!("Got {}, needed {}", successes, required_successes);
-            ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
+            ChainResponse::Ok(Messages::Modified(Box::new(Messages::Response(
                 QueryResponse::empty_with_error(Some(Value::Strings(
                     "Not enough responses".to_string(),
                 ))),
@@ -264,7 +264,7 @@ mod scatter_transform_tests {
     use anyhow::Result;
 
     use crate::config::topology::TopicHolder;
-    use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistency;
@@ -272,11 +272,11 @@ mod scatter_transform_tests {
     use crate::transforms::Transforms;
 
     fn check_ok_responses(
-        message: Message,
+        message: Messages,
         expected_ok: &Value,
         expected_count: usize,
     ) -> Result<()> {
-        if let Message::Response(QueryResponse {
+        if let Messages::Response(QueryResponse {
             matching_query: _,
             original: _,
             result: Some(r),
@@ -301,7 +301,7 @@ mod scatter_transform_tests {
         let t_holder = TopicHolder::get_test_holder();
 
         let response =
-            Message::Response(QueryResponse::just_result(Value::Strings("OK".to_string())));
+            Messages::Response(QueryResponse::just_result(Value::Strings("OK".to_string())));
         let dummy_chain = TransformChain::new(
             vec![],
             "dummy".to_string(),
@@ -309,7 +309,7 @@ mod scatter_transform_tests {
             t_holder.get_global_tx(),
         );
 
-        let wrapper = Wrapper::new(Message::Query(QueryMessage {
+        let wrapper = Wrapper::new(Messages::Query(QueryMessage {
             original: RawFrame::NONE,
             query_string: "".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],

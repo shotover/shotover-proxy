@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, Value};
+use crate::message::{ASTHolder, Messages, QueryMessage, QueryResponse, Value};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use anyhow::{anyhow, Result};
@@ -85,13 +85,13 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
     // redis.call('set','foo','bar')"
 }
 
-fn try_tag_query_message(qm: &QueryMessage) -> (bool, Message) {
+fn try_tag_query_message(qm: &QueryMessage) -> (bool, Messages) {
     let mut m = qm.clone();
     if let Ok(wrapped) = wrap_command(qm) {
         std::mem::swap(&mut m.ast, &mut Some(ASTHolder::Commands(wrapped)));
-        return (true, Message::Modified(Box::new(Message::Query(m))));
+        return (true, Messages::Modified(Box::new(Messages::Query(m))));
     }
-    (false, Message::Query(m))
+    (false, Messages::Query(m))
 }
 
 fn unwrap_response(qr: &mut QueryResponse) {
@@ -150,7 +150,7 @@ impl Transform for RedisTimestampTagger {
         let mut tagged_success: bool = false;
         let mut exec_block: bool = false;
         match &qd.message {
-            Message::Query(qm) => {
+            Messages::Query(qm) => {
                 if let Some(a) = &qm.ast {
                     if a.get_command() == *"EXEC" {
                         exec_block = true;
@@ -161,8 +161,8 @@ impl Transform for RedisTimestampTagger {
                 qd.swap_message(message);
                 tagged_success = tagged;
             }
-            Message::Modified(m) => {
-                if let Message::Query(ref qm) = **m {
+            Messages::Modified(m) => {
+                if let Messages::Query(ref qm) = **m {
                     if let Some(a) = &qm.ast {
                         if a.get_command() == *"EXEC" {
                             exec_block = true;
@@ -174,11 +174,11 @@ impl Transform for RedisTimestampTagger {
                     tagged_success = tagged;
                 }
             }
-            Message::Bulk(bulk_messages) => {
-                let new_messages: Result<Vec<Message>> = bulk_messages
+            Messages::Bulk(bulk_messages) => {
+                let new_messages: Result<Vec<Messages>> = bulk_messages
                     .iter()
                     .map(|message| {
-                        if let Message::Query(ref qm) = message {
+                        if let Messages::Query(ref qm) = message {
                             if let Some(a) = &qm.ast {
                                 if a.get_command() == *"EXEC" {
                                     exec_block = true;
@@ -193,7 +193,7 @@ impl Transform for RedisTimestampTagger {
                     })
                     .collect();
 
-                qd.swap_message(Message::Bulk(new_messages?));
+                qd.swap_message(Messages::Bulk(new_messages?));
             }
             _ => {}
         }
@@ -201,17 +201,17 @@ impl Transform for RedisTimestampTagger {
         debug!("tagging transform got {:?}", response);
         if tagged_success || exec_block {
             match &mut response {
-                Ok(Message::Response(qr)) => {
+                Ok(Messages::Response(qr)) => {
                     unwrap_response(qr);
-                    response = response.map(|m| Message::Modified(Box::new(m)));
+                    response = response.map(|m| Messages::Modified(Box::new(m)));
                 }
-                Ok(Message::Bulk(messages)) => {
+                Ok(Messages::Bulk(messages)) => {
                     for message in messages {
-                        if let Message::Response(qr) = message {
+                        if let Messages::Response(qr) = message {
                             unwrap_response(qr);
                         }
                     }
-                    response = response.map(|m| Message::Modified(Box::new(m)));
+                    response = response.map(|m| Messages::Modified(Box::new(m)));
                 }
                 _ => {}
             }

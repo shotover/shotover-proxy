@@ -1,5 +1,5 @@
-use crate::message::Message::Query as MessageQuery;
-use crate::message::{ASTHolder, Message, QueryResponse};
+use crate::message::Messages::Query as MessageQuery;
+use crate::message::{ASTHolder, Messages, QueryResponse};
 use redis::{pipe, AsyncCommands, RedisFuture, RedisResult};
 use sqlparser::ast::Statement::*;
 use std::collections::HashMap;
@@ -144,7 +144,7 @@ impl Transform for SimpleRedisCache {
                                     .into_iter()
                                     .map(|x| serde_json::from_str(x.as_str()).unwrap())
                                     .collect::<Vec<MValue>>();
-                                return ChainResponse::Ok(Message::Response(QueryResponse {
+                                return ChainResponse::Ok(Messages::Response(QueryResponse {
                                     matching_query: Some(qm.clone()),
                                     original: RawFrame::NONE,
                                     result: Some(MValue::Rows(vec![some])), //todo: Translate function

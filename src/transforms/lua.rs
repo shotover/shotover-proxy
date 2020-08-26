@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage, QueryResponse};
+use crate::message::{Messages, QueryMessage, QueryResponse};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 
@@ -67,15 +67,15 @@ impl Transform for LuaFilterTransform {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let chain_count = qd.next_transform;
         let globals = self.slua.globals();
-        if let Message::Query(qm) = &mut qd.message {
+        if let Messages::Query(qm) = &mut qd.message {
             let qm_v = mlua_serde::to_value(&self.slua, qm.clone()).unwrap();
             let result = self.slua.scope(|scope| {
                 let spawn_func = scope.create_function(
-                    |_lua: &Lua, qm: QueryMessage| -> mlua::Result<Message> {
+                    |_lua: &Lua, qm: QueryMessage| -> mlua::Result<Messages> {
                         //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
                         tokio::runtime::Handle::current().block_on(async move {
                             let w =
-                                Wrapper::new_with_next_transform(Message::Query(qm), chain_count);
+                                Wrapper::new_with_next_transform(Messages::Query(qm), chain_count);
                             return Ok(temp_transform(w, t).await.map_err(|_e| {
                                 mlua::Error::RuntimeError(
                                     "help!!@! - - TODO implement From anyhow to mlua errors"
@@ -87,20 +87,20 @@ impl Transform for LuaFilterTransform {
                 )?;
                 globals.set("call_next_transform", spawn_func)?;
                 let func = scope.create_function(
-                    |lua: &Lua, _qm: QueryMessage| -> mlua::Result<Message> {
+                    |lua: &Lua, _qm: QueryMessage| -> mlua::Result<Messages> {
                         let value = lua
                             .load(self.function_name.clone().as_str())
                             .set_name("fnc")?
                             .eval()?;
                         let result: QueryResponse = mlua_serde::from_value(value)?;
-                        Ok(Message::Response(result))
+                        Ok(Messages::Response(result))
                     },
                 )?;
                 func.call(qm_v)
             });
             result
                 .map_err(|e| anyhow!("uh oh lua broke {}", e))
-                .map(Message::Response)
+                .map(Messages::Response)
         } else {
             Err(anyhow!("expected a request"))
         }
@@ -116,7 +116,7 @@ mod lua_transform_tests {
     use std::error::Error;
 
     use crate::config::topology::TopicHolder;
-    use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::lua::LuaConfig;
@@ -143,7 +143,7 @@ return call_next_transform(qm)
             function_name: "".to_string(),
         };
 
-        let wrapper = Wrapper::new(Message::Query(QueryMessage {
+        let wrapper = Wrapper::new(Messages::Query(QueryMessage {
             original: RawFrame::NONE,
             query_string: "".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],
@@ -169,7 +169,7 @@ return call_next_transform(qm)
         if let Transforms::Lua(lua) = lua_t.get_source(&t_holder).await? {
             let result = lua.transform(wrapper, &chain).await;
             if let Ok(m) = result {
-                if let Message::Response(QueryResponse {
+                if let Messages::Response(QueryResponse {
                     matching_query: Some(oq),
                     original: _,
                     result: _,
@@ -181,7 +181,7 @@ return call_next_transform(qm)
                 } else {
                     panic!()
                 }
-                if let Message::Response(QueryResponse {
+                if let Messages::Response(QueryResponse {
                     matching_query: _,
                     original: _,
                     result: Some(x),

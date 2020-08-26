@@ -1,5 +1,5 @@
 use crate::error::{ChainResponse, RequestError};
-use crate::message::Message;
+use crate::message::Messages;
 use crate::transforms::Transforms;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -20,7 +20,7 @@ struct QueryData {
 
 #[derive(Debug, Clone)]
 pub struct Wrapper {
-    pub message: Message,
+    pub message: Messages,
     pub next_transform: usize,
     pub modified: bool,
     pub clock: Wrapping<u32>,
@@ -35,11 +35,11 @@ impl Display for Wrapper {
 }
 
 impl Wrapper {
-    pub fn swap_message(&mut self, mut m: Message) {
+    pub fn swap_message(&mut self, mut m: Messages) {
         std::mem::swap(&mut self.message, &mut m);
     }
 
-    pub fn new(m: Message) -> Self {
+    pub fn new(m: Messages) -> Self {
         Wrapper {
             message: m,
             next_transform: 0,
@@ -48,7 +48,7 @@ impl Wrapper {
         }
     }
 
-    pub fn new_with_next_transform(m: Message, next_transform: usize) -> Self {
+    pub fn new_with_next_transform(m: Messages, next_transform: usize) -> Self {
         Wrapper {
             message: m,
             next_transform,
@@ -57,7 +57,7 @@ impl Wrapper {
         }
     }
 
-    pub fn new_with_rnd(m: Message, clock: Wrapping<u32>) -> Self {
+    pub fn new_with_rnd(m: Messages, clock: Wrapping<u32>) -> Self {
         Wrapper {
             message: m,
             next_transform: 0,
@@ -73,7 +73,7 @@ impl Wrapper {
 
 #[derive(Debug)]
 struct ResponseData {
-    response: Message,
+    response: Messages,
 }
 
 //TODO change Transform to maintain the InnerChain internally so we don't have to expose this

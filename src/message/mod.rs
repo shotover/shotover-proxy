@@ -21,21 +21,111 @@ use std::net::IpAddr;
 // TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
 // Should move the message type to just be bulk..
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub enum Message {
-    Bypass(RawMessage),
-    Query(QueryMessage),
-    Response(QueryResponse),
-    Modified(Box<Message>), //The box is to put the nested Message on the heap so we can have a recursive Message
-    Bulk(Vec<Message>), // TODO: This enum is not the best place to put this, but it was the easiest integration point to build out pipelining support
+pub struct Messages {
+    pub messages: Vec<Message>,
 }
 
-impl Message {
-    pub fn new_mod(message: Message) -> Message {
-        Message::Modified(Box::new(message))
+impl IntoIterator for Messages {
+    type Item = Message;
+    type IntoIter = std::vec::IntoIter<Message>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.messages.into_iter()
     }
 }
 
-impl UserData for Message {}
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub details: MessageDetails,
+    pub modified: bool,
+    pub original: RawFrame,
+}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub enum MessageDetails {
+    Bypass(Box<MessageDetails>),
+    Query(QueryMessage),
+    Response(QueryResponse),
+    Unknown,
+}
+
+impl Message {
+    pub fn new(details: MessageDetails, modified: bool, original: RawFrame) -> Self {
+        Message {
+            details,
+            modified,
+            original,
+        }
+    }
+
+    pub fn new_no_original(details: MessageDetails, modified: bool) -> Self {
+        Message {
+            details,
+            modified,
+            original: RawFrame::NONE,
+        }
+    }
+
+    pub fn into_bypass(self) -> Self {
+        Message {
+            details: MessageDetails::Bypass,
+            modified: false,
+            original: self.original,
+        }
+    }
+}
+
+impl Messages {
+    pub fn get_raw_original(self) -> Vec<RawFrame> {
+        self.messages.into_iter().map(|m| m.original).collect()
+    }
+
+    pub fn new_single_query(qm: QueryMessage, modified: bool, original: RawFrame) -> Self {
+        Messages {
+            messages: vec![Message::new(MessageDetails::Query(qm), modified, original)],
+        }
+    }
+
+    pub fn new_single_bypass(raw_frame: RawFrame) -> Self {
+        Messages {
+            messages: vec![Message::new(MessageDetails::Bypass, false, raw_frame)],
+        }
+        .to_bypass()
+    }
+
+    pub fn new_single_bypass_response(raw_frame: RawFrame, modified: bool) -> Self {
+        Messages {
+            messages: vec![Message::new(
+                MessageDetails::Response(QueryResponse::empty()),
+                false,
+                raw_frame,
+            )],
+        }
+        .to_bypass()
+    }
+
+    pub fn new_single_response(qr: QueryResponse, modified: bool, original: RawFrame) -> Self {
+        Messages {
+            messages: vec![Message::new(
+                MessageDetails::Response(qr),
+                modified,
+                original,
+            )],
+        }
+    }
+
+    pub fn to_bypass(self) -> Self {
+        Messages {
+            messages: self
+                .messages
+                .into_iter()
+                .map(Message::into_bypass)
+                .collect(),
+        }
+    }
+}
+
+impl UserData for Messages {}
 
 impl UserData for QueryMessage {}
 impl UserData for QueryResponse {}
@@ -90,7 +180,6 @@ impl ASTHolder {
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
-    pub original: RawFrame,
     pub query_string: String,
     pub namespace: Vec<String>,
     pub primary_key: HashMap<String, Value>,
@@ -102,6 +191,18 @@ pub struct QueryMessage {
 }
 
 impl QueryMessage {
+    pub fn empty() -> Self {
+        QueryMessage {
+            query_string: "".to_string(),
+            namespace: vec![],
+            primary_key: Default::default(),
+            query_values: None,
+            projection: None,
+            query_type: QueryType::Read,
+            ast: None,
+        }
+    }
+
     pub fn get_namespace(&self) -> Vec<String> {
         self.namespace.clone()
     }
@@ -137,7 +238,6 @@ impl QueryMessage {
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResponse {
     pub matching_query: Option<QueryMessage>,
-    pub original: RawFrame,
     pub result: Option<Value>,
     pub error: Option<Value>,
     pub response_meta: Option<Value>,
@@ -148,7 +248,6 @@ impl QueryResponse {
     pub fn empty() -> Self {
         QueryResponse {
             matching_query: None,
-            original: RawFrame::NONE,
             result: None,
             error: None,
             response_meta: None,
@@ -158,7 +257,6 @@ impl QueryResponse {
     pub fn empty_with_error(error: Option<Value>) -> Self {
         QueryResponse {
             matching_query: None,
-            original: RawFrame::NONE,
             result: None,
             error,
             response_meta: None,
@@ -168,7 +266,6 @@ impl QueryResponse {
     pub fn just_result(result: Value) -> Self {
         QueryResponse {
             matching_query: None,
-            original: RawFrame::NONE,
             result: Some(result),
             error: None,
             response_meta: None,
@@ -178,7 +275,6 @@ impl QueryResponse {
     pub fn result_with_matching(matching: Option<QueryMessage>, result: Value) -> Self {
         QueryResponse {
             matching_query: matching,
-            original: RawFrame::NONE,
             result: Some(result),
             error: None,
             response_meta: None,
@@ -192,7 +288,6 @@ impl QueryResponse {
     ) -> Self {
         QueryResponse {
             matching_query: matching,
-            original: RawFrame::NONE,
             result,
             error,
             response_meta: None,
@@ -202,7 +297,6 @@ impl QueryResponse {
     pub fn error_with_matching(matching: Option<QueryMessage>, error: Value) -> Self {
         QueryResponse {
             matching_query: matching,
-            original: RawFrame::NONE,
             result: None,
             error: Some(error),
             response_meta: None,
@@ -212,7 +306,6 @@ impl QueryResponse {
     pub fn empty_with_matching(original: QueryMessage) -> Self {
         QueryResponse {
             matching_query: Some(original),
-            original: RawFrame::NONE,
             result: None,
             error: None,
             response_meta: None,

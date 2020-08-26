@@ -1,5 +1,5 @@
 use crate::message::{
-    ASTHolder, Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value,
+    ASTHolder, Messages, QueryMessage, QueryResponse, QueryType, RawMessage, Value,
 };
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
@@ -112,7 +112,7 @@ impl RedisCodec {
         self.batch_hint
     }
 
-    fn handle_redis_array(&self, commands_vec: Vec<Frame>, frame: Frame) -> Result<Message> {
+    fn handle_redis_array(&self, commands_vec: Vec<Frame>, frame: Frame) -> Result<Messages> {
         if !self.decode_as_response {
             let mut keys_map: HashMap<String, Value> = HashMap::new();
             let mut values_map: HashMap<String, Value> = HashMap::new();
@@ -374,7 +374,7 @@ impl RedisCodec {
                     } // merge N HyperLogLogs into a single one
                     _ => {}
                 }
-                return Ok(Message::Query(QueryMessage {
+                return Ok(Messages::Query(QueryMessage {
                     original: RawFrame::Redis(frame),
                     query_string,
                     namespace: vec![],
@@ -386,7 +386,7 @@ impl RedisCodec {
                 }));
             }
         } else {
-            return Ok(Message::Response(QueryResponse {
+            return Ok(Messages::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
                 result: Some(Value::List(
@@ -396,14 +396,14 @@ impl RedisCodec {
                 response_meta: None,
             }));
         }
-        Ok(Message::Bypass(RawMessage {
+        Ok(Messages::Bypass(RawMessage {
             original: RawFrame::Redis(frame),
         }))
     }
 
-    fn handle_redis_string(&self, string: String, frame: Frame) -> Message {
+    fn handle_redis_string(&self, string: String, frame: Frame) -> Messages {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
+            Messages::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Strings(string)),
@@ -411,7 +411,7 @@ impl RedisCodec {
                 response_meta: None,
             })
         } else {
-            Message::Query(QueryMessage {
+            Messages::Query(QueryMessage {
                 original: RawFrame::Redis(frame),
                 query_string: string,
                 namespace: vec![],
@@ -424,9 +424,9 @@ impl RedisCodec {
         }
     }
 
-    fn handle_redis_bulkstring(&self, bulkstring: Vec<u8>, frame: Frame) -> Message {
+    fn handle_redis_bulkstring(&self, bulkstring: Vec<u8>, frame: Frame) -> Messages {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
+            Messages::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Bytes(Bytes::from(bulkstring))),
@@ -434,7 +434,7 @@ impl RedisCodec {
                 response_meta: None,
             })
         } else {
-            Message::Query(QueryMessage {
+            Messages::Query(QueryMessage {
                 original: RawFrame::Redis(frame),
                 query_string: unsafe { String::from_utf8_unchecked(bulkstring) },
                 namespace: vec![],
@@ -447,9 +447,9 @@ impl RedisCodec {
         }
     }
 
-    fn handle_redis_integer(&self, integer: i64, frame: Frame) -> Message {
+    fn handle_redis_integer(&self, integer: i64, frame: Frame) -> Messages {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
+            Messages::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
                 result: Some(Value::Integer(integer)),
@@ -457,7 +457,7 @@ impl RedisCodec {
                 response_meta: None,
             })
         } else {
-            Message::Query(QueryMessage {
+            Messages::Query(QueryMessage {
                 original: RawFrame::Redis(frame),
                 query_string: format!("{}", integer),
                 namespace: vec![],
@@ -470,9 +470,9 @@ impl RedisCodec {
         }
     }
 
-    fn handle_redis_error(&self, error: String, frame: Frame) -> Message {
+    fn handle_redis_error(&self, error: String, frame: Frame) -> Messages {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
+            Messages::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
                 result: None,
@@ -480,7 +480,7 @@ impl RedisCodec {
                 response_meta: None,
             })
         } else {
-            Message::Query(QueryMessage {
+            Messages::Query(QueryMessage {
                 original: RawFrame::Redis(frame),
                 query_string: error,
                 namespace: vec![],
@@ -493,25 +493,25 @@ impl RedisCodec {
         }
     }
 
-    pub fn process_redis_bulk(&self, mut frames: Vec<Frame>) -> Result<Message> {
+    pub fn process_redis_bulk(&self, mut frames: Vec<Frame>) -> Result<Messages> {
         trace!("processing bulk response {:?}", frames);
         if frames.len() == 1 {
             self.process_redis_frame(frames.remove(0))
         } else {
-            let result: Result<Vec<Message>> = frames
+            let result: Result<Vec<Messages>> = frames
                 .into_iter()
                 .map(|f| self.process_redis_frame(f))
                 .collect();
-            Ok(Message::Bulk(result?))
+            Ok(Messages::Bulk(result?))
         }
     }
 
-    pub fn process_redis_frame(&self, frame: Frame) -> Result<Message> {
+    pub fn process_redis_frame(&self, frame: Frame) -> Result<Messages> {
         if frame.is_pubsub_message() {
             if let Ok((channel, message, kind)) = frame.parse_as_pubsub() {
                 let mut map: HashMap<String, Value> = HashMap::new();
                 map.insert(channel.clone(), Value::Strings(message.clone()));
-                Ok(Message::Query(QueryMessage {
+                Ok(Messages::Query(QueryMessage {
                     original: RawFrame::Redis(Frame::Array(vec![
                         Frame::SimpleString(channel.clone()),
                         Frame::SimpleString(message),
@@ -537,7 +537,7 @@ impl RedisCodec {
                 Frame::Ask(a) => self.handle_redis_string(a, frame),
                 Frame::Integer(i) => self.handle_redis_integer(i, frame),
                 Frame::Error(s) => self.handle_redis_error(s, frame),
-                _ => Message::Bypass(RawMessage {
+                _ => Messages::Bypass(RawMessage {
                     original: RawFrame::Redis(frame),
                 }),
             })
@@ -607,7 +607,7 @@ impl RedisCodec {
 }
 
 impl Decoder for RedisCodec {
-    type Item = Message;
+    type Item = Messages;
     type Error = anyhow::Error;
 
     fn decode(
@@ -621,30 +621,30 @@ impl Decoder for RedisCodec {
     }
 }
 
-impl Encoder<Message> for RedisCodec {
+impl Encoder<Messages> for RedisCodec {
     type Error = anyhow::Error;
 
     fn encode(
         &mut self,
-        item: Message,
+        item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         match item {
-            Message::Modified(modified_message) => {
+            Messages::Modified(modified_message) => {
                 match *modified_message {
-                    Message::Bypass(_) => {
+                    Messages::Bypass(_) => {
                         //TODO: throw error -> we should not be modifing a bypass message
                     }
-                    Message::Query(q) => {
+                    Messages::Query(q) => {
                         return self.encode_raw(RedisCodec::build_redis_query_frame(q), dst);
                     }
-                    Message::Response(r) => {
+                    Messages::Response(r) => {
                         return self.encode_raw(RedisCodec::build_redis_response_frame(r), dst);
                     }
-                    Message::Modified(_) => {
+                    Messages::Modified(_) => {
                         //TODO: throw error -> we should not have a nested modified message
                     }
-                    Message::Bulk(messages) => {
+                    Messages::Bulk(messages) => {
                         for message in messages {
                             self.encode(message, dst)?
                         }
@@ -653,28 +653,28 @@ impl Encoder<Message> for RedisCodec {
                 }
             }
 
-            Message::Query(qm) => {
+            Messages::Query(qm) => {
                 if let RawFrame::Redis(frame) = qm.original {
                     return self.encode_raw(frame, dst);
                 } else {
                     //TODO throw error
                 }
             }
-            Message::Response(resp) => {
+            Messages::Response(resp) => {
                 if let RawFrame::Redis(frame) = resp.original {
                     return self.encode_raw(frame, dst);
                 } else {
                     //TODO throw error
                 }
             }
-            Message::Bypass(resp) => {
+            Messages::Bypass(resp) => {
                 if let RawFrame::Redis(frame) = resp.original {
                     return self.encode_raw(frame, dst);
                 } else {
                     //TODO throw error
                 }
             }
-            Message::Bulk(messages) => {
+            Messages::Bulk(messages) => {
                 for message in messages {
                     self.encode(message, dst)?
                 }

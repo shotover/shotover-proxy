@@ -15,7 +15,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Value;
 use crate::message::Value::Rows;
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType};
+use crate::message::{Messages, QueryMessage, QueryResponse, QueryType};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transforms, TransformsFromConfig};
@@ -162,7 +162,7 @@ impl TransformsFromConfig for ProtectConfig {
 #[async_trait]
 impl Transform for Protect {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        if let Message::Query(qm) = &mut qd.message {
+        if let Messages::Query(qm) = &mut qd.message {
             // Encrypt the writes
             if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
                 if let Some((_, tables)) = self
@@ -187,7 +187,7 @@ impl Transform for Protect {
         let mut result = self.call_next_transform(qd, t).await?;
         // this used to be worse https://doc.rust-lang.org/book/ch18-03-pattern-syntax.html#destructuring-structs-and-tuples
         // todo: destructure the above bracket mountain as below
-        if let Message::Response(QueryResponse {
+        if let Messages::Response(QueryResponse {
             matching_query:
                 Some(QueryMessage {
                     original: _,
@@ -260,7 +260,7 @@ mod protect_transform_tests {
     use tokio::sync::mpsc::channel;
 
     use crate::config::topology::TopicHolder;
-    use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
@@ -319,7 +319,7 @@ mod protect_transform_tests {
         query_values.insert(String::from("col2"), Value::Integer(42));
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
-        let wrapper = Wrapper::new(Message::Query(QueryMessage {
+        let wrapper = Wrapper::new(Messages::Query(QueryMessage {
             original: RawFrame::NONE,
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],
@@ -342,7 +342,7 @@ mod protect_transform_tests {
         if let Transforms::Protect(protect) = protect_t.get_source(&t_holder).await? {
             let result = protect.transform(wrapper, &chain).await;
             if let Ok(mut m) = result {
-                if let Message::Response(QueryResponse {
+                if let Messages::Response(QueryResponse {
                     matching_query:
                         Some(QueryMessage {
                             original: _,
@@ -394,7 +394,7 @@ mod protect_transform_tests {
 
                     let codec = CassandraCodec2::new(colk_map, false);
 
-                    if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
+                    if let Messages::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
                         let returner_message = QueryResponse {
                             matching_query: Some(qm.clone()),
                             original: RawFrame::NONE,
@@ -405,7 +405,7 @@ mod protect_transform_tests {
 
                         let ret_transforms: Vec<Transforms> =
                             vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
-                                message: Message::Response(returner_message.clone()),
+                                message: Messages::Response(returner_message.clone()),
                                 ok: true,
                             }))];
 
@@ -417,9 +417,9 @@ mod protect_transform_tests {
                         );
 
                         let resultr = protect
-                            .transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain)
+                            .transform(Wrapper::new(Messages::Query(qm.clone())), &ret_chain)
                             .await;
-                        if let Ok(Message::Response(QueryResponse {
+                        if let Ok(Messages::Response(QueryResponse {
                             matching_query: _,
                             original: _,
                             result: Some(Value::Rows(r)),
@@ -494,7 +494,7 @@ mod protect_transform_tests {
         query_values.insert(String::from("col2"), Value::Integer(42));
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
-        let wrapper = Wrapper::new(Message::Query(QueryMessage {
+        let wrapper = Wrapper::new(Messages::Query(QueryMessage {
             original: RawFrame::NONE,
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],
@@ -517,7 +517,7 @@ mod protect_transform_tests {
         let t = protect_t.get_source(&t_holder).await?;
         if let Transforms::Protect(protect) = t {
             let mut m = protect.transform(wrapper, &chain).await?;
-            if let Message::Response(QueryResponse {
+            if let Messages::Response(QueryResponse {
                 matching_query:
                     Some(QueryMessage {
                         original: _,
@@ -569,7 +569,7 @@ mod protect_transform_tests {
 
                 let codec = CassandraCodec2::new(colk_map, false);
 
-                if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
+                if let Messages::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
                     let returner_message = QueryResponse {
                         matching_query: Some(qm.clone()),
                         original: RawFrame::NONE,
@@ -580,7 +580,7 @@ mod protect_transform_tests {
 
                     let ret_transforms: Vec<Transforms> =
                         vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
-                            message: Message::Response(returner_message.clone()),
+                            message: Messages::Response(returner_message.clone()),
                             ok: true,
                         }))];
 
@@ -592,9 +592,9 @@ mod protect_transform_tests {
                     );
 
                     let resultr = protect
-                        .transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain)
+                        .transform(Wrapper::new(Messages::Query(qm.clone())), &ret_chain)
                         .await;
-                    if let Ok(Message::Response(QueryResponse {
+                    if let Ok(Messages::Response(QueryResponse {
                         matching_query: _,
                         original: _,
                         result: Some(Value::Rows(r)),

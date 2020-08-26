@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, Value};
+use crate::message::{ASTHolder, Messages, QueryMessage, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use futures::stream::{self, StreamExt};
@@ -67,7 +67,7 @@ impl TransformsFromConfig for RedisClusterConfig {
 }
 
 fn build_error(code: String, description: String, original: Option<QueryMessage>) -> ChainResponse {
-    Ok(Message::Modified(Box::new(Message::Response(
+    Ok(Messages::Modified(Box::new(Messages::Response(
         QueryResponse {
             matching_query: original,
             original: RawFrame::NONE,
@@ -89,7 +89,7 @@ impl Transform for RedisCluster {
 
             let mut client = ClusterClientBuilder::new(builder_lock.first_contact_points.clone());
 
-            if let Message::Query(qm) = &qd.message {
+            if let Messages::Query(qm) = &qd.message {
                 if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast.clone() {
                     if !commands.is_empty() {
                         let command = commands.remove(0);
@@ -145,19 +145,19 @@ impl Transform for RedisCluster {
 
             if eat_message {
                 //We need to eat the auth message and return ok before processing it again
-                return Ok(Message::new_mod(Message::Response(
+                return Ok(Messages::new_mod(Messages::Response(
                     QueryResponse::result_with_matching(None, Value::Strings("OK".to_string())),
                 )));
             }
         }
 
         match qd.message {
-            Message::Bulk(messages) => {
+            Messages::Bulk(messages) => {
                 debug!("Building pipelined query {:?}", messages);
                 let mut pipe = redis::pipe();
 
                 for message in messages {
-                    if let Message::Query(qm) = message {
+                    if let Messages::Query(qm) = message {
                         if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
                             if !commands.is_empty() {
                                 let command = commands.remove(0);
@@ -181,10 +181,10 @@ impl Transform for RedisCluster {
                     return match result {
                         Ok(result) => {
                             trace!(result = ?result);
-                            Ok(Message::Bulk(
+                            Ok(Messages::Bulk(
                                 stream::iter(result)
                                     .then(|v| async move {
-                                        Message::new_mod(Message::Response(
+                                        Messages::new_mod(Messages::Response(
                                             QueryResponse::just_result(v),
                                         ))
                                     })
@@ -214,7 +214,7 @@ impl Transform for RedisCluster {
                     };
                 }
             }
-            Message::Query(qm) => {
+            Messages::Query(qm) => {
                 debug!("Building regular query {:?}", qm);
                 let original = qm.clone();
                 if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
@@ -241,7 +241,7 @@ impl Transform for RedisCluster {
                                 return match response_res {
                                     Ok(result) => {
                                         trace!(result = ?result);
-                                        Ok(Message::new_mod(Message::Response(
+                                        Ok(Messages::new_mod(Messages::Response(
                                             QueryResponse::result_with_matching(
                                                 Some(original),
                                                 result,

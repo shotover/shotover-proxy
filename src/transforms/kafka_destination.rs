@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryResponse};
+use crate::message::{Messages, QueryResponse};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 
@@ -72,8 +72,8 @@ impl Default for KafkaDestination {
 impl Transform for KafkaDestination {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         match qd.message {
-            Message::Bypass(_) => {}
-            Message::Query(qm) => {
+            Messages::Bypass(_) => {}
+            Messages::Query(qm) => {
                 if let Some(ref key) = qm.get_namespaced_primary_key() {
                     if let Some(values) = qm.query_values {
                         let message = serde_json::to_string(&values)?;
@@ -89,7 +89,7 @@ impl Transform for KafkaDestination {
             }
             _ => {}
         }
-        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
+        ChainResponse::Ok(Messages::Response(QueryResponse::empty()))
     }
 
     fn get_name(&self) -> &'static str {

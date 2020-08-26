@@ -17,7 +17,7 @@ use tracing::warn;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage};
+use crate::message::{Messages, QueryMessage};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
@@ -79,7 +79,7 @@ impl RedisCodecDestination {
 
     async fn send_message(
         &self,
-        message: Message,
+        message: Messages,
         _matching_query: Option<QueryMessage>,
         message_clock: Wrapping<u32>,
     ) -> ChainResponse {
@@ -149,7 +149,7 @@ impl Transform for RedisCodecDestination {
     // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let return_query = match &qd.message {
-            Message::Query(q) => Some(q.clone()),
+            Messages::Query(q) => Some(q.clone()),
             _ => None,
         };
         let r = self.send_message(qd.message, return_query, qd.clock).await;

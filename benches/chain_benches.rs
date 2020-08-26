@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use shotover_proxy::config::topology::TopicHolder;
-use shotover_proxy::message::{Message, QueryMessage, QueryType};
+use shotover_proxy::message::{Messages, QueryMessage, QueryType};
 use shotover_proxy::protocols::RawFrame;
 use shotover_proxy::transforms::chain::{TransformChain, Wrapper};
 use shotover_proxy::transforms::lua::LuaConfig;
@@ -14,7 +14,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new_without_request())];
 
     let chain = TransformChain::new_no_shared_state(transforms, "bench".to_string());
-    let wrapper = Wrapper::new(Message::Query(QueryMessage {
+    let wrapper = Wrapper::new(Messages::Query(QueryMessage {
         original: RawFrame::NONE,
         query_string: "".to_string(),
         namespace: vec![],
@@ -47,7 +47,7 @@ fn lua_benchmark(c: &mut Criterion) {
         function_name: "".to_string(),
     };
 
-    let lwrapper = Wrapper::new(Message::Query(QueryMessage {
+    let lwrapper = Wrapper::new(Messages::Query(QueryMessage {
         original: RawFrame::NONE,
         query_string: "".to_string(),
         namespace: vec![String::from("keyspace"), String::from("old")],

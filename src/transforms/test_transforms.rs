@@ -1,4 +1,4 @@
-use crate::message::Message;
+use crate::message::Messages;
 use crate::transforms::chain::{Transform, Wrapper, TransformChain};
 use async_trait::async_trait;
 use crate::error::ChainResponse;
@@ -9,7 +9,7 @@ use anyhow::anyhow;
 
 #[derive(Debug, Clone)]
 pub struct ReturnerTransform {
-    pub message: Message,
+    pub message: Messages,
     pub ok: bool
 }
 

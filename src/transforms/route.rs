@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage};
+use crate::message::{Messages, QueryMessage};
 use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
@@ -46,7 +46,7 @@ impl TransformsFromConfig for RouteConfig {
 #[async_trait]
 impl Transform for Route {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        if let Message::Query(qm) = &qd.message {
+        if let Messages::Query(qm) = &qd.message {
             let routes: Vec<String> = self.route_map.keys().cloned().collect();
             let chosen_route = self
                 .route_script

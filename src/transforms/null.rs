@@ -1,6 +1,6 @@
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 
-use crate::message::{Message, QueryResponse};
+use crate::message::{Messages, QueryResponse};
 use async_trait::async_trait;
 use crate::error::ChainResponse;
 
@@ -24,11 +24,11 @@ impl Null {
 impl Transform for Null {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         if self.with_request {
-            if let Message::Query(qm) = qd.message {
-                return ChainResponse::Ok(Message::Response(QueryResponse::empty_with_matching(qm)));
+            if let Messages::Query(qm) = qd.message {
+                return ChainResponse::Ok(Messages::Response(QueryResponse::empty_with_matching(qm)));
             }
         }
-        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
+        ChainResponse::Ok(Messages::Response(QueryResponse::empty()))
     }
 
     fn get_name(&self) -> &'static str {

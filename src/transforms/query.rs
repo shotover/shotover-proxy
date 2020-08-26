@@ -1,5 +1,5 @@
 use crate::message::QueryType;
-use crate::message::{Message, QueryResponse};
+use crate::message::{Messages, QueryResponse};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use std::borrow::Borrow;
 
@@ -28,9 +28,9 @@ impl Transform for QueryTypeFilter {
         let message = qd.message.borrow();
 
         match message {
-            Message::Query(q) => {
+            Messages::Query(q) => {
                 if self.filters.iter().any(|x| *x == q.query_type) {
-                    return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
+                    return ChainResponse::Ok(Messages::Response(QueryResponse::empty()));
                 }
                 self.call_next_transform(qd, t).await
             }

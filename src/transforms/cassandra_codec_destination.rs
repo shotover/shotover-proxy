@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
-use crate::message::{Message, QueryMessage};
+use crate::message::{Messages, QueryMessage};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::transforms::{Transforms, TransformsFromConfig};
 use futures::{FutureExt, SinkExt};
@@ -71,7 +71,7 @@ multi-consumer, single producer threadsafe queue
 impl CodecDestination {
     async fn send_message(
         &self,
-        message: Message,
+        message: Messages,
         _matching_query: Option<QueryMessage>,
     ) -> ChainResponse {
         trace!("waiting for mutex lock");
@@ -126,7 +126,7 @@ impl Transform for CodecDestination {
     // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let return_query = match &qd.message {
-            Message::Query(q) => Some(q.clone()),
+            Messages::Query(q) => Some(q.clone()),
             _ => None,
         };
         self.send_message(qd.message, return_query).await

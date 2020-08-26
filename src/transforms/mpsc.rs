@@ -2,7 +2,7 @@ use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use tokio::sync::mpsc::Sender;
 
 use crate::config::topology::TopicHolder;
-use crate::message::{Message, QueryResponse};
+use crate::message::{Messages, QueryResponse};
 use crate::transforms::{Transforms, TransformsFromConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ It's the thing that owns tx and rx handles :D
 #[derive(Debug, Clone)]
 pub struct AsyncMpscForwarder {
     pub name: &'static str,
-    pub tx: Sender<Message>,
+    pub tx: Sender<Messages>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -50,7 +50,7 @@ impl TransformsFromConfig for AsyncMpscForwarderConfig {
 #[derive(Debug, Clone)]
 pub struct AsyncMpscTee {
     pub name: &'static str,
-    pub tx: Sender<Message>,
+    pub tx: Sender<Messages>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -84,7 +84,7 @@ impl Transform for AsyncMpscForwarder {
             warn!("MPSC error {}", e);
             e
         }).await?;
-        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
+        ChainResponse::Ok(Messages::Response(QueryResponse::empty()))
     }
 
     fn get_name(&self) -> &'static str {
