@@ -860,7 +860,7 @@ mod cassandra_protocol_tests {
         if let Ok(Some(message)) = codec.decode(&mut bytes) {
             if let Message::Query(QueryMessage {
                 original: _,
-                mut query_string,
+                query_string,
                 namespace: _,
                 primary_key: _,
                 query_values: _,
@@ -869,10 +869,12 @@ mod cassandra_protocol_tests {
                 ast: Some(ASTHolder::SQL(ast)),
             }) = message
             {
+                let mut query_s = query_string.clone();
+
                 println!("{}", query_string);
                 println!("{}", ast);
                 assert_eq!(
-                    remove_whitespace(&mut query_string.to_string()),
+                    remove_whitespace(&mut query_s),
                     remove_whitespace(&mut format!("{}", ast))
                 );
             }
