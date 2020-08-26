@@ -77,8 +77,6 @@ lazy_static = "1.4.0"
 [[bench]]
 name = "redis_benches"
 harness = false
-debug = true
-
 
 # https://deterministic.space/high-performance-rust.html
 [profile.release]

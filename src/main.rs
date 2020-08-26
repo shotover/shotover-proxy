@@ -16,7 +16,7 @@ use shotover_proxy::transforms::Transforms;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use tokio::runtime;
-use tracing_subscriber;
+
 
 #[derive(Clap)]
 #[clap(version = "0.0.4", author = "Instaclustr")]
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     info!(
         "Loaded the following configuration file: {}",
-        params.config_file.clone()
+        params.config_file
     );
     info!(configuration = ?config);
 
@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     rt.spawn(exporter.async_run());
 
-    return rt.block_on(async move {
+    rt.block_on(async move {
         let topology = Topology::from_file(params.topology_file.clone())?;
         info!(
             "Loaded the following topology file: {}",
@@ -99,5 +99,5 @@ fn main() -> Result<(), Box<dyn Error>> {
             info!("Goodbye!");
         }
         Ok(())
-    });
+    })
 }

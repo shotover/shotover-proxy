@@ -58,19 +58,19 @@ fn get_timestamp(frag: &QueryResponse) -> i64 {
     if let Some(Value::Document(meta)) = frag.response_meta.as_ref() {
         if let Some(t) = meta.get("timestamp") {
             if let Value::Integer(i) = t {
-                return i.clone();
+                return *i;
             }
             return 0;
         }
     }
-    return 0;
+    0
 }
 
 fn get_size(frag: &QueryResponse) -> usize {
-    return frag.result.as_ref().map_or(0, |v| std::mem::size_of_val(v));
+    frag.result.as_ref().map_or(0, |v| std::mem::size_of_val(v))
 }
 
-fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse> {
+fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse> {
     let mut newest_fragment: Option<QueryResponse> = None;
     let mut biggest_fragment: Option<QueryResponse> = None;
 
@@ -78,7 +78,7 @@ fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResp
     // If we don't have an age, store the biggest one.
     // Return newest, otherwise biggest. Returns newest, even
     // if we have a bigger response.
-    while fragments.len() != 0 {
+    while !fragments.is_empty() {
         if let Some(fragment) = fragments.pop() {
             let candidate = get_timestamp(&fragment);
             if candidate > 0 {
@@ -105,12 +105,12 @@ fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResp
             }
         }
     }
-    return if newest_fragment.is_some() {
+    if newest_fragment.is_some() {
         newest_fragment
     } else {
         // panic!("shouldn't happen");
         biggest_fragment
-    };
+    }
 }
 
 impl TuneableConsistency {}
@@ -175,7 +175,7 @@ impl Transform for TuneableConsistency {
             message_holder.push(m);
         }
 
-        let mut collated_results = message_holder
+        let collated_results = message_holder
             .iter()
             .cloned()
             .filter_map(move |m| match m {
@@ -212,8 +212,8 @@ impl Transform for TuneableConsistency {
             })
             .collect_vec();
 
-        return if successes >= required_successes {
-            if collated_results.len() > 0 {
+        if successes >= required_successes {
+            if !collated_results.is_empty() {
                 let mut responses: Vec<Message> = Vec::new();
                 if let Some(first_replica_response) = collated_results.get(0) {
                     for i in 0..first_replica_response.len() {
@@ -250,7 +250,7 @@ impl Transform for TuneableConsistency {
                     "Not enough responses".to_string(),
                 ))),
             ))))
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {

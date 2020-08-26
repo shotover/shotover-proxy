@@ -39,11 +39,11 @@ pub struct RedisCluster {
 
 impl Clone for RedisCluster {
     fn clone(&self) -> Self {
-        return RedisCluster {
-            name: self.name.clone(),
+        RedisCluster {
+            name: self.name,
             client: self.client.clone(),
             connection: Arc::new(Mutex::new(None)),
-        };
+        }
     }
 }
 
@@ -91,7 +91,7 @@ impl Transform for RedisCluster {
 
             if let Message::Query(qm) = &qd.message {
                 if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast.clone() {
-                    if commands.len() > 0 {
+                    if !commands.is_empty() {
                         let command = commands.remove(0);
                         if let Value::Bytes(b) = &command {
                             let command_string = String::from_utf8(b.to_vec())
@@ -117,7 +117,7 @@ impl Transform for RedisCluster {
             }
 
             if let Some(password) = builder_lock.password.as_deref() {
-                client = client.password(password.clone().to_string());
+                client = client.password(password.to_string());
             }
 
             let cli_res = client.readonly(false).open().await;
@@ -159,7 +159,7 @@ impl Transform for RedisCluster {
                 for message in messages {
                     if let Message::Query(qm) = message {
                         if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
-                            if commands.len() > 0 {
+                            if !commands.is_empty() {
                                 let command = commands.remove(0);
                                 if let Value::Bytes(b) = &command {
                                     let command_string = String::from_utf8(b.to_vec())
@@ -218,7 +218,7 @@ impl Transform for RedisCluster {
                 debug!("Building regular query {:?}", qm);
                 let original = qm.clone();
                 if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
-                    if commands.len() > 0 {
+                    if !commands.is_empty() {
                         let command = commands.remove(0);
                         if let Value::Bytes(b) = &command {
                             let command_string = String::from_utf8(b.to_vec())
@@ -276,9 +276,9 @@ impl Transform for RedisCluster {
             }
             _ => {}
         }
-        return Err(anyhow!(
+        Err(anyhow!(
             "Redis Cluster transform did not have enough information to build a request"
-        ));
+        ))
     }
 
     fn get_name(&self) -> &'static str {

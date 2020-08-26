@@ -60,21 +60,21 @@ impl Debug for SimpleRedisCache {
 impl SimpleRedisCache {
     //"redis://127.0.0.1/"
     pub fn new(connection: MultiplexedConnection) -> SimpleRedisCache {
-        return SimpleRedisCache {
+        SimpleRedisCache {
             name: "SimpleRedisCache",
             con: connection,
             tables_to_pks: HashMap::new(),
-        };
+        }
     }
 
     pub async fn new_from_config(params: &str) -> SimpleRedisCache {
         let client = redis::Client::open(params).unwrap();
         let con = client.get_multiplexed_tokio_connection().await.unwrap();
-        return SimpleRedisCache {
+        SimpleRedisCache {
             name: "SimpleRedisCache",
             con,
             tables_to_pks: HashMap::new(),
-        };
+        }
     }
 }
 

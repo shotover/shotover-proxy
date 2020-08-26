@@ -47,7 +47,7 @@ impl TransformsFromConfig for RouteConfig {
 impl Transform for Route {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         if let Message::Query(qm) = &qd.message {
-            let routes: Vec<String> = self.route_map.keys().map(|x| x).cloned().collect();
+            let routes: Vec<String> = self.route_map.keys().cloned().collect();
             let chosen_route = self
                 .route_script
                 .call(&t.lua_runtime, (qm.clone(), routes))?;

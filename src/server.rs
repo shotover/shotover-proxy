@@ -116,7 +116,7 @@ where
             let peer = socket
                 .peer_addr()
                 .map(|p| format!("{}", p.ip()))
-                .unwrap_or("Unknown peer".to_string());
+                .unwrap_or_else(|_| "Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
             info!(
@@ -124,7 +124,7 @@ where
                 socket
                     .peer_addr()
                     .map(|p| format!("{}", p))
-                    .unwrap_or("Unknown peer".to_string())
+                    .unwrap_or_else(|_| "Unknown peer".to_string())
             );
 
             let mut handler = Handler {
@@ -304,7 +304,7 @@ where
                     match self
                         .chain
                         .process_request(
-                            Wrapper::new_with_rnd(message, self.connection_clock.clone()),
+                            Wrapper::new_with_rnd(message, self.connection_clock),
                             self.client_details.clone(),
                         )
                         .await

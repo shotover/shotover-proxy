@@ -9,13 +9,13 @@ use tracing::info;
 pub mod redis_int_tests;
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
-    return tokio::spawn(async move {
+    tokio::spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }
         Ok(())
-    });
+    })
 }
 
 pub fn load_docker_compose(file_path: String) -> Result<()> {
@@ -70,7 +70,7 @@ pub fn stop_docker_compose(file_path: String) -> Result<()> {
     let mut command3 = Command::new("sh");
     command3
         .arg("-c")
-        .arg(format!("yes | docker network prune"));
+        .arg("yes | docker network prune".to_string());
 
     info!("running {:#?}", command3);
 

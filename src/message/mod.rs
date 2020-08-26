@@ -18,6 +18,8 @@ use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::net::IpAddr;
 
+// TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
+// Should move the message type to just be bulk..
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     Bypass(RawMessage),
@@ -29,7 +31,7 @@ pub enum Message {
 
 impl Message {
     pub fn new_mod(message: Message) -> Message {
-        return Message::Modified(Box::new(message));
+        Message::Modified(Box::new(message))
     }
 }
 
@@ -101,13 +103,13 @@ pub struct QueryMessage {
 
 impl QueryMessage {
     pub fn get_namespace(&self) -> Vec<String> {
-        return self.namespace.clone();
+        self.namespace.clone()
     }
 
     pub fn set_namespace_elem(&mut self, index: usize, elem: String) -> String {
         let old = self.namespace.remove(index);
         self.namespace.insert(index, elem);
-        return old;
+        old
     }
 
     pub fn get_primary_key(&self) -> Option<String> {
@@ -116,7 +118,7 @@ impl QueryMessage {
             .iter()
             .map(|(_, v)| serde_json::to_string(&v).unwrap())
             .collect();
-        return Some(f.join("."));
+        Some(f.join("."))
     }
 
     pub fn get_namespaced_primary_key(&self) -> Option<String> {
@@ -128,7 +130,7 @@ impl QueryMessage {
             buffer.push_str(serde_json::to_string(&pk).unwrap().as_str());
             return Some(buffer);
         }
-        return None;
+        None
     }
 }
 
@@ -144,43 +146,43 @@ pub struct QueryResponse {
 //TODO this could use a Builder
 impl QueryResponse {
     pub fn empty() -> Self {
-        return QueryResponse {
+        QueryResponse {
             matching_query: None,
             original: RawFrame::NONE,
             result: None,
             error: None,
             response_meta: None,
-        };
+        }
     }
 
     pub fn empty_with_error(error: Option<Value>) -> Self {
-        return QueryResponse {
+        QueryResponse {
             matching_query: None,
             original: RawFrame::NONE,
             result: None,
             error,
             response_meta: None,
-        };
+        }
     }
 
     pub fn just_result(result: Value) -> Self {
-        return QueryResponse {
+        QueryResponse {
             matching_query: None,
             original: RawFrame::NONE,
             result: Some(result),
             error: None,
             response_meta: None,
-        };
+        }
     }
 
     pub fn result_with_matching(matching: Option<QueryMessage>, result: Value) -> Self {
-        return QueryResponse {
+        QueryResponse {
             matching_query: matching,
             original: RawFrame::NONE,
             result: Some(result),
             error: None,
             response_meta: None,
-        };
+        }
     }
 
     pub fn result_error_with_matching(
@@ -188,33 +190,33 @@ impl QueryResponse {
         result: Option<Value>,
         error: Option<Value>,
     ) -> Self {
-        return QueryResponse {
+        QueryResponse {
             matching_query: matching,
             original: RawFrame::NONE,
-            result: result,
-            error: error,
+            result,
+            error,
             response_meta: None,
-        };
+        }
     }
 
     pub fn error_with_matching(matching: Option<QueryMessage>, error: Value) -> Self {
-        return QueryResponse {
+        QueryResponse {
             matching_query: matching,
             original: RawFrame::NONE,
             result: None,
             error: Some(error),
             response_meta: None,
-        };
+        }
     }
 
     pub fn empty_with_matching(original: QueryMessage) -> Self {
-        return QueryResponse {
+        QueryResponse {
             matching_query: Some(original),
             original: RawFrame::NONE,
             result: None,
             error: None,
             response_meta: None,
-        };
+        }
     }
 }
 
@@ -250,7 +252,7 @@ pub enum Value {
 fn parse_redis(v: &RValue) -> Value {
     match v {
         RValue::Nil => Value::NULL,
-        RValue::Int(i) => Value::Integer(i.clone()),
+        RValue::Int(i) => Value::Integer(*i),
         RValue::Data(d) => Value::Bytes(Bytes::from(d.clone())),
         RValue::Bulk(b) => Value::List(b.iter().map(|v| parse_redis(v)).collect_vec()),
         RValue::Status(s) => Value::Strings(s.clone()),
@@ -260,7 +262,7 @@ fn parse_redis(v: &RValue) -> Value {
 
 impl redis::FromRedisValue for Value {
     fn from_redis_value(v: &RValue) -> RedisResult<Self> {
-        return RedisResult::Ok(parse_redis(v));
+        RedisResult::Ok(parse_redis(v))
     }
 }
 
@@ -296,7 +298,7 @@ impl From<Frame> for Value {
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
-            Frame::Array(a) => Value::List(a.iter().cloned().map(|i| Value::from(i)).collect()),
+            Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Moved(m) => Value::Strings(m),
             Frame::Ask(a) => Value::Strings(a),
             Frame::Null => Value::NULL,
@@ -310,7 +312,7 @@ impl From<&Frame> for Value {
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
-            Frame::Array(a) => Value::List(a.iter().cloned().map(|i| Value::from(i)).collect()),
+            Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Moved(m) => Value::Strings(m),
             Frame::Ask(a) => Value::Strings(a),
             Frame::Null => Value::NULL,
@@ -389,7 +391,7 @@ impl Value {
 
 impl Into<cassandra_proto::types::value::Bytes> for Value {
     fn into(self) -> cassandra_proto::types::value::Bytes {
-        return match self {
+        match self {
             Value::NULL => (-1).into(),
             Value::None => cassandra_proto::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_proto::types::value::Bytes::new(b.to_vec()),
@@ -404,7 +406,7 @@ impl Into<cassandra_proto::types::value::Bytes> for Value {
             Value::Document(d) => cassandra_proto::types::value::Bytes::from(d),
             Value::Inet(i) => i.into(),
             Value::FragmentedResponese(l) => cassandra_proto::types::value::Bytes::from(l),
-        };
+        }
     }
 }
 

@@ -14,29 +14,13 @@ return {KEYS[1],ARGV[1],ARGV[2]}
 "###;
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
-    return tokio::spawn(async move {
+    tokio::spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }
         Ok(())
-    });
-}
-
-fn get_redis_conn() -> Result<Connection> {
-    let client = redis::Client::open("redis://127.0.0.1:6379/")?;
-    Ok(client.get_connection()?)
-}
-
-fn load_lua<RV>(con: &mut redis::Connection, script: String) -> RedisResult<RV>
-where
-    RV: FromRedisValue,
-{
-    let mut command = redis::cmd("SCRIPT");
-    command.arg("LOAD");
-    command.arg(script.as_str());
-
-    command.query(con)
+    })
 }
 
 fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
@@ -131,6 +115,11 @@ where
     Ok(())
 }
 
+fn get_redis_conn() -> Result<Connection> {
+    let client = redis::Client::open("redis://127.0.0.1:6379/")?;
+    Ok(client.get_connection()?)
+}
+
 async fn test_presence_fresh_join_single_workflow() -> Result<()> {
     let subkey = "demo-36";
     let channel = "channel1";
@@ -145,17 +134,17 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
     let connection = &mut get_redis_conn().unwrap();
 
     let func_sha1 = redis::Script::new(LUA1);
-    let some: RedisResult<Vec<String>> = func_sha1.invoke(connection);
+    let _some: RedisResult<Vec<String>> = func_sha1.invoke(connection);
 
     let func_sha2 = redis::Script::new(LUA2);
-    let other: RedisResult<Vec<String>> = func_sha1.invoke(connection);
+    let _other: RedisResult<Vec<String>> = func_sha1.invoke(connection);
 
     let time: usize = 640;
 
     info!("Loaded lua scripts -> {:?} and {:?}", func_sha1, func_sha2);
 
-    let f: i32 = connection.ttl(build_key()).unwrap(); // TODO: Should be ttl in seconds
-    info!("---> {}", f);
+    let f_ttl: i32 = connection.ttl(build_key()).unwrap(); // TODO: Should be ttl in seconds
+    info!("---> {}", f_ttl);
 
     let _test1: RedisResult<String> = redis::cmd("EVALSHA")
         .arg(func_sha1.get_hash())
@@ -174,15 +163,15 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
         .arg("1509861014.276593")
         .query(connection);
 
-    let a: i32 = connection.sadd(build_key_user(), channel)?;
-    let b: i32 = connection.expire(build_key_user(), time)?;
-    let c: i32 = connection.sadd(build_key(), channel)?;
-    let d: i32 = connection.expire(build_key(), time)?;
+    let sadd: i32 = connection.sadd(build_key_user(), channel)?;
+    let expire: i32 = connection.expire(build_key_user(), time)?;
+    let sadd2: i32 = connection.sadd(build_key(), channel)?;
+    let expire2: i32 = connection.expire(build_key(), time)?;
 
-    info!("Got the following {:?}", a);
-    info!("Got the following {:?}", b);
-    info!("Got the following {:?}", c);
-    info!("Got the following {:?}", d);
+    info!("Got the following {:?}", sadd);
+    info!("Got the following {:?}", expire);
+    info!("Got the following {:?}", sadd2);
+    info!("Got the following {:?}", expire2);
 
     Ok(())
 }

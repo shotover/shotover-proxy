@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use redis;
+
 use tracing::info;
 
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -13,13 +13,13 @@ use tokio::task::JoinHandle;
 use tracing::Level;
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
-    return tokio::spawn(async move {
+    tokio::spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }
         Ok(())
-    });
+    })
 }
 
 pub fn load_docker_compose(file_path: String) -> Result<()> {
@@ -74,7 +74,7 @@ pub fn stop_docker_compose(file_path: String) -> Result<()> {
     let mut command3 = Command::new("sh");
     command3
         .arg("-c")
-        .arg(format!("yes | docker network prune"));
+        .arg("yes | docker network prune".to_string());
 
     info!("running {:#?}", command3);
 
@@ -95,7 +95,7 @@ pub fn stop_docker_compose(file_path: String) -> Result<()> {
 
 fn redis_active_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone()).unwrap();
+    load_docker_compose(compose_config).unwrap();
 
     let rt = runtime::Builder::new()
         .enable_all()
@@ -154,7 +154,7 @@ fn redis_active_bench(c: &mut Criterion) {
 
 fn redis_cluster_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone()).unwrap();
+    load_docker_compose(compose_config).unwrap();
 
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
@@ -213,7 +213,7 @@ fn redis_cluster_bench(c: &mut Criterion) {
 
 fn redis_passthrough_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone()).unwrap();
+    load_docker_compose(compose_config).unwrap();
 
     let rt = runtime::Builder::new()
         .enable_all()

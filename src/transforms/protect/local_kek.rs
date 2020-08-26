@@ -27,21 +27,21 @@ impl LocalKeyManagement {
                 let encrypted_dek = secretbox::seal( &plaintext_dek.0, &nonce, &self.kek);
                 let dek_struct = DEKStructure{ nonce, key: encrypted_dek };
                 let cipher_blob = serde_json::to_string(&dek_struct)?;
-                return Ok(KeyMaterial {
+                Ok(KeyMaterial {
                     ciphertext_blob: Bytes::from(cipher_blob),
                     key_id: self.kek_id.clone(),
                     plaintext: plaintext_dek
-                });
+                })
             },
             Some(dek) => {
                 let dek_struct: DEKStructure = serde_json::from_slice(dek.as_slice())?;
                 let plaintext_dek = secretbox::open(dek_struct.key.as_slice(), &dek_struct.nonce, &self.kek)
                     .map_err(|_|{anyhow!("couldn't decrypt DEK")})?;
-                return Ok(KeyMaterial {
+                Ok(KeyMaterial {
                     ciphertext_blob: Bytes::from(dek),
                     key_id: self.kek_id.clone(),
                     plaintext: Key::from_slice(plaintext_dek.as_slice()).ok_or(anyhow!("could not build key"))?
-                });
+                })
             },
         }
     }

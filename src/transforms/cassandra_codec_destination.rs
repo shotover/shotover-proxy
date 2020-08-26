@@ -112,12 +112,12 @@ impl CodecDestination {
                         .next()
                         .fuse()
                         .await
-                        .ok_or(anyhow!("couldnt get frame"))?;
+                        .ok_or_else(|| anyhow!("couldnt get frame"))?;
                     trace!("resp received");
                 }
             }
         }
-        return ChainResponse::Err(anyhow!("Something went wrong sending to cassandra"));
+        ChainResponse::Err(anyhow!("Something went wrong sending to cassandra"))
     }
 }
 

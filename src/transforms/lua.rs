@@ -19,12 +19,12 @@ pub struct LuaFilterTransform {
 impl Clone for LuaFilterTransform {
     fn clone(&self) -> Self {
         //TODO: we may need to reload the preloaded scripts
-        return LuaFilterTransform {
+        LuaFilterTransform {
             name: self.name,
             function_def: self.function_def.clone(),
             function_name: self.function_name.clone(),
             slua: Lua::new().into_static(),
-        };
+        }
     }
 }
 
@@ -56,24 +56,24 @@ impl TransformsFromConfig for LuaConfig {
 async fn temp_transform(mut qd: Wrapper, transforms: &TransformChain) -> ChainResponse {
     let next = qd.next_transform;
     qd.next_transform += 1;
-    return match transforms.chain.get(next) {
+    match transforms.chain.get(next) {
         Some(t) => t.instrument_transform(qd, transforms).await,
         None => Err(anyhow!("No more transforms left in the chain".to_string())),
-    };
+    }
 }
 
 #[async_trait]
 impl Transform for LuaFilterTransform {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        let chain_count = qd.next_transform.clone();
+        let chain_count = qd.next_transform;
         let globals = self.slua.globals();
-        return if let Message::Query(qm) = &mut qd.message {
+        if let Message::Query(qm) = &mut qd.message {
             let qm_v = mlua_serde::to_value(&self.slua, qm.clone()).unwrap();
             let result = self.slua.scope(|scope| {
                 let spawn_func = scope.create_function(
                     |_lua: &Lua, qm: QueryMessage| -> mlua::Result<Message> {
                         //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
-                        let result = tokio::runtime::Handle::current().block_on(async move {
+                        tokio::runtime::Handle::current().block_on(async move {
                             let w =
                                 Wrapper::new_with_next_transform(Message::Query(qm), chain_count);
                             return Ok(temp_transform(w, t).await.map_err(|_e| {
@@ -82,8 +82,7 @@ impl Transform for LuaFilterTransform {
                                         .to_string(),
                                 )
                             })?);
-                        });
-                        return result;
+                        })
                     },
                 )?;
                 globals.set("call_next_transform", spawn_func)?;
@@ -94,18 +93,17 @@ impl Transform for LuaFilterTransform {
                             .set_name("fnc")?
                             .eval()?;
                         let result: QueryResponse = mlua_serde::from_value(value)?;
-                        return Ok(Message::Response(result));
+                        Ok(Message::Response(result))
                     },
                 )?;
-                return func.call(qm_v);
+                func.call(qm_v)
             });
             result
-                .clone()
                 .map_err(|e| anyhow!("uh oh lua broke {}", e))
-                .map(|x| Message::Response(x))
+                .map(Message::Response)
         } else {
             Err(anyhow!("expected a request"))
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {
@@ -172,24 +170,24 @@ return call_next_transform(qm)
             let result = lua.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse {
-                                             matching_query: Some(oq),
-                                             original: _,
-                                             result: _,
-                                             error: _, 
-                                             response_meta: _,
-                                         }) = &m
+                    matching_query: Some(oq),
+                    original: _,
+                    result: _,
+                    error: _,
+                    response_meta: _,
+                }) = &m
                 {
                     assert_eq!(oq.namespace.get(0).unwrap(), "aaaaaaaaaa");
                 } else {
                     panic!()
                 }
                 if let Message::Response(QueryResponse {
-                                             matching_query: _,
-                                             original: _,
-                                             result: Some(x),
-                                             error: _, 
-                                             response_meta: _,
-                                         }) = m
+                    matching_query: _,
+                    original: _,
+                    result: Some(x),
+                    error: _,
+                    response_meta: _,
+                }) = m
                 {
                     assert_eq!(x, Value::Integer(42));
                 } else {

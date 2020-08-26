@@ -28,7 +28,7 @@ impl Transform for Null {
                 return ChainResponse::Ok(Message::Response(QueryResponse::empty_with_matching(qm)));
             }
         }
-        return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
+        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
     }
 
     fn get_name(&self) -> &'static str {

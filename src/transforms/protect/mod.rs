@@ -66,7 +66,7 @@ pub enum Protected {
 fn encrypt(plaintext: Vec<u8>, sym_key: &Key) -> (Vec<u8>, Nonce) {
     let nonce = secretbox::gen_nonce();
     let ciphertext = secretbox::seal(&plaintext, &nonce, sym_key);
-    return (ciphertext, nonce);
+    (ciphertext, nonce)
 }
 
 fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
@@ -77,7 +77,7 @@ fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
     //     serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
     let decrypted_value: Value =
         bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't open box"))?;
-    return Ok(decrypted_value);
+    Ok(decrypted_value)
 }
 
 // TODO: Switch to something smaller/more efficient like bincode
@@ -101,20 +101,18 @@ impl Protected {
             Value::Bytes(b) => {
                 // let protected_something: Protected = serde_json::from_slice(b.bytes())?;
                 let protected_something: Protected = bincode::deserialize(b.bytes())?;
-                return Ok(protected_something);
+                Ok(protected_something)
             }
-            _ => {
-                return Err(anyhow!(
-                    "Could not get bytes to decrypt - wrong value type {:?}",
-                    value
-                ));
-            }
+            _ => Err(anyhow!(
+                "Could not get bytes to decrypt - wrong value type {:?}",
+                value
+            )),
         }
     }
     // TODO should this actually return self (we are sealing the plaintext value, but we don't swap out the plaintext??
-    pub async fn protect(self, key_management: &KeyManager, key_id: &String) -> Result<Protected> {
+    pub async fn protect(self, key_management: &KeyManager, key_id: &str) -> Result<Protected> {
         let sym_key = key_management
-            .cached_get_key(key_id.clone(), None, None)
+            .cached_get_key(key_id.to_string(), None, None)
             .await?;
         match &self {
             Protected::Plaintext(p) => {
@@ -131,8 +129,8 @@ impl Protected {
         }
     }
 
-    pub async fn unprotect(self, key_management: &KeyManager, key_id: &String) -> Result<Value> {
-        return match self {
+    pub async fn unprotect(self, key_management: &KeyManager, key_id: &str) -> Result<Value> {
+        match self {
             Protected::Plaintext(p) => Ok(p),
             Protected::Ciphertext {
                 cipher,
@@ -141,11 +139,11 @@ impl Protected {
                 kek_id,
             } => {
                 let sym_key = key_management
-                    .cached_get_key(key_id.clone(), Some(enc_dek), Some(kek_id))
+                    .cached_get_key(key_id.to_string(), Some(enc_dek), Some(kek_id))
                     .await?;
                 decrypt(cipher, nonce, &sym_key.plaintext)
             }
-        };
+        }
     }
 }
 
@@ -166,24 +164,19 @@ impl Transform for Protect {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         if let Message::Query(qm) = &mut qd.message {
             // Encrypt the writes
-            if QueryType::Write == qm.query_type {
-                if qm.namespace.len() == 2 {
-                    if let Some((_, tables)) = self
-                        .keyspace_table_columns
-                        .get_key_value(qm.namespace.get(0).unwrap())
-                    {
-                        if let Some((_, columns)) =
-                            tables.get_key_value(qm.namespace.get(1).unwrap())
-                        {
-                            if let Some(query_values) = &mut qm.query_values {
-                                for col in columns {
-                                    if let Some(value) = query_values.get_mut(col) {
-                                        let mut protected = Protected::Plaintext(value.clone());
-                                        protected = protected
-                                            .protect(&self.key_source, &self.key_id)
-                                            .await?;
-                                        let _ = mem::replace(value, protected.into());
-                                    }
+            if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
+                if let Some((_, tables)) = self
+                    .keyspace_table_columns
+                    .get_key_value(qm.namespace.get(0).unwrap())
+                {
+                    if let Some((_, columns)) = tables.get_key_value(qm.namespace.get(1).unwrap()) {
+                        if let Some(query_values) = &mut qm.query_values {
+                            for col in columns {
+                                if let Some(value) = query_values.get_mut(col) {
+                                    let mut protected = Protected::Plaintext(value.clone());
+                                    protected =
+                                        protected.protect(&self.key_source, &self.key_id).await?;
+                                    let _ = mem::replace(value, protected.into());
                                 }
                             }
                         }
@@ -247,7 +240,7 @@ impl Transform for Protect {
                 }
             }
         }
-        return Ok(result);
+        Ok(result)
     }
 
     fn get_name(&self) -> &'static str {
@@ -285,7 +278,7 @@ mod protect_transform_tests {
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),
-            global_tx: global_tx,
+            global_tx,
             global_map_handle: global_map_r.factory(),
         };
 
@@ -454,7 +447,7 @@ mod protect_transform_tests {
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),
-            global_tx: global_tx,
+            global_tx,
             global_map_handle: global_map_r.factory(),
         };
 

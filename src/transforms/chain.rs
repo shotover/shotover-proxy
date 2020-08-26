@@ -97,12 +97,11 @@ pub trait Transform: Send {
         let result = self.transform(qd, t).await;
         let end = Instant::now();
         counter!("shotover_transform_total", 1, "transform" => self.get_name());
-        match &result {
-            Err(_) => counter!("shotover_transform_failures", 1, "transform" => self.get_name()),
-            _ => {}
+        if let Err(_) = &result {
+            counter!("shotover_transform_failures", 1, "transform" => self.get_name())
         }
         timing!("shotover_transform_latency", start, end, "transform" => self.get_name());
-        return result;
+        result
     }
 
     async fn call_next_transform(
@@ -112,12 +111,12 @@ pub trait Transform: Send {
     ) -> ChainResponse {
         let next = qd.next_transform;
         qd.next_transform += 1;
-        return match transforms.chain.get(next) {
+        match transforms.chain.get(next) {
             Some(t) => t.instrument_transform(qd, transforms).await,
             None => Err(anyhow!(RequestError::ChainProcessingError(
                 "No more transforms left in the chain".to_string()
             ))),
-        };
+        }
     }
 }
 
@@ -152,7 +151,7 @@ unsafe impl Sync for TransformChain {}
 
 impl TransformChain {
     pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
-        return TransformChain {
+        TransformChain {
             name,
             chain: transform_list,
             global_map: None,
@@ -160,7 +159,7 @@ impl TransformChain {
             chain_local_map: None,
             chain_local_map_updater: None,
             lua_runtime: Lua::new(),
-        };
+        }
     }
 
     pub fn new(
@@ -182,7 +181,7 @@ impl TransformChain {
             }
         });
 
-        let chain = TransformChain {
+        TransformChain {
             name,
             chain: transform_list,
             global_map: Some(global_map_handle),
@@ -190,9 +189,7 @@ impl TransformChain {
             chain_local_map: Some(rh.factory()),
             chain_local_map_updater: Some(local_tx),
             lua_runtime: Lua::new(),
-        };
-
-        return chain;
+        }
     }
 
     pub async fn process_request(
@@ -214,11 +211,10 @@ impl TransformChain {
         };
         let end = Instant::now();
         counter!("shotover_chain_total", 1, "chain" => self.name.clone());
-        match &result {
-            Err(_) => counter!("shotover_chain_failures", 1, "chain" => self.name.clone()),
-            _ => {}
+        if let Err(_) = &result {
+            counter!("shotover_chain_failures", 1, "chain" => self.name.clone())
         }
         timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);
-        return result;
+        result
     }
 }

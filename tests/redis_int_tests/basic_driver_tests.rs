@@ -1,6 +1,6 @@
 #![allow(clippy::let_unit_value)]
 use anyhow::Result;
-use redis;
+
 use redis::Commands;
 
 use crate::load_docker_compose;
@@ -96,7 +96,7 @@ fn test_set_ops() {
     redis::cmd("SADD").arg("foo").arg(3).execute(&mut con);
 
     let mut s: Vec<i32> = redis::cmd("SMEMBERS").arg("foo").query(&mut con).unwrap();
-    s.sort();
+    s.sort_unstable();
     assert_eq!(s.len(), 3);
     assert_eq!(&s, &[1, 2, 3]);
 
@@ -126,7 +126,7 @@ fn test_scan() {
         .arg(0)
         .query(&mut con)
         .unwrap();
-    s.sort();
+    s.sort_unstable();
     assert_eq!(cur, 0i32);
     assert_eq!(s.len(), 3);
     assert_eq!(&s, &[1, 2, 3]);
@@ -677,9 +677,9 @@ fn test_pass_through() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    load_docker_compose(compose_config)?;
     run_all("examples/redis-passthrough/config.yaml".to_string())?;
-    return Ok(());
+    Ok(())
 }
 
 // #[test]
@@ -709,11 +709,11 @@ fn test_pass_through_one() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    load_docker_compose(compose_config)?;
 
     test_real_transaction();
 
-    return Ok(());
+    Ok(())
 }
 
 #[test]
@@ -722,16 +722,16 @@ fn test_active_active_redis() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    load_docker_compose(compose_config)?;
     run_all_active_safe("examples/redis-multi/config.yaml".to_string())?;
-    return Ok(());
+    Ok(())
 }
 
 #[test]
 // #[allow(dead_code)]
 fn test_active_one_active_redis() -> Result<()> {
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    load_docker_compose(compose_config)?;
 
     let rt = runtime::Builder::new()
         .enable_all()
@@ -763,14 +763,14 @@ fn test_active_one_active_redis() -> Result<()> {
     //     test_getset();
     // }
 
-    return Ok(());
+    Ok(())
 }
 
 #[test]
 #[allow(dead_code)]
 fn test_pass_redis_cluster_one() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    load_docker_compose(compose_config)?;
 
     let rt = runtime::Builder::new()
         .enable_all()
@@ -799,13 +799,13 @@ fn test_pass_redis_cluster_one() -> Result<()> {
     // test_args()test_args;
     test_cluster_script();
 
-    return Ok(());
+    Ok(())
 }
 
 #[test]
 fn test_cluster_auth_redis() -> Result<()> {
     let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    load_docker_compose(compose_config)?;
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -846,18 +846,18 @@ fn test_cluster_auth_redis() -> Result<()> {
         Ok(("foo".to_string(), b"bar".to_vec()))
     );
 
-    return Ok(());
+    Ok(())
 }
 
 #[test]
 fn test_cluster_all_redis() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config.clone())?;
+    load_docker_compose(compose_config)?;
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
     run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string())?;
-    return Ok(());
+    Ok(())
 }
 
 fn run_all_active_safe(config: String) -> Result<()> {
