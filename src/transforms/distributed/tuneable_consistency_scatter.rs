@@ -175,7 +175,7 @@ impl Transform for TuneableConsistency {
             message_holder.push(m);
         }
 
-        let mut collated_results = message_holder
+        let collated_results = message_holder
             .iter()
             .cloned()
             .filter_map(move |m| match m {

@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 use tracing::trace;
-use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
@@ -639,7 +638,7 @@ impl Encoder<Message> for RedisCodec {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         match item {
-            Message::Modified(mut modified_message) => {
+            Message::Modified(modified_message) => {
                 match *modified_message {
                     Message::Bypass(_) => {
                         //TODO: throw error -> we should not be modifing a bypass message
