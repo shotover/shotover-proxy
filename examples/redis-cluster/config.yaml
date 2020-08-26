@@ -2,10 +2,11 @@
 sources:
   redis_prod:
     Redis:
-      batch_max_size: 1
+      batch_size_hint: 1
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
+    - Printer
     - RedisCluster:
         first_contact_points: ["redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/"]
 named_topics:

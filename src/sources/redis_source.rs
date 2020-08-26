@@ -18,7 +18,7 @@ use anyhow::Result;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
     pub listen_addr: String,
-    pub batch_max_size: u64,
+    pub batch_size_hint: u64,
 }
 
 #[async_trait]
@@ -34,7 +34,7 @@ impl SourcesFromConfig for RedisConfig {
             RedisSource::new(
                 chain,
                 self.listen_addr.clone(),
-                self.batch_max_size,
+                self.batch_size_hint,
                 notify_shutdown,
                 shutdown_complete_tx,
             )
