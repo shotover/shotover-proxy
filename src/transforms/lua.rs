@@ -73,7 +73,7 @@ impl Transform for LuaFilterTransform {
                 let spawn_func = scope.create_function(
                     |_lua: &Lua, qm: QueryMessage| -> mlua::Result<Message> {
                         //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
-                        let result = tokio::runtime::Handle::current().block_on(async move {
+                        tokio::runtime::Handle::current().block_on(async move {
                             let w =
                                 Wrapper::new_with_next_transform(Message::Query(qm), chain_count);
                             return Ok(temp_transform(w, t).await.map_err(|_e| {
@@ -82,8 +82,7 @@ impl Transform for LuaFilterTransform {
                                         .to_string(),
                                 )
                             })?);
-                        });
-                        result
+                        })
                     },
                 )?;
                 globals.set("call_next_transform", spawn_func)?;
@@ -100,7 +99,6 @@ impl Transform for LuaFilterTransform {
                 func.call(qm_v)
             });
             result
-                
                 .map_err(|e| anyhow!("uh oh lua broke {}", e))
                 .map(Message::Response)
         } else {
@@ -172,24 +170,24 @@ return call_next_transform(qm)
             let result = lua.transform(wrapper, &chain).await;
             if let Ok(m) = result {
                 if let Message::Response(QueryResponse {
-                                             matching_query: Some(oq),
-                                             original: _,
-                                             result: _,
-                                             error: _, 
-                                             response_meta: _,
-                                         }) = &m
+                    matching_query: Some(oq),
+                    original: _,
+                    result: _,
+                    error: _,
+                    response_meta: _,
+                }) = &m
                 {
                     assert_eq!(oq.namespace.get(0).unwrap(), "aaaaaaaaaa");
                 } else {
                     panic!()
                 }
                 if let Message::Response(QueryResponse {
-                                             matching_query: _,
-                                             original: _,
-                                             result: Some(x),
-                                             error: _, 
-                                             response_meta: _,
-                                         }) = m
+                    matching_query: _,
+                    original: _,
+                    result: Some(x),
+                    error: _,
+                    response_meta: _,
+                }) = m
                 {
                     assert_eq!(x, Value::Integer(42));
                 } else {

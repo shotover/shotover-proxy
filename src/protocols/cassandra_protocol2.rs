@@ -260,7 +260,7 @@ impl CassandraCodec2 {
         }
     }
 
-    fn expr_to_string<'a>(v: &'a SQLValue) -> String {
+    fn expr_to_string(v: &SQLValue) -> String {
         match v {
             SQLValue::Number(v)
             | SQLValue::SingleQuotedString(v)
@@ -279,8 +279,8 @@ impl CassandraCodec2 {
         map: &'a mut HashMap<String, Value>,
         use_bind: bool,
     ) {
-        match node {
-            BinaryOp { left, op, right } => match op {
+        if let BinaryOp { left, op, right } = node {
+            match op {
                 BinaryOperator::And => {
                     CassandraCodec2::rebuild_binops_tree(left, map, use_bind);
                     CassandraCodec2::rebuild_binops_tree(right, map, use_bind);
@@ -301,14 +301,13 @@ impl CassandraCodec2 {
                     }
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
     }
 
     fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a mut HashMap<String, Value>) {
-        match node {
-            BinaryOp { left, op, right } => match op {
+        if let BinaryOp { left, op, right } = node {
+            match op {
                 BinaryOperator::And => {
                     CassandraCodec2::binary_ops_to_hashmap(left, map);
                     CassandraCodec2::binary_ops_to_hashmap(right, map);
@@ -321,27 +320,20 @@ impl CassandraCodec2 {
                     }
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
     }
 
     fn get_column_values(expr: &SetExpr) -> Vec<String> {
         let mut cumulator: Vec<String> = Vec::new();
-        match expr {
-            SetExpr::Values(v) => {
-                for value in &v.0 {
-                    for ex in value {
-                        match ex {
-                            Expr::Value(v) => {
-                                cumulator.push(CassandraCodec2::expr_to_string(v).clone());
-                            }
-                            _ => {}
-                        }
+        if let SetExpr::Values(v) = expr {
+            for value in &v.0 {
+                for ex in value {
+                    if let Expr::Value(v) = ex {
+                        cumulator.push(CassandraCodec2::expr_to_string(v).clone());
                     }
                 }
             }
-            _ => {}
         }
         cumulator
     }
@@ -451,8 +443,8 @@ impl CassandraCodec2 {
             if let Some(statement) = ast_list.get(0) {
                 ast = Some(statement.clone());
                 match statement {
-                    Statement::Query(q) => match q.body.borrow() {
-                        SetExpr::Select(s) => {
+                    Statement::Query(q) => {
+                        if let SetExpr::Select(s) = q.body.borrow() {
                             projection = s.projection.iter().map(|s| s.to_string()).collect();
                             if let TableFactor::Table {
                                 name,
@@ -476,8 +468,7 @@ impl CassandraCodec2 {
                                 }
                             }
                         }
-                        _ => {}
-                    },
+                    }
                     Insert {
                         table_name,
                         columns,
@@ -487,11 +478,8 @@ impl CassandraCodec2 {
                         let values = CassandraCodec2::get_column_values(&source.body);
                         for (i, c) in columns.iter().enumerate() {
                             projection.push(c.clone());
-                            match values.get(i) {
-                                Some(v) => {
-                                    colmap.insert(c.to_string(), Value::Strings(v.clone()));
-                                }
-                                None => {} //TODO some error
+                            if let Some(v) = values.get(i) {
+                                colmap.insert(c.to_string(), Value::Strings(v.clone()));
                             }
                         }
 

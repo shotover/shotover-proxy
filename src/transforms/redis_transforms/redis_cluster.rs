@@ -40,7 +40,7 @@ pub struct RedisCluster {
 impl Clone for RedisCluster {
     fn clone(&self) -> Self {
         RedisCluster {
-            name: self.name.clone(),
+            name: self.name,
             client: self.client.clone(),
             connection: Arc::new(Mutex::new(None)),
         }
@@ -117,7 +117,7 @@ impl Transform for RedisCluster {
             }
 
             if let Some(password) = builder_lock.password.as_deref() {
-                client = client.password(password.clone().to_string());
+                client = client.password(password.to_string());
             }
 
             let cli_res = client.readonly(false).open().await;

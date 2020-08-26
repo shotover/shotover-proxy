@@ -1,7 +1,7 @@
-use crate::transforms::chain::{ Transform, TransformChain, Wrapper};
+use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 
-use async_trait::async_trait;
 use crate::error::ChainResponse;
+use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct NoOp {
@@ -11,6 +11,12 @@ pub struct NoOp {
 impl NoOp {
     pub fn new() -> NoOp {
         NoOp { name: "NoOp" }
+    }
+}
+
+impl Default for NoOp {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

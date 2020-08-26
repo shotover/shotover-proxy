@@ -18,6 +18,8 @@ use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::net::IpAddr;
 
+// TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
+// Should move the message type to just be bulk..
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     Bypass(RawMessage),

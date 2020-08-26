@@ -103,18 +103,16 @@ impl Protected {
                 let protected_something: Protected = bincode::deserialize(b.bytes())?;
                 Ok(protected_something)
             }
-            _ => {
-                Err(anyhow!(
-                    "Could not get bytes to decrypt - wrong value type {:?}",
-                    value
-                ))
-            }
+            _ => Err(anyhow!(
+                "Could not get bytes to decrypt - wrong value type {:?}",
+                value
+            )),
         }
     }
     // TODO should this actually return self (we are sealing the plaintext value, but we don't swap out the plaintext??
-    pub async fn protect(self, key_management: &KeyManager, key_id: &String) -> Result<Protected> {
+    pub async fn protect(self, key_management: &KeyManager, key_id: &str) -> Result<Protected> {
         let sym_key = key_management
-            .cached_get_key(key_id.clone(), None, None)
+            .cached_get_key(key_id.to_string(), None, None)
             .await?;
         match &self {
             Protected::Plaintext(p) => {
@@ -131,7 +129,7 @@ impl Protected {
         }
     }
 
-    pub async fn unprotect(self, key_management: &KeyManager, key_id: &String) -> Result<Value> {
+    pub async fn unprotect(self, key_management: &KeyManager, key_id: &str) -> Result<Value> {
         match self {
             Protected::Plaintext(p) => Ok(p),
             Protected::Ciphertext {
@@ -141,7 +139,7 @@ impl Protected {
                 kek_id,
             } => {
                 let sym_key = key_management
-                    .cached_get_key(key_id.clone(), Some(enc_dek), Some(kek_id))
+                    .cached_get_key(key_id.to_string(), Some(enc_dek), Some(kek_id))
                     .await?;
                 decrypt(cipher, nonce, &sym_key.plaintext)
             }
@@ -171,16 +169,13 @@ impl Transform for Protect {
                     .keyspace_table_columns
                     .get_key_value(qm.namespace.get(0).unwrap())
                 {
-                    if let Some((_, columns)) =
-                        tables.get_key_value(qm.namespace.get(1).unwrap())
-                    {
+                    if let Some((_, columns)) = tables.get_key_value(qm.namespace.get(1).unwrap()) {
                         if let Some(query_values) = &mut qm.query_values {
                             for col in columns {
                                 if let Some(value) = query_values.get_mut(col) {
                                     let mut protected = Protected::Plaintext(value.clone());
-                                    protected = protected
-                                        .protect(&self.key_source, &self.key_id)
-                                        .await?;
+                                    protected =
+                                        protected.protect(&self.key_source, &self.key_id).await?;
                                     let _ = mem::replace(value, protected.into());
                                 }
                             }

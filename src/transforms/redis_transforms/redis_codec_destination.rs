@@ -127,7 +127,7 @@ impl RedisCodecDestination {
                         .next()
                         .fuse()
                         .await
-                        .ok_or(anyhow!("couldnt get frame"))?;
+                        .ok_or_else(|| anyhow!("couldnt get frame"))?;
 
                     last_processed_clock.0 += 1;
 

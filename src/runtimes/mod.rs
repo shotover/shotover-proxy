@@ -73,18 +73,14 @@ pub struct ScriptConfigurator {
 impl ScriptConfigurator {
     pub fn get_script_func<A, R>(&self) -> Result<ScriptHolder<A, R>> {
         match self.script_type.as_str() {
-            "lua" => {
-                Ok(ScriptHolder::new(Script::new_lua(
-                    self.function_name.clone(),
-                    self.script_definition.clone(),
-                )?))
-            }
-            "wasm" => {
-                Ok(ScriptHolder::new(Script::new_wasm(
-                    self.function_name.clone(),
-                    self.script_definition.clone(),
-                )?))
-            }
+            "lua" => Ok(ScriptHolder::new(Script::new_lua(
+                self.function_name.clone(),
+                self.script_definition.clone(),
+            )?)),
+            "wasm" => Ok(ScriptHolder::new(Script::new_wasm(
+                self.function_name.clone(),
+                self.script_definition.clone(),
+            )?)),
             // "wasm" => {
             //     return Ok(ScriptHolder::new(Script))
             // },
@@ -151,11 +147,11 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                 function_def: _,
             } => {
                 let lval = mlua_serde::to_value(lua, args).unwrap();
-                let foo = lua
+                let l_func_result = lua
                     .globals()
                     .get::<_, Function>(function_name.as_str())?
                     .call(lval)?;
-                let result: Self::Return = mlua_serde::from_value(foo).unwrap();
+                let result: Self::Return = mlua_serde::from_value(l_func_result).unwrap();
                 Ok(result)
             }
             Script::Wasm {

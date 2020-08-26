@@ -23,22 +23,6 @@ pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     })
 }
 
-fn get_redis_conn() -> Result<Connection> {
-    let client = redis::Client::open("redis://127.0.0.1:6379/")?;
-    Ok(client.get_connection()?)
-}
-
-fn load_lua<RV>(con: &mut redis::Connection, script: String) -> RedisResult<RV>
-where
-    RV: FromRedisValue,
-{
-    let mut command = redis::cmd("SCRIPT");
-    command.arg("LOAD");
-    command.arg(script.as_str());
-
-    command.query(con)
-}
-
 fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
     let pipel: Vec<i64> = redis::pipe()
         .cmd("INCR")
@@ -154,8 +138,8 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
 
     info!("Loaded lua scripts -> {:?} and {:?}", func_sha1, func_sha2);
 
-    let f: i32 = connection.ttl(build_key()).unwrap(); // TODO: Should be ttl in seconds
-    info!("---> {}", f);
+    let f_ttl: i32 = connection.ttl(build_key()).unwrap(); // TODO: Should be ttl in seconds
+    info!("---> {}", f_ttl);
 
     let _test1: RedisResult<String> = redis::cmd("EVALSHA")
         .arg(func_sha1.get_hash())
@@ -174,15 +158,15 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
         .arg("1509861014.276593")
         .query(connection);
 
-    let a: i32 = connection.sadd(build_key_user(), channel)?;
-    let b: i32 = connection.expire(build_key_user(), time)?;
-    let c: i32 = connection.sadd(build_key(), channel)?;
-    let d: i32 = connection.expire(build_key(), time)?;
+    let sadd: i32 = connection.sadd(build_key_user(), channel)?;
+    let expire: i32 = connection.expire(build_key_user(), time)?;
+    let sadd2: i32 = connection.sadd(build_key(), channel)?;
+    let expire2: i32 = connection.expire(build_key(), time)?;
 
-    info!("Got the following {:?}", a);
-    info!("Got the following {:?}", b);
-    info!("Got the following {:?}", c);
-    info!("Got the following {:?}", d);
+    info!("Got the following {:?}", sadd);
+    info!("Got the following {:?}", expire);
+    info!("Got the following {:?}", sadd2);
+    info!("Got the following {:?}", expire2);
 
     Ok(())
 }

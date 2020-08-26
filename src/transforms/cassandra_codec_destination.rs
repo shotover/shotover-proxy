@@ -112,7 +112,7 @@ impl CodecDestination {
                         .next()
                         .fuse()
                         .await
-                        .ok_or(anyhow!("couldnt get frame"))?;
+                        .ok_or_else(|| anyhow!("couldnt get frame"))?;
                     trace!("resp received");
                 }
             }

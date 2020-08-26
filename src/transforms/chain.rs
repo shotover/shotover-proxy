@@ -97,9 +97,8 @@ pub trait Transform: Send {
         let result = self.transform(qd, t).await;
         let end = Instant::now();
         counter!("shotover_transform_total", 1, "transform" => self.get_name());
-        match &result {
-            Err(_) => counter!("shotover_transform_failures", 1, "transform" => self.get_name()),
-            _ => {}
+        if let Err(_) = &result {
+            counter!("shotover_transform_failures", 1, "transform" => self.get_name())
         }
         timing!("shotover_transform_latency", start, end, "transform" => self.get_name());
         result
@@ -182,7 +181,7 @@ impl TransformChain {
             }
         });
 
-        let chain = TransformChain {
+        TransformChain {
             name,
             chain: transform_list,
             global_map: Some(global_map_handle),
@@ -190,9 +189,7 @@ impl TransformChain {
             chain_local_map: Some(rh.factory()),
             chain_local_map_updater: Some(local_tx),
             lua_runtime: Lua::new(),
-        };
-
-        chain
+        }
     }
 
     pub async fn process_request(
@@ -214,9 +211,8 @@ impl TransformChain {
         };
         let end = Instant::now();
         counter!("shotover_chain_total", 1, "chain" => self.name.clone());
-        match &result {
-            Err(_) => counter!("shotover_chain_failures", 1, "chain" => self.name.clone()),
-            _ => {}
+        if let Err(_) = &result {
+            counter!("shotover_chain_failures", 1, "chain" => self.name.clone())
         }
         timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);
         result

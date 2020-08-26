@@ -70,7 +70,7 @@ fn get_size(frag: &QueryResponse) -> usize {
     frag.result.as_ref().map_or(0, |v| std::mem::size_of_val(v))
 }
 
-fn resolve_fragments<'a>(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse> {
+fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse> {
     let mut newest_fragment: Option<QueryResponse> = None;
     let mut biggest_fragment: Option<QueryResponse> = None;
 

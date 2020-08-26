@@ -140,7 +140,7 @@ impl RedisCodec {
             // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
             if let Some(Frame::BulkString(v)) = commands.pop() {
                 let comm = String::from_utf8(v)
-                    .unwrap_or("invalid utf-8".to_string())
+                    .unwrap_or_else(|_| "invalid utf-8".to_string())
                     .to_uppercase();
                 match comm.as_str() {
                     "APPEND" => {
@@ -402,7 +402,7 @@ impl RedisCodec {
     }
 
     fn handle_redis_string(&self, string: String, frame: Frame) -> Message {
-        let message = if self.decode_as_response {
+        if self.decode_as_response {
             Message::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
@@ -421,13 +421,11 @@ impl RedisCodec {
                 query_type: QueryType::Read,
                 ast: None,
             })
-        };
-
-        message
+        }
     }
 
     fn handle_redis_bulkstring(&self, bulkstring: Vec<u8>, frame: Frame) -> Message {
-        let message = if self.decode_as_response {
+        if self.decode_as_response {
             Message::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
@@ -446,13 +444,11 @@ impl RedisCodec {
                 query_type: QueryType::Read,
                 ast: None,
             })
-        };
-
-        message
+        }
     }
 
     fn handle_redis_integer(&self, integer: i64, frame: Frame) -> Message {
-        let message = if self.decode_as_response {
+        if self.decode_as_response {
             Message::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
@@ -471,13 +467,11 @@ impl RedisCodec {
                 query_type: QueryType::Read,
                 ast: None,
             })
-        };
-
-        message
+        }
     }
 
     fn handle_redis_error(&self, error: String, frame: Frame) -> Message {
-        let message = if self.decode_as_response {
+        if self.decode_as_response {
             Message::Response(QueryResponse {
                 matching_query: None,
                 original: RawFrame::Redis(frame),
@@ -496,9 +490,7 @@ impl RedisCodec {
                 query_type: QueryType::Read,
                 ast: None,
             })
-        };
-
-        message
+        }
     }
 
     pub fn process_redis_bulk(&self, mut frames: Vec<Frame>) -> Result<Message> {
