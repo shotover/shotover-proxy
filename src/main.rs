@@ -19,7 +19,7 @@ use tokio::runtime;
 use tracing_subscriber;
 
 #[derive(Clap)]
-#[clap(version = "0.0.3", author = "Instaclustr")]
+#[clap(version = "0.0.4", author = "Instaclustr")]
 struct ConfigOpts {
     #[clap(short, long, default_value = "config/topology.yaml")]
     pub topology_file: String,
@@ -45,7 +45,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
         .with_max_level(Level::from_str(config.main_log_level.as_str())?)
-
         // completes the builder and sets the constructed `Subscriber` as the default.
         .init();
 
