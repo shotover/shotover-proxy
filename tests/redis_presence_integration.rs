@@ -3,7 +3,7 @@ use redis::{Commands, Connection, FromRedisValue, RedisResult};
 use shotover_proxy::config::topology::Topology;
 use std::{thread, time};
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{info, Level};
 
 const LUA1: &str = r###"
 return {KEYS[1],ARGV[1],ARGV[2]}
@@ -88,15 +88,19 @@ where
     BCK: Fn() -> String,
     BKU: Fn() -> String,
 {
-    let func_sha1: String = load_lua(connection, LUA1.to_string()).unwrap();
-    let func_sha2: String = load_lua(connection, LUA2.to_string()).unwrap();
     let time: usize = 640;
 
-    let _pipel = redis::pipe()
+    let func_sha1 = redis::Script::new(LUA1);
+    let _some: RedisResult<Vec<String>> = func_sha1.invoke(connection);
+
+    let func_sha2 = redis::Script::new(LUA2);
+    let _other: RedisResult<Vec<String>> = func_sha1.invoke(connection);
+
+    let pipe: RedisResult<String> = redis::pipe()
         .ttl(build_key())
         .ignore()
         .cmd("EVALSHA")
-        .arg(func_sha1.to_string())
+        .arg(func_sha1.get_hash())
         .arg(1)
         .arg(build_c_key().as_str())
         .arg(640)
@@ -104,7 +108,7 @@ where
         .arg("1509861014.276593")
         .ignore()
         .cmd("EVALSHA")
-        .arg(func_sha2.to_string())
+        .arg(func_sha2.get_hash())
         .arg(1)
         .arg("updates")
         .arg(build_key().as_str())
@@ -118,9 +122,11 @@ where
         .ignore()
         .expire(build_key(), time)
         .ignore()
-        .query(connection)?;
+        .query(connection);
 
-    info!("pipelined --");
+    info!("pipelined -- {:?}", pipe);
+
+    pipe?;
 
     Ok(())
 }
@@ -138,18 +144,21 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
 
     let connection = &mut get_redis_conn().unwrap();
 
-    let func_sha1: String = load_lua(connection, LUA1.to_string()).unwrap();
-    let func_sha2: String = load_lua(connection, LUA2.to_string()).unwrap();
+    let func_sha1 = redis::Script::new(LUA1);
+    let some: RedisResult<Vec<String>> = func_sha1.invoke(connection);
+
+    let func_sha2 = redis::Script::new(LUA2);
+    let other: RedisResult<Vec<String>> = func_sha1.invoke(connection);
 
     let time: usize = 640;
 
-    info!("Loaded lua scripts -> {} and {}", func_sha1, func_sha2);
+    info!("Loaded lua scripts -> {:?} and {:?}", func_sha1, func_sha2);
 
     let f: i32 = connection.ttl(build_key()).unwrap(); // TODO: Should be ttl in seconds
     info!("---> {}", f);
 
     let _test1: RedisResult<String> = redis::cmd("EVALSHA")
-        .arg(func_sha1.to_string())
+        .arg(func_sha1.get_hash())
         .arg(1)
         .arg(build_c_key().as_str())
         .arg(640)
@@ -158,7 +167,7 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
         .query(connection);
 
     let _test2: RedisResult<String> = redis::cmd("EVALSHA")
-        .arg(func_sha2.to_string())
+        .arg(func_sha2.get_hash())
         .arg(1)
         .arg("updates")
         .arg(build_key().as_str())
@@ -209,9 +218,12 @@ async fn test_simple_pipeline_workflow() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(threaded_scheduler)]
+// #[tokio::test(threaded_scheduler)]
 async fn run_all() -> Result<()> {
     let delaytime = time::Duration::from_secs(2);
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
     let _jh = start_proxy("examples/redis-multi/config.yaml".to_string());
     thread::sleep(delaytime);
     test_simple_pipeline_workflow().await?;
