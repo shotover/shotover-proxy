@@ -218,13 +218,13 @@ async fn test_simple_pipeline_workflow() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(threaded_scheduler)]
+// #[tokio::test(threaded_scheduler)]
 async fn run_all() -> Result<()> {
     let delaytime = time::Duration::from_secs(2);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
-    let _jh = start_proxy("examples/redis-cluster/config.yaml".to_string());
+    let _jh = start_proxy("examples/redis-multi/config.yaml".to_string());
     thread::sleep(delaytime);
     test_simple_pipeline_workflow().await?;
     test_presence_fresh_join_pipeline_workflow().await?;
