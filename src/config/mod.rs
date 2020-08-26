@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
-mod config;
 pub mod topology;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

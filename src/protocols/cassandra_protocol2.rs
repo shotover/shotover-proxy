@@ -213,9 +213,7 @@ impl CassandraCodec2 {
                 Ok(r)
             }
             // Note these should be parse errors, not actual protocol errors
-            Err(e) => {
-                Err(anyhow!(e))
-            }
+            Err(e) => Err(anyhow!(e)),
         }
     }
 
@@ -644,11 +642,9 @@ impl CassandraCodec2 {
                     original: RawFrame::CASSANDRA(frame),
                 })
             }
-            _ => {
-                Message::Bypass(RawMessage {
-                    original: RawFrame::CASSANDRA(frame),
-                })
-            }
+            _ => Message::Bypass(RawMessage {
+                original: RawFrame::CASSANDRA(frame),
+            }),
         }
     }
 }
@@ -682,18 +678,12 @@ impl Encoder<Message> for CassandraCodec2 {
                         //TODO: throw error -> we should not be modifing a bypass message
                         unimplemented!()
                     }
-                    Message::Query(q) => {
-                        self.encode_raw(
-                            CassandraCodec2::build_cassandra_query_frame(
-                                q,
-                                Consistency::LocalQuorum,
-                            ),
-                            dst,
-                        )
-                    }
+                    Message::Query(q) => self.encode_raw(
+                        CassandraCodec2::build_cassandra_query_frame(q, Consistency::LocalQuorum),
+                        dst,
+                    ),
                     Message::Response(r) => {
-                        self
-                            .encode_raw(CassandraCodec2::build_cassandra_response_frame(r), dst)
+                        self.encode_raw(CassandraCodec2::build_cassandra_response_frame(r), dst)
                     }
                     Message::Modified(_) => {
                         //TODO: throw error -> we should not have a nested modified message
@@ -870,7 +860,7 @@ mod cassandra_protocol_tests {
         if let Ok(Some(message)) = codec.decode(&mut bytes) {
             if let Message::Query(QueryMessage {
                 original: _,
-                query_string,
+                mut query_string,
                 namespace: _,
                 primary_key: _,
                 query_values: _,
