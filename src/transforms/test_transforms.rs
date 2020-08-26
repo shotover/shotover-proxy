@@ -16,7 +16,7 @@ pub struct ReturnerTransform {
 #[async_trait]
 impl Transform for ReturnerTransform {
     async fn transform(&self, _qd: Wrapper, _t: &TransformChain) -> ChainResponse {
-        return if self.ok {
+        if self.ok {
             Ok(self.message.clone())
         } else {
             Err(anyhow!("Intentional Fail"))
@@ -24,7 +24,7 @@ impl Transform for ReturnerTransform {
     }
 
     fn get_name(&self) -> &'static str {
-        return "returner"
+        "returner"
     }
 }
 
@@ -48,6 +48,6 @@ impl Transform for RandomDelayTransform {
     }
 
     fn get_name(&self) -> &'static str {
-        return "RandomDelay"
+        "RandomDelay"
     }
 }

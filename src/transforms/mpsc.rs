@@ -84,7 +84,7 @@ impl Transform for AsyncMpscForwarder {
             warn!("MPSC error {}", e);
             e
         }).await?;
-        return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
+        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
     }
 
     fn get_name(&self) -> &'static str {

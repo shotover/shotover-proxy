@@ -75,9 +75,9 @@ impl AsyncMpsc {
             Ok(())
         });
 
-        return AsyncMpsc {
+        AsyncMpsc {
             name: "AsyncMpsc",
             rx_handle: jh,
-        };
+        }
     }
 }

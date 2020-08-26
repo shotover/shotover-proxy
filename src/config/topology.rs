@@ -34,20 +34,20 @@ pub struct TopicHolder {
 impl TopicHolder {
     pub fn get_rx(&mut self, name: &str) -> Option<Receiver<Message>> {
         let rx = self.topics_rx.remove(name)?;
-        return Some(rx);
+        Some(rx)
     }
 
     pub fn get_tx(&self, name: &str) -> Option<Sender<Message>> {
         let tx = self.topics_tx.get(name)?;
-        return Some(tx.clone());
+        Some(tx.clone())
     }
 
     pub fn get_global_tx(&self) -> Sender<(String, Bytes)> {
-        return self.global_tx.clone();
+        self.global_tx.clone()
     }
 
     pub fn get_global_map_handle(&self) -> ReadHandleFactory<String, Bytes> {
-        return self.global_map_handle.clone();
+        self.global_map_handle.clone()
     }
 
     // #[cfg(test)]
@@ -55,12 +55,12 @@ impl TopicHolder {
         let (global_map_r, _global_map_w) = evmap::new();
         let (global_tx, _global_rx) = channel(1);
 
-        return TopicHolder {
+        TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),
-            global_tx: global_tx,
+            global_tx,
             global_map_handle: global_map_r.factory(),
-        };
+        }
     }
 }
 
@@ -81,12 +81,12 @@ impl Topology {
             topics_rx.insert(name.clone(), rx);
             topics_tx.insert(name.clone(), tx);
         }
-        return TopicHolder {
+        TopicHolder {
             topics_rx,
             topics_tx,
             global_tx,
             global_map_handle,
-        };
+        }
     }
 
     async fn build_chains(&self, topics: &TopicHolder) -> Result<HashMap<String, TransformChain>> {
@@ -160,9 +160,9 @@ impl Topology {
     }
 
     pub fn from_file(filepath: String) -> Result<Topology> {
-        let file = std::fs::File::open(filepath.clone())?;
+        let file = std::fs::File::open(filepath)?;
         let config: Topology = serde_yaml::from_reader(file)?;
-        return Ok(config);
+        Ok(config)
     }
 
     pub fn get_demo_config() -> Topology {

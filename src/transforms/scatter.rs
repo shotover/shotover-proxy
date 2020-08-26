@@ -55,14 +55,14 @@ impl Transform for Scatter {
                 .route_script
                 .call(&t.lua_runtime, (qm.clone(), routes))?;
             if chosen_route.len() == 1 {
-                return self
+                self
                     .route_map
                     .get(chosen_route.get(0).unwrap().as_str())
                     .unwrap()
                     .process_request(qd, self.get_name().to_string())
-                    .await;
-            } else if chosen_route.len() == 0 {
-                return ChainResponse::Err(anyhow!("no routes found"));
+                    .await
+            } else if chosen_route.is_empty() {
+                ChainResponse::Err(anyhow!("no routes found"))
             } else {
                 let mut fu = FuturesUnordered::new();
                 for ref route in &chosen_route {

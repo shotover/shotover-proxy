@@ -104,10 +104,10 @@ impl CassandraSource {
             Ok(())
         });
 
-        return CassandraSource {
+        CassandraSource {
             name,
             join_handle: jh,
             listen_addr,
-        };
+        }
     }
 }

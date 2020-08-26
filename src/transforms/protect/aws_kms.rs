@@ -32,7 +32,7 @@ impl AWSKeyManagement {
                 grant_tokens: self.grant_tokens.clone(),
                 key_id: self.cmk_id.clone(),
                 key_spec: self.key_spec.clone(),
-                number_of_bytes: self.number_of_bytes.clone()
+                number_of_bytes: self.number_of_bytes
             })
         }, |dek| {
             DecOrGen::Dec(DecryptRequest{
@@ -54,19 +54,19 @@ impl AWSKeyManagement {
         match dog {
             DecOrGen::Gen(g) => {
                 let resp = self.client.generate_data_key(g).await?;
-                return Ok(KeyMaterial{
+                Ok(KeyMaterial{
                     ciphertext_blob: resp.ciphertext_blob.ok_or(anyhow!("no ciphertext DEK found"))?,
                     key_id: resp.key_id.ok_or(anyhow!("no CMK id found"))?,
                     plaintext: Key::from_slice(
                         &resp.plaintext
                             .ok_or(anyhow!("no plaintext DEK provided"))?.bytes())
                         .ok_or(anyhow!("couldn't create secretbox key from dek bytes"))?
-                });
+                })
 
             },
             DecOrGen::Dec(d) => {
                 let resp = self.client.decrypt(d.clone()).await?;
-                return Ok(KeyMaterial{
+                Ok(KeyMaterial{
                     ciphertext_blob: d.ciphertext_blob.clone(),
                     key_id: d.key_id.ok_or(anyhow!("seemed to have lost cmk id on the way???"))?,
                     plaintext: Key::from_slice(
@@ -74,7 +74,7 @@ impl AWSKeyManagement {
                             .ok_or(anyhow!("no plaintext DEK provided"))?.bytes())
                         .ok_or(anyhow!("couldn't create secretbox key from dek bytes")
                         )?
-                });
+                })
             },
         }
     }

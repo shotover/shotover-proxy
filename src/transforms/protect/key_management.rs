@@ -40,7 +40,7 @@ pub enum KeyManagerConfig {
 
 impl KeyManagerConfig {
     pub fn build(&self) -> Result<KeyManager> {
-        return match self.clone() {
+        match self.clone() {
             KeyManagerConfig::AWSKms {
                 region,
                 cmk_id,
@@ -59,17 +59,17 @@ impl KeyManagerConfig {
             KeyManagerConfig::Local { kek, kek_id } => {
                 Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
             }
-        };
+        }
     }
 }
 
 #[async_trait]
 impl KeyManagement for KeyManager {
     async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial> {
-        return match &self {
+        match &self {
             KeyManager::AWSKms(aws) => aws.get_aws_key(dek, kek_alt).await,
             KeyManager::Local(local) => local.get_key(dek).await,
-        };
+        }
     }
 }
 

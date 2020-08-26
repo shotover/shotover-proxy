@@ -27,7 +27,7 @@ impl Transform for QueryTypeFilter {
         // TODO this is likely the wrong way to get around the borrow from the match statement
         let message = qd.message.borrow();
 
-        return match message {
+        match message {
             Message::Query(q) => {
                 if self.filters.iter().any(|x| *x == q.query_type) {
                     return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
@@ -35,7 +35,7 @@ impl Transform for QueryTypeFilter {
                 self.call_next_transform(qd, t).await
             }
             _ => self.call_next_transform(qd, t).await,
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {

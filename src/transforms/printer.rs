@@ -21,7 +21,7 @@ impl Transform for Printer {
         info!("Request content: {:?}", qd.message);
         let response = self.call_next_transform(qd, t).await;
         info!("Response content: {:?}", response);
-        return response;
+        response
     }
 
     fn get_name(&self) -> &'static str {

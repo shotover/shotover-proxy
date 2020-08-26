@@ -304,7 +304,7 @@ where
                     match self
                         .chain
                         .process_request(
-                            Wrapper::new_with_rnd(message, self.connection_clock.clone()),
+                            Wrapper::new_with_rnd(message, self.connection_clock),
                             self.client_details.clone(),
                         )
                         .await

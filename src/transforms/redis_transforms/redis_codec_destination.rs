@@ -93,7 +93,7 @@ impl RedisCodecDestination {
                     let _ = outbound_framed_codec.send(message).await;
                     if let Some(o) = outbound_framed_codec.next().fuse().await {
                         if let Ok(_resp) = &o {
-                            mg.replace((outbound_framed_codec, message_clock.clone()));
+                            mg.replace((outbound_framed_codec, message_clock));
                             drop(mg);
                             return o;
                         }
@@ -140,7 +140,7 @@ impl RedisCodecDestination {
                 }
             }
         }
-        return ChainResponse::Err(anyhow!("Something went wrong sending frame to Redis"));
+        ChainResponse::Err(anyhow!("Something went wrong sending frame to Redis"))
     }
 }
 

@@ -41,10 +41,10 @@ impl KafkaDestination {
         for (k, v) in config_map.iter() {
             config.set(k.as_str(), v.as_str());
         }
-        return KafkaDestination {
+        KafkaDestination {
             producer: config.create().expect("Producer creation error"),
             topic,
-        };
+        }
     }
 
     pub fn new() -> KafkaDestination {
@@ -78,7 +78,7 @@ impl Transform for KafkaDestination {
             }
             _ => {}
         }
-        return ChainResponse::Ok(Message::Response(QueryResponse::empty()));
+        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
     }
 
     fn get_name(&self) -> &'static str {

@@ -117,7 +117,7 @@ impl CodecDestination {
                 }
             }
         }
-        return ChainResponse::Err(anyhow!("Something went wrong sending to cassandra"));
+        ChainResponse::Err(anyhow!("Something went wrong sending to cassandra"))
     }
 }
 

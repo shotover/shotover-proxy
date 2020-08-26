@@ -45,10 +45,10 @@ impl Clone for Script {
 
 impl Script {
     fn new_lua(function_name: String, script_definition: String) -> Result<Self> {
-        return Ok(Script::Lua {
+        Ok(Script::Lua {
             function_name,
             function_def: script_definition,
-        });
+        })
     }
 
     fn new_wasm(function_name: String, script_definition: String) -> Result<Self> {
@@ -56,10 +56,10 @@ impl Script {
         let import_object = imports! {};
         let instance = instantiate(wasm_bytes.as_slice(), &import_object)
             .map_err(|e| anyhow!("Couldn't load wasm module {}", e))?;
-        return Ok(Script::Wasm {
+        Ok(Script::Wasm {
             function_name,
             function_def: Arc::new(Mutex::new(instance)),
-        });
+        })
     }
 }
 
@@ -74,16 +74,16 @@ impl ScriptConfigurator {
     pub fn get_script_func<A, R>(&self) -> Result<ScriptHolder<A, R>> {
         match self.script_type.as_str() {
             "lua" => {
-                return Ok(ScriptHolder::new(Script::new_lua(
+                Ok(ScriptHolder::new(Script::new_lua(
                     self.function_name.clone(),
                     self.script_definition.clone(),
-                )?));
+                )?))
             }
             "wasm" => {
-                return Ok(ScriptHolder::new(Script::new_wasm(
+                Ok(ScriptHolder::new(Script::new_wasm(
                     self.function_name.clone(),
                     self.script_definition.clone(),
-                )?));
+                )?))
             }
             // "wasm" => {
             //     return Ok(ScriptHolder::new(Script))
@@ -111,10 +111,10 @@ pub trait ScriptDefinition<A, R> {
 
 impl<A, R> ScriptHolder<A, R> {
     pub fn new(script: Script) -> Self {
-        return ScriptHolder {
+        ScriptHolder {
             env: script,
             _phantom: PhantomData,
-        };
+        }
     }
 
     pub fn prep_lua_runtime(&self, lua: &Lua) -> Result<()> {
@@ -150,13 +150,13 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                 function_name,
                 function_def: _,
             } => {
-                let lval = mlua_serde::to_value(lua, args.clone()).unwrap();
+                let lval = mlua_serde::to_value(lua, args).unwrap();
                 let foo = lua
                     .globals()
                     .get::<_, Function>(function_name.as_str())?
                     .call(lval)?;
                 let result: Self::Return = mlua_serde::from_value(foo).unwrap();
-                return Ok(result);
+                Ok(result)
             }
             Script::Wasm {
                 function_name,
@@ -170,7 +170,7 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                     for cell in view[1..5].iter() {
                         cell.set(0);
                     }
-                    let lval = bincode::serialize(&args.clone())?;
+                    let lval = bincode::serialize(&args)?;
                     let len = lval.len();
 
                     for (cell, byte) in view[5..len + 5].iter().zip(lval.iter()) {
@@ -201,7 +201,7 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                         .collect();
 
                     let updated: Self::Return;
-                    updated = bincode::deserialize::<Self::Return>(&updated_bytes)?.to_owned();
+                    updated = bincode::deserialize::<Self::Return>(&updated_bytes)?;
                     return Ok(updated);
                 }
                 unimplemented!()

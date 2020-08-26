@@ -91,15 +91,12 @@ fn try_tag_query_message(qm: &QueryMessage) -> (bool, Message) {
         std::mem::swap(&mut m.ast, &mut Some(ASTHolder::Commands(wrapped)));
         return (true, Message::Modified(Box::new(Message::Query(m))));
     }
-    return (false, Message::Query(m));
+    (false, Message::Query(m))
 }
 
 fn unwrap_response(qr: &mut QueryResponse) {
     if let Some(Value::List(mut values)) = qr.result.clone() {
-        let all_lists = values.iter().all(|v| match v {
-            Value::List(_) => true,
-            _ => false,
-        });
+        let all_lists = values.iter().all(|v| matches!(v, Value::List(_)));
         // This means the result is likely from a transaction or something that returns
         // lots of things
         // panic!("this doesn't seem to work on the test_pass_through_one test")
@@ -155,7 +152,7 @@ impl Transform for RedisTimestampTagger {
         match &qd.message {
             Message::Query(qm) => {
                 if let Some(a) = &qm.ast {
-                    if a.get_command() == "EXEC".to_string() {
+                    if a.get_command() == *"EXEC" {
                         exec_block = true;
                     }
                 }
@@ -167,7 +164,7 @@ impl Transform for RedisTimestampTagger {
             Message::Modified(m) => {
                 if let Message::Query(ref qm) = **m {
                     if let Some(a) = &qm.ast {
-                        if a.get_command() == "EXEC".to_string() {
+                        if a.get_command() == *"EXEC" {
                             exec_block = true;
                         }
                     }
@@ -183,7 +180,7 @@ impl Transform for RedisTimestampTagger {
                     .map(|message| {
                         if let Message::Query(ref qm) = message {
                             if let Some(a) = &qm.ast {
-                                if a.get_command() == "EXEC".to_string() {
+                                if a.get_command() == *"EXEC" {
                                     exec_block = true;
                                 }
                             }
@@ -220,7 +217,7 @@ impl Transform for RedisTimestampTagger {
             }
         }
         debug!("response after trying to unwrap -> {:?}", response);
-        return response;
+        response
     }
 
     fn get_name(&self) -> &'static str {
