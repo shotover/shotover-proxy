@@ -115,6 +115,11 @@ where
     Ok(())
 }
 
+fn get_redis_conn() -> Result<Connection> {
+    let client = redis::Client::open("redis://127.0.0.1:6379/")?;
+    Ok(client.get_connection()?)
+}
+
 async fn test_presence_fresh_join_single_workflow() -> Result<()> {
     let subkey = "demo-36";
     let channel = "channel1";
