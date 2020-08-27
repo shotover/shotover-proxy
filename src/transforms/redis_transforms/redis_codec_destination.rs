@@ -77,12 +77,7 @@ impl RedisCodecDestination {
         }
     }
 
-    async fn send_message(
-        &self,
-        message: Messages,
-        _matching_query: Option<QueryMessage>,
-        message_clock: Wrapping<u32>,
-    ) -> ChainResponse {
+    async fn send_message(&self, message: Messages, message_clock: Wrapping<u32>) -> ChainResponse {
         if let Ok(mut mg) = self.outbound.try_lock() {
             match *mg {
                 None => {
@@ -148,11 +143,7 @@ impl RedisCodecDestination {
 impl Transform for RedisCodecDestination {
     // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        let return_query = match &qd.message {
-            Messages::Query(q) => Some(q.clone()),
-            _ => None,
-        };
-        let r = self.send_message(qd.message, return_query, qd.clock).await;
+        let r = self.send_message(qd.message, qd.clock).await;
         r
     }
 

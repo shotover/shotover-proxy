@@ -69,11 +69,7 @@ multi-consumer, single producer threadsafe queue
 */
 
 impl CodecDestination {
-    async fn send_message(
-        &self,
-        message: Messages,
-        _matching_query: Option<QueryMessage>,
-    ) -> ChainResponse {
+    async fn send_message(&self, message: Messages) -> ChainResponse {
         trace!("waiting for mutex lock");
         if let Ok(mut mg) = self.outbound.try_lock() {
             trace!("got mutex lock");
@@ -125,11 +121,7 @@ impl CodecDestination {
 impl Transform for CodecDestination {
     // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        let return_query = match &qd.message {
-            Messages::Query(q) => Some(q.clone()),
-            _ => None,
-        };
-        self.send_message(qd.message, return_query).await
+        self.send_message(qd.message).await
     }
 
     fn get_name(&self) -> &'static str {

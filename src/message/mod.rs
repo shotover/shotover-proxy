@@ -16,6 +16,7 @@ use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
+use std::iter::FromIterator;
 use std::net::IpAddr;
 
 // TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
@@ -23,6 +24,16 @@ use std::net::IpAddr;
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Messages {
     pub messages: Vec<Message>,
+}
+
+impl FromIterator<Message> for Messages {
+    fn from_iter<T: IntoIterator<Item = Message>>(iter: T) -> Self {
+        let mut messages = Messages::new();
+        for i in iter {
+            messages.messages.push(i);
+        }
+        messages
+    }
 }
 
 impl IntoIterator for Messages {
@@ -58,6 +69,22 @@ impl Message {
         }
     }
 
+    pub fn new_query(qm: QueryMessage, modified: bool, original: RawFrame) -> Self {
+        Self::new(MessageDetails::Query(qm), modified, original)
+    }
+
+    pub fn new_response(qr: QueryResponse, modified: bool, original: RawFrame) -> Self {
+        Self::new(MessageDetails::Response(qr), modified, original)
+    }
+
+    pub fn new_bypass(raw_frame: RawFrame) -> Self {
+        Self::new(
+            MessageDetails::Bypass(Box::new(MessageDetails::Unknown)),
+            false,
+            raw_frame,
+        )
+    }
+
     pub fn new_no_original(details: MessageDetails, modified: bool) -> Self {
         Message {
             details,
@@ -67,15 +94,29 @@ impl Message {
     }
 
     pub fn into_bypass(self) -> Self {
-        Message {
-            details: MessageDetails::Bypass,
-            modified: false,
-            original: self.original,
+        if let MessageDetails::Bypass(_) = &self.details {
+            return self;
+        } else {
+            Message {
+                details: MessageDetails::Bypass(Box::new(self.details)),
+                modified: false,
+                original: self.original,
+            }
         }
     }
 }
 
 impl Messages {
+    pub fn new() -> Self {
+        Messages { messages: vec![] }
+    }
+
+    pub fn new_from_message(message: Message) -> Self {
+        Messages {
+            messages: vec![message],
+        }
+    }
+
     pub fn get_raw_original(self) -> Vec<RawFrame> {
         self.messages.into_iter().map(|m| m.original).collect()
     }
@@ -88,7 +129,11 @@ impl Messages {
 
     pub fn new_single_bypass(raw_frame: RawFrame) -> Self {
         Messages {
-            messages: vec![Message::new(MessageDetails::Bypass, false, raw_frame)],
+            messages: vec![Message::new(
+                MessageDetails::Bypass(Box::new(MessageDetails::Unknown)),
+                false,
+                raw_frame,
+            )],
         }
         .to_bypass()
     }
