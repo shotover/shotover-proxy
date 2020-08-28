@@ -188,8 +188,15 @@ impl Transform for RedisCluster {
             }
         }
 
+        // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
+        // But we still need to fake it being a Vec of results
         if let Some(connection) = lock.deref_mut() {
-            let result: RedisResult<Vec<Value>> = pipe.query_async(connection).await;
+            let result: RedisResult<Vec<Value>> = if pipe.len() == 1 {
+                let cmd = pipe.pop().unwrap();
+                RedisResult::Ok(vec![cmd.query_async(connection).await?])
+            } else {
+                pipe.query_async(connection).await
+            };
 
             return match result {
                 Ok(result) => {

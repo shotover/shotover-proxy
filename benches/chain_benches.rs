@@ -14,16 +14,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new_without_request())];
 
     let chain = TransformChain::new_no_shared_state(transforms, "bench".to_string());
-    let wrapper = Wrapper::new(Messages::Query(QueryMessage {
-        original: RawFrame::NONE,
-        query_string: "".to_string(),
-        namespace: vec![],
-        primary_key: HashMap::new(),
-        query_values: None,
-        projection: None,
-        query_type: QueryType::Write,
-        ast: None,
-    }));
+    let wrapper = Wrapper::new(Messages::new_single_query(
+        QueryMessage {
+            query_string: "".to_string(),
+            namespace: vec![],
+            primary_key: HashMap::new(),
+            query_values: None,
+            projection: None,
+            query_type: QueryType::Write,
+            ast: None,
+        },
+        true,
+        RawFrame::NONE,
+    ));
 
     c.bench_with_input(
         BenchmarkId::new("input_example", "Empty Message"),
@@ -47,16 +50,19 @@ fn lua_benchmark(c: &mut Criterion) {
         function_name: "".to_string(),
     };
 
-    let lwrapper = Wrapper::new(Messages::Query(QueryMessage {
-        original: RawFrame::NONE,
-        query_string: "".to_string(),
-        namespace: vec![String::from("keyspace"), String::from("old")],
-        primary_key: Default::default(),
-        query_values: None,
-        projection: None,
-        query_type: QueryType::Read,
-        ast: None,
-    }));
+    let lwrapper = Wrapper::new(Messages::new_single_query(
+        QueryMessage {
+            query_string: "".to_string(),
+            namespace: vec![String::from("keyspace"), String::from("old")],
+            primary_key: Default::default(),
+            query_values: None,
+            projection: None,
+            query_type: QueryType::Read,
+            ast: None,
+        },
+        true,
+        RawFrame::NONE,
+    ));
 
     let mut rt = tokio::runtime::Runtime::new().unwrap();
 

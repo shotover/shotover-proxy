@@ -22,7 +22,6 @@ struct QueryData {
 pub struct Wrapper {
     pub message: Messages,
     pub next_transform: usize,
-    pub modified: bool,
     pub clock: Wrapping<u32>,
 }
 
@@ -43,7 +42,6 @@ impl Wrapper {
         Wrapper {
             message: m,
             next_transform: 0,
-            modified: false,
             clock: Wrapping(0),
         }
     }
@@ -52,7 +50,6 @@ impl Wrapper {
         Wrapper {
             message: m,
             next_transform,
-            modified: false,
             clock: Wrapping(0),
         }
     }
@@ -61,7 +58,6 @@ impl Wrapper {
         Wrapper {
             message: m,
             next_transform: 0,
-            modified: false,
             clock,
         }
     }

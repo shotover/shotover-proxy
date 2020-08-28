@@ -570,7 +570,7 @@ impl RedisCodec {
                 Ok(Message::new(
                     MessageDetails::Query(QueryMessage {
                         query_string: "".to_string(),
-                        namespace: vec![channel],
+                        namespace: vec![channel.clone()],
                         primary_key: Default::default(),
                         query_values: Some(map),
                         projection: None,

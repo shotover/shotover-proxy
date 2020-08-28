@@ -1,7 +1,8 @@
 use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
-use crate::message::{Messages, QueryMessage, QueryResponse, Value};
+use crate::message::{Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value};
+use crate::protocols::RawFrame;
 use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{
@@ -11,6 +12,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -18,7 +20,7 @@ use std::collections::HashMap;
 pub struct Scatter {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
-    route_script: ScriptHolder<(QueryMessage, Vec<String>), Vec<String>>,
+    route_script: ScriptHolder<(Messages, Vec<String>), Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -49,51 +51,63 @@ impl TransformsFromConfig for ScatterConfig {
 #[async_trait]
 impl Transform for Scatter {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        if let Messages::Query(qm) = &qd.message {
-            let routes: Vec<String> = self.route_map.keys().cloned().collect();
-            let chosen_route = self
-                .route_script
-                .call(&t.lua_runtime, (qm.clone(), routes))?;
-            if chosen_route.len() == 1 {
-                self
-                    .route_map
-                    .get(chosen_route.get(0).unwrap().as_str())
-                    .unwrap()
-                    .process_request(qd, self.get_name().to_string())
-                    .await
-            } else if chosen_route.is_empty() {
-                ChainResponse::Err(anyhow!("no routes found"))
-            } else {
-                let mut fu = FuturesUnordered::new();
-                for ref route in &chosen_route {
-                    let chain = self.route_map.get(route.as_str()).unwrap();
-                    let mut wrapper = qd.clone();
-                    wrapper.reset();
-                    fu.push(chain.process_request(wrapper, self.get_name().to_string()));
-                }
+        let routes: Vec<String> = self.route_map.keys().cloned().collect();
+        let chosen_route = self
+            .route_script
+            .call(&t.lua_runtime, (qd.message.clone(), routes))?;
+        if chosen_route.len() == 1 {
+            self.route_map
+                .get(chosen_route.get(0).unwrap().as_str())
+                .unwrap()
+                .process_request(qd, self.get_name().to_string())
+                .await
+        } else if chosen_route.is_empty() {
+            ChainResponse::Err(anyhow!("no routes found"))
+        } else {
+            let mut fu = FuturesUnordered::new();
+            for ref route in &chosen_route {
+                let chain = self.route_map.get(route.as_str()).unwrap();
+                let mut wrapper = qd.clone();
+                wrapper.reset();
+                fu.push(chain.process_request(wrapper, self.get_name().to_string()));
+            }
 
-                let mut collated_results = vec![];
+            let mut results: Vec<Messages> = Vec::new();
+            while let Some(Ok(messages)) = fu.next().await {
+                results.push(messages);
+            }
 
-                while let Some(Ok(m)) = fu.next().await {
-                    if let Messages::Response(QueryResponse {
-                        matching_query: _,
-                        original: _,
-                        result,
-                        error: _,
-                        response_meta: _,
-                    }) = &m
-                    {
-                        if let Some(res) = result {
-                            collated_results.push(res.clone());
+            let collated_response: Vec<Message> = (0..qd.message.messages.len())
+                .into_iter()
+                .map(|i| {
+                    let mut collated_results = vec![];
+                    for mut res in &mut results {
+                        if let Some(m) = res.messages.pop() {
+                            if let MessageDetails::Response(QueryResponse {
+                                matching_query: _,
+                                result,
+                                error: _,
+                                response_meta: _,
+                            }) = &m.details
+                            {
+                                if let Some(res) = result {
+                                    collated_results.push(res.clone());
+                                }
+                            }
                         }
                     }
-                }
-                ChainResponse::Ok(Messages::Response(QueryResponse::just_result(
-                    Value::FragmentedResponese(collated_results),
-                )))
-            }
-        } else {
-            Err(anyhow!("expected a query for the scatter"))
+                    Message::new_response(
+                        QueryResponse::just_result(Value::FragmentedResponese(collated_results)),
+                        true,
+                        RawFrame::NONE,
+                    )
+                })
+                .rev()
+                .collect_vec();
+
+            ChainResponse::Ok(Messages {
+                messages: collated_response,
+            })
         }
     }
 

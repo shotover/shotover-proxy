@@ -46,8 +46,8 @@ tracing-appender = "0.1.1"
 
 # Transform dependencies
 #redis = {version = "0.15.1", features = ["tokio-rt-core", "cluster"]}
-redis = {git = "https://github.com/benbromhead/redis-rs", branch = "cluster-async", features = ["tokio-rt-core", "cluster"]}
-#redis = {path = "/home/ben/git/redis-rs", features = ["tokio-rt-core", "cluster"]}
+#redis = {git = "https://github.com/benbromhead/redis-rs", branch = "cluster-async", features = ["tokio-rt-core", "cluster"]}
+redis = {path = "/home/ben/git/redis-rs", features = ["tokio-rt-core", "cluster"]}
 redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "changes" }
 #cdrs = { version = "2" }
 cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}

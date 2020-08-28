@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Messages, QueryMessage, QueryResponse};
+use crate::message::{Message, Messages, QueryMessage, QueryResponse};
 use crate::transforms::chain::{Transform, TransformChain, Wrapper};
 use crate::transforms::{Transforms, TransformsFromConfig};
 
@@ -67,43 +67,37 @@ impl Transform for LuaFilterTransform {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let chain_count = qd.next_transform;
         let globals = self.slua.globals();
-        if let Messages::Query(qm) = &mut qd.message {
-            let qm_v = mlua_serde::to_value(&self.slua, qm.clone()).unwrap();
-            let result = self.slua.scope(|scope| {
-                let spawn_func = scope.create_function(
-                    |_lua: &Lua, qm: QueryMessage| -> mlua::Result<Messages> {
-                        //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
-                        tokio::runtime::Handle::current().block_on(async move {
-                            let w =
-                                Wrapper::new_with_next_transform(Messages::Query(qm), chain_count);
-                            return Ok(temp_transform(w, t).await.map_err(|_e| {
-                                mlua::Error::RuntimeError(
-                                    "help!!@! - - TODO implement From anyhow to mlua errors"
-                                        .to_string(),
-                                )
-                            })?);
-                        })
-                    },
-                )?;
-                globals.set("call_next_transform", spawn_func)?;
-                let func = scope.create_function(
-                    |lua: &Lua, _qm: QueryMessage| -> mlua::Result<Messages> {
-                        let value = lua
-                            .load(self.function_name.clone().as_str())
-                            .set_name("fnc")?
-                            .eval()?;
-                        let result: QueryResponse = mlua_serde::from_value(value)?;
-                        Ok(Messages::Response(result))
-                    },
-                )?;
-                func.call(qm_v)
-            });
-            result
-                .map_err(|e| anyhow!("uh oh lua broke {}", e))
-                .map(Messages::Response)
-        } else {
-            Err(anyhow!("expected a request"))
-        }
+        let qm_v = mlua_serde::to_value(&self.slua, qd.message.clone()).unwrap();
+        let result = self.slua.scope(|scope| {
+            let spawn_func = scope.create_function(
+                |_lua: &Lua, messages: Messages| -> mlua::Result<Messages> {
+                    //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
+                    tokio::runtime::Handle::current().block_on(async move {
+                        let w = Wrapper::new_with_next_transform(messages, chain_count);
+                        return Ok(temp_transform(w, t).await.map_err(|_e| {
+                            mlua::Error::RuntimeError(
+                                "help!!@! - - TODO implement From anyhow to mlua errors"
+                                    .to_string(),
+                            )
+                        })?);
+                    })
+                },
+            )?;
+            globals.set("call_next_transform", spawn_func)?;
+            let func = scope.create_function(
+                |lua: &Lua, _qm: QueryMessage| -> mlua::Result<Messages> {
+                    let value = lua
+                        .load(self.function_name.clone().as_str())
+                        .set_name("fnc")?
+                        .eval()?;
+                    let result: Vec<Message> = mlua_serde::from_value(value)?;
+                    let a = Messages { messages: result };
+                    Ok(a)
+                },
+            )?;
+            func.call(qm_v)
+        });
+        result.map_err(|e| anyhow!("uh oh lua broke {}", e))
     }
 
     fn get_name(&self) -> &'static str {
@@ -116,7 +110,7 @@ mod lua_transform_tests {
     use std::error::Error;
 
     use crate::config::topology::TopicHolder;
-    use crate::message::{Messages, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
     use crate::transforms::chain::{Transform, TransformChain, Wrapper};
     use crate::transforms::lua::LuaConfig;
@@ -143,16 +137,19 @@ return call_next_transform(qm)
             function_name: "".to_string(),
         };
 
-        let wrapper = Wrapper::new(Messages::Query(QueryMessage {
-            original: RawFrame::NONE,
-            query_string: "".to_string(),
-            namespace: vec![String::from("keyspace"), String::from("old")],
-            primary_key: Default::default(),
-            query_values: None,
-            projection: None,
-            query_type: QueryType::Read,
-            ast: None,
-        }));
+        let wrapper = Wrapper::new(Messages::new_single_query(
+            QueryMessage {
+                query_string: "".to_string(),
+                namespace: vec![String::from("keyspace"), String::from("old")],
+                primary_key: Default::default(),
+                query_values: None,
+                projection: None,
+                query_type: QueryType::Read,
+                ast: None,
+            },
+            true,
+            RawFrame::NONE,
+        ));
 
         let transforms: Vec<Transforms> = vec![
             Transforms::Printer(Printer::new()),
@@ -169,27 +166,25 @@ return call_next_transform(qm)
         if let Transforms::Lua(lua) = lua_t.get_source(&t_holder).await? {
             let result = lua.transform(wrapper, &chain).await;
             if let Ok(m) = result {
-                if let Messages::Response(QueryResponse {
+                if let MessageDetails::Response(QueryResponse {
                     matching_query: Some(oq),
-                    original: _,
                     result: _,
                     error: _,
                     response_meta: _,
-                }) = &m
+                }) = &m.messages.get(0).unwrap().details
                 {
                     assert_eq!(oq.namespace.get(0).unwrap(), "aaaaaaaaaa");
                 } else {
                     panic!()
                 }
-                if let Messages::Response(QueryResponse {
+                if let MessageDetails::Response(QueryResponse {
                     matching_query: _,
-                    original: _,
                     result: Some(x),
                     error: _,
                     response_meta: _,
-                }) = m
+                }) = &m.messages.get(0).unwrap().details
                 {
-                    assert_eq!(x, Value::Integer(42));
+                    assert_eq!(*x, Value::Integer(42));
                 } else {
                     panic!()
                 }

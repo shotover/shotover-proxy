@@ -41,7 +41,6 @@ pub mod noop;
 pub mod null;
 pub mod printer;
 pub mod protect;
-pub mod query;
 pub mod redis_transforms;
 pub mod route;
 pub mod scatter;

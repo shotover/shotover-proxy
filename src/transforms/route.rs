@@ -15,7 +15,7 @@ use std::collections::HashMap;
 pub struct Route {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
-    route_script: ScriptHolder<(QueryMessage, Vec<String>), String>,
+    route_script: ScriptHolder<(Messages, Vec<String>), String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -46,21 +46,17 @@ impl TransformsFromConfig for RouteConfig {
 #[async_trait]
 impl Transform for Route {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        if let Messages::Query(qm) = &qd.message {
-            let routes: Vec<String> = self.route_map.keys().cloned().collect();
-            let chosen_route = self
-                .route_script
-                .call(&t.lua_runtime, (qm.clone(), routes))?;
-            qd.reset();
-            return self
-                .route_map
-                .get(chosen_route.as_str())
-                .unwrap()
-                .process_request(qd, self.get_name().to_string())
-                .await;
-        }
-
-        self.call_next_transform(qd, t).await
+        let routes: Vec<String> = self.route_map.keys().cloned().collect();
+        let chosen_route = self
+            .route_script
+            .call(&t.lua_runtime, (qd.message.clone(), routes))?;
+        qd.reset();
+        return self
+            .route_map
+            .get(chosen_route.as_str())
+            .unwrap()
+            .process_request(qd, self.get_name().to_string())
+            .await;
     }
 
     fn get_name(&self) -> &'static str {
