@@ -28,11 +28,11 @@ use crate::transforms::redis_transforms::redis_codec_destination::{
     RedisCodecConfiguration, RedisCodecDestination,
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::route::{Route, RouteConfig};
-use crate::transforms::scatter::{Scatter, ScatterConfig};
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
 use core::fmt::Display;
 use core::num::Wrapping;
+use distributed::route::{Route, RouteConfig};
+use distributed::scatter::{Scatter, ScatterConfig};
 use mlua::UserData;
 
 pub mod cassandra_codec_destination;
@@ -46,8 +46,6 @@ pub mod null;
 pub mod printer;
 pub mod protect;
 pub mod redis_transforms;
-pub mod route;
-pub mod scatter;
 pub mod test_transforms;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
