@@ -652,25 +652,6 @@ fn test_cluster_script() {
     assert_eq!(rv, Ok(("1".to_string(), "2".to_string())));
 }
 
-#[allow(dead_code)]
-fn test_cluster_pipeline() {
-    let ctx = TestContext::new();
-    let mut con = ctx.connection();
-
-    let err = redis::pipe()
-        .cmd("SET")
-        .arg("key_1")
-        .arg(42)
-        .ignore()
-        .query::<()>(&mut con)
-        .unwrap_err();
-
-    assert_eq!(
-        err.to_string(),
-        "This connection does not support pipelining."
-    );
-}
-
 #[test]
 fn test_pass_through() -> Result<()> {
     let _subscriber = tracing_subscriber::fmt()
@@ -797,7 +778,7 @@ fn test_pass_redis_cluster_one() -> Result<()> {
         .try_init();
 
     // test_args()test_args;
-    test_cluster_script();
+    test_cluster_script(); //TODO: script does not seem to be loading in the server?
 
     Ok(())
 }
@@ -934,8 +915,7 @@ fn run_all_cluster_safe(config: String) -> Result<()> {
 
     test_cluster_basics();
     test_cluster_eval();
-    // test_cluster_script(); //TODO: script does not seem to be loading in the server?
-    // test_cluster_pipeline(); // we do support pipelining!!
+    test_cluster_script(); //TODO: script does not seem to be loading in the server?
     test_getset();
     test_incr();
     // test_info();
@@ -956,7 +936,7 @@ fn run_all_cluster_safe(config: String) -> Result<()> {
     test_pipeline_reuse_query_clear();
     // test_real_transaction();
     // test_real_transaction_highlevel();
-    // test_script();
+    test_script();
     test_tuple_args();
     // test_nice_api();
     // test_auto_m_versions();

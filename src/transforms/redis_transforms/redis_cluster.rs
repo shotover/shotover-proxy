@@ -193,7 +193,7 @@ impl Transform for RedisCluster {
         if let Some(connection) = lock.deref_mut() {
             let result: RedisResult<Vec<Value>> = if pipe.len() == 1 {
                 let cmd = pipe.pop().unwrap();
-                RedisResult::Ok(vec![cmd.query_async(connection).await?])
+                cmd.query_async(connection).await.map(|r| vec![r])
             } else {
                 pipe.query_async(connection).await
             };
