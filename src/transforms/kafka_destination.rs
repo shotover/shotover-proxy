@@ -11,8 +11,8 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::RawFrame;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Clone)]
 pub struct KafkaDestination {

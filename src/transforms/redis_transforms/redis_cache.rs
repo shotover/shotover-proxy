@@ -1,18 +1,18 @@
 use crate::message::{ASTHolder, Message, MessageDetails, Messages, QueryResponse};
-use redis::{pipe, AsyncCommands, RedisFuture, RedisResult};
+use redis::{pipe, AsyncCommands, RedisResult};
 use sqlparser::ast::Statement::*;
 use std::collections::HashMap;
 use std::iter::Iterator;
 
 use crate::message::Value as MValue;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use std::borrow::Borrow;
 
 use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use async_trait::async_trait;
 
 use tracing::trace;
@@ -84,12 +84,15 @@ impl Transform for SimpleRedisCache {
         let mut responses = Messages::new();
         let next_transform = qd.next_transform.clone();
         for message in &qd.message.messages {
-            let wrapped_message = Wrapper::new_with_next_transform(Messages::new_from_message(message.clone()), next_transform);
+            let wrapped_message = Wrapper::new_with_next_transform(
+                Messages::new_from_message(message.clone()),
+                next_transform,
+            );
             if let MessageDetails::Query(qm) = &message.details {
                 if qm.primary_key.is_empty() {
                     responses
                         .messages
-                        .append(&mut self.call_next_transform(wrapped_message, t).await?.messages);
+                        .append(&mut t.call_next_transform(wrapped_message).await?.messages);
                 } else {
                     if let Some(ASTHolder::SQL(ast)) = &qm.ast {
                         match ast {
@@ -131,9 +134,9 @@ impl Transform for SimpleRedisCache {
                                         ));
                                     }
                                 } else {
-                                    responses
-                                        .messages
-                                        .append(&mut self.call_next_transform(wrapped_message, t).await?.messages);
+                                    responses.messages.append(
+                                        &mut t.call_next_transform(wrapped_message).await?.messages,
+                                    );
                                 }
                             }
 
@@ -165,17 +168,22 @@ impl Transform for SimpleRedisCache {
                                 if let Some(pk) = qm.get_namespaced_primary_key() {
                                     if let Some(value_map) = qm.query_values.borrow() {
                                         for (k, v) in value_map {
-                                            insert_values
-                                                .push((k.clone(), serde_json::to_string(&v).unwrap()));
+                                            insert_values.push((
+                                                k.clone(),
+                                                serde_json::to_string(&v).unwrap(),
+                                            ));
                                         }
 
                                         let mut client_copy = self.con.clone();
 
                                         //TODO: something something what happens if hset fails.
-                                        let (cache_update, chain_r) : (RedisResult<()>, ChainResponse) = tokio::join!(
-                                        client_copy.hset_multiple(pk, insert_values.as_slice()),
-                                        self.call_next_transform(wrapped_message, t)
-                                    );
+                                        let (cache_update, chain_r): (
+                                            RedisResult<()>,
+                                            ChainResponse,
+                                        ) = tokio::join!(
+                                            client_copy.hset_multiple(pk, insert_values.as_slice()),
+                                            t.call_next_transform(wrapped_message)
+                                        );
 
                                         responses.messages.append(&mut chain_r?.messages);
 
@@ -188,11 +196,10 @@ impl Transform for SimpleRedisCache {
                                         }
                                     }
                                 } else {
-                                    responses
-                                        .messages
-                                        .append(&mut self.call_next_transform(wrapped_message, t).await?.messages);
+                                    responses.messages.append(
+                                        &mut t.call_next_transform(wrapped_message).await?.messages,
+                                    );
                                 }
-
                             }
                             Update {
                                 table_name: _,
@@ -204,18 +211,23 @@ impl Transform for SimpleRedisCache {
                                 if let Some(pk) = qm.get_namespaced_primary_key() {
                                     if let Some(value_map) = qm.query_values.borrow() {
                                         for (k, v) in value_map {
-                                            insert_values
-                                                .push((k.clone(), serde_json::to_string(&v).unwrap()));
+                                            insert_values.push((
+                                                k.clone(),
+                                                serde_json::to_string(&v).unwrap(),
+                                            ));
                                         }
 
                                         let mut client_copy = self.con.clone();
 
                                         //TODO: something something what happens if hset fails.
 
-                                        let (cache_update, chain_r) : (RedisResult<()>, ChainResponse) = tokio::join!(
-                                        client_copy.hset_multiple(pk, insert_values.as_slice()),
-                                        self.call_next_transform(wrapped_message, t)
-                                    );
+                                        let (cache_update, chain_r): (
+                                            RedisResult<()>,
+                                            ChainResponse,
+                                        ) = tokio::join!(
+                                            client_copy.hset_multiple(pk, insert_values.as_slice()),
+                                            t.call_next_transform(wrapped_message)
+                                        );
 
                                         // TODO: We update the cache asynchronously - currently errors on cache update are ignored
                                         responses.messages.append(&mut chain_r?.messages);
@@ -227,9 +239,9 @@ impl Transform for SimpleRedisCache {
                                         }
                                     }
                                 } else {
-                                    responses
-                                        .messages
-                                        .append(&mut self.call_next_transform(wrapped_message, t).await?.messages);
+                                    responses.messages.append(
+                                        &mut t.call_next_transform(wrapped_message).await?.messages,
+                                    );
                                 }
                             }
                             Delete {
@@ -245,11 +257,13 @@ impl Transform for SimpleRedisCache {
 
                                         let mut client_copy = self.con.clone();
 
-
-                                        let (cache_update, chain_r) : (RedisResult<Vec<i32>>, ChainResponse) = tokio::join!(
-                                        p.query_async(&mut client_copy),
-                                        self.call_next_transform(wrapped_message, t)
-                                    );
+                                        let (cache_update, chain_r): (
+                                            RedisResult<Vec<i32>>,
+                                            ChainResponse,
+                                        ) = tokio::join!(
+                                            p.query_async(&mut client_copy),
+                                            t.call_next_transform(wrapped_message)
+                                        );
 
                                         // TODO: We update the cache asynchronously - currently errors on cache update are ignored
                                         responses.messages.append(&mut chain_r?.messages);
@@ -261,9 +275,9 @@ impl Transform for SimpleRedisCache {
                                         }
                                     }
                                 } else {
-                                    responses
-                                        .messages
-                                        .append(&mut self.call_next_transform(wrapped_message, t).await?.messages);
+                                    responses.messages.append(
+                                        &mut t.call_next_transform(wrapped_message).await?.messages,
+                                    );
                                 }
                             }
                             _ => {}
@@ -271,7 +285,7 @@ impl Transform for SimpleRedisCache {
                     } else {
                         responses
                             .messages
-                            .append(&mut self.call_next_transform(wrapped_message, t).await?.messages);
+                            .append(&mut t.call_next_transform(wrapped_message).await?.messages);
                     }
                 }
             }

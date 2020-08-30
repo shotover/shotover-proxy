@@ -1,10 +1,11 @@
-use crate::transforms::chain::{TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::TopicHolder;
 use crate::message::Messages;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
+use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

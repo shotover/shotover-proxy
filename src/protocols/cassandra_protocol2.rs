@@ -19,7 +19,7 @@ use std::str::FromStr;
 use tracing::trace;
 use tracing::warn;
 
-use crate::message::{Messages, QueryType, RawMessage};
+use crate::message::{Messages, QueryType};
 use crate::protocols::RawFrame;
 use cassandra_proto::frame::frame_response::ResponseBody;
 use chrono::DateTime;
@@ -694,7 +694,7 @@ impl Encoder<Messages> for CassandraCodec2 {
 
 #[cfg(test)]
 mod cassandra_protocol_tests {
-    use crate::message::{ASTHolder, Message, MessageDetails, Messages, QueryMessage};
+    use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use anyhow::{anyhow, Result};
     use bytes::BytesMut;
@@ -846,6 +846,7 @@ mod cassandra_protocol_tests {
                     }
                 })
                 .collect();
+            assert_eq!(true, answer.is_ok());
         } else {
             panic!("Could not decode frame");
         }

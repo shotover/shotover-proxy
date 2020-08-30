@@ -1,11 +1,11 @@
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Sender;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::RawFrame;
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::TryFutureExt;
@@ -107,7 +107,7 @@ impl Transform for AsyncMpscTee {
                 e
             })
             .await?;
-        self.call_next_transform(qd, t).await
+        t.call_next_transform(qd).await
     }
 
     fn get_name(&self) -> &'static str {

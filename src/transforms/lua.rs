@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages, QueryMessage, QueryResponse};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::message::{Message, Messages, QueryMessage};
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 pub struct LuaFilterTransform {
     name: &'static str,
@@ -53,18 +53,13 @@ impl TransformsFromConfig for LuaConfig {
     }
 }
 
-async fn temp_transform(mut qd: Wrapper, transforms: &TransformChain) -> ChainResponse {
-    let next = qd.next_transform;
-    qd.next_transform += 1;
-    match transforms.chain.get(next) {
-        Some(t) => t.instrument_transform(qd, transforms).await,
-        None => Err(anyhow!("No more transforms left in the chain".to_string())),
-    }
+async fn temp_transform(qd: Wrapper, transforms: &TransformChain) -> ChainResponse {
+    transforms.call_next_transform(qd).await
 }
 
 #[async_trait]
 impl Transform for LuaFilterTransform {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let chain_count = qd.next_transform;
         let globals = self.slua.globals();
         let qm_v = mlua_serde::to_value(&self.slua, qd.message.clone()).unwrap();
@@ -112,11 +107,11 @@ mod lua_transform_tests {
     use crate::config::topology::TopicHolder;
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
-    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::TransformChain;
     use crate::transforms::lua::LuaConfig;
     use crate::transforms::null::Null;
     use crate::transforms::printer::Printer;
-    use crate::transforms::{Transforms, TransformsFromConfig};
+    use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}

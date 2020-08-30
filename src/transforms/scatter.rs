@@ -1,12 +1,12 @@
 use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value};
+use crate::message::{Message, MessageDetails, Messages, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -14,6 +14,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -52,9 +53,11 @@ impl TransformsFromConfig for ScatterConfig {
 impl Transform for Scatter {
     async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let routes: Vec<String> = self.route_map.keys().cloned().collect();
+        let rt = t.lua_runtime.lock().await;
+
         let chosen_route = self
             .route_script
-            .call(&t.lua_runtime, (qd.message.clone(), routes))?;
+            .call(rt.borrow(), (qd.message.clone(), routes))?;
         if chosen_route.len() == 1 {
             self.route_map
                 .get(chosen_route.get(0).unwrap().as_str())
@@ -79,9 +82,9 @@ impl Transform for Scatter {
 
             let collated_response: Vec<Message> = (0..qd.message.messages.len())
                 .into_iter()
-                .map(|i| {
+                .map(|_i| {
                     let mut collated_results = vec![];
-                    for mut res in &mut results {
+                    for res in &mut results {
                         if let Some(m) = res.messages.pop() {
                             if let MessageDetails::Response(QueryResponse {
                                 matching_query: _,
@@ -116,7 +119,8 @@ impl Transform for Scatter {
     }
 
     async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
-        self.route_script.prep_lua_runtime(&t.lua_runtime)?;
+        let rt = t.lua_runtime.lock().await;
+        self.route_script.prep_lua_runtime(rt.borrow())?;
         Ok(())
     }
 }

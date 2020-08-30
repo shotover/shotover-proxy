@@ -17,10 +17,10 @@ use tracing::warn;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Messages, QueryMessage};
+use crate::message::Messages;
 use crate::protocols::redis_codec::RedisCodec;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {

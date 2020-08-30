@@ -142,7 +142,7 @@ impl Messages {
         Messages {
             messages: vec![Message::new(
                 MessageDetails::Response(QueryResponse::empty()),
-                false,
+                modified,
                 raw_frame,
             )],
         }

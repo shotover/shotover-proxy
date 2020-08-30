@@ -1,13 +1,13 @@
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
-use crate::message::{Messages, QueryMessage};
+use crate::message::Messages;
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use futures::{FutureExt, SinkExt};
 use std::collections::HashMap;
 use std::sync::Arc;

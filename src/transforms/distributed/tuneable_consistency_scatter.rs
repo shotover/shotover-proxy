@@ -16,9 +16,9 @@ use crate::message::{
     Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
 };
 use crate::protocols::RawFrame;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
 
 #[derive(Clone)]
@@ -213,9 +213,9 @@ impl Transform for TuneableConsistency {
         } else {
             let mut collated_response: Vec<Message> = required_successes
                 .into_iter()
-                .filter_map(|required_successes| {
+                .filter_map(|_required_successes| {
                     let mut collated_results = vec![];
-                    for mut res in &mut results {
+                    for res in &mut results {
                         if let Some(m) = res.messages.pop() {
                             if let MessageDetails::Response(qm) = &m.details {
                                 collated_results.push(qm.clone());
@@ -249,22 +249,24 @@ mod scatter_transform_tests {
     use crate::config::topology::TopicHolder;
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
-    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::TransformChain;
     use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::Transforms;
+    use crate::transforms::{Transform, Transforms, Wrapper};
 
     fn check_ok_responses(
         mut message: Messages,
         expected_ok: &Value,
-        expected_count: usize,
+        _expected_count: usize,
     ) -> Result<()> {
+        let foo = message.messages.pop().unwrap().details;
+        println!("{:?}", foo);
         return if let MessageDetails::Response(QueryResponse {
             matching_query: _,
             result: Some(r),
             error: _,
             response_meta: _,
-        }) = message.messages.pop().unwrap().details
+        }) = foo
         {
             assert_eq!(expected_ok, &r);
             Ok(())
@@ -276,7 +278,7 @@ mod scatter_transform_tests {
     fn check_err_responses(
         mut message: Messages,
         expected_err: &Value,
-        expected_count: usize,
+        _expected_count: usize,
     ) -> Result<()> {
         return if let MessageDetails::Response(QueryResponse {
             matching_query: _,
@@ -356,19 +358,19 @@ mod scatter_transform_tests {
             route_map: two_of_three,
             write_consistency: 2,
             read_consistency: 2,
-            timeout: 500, //todo this timeout needs to be longer for the initial connection...
+            timeout: 5000, //todo this timeout needs to be longer for the initial connection...
             count: 0,
         });
 
         let expected_ok = Value::Strings("OK".to_string());
 
-        check_ok_responses(
-            tuneable_success_consistency
-                .transform(wrapper.clone(), &dummy_chain)
-                .await?,
-            &expected_ok,
-            2,
-        )?;
+        let test = tuneable_success_consistency
+            .transform(wrapper.clone(), &dummy_chain)
+            .await;
+
+        println!("{:?}", test);
+
+        check_ok_responses(test?, &expected_ok, 2)?;
 
         let mut one_of_three = Vec::new();
         one_of_three.push(TransformChain::new(

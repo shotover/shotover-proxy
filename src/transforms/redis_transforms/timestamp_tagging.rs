@@ -1,18 +1,14 @@
 use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
-use crate::message::{
-    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value,
-};
-use crate::protocols::RawFrame;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
@@ -166,7 +162,7 @@ impl Transform for RedisTimestampTagger {
             }
         }
 
-        let mut response = self.call_next_transform(qd, t).await;
+        let response = t.call_next_transform(qd).await;
         debug!("tagging transform got {:?}", response);
         if let Ok(mut messages) = response {
             if tagged_success || exec_block {

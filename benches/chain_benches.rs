@@ -5,10 +5,10 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use shotover_proxy::config::topology::TopicHolder;
 use shotover_proxy::message::{Messages, QueryMessage, QueryType};
 use shotover_proxy::protocols::RawFrame;
-use shotover_proxy::transforms::chain::{TransformChain, Wrapper};
+use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::lua::LuaConfig;
 use shotover_proxy::transforms::null::Null;
-use shotover_proxy::transforms::{Transforms, TransformsFromConfig};
+use shotover_proxy::transforms::{Transforms, TransformsFromConfig, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new_without_request())];

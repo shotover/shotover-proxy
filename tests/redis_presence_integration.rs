@@ -1,5 +1,5 @@
 use anyhow::Result;
-use redis::{Commands, Connection, FromRedisValue, RedisResult};
+use redis::{Commands, Connection, RedisResult};
 use shotover_proxy::config::topology::Topology;
 use std::{thread, time};
 use tokio::task::JoinHandle;

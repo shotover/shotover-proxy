@@ -8,7 +8,7 @@ use crate::message::{
     ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value,
 };
 use crate::protocols::RawFrame;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use futures::stream::{self, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection};
@@ -17,7 +17,7 @@ use redis::RedisResult;
 
 use tracing::{debug, trace};
 
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -94,8 +94,8 @@ impl Transform for RedisCluster {
 
             if let Some(Message {
                 details: MessageDetails::Query(qm),
-                modified,
-                original,
+                modified: _,
+                original: _,
             }) = &qd.message.messages.get(0)
             {
                 if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast.clone() {

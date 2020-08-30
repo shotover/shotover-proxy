@@ -15,10 +15,10 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Value;
 use crate::message::Value::Rows;
-use crate::message::{Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::message::{MessageDetails, QueryMessage, QueryResponse, QueryType};
+use crate::transforms::chain::TransformChain;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 mod aws_kms;
 mod key_management;
@@ -190,7 +190,7 @@ impl Transform for Protect {
             }
         }
 
-        let mut result = self.call_next_transform(qd.clone(), t).await?;
+        let mut result = t.call_next_transform(qd.clone()).await?;
 
         for (response, request) in result
             .messages
@@ -281,12 +281,12 @@ mod protect_transform_tests {
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;
-    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::TransformChain;
     use crate::transforms::null::Null;
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::{Transforms, TransformsFromConfig};
+    use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
     #[tokio::test(threaded_scheduler)]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {

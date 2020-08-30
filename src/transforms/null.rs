@@ -1,8 +1,9 @@
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::RawFrame;
+use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
 use itertools::Itertools;
 
