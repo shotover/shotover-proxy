@@ -1,5 +1,5 @@
 use crate::message::{
-    ASTHolder, Message, QueryMessage, QueryResponse, QueryType, RawMessage, Value,
+    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
 };
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
@@ -8,8 +8,7 @@ use itertools::Itertools;
 use redis_protocol::prelude::*;
 use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::info;
-use tracing::trace;
+use tracing::{info, trace, warn};
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
@@ -100,7 +99,34 @@ fn get_key_values(
     Ok(())
 }
 
+fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
+    if let RawFrame::Redis(frame) = rf {
+        Ok(frame)
+    } else {
+        warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
+        return Err(anyhow!("Unsupported frame found, not sending"));
+    }
+}
+
 impl RedisCodec {
+    fn encode_message(&mut self, item: Message) -> Result<Frame> {
+        let frame = if !item.modified {
+            get_redis_frame(item.original)?
+        } else {
+            match item.details {
+                MessageDetails::Bypass(message) => self.encode_message(Message {
+                    details: *message,
+                    modified: item.modified,
+                    original: item.original,
+                })?,
+                MessageDetails::Query(qm) => RedisCodec::build_redis_query_frame(qm),
+                MessageDetails::Response(qr) => RedisCodec::build_redis_response_frame(qr),
+                MessageDetails::Unknown => get_redis_frame(item.original)?,
+            }
+        };
+        Ok(frame)
+    }
+
     pub fn new(decode_as_response: bool, batch_hint: usize) -> RedisCodec {
         RedisCodec {
             decode_as_response,
@@ -374,135 +400,165 @@ impl RedisCodec {
                     } // merge N HyperLogLogs into a single one
                     _ => {}
                 }
-                return Ok(Message::Query(QueryMessage {
-                    original: RawFrame::Redis(frame),
-                    query_string,
-                    namespace: vec![],
-                    primary_key: keys_map,
-                    query_values: Some(values_map),
-                    projection: None,
-                    query_type,
-                    ast: Some(ast),
-                }));
+                return Ok(Message::new_query(
+                    QueryMessage {
+                        query_string,
+                        namespace: vec![],
+                        primary_key: keys_map,
+                        query_values: Some(values_map),
+                        projection: None,
+                        query_type,
+                        ast: Some(ast),
+                    },
+                    false,
+                    RawFrame::Redis(frame),
+                ));
             }
         } else {
-            return Ok(Message::Response(QueryResponse {
-                matching_query: None,
-                original: RawFrame::Redis(frame),
-                result: Some(Value::List(
-                    commands_vec.iter().map(|f| f.into()).collect_vec(),
-                )),
-                error: None,
-                response_meta: None,
-            }));
+            return Ok(Message::new_response(
+                QueryResponse {
+                    matching_query: None,
+                    result: Some(Value::List(
+                        commands_vec.iter().map(|f| f.into()).collect_vec(),
+                    )),
+                    error: None,
+                    response_meta: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            ));
         }
-        Ok(Message::Bypass(RawMessage {
-            original: RawFrame::Redis(frame),
-        }))
+        Ok(Message::new_bypass(RawFrame::Redis(frame)))
     }
 
     fn handle_redis_string(&self, string: String, frame: Frame) -> Message {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
-                matching_query: None,
-                original: RawFrame::Redis(frame),
-                result: Some(Value::Strings(string)),
-                error: None,
-                response_meta: None,
-            })
+            Message::new_response(
+                QueryResponse {
+                    matching_query: None,
+                    result: Some(Value::Strings(string)),
+                    error: None,
+                    response_meta: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         } else {
-            Message::Query(QueryMessage {
-                original: RawFrame::Redis(frame),
-                query_string: string,
-                namespace: vec![],
-                primary_key: Default::default(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Read,
-                ast: None,
-            })
+            Message::new_query(
+                QueryMessage {
+                    query_string: string,
+                    namespace: vec![],
+                    primary_key: Default::default(),
+                    query_values: None,
+                    projection: None,
+                    query_type: QueryType::Read,
+                    ast: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         }
     }
 
     fn handle_redis_bulkstring(&self, bulkstring: Vec<u8>, frame: Frame) -> Message {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
-                matching_query: None,
-                original: RawFrame::Redis(frame),
-                result: Some(Value::Bytes(Bytes::from(bulkstring))),
-                error: None,
-                response_meta: None,
-            })
+            Message::new_response(
+                QueryResponse {
+                    matching_query: None,
+                    result: Some(Value::Bytes(Bytes::from(bulkstring))),
+                    error: None,
+                    response_meta: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         } else {
-            Message::Query(QueryMessage {
-                original: RawFrame::Redis(frame),
-                query_string: unsafe { String::from_utf8_unchecked(bulkstring) },
-                namespace: vec![],
-                primary_key: Default::default(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Read,
-                ast: None,
-            })
+            Message::new_query(
+                QueryMessage {
+                    query_string: unsafe { String::from_utf8_unchecked(bulkstring) },
+                    namespace: vec![],
+                    primary_key: Default::default(),
+                    query_values: None,
+                    projection: None,
+                    query_type: QueryType::Read,
+                    ast: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         }
     }
 
     fn handle_redis_integer(&self, integer: i64, frame: Frame) -> Message {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
-                matching_query: None,
-                original: RawFrame::Redis(frame),
-                result: Some(Value::Integer(integer)),
-                error: None,
-                response_meta: None,
-            })
+            Message::new_response(
+                QueryResponse {
+                    matching_query: None,
+                    result: Some(Value::Integer(integer)),
+                    error: None,
+                    response_meta: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         } else {
-            Message::Query(QueryMessage {
-                original: RawFrame::Redis(frame),
-                query_string: format!("{}", integer),
-                namespace: vec![],
-                primary_key: Default::default(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Read,
-                ast: None,
-            })
+            Message::new_query(
+                QueryMessage {
+                    query_string: format!("{}", integer),
+                    namespace: vec![],
+                    primary_key: Default::default(),
+                    query_values: None,
+                    projection: None,
+                    query_type: QueryType::Read,
+                    ast: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         }
     }
 
     fn handle_redis_error(&self, error: String, frame: Frame) -> Message {
         if self.decode_as_response {
-            Message::Response(QueryResponse {
-                matching_query: None,
-                original: RawFrame::Redis(frame),
-                result: None,
-                error: Some(Value::Strings(error)),
-                response_meta: None,
-            })
+            Message::new_response(
+                QueryResponse {
+                    matching_query: None,
+                    result: None,
+                    error: Some(Value::Strings(error)),
+                    response_meta: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         } else {
-            Message::Query(QueryMessage {
-                original: RawFrame::Redis(frame),
-                query_string: error,
-                namespace: vec![],
-                primary_key: Default::default(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Read,
-                ast: None,
-            })
+            Message::new_query(
+                QueryMessage {
+                    query_string: error,
+                    namespace: vec![],
+                    primary_key: Default::default(),
+                    query_values: None,
+                    projection: None,
+                    query_type: QueryType::Read,
+                    ast: None,
+                },
+                false,
+                RawFrame::Redis(frame),
+            )
         }
     }
 
-    pub fn process_redis_bulk(&self, mut frames: Vec<Frame>) -> Result<Message> {
+    pub fn process_redis_bulk(&self, mut frames: Vec<Frame>) -> Result<Messages> {
         trace!("processing bulk response {:?}", frames);
         if frames.len() == 1 {
-            self.process_redis_frame(frames.remove(0))
+            Ok(Messages::new_from_message(
+                self.process_redis_frame(frames.remove(0))?,
+            ))
         } else {
-            let result: Result<Vec<Message>> = frames
+            let result: Result<Messages> = frames
                 .into_iter()
                 .map(|f| self.process_redis_frame(f))
                 .collect();
-            Ok(Message::Bulk(result?))
+            result
         }
     }
 
@@ -511,20 +567,23 @@ impl RedisCodec {
             if let Ok((channel, message, kind)) = frame.parse_as_pubsub() {
                 let mut map: HashMap<String, Value> = HashMap::new();
                 map.insert(channel.clone(), Value::Strings(message.clone()));
-                Ok(Message::Query(QueryMessage {
-                    original: RawFrame::Redis(Frame::Array(vec![
+                Ok(Message::new(
+                    MessageDetails::Query(QueryMessage {
+                        query_string: "".to_string(),
+                        namespace: vec![channel.clone()],
+                        primary_key: Default::default(),
+                        query_values: Some(map),
+                        projection: None,
+                        query_type: QueryType::PubSubMessage,
+                        ast: None,
+                    }),
+                    false,
+                    RawFrame::Redis(Frame::Array(vec![
                         Frame::SimpleString(channel.clone()),
                         Frame::SimpleString(message),
                         Frame::SimpleString(kind),
                     ])),
-                    query_string: "".to_string(),
-                    namespace: vec![channel],
-                    primary_key: Default::default(),
-                    query_values: Some(map),
-                    projection: None,
-                    query_type: QueryType::PubSubMessage,
-                    ast: None,
-                }))
+                ))
             } else {
                 Err(anyhow!("Was pubsub but couldn't parse frame"))
             }
@@ -537,9 +596,7 @@ impl RedisCodec {
                 Frame::Ask(a) => self.handle_redis_string(a, frame),
                 Frame::Integer(i) => self.handle_redis_integer(i, frame),
                 Frame::Error(s) => self.handle_redis_error(s, frame),
-                _ => Message::Bypass(RawMessage {
-                    original: RawFrame::Redis(frame),
-                }),
+                _ => Message::new_bypass(RawFrame::Redis(frame)),
             })
         }
     }
@@ -607,7 +664,7 @@ impl RedisCodec {
 }
 
 impl Decoder for RedisCodec {
-    type Item = Message;
+    type Item = Messages;
     type Error = anyhow::Error;
 
     fn decode(
@@ -621,67 +678,20 @@ impl Decoder for RedisCodec {
     }
 }
 
-impl Encoder<Message> for RedisCodec {
+impl Encoder<Messages> for RedisCodec {
     type Error = anyhow::Error;
 
     fn encode(
         &mut self,
-        item: Message,
+        item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        match item {
-            Message::Modified(modified_message) => {
-                match *modified_message {
-                    Message::Bypass(_) => {
-                        //TODO: throw error -> we should not be modifing a bypass message
-                    }
-                    Message::Query(q) => {
-                        return self.encode_raw(RedisCodec::build_redis_query_frame(q), dst);
-                    }
-                    Message::Response(r) => {
-                        return self.encode_raw(RedisCodec::build_redis_response_frame(r), dst);
-                    }
-                    Message::Modified(_) => {
-                        //TODO: throw error -> we should not have a nested modified message
-                    }
-                    Message::Bulk(messages) => {
-                        for message in messages {
-                            self.encode(message, dst)?
-                        }
-                        return Ok(());
-                    }
-                }
-            }
-
-            Message::Query(qm) => {
-                if let RawFrame::Redis(frame) = qm.original {
-                    return self.encode_raw(frame, dst);
-                } else {
-                    //TODO throw error
-                }
-            }
-            Message::Response(resp) => {
-                if let RawFrame::Redis(frame) = resp.original {
-                    return self.encode_raw(frame, dst);
-                } else {
-                    //TODO throw error
-                }
-            }
-            Message::Bypass(resp) => {
-                if let RawFrame::Redis(frame) = resp.original {
-                    return self.encode_raw(frame, dst);
-                } else {
-                    //TODO throw error
-                }
-            }
-            Message::Bulk(messages) => {
-                for message in messages {
-                    self.encode(message, dst)?
-                }
-                return Ok(());
-            }
-        }
-        Err(anyhow!("Could not process and send Redis Frame"))
+        item.into_iter()
+            .map(|m: Message| {
+                let frame = self.encode_message(m)?;
+                self.encode_raw(frame, dst)
+            })
+            .collect()
     }
 }
 

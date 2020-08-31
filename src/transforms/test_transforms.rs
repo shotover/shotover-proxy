@@ -1,16 +1,17 @@
-use crate::message::Message;
-use crate::transforms::chain::{Transform, Wrapper, TransformChain};
-use async_trait::async_trait;
 use crate::error::ChainResponse;
-use tokio::time::Duration;
-use rand::prelude::*;
-use rand_distr::{Normal};
+use crate::message::Messages;
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{Transform, Wrapper};
 use anyhow::anyhow;
+use async_trait::async_trait;
+use rand::prelude::*;
+use rand_distr::Normal;
+use tokio::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct ReturnerTransform {
-    pub message: Message,
-    pub ok: bool
+    pub message: Messages,
+    pub ok: bool,
 }
 
 #[async_trait]
@@ -31,7 +32,7 @@ impl Transform for ReturnerTransform {
 #[derive(Debug, Clone)]
 pub struct RandomDelayTransform {
     pub delay: u64,
-    pub distribution: Option<Normal<f64>>
+    pub distribution: Option<Normal<f64>>,
 }
 
 #[async_trait]
@@ -44,7 +45,7 @@ impl Transform for RandomDelayTransform {
             delay = Duration::from_millis(self.delay);
         }
         tokio::time::delay_for(delay).await;
-        self.call_next_transform(qd, t).await
+        t.call_next_transform(qd).await
     }
 
     fn get_name(&self) -> &'static str {

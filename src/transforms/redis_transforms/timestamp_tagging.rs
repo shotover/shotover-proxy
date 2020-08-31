@@ -1,9 +1,9 @@
 use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, Value};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -85,13 +85,12 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
     // redis.call('set','foo','bar')"
 }
 
-fn try_tag_query_message(qm: &QueryMessage) -> (bool, Message) {
-    let mut m = qm.clone();
+fn try_tag_query_message(qm: &mut QueryMessage) -> bool {
     if let Ok(wrapped) = wrap_command(qm) {
-        std::mem::swap(&mut m.ast, &mut Some(ASTHolder::Commands(wrapped)));
-        return (true, Message::Modified(Box::new(Message::Query(m))));
+        std::mem::swap(&mut qm.ast, &mut Some(ASTHolder::Commands(wrapped)));
+        return true;
     }
-    (false, Message::Query(m))
+    false
 }
 
 fn unwrap_response(qr: &mut QueryResponse) {
@@ -149,73 +148,34 @@ impl Transform for RedisTimestampTagger {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
         let mut tagged_success: bool = false;
         let mut exec_block: bool = false;
-        match &qd.message {
-            Message::Query(qm) => {
+
+        for message in qd.message.messages.iter_mut() {
+            if let MessageDetails::Query(ref mut qm) = message.details {
                 if let Some(a) = &qm.ast {
                     if a.get_command() == *"EXEC" {
                         exec_block = true;
                     }
                 }
 
-                let (tagged, message) = try_tag_query_message(qm);
-                qd.swap_message(message);
-                tagged_success = tagged;
+                let tagged = try_tag_query_message(qm);
+                tagged_success = tagged_success && tagged;
             }
-            Message::Modified(m) => {
-                if let Message::Query(ref qm) = **m {
-                    if let Some(a) = &qm.ast {
-                        if a.get_command() == *"EXEC" {
-                            exec_block = true;
-                        }
-                    }
-
-                    let (tagged, message) = try_tag_query_message(qm);
-                    qd.swap_message(message);
-                    tagged_success = tagged;
-                }
-            }
-            Message::Bulk(bulk_messages) => {
-                let new_messages: Result<Vec<Message>> = bulk_messages
-                    .iter()
-                    .map(|message| {
-                        if let Message::Query(ref qm) = message {
-                            if let Some(a) = &qm.ast {
-                                if a.get_command() == *"EXEC" {
-                                    exec_block = true;
-                                }
-                            }
-
-                            let (tagged, message) = try_tag_query_message(qm);
-                            tagged_success = tagged;
-                            return Ok(message);
-                        }
-                        Err(anyhow!("not a query"))
-                    })
-                    .collect();
-
-                qd.swap_message(Message::Bulk(new_messages?));
-            }
-            _ => {}
         }
-        let mut response = self.call_next_transform(qd, t).await;
+
+        let response = t.call_next_transform(qd).await;
         debug!("tagging transform got {:?}", response);
-        if tagged_success || exec_block {
-            match &mut response {
-                Ok(Message::Response(qr)) => {
-                    unwrap_response(qr);
-                    response = response.map(|m| Message::Modified(Box::new(m)));
-                }
-                Ok(Message::Bulk(messages)) => {
-                    for message in messages {
-                        if let Message::Response(qr) = message {
-                            unwrap_response(qr);
-                        }
+        if let Ok(mut messages) = response {
+            if tagged_success || exec_block {
+                for mut message in messages.messages.iter_mut() {
+                    if let MessageDetails::Response(ref mut qr) = message.details {
+                        unwrap_response(qr);
+                        message.modified = true;
                     }
-                    response = response.map(|m| Message::Modified(Box::new(m)));
                 }
-                _ => {}
             }
+            return Ok(messages);
         }
+
         debug!("response after trying to unwrap -> {:?}", response);
         response
     }

@@ -4,9 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, Message, QueryMessage, QueryResponse, Value};
+use crate::message::{
+    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value,
+};
 use crate::protocols::RawFrame;
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use futures::stream::{self, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection};
@@ -15,7 +17,7 @@ use redis::RedisResult;
 
 use tracing::{debug, trace};
 
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -67,20 +69,21 @@ impl TransformsFromConfig for RedisClusterConfig {
 }
 
 fn build_error(code: String, description: String, original: Option<QueryMessage>) -> ChainResponse {
-    Ok(Message::Modified(Box::new(Message::Response(
+    Ok(Messages::new_single_response(
         QueryResponse {
             matching_query: original,
-            original: RawFrame::NONE,
             result: None,
             error: Some(Value::Strings(format!("{} {}", code, description))),
             response_meta: None,
         },
-    ))))
+        true,
+        RawFrame::NONE,
+    ))
 }
 
 #[async_trait]
 impl Transform for RedisCluster {
-    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform(&self, mut qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let mut lock = self.connection.lock().await;
 
         if lock.is_none() {
@@ -89,7 +92,12 @@ impl Transform for RedisCluster {
 
             let mut client = ClusterClientBuilder::new(builder_lock.first_contact_points.clone());
 
-            if let Message::Query(qm) = &qd.message {
+            if let Some(Message {
+                details: MessageDetails::Query(qm),
+                modified: _,
+                original: _,
+            }) = &qd.message.messages.get(0)
+            {
                 if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast.clone() {
                     if !commands.is_empty() {
                         let command = commands.remove(0);
@@ -145,78 +153,24 @@ impl Transform for RedisCluster {
 
             if eat_message {
                 //We need to eat the auth message and return ok before processing it again
-                return Ok(Message::new_mod(Message::Response(
-                    QueryResponse::result_with_matching(None, Value::Strings("OK".to_string())),
-                )));
+                if qd.message.messages.len() <= 1 {
+                    return Ok(Messages::new_single_response(
+                        QueryResponse::result_with_matching(None, Value::Strings("OK".to_string())),
+                        true,
+                        RawFrame::NONE,
+                    ));
+                } else {
+                    // looks like there was an AUTH message at the top of the pipeline, so just eat the AUTH message and continue to processing
+                    qd.message.messages.remove(0);
+                }
             }
         }
 
-        match qd.message {
-            Message::Bulk(messages) => {
-                debug!("Building pipelined query {:?}", messages);
-                let mut pipe = redis::pipe();
+        debug!("Building pipelined query {:?}", qd.message.messages);
+        let mut pipe = redis::pipe();
 
-                for message in messages {
-                    if let Message::Query(qm) = message {
-                        if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
-                            if !commands.is_empty() {
-                                let command = commands.remove(0);
-                                if let Value::Bytes(b) = &command {
-                                    let command_string = String::from_utf8(b.to_vec())
-                                        .unwrap_or_else(|_| "couldn't decode".to_string());
-
-                                    pipe.cmd(command_string.as_str());
-                                    for args in commands {
-                                        pipe.arg(args);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let Some(connection) = lock.deref_mut() {
-                    let result: RedisResult<Vec<Value>> = pipe.query_async(connection).await;
-
-                    return match result {
-                        Ok(result) => {
-                            trace!(result = ?result);
-                            Ok(Message::Bulk(
-                                stream::iter(result)
-                                    .then(|v| async move {
-                                        Message::new_mod(Message::Response(
-                                            QueryResponse::just_result(v),
-                                        ))
-                                    })
-                                    .collect()
-                                    .await,
-                            ))
-                        }
-                        Err(error) => {
-                            trace!(error = ?error);
-                            match error.kind() {
-                                ErrorKind::MasterDown
-                                | ErrorKind::IoError
-                                | ErrorKind::ClientError
-                                | ErrorKind::ExtensionError => {
-                                    Err(anyhow!("Got connection error with cluster {}", error))
-                                }
-                                _ => build_error(
-                                    error.code().unwrap_or("ERR").to_string(),
-                                    error
-                                        .detail()
-                                        .unwrap_or("something went wrong?")
-                                        .to_string(),
-                                    None,
-                                ),
-                            }
-                        }
-                    };
-                }
-            }
-            Message::Query(qm) => {
-                debug!("Building regular query {:?}", qm);
-                let original = qm.clone();
+        for message in qd.message.messages {
+            if let MessageDetails::Query(qm) = message.details {
                 if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
                     if !commands.is_empty() {
                         let command = commands.remove(0);
@@ -224,58 +178,64 @@ impl Transform for RedisCluster {
                             let command_string = String::from_utf8(b.to_vec())
                                 .unwrap_or_else(|_| "couldn't decode".to_string());
 
-                            trace!(command = %command_string, connection = ?lock);
-
-                            // Here we create the connection on the first request. This does have a higher startup cost
-                            // and impact latency, but its makes the proxy transparent to the client from an authentication
-                            // perspective.
-
-                            if let Some(conn) = lock.deref_mut() {
-                                let mut cmd = redis::cmd(command_string.as_str());
-                                for args in commands {
-                                    cmd.arg(args);
-                                }
-                                let response_res: RedisResult<Value> = cmd.query_async(conn).await;
-                                trace!("{:#?}", response_res);
-
-                                return match response_res {
-                                    Ok(result) => {
-                                        trace!(result = ?result);
-                                        Ok(Message::new_mod(Message::Response(
-                                            QueryResponse::result_with_matching(
-                                                Some(original),
-                                                result,
-                                            ),
-                                        )))
-                                    }
-                                    Err(error) => {
-                                        trace!(error = ?error);
-                                        match error.kind() {
-                                            ErrorKind::MasterDown
-                                            | ErrorKind::IoError
-                                            | ErrorKind::ClientError
-                                            | ErrorKind::ExtensionError => Err(anyhow!(
-                                                "Got connection error with cluster {}",
-                                                error
-                                            )),
-                                            _ => build_error(
-                                                error.code().unwrap_or("ERR").to_string(),
-                                                error
-                                                    .detail()
-                                                    .unwrap_or("something went wrong?")
-                                                    .to_string(),
-                                                Some(original),
-                                            ),
-                                        }
-                                    }
-                                };
+                            pipe.cmd(command_string.as_str());
+                            for args in commands {
+                                pipe.arg(args);
                             }
                         }
                     }
                 }
             }
-            _ => {}
         }
+
+        // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
+        // But we still need to fake it being a Vec of results
+        if let Some(connection) = lock.deref_mut() {
+            let result: RedisResult<Vec<Value>> = if pipe.len() == 1 {
+                let cmd = pipe.pop().unwrap();
+                cmd.query_async(connection).await.map(|r| vec![r])
+            } else {
+                pipe.query_async(connection).await
+            };
+
+            return match result {
+                Ok(result) => {
+                    trace!(result = ?result);
+                    Ok(Messages {
+                        messages: stream::iter(result)
+                            .then(|v| async move {
+                                Message::new_response(
+                                    QueryResponse::just_result(v),
+                                    true,
+                                    RawFrame::NONE,
+                                )
+                            })
+                            .collect()
+                            .await,
+                    })
+                }
+                Err(error) => {
+                    trace!(error = ?error);
+                    match error.kind() {
+                        ErrorKind::MasterDown
+                        | ErrorKind::IoError
+                        | ErrorKind::ClientError
+                        | ErrorKind::ExtensionError => {
+                            Err(anyhow!("Got connection error with cluster {}", error))
+                        }
+                        _ => build_error(
+                            error.code().unwrap_or("ERR").to_string(),
+                            error
+                                .detail()
+                                .unwrap_or("something went wrong?")
+                                .to_string(),
+                            None,
+                        ),
+                    }
+                }
+            };
+        }
+
         Err(anyhow!(
             "Redis Cluster transform did not have enough information to build a request"
         ))

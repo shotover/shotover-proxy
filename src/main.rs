@@ -11,12 +11,11 @@ use metrics_runtime::exporters::HttpExporter;
 use metrics_runtime::observers::PrometheusBuilder;
 use shotover_proxy::config::topology::Topology;
 use shotover_proxy::config::Config;
-use shotover_proxy::transforms::chain::Wrapper;
 use shotover_proxy::transforms::Transforms;
+use shotover_proxy::transforms::Wrapper;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use tokio::runtime;
-
 
 #[derive(Clap)]
 #[clap(version = "0.0.4", author = "Instaclustr")]

@@ -15,10 +15,10 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Value;
 use crate::message::Value::Rows;
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::message::{MessageDetails, QueryMessage, QueryResponse, QueryType};
+use crate::transforms::chain::TransformChain;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 mod aws_kms;
 mod key_management;
@@ -162,76 +162,25 @@ impl TransformsFromConfig for ProtectConfig {
 #[async_trait]
 impl Transform for Protect {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        if let Message::Query(qm) = &mut qd.message {
-            // Encrypt the writes
-            if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
-                if let Some((_, tables)) = self
-                    .keyspace_table_columns
-                    .get_key_value(qm.namespace.get(0).unwrap())
-                {
-                    if let Some((_, columns)) = tables.get_key_value(qm.namespace.get(1).unwrap()) {
-                        if let Some(query_values) = &mut qm.query_values {
-                            for col in columns {
-                                if let Some(value) = query_values.get_mut(col) {
-                                    let mut protected = Protected::Plaintext(value.clone());
-                                    protected =
-                                        protected.protect(&self.key_source, &self.key_id).await?;
-                                    let _ = mem::replace(value, protected.into());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let mut result = self.call_next_transform(qd, t).await?;
-        // this used to be worse https://doc.rust-lang.org/book/ch18-03-pattern-syntax.html#destructuring-structs-and-tuples
-        // todo: destructure the above bracket mountain as below
-        if let Message::Response(QueryResponse {
-            matching_query:
-                Some(QueryMessage {
-                    original: _,
-                    query_string: _,
-                    namespace,
-                    primary_key: _,
-                    query_values: _,
-                    projection: Some(projection),
-                    query_type: _,
-                    ast: _,
-                }),
-            original: _,
-            result: Some(Rows(rows)),
-            error: None,
-            response_meta: _,
-        }) = &mut result
-        {
-            if namespace.len() == 2 {
-                if let Some((_keyspace, tables)) = self
-                    .keyspace_table_columns
-                    .get_key_value(namespace.get(0).unwrap())
-                {
-                    if let Some((_table, protect_columns)) =
-                        tables.get_key_value(namespace.get(1).unwrap())
+        for message in qd.message.messages.iter_mut() {
+            if let MessageDetails::Query(qm) = &mut message.details {
+                // Encrypt the writes
+                if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
+                    if let Some((_, tables)) = self
+                        .keyspace_table_columns
+                        .get_key_value(qm.namespace.get(0).unwrap())
                     {
-                        let mut positions: Vec<usize> = Vec::new();
-                        for (i, p) in projection.iter().enumerate() {
-                            if protect_columns.contains(p) {
-                                positions.push(i);
-                            }
-                        }
-                        for row in rows {
-                            for index in &positions {
-                                if let Some(v) = row.get_mut(*index) {
-                                    if let Value::Bytes(_) = v {
-                                        let protected =
-                                            Protected::from_encrypted_bytes_value(v.borrow())
-                                                .await?;
-                                        let new_value: Value = protected
-                                            .unprotect(&self.key_source, &self.key_id)
+                        if let Some((_, columns)) =
+                            tables.get_key_value(qm.namespace.get(1).unwrap())
+                        {
+                            if let Some(query_values) = &mut qm.query_values {
+                                for col in columns {
+                                    if let Some(value) = query_values.get_mut(col) {
+                                        let mut protected = Protected::Plaintext(value.clone());
+                                        protected = protected
+                                            .protect(&self.key_source, &self.key_id)
                                             .await?;
-                                        let _ = mem::replace(v, new_value);
-                                    } else {
-                                        warn!("Tried decrypting non-blob column")
+                                        let _ = mem::replace(value, protected.into());
                                     }
                                 }
                             }
@@ -240,6 +189,73 @@ impl Transform for Protect {
                 }
             }
         }
+
+        let mut result = t.call_next_transform(qd.clone()).await?;
+
+        for (response, request) in result
+            .messages
+            .iter_mut()
+            .zip(qd.message.messages.iter_mut())
+        {
+            if let MessageDetails::Response(QueryResponse {
+                matching_query: _,
+                result: Some(Rows(rows)),
+                error: None,
+                response_meta: _,
+            }) = &mut response.details
+            {
+                if let MessageDetails::Query(QueryMessage {
+                    query_string: _,
+                    namespace,
+                    primary_key: _,
+                    query_values: _,
+                    projection: Some(projection),
+                    query_type: _,
+                    ast: _,
+                }) = &request.details
+                {
+                    if namespace.len() == 2 {
+                        if let Some((_keyspace, tables)) = self
+                            .keyspace_table_columns
+                            .get_key_value(namespace.get(0).unwrap())
+                        {
+                            if let Some((_table, protect_columns)) =
+                                tables.get_key_value(namespace.get(1).unwrap())
+                            {
+                                let mut positions: Vec<usize> = Vec::new();
+                                for (i, p) in projection.iter().enumerate() {
+                                    if protect_columns.contains(p) {
+                                        positions.push(i);
+                                    }
+                                }
+                                for row in rows {
+                                    for index in &positions {
+                                        if let Some(v) = row.get_mut(*index) {
+                                            if let Value::Bytes(_) = v {
+                                                let protected =
+                                                    Protected::from_encrypted_bytes_value(
+                                                        v.borrow(),
+                                                    )
+                                                    .await?;
+                                                let new_value: Value = protected
+                                                    .unprotect(&self.key_source, &self.key_id)
+                                                    .await?;
+                                                let _ = mem::replace(v, new_value);
+                                            } else {
+                                                warn!("Tried decrypting non-blob column")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // this used to be worse https://doc.rust-lang.org/book/ch18-03-pattern-syntax.html#destructuring-structs-and-tuples
+        // todo: destructure the above bracket mountain as below
         Ok(result)
     }
 
@@ -254,21 +270,23 @@ mod protect_transform_tests {
     use std::env;
     use std::error::Error;
 
+    use anyhow::{anyhow, Result};
+
     use cassandra_proto::consistency::Consistency;
     use cassandra_proto::frame::Frame;
     use sodiumoxide::crypto::secretbox;
     use tokio::sync::mpsc::channel;
 
     use crate::config::topology::TopicHolder;
-    use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;
-    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::TransformChain;
     use crate::transforms::null::Null;
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::{Transforms, TransformsFromConfig};
+    use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
     #[tokio::test(threaded_scheduler)]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
@@ -319,8 +337,7 @@ mod protect_transform_tests {
         query_values.insert(String::from("col2"), Value::Integer(42));
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
-        let wrapper = Wrapper::new(Message::Query(QueryMessage {
-            original: RawFrame::NONE,
+        let wrapper = Wrapper::new(Messages::new_single_query(QueryMessage {
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],
             primary_key,
@@ -328,7 +345,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }));
+        }, true, RawFrame::NONE));
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
@@ -342,10 +359,9 @@ mod protect_transform_tests {
         if let Transforms::Protect(protect) = protect_t.get_source(&t_holder).await? {
             let result = protect.transform(wrapper, &chain).await;
             if let Ok(mut m) = result {
-                if let Message::Response(QueryResponse {
+                if let MessageDetails::Response(QueryResponse {
                     matching_query:
                         Some(QueryMessage {
-                            original: _,
                             query_string: _,
                             namespace: _,
                             primary_key: _,
@@ -354,11 +370,10 @@ mod protect_transform_tests {
                             query_type: _,
                             ast: _,
                         }),
-                    original: _,
                     result: _,
                     error: _,
                     response_meta: _,
-                }) = &mut m
+                }) = &mut m.messages.pop().unwrap().details
                 {
                     let encrypted_val = query_values.remove("col1").unwrap();
                     assert_ne!(encrypted_val.clone(), Value::Strings(secret_data.clone()));
@@ -394,10 +409,15 @@ mod protect_transform_tests {
 
                     let codec = CassandraCodec2::new(colk_map, false);
 
-                    if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
+                    if let MessageDetails::Query(qm) = codec
+                        .process_cassandra_frame(cframe.clone())
+                        .messages
+                        .pop()
+                        .unwrap()
+                        .details
+                    {
                         let returner_message = QueryResponse {
                             matching_query: Some(qm.clone()),
-                            original: RawFrame::NONE,
                             result: Some(Value::Rows(vec![vec![encrypted_val]])),
                             error: None,
                             response_meta: None,
@@ -405,7 +425,11 @@ mod protect_transform_tests {
 
                         let ret_transforms: Vec<Transforms> =
                             vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
-                                message: Message::Response(returner_message.clone()),
+                                message: Messages::new_single_response(
+                                    returner_message.clone(),
+                                    true,
+                                    RawFrame::NONE,
+                                ),
                                 ok: true,
                             }))];
 
@@ -417,15 +441,21 @@ mod protect_transform_tests {
                         );
 
                         let resultr = protect
-                            .transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain)
+                            .transform(
+                                Wrapper::new(Messages::new_single_query(
+                                    qm.clone(),
+                                    true,
+                                    RawFrame::NONE,
+                                )),
+                                &ret_chain,
+                            )
                             .await;
-                        if let Ok(Message::Response(QueryResponse {
+                        if let MessageDetails::Response(QueryResponse {
                             matching_query: _,
-                            original: _,
                             result: Some(Value::Rows(r)),
                             error: _,
                             response_meta: _,
-                        })) = resultr
+                        }) = resultr.unwrap().messages.pop().unwrap().details
                         {
                             if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
                                 assert_eq!(s.clone(), secret_data);
@@ -440,7 +470,7 @@ mod protect_transform_tests {
     }
 
     #[tokio::test(threaded_scheduler)]
-    async fn test_protect_kms_transform() -> Result<(), Box<dyn Error>> {
+    async fn test_protect_kms_transform() -> Result<()> {
         let (global_map_r, _global_map_w) = evmap::new();
         let (global_tx, _global_rx) = channel(1);
 
@@ -462,8 +492,12 @@ mod protect_transform_tests {
         protection_map.insert("keyspace".to_string(), protection_table_map);
 
         let aws_config = KeyManagerConfig::AWSKms {
-            region: env::var("CMK_REGION").or::<String>(Ok("US-EAST-1".to_string()))?,
-            cmk_id: env::var("CMK_ID").or::<String>(Ok("alias/InstaProxyDev".to_string()))?,
+            region: env::var("CMK_REGION")
+                .or::<String>(Ok("US-EAST-1".to_string()))
+                .map_err(|e| anyhow!(e))?,
+            cmk_id: env::var("CMK_ID")
+                .or::<String>(Ok("alias/InstaProxyDev".to_string()))
+                .map_err(|e| anyhow!(e))?,
             encryption_context: None,
             key_spec: None,
             number_of_bytes: Some(32), // 256-bit (it's specified in bytes)
@@ -494,8 +528,7 @@ mod protect_transform_tests {
         query_values.insert(String::from("col2"), Value::Integer(42));
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
-        let wrapper = Wrapper::new(Message::Query(QueryMessage {
-            original: RawFrame::NONE,
+        let wrapper = Wrapper::new(Messages::new_single_query(QueryMessage {
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],
             primary_key,
@@ -503,7 +536,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }));
+        }, true, RawFrame::NONE));
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
@@ -517,10 +550,10 @@ mod protect_transform_tests {
         let t = protect_t.get_source(&t_holder).await?;
         if let Transforms::Protect(protect) = t {
             let mut m = protect.transform(wrapper, &chain).await?;
-            if let Message::Response(QueryResponse {
+            let mut details = m.messages.pop().unwrap().details;
+            if let MessageDetails::Response(QueryResponse {
                 matching_query:
                     Some(QueryMessage {
-                        original: _,
                         query_string: _,
                         namespace: _,
                         primary_key: _,
@@ -529,11 +562,10 @@ mod protect_transform_tests {
                         query_type: _,
                         ast: _,
                     }),
-                original: _,
                 result: _,
                 error: _,
                 response_meta: _,
-            }) = &mut m
+            }) = &mut details
             {
                 let encrypted_val = query_values.remove("col1").unwrap();
                 assert_ne!(encrypted_val.clone(), Value::Strings(secret_data.clone()));
@@ -569,10 +601,15 @@ mod protect_transform_tests {
 
                 let codec = CassandraCodec2::new(colk_map, false);
 
-                if let Message::Query(qm) = codec.process_cassandra_frame(cframe.clone()) {
+                if let MessageDetails::Query(qm) = codec
+                    .process_cassandra_frame(cframe.clone())
+                    .messages
+                    .pop()
+                    .unwrap()
+                    .details
+                {
                     let returner_message = QueryResponse {
                         matching_query: Some(qm.clone()),
-                        original: RawFrame::NONE,
                         result: Some(Value::Rows(vec![vec![encrypted_val]])),
                         error: None,
                         response_meta: None,
@@ -580,7 +617,11 @@ mod protect_transform_tests {
 
                     let ret_transforms: Vec<Transforms> =
                         vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
-                            message: Message::Response(returner_message.clone()),
+                            message: Messages::new_single_response(
+                                returner_message.clone(),
+                                true,
+                                RawFrame::NONE,
+                            ),
                             ok: true,
                         }))];
 
@@ -592,20 +633,28 @@ mod protect_transform_tests {
                     );
 
                     let resultr = protect
-                        .transform(Wrapper::new(Message::Query(qm.clone())), &ret_chain)
+                        .transform(
+                            Wrapper::new(Messages::new_single_query(
+                                qm.clone(),
+                                true,
+                                RawFrame::NONE,
+                            )),
+                            &ret_chain,
+                        )
                         .await;
-                    if let Ok(Message::Response(QueryResponse {
+                    if let MessageDetails::Response(QueryResponse {
                         matching_query: _,
-                        original: _,
                         result: Some(Value::Rows(r)),
                         error: _,
                         response_meta: _,
-                    })) = resultr
+                    }) = resultr.unwrap().messages.pop().unwrap().details
                     {
-                        if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
+                        return if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
                             assert_eq!(s.clone(), secret_data);
-                            return Ok(());
-                        }
+                            Ok(())
+                        } else {
+                            Err(anyhow!("Couldn't get string"))
+                        };
                     }
                 }
             }

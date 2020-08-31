@@ -1,5 +1,5 @@
 use std::{fmt, error};
-use crate::message::Message;
+use crate::message::Messages;
 use thiserror::Error;
 
 
@@ -52,4 +52,4 @@ impl fmt::Display for ConfigError {
 }
 
 
-pub type ChainResponse = anyhow::Result<Message>;
+pub type ChainResponse = anyhow::Result<Messages>;

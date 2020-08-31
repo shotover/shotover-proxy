@@ -12,10 +12,13 @@ use tracing::debug;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::message::{
+    Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+};
+use crate::protocols::RawFrame;
+use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
 
 #[derive(Clone)]
@@ -119,24 +122,35 @@ impl TuneableConsistency {}
 impl Transform for TuneableConsistency {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         let sref = self;
-        let required_successes = if let Message::Query(QueryMessage {
-            original: _,
-            query_string: _,
-            namespace: _,
-            primary_key: _,
-            query_values: _,
-            projection: _,
-            query_type,
-            ast: _,
-        }) = &qd.message
-        {
-            match query_type {
-                QueryType::Read => self.read_consistency,
-                _ => self.write_consistency,
-            }
-        } else {
-            self.write_consistency
-        };
+        let required_successes = qd
+            .message
+            .messages
+            .iter()
+            .map(|m| {
+                return if let MessageDetails::Query(QueryMessage {
+                    query_string: _,
+                    namespace: _,
+                    primary_key: _,
+                    query_values: _,
+                    projection: _,
+                    query_type,
+                    ast: _,
+                }) = &m.details
+                {
+                    return match query_type {
+                        QueryType::Read => self.read_consistency,
+                        _ => self.write_consistency,
+                    };
+                } else {
+                    self.write_consistency
+                };
+            })
+            .collect_vec();
+        let max_required_successes = *required_successes
+            .iter()
+            .max()
+            .unwrap_or_else(|| &self.write_consistency);
+
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
 
@@ -161,96 +175,65 @@ impl Transform for TuneableConsistency {
          */
 
         let mut r = fu.take_while(|x| {
-            let resp = successes < required_successes;
+            let resp = successes < max_required_successes;
             if let Ok(Ok(x)) = x {
                 debug!("{:?}", x);
                 successes += 1;
             }
             resp
         });
-        let mut message_holder = vec![];
 
-        while let Some(Ok(Ok(m))) = r.next().await {
-            debug!("{:#?}", m);
-            message_holder.push(m);
+        let mut results: Vec<Messages> = Vec::new();
+        while let Some(Ok(Ok(messages))) = r.next().await {
+            debug!("{:#?}", messages);
+            results.push(messages);
         }
+        return if results.len()
+            < *required_successes
+                .iter()
+                .max()
+                .unwrap_or_else(|| &self.write_consistency) as usize
+        {
+            let collated_response: Vec<Message> = required_successes
+                .iter()
+                .map(|_| {
+                    Message::new_response(
+                        QueryResponse::empty_with_error(Some(Value::Strings(
+                            "Not enough responses".to_string(),
+                        ))),
+                        true,
+                        RawFrame::NONE,
+                    )
+                })
+                .collect_vec();
 
-        let collated_results = message_holder
-            .iter()
-            .cloned()
-            .filter_map(move |m| match m {
-                Message::Response(qr) => Some(vec![qr]),
-                Message::Modified(m) => match *m {
-                    Message::Response(qr) => Some(vec![qr]),
-                    Message::Bulk(messages) => Some(
-                        messages
-                            .iter()
-                            .filter_map(move |m| {
-                                if let Message::Response(qr) = m {
-                                    Some(qr.clone())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect_vec(),
-                    ),
-                    _ => None,
-                },
-                Message::Bulk(messages) => Some(
-                    messages
-                        .iter()
-                        .filter_map(move |m| {
-                            if let Message::Response(qr) = m {
-                                Some(qr.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect_vec(),
-                ),
-                _ => None,
+            Ok(Messages {
+                messages: collated_response,
             })
-            .collect_vec();
-
-        if successes >= required_successes {
-            if !collated_results.is_empty() {
-                let mut responses: Vec<Message> = Vec::new();
-                if let Some(first_replica_response) = collated_results.get(0) {
-                    for i in 0..first_replica_response.len() {
-                        let mut fragments = Vec::new();
-                        for j in 0..collated_results.len() {
-                            unsafe { fragments.push(collated_results.get_unchecked(j).get(i)) }
-                        }
-                        let mut fragments = fragments
-                            .iter()
-                            .filter_map(|v| v.as_deref())
-                            .cloned()
-                            .collect_vec();
-                        if let Some(collated_response) = resolve_fragments(&mut fragments) {
-                            responses.push(Message::new_mod(Message::Response(collated_response)))
-                        }
-                    }
-                }
-                if responses.len() == 1 {
-                    if let Some(m) = responses.pop() {
-                        let res = ChainResponse::Ok(m);
-                        return res;
-                    }
-                } else {
-                    return ChainResponse::Ok(Message::Bulk(responses));
-                }
-            }
-            ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
-                QueryResponse::empty(),
-            ))))
         } else {
-            debug!("Got {}, needed {}", successes, required_successes);
-            ChainResponse::Ok(Message::Modified(Box::new(Message::Response(
-                QueryResponse::empty_with_error(Some(Value::Strings(
-                    "Not enough responses".to_string(),
-                ))),
-            ))))
-        }
+            let mut collated_response: Vec<Message> = required_successes
+                .into_iter()
+                .filter_map(|_required_successes| {
+                    let mut collated_results = vec![];
+                    for res in &mut results {
+                        if let Some(m) = res.messages.pop() {
+                            if let MessageDetails::Response(qm) = &m.details {
+                                collated_results.push(qm.clone());
+                            }
+                        }
+                    }
+                    resolve_fragments(&mut collated_results)
+                        .map(|qr| Message::new_response(qr, true, RawFrame::NONE))
+                })
+                .collect_vec();
+
+            // We do this as we are pop'ing from the end of the results in the filter_map above
+            collated_response.reverse();
+
+            Ok(Messages {
+                messages: collated_response,
+            })
+        };
     }
 
     fn get_name(&self) -> &'static str {
@@ -264,44 +247,62 @@ mod scatter_transform_tests {
     use anyhow::Result;
 
     use crate::config::topology::TopicHolder;
-    use crate::message::{Message, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
-    use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+    use crate::transforms::chain::TransformChain;
     use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::Transforms;
+    use crate::transforms::{Transform, Transforms, Wrapper};
 
     fn check_ok_responses(
-        message: Message,
+        mut message: Messages,
         expected_ok: &Value,
-        expected_count: usize,
+        _expected_count: usize,
     ) -> Result<()> {
-        if let Message::Response(QueryResponse {
+        let foo = message.messages.pop().unwrap().details;
+        println!("{:?}", foo);
+        return if let MessageDetails::Response(QueryResponse {
             matching_query: _,
-            original: _,
             result: Some(r),
             error: _,
             response_meta: _,
-        }) = message
+        }) = foo
         {
-            if let Value::FragmentedResponese(v) = r {
-                let ok_responses = v.iter().filter(|&x| x == expected_ok).count();
-                if ok_responses != expected_count {
-                    return Err(anyhow!("not enough ok responses {}", ok_responses));
-                }
-            } else {
-                return Err(anyhow!("Expected Fragmented response"));
-            }
-        }
-        Ok(())
+            assert_eq!(expected_ok, &r);
+            Ok(())
+        } else {
+            Err(anyhow!("Couldn't destructure message"))
+        };
+    }
+
+    fn check_err_responses(
+        mut message: Messages,
+        expected_err: &Value,
+        _expected_count: usize,
+    ) -> Result<()> {
+        return if let MessageDetails::Response(QueryResponse {
+            matching_query: _,
+            result: _,
+            error: Some(err),
+            response_meta: _,
+        }) = message.messages.pop().unwrap().details
+        {
+            assert_eq!(expected_err, &err);
+            Ok(())
+        } else {
+            Err(anyhow!("Couldn't destructure message"))
+        };
     }
 
     #[tokio::test(threaded_scheduler)]
     async fn test_scatter_success() -> Result<()> {
         let t_holder = TopicHolder::get_test_holder();
 
-        let response =
-            Message::Response(QueryResponse::just_result(Value::Strings("OK".to_string())));
+        let response = Messages::new_single_response(
+            QueryResponse::just_result(Value::Strings("OK".to_string())),
+            true,
+            RawFrame::NONE,
+        );
         let dummy_chain = TransformChain::new(
             vec![],
             "dummy".to_string(),
@@ -309,16 +310,19 @@ mod scatter_transform_tests {
             t_holder.get_global_tx(),
         );
 
-        let wrapper = Wrapper::new(Message::Query(QueryMessage {
-            original: RawFrame::NONE,
-            query_string: "".to_string(),
-            namespace: vec![String::from("keyspace"), String::from("old")],
-            primary_key: Default::default(),
-            query_values: None,
-            projection: None,
-            query_type: QueryType::Read,
-            ast: None,
-        }));
+        let wrapper = Wrapper::new(Messages::new_single_query(
+            QueryMessage {
+                query_string: "".to_string(),
+                namespace: vec![String::from("keyspace"), String::from("old")],
+                primary_key: Default::default(),
+                query_values: None,
+                projection: None,
+                query_type: QueryType::Read,
+                ast: None,
+            },
+            true,
+            RawFrame::NONE,
+        ));
 
         let ok_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {
             message: response.clone(),
@@ -354,19 +358,19 @@ mod scatter_transform_tests {
             route_map: two_of_three,
             write_consistency: 2,
             read_consistency: 2,
-            timeout: 500, //todo this timeout needs to be longer for the initial connection...
+            timeout: 5000, //todo this timeout needs to be longer for the initial connection...
             count: 0,
         });
 
         let expected_ok = Value::Strings("OK".to_string());
 
-        check_ok_responses(
-            tuneable_success_consistency
-                .transform(wrapper.clone(), &dummy_chain)
-                .await?,
-            &expected_ok,
-            2,
-        )?;
+        let test = tuneable_success_consistency
+            .transform(wrapper.clone(), &dummy_chain)
+            .await;
+
+        println!("{:?}", test);
+
+        check_ok_responses(test?, &expected_ok, 2)?;
 
         let mut one_of_three = Vec::new();
         one_of_three.push(TransformChain::new(
@@ -397,13 +401,13 @@ mod scatter_transform_tests {
             count: 0,
         });
 
-        check_ok_responses(
-            tuneable_fail_consistency
-                .transform(wrapper.clone(), &dummy_chain)
-                .await?,
-            &expected_ok,
-            1,
-        )?;
+        let response_fail = tuneable_fail_consistency
+            .transform(wrapper.clone(), &dummy_chain)
+            .await?;
+
+        let expected_err = Value::Strings("Not enough responses".to_string());
+
+        check_err_responses(response_fail, &expected_err, 1)?;
 
         Ok(())
     }

@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryResponse};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::message::{Message, MessageDetails, Messages, QueryResponse};
+use crate::protocols::RawFrame;
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Clone)]
 pub struct KafkaDestination {
@@ -71,25 +72,36 @@ impl Default for KafkaDestination {
 #[async_trait]
 impl Transform for KafkaDestination {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        match qd.message {
-            Message::Bypass(_) => {}
-            Message::Query(qm) => {
-                if let Some(ref key) = qm.get_namespaced_primary_key() {
-                    if let Some(values) = qm.query_values {
-                        let message = serde_json::to_string(&values)?;
-                        let a = FutureRecord::to(self.topic.as_str())
-                            .payload(&message)
-                            .key(&key);
-                        self.producer
-                            .send(a, Timeout::Never)
-                            .await
-                            .map_err(|(e, _o)| anyhow!("Couldn't send kafka message {}", e))?;
+        let mut responses: Vec<Message> = vec![];
+        for message in qd.message.messages {
+            match message.details {
+                MessageDetails::Bypass(_) => {}
+                MessageDetails::Query(qm) => {
+                    if let Some(ref key) = qm.get_namespaced_primary_key() {
+                        if let Some(values) = qm.query_values {
+                            let message = serde_json::to_string(&values)?;
+                            let a = FutureRecord::to(self.topic.as_str())
+                                .payload(&message)
+                                .key(&key);
+                            self.producer
+                                .send(a, Timeout::Never)
+                                .await
+                                .map_err(|(e, _o)| anyhow!("Couldn't send kafka message {}", e))?;
+                        }
                     }
                 }
+                MessageDetails::Response(_) => {}
+                MessageDetails::Unknown => {}
             }
-            _ => {}
+            responses.push(Message::new_response(
+                QueryResponse::empty(),
+                true,
+                RawFrame::NONE,
+            ))
         }
-        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
+        ChainResponse::Ok(Messages {
+            messages: responses,
+        })
     }
 
     fn get_name(&self) -> &'static str {

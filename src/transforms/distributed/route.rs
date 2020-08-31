@@ -1,21 +1,22 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryMessage};
+use crate::message::Messages;
 use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct Route {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
-    route_script: ScriptHolder<(QueryMessage, Vec<String>), String>,
+    route_script: ScriptHolder<(Messages, Vec<String>), String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -46,21 +47,18 @@ impl TransformsFromConfig for RouteConfig {
 #[async_trait]
 impl Transform for Route {
     async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        if let Message::Query(qm) = &qd.message {
-            let routes: Vec<String> = self.route_map.keys().cloned().collect();
-            let chosen_route = self
-                .route_script
-                .call(&t.lua_runtime, (qm.clone(), routes))?;
-            qd.reset();
-            return self
-                .route_map
-                .get(chosen_route.as_str())
-                .unwrap()
-                .process_request(qd, self.get_name().to_string())
-                .await;
-        }
-
-        self.call_next_transform(qd, t).await
+        let routes: Vec<String> = self.route_map.keys().cloned().collect();
+        let rt = t.lua_runtime.lock().await;
+        let chosen_route = self
+            .route_script
+            .call(rt.borrow(), (qd.message.clone(), routes))?;
+        qd.reset();
+        return self
+            .route_map
+            .get(chosen_route.as_str())
+            .unwrap()
+            .process_request(qd, self.get_name().to_string())
+            .await;
     }
 
     fn get_name(&self) -> &'static str {
@@ -68,6 +66,7 @@ impl Transform for Route {
     }
 
     async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
-        self.route_script.prep_lua_runtime(&t.lua_runtime)
+        let rt = t.lua_runtime.lock().await;
+        self.route_script.prep_lua_runtime(rt.borrow())
     }
 }

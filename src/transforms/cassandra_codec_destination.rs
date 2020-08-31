@@ -1,13 +1,13 @@
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
-use crate::message::{Message, QueryMessage};
+use crate::message::Messages;
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use futures::{FutureExt, SinkExt};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -69,11 +69,7 @@ multi-consumer, single producer threadsafe queue
 */
 
 impl CodecDestination {
-    async fn send_message(
-        &self,
-        message: Message,
-        _matching_query: Option<QueryMessage>,
-    ) -> ChainResponse {
+    async fn send_message(&self, message: Messages) -> ChainResponse {
         trace!("waiting for mutex lock");
         if let Ok(mut mg) = self.outbound.try_lock() {
             trace!("got mutex lock");
@@ -125,11 +121,7 @@ impl CodecDestination {
 impl Transform for CodecDestination {
     // #[instrument]
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        let return_query = match &qd.message {
-            Message::Query(q) => Some(q.clone()),
-            _ => None,
-        };
-        self.send_message(qd.message, return_query).await
+        self.send_message(qd.message).await
     }
 
     fn get_name(&self) -> &'static str {

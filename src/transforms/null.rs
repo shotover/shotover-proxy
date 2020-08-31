@@ -1,22 +1,31 @@
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 
-use crate::message::{Message, QueryResponse};
-use async_trait::async_trait;
 use crate::error::ChainResponse;
+use crate::message::{Message, MessageDetails, Messages, QueryResponse};
+use crate::protocols::RawFrame;
+use crate::transforms::{Transform, Wrapper};
+use async_trait::async_trait;
+use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct Null {
     name: &'static str,
-    with_request: bool
+    with_request: bool,
 }
 
 impl Null {
     pub fn new() -> Null {
-        Null { name: "Null" , with_request: true}
+        Null {
+            name: "Null",
+            with_request: true,
+        }
     }
 
     pub fn new_without_request() -> Null {
-        Null { name: "Null" , with_request: false}
+        Null {
+            name: "Null",
+            with_request: false,
+        }
     }
 }
 
@@ -24,11 +33,30 @@ impl Null {
 impl Transform for Null {
     async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
         if self.with_request {
-            if let Message::Query(qm) = qd.message {
-                return ChainResponse::Ok(Message::Response(QueryResponse::empty_with_matching(qm)));
-            }
+            return ChainResponse::Ok(Messages {
+                messages: qd
+                    .message
+                    .messages
+                    .into_iter()
+                    .filter_map(|m| {
+                        return if let MessageDetails::Query(qm) = m.details {
+                            Some(Message::new_response(
+                                QueryResponse::empty_with_matching(qm),
+                                true,
+                                RawFrame::NONE,
+                            ))
+                        } else {
+                            None
+                        };
+                    })
+                    .collect_vec(),
+            });
         }
-        ChainResponse::Ok(Message::Response(QueryResponse::empty()))
+        ChainResponse::Ok(Messages::new_single_response(
+            QueryResponse::empty(),
+            true,
+            RawFrame::NONE,
+        ))
     }
 
     fn get_name(&self) -> &'static str {

@@ -1,4 +1,4 @@
-use crate::message::{ASTHolder, QueryMessage, QueryResponse, Value};
+use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, Value};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
@@ -17,8 +17,9 @@ use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::trace;
+use tracing::warn;
 
-use crate::message::{Message, QueryType, RawMessage};
+use crate::message::{Messages, QueryType};
 use crate::protocols::RawFrame;
 use cassandra_proto::frame::frame_response::ResponseBody;
 use chrono::DateTime;
@@ -67,7 +68,6 @@ impl CassandraCodec2 {
         CassandraCodec2::rebuild_ast_in_message(&mut query);
         CassandraCodec2::rebuild_query_string_from_ast(&mut query);
         let QueryMessage {
-            original: _,
             query_string,
             namespace: _,
             primary_key: _,
@@ -103,99 +103,92 @@ impl CassandraCodec2 {
         )
     }
 
-    pub fn build_cassandra_response_frame(resp: QueryResponse) -> Frame {
+    pub fn build_cassandra_response_frame(resp: QueryResponse, query_frame: Frame) -> Frame {
         if let Some(Value::Rows(rows)) = resp.result {
             if let Some(ref query) = resp.matching_query {
-                if let RawFrame::CASSANDRA(ref query_frame) = query.original {
-                    if let Some(ref proj) = query.projection {
-                        let col_spec = proj
-                            .iter()
-                            .map(|x| {
-                                ColSpec {
-                                    ksname: Some(CString::new(
-                                        query.namespace.get(0).unwrap().clone(),
-                                    )),
-                                    tablename: Some(CString::new(
-                                        query.namespace.get(1).unwrap().clone(),
-                                    )),
-                                    name: CString::new(x.clone()),
-                                    col_type: ColTypeOption {
-                                        id: ColType::Ascii, // todo: get types working
-                                        value: None,
-                                    },
-                                }
-                            })
-                            .collect();
-                        let count = rows.get(0).unwrap().len() as i32;
-                        let metadata = RowsMetadata {
-                            flags: 0,
-                            columns_count: count,
-                            paging_state: None,
-                            // global_table_space: Some(query.namespace.iter()
-                            //     .map(|x| CString::new(x.clone())).collect()),
-                            global_table_space: None,
-                            col_specs: col_spec,
-                        };
+                if let Some(ref proj) = query.projection {
+                    let col_spec = proj
+                        .iter()
+                        .map(|x| {
+                            ColSpec {
+                                ksname: Some(CString::new(query.namespace.get(0).unwrap().clone())),
+                                tablename: Some(CString::new(
+                                    query.namespace.get(1).unwrap().clone(),
+                                )),
+                                name: CString::new(x.clone()),
+                                col_type: ColTypeOption {
+                                    id: ColType::Ascii, // todo: get types working
+                                    value: None,
+                                },
+                            }
+                        })
+                        .collect();
+                    let count = rows.get(0).unwrap().len() as i32;
+                    let metadata = RowsMetadata {
+                        flags: 0,
+                        columns_count: count,
+                        paging_state: None,
+                        // global_table_space: Some(query.namespace.iter()
+                        //     .map(|x| CString::new(x.clone())).collect()),
+                        global_table_space: None,
+                        col_specs: col_spec,
+                    };
 
-                        let result_bytes = rows
-                            .iter()
-                            .map(|i| {
-                                let rr: Vec<CBytes> = i
-                                    .iter()
-                                    .map(|j| {
-                                        let rb: CBytes = CBytes::new(match j {
-                                            Value::NULL => (-1 as CInt).into_cbytes(),
-                                            Value::Bytes(x) => x.to_vec(),
-                                            Value::Strings(x) => {
-                                                Vec::from(x.clone().as_bytes())
-                                                // CString::new(x.clone()).into_cbytes()
-                                            }
-                                            Value::Integer(x) => {
-                                                let mut temp: Vec<u8> = Vec::new();
-                                                let _ = temp.write_i64::<BigEndian>(*x).unwrap();
-                                                temp
-                                                // Decimal::new(*x, 0).into_cbytes()
-                                            }
-                                            Value::Float(x) => {
-                                                let mut temp: Vec<u8> = Vec::new();
-                                                let _ = temp.write_f64::<BigEndian>(*x).unwrap();
-                                                temp
-                                            }
-                                            Value::Boolean(x) => {
-                                                let mut temp: Vec<u8> = Vec::new();
-                                                let _ =
-                                                    temp.write_i32::<BigEndian>(*x as i32).unwrap();
-                                                temp
-                                                // (x.clone() as CInt).into_cbytes()
-                                            }
-                                            Value::Timestamp(x) => {
-                                                Vec::from(x.to_rfc2822().as_bytes())
-                                            }
-                                            _ => unreachable!(),
-                                        });
-                                        rb
-                                    })
-                                    .collect();
-                                rr
-                            })
-                            .collect();
+                    let result_bytes = rows
+                        .iter()
+                        .map(|i| {
+                            let rr: Vec<CBytes> = i
+                                .iter()
+                                .map(|j| {
+                                    let rb: CBytes = CBytes::new(match j {
+                                        Value::NULL => (-1 as CInt).into_cbytes(),
+                                        Value::Bytes(x) => x.to_vec(),
+                                        Value::Strings(x) => {
+                                            Vec::from(x.clone().as_bytes())
+                                            // CString::new(x.clone()).into_cbytes()
+                                        }
+                                        Value::Integer(x) => {
+                                            let mut temp: Vec<u8> = Vec::new();
+                                            let _ = temp.write_i64::<BigEndian>(*x).unwrap();
+                                            temp
+                                            // Decimal::new(*x, 0).into_cbytes()
+                                        }
+                                        Value::Float(x) => {
+                                            let mut temp: Vec<u8> = Vec::new();
+                                            let _ = temp.write_f64::<BigEndian>(*x).unwrap();
+                                            temp
+                                        }
+                                        Value::Boolean(x) => {
+                                            let mut temp: Vec<u8> = Vec::new();
+                                            let _ = temp.write_i32::<BigEndian>(*x as i32).unwrap();
+                                            temp
+                                            // (x.clone() as CInt).into_cbytes()
+                                        }
+                                        Value::Timestamp(x) => Vec::from(x.to_rfc2822().as_bytes()),
+                                        _ => unreachable!(),
+                                    });
+                                    rb
+                                })
+                                .collect();
+                            rr
+                        })
+                        .collect();
 
-                        let response = ResResultBody::Rows(BodyResResultRows {
-                            metadata,
-                            rows_count: rows.len() as CInt,
-                            rows_content: result_bytes,
-                        });
+                    let response = ResResultBody::Rows(BodyResResultRows {
+                        metadata,
+                        rows_count: rows.len() as CInt,
+                        rows_content: result_bytes,
+                    });
 
-                        return Frame {
-                            version: Version::Response,
-                            flags: query_frame.flags.clone(),
-                            opcode: Opcode::Result,
-                            stream: query_frame.stream,
-                            body: response.into_cbytes(),
-                            tracing_id: query_frame.tracing_id,
-                            warnings: Vec::new(),
-                        };
-                    }
+                    return Frame {
+                        version: Version::Response,
+                        flags: query_frame.flags.clone(),
+                        opcode: Opcode::Result,
+                        stream: query_frame.stream,
+                        body: response.into_cbytes(),
+                        tracing_id: query_frame.tracing_id,
+                        warnings: Vec::new(),
+                    };
                 }
             }
         }
@@ -340,7 +333,6 @@ impl CassandraCodec2 {
 
     pub fn rebuild_query_string_from_ast(message: &mut QueryMessage) {
         if let QueryMessage {
-            original: _,
             query_string,
             namespace: _,
             primary_key: _,
@@ -357,7 +349,6 @@ impl CassandraCodec2 {
 
     pub fn rebuild_ast_in_message(message: &mut QueryMessage) {
         if let QueryMessage {
-            original: _,
             query_string: _,
             namespace,
             primary_key: _,
@@ -534,7 +525,7 @@ impl CassandraCodec2 {
         }
     }
 
-    fn build_response_message(frame: Frame, matching_query: Option<QueryMessage>) -> Message {
+    fn build_response_message(frame: Frame, matching_query: Option<QueryMessage>) -> Messages {
         let mut result: Option<Value> = None;
         let mut error: Option<Value> = None;
         match frame.get_body().unwrap() {
@@ -566,20 +557,21 @@ impl CassandraCodec2 {
             _ => {}
         }
 
-        Message::Response(QueryResponse {
-            matching_query,
-            original: RawFrame::CASSANDRA(frame),
-            result,
-            error,
-            response_meta: None,
-        })
+        Messages::new_single_response(
+            QueryResponse {
+                matching_query,
+                result,
+                error,
+                response_meta: None,
+            },
+            false,
+            RawFrame::CASSANDRA(frame),
+        )
     }
 
-    pub fn process_cassandra_frame(&self, frame: Frame) -> Message {
+    pub fn process_cassandra_frame(&self, frame: Frame) -> Messages {
         if self.bypass {
-            return Message::Bypass(RawMessage {
-                original: RawFrame::CASSANDRA(frame),
-            });
+            return Messages::new_single_bypass(RawFrame::CASSANDRA(frame));
         }
 
         match frame.opcode {
@@ -593,52 +585,50 @@ impl CassandraCodec2 {
                         if parsed_string.ast.is_none() {
                             // TODO: Currently this will probably catch schema changes that don't match
                             // what the SQL parser expects
-                            return Message::Bypass(RawMessage {
-                                original: RawFrame::CASSANDRA(frame),
-                            });
+                            return Messages::new_single_bypass(RawFrame::CASSANDRA(frame));
                         }
-                        return Message::Query(QueryMessage {
-                            original: RawFrame::CASSANDRA(frame),
-                            query_string: brq.query.into_plain(),
-                            namespace: parsed_string.namespace.unwrap(),
-                            primary_key: parsed_string.primary_key,
-                            query_values: parsed_string.colmap,
-                            projection: parsed_string.projection,
-                            query_type: QueryType::Read,
-                            ast: parsed_string.ast.map(ASTHolder::SQL),
-                        });
+                        return Messages::new_single_query(
+                            QueryMessage {
+                                query_string: brq.query.into_plain(),
+                                namespace: parsed_string.namespace.unwrap(),
+                                primary_key: parsed_string.primary_key,
+                                query_values: parsed_string.colmap,
+                                projection: parsed_string.projection,
+                                query_type: QueryType::Read,
+                                ast: parsed_string.ast.map(ASTHolder::SQL),
+                            },
+                            false,
+                            RawFrame::CASSANDRA(frame),
+                        );
                     }
                 }
-                Message::Bypass(RawMessage {
-                    original: RawFrame::CASSANDRA(frame),
-                })
+                Messages::new_single_bypass(RawFrame::CASSANDRA(frame))
             }
             Opcode::Result => CassandraCodec2::build_response_message(frame, None),
             Opcode::Error => {
                 if let Ok(body) = frame.get_body() {
                     if let ResponseBody::Error(e) = body {
-                        return Message::Response(QueryResponse {
-                            matching_query: None,
-                            original: RawFrame::CASSANDRA(frame),
-                            result: None,
-                            error: Some(Value::Strings(e.message.as_plain())),
-                            response_meta: None,
-                        });
+                        return Messages::new_single_response(
+                            QueryResponse {
+                                matching_query: None,
+                                result: None,
+                                error: Some(Value::Strings(e.message.as_plain())),
+                                response_meta: None,
+                            },
+                            false,
+                            RawFrame::CASSANDRA(frame),
+                        );
                     }
                 }
-                Message::Bypass(RawMessage {
-                    original: RawFrame::CASSANDRA(frame),
-                })
+                Messages::new_single_bypass(RawFrame::CASSANDRA(frame))
             }
-            _ => Message::Bypass(RawMessage {
-                original: RawFrame::CASSANDRA(frame),
-            }),
+            _ => Messages::new_single_bypass(RawFrame::CASSANDRA(frame)),
         }
     }
 }
 
 impl Decoder for CassandraCodec2 {
-    type Item = Message;
+    type Item = Messages;
     type Error = anyhow::Error;
 
     fn decode(
@@ -651,79 +641,62 @@ impl Decoder for CassandraCodec2 {
     }
 }
 
-impl Encoder<Message> for CassandraCodec2 {
+fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
+    if let RawFrame::CASSANDRA(frame) = rf {
+        Ok(frame)
+    } else {
+        warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
+        return Err(anyhow!("Unsupported frame found, not sending"));
+    }
+}
+
+impl CassandraCodec2 {
+    fn encode_message(&mut self, item: Message) -> Result<Frame> {
+        let frame = if !item.modified {
+            get_cassandra_frame(item.original)?
+        } else {
+            match item.details {
+                MessageDetails::Bypass(message) => self.encode_message(Message {
+                    details: *message,
+                    modified: item.modified,
+                    original: item.original,
+                })?,
+                MessageDetails::Query(qm) => {
+                    CassandraCodec2::build_cassandra_query_frame(qm, Consistency::LocalQuorum)
+                }
+                MessageDetails::Response(qr) => CassandraCodec2::build_cassandra_response_frame(
+                    qr,
+                    get_cassandra_frame(item.original)?,
+                ),
+                MessageDetails::Unknown => get_cassandra_frame(item.original)?,
+            }
+        };
+        Ok(frame)
+    }
+}
+
+impl Encoder<Messages> for CassandraCodec2 {
     type Error = anyhow::Error;
 
     fn encode(
         &mut self,
-        item: Message,
+        item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        match item {
-            Message::Modified(modified_message) => {
-                match *modified_message {
-                    Message::Bypass(_) => {
-                        //TODO: throw error -> we should not be modifing a bypass message
-                        unimplemented!()
-                    }
-                    Message::Query(q) => self.encode_raw(
-                        CassandraCodec2::build_cassandra_query_frame(q, Consistency::LocalQuorum),
-                        dst,
-                    ),
-                    Message::Response(r) => {
-                        self.encode_raw(CassandraCodec2::build_cassandra_response_frame(r), dst)
-                    }
-                    Message::Modified(_) => {
-                        //TODO: throw error -> we should not have a nested modified message
-                        unimplemented!()
-                    }
-                    Message::Bulk(messages) => {
-                        for message in messages {
-                            self.encode(message, dst)?
-                        }
-                        Ok(())
-                    }
-                }
-            }
-
-            Message::Query(qm) => {
-                if let RawFrame::CASSANDRA(frame) = qm.original {
-                    self.encode_raw(frame, dst)
-                } else {
-                    //TODO throw error
-                    unimplemented!()
-                }
-            }
-            Message::Response(resp) => {
-                if let RawFrame::CASSANDRA(frame) = resp.original {
-                    self.encode_raw(frame, dst)
-                } else {
-                    //TODO throw error
-                    unimplemented!()
-                }
-            }
-            Message::Bypass(resp) => {
-                if let RawFrame::CASSANDRA(frame) = resp.original {
-                    self.encode_raw(frame, dst)
-                } else {
-                    //TODO throw error
-                    unimplemented!()
-                }
-            }
-            Message::Bulk(messages) => {
-                for message in messages {
-                    self.encode(message, dst)?
-                }
-                Ok(())
-            }
-        }
+        item.into_iter()
+            .map(|m: Message| {
+                let frame = self.encode_message(m)?;
+                self.encode_raw(frame, dst)
+            })
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod cassandra_protocol_tests {
-    use crate::message::{ASTHolder, Message, QueryMessage};
+    use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
+    use anyhow::{anyhow, Result};
     use bytes::BytesMut;
     use hex_literal::hex;
     use rdkafka::message::ToBytes;
@@ -845,27 +818,35 @@ mod cassandra_protocol_tests {
 
         let mut codec = CassandraCodec2::new(pk_map, false);
         let mut bytes: BytesMut = build_bytesmut(&QUERY_BYTES);
-        if let Ok(Some(message)) = codec.decode(&mut bytes) {
-            if let Message::Query(QueryMessage {
-                original: _,
-                query_string,
-                namespace: _,
-                primary_key: _,
-                query_values: _,
-                projection: _,
-                query_type: _,
-                ast: Some(ASTHolder::SQL(ast)),
-            }) = message
-            {
-                let mut query_s = query_string.clone();
+        if let Ok(Some(messages)) = codec.decode(&mut bytes) {
+            let answer: Result<()> = messages
+                .into_iter()
+                .map(|m: Message| {
+                    if let MessageDetails::Query(QueryMessage {
+                        query_string,
+                        namespace: _,
+                        primary_key: _,
+                        query_values: _,
+                        projection: _,
+                        query_type: _,
+                        ast: Some(ASTHolder::SQL(ast)),
+                    }) = m.details
+                    {
+                        let mut query_s = query_string.clone();
 
-                println!("{}", query_string);
-                println!("{}", ast);
-                assert_eq!(
-                    remove_whitespace(&mut query_s),
-                    remove_whitespace(&mut format!("{}", ast))
-                );
-            }
+                        println!("{}", query_string);
+                        println!("{}", ast);
+                        assert_eq!(
+                            remove_whitespace(&mut query_s),
+                            remove_whitespace(&mut format!("{}", ast))
+                        );
+                        Ok(())
+                    } else {
+                        Err(anyhow!("uh oh"))
+                    }
+                })
+                .collect();
+            assert_eq!(true, answer.is_ok());
         } else {
             panic!("Could not decode frame");
         }

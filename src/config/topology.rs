@@ -1,4 +1,4 @@
-use crate::message::Message;
+use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::mpsc_source::AsyncMpscConfig;
 use crate::sources::{Sources, SourcesConfig};
@@ -25,19 +25,19 @@ pub struct Topology {
 }
 
 pub struct TopicHolder {
-    pub topics_rx: HashMap<String, Receiver<Message>>,
-    pub topics_tx: HashMap<String, Sender<Message>>,
+    pub topics_rx: HashMap<String, Receiver<Messages>>,
+    pub topics_tx: HashMap<String, Sender<Messages>>,
     pub global_tx: Sender<(String, Bytes)>,
     pub global_map_handle: ReadHandleFactory<String, Bytes>,
 }
 
 impl TopicHolder {
-    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<Message>> {
+    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<Messages>> {
         let rx = self.topics_rx.remove(name)?;
         Some(rx)
     }
 
-    pub fn get_tx(&self, name: &str) -> Option<Sender<Message>> {
+    pub fn get_tx(&self, name: &str) -> Option<Sender<Messages>> {
         let tx = self.topics_tx.get(name)?;
         Some(tx.clone())
     }
@@ -74,10 +74,10 @@ impl Topology {
         global_tx: Sender<(String, Bytes)>,
         global_map_handle: ReadHandleFactory<String, Bytes>,
     ) -> TopicHolder {
-        let mut topics_rx: HashMap<String, Receiver<Message>> = HashMap::new();
-        let mut topics_tx: HashMap<String, Sender<Message>> = HashMap::new();
+        let mut topics_rx: HashMap<String, Receiver<Messages>> = HashMap::new();
+        let mut topics_tx: HashMap<String, Sender<Messages>> = HashMap::new();
         for name in &self.named_topics {
-            let (tx, rx) = channel::<Message>(5);
+            let (tx, rx) = channel::<Messages>(5);
             topics_rx.insert(name.clone(), rx);
             topics_tx.insert(name.clone(), tx);
         }

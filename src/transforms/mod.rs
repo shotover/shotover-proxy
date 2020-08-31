@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
+use crate::message::Messages;
 use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
-use crate::transforms::chain::{Transform, TransformChain, Wrapper};
+use crate::transforms::chain::TransformChain;
 use crate::transforms::distributed::tuneable_consistency_scatter::{
     TuneableConsistency, TuneableConsistencyConfig,
 };
@@ -27,9 +28,12 @@ use crate::transforms::redis_transforms::redis_codec_destination::{
     RedisCodecConfiguration, RedisCodecDestination,
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::route::{Route, RouteConfig};
-use crate::transforms::scatter::{Scatter, ScatterConfig};
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
+use core::fmt::Display;
+use core::num::Wrapping;
+use distributed::route::{Route, RouteConfig};
+use distributed::scatter::{Scatter, ScatterConfig};
+use mlua::UserData;
 
 pub mod cassandra_codec_destination;
 pub mod chain;
@@ -41,10 +45,7 @@ pub mod noop;
 pub mod null;
 pub mod printer;
 pub mod protect;
-pub mod query;
 pub mod redis_transforms;
-pub mod route;
-pub mod scatter;
 pub mod test_transforms;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
@@ -203,4 +204,74 @@ pub async fn build_chain_from_config(
 #[async_trait]
 pub trait TransformsFromConfig: Send {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms>;
+}
+
+#[derive(Debug, Clone)]
+struct QueryData {
+    query: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Wrapper {
+    pub message: Messages,
+    pub next_transform: usize,
+    pub clock: Wrapping<u32>,
+}
+
+impl UserData for Wrapper {}
+
+impl Display for Wrapper {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("{:#?}", self.message))
+    }
+}
+
+impl Wrapper {
+    pub fn swap_message(&mut self, mut m: Messages) {
+        std::mem::swap(&mut self.message, &mut m);
+    }
+
+    pub fn new(m: Messages) -> Self {
+        Wrapper {
+            message: m,
+            next_transform: 0,
+            clock: Wrapping(0),
+        }
+    }
+
+    pub fn new_with_next_transform(m: Messages, next_transform: usize) -> Self {
+        Wrapper {
+            message: m,
+            next_transform,
+            clock: Wrapping(0),
+        }
+    }
+
+    pub fn new_with_rnd(m: Messages, clock: Wrapping<u32>) -> Self {
+        Wrapper {
+            message: m,
+            next_transform: 0,
+            clock,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.next_transform = 0;
+    }
+}
+
+#[derive(Debug)]
+struct ResponseData {
+    response: Messages,
+}
+
+#[async_trait]
+pub trait Transform: Send {
+    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
+
+    fn get_name(&self) -> &'static str;
+
+    async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
+        Ok(())
+    }
 }
