@@ -1,8 +1,8 @@
-use crate::error::{ChainResponse, RequestError};
-use crate::transforms::{Transform, Transforms, Wrapper};
-use anyhow::anyhow;
+use crate::error::ChainResponse;
+use crate::transforms::{Transforms, Wrapper};
 use bytes::Bytes;
 use evmap::ReadHandleFactory;
+use itertools::Itertools;
 use metrics::{counter, timing};
 use mlua::Lua;
 use std::sync::Arc;
@@ -80,31 +80,20 @@ impl TransformChain {
         }
     }
 
-    pub async fn call_next_transform(&self, mut qd: Wrapper) -> ChainResponse {
-        let current = qd.next_transform;
-        qd.next_transform += 1;
-
-        return match self.chain.get(current) {
-            Some(t) => {
-                let start = Instant::now();
-                let result = t.transform(qd, self).await;
-                let end = Instant::now();
-                counter!("shotover_transform_total", 1, "transform" => t.get_name());
-                if let Err(_) = &result {
-                    counter!("shotover_transform_failures", 1, "transform" => t.get_name())
-                }
-                timing!("shotover_transform_latency", start, end, "transform" => t.get_name());
-                result
-            }
-            None => Err(anyhow!(RequestError::ChainProcessingError(
-                "No more transforms left in the chain".to_string()
-            ))),
-        };
+    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
+        self.chain.iter_mut().collect_vec()
     }
 
-    pub async fn process_request(&self, wrapper: Wrapper, client_details: String) -> ChainResponse {
+    pub async fn process_request(
+        &mut self,
+        mut wrapper: Wrapper<'_>,
+        client_details: String,
+    ) -> ChainResponse {
         let start = Instant::now();
-        let result = self.call_next_transform(wrapper).await;
+        let iter = self.chain.iter_mut().collect_vec();
+        wrapper.reset(iter);
+
+        let result = wrapper.call_next_transform().await;
         let end = Instant::now();
         counter!("shotover_chain_total", 1, "chain" => self.name.clone());
         if let Err(_) = &result {

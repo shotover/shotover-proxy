@@ -2,7 +2,6 @@ use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
-use crate::transforms::chain::TransformChain;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -145,7 +144,7 @@ fn unwrap_response(qr: &mut QueryResponse) {
 
 #[async_trait]
 impl Transform for RedisTimestampTagger {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut tagged_success: bool = false;
         let mut exec_block: bool = false;
 
@@ -162,7 +161,7 @@ impl Transform for RedisTimestampTagger {
             }
         }
 
-        let response = t.call_next_transform(qd).await;
+        let response = qd.call_next_transform().await;
         debug!("tagging transform got {:?}", response);
         if let Ok(mut messages) = response {
             if tagged_success || exec_block {

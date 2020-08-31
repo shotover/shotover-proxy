@@ -1,4 +1,3 @@
-use crate::transforms::chain::TransformChain;
 use tracing::info;
 
 use crate::error::ChainResponse;
@@ -18,9 +17,9 @@ impl Printer {
 
 #[async_trait]
 impl Transform for Printer {
-    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         info!("Request content: {:?}", qd.message);
-        let response = t.call_next_transform(qd).await;
+        let response = qd.call_next_transform().await;
         info!("Response content: {:?}", response);
         response
     }

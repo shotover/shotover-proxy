@@ -16,7 +16,6 @@ use crate::error::ChainResponse;
 use crate::message::Value;
 use crate::message::Value::Rows;
 use crate::message::{MessageDetails, QueryMessage, QueryResponse, QueryType};
-use crate::transforms::chain::TransformChain;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
@@ -161,7 +160,7 @@ impl TransformsFromConfig for ProtectConfig {
 
 #[async_trait]
 impl Transform for Protect {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         for message in qd.message.messages.iter_mut() {
             if let MessageDetails::Query(qm) = &mut message.details {
                 // Encrypt the writes
@@ -190,13 +189,10 @@ impl Transform for Protect {
             }
         }
 
-        let mut result = t.call_next_transform(qd.clone()).await?;
+        let mut original_messages = qd.message.messages.clone();
+        let mut result = qd.call_next_transform().await?;
 
-        for (response, request) in result
-            .messages
-            .iter_mut()
-            .zip(qd.message.messages.iter_mut())
-        {
+        for (response, request) in result.messages.iter_mut().zip(original_messages.iter_mut()) {
             if let MessageDetails::Response(QueryResponse {
                 matching_query: _,
                 result: Some(Rows(rows)),
@@ -337,7 +333,7 @@ mod protect_transform_tests {
         query_values.insert(String::from("col2"), Value::Integer(42));
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
-        let wrapper = Wrapper::new(Messages::new_single_query(QueryMessage {
+        let mut wrapper = Wrapper::new(Messages::new_single_query(QueryMessage {
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],
             primary_key,
@@ -349,15 +345,17 @@ mod protect_transform_tests {
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
-        let chain = TransformChain::new(
+        let mut chain = TransformChain::new(
             transforms,
             String::from("test_chain"),
             t_holder.get_global_map_handle(),
             t_holder.get_global_tx(),
         );
 
-        if let Transforms::Protect(protect) = protect_t.get_source(&t_holder).await? {
-            let result = protect.transform(wrapper, &chain).await;
+        wrapper.reset(chain.get_inner_chain_refs());
+
+        if let Transforms::Protect(mut protect) = protect_t.get_source(&t_holder).await? {
+            let result = protect.transform(wrapper).await;
             if let Ok(mut m) = result {
                 if let MessageDetails::Response(QueryResponse {
                     matching_query:
@@ -433,23 +431,22 @@ mod protect_transform_tests {
                                 ok: true,
                             }))];
 
-                        let ret_chain = TransformChain::new(
+                        let mut ret_chain = TransformChain::new(
                             ret_transforms,
                             String::from("test_chain"),
                             t_holder.get_global_map_handle(),
                             t_holder.get_global_tx(),
                         );
 
-                        let resultr = protect
-                            .transform(
-                                Wrapper::new(Messages::new_single_query(
-                                    qm.clone(),
-                                    true,
-                                    RawFrame::NONE,
-                                )),
-                                &ret_chain,
-                            )
-                            .await;
+                        let mut new_wrapper = Wrapper::new(Messages::new_single_query(
+                            qm.clone(),
+                            true,
+                            RawFrame::NONE,
+                        ));
+
+                        new_wrapper.reset(ret_chain.get_inner_chain_refs());
+
+                        let resultr = protect.transform(new_wrapper).await;
                         if let MessageDetails::Response(QueryResponse {
                             matching_query: _,
                             result: Some(Value::Rows(r)),
@@ -528,7 +525,7 @@ mod protect_transform_tests {
         query_values.insert(String::from("col2"), Value::Integer(42));
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
-        let wrapper = Wrapper::new(Messages::new_single_query(QueryMessage {
+        let mut wrapper = Wrapper::new(Messages::new_single_query(QueryMessage {
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
             namespace: vec![String::from("keyspace"), String::from("old")],
             primary_key,
@@ -540,16 +537,18 @@ mod protect_transform_tests {
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
-        let chain = TransformChain::new(
+        let mut chain = TransformChain::new(
             transforms,
             String::from("test_chain"),
             t_holder.get_global_map_handle(),
             t_holder.get_global_tx(),
         );
 
+        wrapper.reset(chain.get_inner_chain_refs());
+
         let t = protect_t.get_source(&t_holder).await?;
-        if let Transforms::Protect(protect) = t {
-            let mut m = protect.transform(wrapper, &chain).await?;
+        if let Transforms::Protect(mut protect) = t {
+            let mut m = protect.transform(wrapper).await?;
             let mut details = m.messages.pop().unwrap().details;
             if let MessageDetails::Response(QueryResponse {
                 matching_query:
@@ -625,23 +624,19 @@ mod protect_transform_tests {
                             ok: true,
                         }))];
 
-                    let ret_chain = TransformChain::new(
+                    let mut ret_chain = TransformChain::new(
                         ret_transforms,
                         String::from("test_chain"),
                         t_holder.get_global_map_handle(),
                         t_holder.get_global_tx(),
                     );
 
-                    let resultr = protect
-                        .transform(
-                            Wrapper::new(Messages::new_single_query(
-                                qm.clone(),
-                                true,
-                                RawFrame::NONE,
-                            )),
-                            &ret_chain,
-                        )
-                        .await;
+                    let mut new_wrapper =
+                        Wrapper::new(Messages::new_single_query(qm.clone(), true, RawFrame::NONE));
+
+                    new_wrapper.reset(ret_chain.get_inner_chain_refs());
+
+                    let resultr = protect.transform(new_wrapper).await;
                     if let MessageDetails::Response(QueryResponse {
                         matching_query: _,
                         result: Some(Value::Rows(r)),

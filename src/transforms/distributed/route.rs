@@ -8,15 +8,19 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
+use mlua::Lua;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct Route {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
     route_script: ScriptHolder<(Messages, Vec<String>), String>,
+    lua_runtime: Arc<Mutex<mlua::Lua>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -40,24 +44,25 @@ impl TransformsFromConfig for RouteConfig {
             name: "scatter",
             route_map: temp,
             route_script: self.route_script.get_script_func()?,
+            lua_runtime: Arc::new(Mutex::new(Lua::new())),
         }))
     }
 }
 
 #[async_trait]
 impl Transform for Route {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+        let name = self.get_name().to_string();
         let routes: Vec<String> = self.route_map.keys().cloned().collect();
-        let rt = t.lua_runtime.lock().await;
+        let rt = self.lua_runtime.lock().await;
         let chosen_route = self
             .route_script
             .call(rt.borrow(), (qd.message.clone(), routes))?;
-        qd.reset();
         return self
             .route_map
-            .get(chosen_route.as_str())
+            .get_mut(chosen_route.as_str())
             .unwrap()
-            .process_request(qd, self.get_name().to_string())
+            .process_request(qd, name)
             .await;
     }
 

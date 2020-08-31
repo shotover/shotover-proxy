@@ -20,6 +20,7 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
+use std::iter::FromIterator;
 
 #[derive(Clone)]
 pub struct TuneableConsistency {
@@ -120,8 +121,7 @@ impl TuneableConsistency {}
 
 #[async_trait]
 impl Transform for TuneableConsistency {
-    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        let sref = self;
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let required_successes = qd
             .message
             .messages
@@ -153,20 +153,28 @@ impl Transform for TuneableConsistency {
 
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
+        let name = self.get_name().to_string();
+        let timeout_count = self.timeout.clone();
+        let mut_iter = self.route_map.iter_mut();
 
-        let fu: FuturesUnordered<_> = FuturesUnordered::new();
+        //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
+        let fu: FuturesUnordered<_> = FuturesUnordered::from_iter(mut_iter.map(|c| {
+            timeout(
+                Duration::from_millis(timeout_count),
+                c.process_request(qd.clone(), name.clone()),
+            )
+        }));
 
-        for i in 0..sref.route_map.len() {
-            let u = ((qd.clock.0 + (i as u32)) % (sref.route_map.len() as u32)) as usize;
-            if let Some(c) = sref.route_map.get(u) {
-                let mut wrapper = qd.clone();
-                wrapper.reset();
-                fu.push(timeout(
-                    Duration::from_millis(sref.timeout),
-                    c.process_request(wrapper, self.get_name().to_string()),
-                ))
-            }
-        }
+        // for i in 0..self.route_map.len() {
+        //     let u = ((qd.clock.0 + (i as u32)) % (self.route_map.len() as u32)) as usize;
+        //     if let Some(c) = self.route_map.get_mut(u) {
+        //         let mut wrapper = qd.clone();
+        //         fu.push(timeout(
+        //             Duration::from_millis(self.timeout),
+        //             c.process_request(wrapper, self.get_name().clone().to_string()),
+        //         ))
+        //     }
+        // }
 
         /*
         Tuneable consistent scatter follows these rules:
@@ -188,6 +196,9 @@ impl Transform for TuneableConsistency {
             debug!("{:#?}", messages);
             results.push(messages);
         }
+
+        drop(r);
+
         return if results.len()
             < *required_successes
                 .iter()
@@ -353,19 +364,20 @@ mod scatter_transform_tests {
             t_holder.get_global_tx(),
         ));
 
-        let tuneable_success_consistency = Transforms::TuneableConsistency(TuneableConsistency {
-            name: "TuneableConsistency",
-            route_map: two_of_three,
-            write_consistency: 2,
-            read_consistency: 2,
-            timeout: 5000, //todo this timeout needs to be longer for the initial connection...
-            count: 0,
-        });
+        let mut tuneable_success_consistency =
+            Transforms::TuneableConsistency(TuneableConsistency {
+                name: "TuneableConsistency",
+                route_map: two_of_three,
+                write_consistency: 2,
+                read_consistency: 2,
+                timeout: 5000, //todo this timeout needs to be longer for the initial connection...
+                count: 0,
+            });
 
         let expected_ok = Value::Strings("OK".to_string());
 
         let test = tuneable_success_consistency
-            .transform(wrapper.clone(), &dummy_chain)
+            .transform(wrapper.clone())
             .await;
 
         println!("{:?}", test);
@@ -392,7 +404,7 @@ mod scatter_transform_tests {
             t_holder.get_global_tx(),
         ));
 
-        let tuneable_fail_consistency = Transforms::TuneableConsistency(TuneableConsistency {
+        let mut tuneable_fail_consistency = Transforms::TuneableConsistency(TuneableConsistency {
             name: "TuneableConsistency",
             route_map: one_of_three,
             write_consistency: 2,
@@ -401,9 +413,7 @@ mod scatter_transform_tests {
             count: 0,
         });
 
-        let response_fail = tuneable_fail_consistency
-            .transform(wrapper.clone(), &dummy_chain)
-            .await?;
+        let response_fail = tuneable_fail_consistency.transform(wrapper.clone()).await?;
 
         let expected_err = Value::Strings("Not enough responses".to_string());
 

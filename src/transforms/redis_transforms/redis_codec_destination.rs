@@ -19,7 +19,6 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::protocols::redis_codec::RedisCodec;
-use crate::transforms::chain::TransformChain;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -142,7 +141,7 @@ impl RedisCodecDestination {
 #[async_trait]
 impl Transform for RedisCodecDestination {
     // #[instrument]
-    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let r = self.send_message(qd.message, qd.clock).await;
         r
     }

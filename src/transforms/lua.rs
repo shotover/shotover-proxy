@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages, QueryMessage};
-use crate::transforms::chain::TransformChain;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 pub struct LuaFilterTransform {
@@ -53,23 +52,26 @@ impl TransformsFromConfig for LuaConfig {
     }
 }
 
-async fn temp_transform(qd: Wrapper, transforms: &TransformChain) -> ChainResponse {
-    transforms.call_next_transform(qd).await
-}
-
 #[async_trait]
 impl Transform for LuaFilterTransform {
-    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        let chain_count = qd.next_transform;
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let globals = self.slua.globals();
         let qm_v = mlua_serde::to_value(&self.slua, qd.message.clone()).unwrap();
+
+        //Warning, QD's transform chain is empty after the creation of this scoped function
+
         let result = self.slua.scope(|scope| {
-            let spawn_func = scope.create_function(
+            let spawn_func = scope.create_function_mut(
                 |_lua: &Lua, messages: Messages| -> mlua::Result<Messages> {
+                    //Warning, QD's transform chain is empty after the creation of this scoped function
+                    let mut future = Wrapper::new(Messages::new());
+                    std::mem::swap(&mut future.transforms, &mut qd.transforms);
+                    std::mem::swap(&mut future.message, &mut qd.message);
+                    std::mem::swap(&mut future.clock, &mut qd.clock);
                     //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
-                    tokio::runtime::Handle::current().block_on(async move {
-                        let w = Wrapper::new_with_next_transform(messages, chain_count);
-                        return Ok(temp_transform(w, t).await.map_err(|_e| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        let result = future.call_next_transform().await;
+                        return Ok(result.map_err(|_e| {
                             mlua::Error::RuntimeError(
                                 "help!!@! - - TODO implement From anyhow to mlua errors"
                                     .to_string(),
@@ -158,8 +160,8 @@ return call_next_transform(qm)
             t_holder.get_global_tx(),
         );
 
-        if let Transforms::Lua(lua) = lua_t.get_source(&t_holder).await? {
-            let result = lua.transform(wrapper, &chain).await;
+        if let Transforms::Lua(mut lua) = lua_t.get_source(&t_holder).await? {
+            let result = lua.transform(wrapper).await;
             if let Ok(m) = result {
                 if let MessageDetails::Response(QueryResponse {
                     matching_query: Some(oq),
