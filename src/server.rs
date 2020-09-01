@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
 use tokio::time::Duration;
 use tokio_util::codec::{Decoder, Encoder, Framed};
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 
 pub struct TcpCodecListener<C>
 where
@@ -272,8 +272,6 @@ where
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
 
-        let one = Wrapping(1);
-
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown
             // signal
@@ -301,11 +299,12 @@ where
 
             match frame {
                 Ok(message) => {
-                    self.connection_clock += one;
+                    trace!("Received raw message {:?}", message);
+                    self.connection_clock += Wrapping(1);
                     match self
                         .chain
                         .process_request(
-                            Wrapper::new_with_rnd(message, self.connection_clock),
+                            Wrapper::new_with_rnd(message, self.connection_clock.clone()),
                             self.client_details.clone(),
                         )
                         .await

@@ -227,7 +227,7 @@ impl<'a> Clone for Wrapper<'a> {
         Wrapper {
             message: self.message.clone(),
             transforms: vec![],
-            clock: self.clock,
+            clock: self.clock.clone(),
         }
     }
 }
