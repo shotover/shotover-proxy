@@ -69,7 +69,7 @@ impl Transform for Route {
         self.name
     }
 
-    async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
+    async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
         let rt = self.lua_runtime.lock().await;
         self.route_script.prep_lua_runtime(rt.borrow())
     }

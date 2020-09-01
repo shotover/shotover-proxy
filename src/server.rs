@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
 use tokio::time::Duration;
 use tokio_util::codec::{Decoder, Encoder, Framed};
-use tracing::{debug, error, info, trace};
+use tracing::{error, info, trace};
 
 pub struct TcpCodecListener<C>
 where
@@ -304,7 +304,7 @@ where
                     match self
                         .chain
                         .process_request(
-                            Wrapper::new_with_rnd(message, self.connection_clock.clone()),
+                            Wrapper::new_with_rnd(message, self.connection_clock),
                             self.client_details.clone(),
                         )
                         .await
