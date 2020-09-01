@@ -4,10 +4,7 @@ use bytes::Bytes;
 use evmap::ReadHandleFactory;
 use itertools::Itertools;
 use metrics::{counter, timing};
-use mlua::Lua;
-use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 type InnerChain = Vec<Transforms>;
