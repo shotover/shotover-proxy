@@ -78,12 +78,12 @@ impl Transform for Scatter {
         } else {
             let mut fu = FuturesUnordered::from_iter(self.route_map.iter_mut().filter_map(
                 |(name, chain)| {
-                    return if let Some(f) = chosen_route.iter().find(|p| *p == name) {
-                        let mut wrapper = qd.clone();
+                    if let Some(_f) = chosen_route.iter().find(|p| *p == name) {
+                        let wrapper = qd.clone();
                         Some(chain.process_request(wrapper, name.clone()))
                     } else {
                         None
-                    };
+                    }
                 },
             ));
 

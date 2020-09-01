@@ -96,7 +96,7 @@ impl TransformChain {
         let result = wrapper.call_next_transform().await;
         let end = Instant::now();
         counter!("shotover_chain_total", 1, "chain" => self.name.clone());
-        if let Err(_) = &result {
+        if result.is_err() {
             counter!("shotover_chain_failures", 1, "chain" => self.name.clone())
         }
         timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);

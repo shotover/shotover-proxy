@@ -58,12 +58,12 @@ impl Transform for Route {
         let chosen_route = self
             .route_script
             .call(rt.borrow(), (qd.message.clone(), routes))?;
-        return self
+        self
             .route_map
             .get_mut(chosen_route.as_str())
             .unwrap()
             .process_request(qd, name)
-            .await;
+            .await
     }
 
     fn get_name(&self) -> &'static str {

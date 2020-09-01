@@ -37,7 +37,7 @@ impl Transform for Null {
                     .messages
                     .into_iter()
                     .filter_map(|m| {
-                        return if let MessageDetails::Query(qm) = m.details {
+                        if let MessageDetails::Query(qm) = m.details {
                             Some(Message::new_response(
                                 QueryResponse::empty_with_matching(qm),
                                 true,
@@ -45,7 +45,7 @@ impl Transform for Null {
                             ))
                         } else {
                             None
-                        };
+                        }
                     })
                     .collect_vec(),
             });

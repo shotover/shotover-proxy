@@ -227,7 +227,7 @@ impl<'a> Clone for Wrapper<'a> {
         Wrapper {
             message: self.message.clone(),
             transforms: vec![],
-            clock: self.clock.clone(),
+            clock: self.clock,
         }
     }
 }
@@ -252,7 +252,7 @@ impl<'a> Wrapper<'a> {
         }
         let end = Instant::now();
         counter!("shotover_transform_total", 1, "transform" => name);
-        if let Err(_) = &result {
+        if result.is_err() {
             counter!("shotover_transform_failures", 1, "transform" => name)
         }
         timing!("shotover_transform_latency", start, end, "transform" => name);
@@ -271,7 +271,7 @@ impl<'a> Wrapper<'a> {
         }
     }
 
-    pub fn new_with_next_transform(m: Messages, next_transform: usize) -> Self {
+    pub fn new_with_next_transform(m: Messages, _next_transform: usize) -> Self {
         Wrapper {
             message: m,
             transforms: vec![],

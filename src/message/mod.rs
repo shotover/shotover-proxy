@@ -95,7 +95,7 @@ impl Message {
 
     pub fn into_bypass(self) -> Self {
         if let MessageDetails::Bypass(_) = &self.details {
-            return self;
+            self
         } else {
             Message {
                 details: MessageDetails::Bypass(Box::new(self.details)),

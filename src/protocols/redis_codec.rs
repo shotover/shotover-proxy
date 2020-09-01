@@ -104,7 +104,7 @@ fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
         Ok(frame)
     } else {
         warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
-        return Err(anyhow!("Unsupported frame found, not sending"));
+        Err(anyhow!("Unsupported frame found, not sending"))
     }
 }
 
@@ -579,7 +579,7 @@ impl RedisCodec {
                     }),
                     false,
                     RawFrame::Redis(Frame::Array(vec![
-                        Frame::SimpleString(channel.clone()),
+                        Frame::SimpleString(channel),
                         Frame::SimpleString(message),
                         Frame::SimpleString(kind),
                     ])),

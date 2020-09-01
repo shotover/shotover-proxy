@@ -1,12 +1,12 @@
 use crate::message::{ASTHolder, Message, MessageDetails, Messages, QueryResponse};
-use redis::{pipe, AsyncCommands, RedisResult};
-use sqlparser::ast::Statement::*;
-use std::collections::HashMap;
-use std::iter::Iterator;
 
-use crate::message::Value as MValue;
-use crate::transforms::chain::TransformChain;
-use std::borrow::Borrow;
+
+use std::collections::HashMap;
+
+
+
+
+
 
 use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
@@ -77,8 +77,8 @@ impl SimpleRedisCache {
 #[async_trait]
 impl Transform for SimpleRedisCache {
     // #[instrument]
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        let mut responses = Messages::new();
+    async fn transform<'a>(&'a mut self, _qd: Wrapper<'a>) -> ChainResponse {
+        let responses = Messages::new();
         // for message in &qd.message.messages {
         //     let wrapped_message = Wrapper::new_with_next_transform(
         //         Messages::new_from_message(message.clone()),

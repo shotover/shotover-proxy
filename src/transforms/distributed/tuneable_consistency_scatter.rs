@@ -127,7 +127,7 @@ impl Transform for TuneableConsistency {
             .messages
             .iter()
             .map(|m| {
-                return if let MessageDetails::Query(QueryMessage {
+                if let MessageDetails::Query(QueryMessage {
                     query_string: _,
                     namespace: _,
                     primary_key: _,
@@ -137,13 +137,13 @@ impl Transform for TuneableConsistency {
                     ast: _,
                 }) = &m.details
                 {
-                    return match query_type {
+                    match query_type {
                         QueryType::Read => self.read_consistency,
                         _ => self.write_consistency,
-                    };
+                    }
                 } else {
                     self.write_consistency
-                };
+                }
             })
             .collect_vec();
         let max_required_successes = *required_successes
@@ -154,7 +154,7 @@ impl Transform for TuneableConsistency {
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
         let name = self.get_name().to_string();
-        let timeout_count = self.timeout.clone();
+        let timeout_count = self.timeout;
         let mut_iter = self.route_map.iter_mut();
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
@@ -199,7 +199,7 @@ impl Transform for TuneableConsistency {
 
         drop(r);
 
-        return if results.len()
+        if results.len()
             < *required_successes
                 .iter()
                 .max()
@@ -244,7 +244,7 @@ impl Transform for TuneableConsistency {
             Ok(Messages {
                 messages: collated_response,
             })
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {
@@ -272,7 +272,7 @@ mod scatter_transform_tests {
     ) -> Result<()> {
         let foo = message.messages.pop().unwrap().details;
         println!("{:?}", foo);
-        return if let MessageDetails::Response(QueryResponse {
+        if let MessageDetails::Response(QueryResponse {
             matching_query: _,
             result: Some(r),
             error: _,
@@ -283,7 +283,7 @@ mod scatter_transform_tests {
             Ok(())
         } else {
             Err(anyhow!("Couldn't destructure message"))
-        };
+        }
     }
 
     fn check_err_responses(
@@ -291,7 +291,7 @@ mod scatter_transform_tests {
         expected_err: &Value,
         _expected_count: usize,
     ) -> Result<()> {
-        return if let MessageDetails::Response(QueryResponse {
+        if let MessageDetails::Response(QueryResponse {
             matching_query: _,
             result: _,
             error: Some(err),
@@ -302,7 +302,7 @@ mod scatter_transform_tests {
             Ok(())
         } else {
             Err(anyhow!("Couldn't destructure message"))
-        };
+        }
     }
 
     #[tokio::test(threaded_scheduler)]
@@ -314,7 +314,7 @@ mod scatter_transform_tests {
             true,
             RawFrame::NONE,
         );
-        let dummy_chain = TransformChain::new(
+        let _dummy_chain = TransformChain::new(
             vec![],
             "dummy".to_string(),
             t_holder.get_global_map_handle(),

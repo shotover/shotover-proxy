@@ -646,7 +646,7 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
         Ok(frame)
     } else {
         warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
-        return Err(anyhow!("Unsupported frame found, not sending"));
+        Err(anyhow!("Unsupported frame found, not sending"))
     }
 }
 

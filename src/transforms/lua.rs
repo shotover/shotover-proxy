@@ -62,7 +62,7 @@ impl Transform for LuaFilterTransform {
 
         let result = self.slua.scope(|scope| {
             let spawn_func = scope.create_function_mut(
-                |_lua: &Lua, messages: Messages| -> mlua::Result<Messages> {
+                |_lua: &Lua, _messages: Messages| -> mlua::Result<Messages> {
                     //Warning, QD's transform chain is empty after the creation of this scoped function
                     let mut future = Wrapper::new(Messages::new());
                     std::mem::swap(&mut future.transforms, &mut qd.transforms);
@@ -153,7 +153,7 @@ return call_next_transform(qm)
             Transforms::Null(Null::new()),
         ];
 
-        let chain = TransformChain::new(
+        let _chain = TransformChain::new(
             transforms,
             String::from("test_chain"),
             t_holder.get_global_map_handle(),
