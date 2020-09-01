@@ -131,8 +131,7 @@ impl Transform for Scatter {
     }
 
     async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
-        let rt = t.lua_runtime.lock().await;
-        self.route_script.prep_lua_runtime(rt.borrow())?;
-        Ok(())
+        let rt = self.lua_runtime.lock().await;
+        self.route_script.prep_lua_runtime(rt.borrow())
     }
 }

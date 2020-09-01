@@ -23,7 +23,6 @@ pub struct TransformChain {
     global_updater: Option<Sender<(String, Bytes)>>,
     pub chain_local_map: Option<ReadHandleFactory<String, Bytes>>,
     pub chain_local_map_updater: Option<Sender<(String, Bytes)>>,
-    pub lua_runtime: Arc<Mutex<mlua::Lua>>,
 }
 
 impl Clone for TransformChain {
@@ -46,7 +45,6 @@ impl TransformChain {
             global_updater: None,
             chain_local_map: None,
             chain_local_map_updater: None,
-            lua_runtime: Arc::new(Mutex::new(Lua::new())),
         }
     }
 
@@ -77,7 +75,6 @@ impl TransformChain {
             global_updater: Some(global_updater),
             chain_local_map: Some(rh.factory()),
             chain_local_map_updater: Some(local_tx),
-            lua_runtime: Arc::new(Mutex::new(Lua::new())),
         }
     }
 

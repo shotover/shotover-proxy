@@ -58,8 +58,7 @@ impl Transform for Route {
         let chosen_route = self
             .route_script
             .call(rt.borrow(), (qd.message.clone(), routes))?;
-        self
-            .route_map
+        self.route_map
             .get_mut(chosen_route.as_str())
             .unwrap()
             .process_request(qd, name)
@@ -71,7 +70,7 @@ impl Transform for Route {
     }
 
     async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
-        let rt = t.lua_runtime.lock().await;
+        let rt = self.lua_runtime.lock().await;
         self.route_script.prep_lua_runtime(rt.borrow())
     }
 }

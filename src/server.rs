@@ -318,21 +318,6 @@ where
                             error!("chain processing error - {}", e);
                         }
                     }
-
-                    // if let Ok(modified_message) = self
-                    //     .chain
-                    //     .process_request(Wrapper::new_with_rnd(
-                    //         message,
-                    //         self.connection_clock.clone(),
-                    //     ))
-                    //     .await
-                    // {
-                    //     let r = self.connection.send(modified_message).await?;
-                    //     // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
-                    //     r
-                    // } else {
-                    //     error!("chain processing error")
-                    // }
                 }
                 Err(e) => {
                     trace!("Error handling message in TcpStream source: {:?}", e);
