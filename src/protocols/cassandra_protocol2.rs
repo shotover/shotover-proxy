@@ -833,12 +833,16 @@ mod cassandra_protocol_tests {
                     }) = m.details
                     {
                         let mut query_s = query_string.clone();
+                        let mut ast_string = format!("{}", ast);
+
+                        remove_whitespace(&mut query_s);
+                        remove_whitespace(&mut ast_string);
 
                         println!("{}", query_string);
                         println!("{}", ast);
                         assert_eq!(
-                            remove_whitespace(&mut query_s),
-                            remove_whitespace(&mut format!("{}", ast))
+                            query_s,
+                            ast_string
                         );
                         Ok(())
                     } else {

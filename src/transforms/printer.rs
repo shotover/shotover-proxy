@@ -9,6 +9,13 @@ pub struct Printer {
     name: &'static str,
 }
 
+
+impl Default for Printer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Printer {
     pub fn new() -> Printer {
         Printer { name: "Printer" }

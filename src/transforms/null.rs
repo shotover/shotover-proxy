@@ -11,6 +11,12 @@ pub struct Null {
     with_request: bool,
 }
 
+impl Default for Null {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Null {
     pub fn new() -> Null {
         Null {

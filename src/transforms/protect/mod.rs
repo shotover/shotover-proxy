@@ -490,10 +490,10 @@ mod protect_transform_tests {
 
         let aws_config = KeyManagerConfig::AWSKms {
             region: env::var("CMK_REGION")
-                .or::<String>(Ok("US-EAST-1".to_string()))
+                .or_else::<String, _>(|_| Ok("US-EAST-1".to_string()))
                 .map_err(|e| anyhow!(e))?,
             cmk_id: env::var("CMK_ID")
-                .or::<String>(Ok("alias/InstaProxyDev".to_string()))
+                .or_else::<String, _>(|_| Ok("alias/InstaProxyDev".to_string()))
                 .map_err(|e| anyhow!(e))?,
             encryption_context: None,
             key_spec: None,

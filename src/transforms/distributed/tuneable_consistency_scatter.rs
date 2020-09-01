@@ -270,14 +270,14 @@ mod scatter_transform_tests {
         expected_ok: &Value,
         _expected_count: usize,
     ) -> Result<()> {
-        let foo = message.messages.pop().unwrap().details;
-        println!("{:?}", foo);
+        let test_message_details = message.messages.pop().unwrap().details;
+        println!("{:?}", test_message_details);
         if let MessageDetails::Response(QueryResponse {
             matching_query: _,
             result: Some(r),
             error: _,
             response_meta: _,
-        }) = foo
+        }) = test_message_details
         {
             assert_eq!(expected_ok, &r);
             Ok(())

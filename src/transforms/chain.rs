@@ -50,6 +50,7 @@ impl TransformChain {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn new(
         transform_list: Vec<Transforms>,
         name: String,
