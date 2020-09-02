@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     debug!(
         "Wrapper overhead size on stack is {}",
-        std::mem::size_of::<Wrapper>()
+        std::mem::size_of::<Wrapper<'_>>()
     );
 
     info!("Starting loaded topology");

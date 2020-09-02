@@ -8,6 +8,12 @@ pub struct TestContext {
     pub client: redis::Client,
 }
 
+impl Default for TestContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestContext {
     pub fn new_auth() -> TestContext {
         TestContext::new_internal("redis://:shotover@127.0.0.1:6379/".to_string())

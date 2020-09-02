@@ -1,4 +1,3 @@
-use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Sender;
 
 use crate::config::topology::TopicHolder;
@@ -72,7 +71,7 @@ impl TransformsFromConfig for AsyncMpscTeeConfig {
 
 #[async_trait]
 impl Transform for AsyncMpscForwarder {
-    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let expected_responses = qd.message.messages.len();
         self.tx
             .clone()
@@ -97,7 +96,7 @@ impl Transform for AsyncMpscForwarder {
 
 #[async_trait]
 impl Transform for AsyncMpscTee {
-    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let m = qd.message.clone();
         self.tx
             .clone()
@@ -107,7 +106,7 @@ impl Transform for AsyncMpscTee {
                 e
             })
             .await?;
-        t.call_next_transform(qd).await
+        qd.call_next_transform().await
     }
 
     fn get_name(&self) -> &'static str {

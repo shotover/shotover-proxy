@@ -1,5 +1,3 @@
-use crate::transforms::chain::TransformChain;
-
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::RawFrame;
@@ -11,6 +9,12 @@ use itertools::Itertools;
 pub struct Null {
     name: &'static str,
     with_request: bool,
+}
+
+impl Default for Null {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Null {
@@ -31,7 +35,7 @@ impl Null {
 
 #[async_trait]
 impl Transform for Null {
-    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         if self.with_request {
             return ChainResponse::Ok(Messages {
                 messages: qd
@@ -39,7 +43,7 @@ impl Transform for Null {
                     .messages
                     .into_iter()
                     .filter_map(|m| {
-                        return if let MessageDetails::Query(qm) = m.details {
+                        if let MessageDetails::Query(qm) = m.details {
                             Some(Message::new_response(
                                 QueryResponse::empty_with_matching(qm),
                                 true,
@@ -47,7 +51,7 @@ impl Transform for Null {
                             ))
                         } else {
                             None
-                        };
+                        }
                     })
                     .collect_vec(),
             });

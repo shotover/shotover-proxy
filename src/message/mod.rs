@@ -95,7 +95,7 @@ impl Message {
 
     pub fn into_bypass(self) -> Self {
         if let MessageDetails::Bypass(_) = &self.details {
-            return self;
+            self
         } else {
             Message {
                 details: MessageDetails::Bypass(Box::new(self.details)),
@@ -103,6 +103,12 @@ impl Message {
                 original: self.original,
             }
         }
+    }
+}
+
+impl Default for Messages {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -135,7 +141,7 @@ impl Messages {
                 raw_frame,
             )],
         }
-        .to_bypass()
+        .into_bypass()
     }
 
     pub fn new_single_bypass_response(raw_frame: RawFrame, modified: bool) -> Self {
@@ -146,7 +152,7 @@ impl Messages {
                 raw_frame,
             )],
         }
-        .to_bypass()
+        .into_bypass()
     }
 
     pub fn new_single_response(qr: QueryResponse, modified: bool, original: RawFrame) -> Self {
@@ -159,7 +165,7 @@ impl Messages {
         }
     }
 
-    pub fn to_bypass(self) -> Self {
+    pub fn into_bypass(self) -> Self {
         Messages {
             messages: self
                 .messages

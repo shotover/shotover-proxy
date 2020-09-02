@@ -7,6 +7,8 @@ use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
+use metrics::{counter, timing};
+
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
@@ -34,6 +36,7 @@ use core::num::Wrapping;
 use distributed::route::{Route, RouteConfig};
 use distributed::scatter::{Scatter, ScatterConfig};
 use mlua::UserData;
+use tokio::time::Instant;
 
 pub mod cassandra_codec_destination;
 pub mod chain;
@@ -80,25 +83,25 @@ impl Debug for Transforms {
 
 #[async_trait]
 impl Transform for Transforms {
-    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CodecDestination(c) => c.transform(qd, t).await,
-            Transforms::KafkaDestination(k) => k.transform(qd, t).await,
-            Transforms::RedisCache(r) => r.transform(qd, t).await,
-            Transforms::MPSCTee(m) => m.transform(qd, t).await,
-            Transforms::MPSCForwarder(m) => m.transform(qd, t).await,
-            Transforms::Route(r) => r.transform(qd, t).await,
-            Transforms::Scatter(s) => s.transform(qd, t).await,
-            Transforms::Printer(p) => p.transform(qd, t).await,
-            Transforms::Null(n) => n.transform(qd, t).await,
-            Transforms::Lua(l) => l.transform(qd, t).await,
-            Transforms::Protect(p) => p.transform(qd, t).await,
-            Transforms::RepeatMessage(p) => p.transform(qd, t).await,
-            Transforms::RandomDelay(p) => p.transform(qd, t).await,
-            Transforms::TuneableConsistency(tc) => tc.transform(qd, t).await,
-            Transforms::RedisCodecDestination(r) => r.transform(qd, t).await,
-            Transforms::RedisTimeStampTagger(r) => r.transform(qd, t).await,
-            Transforms::RedisCluster(r) => r.transform(qd, t).await,
+            Transforms::CodecDestination(c) => c.transform(qd).await,
+            Transforms::KafkaDestination(k) => k.transform(qd).await,
+            Transforms::RedisCache(r) => r.transform(qd).await,
+            Transforms::MPSCTee(m) => m.transform(qd).await,
+            Transforms::MPSCForwarder(m) => m.transform(qd).await,
+            Transforms::Route(r) => r.transform(qd).await,
+            Transforms::Scatter(s) => s.transform(qd).await,
+            Transforms::Printer(p) => p.transform(qd).await,
+            Transforms::Null(n) => n.transform(qd).await,
+            Transforms::Lua(l) => l.transform(qd).await,
+            Transforms::Protect(p) => p.transform(qd).await,
+            Transforms::RepeatMessage(p) => p.transform(qd).await,
+            Transforms::RandomDelay(p) => p.transform(qd).await,
+            Transforms::TuneableConsistency(tc) => tc.transform(qd).await,
+            Transforms::RedisCodecDestination(r) => r.transform(qd).await,
+            Transforms::RedisTimeStampTagger(r) => r.transform(qd).await,
+            Transforms::RedisCluster(r) => r.transform(qd).await,
         }
     }
 
@@ -211,22 +214,51 @@ struct QueryData {
     query: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct Wrapper {
+#[derive(Debug)]
+pub struct Wrapper<'a> {
     pub message: Messages,
-    pub next_transform: usize,
+    // pub next_transform: usize,
+    transforms: Vec<&'a mut Transforms>,
     pub clock: Wrapping<u32>,
 }
 
-impl UserData for Wrapper {}
+impl<'a> Clone for Wrapper<'a> {
+    fn clone(&self) -> Self {
+        Wrapper {
+            message: self.message.clone(),
+            transforms: vec![],
+            clock: self.clock,
+        }
+    }
+}
 
-impl Display for Wrapper {
+impl<'a> UserData for Wrapper<'a> {}
+
+impl<'a> Display for Wrapper<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         f.write_fmt(format_args!("{:#?}", self.message))
     }
 }
 
-impl Wrapper {
+impl<'a> Wrapper<'a> {
+    pub async fn call_next_transform(mut self) -> ChainResponse {
+        let t = self.transforms.remove(0);
+
+        let name = t.get_name();
+        let start = Instant::now();
+        let result;
+        {
+            result = t.transform(self).await;
+        }
+        let end = Instant::now();
+        counter!("shotover_transform_total", 1, "transform" => name);
+        if result.is_err() {
+            counter!("shotover_transform_failures", 1, "transform" => name)
+        }
+        timing!("shotover_transform_latency", start, end, "transform" => name);
+        result
+    }
+
     pub fn swap_message(&mut self, mut m: Messages) {
         std::mem::swap(&mut self.message, &mut m);
     }
@@ -234,15 +266,15 @@ impl Wrapper {
     pub fn new(m: Messages) -> Self {
         Wrapper {
             message: m,
-            next_transform: 0,
+            transforms: vec![],
             clock: Wrapping(0),
         }
     }
 
-    pub fn new_with_next_transform(m: Messages, next_transform: usize) -> Self {
+    pub fn new_with_next_transform(m: Messages, _next_transform: usize) -> Self {
         Wrapper {
             message: m,
-            next_transform,
+            transforms: vec![],
             clock: Wrapping(0),
         }
     }
@@ -250,13 +282,13 @@ impl Wrapper {
     pub fn new_with_rnd(m: Messages, clock: Wrapping<u32>) -> Self {
         Wrapper {
             message: m,
-            next_transform: 0,
+            transforms: vec![],
             clock,
         }
     }
 
-    pub fn reset(&mut self) {
-        self.next_transform = 0;
+    pub fn reset(&mut self, transforms: Vec<&'a mut Transforms>) {
+        self.transforms = transforms;
     }
 }
 
@@ -267,7 +299,7 @@ struct ResponseData {
 
 #[async_trait]
 pub trait Transform: Send {
-    async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
 

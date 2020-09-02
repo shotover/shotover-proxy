@@ -13,7 +13,7 @@ use shotover_proxy::transforms::{Transforms, TransformsFromConfig, Wrapper};
 fn criterion_benchmark(c: &mut Criterion) {
     let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new_without_request())];
 
-    let chain = TransformChain::new_no_shared_state(transforms, "bench".to_string());
+    let mut chain = TransformChain::new_no_shared_state(transforms, "bench".to_string());
     let wrapper = Wrapper::new(Messages::new_single_query(
         QueryMessage {
             query_string: "".to_string(),
@@ -70,7 +70,7 @@ fn lua_benchmark(c: &mut Criterion) {
 
     let transforms: Vec<Transforms> = vec![transform, Transforms::Null(Null::new())];
 
-    let lchain = TransformChain::new_no_shared_state(transforms, String::from("test_chain"));
+    let mut lchain = TransformChain::new_no_shared_state(transforms, String::from("test_chain"));
 
     c.bench_with_input(
         BenchmarkId::new("lua processing", "Empty Message"),

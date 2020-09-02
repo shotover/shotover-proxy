@@ -100,6 +100,7 @@ impl Topology {
         Ok(temp)
     }
 
+    #[allow(clippy::type_complexity)]
     pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
         let (global_map_r, mut global_map_w) = evmap::new();
         let (global_tx, mut global_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) =

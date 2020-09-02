@@ -1,13 +1,10 @@
-use crate::error::{ChainResponse, RequestError};
-use crate::transforms::{Transform, Transforms, Wrapper};
-use anyhow::anyhow;
+use crate::error::ChainResponse;
+use crate::transforms::{Transforms, Wrapper};
 use bytes::Bytes;
 use evmap::ReadHandleFactory;
+use itertools::Itertools;
 use metrics::{counter, timing};
-use mlua::Lua;
-use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 type InnerChain = Vec<Transforms>;
@@ -23,7 +20,6 @@ pub struct TransformChain {
     global_updater: Option<Sender<(String, Bytes)>>,
     pub chain_local_map: Option<ReadHandleFactory<String, Bytes>>,
     pub chain_local_map_updater: Option<Sender<(String, Bytes)>>,
-    pub lua_runtime: Arc<Mutex<mlua::Lua>>,
 }
 
 impl Clone for TransformChain {
@@ -46,10 +42,10 @@ impl TransformChain {
             global_updater: None,
             chain_local_map: None,
             chain_local_map_updater: None,
-            lua_runtime: Arc::new(Mutex::new(Lua::new())),
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn new(
         transform_list: Vec<Transforms>,
         name: String,
@@ -76,38 +72,26 @@ impl TransformChain {
             global_updater: Some(global_updater),
             chain_local_map: Some(rh.factory()),
             chain_local_map_updater: Some(local_tx),
-            lua_runtime: Arc::new(Mutex::new(Lua::new())),
         }
     }
 
-    pub async fn call_next_transform(&self, mut qd: Wrapper) -> ChainResponse {
-        let current = qd.next_transform;
-        qd.next_transform += 1;
-
-        return match self.chain.get(current) {
-            Some(t) => {
-                let start = Instant::now();
-                let result = t.transform(qd, self).await;
-                let end = Instant::now();
-                counter!("shotover_transform_total", 1, "transform" => t.get_name());
-                if let Err(_) = &result {
-                    counter!("shotover_transform_failures", 1, "transform" => t.get_name())
-                }
-                timing!("shotover_transform_latency", start, end, "transform" => t.get_name());
-                result
-            }
-            None => Err(anyhow!(RequestError::ChainProcessingError(
-                "No more transforms left in the chain".to_string()
-            ))),
-        };
+    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
+        self.chain.iter_mut().collect_vec()
     }
 
-    pub async fn process_request(&self, wrapper: Wrapper, client_details: String) -> ChainResponse {
+    pub async fn process_request(
+        &mut self,
+        mut wrapper: Wrapper<'_>,
+        client_details: String,
+    ) -> ChainResponse {
         let start = Instant::now();
-        let result = self.call_next_transform(wrapper).await;
+        let iter = self.chain.iter_mut().collect_vec();
+        wrapper.reset(iter);
+
+        let result = wrapper.call_next_transform().await;
         let end = Instant::now();
         counter!("shotover_chain_total", 1, "chain" => self.name.clone());
-        if let Err(_) = &result {
+        if result.is_err() {
             counter!("shotover_chain_failures", 1, "chain" => self.name.clone())
         }
         timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);

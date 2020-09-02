@@ -54,7 +54,7 @@ pub struct AsyncMpsc {
 
 impl AsyncMpsc {
     pub fn new(
-        chain: TransformChain,
+        mut chain: TransformChain,
         mut rx: Receiver<Messages>,
         name: &str,
         shutdown: Shutdown,

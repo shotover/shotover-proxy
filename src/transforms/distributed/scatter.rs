@@ -13,15 +13,20 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use itertools::Itertools;
+use mlua::Lua;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::iter::FromIterator;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct Scatter {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
     route_script: ScriptHolder<(Messages, Vec<String>), Vec<String>>,
+    lua_runtime: Arc<Mutex<mlua::Lua>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -45,35 +50,42 @@ impl TransformsFromConfig for ScatterConfig {
             name: "scatter",
             route_map: temp,
             route_script: self.route_script.get_script_func()?,
+            lua_runtime: Arc::new(Mutex::new(Lua::new())),
         }))
     }
 }
 
 #[async_trait]
 impl Transform for Scatter {
-    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+        let name = self.get_name().to_string();
+
         let routes: Vec<String> = self.route_map.keys().cloned().collect();
-        let rt = t.lua_runtime.lock().await;
+        let rt = self.lua_runtime.lock().await;
 
         let chosen_route = self
             .route_script
-            .call(rt.borrow(), (qd.message.clone(), routes))?;
+            .call(rt.borrow(), (qd.message.clone(), routes))?
+            .clone();
         if chosen_route.len() == 1 {
             self.route_map
-                .get(chosen_route.get(0).unwrap().as_str())
+                .get_mut(chosen_route.get(0).unwrap().as_str())
                 .unwrap()
-                .process_request(qd, self.get_name().to_string())
+                .process_request(qd, name)
                 .await
         } else if chosen_route.is_empty() {
             ChainResponse::Err(anyhow!("no routes found"))
         } else {
-            let mut fu = FuturesUnordered::new();
-            for ref route in &chosen_route {
-                let chain = self.route_map.get(route.as_str()).unwrap();
-                let mut wrapper = qd.clone();
-                wrapper.reset();
-                fu.push(chain.process_request(wrapper, self.get_name().to_string()));
-            }
+            let mut fu = FuturesUnordered::from_iter(self.route_map.iter_mut().filter_map(
+                |(name, chain)| {
+                    if let Some(_f) = chosen_route.iter().find(|p| *p == name) {
+                        let wrapper = qd.clone();
+                        Some(chain.process_request(wrapper, name.clone()))
+                    } else {
+                        None
+                    }
+                },
+            ));
 
             let mut results: Vec<Messages> = Vec::new();
             while let Some(Ok(messages)) = fu.next().await {
@@ -118,9 +130,8 @@ impl Transform for Scatter {
         self.name
     }
 
-    async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
-        let rt = t.lua_runtime.lock().await;
-        self.route_script.prep_lua_runtime(rt.borrow())?;
-        Ok(())
+    async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
+        let rt = self.lua_runtime.lock().await;
+        self.route_script.prep_lua_runtime(rt.borrow())
     }
 }

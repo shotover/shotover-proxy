@@ -1,5 +1,3 @@
-use crate::transforms::chain::TransformChain;
-
 use crate::error::ChainResponse;
 use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
@@ -23,8 +21,8 @@ impl Default for NoOp {
 
 #[async_trait]
 impl Transform for NoOp {
-    async fn transform(&self, qd: Wrapper, t: &TransformChain) -> ChainResponse {
-        t.call_next_transform(qd).await
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+        qd.call_next_transform().await
     }
 
     fn get_name(&self) -> &'static str {

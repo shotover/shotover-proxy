@@ -646,7 +646,7 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
         Ok(frame)
     } else {
         warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
-        return Err(anyhow!("Unsupported frame found, not sending"));
+        Err(anyhow!("Unsupported frame found, not sending"))
     }
 }
 
@@ -833,12 +833,16 @@ mod cassandra_protocol_tests {
                     }) = m.details
                     {
                         let mut query_s = query_string.clone();
+                        let mut ast_string = format!("{}", ast);
+
+                        remove_whitespace(&mut query_s);
+                        remove_whitespace(&mut ast_string);
 
                         println!("{}", query_string);
                         println!("{}", ast);
                         assert_eq!(
-                            remove_whitespace(&mut query_s),
-                            remove_whitespace(&mut format!("{}", ast))
+                            query_s,
+                            ast_string
                         );
                         Ok(())
                     } else {

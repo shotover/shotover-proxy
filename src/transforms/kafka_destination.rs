@@ -11,7 +11,6 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::RawFrame;
-use crate::transforms::chain::TransformChain;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Clone)]
@@ -71,7 +70,7 @@ impl Default for KafkaDestination {
 
 #[async_trait]
 impl Transform for KafkaDestination {
-    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let mut responses: Vec<Message> = vec![];
         for message in qd.message.messages {
             match message.details {

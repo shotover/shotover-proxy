@@ -8,7 +8,6 @@ use crate::message::{
     ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value,
 };
 use crate::protocols::RawFrame;
-use crate::transforms::chain::TransformChain;
 use futures::stream::{self, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection};
@@ -18,9 +17,6 @@ use redis::RedisResult;
 use tracing::{debug, trace};
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use std::ops::DerefMut;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 // TODO this may be worth implementing with a redis codec destination
 // buttt... the driver already supported a ton of stuff that didn't make sense
@@ -35,8 +31,8 @@ pub struct ConnectionDetails {
 
 pub struct RedisCluster {
     pub name: &'static str,
-    pub client: Arc<Mutex<ConnectionDetails>>,
-    pub connection: Arc<Mutex<Option<ClusterConnection>>>,
+    pub client: ConnectionDetails,
+    pub connection: Option<ClusterConnection>,
 }
 
 impl Clone for RedisCluster {
@@ -44,7 +40,7 @@ impl Clone for RedisCluster {
         RedisCluster {
             name: self.name,
             client: self.client.clone(),
-            connection: Arc::new(Mutex::new(None)),
+            connection: None,
         }
     }
 }
@@ -59,11 +55,11 @@ impl TransformsFromConfig for RedisClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisCluster(RedisCluster {
             name: "RedisCluster",
-            client: Arc::new(Mutex::new(ConnectionDetails {
+            client: ConnectionDetails {
                 first_contact_points: self.first_contact_points.clone(),
                 password: None,
-            })),
-            connection: Arc::new(Mutex::new(None)),
+            },
+            connection: None,
         }))
     }
 }
@@ -83,14 +79,11 @@ fn build_error(code: String, description: String, original: Option<QueryMessage>
 
 #[async_trait]
 impl Transform for RedisCluster {
-    async fn transform(&self, mut qd: Wrapper, _: &TransformChain) -> ChainResponse {
-        let mut lock = self.connection.lock().await;
-
-        if lock.is_none() {
-            let mut builder_lock = self.client.lock().await;
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+        if self.connection.is_none() {
             let mut eat_message = false;
 
-            let mut client = ClusterClientBuilder::new(builder_lock.first_contact_points.clone());
+            let mut client = ClusterClientBuilder::new(self.client.first_contact_points.clone());
 
             if let Some(Message {
                 details: MessageDetails::Query(qm),
@@ -105,15 +98,15 @@ impl Transform for RedisCluster {
                             let command_string = String::from_utf8(b.to_vec())
                                 .unwrap_or_else(|_| "couldn't decode".to_string());
 
-                            trace!(command = %command_string, connection = ?lock);
+                            trace!(command = %command_string, connection = ?self.client);
 
                             if command_string == "AUTH" {
                                 eat_message = true;
                             }
 
-                            if builder_lock.password.is_none() && command_string == "AUTH" {
+                            if self.client.password.is_none() && command_string == "AUTH" {
                                 if let Value::Bytes(password) = commands.remove(0) {
-                                    builder_lock.deref_mut().password.replace(
+                                    self.client.password.replace(
                                         String::from_utf8(password.to_vec())
                                             .unwrap_or_else(|_| "couldn't decode".to_string()),
                                     );
@@ -124,7 +117,7 @@ impl Transform for RedisCluster {
                 }
             }
 
-            if let Some(password) = builder_lock.password.as_deref() {
+            if let Some(password) = self.client.password.as_deref() {
                 client = client.password(password.to_string());
             }
 
@@ -135,7 +128,7 @@ impl Transform for RedisCluster {
             match connection_res {
                 Ok(conn) => {
                     debug!(connection = ?conn);
-                    *lock = Some(conn)
+                    self.connection = Some(conn)
                 }
                 Err(error) => {
                     debug!(error = ?error);
@@ -190,7 +183,7 @@ impl Transform for RedisCluster {
 
         // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
         // But we still need to fake it being a Vec of results
-        if let Some(connection) = lock.deref_mut() {
+        if let Some(connection) = &mut self.connection {
             let result: RedisResult<Vec<Value>> = if pipe.len() == 1 {
                 let cmd = pipe.pop().unwrap();
                 cmd.query_async(connection).await.map(|r| vec![r])

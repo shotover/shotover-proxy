@@ -1,4 +1,3 @@
-use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
@@ -10,9 +9,7 @@ use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use futures::{FutureExt, SinkExt};
 use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::stream::StreamExt;
-use tokio::sync::Mutex;
 use tracing::trace;
 
 use crate::error::ChainResponse;
@@ -39,7 +36,8 @@ impl TransformsFromConfig for CodecConfiguration {
 pub struct CodecDestination {
     name: &'static str,
     address: String,
-    outbound: Arc<Mutex<Option<Framed<TcpStream, CassandraCodec2>>>>,
+    // outbound: Arc<Mutex<Option<Framed<TcpStream, CassandraCodec2>>>>,
+    outbound: Option<Framed<TcpStream, CassandraCodec2>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
 }
@@ -54,7 +52,7 @@ impl CodecDestination {
     pub fn new(address: String, bypass: bool) -> CodecDestination {
         CodecDestination {
             address,
-            outbound: Arc::new(Mutex::new(None)),
+            outbound: None,
             name: "CodecDestination",
             cassandra_ks: HashMap::new(),
             bypass,
@@ -69,48 +67,42 @@ multi-consumer, single producer threadsafe queue
 */
 
 impl CodecDestination {
-    async fn send_message(&self, message: Messages) -> ChainResponse {
-        trace!("waiting for mutex lock");
-        if let Ok(mut mg) = self.outbound.try_lock() {
-            trace!("got mutex lock");
-            match *mg {
-                None => {
-                    trace!("creating outbound connection {:?}", self.address);
-                    let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
-                    // outbound_stream.set_nodelay(true);
-                    // outbound_stream.set_send_buffer_size(15*1000);
-                    let mut outbound_framed_codec = Framed::new(
-                        outbound_stream,
-                        CassandraCodec2::new(self.cassandra_ks.clone(), self.bypass),
-                    );
-                    trace!("sending frame upstream");
-                    let _ = outbound_framed_codec.send(message).await;
-                    trace!("frame sent");
+    async fn send_message(&mut self, message: Messages) -> ChainResponse {
+        match self.outbound {
+            None => {
+                trace!("creating outbound connection {:?}", self.address);
+                let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
+                // outbound_stream.set_nodelay(true);
+                // outbound_stream.set_send_buffer_size(15*1000);
+                let mut outbound_framed_codec = Framed::new(
+                    outbound_stream,
+                    CassandraCodec2::new(self.cassandra_ks.clone(), self.bypass),
+                );
+                trace!("sending frame upstream");
+                let _ = outbound_framed_codec.send(message).await;
+                trace!("frame sent");
 
-                    trace!("getting response");
-                    if let Some(o) = outbound_framed_codec.next().fuse().await {
-                        if let Ok(_resp) = &o {
-                            trace!("resp received");
-                            mg.replace(outbound_framed_codec);
-                            drop(mg);
-                            return o;
-                        }
+                trace!("getting response");
+                if let Some(o) = outbound_framed_codec.next().fuse().await {
+                    if let Ok(_resp) = &o {
+                        trace!("resp received");
+                        self.outbound.replace(outbound_framed_codec);
+                        return o;
                     }
-                    mg.replace(outbound_framed_codec);
-                    drop(mg);
                 }
-                Some(ref mut outbound_framed_codec) => {
-                    trace!("sending frame upstream");
-                    let _ = outbound_framed_codec.send(message).await;
-                    trace!("frame sent");
-                    trace!("getting response");
-                    let _rv = outbound_framed_codec
-                        .next()
-                        .fuse()
-                        .await
-                        .ok_or_else(|| anyhow!("couldnt get frame"))?;
-                    trace!("resp received");
-                }
+                self.outbound.replace(outbound_framed_codec);
+            }
+            Some(ref mut outbound_framed_codec) => {
+                trace!("sending frame upstream");
+                let _ = outbound_framed_codec.send(message).await;
+                trace!("frame sent");
+                trace!("getting response");
+                let _rv = outbound_framed_codec
+                    .next()
+                    .fuse()
+                    .await
+                    .ok_or_else(|| anyhow!("couldnt get frame"))?;
+                trace!("resp received");
             }
         }
         ChainResponse::Err(anyhow!("Something went wrong sending to cassandra"))
@@ -120,7 +112,7 @@ impl CodecDestination {
 #[async_trait]
 impl Transform for CodecDestination {
     // #[instrument]
-    async fn transform(&self, qd: Wrapper, _: &TransformChain) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         self.send_message(qd.message).await
     }
 
