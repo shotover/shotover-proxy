@@ -74,7 +74,6 @@ impl Transform for AsyncMpscForwarder {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let expected_responses = qd.message.messages.len();
         self.tx
-            .clone()
             .send(qd.message)
             .map_err(|e| {
                 warn!("MPSC error {}", e);
@@ -99,7 +98,6 @@ impl Transform for AsyncMpscTee {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let m = qd.message.clone();
         self.tx
-            .clone()
             .send(m)
             .map_err(|e| {
                 warn!("MPSC error {}", e);
