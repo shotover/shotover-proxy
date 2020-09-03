@@ -6,10 +6,8 @@ sources:
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
-    - ParallelMap:
+    - SequentialMap:
         name: "Redis-Cluster"
-        parallelism: 10
-        ordered_results: false
         chain:
           - RedisCluster:
               first_contact_points: ["redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/"]
