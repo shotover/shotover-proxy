@@ -12,7 +12,7 @@ type InnerChain = Vec<Transforms>;
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
 
-// #[derive(Debug)]
+#[derive(Debug)]
 pub struct TransformChain {
     name: String,
     pub chain: InnerChain,

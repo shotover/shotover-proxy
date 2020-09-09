@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -10,18 +10,23 @@ use crate::message::{
 use crate::protocols::RawFrame;
 use futures::stream::{self, StreamExt};
 
-use redis::cluster_async::{ClusterClientBuilder, ClusterConnection};
-use redis::ErrorKind;
-use redis::RedisResult;
+use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo};
+use redis::{cmd as redis_cmd, Cmd};
+use redis::{ErrorKind, ToRedisArgs};
+use redis::{Pipeline, RedisError, RedisResult};
 
 use tracing::{debug, trace};
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use itertools::Itertools;
+use std::collections::HashMap;
 
 // TODO this may be worth implementing with a redis codec destination
 // buttt... the driver already supported a ton of stuff that didn't make sense
 // to reimplement. It may be worth reworking the redis driver and redis protocol
 // to use the same types. j
+
+const RANDOM_STRING: &str = "<<RANDOM";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectionDetails {
@@ -75,6 +80,88 @@ fn build_error(code: String, description: String, original: Option<QueryMessage>
         true,
         RawFrame::NONE,
     ))
+}
+
+async fn remap_cluster_commands<'a>(
+    connection: &'a mut ClusterConnection,
+    mut qd: Wrapper<'a>,
+    use_slots: bool,
+) -> Result<HashMap<String, Vec<(usize, Cmd)>>, ChainResponse> {
+    let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
+    cmd_map.insert(RANDOM_STRING.to_string(), vec![]);
+    for (i, message) in qd.message.messages.into_iter().enumerate() {
+        if let MessageDetails::Query(qm) = message.details {
+            if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
+                if !commands.is_empty() {
+                    let command = commands.remove(0);
+                    if let Value::Bytes(b) = &command {
+                        let command_string = String::from_utf8(b.to_vec())
+                            .unwrap_or_else(|_| "couldn't decode".to_string());
+
+                        let mut redis_command = redis_cmd(command_string.as_str());
+
+                        for args in commands {
+                            redis_command.arg(args);
+                        }
+
+                        match RoutingInfo::for_packed_command(&redis_command) {
+                            Some(RoutingInfo::Random) => {
+                                if let Some(cmds) = cmd_map.get_mut(RANDOM_STRING) {
+                                    cmds.push((i, redis_command));
+                                } else {
+                                    cmd_map.insert(
+                                        RANDOM_STRING.to_string(),
+                                        vec![(i, redis_command)],
+                                    );
+                                }
+                            }
+                            Some(RoutingInfo::Slot(slot)) => {
+                                let bucket = if use_slots {
+                                    format!("{}", slot)
+                                } else {
+                                    if let Some(server) =
+                                        connection.get_connection_string(slot).await
+                                    {
+                                        server
+                                    } else {
+                                        return Err(build_error(
+                                            "ERR".to_string(),
+                                            format!(
+                                                "Could not route request: {}",
+                                                String::from_utf8_lossy(
+                                                    &*redis_command.get_packed_command()
+                                                )
+                                            ),
+                                            None,
+                                        ));
+                                    }
+                                };
+                                if let Some(cmds) = cmd_map.get_mut(&bucket) {
+                                    cmds.push((i, redis_command));
+                                } else {
+                                    cmd_map.insert(bucket.to_string(), vec![(i, redis_command)]);
+                                }
+                            }
+                            Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
+                                for cmds in cmd_map.values_mut() {
+                                    cmds.push((i, redis_command.clone()));
+                                }
+                            }
+                            None => {
+                                return Err(build_error(
+                                    "ERR".to_string(),
+                                    "Could not route request".to_string(),
+                                    None,
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return Ok(cmd_map);
 }
 
 #[async_trait]
@@ -160,35 +247,82 @@ impl Transform for RedisCluster {
         }
 
         debug!("Building pipelined query {:?}", qd.message.messages);
-        let mut pipe = redis::pipe();
-
-        for message in qd.message.messages {
-            if let MessageDetails::Query(qm) = message.details {
-                if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
-                    if !commands.is_empty() {
-                        let command = commands.remove(0);
-                        if let Value::Bytes(b) = &command {
-                            let command_string = String::from_utf8(b.to_vec())
-                                .unwrap_or_else(|_| "couldn't decode".to_string());
-
-                            pipe.cmd(command_string.as_str());
-                            for args in commands {
-                                pipe.arg(args);
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
         // But we still need to fake it being a Vec of results
         if let Some(connection) = &mut self.connection {
-            let result: RedisResult<Vec<Value>> = if pipe.len() == 1 {
-                let cmd = pipe.pop().unwrap();
-                cmd.query_async(connection).await.map(|r| vec![r])
+            let mut result: RedisResult<Vec<Value>> = Err(RedisError::from((
+                ErrorKind::ClientError,
+                "couldn't extract single command",
+            )));
+
+            if qd.message.messages.len() == 1 {
+                let message = qd.message.messages.pop().unwrap();
+                if let MessageDetails::Query(qm) = message.details {
+                    if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
+                        if !commands.is_empty() {
+                            let command = commands.remove(0);
+                            if let Value::Bytes(b) = &command {
+                                let command_string = String::from_utf8(b.to_vec())
+                                    .unwrap_or_else(|_| "couldn't decode".to_string());
+
+                                let mut redis_command = redis_cmd(command_string.as_str());
+
+                                for args in commands {
+                                    redis_command.arg(args);
+                                }
+                                result =
+                                    redis_command.query_async(connection).await.map(|r| vec![r]);
+                            }
+                        }
+                    }
+                }
             } else {
-                pipe.query_async(connection).await
+                let mut remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return e;
+                    }
+                };
+                let mut redis_results: Vec<Vec<(usize, Value)>> = vec![];
+                for (key, ordered_pipe) in remapped_pipe {
+                    let (order, pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
+                    let redis_pipe = Pipeline {
+                        commands: pipe,
+                        transaction_mode: false,
+                    };
+
+                    let result: RedisResult<Vec<Value>> = redis_pipe.query_async(connection).await;
+                    match result {
+                        Ok(rv) => {
+                            redis_results.push(order.into_iter().zip(rv.into_iter()).collect_vec());
+                        }
+                        Err(error) => {
+                            trace!(error = ?error);
+                            return match error.kind() {
+                                ErrorKind::MasterDown
+                                | ErrorKind::IoError
+                                | ErrorKind::ClientError
+                                | ErrorKind::ExtensionError => {
+                                    Err(anyhow!("Got connection error with cluster {}", error))
+                                }
+                                _ => build_error(
+                                    error.code().unwrap_or("ERR").to_string(),
+                                    error
+                                        .detail()
+                                        .unwrap_or("something went wrong?")
+                                        .to_string(),
+                                    None,
+                                ),
+                            };
+                        }
+                    }
+                }
+                result = Ok(redis_results
+                    .into_iter()
+                    .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
+                    .map(|(order, value)| value)
+                    .collect_vec())
             };
 
             return match result {

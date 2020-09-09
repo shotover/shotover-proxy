@@ -9,6 +9,7 @@ use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 use tokio::runtime;
+use tracing::info;
 use tracing::Level;
 
 fn test_args() {
@@ -838,6 +839,100 @@ fn test_cluster_all_redis() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
     run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string())?;
+    Ok(())
+}
+
+#[test]
+fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
+    let compose_config = "examples/redis-cluster-pipeline/docker-compose.yml".to_string();
+    load_docker_compose(compose_config)?;
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
+
+    let rt = runtime::Builder::new()
+        .enable_all()
+        .thread_name("RPProxy-Thread")
+        .threaded_scheduler()
+        .core_threads(4)
+        .build()
+        .unwrap();
+    let _jh: _ = rt.spawn(async move {
+        if let Ok((_, mut shutdown_complete_rx)) =
+            Topology::from_file("examples/redis-cluster-pipeline/config.yaml".to_string())
+                .unwrap()
+                .run_chains()
+                .await
+        {
+            //TODO: probably a better way to handle various join handles / threads
+            let _ = shutdown_complete_rx.recv().await;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+
+    info!("Starting test");
+
+    let ctx = TestContext::new();
+    let mut con = ctx.connection();
+
+    //do this a few times to be sure we are not hitting a single master
+    for i in 0..200 {
+        // make sure there are no overlaps etc
+        let key1 = format!("key{}", i);
+        let key2 = format!("{}key", i);
+
+        let (k1, k2): (i32, i32) = redis::pipe()
+            .cmd("SET")
+            .arg(&key1)
+            .arg(42)
+            .ignore()
+            .cmd("SET")
+            .arg(&key2)
+            .arg(43)
+            .ignore()
+            .cmd("GET")
+            .arg(&key1)
+            .cmd("GET")
+            .arg(&key2)
+            .query(&mut con)
+            .unwrap();
+
+        assert_eq!(k1, 42);
+        assert_eq!(k2, 43);
+    }
+
+    test_cluster_basics();
+    test_cluster_eval();
+    test_cluster_script(); //TODO: script does not seem to be loading in the server?
+    test_getset();
+    test_incr();
+    // test_info();
+    // test_hash_ops();
+    test_set_ops();
+    test_scan();
+    // test_optionals();
+    test_scanning();
+    test_filtered_scanning();
+    test_pipeline(); // NGET Issues
+    test_empty_pipeline();
+    // TODO: Pipeline transactions currently don't work (though it tries very hard)
+    // Current each cmd in a pipeline is treated as a single request, which means on a cluster
+    // basis they end up getting routed to different masters. This results in very occasionally will
+    // the transaction resolve (the exec and the multi both go to the right server).
+    // test_pipeline_transaction();
+    test_pipeline_reuse_query();
+    test_pipeline_reuse_query_clear();
+    // test_real_transaction();
+    // test_real_transaction_highlevel();
+    test_script();
+    test_tuple_args();
+    // test_nice_api();
+    // test_auto_m_versions();
+    test_nice_hash_api();
+    test_nice_list_api();
+    test_tuple_decoding_regression();
+    test_bit_operations();
+
     Ok(())
 }
 

@@ -22,6 +22,7 @@ use crate::transforms::mpsc::{
     AsyncMpscForwarder, AsyncMpscForwarderConfig, AsyncMpscTee, AsyncMpscTeeConfig,
 };
 use crate::transforms::null::Null;
+use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
 use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
 use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
@@ -30,6 +31,7 @@ use crate::transforms::redis_transforms::redis_codec_destination::{
     RedisCodecConfiguration, RedisCodecDestination,
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
+use crate::transforms::sequential_map::{SequentialMap, SequentialMapConfig};
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
 use core::fmt::Display;
 use core::num::Wrapping;
@@ -46,9 +48,11 @@ pub mod lua;
 pub mod mpsc;
 pub mod noop;
 pub mod null;
+mod parallel_map;
 pub mod printer;
 pub mod protect;
 pub mod redis_transforms;
+mod sequential_map;
 pub mod test_transforms;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
@@ -73,6 +77,8 @@ pub enum Transforms {
     RepeatMessage(Box<ReturnerTransform>),
     RandomDelay(RandomDelayTransform),
     Printer(Printer),
+    SequentialMap(SequentialMap),
+    ParallelMap(ParallelMap),
 }
 
 impl Debug for Transforms {
@@ -102,6 +108,8 @@ impl Transform for Transforms {
             Transforms::RedisCodecDestination(r) => r.transform(qd).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(qd).await,
             Transforms::RedisCluster(r) => r.transform(qd).await,
+            Transforms::SequentialMap(s) => s.transform(qd).await,
+            Transforms::ParallelMap(s) => s.transform(qd).await,
         }
     }
 
@@ -124,6 +132,8 @@ impl Transform for Transforms {
             Transforms::RedisCodecDestination(r) => r.get_name(),
             Transforms::RedisTimeStampTagger(r) => r.get_name(),
             Transforms::RedisCluster(r) => r.get_name(),
+            Transforms::SequentialMap(s) => s.get_name(),
+            Transforms::ParallelMap(s) => s.get_name(),
         }
     }
 
@@ -146,6 +156,8 @@ impl Transform for Transforms {
             Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCluster(r) => r.prep_transform_chain(t).await,
+            Transforms::SequentialMap(s) => s.prep_transform_chain(t).await,
+            Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
         }
     }
 }
@@ -164,6 +176,8 @@ pub enum TransformsConfig {
     RedisCluster(RedisClusterConfig),
     RedisTimestampTagger,
     Printer,
+    SequentialMap(SequentialMapConfig),
+    ParallelMap(ParallelMapConfig),
 }
 
 impl TransformsConfig {
@@ -183,6 +197,8 @@ impl TransformsConfig {
             }
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
             TransformsConfig::RedisCluster(r) => r.get_source(topics).await,
+            TransformsConfig::SequentialMap(s) => s.get_source(topics).await,
+            TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
         }
     }
 }
