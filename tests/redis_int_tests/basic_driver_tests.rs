@@ -903,61 +903,61 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
         assert_eq!(k2, 43);
     }
 
-    for _ in 0..200 {
-        let mut pipe = redis::pipe();
-        for i in 0..1000 {
-            let key1 = format!("{}key", i);
-            pipe.cmd("SET").arg(&key1).arg(i).ignore();
-        }
-
-        let _: Vec<String> = pipe.query(&mut con).unwrap();
-
-        let mut pipe = redis::pipe();
-
-        for i in 0..1000 {
-            let key1 = format!("{}key", i);
-            pipe.cmd("GET").arg(&key1);
-        }
-
-        let mut results: Vec<i32> = pipe.query(&mut con).unwrap();
-
-        for i in 0..1000 {
-            let result = results.remove(0);
-            assert_eq!(i, result);
-        }
-    }
-
-    test_cluster_basics();
-    test_cluster_eval();
-    test_cluster_script(); //TODO: script does not seem to be loading in the server?
-    test_getset();
-    test_incr();
-    // test_info();
-    // test_hash_ops();
-    test_set_ops();
-    test_scan();
-    // test_optionals();
-    test_scanning();
-    test_filtered_scanning();
-    test_pipeline(); // NGET Issues
-    test_empty_pipeline();
-    // TODO: Pipeline transactions currently don't work (though it tries very hard)
-    // Current each cmd in a pipeline is treated as a single request, which means on a cluster
-    // basis they end up getting routed to different masters. This results in very occasionally will
-    // the transaction resolve (the exec and the multi both go to the right server).
-    // test_pipeline_transaction();
-    test_pipeline_reuse_query();
-    test_pipeline_reuse_query_clear();
-    // test_real_transaction();
-    // test_real_transaction_highlevel();
-    test_script();
-    test_tuple_args();
-    // test_nice_api();
-    // test_auto_m_versions();
-    test_nice_hash_api();
-    test_nice_list_api();
-    test_tuple_decoding_regression();
-    test_bit_operations();
+    // for _ in 0..200 {
+    //     let mut pipe = redis::pipe();
+    //     for i in 0..1000 {
+    //         let key1 = format!("{}key", i);
+    //         pipe.cmd("SET").arg(&key1).arg(i).ignore();
+    //     }
+    //
+    //     let _: Vec<String> = pipe.query(&mut con).unwrap();
+    //
+    //     let mut pipe = redis::pipe();
+    //
+    //     for i in 0..1000 {
+    //         let key1 = format!("{}key", i);
+    //         pipe.cmd("GET").arg(&key1);
+    //     }
+    //
+    //     let mut results: Vec<i32> = pipe.query(&mut con).unwrap();
+    //
+    //     for i in 0..1000 {
+    //         let result = results.remove(0);
+    //         assert_eq!(i, result);
+    //     }
+    // }
+    //
+    // test_cluster_basics();
+    // test_cluster_eval();
+    // test_cluster_script(); //TODO: script does not seem to be loading in the server?
+    // test_getset();
+    // test_incr();
+    // // test_info();
+    // // test_hash_ops();
+    // test_set_ops();
+    // test_scan();
+    // // test_optionals();
+    // test_scanning();
+    // test_filtered_scanning();
+    // test_pipeline(); // NGET Issues
+    // test_empty_pipeline();
+    // // TODO: Pipeline transactions currently don't work (though it tries very hard)
+    // // Current each cmd in a pipeline is treated as a single request, which means on a cluster
+    // // basis they end up getting routed to different masters. This results in very occasionally will
+    // // the transaction resolve (the exec and the multi both go to the right server).
+    // // test_pipeline_transaction();
+    // test_pipeline_reuse_query();
+    // test_pipeline_reuse_query_clear();
+    // // test_real_transaction();
+    // // test_real_transaction_highlevel();
+    // test_script();
+    // test_tuple_args();
+    // // test_nice_api();
+    // // test_auto_m_versions();
+    // test_nice_hash_api();
+    // test_nice_list_api();
+    // test_tuple_decoding_regression();
+    // test_bit_operations();
 
     Ok(())
 }
