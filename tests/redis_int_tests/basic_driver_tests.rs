@@ -838,6 +838,7 @@ fn test_cluster_all_redis() -> Result<()> {
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
+    // panic!("Loooks like we are getting some out of order issues with pipelined request");
     run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string())?;
     Ok(())
 }
@@ -847,7 +848,7 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
     let compose_config = "examples/redis-cluster-pipeline/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
     let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::DEBUG)
         .try_init();
 
     let rt = runtime::Builder::new()
@@ -899,6 +900,30 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
 
         assert_eq!(k1, 42);
         assert_eq!(k2, 43);
+    }
+
+    for _ in 0..200 {
+        let mut pipe = redis::pipe();
+        for i in 0..1000 {
+            let key1 = format!("{}key", i);
+            pipe.cmd("SET").arg(&key1).arg(i).ignore();
+        }
+
+        let _: Vec<String> = pipe.query(&mut con).unwrap();
+
+        let mut pipe = redis::pipe();
+
+        for i in 0..1000 {
+            let key1 = format!("{}key", i);
+            pipe.cmd("GET").arg(&key1);
+        }
+
+        let mut results: Vec<i32> = pipe.query(&mut con).unwrap();
+
+        for i in 0..1000 {
+            let result = results.remove(0);
+            assert_eq!(i, result);
+        }
     }
 
     test_cluster_basics();
