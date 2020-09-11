@@ -292,6 +292,9 @@ impl Transform for RedisCluster {
                 debug!("remaped_pipe: {:?}", remapped_pipe);
                 for (key, ordered_pipe) in remapped_pipe {
                     let (order, pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
+                    debug!("order: {:?}", order);
+                    debug!("pipe: {:?}", pipe);
+
                     let redis_pipe = Pipeline {
                         commands: pipe,
                         transaction_mode: false,
