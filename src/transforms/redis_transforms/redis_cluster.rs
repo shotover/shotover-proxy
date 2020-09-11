@@ -298,6 +298,8 @@ impl Transform for RedisCluster {
                     };
 
                     let result: RedisResult<Vec<Value>> = redis_pipe.query_async(connection).await;
+                    debug!("returned redis result {} - {:?}", key, result);
+
                     match result {
                         Ok(rv) => {
                             redis_results.push(order.into_iter().zip(rv.into_iter()).collect_vec());
