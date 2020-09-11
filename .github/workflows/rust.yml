@@ -58,11 +58,10 @@ jobs:
         SCCACHE_BUCKET: shotover-build-caches
         SCCACHE_IDLE_TIMEOUT: 0
       run: sccache --start-server
-
-    - name: Build
-      run: cargo build
     - name: Run tests
       run: cargo test -- --test-threads 1
+    - name: Build
+      run: cargo build
     - name: Cleanup docker
       run: ./tests/scripts/teardown.sh
       if: ${{ always() }}
