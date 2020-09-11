@@ -58,10 +58,12 @@ jobs:
         SCCACHE_BUCKET: shotover-build-caches
         SCCACHE_IDLE_TIMEOUT: 0
       run: sccache --start-server
+    - name: Run specific
+      run: cargo test --package shotover-proxy --test lib redis_int_tests::basic_driver_tests::test_cluster_all_pipeline_safe_redis -- --exact
     - name: Run tests
       run: cargo test -- --test-threads 1
-    - name: Build
-      run: cargo build
+#    - name: Build
+#      run: cargo build
     - name: Cleanup docker
       run: ./tests/scripts/teardown.sh
       if: ${{ always() }}
