@@ -897,7 +897,7 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
             .arg(&key2)
             .query(&mut con)
             .unwrap();
-        info!("Iteration {}, k1 = {}, k2 = {}")
+        info!("Iteration {}, k1 = {}, k2 = {}", i, k1, k2);
 
         assert_eq!(k1, 42);
         assert_eq!(k2, 43);
