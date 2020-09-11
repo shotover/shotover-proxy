@@ -90,6 +90,7 @@ async fn remap_cluster_commands<'a>(
     let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
     cmd_map.insert(RANDOM_STRING.to_string(), vec![]);
     for (i, message) in qd.message.messages.into_iter().enumerate() {
+        let message_clone = message.clone();
         if let MessageDetails::Query(qm) = message.details {
             if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
                 if !commands.is_empty() {
@@ -136,6 +137,8 @@ async fn remap_cluster_commands<'a>(
                                         ));
                                     }
                                 };
+                                debug!("{} - {} - {:?}", i, bucket, message_clone);
+
                                 if let Some(cmds) = cmd_map.get_mut(&bucket) {
                                     cmds.push((i, redis_command));
                                 } else {
@@ -284,6 +287,7 @@ impl Transform for RedisCluster {
                         return e;
                     }
                 };
+                // debug!("Remapped query {:?}", remapped_pipe);
                 let mut redis_results: Vec<Vec<(usize, Value)>> = vec![];
                 for (key, ordered_pipe) in remapped_pipe {
                     let (order, pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
