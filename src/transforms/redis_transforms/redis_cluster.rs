@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,8 @@ use crate::protocols::RawFrame;
 use futures::stream::{self, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo};
+use redis::ErrorKind;
 use redis::{cmd as redis_cmd, Cmd};
-use redis::{ErrorKind, ToRedisArgs};
 use redis::{Pipeline, RedisError, RedisResult};
 
 use tracing::{debug, trace};
@@ -84,13 +84,12 @@ fn build_error(code: String, description: String, original: Option<QueryMessage>
 
 async fn remap_cluster_commands<'a>(
     connection: &'a mut ClusterConnection,
-    mut qd: Wrapper<'a>,
+    qd: Wrapper<'a>,
     use_slots: bool,
 ) -> Result<HashMap<String, Vec<(usize, Cmd)>>, ChainResponse> {
     let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
     cmd_map.insert(RANDOM_STRING.to_string(), vec![]);
     for (i, message) in qd.message.messages.into_iter().enumerate() {
-        let message_clone = message.clone();
         if let MessageDetails::Query(qm) = message.details {
             if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
                 if !commands.is_empty() {
@@ -137,7 +136,6 @@ async fn remap_cluster_commands<'a>(
                                         ));
                                     }
                                 };
-                                debug!("{} - {} - {:?}", i, bucket, message_clone);
 
                                 if let Some(cmds) = cmd_map.get_mut(&bucket) {
                                     cmds.push((i, redis_command));
@@ -281,7 +279,7 @@ impl Transform for RedisCluster {
                     }
                 }
             } else {
-                let mut remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
+                let remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
                     Ok(v) => v,
                     Err(e) => {
                         return e;
@@ -289,11 +287,11 @@ impl Transform for RedisCluster {
                 };
                 // debug!("Remapped query {:?}", remapped_pipe);
                 let mut redis_results: Vec<Vec<(usize, Value)>> = vec![];
-                debug!("remaped_pipe: {:?}", remapped_pipe);
+                trace!("remaped_pipe: {:?}", remapped_pipe);
                 for (key, ordered_pipe) in remapped_pipe {
                     let (order, pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
-                    debug!("order: {:?}", order);
-                    debug!("pipe: {:?}", pipe);
+                    trace!("order: {:?}", order);
+                    trace!("pipe: {:?}", pipe);
 
                     let redis_pipe = Pipeline {
                         commands: pipe,
@@ -301,14 +299,14 @@ impl Transform for RedisCluster {
                     };
 
                     let result: RedisResult<Vec<Value>> = redis_pipe.query_async(connection).await;
-                    debug!("returned redis result {} - {:?}", key, result);
+                    trace!("returned redis result {} - {:?}", key, result);
 
                     match result {
                         Ok(rv) => {
                             redis_results.push(order.into_iter().zip(rv.into_iter()).collect_vec());
                         }
                         Err(error) => {
-                            trace!(error = ?error);
+                            debug!(error = ?error);
                             return match error.kind() {
                                 ErrorKind::MasterDown
                                 | ErrorKind::IoError
@@ -328,13 +326,13 @@ impl Transform for RedisCluster {
                         }
                     }
                 }
-                debug!("Got results {:?}", redis_results);
+                trace!("Got results {:?}", redis_results);
                 let ordered_results = redis_results
                     .into_iter()
                     .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
-                    .map(|(order, value)| value)
+                    .map(|(_order, value)| value)
                     .collect_vec();
-                debug!("Reordered {:?}", ordered_results);
+                trace!("Reordered {:?}", ordered_results);
                 result = Ok(ordered_results)
             };
 
