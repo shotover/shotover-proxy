@@ -67,7 +67,7 @@ Latency and throughput will be different from pipelining with a single Redis nod
 _Note: Currently Redis-cluster does not support the following functionality:_
 
 * _Redis Transactions_
-* _*Scan based operations e.g. SSCAN_
+* _Scan based operations e.g. SSCAN_
 
 
 ### MPSCForwarder
