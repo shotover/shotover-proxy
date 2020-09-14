@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,8 @@ use crate::protocols::RawFrame;
 use futures::stream::{self, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo};
+use redis::ErrorKind;
 use redis::{cmd as redis_cmd, Cmd};
-use redis::{ErrorKind, ToRedisArgs};
 use redis::{Pipeline, RedisError, RedisResult};
 
 use tracing::{debug, trace};
@@ -84,7 +84,7 @@ fn build_error(code: String, description: String, original: Option<QueryMessage>
 
 async fn remap_cluster_commands<'a>(
     connection: &'a mut ClusterConnection,
-    mut qd: Wrapper<'a>,
+    qd: Wrapper<'a>,
     use_slots: bool,
 ) -> Result<HashMap<String, Vec<(usize, Cmd)>>, ChainResponse> {
     let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
@@ -136,6 +136,7 @@ async fn remap_cluster_commands<'a>(
                                         ));
                                     }
                                 };
+
                                 if let Some(cmds) = cmd_map.get_mut(&bucket) {
                                     cmds.push((i, redis_command));
                                 } else {
@@ -214,11 +215,11 @@ impl Transform for RedisCluster {
 
             match connection_res {
                 Ok(conn) => {
-                    debug!(connection = ?conn);
+                    trace!(connection = ?conn);
                     self.connection = Some(conn)
                 }
                 Err(error) => {
-                    debug!(error = ?error);
+                    trace!(error = ?error);
                     let my_err = build_error(
                         error.code().unwrap_or("ERR").to_string(),
                         error
@@ -246,7 +247,7 @@ impl Transform for RedisCluster {
             }
         }
 
-        debug!("Building pipelined query {:?}", qd.message.messages);
+        trace!("Building pipelined query {:?}", qd.message.messages);
 
         // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
         // But we still need to fake it being a Vec of results
@@ -278,27 +279,34 @@ impl Transform for RedisCluster {
                     }
                 }
             } else {
-                let mut remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
+                let remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
                     Ok(v) => v,
                     Err(e) => {
                         return e;
                     }
                 };
+                // debug!("Remapped query {:?}", remapped_pipe);
                 let mut redis_results: Vec<Vec<(usize, Value)>> = vec![];
+                trace!("remaped_pipe: {:?}", remapped_pipe);
                 for (key, ordered_pipe) in remapped_pipe {
                     let (order, pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
+                    trace!("order: {:?}", order);
+                    trace!("pipe: {:?}", pipe);
+
                     let redis_pipe = Pipeline {
                         commands: pipe,
                         transaction_mode: false,
                     };
 
                     let result: RedisResult<Vec<Value>> = redis_pipe.query_async(connection).await;
+                    trace!("returned redis result {} - {:?}", key, result);
+
                     match result {
                         Ok(rv) => {
                             redis_results.push(order.into_iter().zip(rv.into_iter()).collect_vec());
                         }
                         Err(error) => {
-                            trace!(error = ?error);
+                            debug!(error = ?error);
                             return match error.kind() {
                                 ErrorKind::MasterDown
                                 | ErrorKind::IoError
@@ -318,11 +326,14 @@ impl Transform for RedisCluster {
                         }
                     }
                 }
-                result = Ok(redis_results
+                trace!("Got results {:?}", redis_results);
+                let ordered_results = redis_results
                     .into_iter()
                     .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
-                    .map(|(order, value)| value)
-                    .collect_vec())
+                    .map(|(_order, value)| value)
+                    .collect_vec();
+                trace!("Reordered {:?}", ordered_results);
+                result = Ok(ordered_results)
             };
 
             return match result {
