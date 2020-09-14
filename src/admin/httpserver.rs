@@ -1,13 +1,13 @@
 use hyper::{
     service::{make_service_fn, service_fn},
-    Method, Request, StatusCode, {Body, Error, Response, Server},
+    Method, Request, StatusCode, {Body, Response, Server},
 };
 
 use bytes::Bytes;
 use metrics_core::{Builder, Drain, Observe, Observer};
 use std::convert::Infallible;
 use std::{net::SocketAddr, sync::Arc};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, trace};
 use tracing_subscriber::reload::Handle;
 use tracing_subscriber::EnvFilter;
 
