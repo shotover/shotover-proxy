@@ -1,20 +1,19 @@
 #![warn(rust_2018_idioms)]
 #![recursion_limit = "256"]
 
-use std::error::Error;
-
+use anyhow::{anyhow, Result};
 use clap::Clap;
 use metrics_runtime::Receiver;
-use tracing::{debug, info, Level};
+use tracing::{debug, info};
+// use tracing_subscriber::{filter::EnvFilter, reload::Handle};
 
-use metrics_runtime::exporters::HttpExporter;
 use metrics_runtime::observers::PrometheusBuilder;
+use shotover_proxy::admin::httpserver::PrometheusLogFilterHttpExporter;
 use shotover_proxy::config::topology::Topology;
 use shotover_proxy::config::Config;
 use shotover_proxy::transforms::Transforms;
 use shotover_proxy::transforms::Wrapper;
 use std::net::SocketAddr;
-use std::str::FromStr;
 use tokio::runtime;
 
 #[derive(Clap)]
@@ -35,17 +34,31 @@ struct ConfigOpts {
 
 #[cfg(not(feature = "no_index"))]
 #[cfg(not(feature = "no_object"))]
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let params = ConfigOpts::parse();
     let config = Config::from_file(params.config_file.clone())?;
+    // let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+    // let subscriber = tracing_subscriber::fmt()
+    //     // .with_filter_reloading()
+    //     .with_writer(non_blocking)
+    //     // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+    //     // will be written to stdout.
+    //     .with_max_level(Level::from_str(config.main_log_level.as_str())?);
+    // // completes the builder and sets the constructed `Subscriber` as the default.
+    //
+    // let handle = subscriber.reload_handle();
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
-    let _subscriber = tracing_subscriber::fmt()
+
+    let builder = tracing_subscriber::fmt()
         .with_writer(non_blocking)
-        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
-        // will be written to stdout.
-        .with_max_level(Level::from_str(config.main_log_level.as_str())?)
-        // completes the builder and sets the constructed `Subscriber` as the default.
-        .init();
+        .with_env_filter(config.main_log_level.as_str())
+        .with_filter_reloading();
+
+    let handle = builder.reload_handle();
+
+    builder
+        .try_init()
+        .map_err(|e| anyhow!("couldn't start logging - {}", e))?;
 
     info!(
         "Loaded the following configuration file: {}",
@@ -57,9 +70,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build()
         .expect("failed to create receiver");
 
-    let socket: SocketAddr = config.prometheus_interface.parse()?;
+    let socket: SocketAddr = config.observability_interface.parse()?;
 
-    let exporter = HttpExporter::new(receiver.controller(), PrometheusBuilder::new(), socket);
+    let exporter = PrometheusLogFilterHttpExporter::new(
+        receiver.controller(),
+        PrometheusBuilder::new(),
+        socket,
+        handle,
+    );
 
     receiver.install();
 

@@ -52,7 +52,8 @@ mod parallel_map;
 pub mod printer;
 pub mod protect;
 pub mod redis_transforms;
-mod sequential_map;
+pub mod sampler;
+pub mod sequential_map;
 pub mod test_transforms;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
