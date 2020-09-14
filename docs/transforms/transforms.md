@@ -65,6 +65,7 @@ sequentially and there is room to make this transform split requests between mas
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
 _Note: Currently Redis-cluster does not support the following functionality:_
+
 * _Redis Transactions_
 * _*Scan based operations e.g. SSCAN_
 
