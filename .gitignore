@@ -6,3 +6,6 @@ Cargo.lock
 tests/soaktest-*
 *.svg
 *.gz
+.vscode/tasks.json
+.vscode/launch.json
+.workspace.code-workspace
