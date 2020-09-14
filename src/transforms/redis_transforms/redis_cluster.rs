@@ -32,6 +32,7 @@ const RANDOM_STRING: &str = "<<RANDOM";
 pub struct ConnectionDetails {
     pub first_contact_points: Vec<String>,
     pub password: Option<String>,
+    pub username: Option<String>,
 }
 
 pub struct RedisCluster {
@@ -63,6 +64,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             client: ConnectionDetails {
                 first_contact_points: self.first_contact_points.clone(),
                 password: None,
+                username: None,
             },
             connection: None,
         }))
@@ -193,6 +195,14 @@ impl Transform for RedisCluster {
                             }
 
                             if self.client.password.is_none() && command_string == "AUTH" {
+                                if commands.len() == 2 {
+                                    if let Value::Bytes(username) = commands.remove(0) {
+                                        self.client.username.replace(
+                                            String::from_utf8(username.to_vec())
+                                                .unwrap_or_else(|_| "couldn't decode".to_string()),
+                                        );
+                                    }
+                                }
                                 if let Value::Bytes(password) = commands.remove(0) {
                                     self.client.password.replace(
                                         String::from_utf8(password.to_vec())
