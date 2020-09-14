@@ -58,9 +58,11 @@ This transform is a full featured redis driver that will connect to a redis-clus
 E.g. `first_contact_points: ["redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/"]
 `
 
-Unlike other redis-cluster drivers, this Transform does support pipelining. It does however turn each command from the pipeline into a single
-request/response operation, buffering results as within different Redis nodes as needed. Latency will be different from pipelining with a single
-Redis node.
+Unlike other redis-cluster drivers, this Transform does support pipelining. It does however turn each command from the pipeline into a group
+of requests split between the master redis node that owns them, buffering results as within different Redis nodes as needed. This is done
+sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
+
+Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
 _Note: Currently Redis-cluster does not support the following functionality:_
 * _Redis Transactions_

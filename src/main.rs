@@ -47,9 +47,9 @@ fn main() -> Result<()> {
     // // completes the builder and sets the constructed `Subscriber` as the default.
     //
     // let handle = subscriber.reload_handle();
-    let (mut non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+    let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
 
-    let mut builder = tracing_subscriber::fmt()
+    let builder = tracing_subscriber::fmt()
         .with_writer(non_blocking)
         .with_env_filter(config.main_log_level.as_str())
         .with_filter_reloading();
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
         .build()
         .expect("failed to create receiver");
 
-    let socket: SocketAddr = config.prometheus_interface.parse()?;
+    let socket: SocketAddr = config.observability_interface.parse()?;
 
     let exporter = PrometheusLogFilterHttpExporter::new(
         receiver.controller(),
