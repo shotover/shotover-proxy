@@ -55,6 +55,7 @@ impl TransformsFromConfig for TuneableConsistencyConfig {
                     messages,
                 }) = rx.recv().await
                 {
+                    //TODO we need to timeout this process as well or periodically check if the response_sender was dropped
                     let response = chain
                         .process_request(Wrapper::new(messages), "TuneableConsistency".to_string())
                         .await;
