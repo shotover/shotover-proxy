@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use async_trait::async_trait;
-use futures::stream::{FuturesUnordered, Next};
+use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::stream::StreamExt;
-use tokio::time::{timeout, Elapsed, Timeout};
-use tracing::{debug, trace};
+use tokio::time::timeout;
+use tracing::{debug, info, trace};
 
 use crate::config::topology::{ChannelMessage, TopicHolder};
 use crate::error::ChainResponse;
@@ -16,16 +16,14 @@ use crate::message::{
     Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
 };
 use crate::protocols::RawFrame;
-use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
 use std::iter::FromIterator;
-use tokio::sync::broadcast::SendError;
 use tokio::sync::mpsc::Sender;
 
 #[derive(Clone)]
-pub struct TuneableConsistency {
+pub struct TunableConsistency {
     name: &'static str,
     route_map: Vec<Sender<ChannelMessage>>,
     write_consistency: i32,
@@ -35,14 +33,14 @@ pub struct TuneableConsistency {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
-pub struct TuneableConsistencyConfig {
+pub struct TunableConsistencyConfig {
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub write_consistency: i32,
     pub read_consistency: i32,
 }
 
 #[async_trait]
-impl TransformsFromConfig for TuneableConsistencyConfig {
+impl TransformsFromConfig for TunableConsistencyConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let mut temp: Vec<Sender<ChannelMessage>> = Vec::with_capacity(self.route_map.len());
 
@@ -56,16 +54,32 @@ impl TransformsFromConfig for TuneableConsistencyConfig {
                 }) = rx.recv().await
                 {
                     //TODO we need to timeout this process as well or periodically check if the response_sender was dropped
-                    let response = chain
-                        .process_request(Wrapper::new(messages), "TuneableConsistency".to_string())
-                        .await;
-                    if let Some(response_sender) = return_chan {
-                        match response_sender.send(response) {
-                            Ok(_) => {}
-                            Err(e) => trace!(
-                                "Dropping response message {:?} as not needed by TuneableConsistency",
-                                e
-                            ),
+                    match timeout(
+                        Duration::from_millis(1000),
+                        chain.process_request(
+                            Wrapper::new(messages),
+                            "TunableConsistency".to_string(),
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(response) => {
+                            if let Some(response_sender) = return_chan {
+                                match response_sender.send(response) {
+                                    Ok(_) => {}
+                                    Err(e) => trace!(
+                                        "Dropping response message {:?} as not needed by TunableConsistency",
+                                        e
+                                    ),
+                                }
+                            } else {
+                                info!("hmmmm")
+                            }
+                        }
+                        Err(e) => {
+                            // This will reconnect
+                            info!("Upstream timeout, resetting chain {}", e);
+                            chain = chain.clone();
                         }
                     }
                 }
@@ -73,8 +87,8 @@ impl TransformsFromConfig for TuneableConsistencyConfig {
             temp.push(tx);
         }
 
-        Ok(Transforms::TuneableConsistency(TuneableConsistency {
-            name: "TuneableConsistency",
+        Ok(Transforms::TunableConsistency(TunableConsistency {
+            name: "TunableConsistency",
             route_map: temp,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
@@ -144,10 +158,10 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
     }
 }
 
-impl TuneableConsistency {}
+impl TunableConsistency {}
 
 #[async_trait]
-impl Transform for TuneableConsistency {
+impl Transform for TunableConsistency {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let required_successes = qd
             .message
@@ -180,9 +194,8 @@ impl Transform for TuneableConsistency {
 
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
-        let name = self.get_name().to_string();
         let timeout_count = self.timeout;
-        let mut mut_iter = self.route_map.iter_mut();
+        let mut_iter = self.route_map.iter_mut();
         let rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
@@ -194,23 +207,6 @@ impl Transform for TuneableConsistency {
         }));
 
         let _ = send_fu.collect::<Vec<_>>().await;
-
-        // for i in 0..self.route_map.len() {
-        //     let u = ((qd.clock.0 + (i as u32)) % (self.route_map.len() as u32)) as usize;
-        //     if let Some(c) = self.route_map.get_mut(u) {
-        //         let mut wrapper = qd.clone();
-        //         fu.push(timeout(
-        //             Duration::from_millis(self.timeout),
-        //             c.process_request(wrapper, self.get_name().clone().to_string()),
-        //         ))
-        //     }
-        // }
-
-        /*
-        Tuneable consistent scatter follows these rules:
-        - When a downstream chain returns a Result::Ok for the ChainResponse, that counts as a success
-        - This transform doesn't try to resolve data consistency issues, it just waits for successes
-         */
 
         let mut r = rec_fu.take_while(|x| {
             let resp = successes < max_required_successes;
@@ -285,15 +281,23 @@ impl Transform for TuneableConsistency {
 #[cfg(test)]
 mod scatter_transform_tests {
     use anyhow::anyhow;
-    use anyhow::Result;
 
-    use crate::config::topology::TopicHolder;
+    use crate::transforms::chain::TransformChain;
+    use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
+    use crate::transforms::test_transforms::ReturnerTransform;
+
+    use std::time::Duration;
+
+    use anyhow::Result;
+    use tokio::time::timeout;
+    use tracing::{info, trace};
+
+    use crate::config::topology::{ChannelMessage, TopicHolder};
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
-    use crate::transforms::chain::TransformChain;
-    use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistency;
-    use crate::transforms::test_transforms::ReturnerTransform;
     use crate::transforms::{Transform, Transforms, Wrapper};
+    use std::collections::HashMap;
+    use tokio::sync::mpsc::Sender;
 
     fn check_ok_responses(
         mut message: Messages,
@@ -335,6 +339,54 @@ mod scatter_transform_tests {
         }
     }
 
+    async fn build_chains(
+        route_map: HashMap<String, TransformChain>,
+    ) -> Vec<Sender<ChannelMessage>> {
+        let mut temp: Vec<Sender<ChannelMessage>> = Vec::with_capacity(route_map.len());
+
+        for (key, value) in route_map {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(10);
+            let mut chain = value.clone();
+            let _jh = tokio::spawn(async move {
+                while let Some(ChannelMessage {
+                    return_chan,
+                    messages,
+                }) = rx.recv().await
+                {
+                    //TODO we need to timeout this process as well or periodically check if the response_sender was dropped
+                    match timeout(
+                        Duration::from_millis(1000),
+                        chain.process_request(
+                            Wrapper::new(messages),
+                            format!("TunableConsistency-{}", key),
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(response) => {
+                            if let Some(response_sender) = return_chan {
+                                match response_sender.send(response) {
+                                    Ok(_) => {}
+                                    Err(e) => trace!(
+                                        "Dropping response message {:?} as not needed by TunableConsistency",
+                                        e
+                                    ),
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            // This will reconnect
+                            info!("Upstream timeout, resetting chain {}", e);
+                            chain = chain.clone();
+                        }
+                    }
+                }
+            });
+            temp.push(tx);
+        }
+        temp
+    }
+
     #[tokio::test(threaded_scheduler)]
     async fn test_scatter_success() -> Result<()> {
         let t_holder = TopicHolder::get_test_holder();
@@ -374,35 +426,43 @@ mod scatter_transform_tests {
             ok: false,
         }));
 
-        let mut two_of_three = Vec::new();
-        two_of_three.push(TransformChain::new(
-            vec![ok_repeat.clone()],
+        let mut two_of_three = HashMap::new();
+        two_of_three.insert(
             "one".to_string(),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        ));
-        two_of_three.push(TransformChain::new(
-            vec![ok_repeat.clone()],
+            TransformChain::new(
+                vec![ok_repeat.clone()],
+                "one".to_string(),
+                t_holder.get_global_map_handle(),
+                t_holder.get_global_tx(),
+            ),
+        );
+        two_of_three.insert(
             "two".to_string(),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        ));
-        two_of_three.push(TransformChain::new(
-            vec![err_repeat.clone()],
+            TransformChain::new(
+                vec![ok_repeat.clone()],
+                "two".to_string(),
+                t_holder.get_global_map_handle(),
+                t_holder.get_global_tx(),
+            ),
+        );
+        two_of_three.insert(
             "three".to_string(),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        ));
+            TransformChain::new(
+                vec![err_repeat.clone()],
+                "three".to_string(),
+                t_holder.get_global_map_handle(),
+                t_holder.get_global_tx(),
+            ),
+        );
 
-        let mut tuneable_success_consistency =
-            Transforms::TuneableConsistency(TuneableConsistency {
-                name: "TuneableConsistency",
-                route_map: two_of_three,
-                write_consistency: 2,
-                read_consistency: 2,
-                timeout: 5000, //todo this timeout needs to be longer for the initial connection...
-                count: 0,
-            });
+        let mut tuneable_success_consistency = Transforms::TunableConsistency(TunableConsistency {
+            name: "TunableConsistency",
+            route_map: build_chains(two_of_three).await,
+            write_consistency: 2,
+            read_consistency: 2,
+            timeout: 5000, //todo this timeout needs to be longer for the initial connection...
+            count: 0,
+        });
 
         let expected_ok = Value::Strings("OK".to_string());
 
@@ -414,29 +474,38 @@ mod scatter_transform_tests {
 
         check_ok_responses(test?, &expected_ok, 2)?;
 
-        let mut one_of_three = Vec::new();
-        one_of_three.push(TransformChain::new(
-            vec![ok_repeat.clone()],
+        let mut one_of_three = HashMap::new();
+        one_of_three.insert(
             "one".to_string(),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        ));
-        one_of_three.push(TransformChain::new(
-            vec![err_repeat.clone()],
+            TransformChain::new(
+                vec![ok_repeat.clone()],
+                "one".to_string(),
+                t_holder.get_global_map_handle(),
+                t_holder.get_global_tx(),
+            ),
+        );
+        one_of_three.insert(
             "two".to_string(),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        ));
-        one_of_three.push(TransformChain::new(
-            vec![err_repeat.clone()],
+            TransformChain::new(
+                vec![err_repeat.clone()],
+                "two".to_string(),
+                t_holder.get_global_map_handle(),
+                t_holder.get_global_tx(),
+            ),
+        );
+        one_of_three.insert(
             "three".to_string(),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        ));
+            TransformChain::new(
+                vec![err_repeat.clone()],
+                "three".to_string(),
+                t_holder.get_global_map_handle(),
+                t_holder.get_global_tx(),
+            ),
+        );
 
-        let mut tuneable_fail_consistency = Transforms::TuneableConsistency(TuneableConsistency {
-            name: "TuneableConsistency",
-            route_map: one_of_three,
+        let mut tuneable_fail_consistency = Transforms::TunableConsistency(TunableConsistency {
+            name: "TunableConsistency",
+            route_map: build_chains(one_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
             timeout: 500, //todo this timeout needs to be longer for the initial connection...

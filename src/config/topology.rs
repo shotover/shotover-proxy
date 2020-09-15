@@ -14,7 +14,7 @@ use evmap::ReadHandleFactory;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::oneshot::{Receiver as OneReceiver, Sender as OneSender};
+use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 

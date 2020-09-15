@@ -67,7 +67,6 @@ impl Transform for LuaFilterTransform {
                     let mut future = Wrapper::new(Messages::new());
                     std::mem::swap(&mut future.transforms, &mut qd.transforms);
                     std::mem::swap(&mut future.message, &mut qd.message);
-                    std::mem::swap(&mut future.clock, &mut qd.clock);
                     //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
                     tokio::runtime::Handle::current().block_on(async {
                         let result = future.call_next_transform().await;
