@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use async_trait::async_trait;
-use futures::stream::FuturesUnordered;
+use futures::stream::{FuturesUnordered, Next};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::stream::StreamExt;
-use tokio::time::timeout;
-use tracing::debug;
+use tokio::time::{timeout, Elapsed, Timeout};
+use tracing::{debug, trace};
 
-use crate::config::topology::TopicHolder;
+use crate::config::topology::{ChannelMessage, TopicHolder};
 use crate::error::ChainResponse;
 use crate::message::{
     Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
@@ -21,11 +21,13 @@ use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
 use std::iter::FromIterator;
+use tokio::sync::broadcast::SendError;
+use tokio::sync::mpsc::Sender;
 
 #[derive(Clone)]
 pub struct TuneableConsistency {
     name: &'static str,
-    route_map: Vec<TransformChain>,
+    route_map: Vec<Sender<ChannelMessage>>,
     write_consistency: i32,
     read_consistency: i32,
     timeout: u64,
@@ -42,10 +44,34 @@ pub struct TuneableConsistencyConfig {
 #[async_trait]
 impl TransformsFromConfig for TuneableConsistencyConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let mut temp: Vec<TransformChain> = Vec::with_capacity(self.route_map.len());
+        let mut temp: Vec<Sender<ChannelMessage>> = Vec::with_capacity(self.route_map.len());
+
         for (key, value) in self.route_map.clone() {
-            temp.push(build_chain_from_config(key, &value, topics).await?);
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(10);
+            let mut chain = build_chain_from_config(key, &value, topics).await?;
+            let _jh = tokio::spawn(async move {
+                while let Some(ChannelMessage {
+                    return_chan,
+                    messages,
+                }) = rx.recv().await
+                {
+                    let response = chain
+                        .process_request(Wrapper::new(messages), "TuneableConsistency".to_string())
+                        .await;
+                    if let Some(response_sender) = return_chan {
+                        match response_sender.send(response) {
+                            Ok(_) => {}
+                            Err(e) => trace!(
+                                "Dropping response message {:?} as not needed by TuneableConsistency",
+                                e
+                            ),
+                        }
+                    }
+                }
+            });
+            temp.push(tx);
         }
+
         Ok(Transforms::TuneableConsistency(TuneableConsistency {
             name: "TuneableConsistency",
             route_map: temp,
@@ -155,15 +181,18 @@ impl Transform for TuneableConsistency {
         let mut successes: i32 = 0;
         let name = self.get_name().to_string();
         let timeout_count = self.timeout;
-        let mut_iter = self.route_map.iter_mut();
+        let mut mut_iter = self.route_map.iter_mut();
+        let rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
-        let fu: FuturesUnordered<_> = FuturesUnordered::from_iter(mut_iter.map(|c| {
-            timeout(
-                Duration::from_millis(timeout_count),
-                c.process_request(qd.clone(), name.clone()),
-            )
+        let send_fu: FuturesUnordered<_> = FuturesUnordered::from_iter(mut_iter.map(|c| {
+            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
+            rec_fu.push(timeout(Duration::from_millis(timeout_count), one_rx));
+            let chan_message = ChannelMessage::new(qd.message.clone(), one_tx);
+            c.send(chan_message)
         }));
+
+        let _ = send_fu.collect::<Vec<_>>().await;
 
         // for i in 0..self.route_map.len() {
         //     let u = ((qd.clock.0 + (i as u32)) % (self.route_map.len() as u32)) as usize;
@@ -182,7 +211,7 @@ impl Transform for TuneableConsistency {
         - This transform doesn't try to resolve data consistency issues, it just waits for successes
          */
 
-        let mut r = fu.take_while(|x| {
+        let mut r = rec_fu.take_while(|x| {
             let resp = successes < max_required_successes;
             if let Ok(Ok(x)) = x {
                 debug!("{:?}", x);
@@ -192,7 +221,7 @@ impl Transform for TuneableConsistency {
         });
 
         let mut results: Vec<Messages> = Vec::new();
-        while let Some(Ok(Ok(messages))) = r.next().await {
+        while let Some(Ok(Ok(Ok(messages)))) = r.next().await {
             debug!("{:#?}", messages);
             results.push(messages);
         }

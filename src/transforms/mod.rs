@@ -18,9 +18,7 @@ use crate::transforms::distributed::tuneable_consistency_scatter::{
 };
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::lua::LuaFilterTransform;
-use crate::transforms::mpsc::{
-    AsyncMpscForwarder, AsyncMpscForwarderConfig, AsyncMpscTee, AsyncMpscTeeConfig,
-};
+use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
 use crate::transforms::printer::Printer;
@@ -64,8 +62,8 @@ pub enum Transforms {
     RedisCodecDestination(RedisCodecDestination),
     KafkaDestination(KafkaDestination),
     RedisCache(SimpleRedisCache),
-    MPSCTee(AsyncMpscTee),
-    MPSCForwarder(AsyncMpscForwarder),
+    MPSCTee(Tee),
+    MPSCForwarder(Buffer),
     Route(Route),
     Scatter(Scatter),
     Null(Null),
@@ -169,8 +167,8 @@ pub enum TransformsConfig {
     RedisDestination(RedisCodecConfiguration),
     KafkaDestination(KafkaConfig),
     RedisCache(RedisConfig),
-    MPSCTee(AsyncMpscTeeConfig),
-    MPSCForwarder(AsyncMpscForwarderConfig),
+    MPSCTee(TeeConfig),
+    MPSCForwarder(BufferConfig),
     Route(RouteConfig),
     ConsistentScatter(TuneableConsistencyConfig),
     Scatter(ScatterConfig),

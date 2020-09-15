@@ -1,8 +1,7 @@
 use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
-use crate::config::topology::TopicHolder;
-use crate::message::Messages;
+use crate::config::topology::{ChannelMessage, TopicHolder};
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::Wrapper;
@@ -55,7 +54,7 @@ pub struct AsyncMpsc {
 impl AsyncMpsc {
     pub fn new(
         mut chain: TransformChain,
-        mut rx: Receiver<Messages>,
+        mut rx: Receiver<ChannelMessage>,
         name: &str,
         shutdown: Shutdown,
         shutdown_complete: mpsc::Sender<()>,
@@ -67,7 +66,7 @@ impl AsyncMpsc {
             let _notifier = shutdown_complete.clone();
             while !shutdown.is_shutdown() {
                 if let Some(m) = rx.recv().await {
-                    let w: Wrapper = Wrapper::new(m.clone());
+                    let w: Wrapper = Wrapper::new(m.messages.clone());
                     if let Err(e) = chain.process_request(w, "AsyncMpsc".to_string()).await {
                         warn!("Something went wrong {}", e)
                     }
