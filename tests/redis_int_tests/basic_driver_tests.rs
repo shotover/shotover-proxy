@@ -30,14 +30,16 @@ fn test_getset() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
-    redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
-    assert_eq!(redis::cmd("GET").arg("foo").query(&mut con), Ok(42));
+    for _ in 1..10000 {
+        redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
+        assert_eq!(redis::cmd("GET").arg("foo").query(&mut con), Ok(42));
 
-    redis::cmd("SET").arg("bar").arg("foo").execute(&mut con);
-    assert_eq!(
-        redis::cmd("GET").arg("bar").query(&mut con),
-        Ok(b"foo".to_vec())
-    );
+        redis::cmd("SET").arg("bar").arg("foo").execute(&mut con);
+        assert_eq!(
+            redis::cmd("GET").arg("bar").query(&mut con),
+            Ok(b"foo".to_vec())
+        );
+    }
 }
 
 fn test_incr() {
@@ -607,7 +609,9 @@ fn test_cluster_basics() {
         .arg("{x}key1")
         .arg(b"foo")
         .execute(&mut con);
+    info!("one");
     redis::cmd("SET").arg(&["{x}key2", "bar"]).execute(&mut con);
+    info!("two");
 
     assert_eq!(
         redis::cmd("MGET")
@@ -741,10 +745,10 @@ fn test_active_one_active_redis() -> Result<()> {
         .try_init();
 
     // test_args();
+    test_cluster_basics();
+
     test_pipeline();
-    // for _ in 1..10000 {
-    //     test_getset();
-    // }
+    test_getset();
 
     Ok(())
 }

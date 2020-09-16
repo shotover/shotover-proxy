@@ -95,12 +95,9 @@ impl Transform for ParallelMap {
             for chain in self.chains.iter_mut() {
                 if let Some(message) = message_iter.next() {
                     future.push(chain.process_request(
-                        Wrapper::new_with_rnd(
-                            Messages {
-                                messages: vec![message],
-                            },
-                            qd.clock.clone(),
-                        ),
+                        Wrapper::new(Messages {
+                            messages: vec![message],
+                        }),
                         "Parallel".to_string(),
                     ));
                 }

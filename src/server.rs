@@ -150,8 +150,6 @@ where
                 // Notifies the receiver half once all clones are
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
-
-                connection_clock: Wrapping(0),
             };
 
             // Spawn a new task to process the connections. Tokio tasks are like
@@ -243,8 +241,6 @@ where
 
     /// Not used directly. Instead, when `Handler` is dropped...?
     _shutdown_complete: mpsc::Sender<()>,
-
-    connection_clock: Wrapping<u32>,
 }
 
 impl<S, C> Handler<S, C>
@@ -300,13 +296,9 @@ where
             match frame {
                 Ok(message) => {
                     trace!("Received raw message {:?}", message);
-                    self.connection_clock += Wrapping(1);
                     match self
                         .chain
-                        .process_request(
-                            Wrapper::new_with_rnd(message, self.connection_clock),
-                            self.client_details.clone(),
-                        )
+                        .process_request(Wrapper::new(message), self.client_details.clone())
                         .await
                     {
                         Ok(modified_message) => {

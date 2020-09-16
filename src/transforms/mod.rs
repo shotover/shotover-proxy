@@ -13,14 +13,12 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::chain::TransformChain;
-use crate::transforms::distributed::tuneable_consistency_scatter::{
-    TuneableConsistency, TuneableConsistencyConfig,
+use crate::transforms::distributed::tunable_consistency_scatter::{
+    TunableConsistency, TunableConsistencyConfig,
 };
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::lua::LuaFilterTransform;
-use crate::transforms::mpsc::{
-    AsyncMpscForwarder, AsyncMpscForwarderConfig, AsyncMpscTee, AsyncMpscTeeConfig,
-};
+use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
 use crate::transforms::printer::Printer;
@@ -64,14 +62,14 @@ pub enum Transforms {
     RedisCodecDestination(RedisCodecDestination),
     KafkaDestination(KafkaDestination),
     RedisCache(SimpleRedisCache),
-    MPSCTee(AsyncMpscTee),
-    MPSCForwarder(AsyncMpscForwarder),
+    MPSCTee(Tee),
+    MPSCForwarder(Buffer),
     Route(Route),
     Scatter(Scatter),
     Null(Null),
     Lua(LuaFilterTransform),
     Protect(Protect),
-    TuneableConsistency(TuneableConsistency),
+    TunableConsistency(TunableConsistency),
     RedisTimeStampTagger(RedisTimestampTagger),
     RedisCluster(RedisCluster),
     // The below variants are mainly for testing
@@ -105,7 +103,7 @@ impl Transform for Transforms {
             Transforms::Protect(p) => p.transform(qd).await,
             Transforms::RepeatMessage(p) => p.transform(qd).await,
             Transforms::RandomDelay(p) => p.transform(qd).await,
-            Transforms::TuneableConsistency(tc) => tc.transform(qd).await,
+            Transforms::TunableConsistency(tc) => tc.transform(qd).await,
             Transforms::RedisCodecDestination(r) => r.transform(qd).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(qd).await,
             Transforms::RedisCluster(r) => r.transform(qd).await,
@@ -127,7 +125,7 @@ impl Transform for Transforms {
             Transforms::Null(n) => n.get_name(),
             Transforms::Lua(l) => l.get_name(),
             Transforms::Protect(p) => p.get_name(),
-            Transforms::TuneableConsistency(t) => t.get_name(),
+            Transforms::TunableConsistency(t) => t.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
             Transforms::RandomDelay(p) => p.get_name(),
             Transforms::RedisCodecDestination(r) => r.get_name(),
@@ -152,7 +150,7 @@ impl Transform for Transforms {
             Transforms::Null(a) => a.prep_transform_chain(t).await,
             Transforms::Lua(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
-            Transforms::TuneableConsistency(a) => a.prep_transform_chain(t).await,
+            Transforms::TunableConsistency(a) => a.prep_transform_chain(t).await,
             Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
             Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
@@ -169,10 +167,10 @@ pub enum TransformsConfig {
     RedisDestination(RedisCodecConfiguration),
     KafkaDestination(KafkaConfig),
     RedisCache(RedisConfig),
-    MPSCTee(AsyncMpscTeeConfig),
-    MPSCForwarder(AsyncMpscForwarderConfig),
+    MPSCTee(TeeConfig),
+    MPSCForwarder(BufferConfig),
     Route(RouteConfig),
-    ConsistentScatter(TuneableConsistencyConfig),
+    ConsistentScatter(TunableConsistencyConfig),
     Scatter(ScatterConfig),
     RedisCluster(RedisClusterConfig),
     RedisTimestampTagger,
@@ -236,7 +234,6 @@ pub struct Wrapper<'a> {
     pub message: Messages,
     // pub next_transform: usize,
     transforms: Vec<&'a mut Transforms>,
-    pub clock: Wrapping<u32>,
 }
 
 impl<'a> Clone for Wrapper<'a> {
@@ -244,7 +241,6 @@ impl<'a> Clone for Wrapper<'a> {
         Wrapper {
             message: self.message.clone(),
             transforms: vec![],
-            clock: self.clock,
         }
     }
 }
@@ -284,7 +280,6 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             message: m,
             transforms: vec![],
-            clock: Wrapping(0),
         }
     }
 
@@ -292,15 +287,6 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             message: m,
             transforms: vec![],
-            clock: Wrapping(0),
-        }
-    }
-
-    pub fn new_with_rnd(m: Messages, clock: Wrapping<u32>) -> Self {
-        Wrapper {
-            message: m,
-            transforms: vec![],
-            clock,
         }
     }
 

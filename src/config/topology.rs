@@ -1,3 +1,4 @@
+use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::mpsc_source::AsyncMpscConfig;
@@ -5,7 +6,7 @@ use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::cassandra_codec_destination::CodecConfiguration;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::kafka_destination::KafkaConfig;
-use crate::transforms::mpsc::AsyncMpscTeeConfig;
+use crate::transforms::mpsc::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
@@ -13,6 +14,7 @@ use evmap::ReadHandleFactory;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 
@@ -24,20 +26,42 @@ pub struct Topology {
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
+#[derive(Debug)]
+pub struct ChannelMessage {
+    pub messages: Messages,
+    pub return_chan: Option<OneSender<ChainResponse>>,
+}
+
+impl ChannelMessage {
+    pub fn new_with_no_return(m: Messages) -> Self {
+        return ChannelMessage {
+            messages: m,
+            return_chan: None,
+        };
+    }
+
+    pub fn new(m: Messages, return_chan: OneSender<ChainResponse>) -> Self {
+        return ChannelMessage {
+            messages: m,
+            return_chan: Some(return_chan),
+        };
+    }
+}
+
 pub struct TopicHolder {
-    pub topics_rx: HashMap<String, Receiver<Messages>>,
-    pub topics_tx: HashMap<String, Sender<Messages>>,
+    pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
+    pub topics_tx: HashMap<String, Sender<ChannelMessage>>,
     pub global_tx: Sender<(String, Bytes)>,
     pub global_map_handle: ReadHandleFactory<String, Bytes>,
 }
 
 impl TopicHolder {
-    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<Messages>> {
+    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<ChannelMessage>> {
         let rx = self.topics_rx.remove(name)?;
         Some(rx)
     }
 
-    pub fn get_tx(&self, name: &str) -> Option<Sender<Messages>> {
+    pub fn get_tx(&self, name: &str) -> Option<Sender<ChannelMessage>> {
         let tx = self.topics_tx.get(name)?;
         Some(tx.clone())
     }
@@ -74,10 +98,10 @@ impl Topology {
         global_tx: Sender<(String, Bytes)>,
         global_map_handle: ReadHandleFactory<String, Bytes>,
     ) -> TopicHolder {
-        let mut topics_rx: HashMap<String, Receiver<Messages>> = HashMap::new();
-        let mut topics_tx: HashMap<String, Sender<Messages>> = HashMap::new();
+        let mut topics_rx: HashMap<String, Receiver<ChannelMessage>> = HashMap::new();
+        let mut topics_tx: HashMap<String, Sender<ChannelMessage>> = HashMap::new();
         for name in &self.named_topics {
-            let (tx, rx) = channel::<Messages>(5);
+            let (tx, rx) = channel::<ChannelMessage>(5);
             topics_rx.insert(name.clone(), rx);
             topics_tx.insert(name.clone(), tx);
         }
@@ -205,7 +229,7 @@ impl Topology {
             bypass_query_processing: false,
         });
 
-        let tee_conf = TransformsConfig::MPSCTee(AsyncMpscTeeConfig {
+        let tee_conf = TransformsConfig::MPSCTee(TeeConfig {
             topic_name: String::from("test_topic"),
         });
 
