@@ -1,11 +1,22 @@
+use crate::config::topology::ChannelMessage;
 use crate::error::ChainResponse;
+use crate::message::Messages;
 use crate::transforms::{Transforms, Wrapper};
+use anyhow::{Error, Result};
 use bytes::Bytes;
 use evmap::ReadHandleFactory;
+use futures::FutureExt;
+
 use itertools::Itertools;
 use metrics::{counter, timing};
+use tokio::select;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::oneshot::Receiver as OneReceiver;
+use tokio::task::JoinHandle;
+use tokio::time::Duration;
 use tokio::time::Instant;
+use tokio::time::{timeout, Elapsed};
+use tracing::{debug, info, trace};
 
 type InnerChain = Vec<Transforms>;
 
@@ -33,7 +44,106 @@ impl Clone for TransformChain {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct BufferedChain {
+    send_handle: Sender<ChannelMessage>,
+}
+
+impl BufferedChain {
+    pub async fn process_request(
+        &mut self,
+        wrapper: Wrapper<'_>,
+        client_details: String,
+    ) -> ChainResponse {
+        self.process_request_with_receiver(wrapper, client_details)
+            .await?
+            .await?
+    }
+
+    pub async fn process_request_with_receiver(
+        &mut self,
+        wrapper: Wrapper<'_>,
+        _client_details: String,
+    ) -> Result<OneReceiver<ChainResponse>> {
+        let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
+        self.send_handle
+            .send(ChannelMessage::new(wrapper.message, one_tx))
+            .await?;
+        Ok(one_rx)
+    }
+}
+
 impl TransformChain {
+    pub fn build_buffered_chain(
+        self,
+        buffer_size: usize,
+        timeout_millis: Option<u64>,
+    ) -> BufferedChain {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
+
+        // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
+        let _jh = tokio::spawn(async move {
+            let mut chain = self;
+            while let Some(ChannelMessage {
+                return_chan,
+                messages,
+            }) = rx.recv().await
+            {
+                let name = chain.name.clone();
+                let future = async {
+                    match timeout_millis {
+                        None => Ok(chain.process_request(Wrapper::new(messages), name).await),
+                        Some(timeout_ms) => {
+                            timeout(
+                                Duration::from_millis(timeout_ms),
+                                chain.process_request(Wrapper::new(messages), name),
+                            )
+                            .await
+                        }
+                    }
+                };
+
+                match return_chan {
+                    None => match future.fuse().await {
+                        Ok(_) => {
+                            trace!("Ignoring response due to lack of return chan");
+                        }
+                        Err(_) => {
+                            trace!("Response timed out, but no way to return error");
+                        }
+                    },
+                    Some(mut tx) => {
+                        select! {
+                            _ = tx.closed().fuse() => {
+                                info!("No longer interested in the result");
+                            }
+                            response = future.fuse() => {
+                                match response {
+                                    Ok(chain_response) => {
+                                       match tx.send(chain_response) {
+                                            Ok(_) => {}
+                                            Err(e) => trace!(
+                                                "Dropping response message {:?} as not needed by TunableConsistency",
+                                                e
+                                            )
+                                       }
+                                    },
+                                    Err(e) => {
+                                        info!("Upstream timeout, resetting chain {}", e);
+                                        chain = chain.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return ();
+        });
+
+        return BufferedChain { send_handle: tx };
+    }
+
     pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
         TransformChain {
             name,
