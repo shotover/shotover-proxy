@@ -16,6 +16,7 @@ use crate::message::{
     Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
 };
 use crate::protocols::RawFrame;
+use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
@@ -25,7 +26,7 @@ use tokio::sync::mpsc::Sender;
 #[derive(Clone)]
 pub struct TunableConsistency {
     name: &'static str,
-    route_map: Vec<Sender<ChannelMessage>>,
+    route_map: Vec<BufferedChain>,
     write_consistency: i32,
     read_consistency: i32,
     timeout: u64,
@@ -42,49 +43,14 @@ pub struct TunableConsistencyConfig {
 #[async_trait]
 impl TransformsFromConfig for TunableConsistencyConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let mut temp: Vec<Sender<ChannelMessage>> = Vec::with_capacity(self.route_map.len());
+        let mut temp: Vec<BufferedChain> = Vec::with_capacity(self.route_map.len());
 
         for (key, value) in self.route_map.clone() {
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(10);
-            let mut chain = build_chain_from_config(key, &value, topics).await?;
-            let _jh = tokio::spawn(async move {
-                while let Some(ChannelMessage {
-                    return_chan,
-                    messages,
-                }) = rx.recv().await
-                {
-                    //TODO we need to timeout this process as well or periodically check if the response_sender was dropped
-                    match timeout(
-                        Duration::from_millis(1000),
-                        chain.process_request(
-                            Wrapper::new(messages),
-                            "TunableConsistency".to_string(),
-                        ),
-                    )
-                    .await
-                    {
-                        Ok(response) => {
-                            if let Some(response_sender) = return_chan {
-                                match response_sender.send(response) {
-                                    Ok(_) => {}
-                                    Err(e) => trace!(
-                                        "Dropping response message {:?} as not needed by TunableConsistency",
-                                        e
-                                    ),
-                                }
-                            } else {
-                                info!("hmmmm")
-                            }
-                        }
-                        Err(e) => {
-                            // This will reconnect
-                            info!("Upstream timeout, resetting chain {}", e);
-                            chain = chain.clone();
-                        }
-                    }
-                }
-            });
-            temp.push(tx);
+            temp.push(
+                build_chain_from_config(key, &value, topics)
+                    .await?
+                    .build_buffered_chain(10, Some(1000)),
+            );
         }
 
         Ok(Transforms::TunableConsistency(TunableConsistency {
@@ -195,22 +161,16 @@ impl Transform for TunableConsistency {
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
         let timeout_count = self.timeout;
-        let mut_iter = self.route_map.iter_mut();
         let rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
-        let send_fu: FuturesUnordered<_> = FuturesUnordered::from_iter(mut_iter.map(|c| {
-            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
-            rec_fu.push(timeout(Duration::from_millis(timeout_count), one_rx));
-            let chan_message = ChannelMessage::new(qd.message.clone(), one_tx);
-            c.send(chan_message)
-        }));
-
-        let _ = send_fu.collect::<Vec<_>>().await;
+        for chain in self.route_map.iter_mut() {
+            rec_fu.push(chain.process_request(qd.clone(), "TunableConsistency".to_string()));
+        }
 
         let mut r = rec_fu.take_while(|x| {
             let resp = successes < max_required_successes;
-            if let Ok(Ok(x)) = x {
+            if let Ok(x) = x {
                 debug!("{:?}", x);
                 successes += 1;
             }
@@ -218,7 +178,7 @@ impl Transform for TunableConsistency {
         });
 
         let mut results: Vec<Messages> = Vec::new();
-        while let Some(Ok(Ok(Ok(messages)))) = r.next().await {
+        while let Some(Ok(messages)) = r.next().await {
             debug!("{:#?}", messages);
             results.push(messages);
         }
@@ -282,7 +242,7 @@ impl Transform for TunableConsistency {
 mod scatter_transform_tests {
     use anyhow::anyhow;
 
-    use crate::transforms::chain::TransformChain;
+    use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
 
@@ -295,7 +255,7 @@ mod scatter_transform_tests {
     use crate::config::topology::{ChannelMessage, TopicHolder};
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
-    use crate::transforms::{Transform, Transforms, Wrapper};
+    use crate::transforms::{build_chain_from_config, Transform, Transforms, Wrapper};
     use std::collections::HashMap;
     use tokio::sync::mpsc::Sender;
 
@@ -339,50 +299,11 @@ mod scatter_transform_tests {
         }
     }
 
-    async fn build_chains(
-        route_map: HashMap<String, TransformChain>,
-    ) -> Vec<Sender<ChannelMessage>> {
-        let mut temp: Vec<Sender<ChannelMessage>> = Vec::with_capacity(route_map.len());
+    async fn build_chains(route_map: HashMap<String, TransformChain>) -> Vec<BufferedChain> {
+        let mut temp: Vec<BufferedChain> = Vec::with_capacity(route_map.len());
 
-        for (key, value) in route_map {
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(10);
-            let mut chain = value.clone();
-            let _jh = tokio::spawn(async move {
-                while let Some(ChannelMessage {
-                    return_chan,
-                    messages,
-                }) = rx.recv().await
-                {
-                    //TODO we need to timeout this process as well or periodically check if the response_sender was dropped
-                    match timeout(
-                        Duration::from_millis(1000),
-                        chain.process_request(
-                            Wrapper::new(messages),
-                            format!("TunableConsistency-{}", key),
-                        ),
-                    )
-                    .await
-                    {
-                        Ok(response) => {
-                            if let Some(response_sender) = return_chan {
-                                match response_sender.send(response) {
-                                    Ok(_) => {}
-                                    Err(e) => trace!(
-                                        "Dropping response message {:?} as not needed by TunableConsistency",
-                                        e
-                                    ),
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            // This will reconnect
-                            info!("Upstream timeout, resetting chain {}", e);
-                            chain = chain.clone();
-                        }
-                    }
-                }
-            });
-            temp.push(tx);
+        for (key, value) in route_map.clone() {
+            temp.push(value.build_buffered_chain(10, Some(1000)));
         }
         temp
     }
