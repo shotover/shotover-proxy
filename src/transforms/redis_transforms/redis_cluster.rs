@@ -120,23 +120,21 @@ async fn remap_cluster_commands<'a>(
                             Some(RoutingInfo::Slot(slot)) => {
                                 let bucket = if use_slots {
                                     format!("{}", slot)
+                                } else if let Some(server) =
+                                    connection.get_connection_string(slot).await
+                                {
+                                    server
                                 } else {
-                                    if let Some(server) =
-                                        connection.get_connection_string(slot).await
-                                    {
-                                        server
-                                    } else {
-                                        return Err(build_error(
-                                            "ERR".to_string(),
-                                            format!(
-                                                "Could not route request: {}",
-                                                String::from_utf8_lossy(
-                                                    &*redis_command.get_packed_command()
-                                                )
-                                            ),
-                                            None,
-                                        ));
-                                    }
+                                    return Err(build_error(
+                                        "ERR".to_string(),
+                                        format!(
+                                            "Could not route request: {}",
+                                            String::from_utf8_lossy(
+                                                &*redis_command.get_packed_command()
+                                            )
+                                        ),
+                                        None,
+                                    ));
                                 };
 
                                 if let Some(cmds) = cmd_map.get_mut(&bucket) {

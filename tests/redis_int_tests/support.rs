@@ -32,7 +32,7 @@ impl TestContext {
         let mut current_attempt = 0;
 
         loop {
-            current_attempt = current_attempt + 1;
+            current_attempt += 1;
             info!("attempt {}", current_attempt);
             if current_attempt > attempts {
                 panic!("Could not connect!")

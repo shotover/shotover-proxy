@@ -121,10 +121,10 @@ impl TransformChain {
                     }
                 }
             }
-            return ();
+            
         });
 
-        return BufferedChain { send_handle: tx };
+        BufferedChain { send_handle: tx }
     }
 
     pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {

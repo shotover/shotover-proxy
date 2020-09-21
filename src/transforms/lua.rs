@@ -70,12 +70,12 @@ impl Transform for LuaFilterTransform {
                     //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
                     tokio::runtime::Handle::current().block_on(async {
                         let result = future.call_next_transform().await;
-                        return Ok(result.map_err(|_e| {
+                        Ok(result.map_err(|_e| {
                             mlua::Error::RuntimeError(
                                 "help!!@! - - TODO implement From anyhow to mlua errors"
                                     .to_string(),
                             )
-                        })?);
+                        })?)
                     })
                 },
             )?;
