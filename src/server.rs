@@ -4,7 +4,6 @@ use crate::transforms::Wrapper;
 use anyhow::Result;
 use futures::{FutureExt, SinkExt, StreamExt};
 use metrics::gauge;
-use std::num::Wrapping;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::{AsyncRead, AsyncWrite};

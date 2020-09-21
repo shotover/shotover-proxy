@@ -1,4 +1,4 @@
-use redis::{RedisError, RedisResult, Value};
+use redis::{RedisResult, Value};
 
 use std::io;
 use std::thread::sleep;
@@ -30,8 +30,6 @@ impl TestContext {
 
         let attempts = 30;
         let mut current_attempt = 0;
-
-        let millisecond = Duration::from_millis(100);
 
         loop {
             current_attempt = current_attempt + 1;
