@@ -103,38 +103,24 @@ impl TransformChain {
                     }
                 };
 
-                match return_chan {
-                    None => match future.fuse().await {
-                        Ok(_) => {
-                            trace!("Ignoring response due to lack of return chan");
-                        }
-                        Err(_) => {
-                            trace!("Response timed out, but no way to return error");
-                        }
-                    },
-                    Some(mut tx) => {
-                        select! {
-                            _ = tx.closed().fuse() => {
-                                info!("No longer interested in the result");
-                            }
-                            response = future.fuse() => {
-                                match response {
-                                    Ok(chain_response) => {
-                                       match tx.send(chain_response) {
-                                            Ok(_) => {}
-                                            Err(e) => trace!(
-                                                "Dropping response message {:?} as not needed by TunableConsistency",
-                                                e
-                                            )
-                                       }
-                                    },
-                                    Err(e) => {
-                                        info!("Upstream timeout, resetting chain {}", e);
-                                        chain = chain.clone();
-                                    }
+                match future.fuse().await {
+                    Ok(chain_response) => {
+                        match return_chan {
+                            None => trace!("Ignoring response due to lack of return chan"),
+                            Some(tx) => {
+                                match tx.send(chain_response) {
+                                    Ok(_) => {}
+                                    Err(e) => trace!(
+                                        "Dropping response message {:?} as not needed by TunableConsistency",
+                                        e
+                                    )
                                 }
-                            }
+                            },
                         }
+                    }
+                    Err(e) => {
+                        info!("Upstream timeout, resetting chain {}", e);
+                        chain = chain.clone();
                     }
                 }
             }

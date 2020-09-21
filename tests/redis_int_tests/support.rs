@@ -1,8 +1,9 @@
-use redis::{RedisResult, Value};
+use redis::{RedisError, RedisResult, Value};
 
 use std::io;
 use std::thread::sleep;
 use std::time::Duration;
+use tracing::info;
 
 pub struct TestContext {
     pub client: redis::Client,
@@ -27,8 +28,19 @@ impl TestContext {
         let client = redis::Client::open(conn_string.as_str()).unwrap();
         let mut con;
 
-        let millisecond = Duration::from_millis(1);
+        let attempts = 30;
+        let mut current_attempt = 0;
+
+        let millisecond = Duration::from_millis(100);
+
         loop {
+            current_attempt = current_attempt + 1;
+            info!("attempt {}", current_attempt);
+            if current_attempt > attempts {
+                panic!("Could not connect!")
+            }
+            let millisecond = Duration::from_millis(100 * current_attempt);
+
             match client.get_connection() {
                 Err(err) => {
                     if err.is_connection_refusal() {
@@ -39,7 +51,20 @@ impl TestContext {
                 }
                 Ok(x) => {
                     con = x;
-                    break;
+                    let result: RedisResult<Option<String>> =
+                        redis::cmd("GET").arg("nosdjkghsdjghsdkghj").query(&mut con);
+                    match result {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(e) => {
+                            info!(
+                                "Could not execute dummy query {}, retrying again - retries {}",
+                                e, current_attempt
+                            );
+                            sleep(millisecond);
+                        }
+                    }
                 }
             }
         }
