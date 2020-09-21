@@ -86,9 +86,8 @@ impl RedisCodecDestination {
                 let mut outbound_framed_codec =
                     Framed::new(outbound_stream, RedisCodec::new(true, 1));
                 let _ = outbound_framed_codec.send(message).await;
-                // self.last_processed_clock.0 += 1;
                 if let Some(o) = outbound_framed_codec.next().fuse().await {
-                    if let Ok(_resp) = &o {
+                    if let Ok(resp) = &o {
                         self.outbound.replace(outbound_framed_codec);
                         return o;
                     }
@@ -98,38 +97,11 @@ impl RedisCodecDestination {
             Some(ref mut outbound_framed_codec) => {
                 let _ = outbound_framed_codec.send(message).await;
 
-                // debug!(
-                //     "{} Redis message clock: current {} - last processed {}",
-                //     self.address, message_clock, self.last_processed_clock.0
-                // );
-
-                // maybe_fastforward(
-                //     self.address.borrow(),
-                //     outbound_framed_codec,
-                //     message_clock,
-                //     &mut self.last_processed_clock,
-                // )
-                // .await;
-                //
-                // if message_clock.0 < self.last_processed_clock.0 {
-                //     warn!(
-                //         "{} Out of order detected current {}, last processed {}",
-                //         self.address, message_clock, self.last_processed_clock
-                //     )
-                // }
-
                 let result = outbound_framed_codec
                     .next()
                     .fuse()
                     .await
                     .ok_or_else(|| anyhow!("couldnt get frame"))?;
-
-                // self.last_processed_clock.0 += 1;
-                //
-                // debug!(
-                //     "Post answer - {} Redis message clock: current {} - last processed {}",
-                //     self.address, message_clock, self.last_processed_clock.0
-                // );
 
                 return result;
             }

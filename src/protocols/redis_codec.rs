@@ -596,7 +596,21 @@ impl RedisCodec {
                 Frame::Ask(a) => self.handle_redis_string(a, frame),
                 Frame::Integer(i) => self.handle_redis_integer(i, frame),
                 Frame::Error(s) => self.handle_redis_error(s, frame),
-                _ => Message::new_bypass(RawFrame::Redis(frame)),
+                Frame::Null => {
+                    return if self.decode_as_response {
+                        Ok(Message::new_response(
+                            QueryResponse::empty(),
+                            false,
+                            RawFrame::Redis(frame),
+                        ))
+                    } else {
+                        Ok(Message::new_query(
+                            QueryMessage::empty(),
+                            false,
+                            RawFrame::Redis(frame),
+                        ))
+                    }
+                }
             })
         }
     }

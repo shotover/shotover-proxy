@@ -8,10 +8,17 @@ use crate::redis_int_tests::support::TestContext;
 use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
+use std::process::exit;
 use tokio::runtime;
 use tracing::info;
 use tracing::trace;
 use tracing::Level;
+
+fn try_register_cleanup() {
+    let _ = ctrlc::set_handler(move || {
+        exit(0);
+    });
+}
 
 fn test_args() {
     let ctx = TestContext::new();
@@ -601,6 +608,10 @@ fn test_bit_operations() {
 //     child.join().unwrap().unwrap();
 // }
 
+fn check_cluster_ready() {
+    let ctx = TestContext::new();
+}
+
 fn test_cluster_basics() {
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -660,6 +671,7 @@ fn test_cluster_script() {
 
 #[test]
 fn test_pass_through() -> Result<()> {
+    try_register_cleanup();
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -705,6 +717,7 @@ fn test_pass_through_one() -> Result<()> {
 
 #[test]
 fn test_active_active_redis() -> Result<()> {
+    try_register_cleanup();
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -717,6 +730,7 @@ fn test_active_active_redis() -> Result<()> {
 #[test]
 // #[allow(dead_code)]
 fn test_active_one_active_redis() -> Result<()> {
+    try_register_cleanup();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
 
@@ -791,6 +805,7 @@ fn test_pass_redis_cluster_one() -> Result<()> {
 
 #[test]
 fn test_cluster_auth_redis() -> Result<()> {
+    try_register_cleanup();
     let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
     let _subscriber = tracing_subscriber::fmt()
@@ -838,6 +853,7 @@ fn test_cluster_auth_redis() -> Result<()> {
 
 #[test]
 fn test_cluster_all_redis() -> Result<()> {
+    try_register_cleanup();
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
     let _subscriber = tracing_subscriber::fmt()
@@ -850,6 +866,7 @@ fn test_cluster_all_redis() -> Result<()> {
 
 #[test]
 fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
+    try_register_cleanup();
     let compose_config = "examples/redis-cluster-pipeline/docker-compose.yml".to_string();
 
     load_docker_compose(compose_config)?;

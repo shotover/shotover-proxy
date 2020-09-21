@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
@@ -58,7 +58,7 @@ impl TransformsFromConfig for TunableConsistencyConfig {
             route_map: temp,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
-            timeout: 500, //todo this timeout needs to be longer for the initial connection...
+            timeout: 1000, //todo this timeout needs to be longer for the initial connection...
             count: 0,
         }))
     }
@@ -161,29 +161,41 @@ impl Transform for TunableConsistency {
         // Bias towards the write_consistency value for everything else
         let mut successes: i32 = 0;
         let timeout_count = self.timeout;
-        let rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
+        let mut rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
         for chain in self.route_map.iter_mut() {
             rec_fu.push(chain.process_request(qd.clone(), "TunableConsistency".to_string()));
         }
 
-        let mut r = rec_fu.take_while(|x| {
-            let resp = successes < max_required_successes;
-            if let Ok(x) = x {
-                debug!("{:?}", x);
-                successes += 1;
-            }
-            resp
-        });
+        // let mut r = rec_fu.take_while(|x| {
+        //     let resp = successes < max_required_successes;
+        //     if let Ok(x) = x {
+        //         debug!("{:?}", x);
+        //         successes += 1;
+        //     }
+        //     resp
+        // });
 
         let mut results: Vec<Messages> = Vec::new();
-        while let Some(Ok(messages)) = r.next().await {
-            debug!("{:#?}", messages);
-            results.push(messages);
+        while let Some(res) = rec_fu.next().await {
+            match res {
+                Ok(messages) => {
+                    debug!("{:#?}", messages);
+                    results.push(messages);
+                }
+                Err(e) => {
+                    debug!("failed response {}", e);
+                }
+            }
+            if results.len() >= max_required_successes as usize {
+                break;
+            }
         }
 
-        drop(r);
+        drop(rec_fu);
+
+        // info!("{:?}\n{:?}", qd, results);
 
         if results.len()
             < *required_successes
