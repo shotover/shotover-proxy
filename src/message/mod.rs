@@ -278,7 +278,7 @@ impl QueryMessage {
             let mut buffer = String::new();
             let f: String = self.namespace.join(".");
             buffer.push_str(f.as_str());
-            buffer.push_str(".");
+            buffer.push('.');
             buffer.push_str(serde_json::to_string(&pk).unwrap().as_str());
             return Some(buffer);
         }

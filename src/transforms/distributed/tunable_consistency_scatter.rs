@@ -1,16 +1,14 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::stream::StreamExt;
-use tokio::time::timeout;
-use tracing::{debug, info, trace};
+use tracing::debug;
 
-use crate::config::topology::{ChannelMessage, TopicHolder};
+use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{
     Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
@@ -20,8 +18,6 @@ use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
-use std::iter::FromIterator;
-use tokio::sync::mpsc::Sender;
 
 #[derive(Clone)]
 pub struct TunableConsistency {
@@ -159,23 +155,12 @@ impl Transform for TunableConsistency {
             .unwrap_or_else(|| &self.write_consistency);
 
         // Bias towards the write_consistency value for everything else
-        let mut successes: i32 = 0;
-        let timeout_count = self.timeout;
         let mut rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
         for chain in self.route_map.iter_mut() {
             rec_fu.push(chain.process_request(qd.clone(), "TunableConsistency".to_string()));
         }
-
-        // let mut r = rec_fu.take_while(|x| {
-        //     let resp = successes < max_required_successes;
-        //     if let Ok(x) = x {
-        //         debug!("{:?}", x);
-        //         successes += 1;
-        //     }
-        //     resp
-        // });
 
         let mut results: Vec<Messages> = Vec::new();
         while let Some(res) = rec_fu.next().await {
@@ -258,18 +243,13 @@ mod scatter_transform_tests {
     use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
 
-    use std::time::Duration;
-
     use anyhow::Result;
-    use tokio::time::timeout;
-    use tracing::{info, trace};
 
-    use crate::config::topology::{ChannelMessage, TopicHolder};
+    use crate::config::topology::TopicHolder;
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
-    use crate::transforms::{build_chain_from_config, Transform, Transforms, Wrapper};
+    use crate::transforms::{Transform, Transforms, Wrapper};
     use std::collections::HashMap;
-    use tokio::sync::mpsc::Sender;
 
     fn check_ok_responses(
         mut message: Messages,
@@ -314,7 +294,7 @@ mod scatter_transform_tests {
     async fn build_chains(route_map: HashMap<String, TransformChain>) -> Vec<BufferedChain> {
         let mut temp: Vec<BufferedChain> = Vec::with_capacity(route_map.len());
 
-        for (key, value) in route_map.clone() {
+        for (_key, value) in route_map.clone() {
             temp.push(value.build_buffered_chain(10, Some(1000)));
         }
         temp

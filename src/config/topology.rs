@@ -34,17 +34,17 @@ pub struct ChannelMessage {
 
 impl ChannelMessage {
     pub fn new_with_no_return(m: Messages) -> Self {
-        return ChannelMessage {
+        ChannelMessage {
             messages: m,
             return_chan: None,
-        };
+        }
     }
 
     pub fn new(m: Messages, return_chan: OneSender<ChainResponse>) -> Self {
-        return ChannelMessage {
+        ChannelMessage {
             messages: m,
             return_chan: Some(return_chan),
-        };
+        }
     }
 }
 

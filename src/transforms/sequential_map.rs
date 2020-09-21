@@ -35,7 +35,7 @@ impl TransformsFromConfig for SequentialMapConfig {
 impl Transform for SequentialMap {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut results: Vec<Messages> = Vec::with_capacity(qd.message.messages.len());
-        while qd.message.messages.len() != 0 {
+        while !qd.message.messages.is_empty() {
             results.push(
                 self.chain
                     .process_request(

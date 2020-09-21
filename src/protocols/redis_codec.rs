@@ -8,7 +8,7 @@ use itertools::Itertools;
 use redis_protocol::prelude::*;
 use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
@@ -625,7 +625,7 @@ impl RedisCodec {
             }
         }
 
-        info!("{:?}", resp);
+        debug!("{:?}", resp);
         Frame::SimpleString("OK".to_string())
     }
 

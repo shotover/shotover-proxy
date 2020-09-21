@@ -1,17 +1,13 @@
-use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::num::Wrapping;
-use std::ops::Sub;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
-use tokio::stream::{Stream, StreamExt};
+use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
-use tracing::debug;
-use tracing::warn;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -87,7 +83,7 @@ impl RedisCodecDestination {
                     Framed::new(outbound_stream, RedisCodec::new(true, 1));
                 let _ = outbound_framed_codec.send(message).await;
                 if let Some(o) = outbound_framed_codec.next().fuse().await {
-                    if let Ok(resp) = &o {
+                    if let Ok(_resp) = &o {
                         self.outbound.replace(outbound_framed_codec);
                         return o;
                     }
@@ -125,12 +121,6 @@ impl Transform for RedisCodecDestination {
 
 #[cfg(test)]
 mod test {
-    use std::num::Wrapping;
-
-    use anyhow::Result;
-    use futures::stream::{self};
-    use tokio::stream::StreamExt;
-
     // #[tokio::test(threaded_scheduler)]
     // pub async fn test_clock_wrap() -> Result<()> {
     //     let address = "".to_string();

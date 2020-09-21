@@ -33,11 +33,11 @@ where
     T: Future,
 {
     pub fn new(ordered: bool) -> Self {
-        return if ordered {
+        if ordered {
             Self::Ordered(FuturesOrdered::new())
         } else {
             Self::Unordered(FuturesUnordered::new())
-        };
+        }
     }
 
     pub fn push(&mut self, future: T) {
