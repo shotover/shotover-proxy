@@ -8,6 +8,9 @@ nav:
       - 'Configuration': 'user-guide/configuration.md'
       - 'Functions': 'user-guide/functions.md'
   - 'Transforms': 'transforms/transforms.md'
+  - 'Developer' :
+      - 'Shotover' : 'developer/shotover-development.md'
+      - 'Transform' : 'developer/transform-development.md'
   - 'Examples':
       - 'Redis': 'examples/redis-clustering.md'
 
