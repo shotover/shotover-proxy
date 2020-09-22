@@ -2,13 +2,15 @@ use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::{ChannelMessage, TopicHolder};
+use crate::message::Messages;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::Wrapper;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
+use tokio::sync::oneshot::Sender;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::info;
@@ -67,8 +69,20 @@ impl AsyncMpsc {
             while !shutdown.is_shutdown() {
                 if let Some(m) = rx.recv().await {
                     let w: Wrapper = Wrapper::new(m.messages.clone());
-                    if let Err(e) = chain.process_request(w, "AsyncMpsc".to_string()).await {
-                        warn!("Something went wrong {}", e)
+                    match m.return_chan {
+                        None => {
+                            if let Err(e) = chain.process_request(w, "AsyncMpsc".to_string()).await
+                            {
+                                warn!("Something went wrong {}", e);
+                            }
+                        }
+                        Some(tx) => {
+                            if let Err(e) =
+                                tx.send(chain.process_request(w, "AsyncMpsc".to_string()).await)
+                            {
+                                warn!("Something went wrong - couldn't return response {:?}", e);
+                            }
+                        }
                     }
                 }
             }

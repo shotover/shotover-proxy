@@ -19,6 +19,7 @@ use anyhow::Result;
 pub struct RedisConfig {
     pub listen_addr: String,
     pub batch_size_hint: u64,
+    pub connection_limit: Option<usize>,
 }
 
 #[async_trait]
@@ -37,6 +38,7 @@ impl SourcesFromConfig for RedisConfig {
                 self.batch_size_hint,
                 notify_shutdown,
                 shutdown_complete_tx,
+                self.connection_limit,
             )
             .await,
         )])
@@ -58,6 +60,7 @@ impl RedisSource {
         batch_hint: u64,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
+        connection_limit: Option<usize>,
     ) -> RedisSource {
         let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
 
@@ -69,7 +72,7 @@ impl RedisSource {
             source_name: name.to_string(),
             listener,
             codec: RedisCodec::new(false, batch_hint as usize),
-            limit_connections: Arc::new(Semaphore::new(50)),
+            limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             notify_shutdown,
             shutdown_complete_tx,
         };
