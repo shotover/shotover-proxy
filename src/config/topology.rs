@@ -227,10 +227,12 @@ impl Topology {
             listen_addr,
             cassandra_ks,
             bypass_query_processing: false,
+            connection_limit: None,
         });
 
         let tee_conf = TransformsConfig::MPSCTee(TeeConfig {
             topic_name: String::from("test_topic"),
+            behavior: None,
         });
 
         let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
