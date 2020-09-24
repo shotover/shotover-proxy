@@ -213,10 +213,14 @@ impl Transform for RedisCluster {
                 }
             }
 
+            if let Some(username) = self.client.username.as_deref() {
+                client = client.username(username.to_string());
+            }
+
             if let Some(password) = self.client.password.as_deref() {
                 client = client.password(password.to_string());
             }
-
+            
             let cli_res = client.readonly(false).open().await;
 
             let connection_res = cli_res?.get_connection().await;
