@@ -17,7 +17,7 @@ impl Default for TestContext {
 
 impl TestContext {
     pub fn new_auth() -> TestContext {
-        TestContext::new_internal("redis://:shotover@127.0.0.1:6379/".to_string())
+        TestContext::new_internal("redis://default:shotover@127.0.0.1:6379/".to_string())
     }
 
     pub fn new() -> TestContext {
