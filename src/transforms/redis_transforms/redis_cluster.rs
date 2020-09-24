@@ -220,7 +220,7 @@ impl Transform for RedisCluster {
             if let Some(password) = self.client.password.as_deref() {
                 client = client.password(password.to_string());
             }
-            
+
             let cli_res = client.readonly(false).open().await;
 
             let connection_res = cli_res?.get_connection().await;
@@ -261,92 +261,74 @@ impl Transform for RedisCluster {
 
         trace!("Building pipelined query {:?}", qd.message.messages);
 
-        // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
-        // But we still need to fake it being a Vec of results
         if let Some(connection) = &mut self.connection {
             let mut result: RedisResult<Vec<Value>> = Err(RedisError::from((
                 ErrorKind::ClientError,
                 "couldn't extract single command",
             )));
 
-            if qd.message.messages.len() == 1 {
-                let message = qd.message.messages.pop().unwrap();
-                if let MessageDetails::Query(qm) = message.details {
-                    if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
-                        if !commands.is_empty() {
-                            let command = commands.remove(0);
-                            if let Value::Bytes(b) = &command {
-                                let command_string = String::from_utf8(b.to_vec())
-                                    .unwrap_or_else(|_| "couldn't decode".to_string());
-
-                                let mut redis_command = redis_cmd(command_string.as_str());
-
-                                for args in commands {
-                                    redis_command.arg(args);
-                                }
-                                result =
-                                    redis_command.query_async(connection).await.map(|r| vec![r]);
-                            }
-                        }
-                    }
+            let remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
+                Ok(v) => v,
+                Err(e) => {
+                    return e;
                 }
-            } else {
-                let remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return e;
-                    }
-                };
-                // debug!("Remapped query {:?}", remapped_pipe);
-                let mut redis_results: Vec<Vec<(usize, Value)>> = vec![];
-                trace!("remaped_pipe: {:?}", remapped_pipe);
-                for (key, ordered_pipe) in remapped_pipe {
-                    let (order, pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
-                    trace!("order: {:?}", order);
-                    trace!("pipe: {:?}", pipe);
+            };
 
+            let mut redis_results: Vec<Vec<(usize, Value)>> = vec![];
+            trace!("remaped_pipe: {:?}", remapped_pipe);
+            for (key, ordered_pipe) in remapped_pipe {
+                let (order, mut pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
+                trace!("order: {:?}", order);
+                trace!("pipe: {:?}", pipe);
+
+                let result: RedisResult<Vec<Value>>;
+
+                // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
+                // But we still need to fake it being a Vec of results
+                if pipe.len() == 1 {
+                    let cmd = pipe.pop().unwrap();
+                    let q_result = cmd.query_async(connection).await;
+                    result = q_result.map(|r| vec![r]);
+                } else {
                     let redis_pipe = Pipeline {
                         commands: pipe,
                         transaction_mode: false,
                     };
 
-                    let result: RedisResult<Vec<Value>> = redis_pipe.query_async(connection).await;
+                    result = redis_pipe.query_async(connection).await;
                     trace!("returned redis result {} - {:?}", key, result);
+                }
 
-                    match result {
-                        Ok(rv) => {
-                            redis_results.push(order.into_iter().zip(rv.into_iter()).collect_vec());
-                        }
-                        Err(error) => {
-                            debug!(error = ?error);
-                            return match error.kind() {
-                                ErrorKind::MasterDown
-                                | ErrorKind::IoError
-                                | ErrorKind::ClientError
-                                | ErrorKind::ExtensionError => {
-                                    Err(anyhow!("Got connection error with cluster {}", error))
-                                }
-                                _ => build_error(
-                                    error.code().unwrap_or("ERR").to_string(),
-                                    error
-                                        .detail()
-                                        .unwrap_or("something went wrong?")
-                                        .to_string(),
-                                    None,
-                                ),
-                            };
-                        }
+                match result {
+                    Ok(rv) => {
+                        redis_results.push(order.into_iter().zip(rv.into_iter()).collect_vec());
+                    }
+                    Err(error) => {
+                        debug!(error = ?error);
+                        return match error.kind() {
+                            ErrorKind::MasterDown | ErrorKind::IoError | ErrorKind::ClientError => {
+                                Err(anyhow!("Got connection error with cluster {}", error))
+                            }
+                            _ => build_error(
+                                error.code().unwrap_or("ERR").to_string(),
+                                error
+                                    .detail()
+                                    .unwrap_or("something went wrong?")
+                                    .to_string(),
+                                None,
+                            ),
+                        };
                     }
                 }
-                trace!("Got results {:?}", redis_results);
-                let ordered_results = redis_results
-                    .into_iter()
-                    .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
-                    .map(|(_order, value)| value)
-                    .collect_vec();
-                trace!("Reordered {:?}", ordered_results);
-                result = Ok(ordered_results)
-            };
+            }
+            trace!("Got results {:?}", redis_results);
+            let ordered_results = redis_results
+                .into_iter()
+                .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
+                .map(|(_order, value)| value)
+                .collect_vec();
+            trace!("Reordered {:?}", ordered_results);
+            result = Ok(ordered_results);
 
             return match result {
                 Ok(result) => {
@@ -367,10 +349,7 @@ impl Transform for RedisCluster {
                 Err(error) => {
                     trace!(error = ?error);
                     match error.kind() {
-                        ErrorKind::MasterDown
-                        | ErrorKind::IoError
-                        | ErrorKind::ClientError
-                        | ErrorKind::ExtensionError => {
+                        ErrorKind::MasterDown | ErrorKind::IoError | ErrorKind::ClientError => {
                             Err(anyhow!("Got connection error with cluster {}", error))
                         }
                         _ => build_error(
