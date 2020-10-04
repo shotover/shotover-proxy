@@ -2,15 +2,13 @@ use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::{ChannelMessage, TopicHolder};
-use crate::message::Messages;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::Wrapper;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
-use tokio::sync::oneshot::Sender;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::info;

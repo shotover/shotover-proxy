@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -11,18 +11,17 @@ use crate::protocols::RawFrame;
 use futures::stream::{self, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo};
-use redis::ErrorKind;
 use redis::{cmd as redis_cmd, Cmd};
 use redis::{Pipeline, RedisError, RedisResult};
 
-use tracing::{debug, trace};
+use tracing::trace;
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use itertools::Itertools;
 use std::collections::HashMap;
 
 // TODO this may be worth implementing with a redis codec destination
-// buttt... the driver already supported a ton of stuff that didn't make sense
+// but... the driver already supported a ton of stuff that didn't make sense
 // to reimplement. It may be worth reworking the redis driver and redis protocol
 // to use the same types. j
 
@@ -69,6 +68,17 @@ impl TransformsFromConfig for RedisClusterConfig {
             connection: None,
         }))
     }
+}
+
+fn build_error_from_redis(error: RedisError) -> ChainResponse {
+    build_error(
+        error.code().unwrap_or("ERR").to_string(),
+        error
+            .detail()
+            .unwrap_or("Redis error from driver, couldn't determine cause")
+            .to_string(),
+        None,
+    )
 }
 
 fn build_error(code: String, description: String, original: Option<QueryMessage>) -> ChainResponse {
@@ -128,7 +138,7 @@ async fn remap_cluster_commands<'a>(
                                     return Err(build_error(
                                         "ERR".to_string(),
                                         format!(
-                                            "Could not route request: {}",
+                                            "Could not route request to redis node (couldn't calculate slot): {}",
                                             String::from_utf8_lossy(
                                                 &*redis_command.get_packed_command()
                                             )
@@ -232,15 +242,7 @@ impl Transform for RedisCluster {
                 }
                 Err(error) => {
                     trace!(error = ?error);
-                    let my_err = build_error(
-                        error.code().unwrap_or("ERR").to_string(),
-                        error
-                            .detail()
-                            .unwrap_or("something went wrong?")
-                            .to_string(),
-                        None,
-                    );
-                    return my_err;
+                    return build_error_from_redis(error);
                 }
             }
 
@@ -262,11 +264,6 @@ impl Transform for RedisCluster {
         trace!("Building pipelined query {:?}", qd.message.messages);
 
         if let Some(connection) = &mut self.connection {
-            let mut result: RedisResult<Vec<Value>> = Err(RedisError::from((
-                ErrorKind::ClientError,
-                "couldn't extract single command",
-            )));
-
             let remapped_pipe = match remap_cluster_commands(connection, qd, false).await {
                 Ok(v) => v,
                 Err(e) => {
@@ -275,13 +272,15 @@ impl Transform for RedisCluster {
             };
 
             let mut redis_results: Vec<Vec<(usize, Value)>> = vec![];
-            trace!("remaped_pipe: {:?}", remapped_pipe);
+            trace!("remapped_pipe: {:?}", remapped_pipe);
             for (key, ordered_pipe) in remapped_pipe {
                 let (order, mut pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
                 trace!("order: {:?}", order);
                 trace!("pipe: {:?}", pipe);
 
                 let result: RedisResult<Vec<Value>>;
+
+                //TODO: we can probably be smarter around the random unpacked group
 
                 // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
                 // But we still need to fake it being a Vec of results
@@ -304,20 +303,8 @@ impl Transform for RedisCluster {
                         redis_results.push(order.into_iter().zip(rv.into_iter()).collect_vec());
                     }
                     Err(error) => {
-                        debug!(error = ?error);
-                        return match error.kind() {
-                            ErrorKind::MasterDown | ErrorKind::IoError | ErrorKind::ClientError => {
-                                Err(anyhow!("Got connection error with cluster {}", error))
-                            }
-                            _ => build_error(
-                                error.code().unwrap_or("ERR").to_string(),
-                                error
-                                    .detail()
-                                    .unwrap_or("something went wrong?")
-                                    .to_string(),
-                                None,
-                            ),
-                        };
+                        trace!(error = ?error);
+                        return build_error_from_redis(error);
                     }
                 }
             }
@@ -328,46 +315,22 @@ impl Transform for RedisCluster {
                 .map(|(_order, value)| value)
                 .collect_vec();
             trace!("Reordered {:?}", ordered_results);
-            result = Ok(ordered_results);
 
-            return match result {
-                Ok(result) => {
-                    trace!(result = ?result);
-                    Ok(Messages {
-                        messages: stream::iter(result)
-                            .then(|v| async move {
-                                Message::new_response(
-                                    QueryResponse::just_result(v),
-                                    true,
-                                    RawFrame::NONE,
-                                )
-                            })
-                            .collect()
-                            .await,
+            return Ok(Messages {
+                messages: stream::iter(ordered_results)
+                    .then(|v| async move {
+                        Message::new_response(QueryResponse::just_result(v), true, RawFrame::NONE)
                     })
-                }
-                Err(error) => {
-                    trace!(error = ?error);
-                    match error.kind() {
-                        ErrorKind::MasterDown | ErrorKind::IoError | ErrorKind::ClientError => {
-                            Err(anyhow!("Got connection error with cluster {}", error))
-                        }
-                        _ => build_error(
-                            error.code().unwrap_or("ERR").to_string(),
-                            error
-                                .detail()
-                                .unwrap_or("something went wrong?")
-                                .to_string(),
-                            None,
-                        ),
-                    }
-                }
-            };
+                    .collect()
+                    .await,
+            });
         }
 
-        Err(anyhow!(
-            "Redis Cluster transform did not have enough information to build a request"
-        ))
+        build_error(
+            "ERR".to_string(),
+            "Shotover couldn't connect to upstream redis cluster".to_string(),
+            None,
+        )
     }
 
     fn get_name(&self) -> &'static str {
