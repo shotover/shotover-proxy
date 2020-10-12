@@ -393,7 +393,7 @@ pub enum Value {
     FragmentedResponese(Vec<Value>),
 }
 
-fn parse_redis(v: &RValue) -> Value {
+pub fn parse_redis(v: &RValue) -> Value {
     match v {
         RValue::Nil => Value::NULL,
         RValue::Int(i) => Value::Integer(*i),

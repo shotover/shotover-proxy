@@ -1,10 +1,11 @@
 #![allow(clippy::let_unit_value)]
 use anyhow::Result;
 
-use redis::Commands;
+use redis::{Commands, ConnectionLike, ErrorKind, RedisError, RedisResult, Value};
 
 use crate::load_docker_compose;
 use crate::redis_int_tests::support::TestContext;
+use rdkafka::message::ToBytes;
 use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
@@ -219,6 +220,51 @@ fn test_filtered_scanning() {
     }
 
     assert_eq!(unseen.len(), 0);
+}
+
+fn test_pipeline_error() {
+    let ctx = TestContext::new();
+    let mut con = ctx.connection();
+
+    let ((_k1, _k2),): ((i32, i32),) = redis::pipe()
+        .cmd("SET")
+        .arg("k{x}ey_1")
+        .arg(42)
+        .ignore()
+        .cmd("SET")
+        .arg("k{x}ey_2")
+        .arg(43)
+        .ignore()
+        .cmd("MGET")
+        .arg(&["k{x}ey_1", "k{x}ey_2"])
+        .query(&mut con)
+        .unwrap();
+
+    let packed = redis::pipe()
+        .cmd("SET")
+        .arg("k{x}ey_1")
+        .arg(42)
+        .cmd("SESDFSDFSDFT")
+        .arg("k{x}ey_2")
+        .arg(43)
+        .cmd("GET")
+        .arg("k{x}ey_1")
+        .get_packed_pipeline();
+
+    let _r = con.send_packed_command(&packed); // Don't unwrap the results as the driver will throw an exception and disconnect
+
+    assert_eq!(con.recv_response(), Ok(redis::Value::Okay));
+
+    assert_eq!(
+        con.recv_response(),
+        Err::<Value, RedisError>(RedisError::from((
+            ErrorKind::ResponseError,
+            "An error was signalled by the server",
+            "unknown command `SESDFSDFSDFT`, with args beginning with: `k{x}ey_2`, `43`, "
+                .to_string()
+        )))
+    );
+    assert_eq!(con.recv_response(), Ok(redis::Value::Data(Vec::from("42"))));
 }
 
 fn test_pipeline() {
@@ -728,8 +774,8 @@ fn test_active_one_active_redis() -> Result<()> {
     Ok(())
 }
 
-// #[test]
-#[allow(dead_code)]
+#[test]
+// #[allow(dead_code)]
 fn test_pass_redis_cluster_one() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
@@ -759,7 +805,7 @@ fn test_pass_redis_cluster_one() -> Result<()> {
         .try_init();
 
     // test_args()test_args;
-    test_cluster_script(); //TODO: script does not seem to be loading in the server?
+    test_pipeline_error(); //TODO: script does not seem to be loading in the server?
 
     Ok(())
 }
@@ -923,7 +969,7 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
         let mut pipe = redis::pipe();
         for i in 0..1000 {
             let key1 = format!("{}kaey", i);
-            pipe.cmd("SET").arg(&key1).arg(i).ignore();
+            pipe.cmd("SET").arg(&key1).arg(i);
         }
 
         let _: Vec<String> = pipe.query(&mut con).unwrap();
@@ -953,6 +999,7 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
     test_set_ops();
     test_scan();
     // test_optionals();
+    test_pipeline_error();
     test_scanning();
     test_filtered_scanning();
     test_pipeline(); // NGET Issues
