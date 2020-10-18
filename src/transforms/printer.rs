@@ -9,7 +9,6 @@ pub struct Printer {
     name: &'static str,
 }
 
-
 impl Default for Printer {
     fn default() -> Self {
         Self::new()
@@ -25,9 +24,9 @@ impl Printer {
 #[async_trait]
 impl Transform for Printer {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        info!("Request content: {:?}", qd.message);
+        info!("Request content: {:#?}", qd.message);
         let response = qd.call_next_transform().await;
-        info!("Response content: {:?}", response);
+        info!("Response content: {:#?}", response);
         response
     }
 

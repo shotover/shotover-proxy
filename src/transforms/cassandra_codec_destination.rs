@@ -97,12 +97,13 @@ impl CodecDestination {
                 let _ = outbound_framed_codec.send(message).await;
                 trace!("frame sent");
                 trace!("getting response");
-                let _rv = outbound_framed_codec
+                let rv = outbound_framed_codec
                     .next()
                     .fuse()
                     .await
                     .ok_or_else(|| anyhow!("couldnt get frame"))?;
                 trace!("resp received");
+                return rv;
             }
         }
         ChainResponse::Err(anyhow!("Something went wrong sending to cassandra"))

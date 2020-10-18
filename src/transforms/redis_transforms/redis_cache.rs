@@ -10,8 +10,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::Messages;
+use crate::message::MessageDetails::Query;
+use crate::message::{ASTHolder, Messages, Value as ShotoverValue};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement};
+use std::borrow::Borrow;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -66,11 +69,101 @@ impl SimpleRedisCache {
     }
 }
 
+async fn build_redis_commands(
+    expr: &Expr,
+    pks: &Vec<String>,
+    min: &mut Vec<u8>,
+    max: &mut Vec<u8>,
+) {
+    match expr {
+        Expr::BinaryOp { left, op, right } => match op {
+            BinaryOperator::Plus => {}
+            BinaryOperator::Minus => {}
+            BinaryOperator::Multiply => {}
+            BinaryOperator::Divide => {}
+            BinaryOperator::Modulus => {}
+            BinaryOperator::Gt => {}
+            BinaryOperator::Lt => {}
+            BinaryOperator::GtEq => {}
+            BinaryOperator::LtEq => {}
+            BinaryOperator::Eq => {
+                // first check if this is a related to PK
+                if let Expr::Identifier(i) = left.borrow() {
+                    let id_string = i.to_string();
+                    if pks.iter().find(|&v| v == &id_string).is_some() {
+                        //Ignore this as we build the pk constraint elsewhere
+                        return;
+                    } else {
+                        // this is a constraint
+
+                        // We will build both the min and max value of the redis zrange query
+                        // if its equality, thats the same as putting the constraint on both the
+                        // min and max side (with inclusive values)
+
+                        if let Expr::Value(v) = right.borrow() {
+                            min.push(serde_this(v).to_bytes());
+                            min.push(":".as_bytes());
+                            max.push(serde_this(v).to_bytes());
+                            max.push(":".as_bytes());
+                        }
+                    }
+                }
+            }
+            BinaryOperator::NotEq => {}
+            BinaryOperator::And => {}
+            BinaryOperator::Or => {}
+            BinaryOperator::Like => {}
+            BinaryOperator::NotLike => {}
+        },
+        _ => {}
+    }
+
+    unimplemented!()
+}
+
+async fn build_redis_ast_from_sql(
+    ast: ASTHolder,
+    primary_keys: &HashMap<String, ShotoverValue>,
+) -> ASTHolder {
+    match &ast {
+        ASTHolder::SQL(sql) => {
+            if let Statement::Query(box sqlparser::ast::Query {
+                ctes: _,
+                body:
+                    SetExpr::Select(box sqlparser::ast::Select {
+                        distinct,
+                        projection,
+                        from,
+                        selection: Some(expr),
+                        group_by,
+                        having,
+                    }),
+                order_by: _,
+                limit: _,
+                offset: _,
+                fetch: _,
+            }) = sql
+            {
+                let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
+            }
+        }
+        ASTHolder::Commands(a) => {
+            return ast;
+        }
+    }
+    unimplemented!()
+}
+
 #[async_trait]
 impl Transform for SimpleRedisCache {
     // #[instrument]
-    async fn transform<'a>(&'a mut self, _qd: Wrapper<'a>) -> ChainResponse {
-        let responses = Messages::new();
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+        // let responses = Messages::new();
+        // for m in &qd.message.messages {
+        //     if let Query(qm) = &m.details {
+        //         qm.primary_key
+        //     }
+        // }
         // for message in &qd.message.messages {
         //     let wrapped_message = Wrapper::new_with_next_transform(
         //         Messages::new_from_message(message.clone()),
@@ -278,7 +371,8 @@ impl Transform for SimpleRedisCache {
         //         }
         //     }
         // }
-        Ok(responses)
+        // Ok(responses)
+        unimplemented!()
     }
 
     fn get_name(&self) -> &'static str {

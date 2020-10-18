@@ -1,3 +1,5 @@
+#![feature(box_syntax, box_patterns)]
+
 pub mod admin;
 pub mod concurrency;
 pub mod config;

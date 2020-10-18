@@ -216,7 +216,7 @@ impl CassandraCodec2 {
         Ok(())
     }
 
-    fn value_to_expr(v: &Value) -> SQLValue {
+    pub fn value_to_expr(v: &Value) -> SQLValue {
         match v {
             Value::NULL => SQLValue::Null,
             Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // todo: this is definitely wrong
@@ -234,7 +234,7 @@ impl CassandraCodec2 {
         SQLValue::SingleQuotedString("XYz-1-zYX".to_string())
     }
 
-    fn expr_to_value(v: &SQLValue) -> Value {
+    pub fn expr_to_value(v: &SQLValue) -> Value {
         match v {
             SQLValue::Number(v)
             | SQLValue::SingleQuotedString(v)
@@ -253,7 +253,7 @@ impl CassandraCodec2 {
         }
     }
 
-    fn expr_to_string(v: &SQLValue) -> String {
+    pub fn expr_to_string(v: &SQLValue) -> String {
         match v {
             SQLValue::Number(v)
             | SQLValue::SingleQuotedString(v)
@@ -317,7 +317,7 @@ impl CassandraCodec2 {
         }
     }
 
-    fn get_column_values(expr: &SetExpr) -> Vec<String> {
+    pub fn get_column_values(expr: &SetExpr) -> Vec<String> {
         let mut cumulator: Vec<String> = Vec::new();
         if let SetExpr::Values(v) = expr {
             for value in &v.0 {
@@ -840,10 +840,7 @@ mod cassandra_protocol_tests {
 
                         println!("{}", query_string);
                         println!("{}", ast);
-                        assert_eq!(
-                            query_s,
-                            ast_string
-                        );
+                        assert_eq!(query_s, ast_string);
                         Ok(())
                     } else {
                         Err(anyhow!("uh oh"))
