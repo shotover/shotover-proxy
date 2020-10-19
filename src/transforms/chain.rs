@@ -1,7 +1,7 @@
 use crate::config::topology::ChannelMessage;
 use crate::error::ChainResponse;
 use crate::transforms::{Transforms, Wrapper};
-use anyhow::{Result};
+use anyhow::Result;
 use bytes::Bytes;
 use evmap::ReadHandleFactory;
 use futures::FutureExt;
@@ -10,9 +10,9 @@ use itertools::Itertools;
 use metrics::{counter, timing};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Receiver as OneReceiver;
+use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tokio::time::{timeout};
 use tracing::{info, trace};
 
 type InnerChain = Vec<Transforms>;
@@ -121,7 +121,6 @@ impl TransformChain {
                     }
                 }
             }
-            
         });
 
         BufferedChain { send_handle: tx }
