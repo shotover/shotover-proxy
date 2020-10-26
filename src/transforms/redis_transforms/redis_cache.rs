@@ -1,19 +1,19 @@
 use core::fmt;
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use redis::aio::MultiplexedConnection;
-use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::MessageDetails::Query;
 use crate::message::{ASTHolder, Messages, Value as ShotoverValue};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement};
+use bytes::Bytes;
+use itertools::Itertools;
+use sqlparser::ast::{BinaryOperator, DateTimeField, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -69,12 +69,11 @@ impl SimpleRedisCache {
     }
 }
 
-async fn build_redis_commands(
-    expr: &Expr,
-    pks: &Vec<String>,
-    min: &mut Vec<u8>,
-    max: &mut Vec<u8>,
-) {
+#[derive(Serialize, Deserialize)]
+struct ValueHelper(#[serde(with = "SQLValueDef")] Value);
+
+fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: &mut Vec<u8>) {
+    println!("yo");
     match expr {
         Expr::BinaryOp { left, op, right } => match op {
             BinaryOperator::Plus => {}
@@ -101,27 +100,33 @@ async fn build_redis_commands(
                         // min and max side (with inclusive values)
 
                         if let Expr::Value(v) = right.borrow() {
-                            min.push(serde_this(v).to_bytes());
-                            min.push(":".as_bytes());
-                            max.push(serde_this(v).to_bytes());
-                            max.push(":".as_bytes());
+                            let vh = ValueHelper(v.clone());
+                            let mut minrv = serde_json::to_vec(&vh).unwrap();
+                            let mut maxrv = minrv.clone();
+
+                            min.append(&mut minrv);
+                            min.push(':' as u8);
+
+                            max.append(&mut maxrv);
+                            max.push(':' as u8);
                         }
                     }
                 }
             }
             BinaryOperator::NotEq => {}
-            BinaryOperator::And => {}
+            BinaryOperator::And => {
+                build_redis_commands(left, pks, min, max);
+                build_redis_commands(right, pks, min, max)
+            }
             BinaryOperator::Or => {}
             BinaryOperator::Like => {}
             BinaryOperator::NotLike => {}
         },
         _ => {}
     }
-
-    unimplemented!()
 }
 
-async fn build_redis_ast_from_sql(
+fn build_redis_ast_from_sql(
     ast: ASTHolder,
     primary_keys: &HashMap<String, ShotoverValue>,
 ) -> ASTHolder {
@@ -145,13 +150,80 @@ async fn build_redis_ast_from_sql(
             }) = sql
             {
                 let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
+                let mut min: Vec<u8> = Vec::new();
+                min.push('[' as u8);
+                let mut max: Vec<u8> = Vec::new();
+                max.push(']' as u8);
+                let pks = primary_keys.keys().cloned().collect_vec();
+
+                build_redis_commands(expr, &pks, &mut min, &mut max);
+
+                commands_buffer.push(ShotoverValue::Strings("ZRANGEBYLEX".to_string()));
+                let pk = primary_keys
+                    .values()
+                    .cloned()
+                    .fold("".to_string(), |acc, v| {
+                        format!("{}:{}", acc, serde_json::to_string(&v).unwrap())
+                    });
+                commands_buffer.push(ShotoverValue::Strings(pk));
+                commands_buffer.push(ShotoverValue::Bytes(Bytes::from(min)));
+                commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
+                return ASTHolder::Commands(ShotoverValue::List(commands_buffer));
+            } else {
+                panic!("woops");
             }
         }
         ASTHolder::Commands(a) => {
             return ast;
         }
     }
-    unimplemented!()
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "Value")]
+pub enum SQLValueDef {
+    /// Numeric literal
+    #[cfg(not(feature = "bigdecimal"))]
+    Number(String),
+    #[cfg(feature = "bigdecimal")]
+    Number(BigDecimal),
+    /// 'string value'
+    SingleQuotedString(String),
+    /// N'string value'
+    NationalStringLiteral(String),
+    /// X'hex value'
+    HexStringLiteral(String),
+    /// Boolean value true or false
+    Boolean(bool),
+    /// `DATE '...'` literals
+    Date(String),
+    /// `TIME '...'` literals
+    Time(String),
+    /// `TIMESTAMP '...'` literals
+    Timestamp(String),
+    /// INTERVAL literals, roughly in the following format:
+    /// `INTERVAL '<value>' <leading_field> [ (<leading_precision>) ]
+    /// [ TO <last_field> [ (<fractional_seconds_precision>) ] ]`,
+    /// e.g. `INTERVAL '123:45.67' MINUTE(3) TO SECOND(2)`.
+    ///
+    /// The parser does not validate the `<value>`, nor does it ensure
+    /// that the `<leading_field>` units >= the units in `<last_field>`,
+    /// so the user will have to reject intervals like `HOUR TO YEAR`.
+    #[serde(skip)]
+    Interval {
+        value: String,
+        leading_field: DateTimeField,
+        leading_precision: Option<u64>,
+
+        last_field: Option<DateTimeField>,
+        /// The seconds precision can be specified in SQL source as
+        /// `INTERVAL '__' SECOND(_, x)` (in which case the `leading_field`
+        /// will be `Second` and the `last_field` will be `None`),
+        /// or as `__ TO SECOND(x)`.
+        fractional_seconds_precision: Option<u64>,
+    },
+    /// `NULL` value
+    Null,
 }
 
 #[async_trait]
@@ -377,5 +449,75 @@ impl Transform for SimpleRedisCache {
 
     fn get_name(&self) -> &'static str {
         self.name
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::message::ASTHolder;
+    use crate::message::{Messages, Value as ShotoverValue};
+    use crate::transforms::redis_transforms::redis_cache::build_redis_ast_from_sql;
+    use anyhow::Result;
+    use sqlparser::dialect::GenericDialect;
+    use sqlparser::parser::Parser;
+    use std::collections::HashMap;
+
+    fn build_query(query_string: &str) -> Result<ASTHolder> {
+        let dialect = GenericDialect {}; //TODO write CQL dialect
+        let parsed_sql = Parser::parse_sql(&dialect, query_string.to_string())?.remove(0);
+        Ok(ASTHolder::SQL(parsed_sql))
+    }
+
+    #[test]
+    fn equal_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+
+        let query = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965")?,
+            &pks,
+        );
+
+        println!("{:#?}", query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn check_deterministic_order_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+
+        let query_one = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965")?,
+            &pks,
+        );
+
+        let query_two = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123")?,
+            &pks,
+        );
+
+        println!("{:#?}", query_one);
+        println!("{:#?}", query_two);
+
+        assert_eq!(query_one, query_two);
+
+        Ok(())
+    }
+
+    #[test]
+    fn range_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+
+        let query = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND y < 123")?,
+            &pks,
+        );
+
+        println!("{:#?}", query);
+
+        Ok(())
     }
 }
