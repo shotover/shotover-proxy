@@ -70,7 +70,11 @@ impl BufferedChain {
     ) -> Result<OneReceiver<ChainResponse>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
         self.send_handle
-            .send(ChannelMessage::new(wrapper.message, one_tx))
+            .send(ChannelMessage::new(
+                wrapper.message,
+                one_tx,
+                Some(wrapper.from_client),
+            ))
             .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
             .await?;
         Ok(one_rx)
@@ -98,6 +102,7 @@ impl TransformChain {
             while let Some(ChannelMessage {
                 return_chan,
                 messages,
+                public_client,
             }) = rx.recv().await
             {
                 last_message = Some(messages.clone());
@@ -106,6 +111,7 @@ impl TransformChain {
                     let mut count = count.lock().await;
                     *count += 1;
                 }
+                let name = public_client.unwrap_or(chain.name.clone());
                 let future = async {
                     match timeout_millis {
                         None => Ok(chain.process_request(Wrapper::new(messages), name).await),
@@ -212,6 +218,7 @@ impl TransformChain {
         let start = Instant::now();
         let iter = self.chain.iter_mut().collect_vec();
         wrapper.reset(iter);
+        wrapper.from_client = client_details.clone();
 
         let result = wrapper.call_next_transform().await;
         let end = Instant::now();

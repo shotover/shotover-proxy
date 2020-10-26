@@ -80,6 +80,7 @@ impl AsyncMpsc {
                 let ChannelMessage {
                     messages,
                     return_chan,
+                    public_client,
                 } = channel_message;
 
                 let w: Wrapper = Wrapper::new(messages);

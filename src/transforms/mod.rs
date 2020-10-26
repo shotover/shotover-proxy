@@ -239,7 +239,7 @@ struct QueryData {
 #[derive(Debug)]
 pub struct Wrapper<'a> {
     pub message: Messages,
-    // pub next_transform: usize,
+    pub from_client: String,
     transforms: Vec<&'a mut Transforms>,
 }
 
@@ -247,6 +247,7 @@ impl<'a> Clone for Wrapper<'a> {
     fn clone(&self) -> Self {
         Wrapper {
             message: self.message.clone(),
+            from_client: self.from_client.clone(),
             transforms: vec![],
         }
     }
@@ -286,6 +287,7 @@ impl<'a> Wrapper<'a> {
     pub fn new(m: Messages) -> Self {
         Wrapper {
             message: m,
+            from_client: "".to_string(),
             transforms: vec![],
         }
     }
@@ -293,6 +295,7 @@ impl<'a> Wrapper<'a> {
     pub fn new_with_next_transform(m: Messages, _next_transform: usize) -> Self {
         Wrapper {
             message: m,
+            from_client: "".to_string(),
             transforms: vec![],
         }
     }

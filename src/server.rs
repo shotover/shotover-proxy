@@ -11,7 +11,8 @@ use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
 use tokio::time::Duration;
 use tokio_util::codec::{Decoder, Encoder, Framed};
-use tracing::{error, info, trace};
+use tracing::{debug_span, error, info, trace};
+use tracing_futures::Instrument;
 
 pub struct TcpCodecListener<C>
 where
@@ -115,17 +116,11 @@ where
 
             let peer = socket
                 .peer_addr()
-                .map(|p| format!("{}", p.ip()))
+                .map(|p| format!("{}:{}", p.ip(), p.port()))
                 .unwrap_or_else(|_| "Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
-            info!(
-                "New connection from {}",
-                socket
-                    .peer_addr()
-                    .map(|p| format!("{}", p))
-                    .unwrap_or_else(|_| "Unknown peer".to_string())
-            );
+            info!("New connection from {}", peer);
 
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an
@@ -291,13 +286,14 @@ where
             // If `None` is returned from `read_frame()` then the peer closed
             // the socket. There is no further work to do and the task can be
             // terminated.
-
             match frame {
                 Ok(message) => {
                     trace!("Received raw message {:?}", message);
+                    let span = debug_span!("processing_chain");
                     match self
                         .chain
                         .process_request(Wrapper::new(message), self.client_details.clone())
+                        .instrument(span)
                         .await
                     {
                         Ok(modified_message) => {

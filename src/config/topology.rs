@@ -30,20 +30,27 @@ pub struct Topology {
 pub struct ChannelMessage {
     pub messages: Messages,
     pub return_chan: Option<OneSender<ChainResponse>>,
+    pub public_client: Option<String>,
 }
 
 impl ChannelMessage {
-    pub fn new_with_no_return(m: Messages) -> Self {
+    pub fn new_with_no_return(m: Messages, public_client: Option<String>) -> Self {
         ChannelMessage {
             messages: m,
             return_chan: None,
+            public_client,
         }
     }
 
-    pub fn new(m: Messages, return_chan: OneSender<ChainResponse>) -> Self {
+    pub fn new(
+        m: Messages,
+        return_chan: OneSender<ChainResponse>,
+        public_client: Option<String>,
+    ) -> Self {
         ChannelMessage {
             messages: m,
             return_chan: Some(return_chan),
+            public_client,
         }
     }
 }

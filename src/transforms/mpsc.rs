@@ -55,7 +55,10 @@ impl Transform for Buffer {
         if self.async_mode {
             let expected_responses = qd.message.messages.len();
             self.tx
-                .send(ChannelMessage::new_with_no_return(qd.message))
+                .send(ChannelMessage::new_with_no_return(
+                    qd.message,
+                    Some(qd.from_client),
+                ))
                 .map_err(|e| {
                     warn!("MPSC error {}", e);
                     e
@@ -70,7 +73,7 @@ impl Transform for Buffer {
         } else {
             let (tx, rx) = oneshot::channel::<ChainResponse>();
             self.tx
-                .send(ChannelMessage::new(qd.message, tx))
+                .send(ChannelMessage::new(qd.message, tx, Some(qd.from_client)))
                 .map_err(|e| {
                     warn!("MPSC error {}", e);
                     e
@@ -142,10 +145,11 @@ impl TransformsFromConfig for TeeConfig {
 impl Transform for Tee {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let m = qd.message.clone();
+        let public_client = qd.from_client.clone();
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {
                 self.tx
-                    .send(ChannelMessage::new_with_no_return(m))
+                    .send(ChannelMessage::new_with_no_return(m, Some(public_client)))
                     .map_err(|e| {
                         warn!("MPSC error {}", e);
                         e
@@ -156,7 +160,7 @@ impl Transform for Tee {
             ConsistencyBehavior::FAIL => {
                 let (tx, rx) = oneshot::channel::<ChainResponse>();
                 self.tx
-                    .send(ChannelMessage::new(m, tx))
+                    .send(ChannelMessage::new(m, tx, Some(public_client)))
                     .map_err(|e| {
                         warn!("MPSC error {}", e);
                         e
@@ -184,7 +188,7 @@ impl Transform for Tee {
                 let failed_message = m.clone();
                 let (tx, rx) = oneshot::channel::<ChainResponse>();
                 self.tx
-                    .send(ChannelMessage::new(m, tx))
+                    .send(ChannelMessage::new(m, tx, Some(public_client.clone())))
                     .map_err(|e| {
                         warn!("MPSC error {}", e);
                         e
@@ -198,7 +202,10 @@ impl Transform for Tee {
                 if !chain_response.eq(&tee_response) {
                     if let Some(topic) = &mut self.fail_topic {
                         topic
-                            .send(ChannelMessage::new_with_no_return(failed_message))
+                            .send(ChannelMessage::new_with_no_return(
+                                failed_message,
+                                Some(public_client),
+                            ))
                             .map_err(|e| {
                                 warn!("MPSC error for logging failed Tee message {}", e);
                                 e

@@ -14,7 +14,7 @@ use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo}
 use redis::{cmd as redis_cmd, Cmd, ErrorKind};
 use redis::{Pipeline, RedisError, RedisResult};
 
-use tracing::{trace, warn};
+use tracing::{debug, info, instrument, trace, warn};
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use cached::Cached;
@@ -22,6 +22,7 @@ use itertools::Itertools;
 use rand::RngCore;
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::error::Error;
 use std::iter::FromIterator;
 
 // TODO this may be worth implementing with a redis codec destination
@@ -38,6 +39,7 @@ pub struct ConnectionDetails {
     pub username: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct RedisCluster {
     pub name: &'static str,
     pub client: ConnectionDetails,
@@ -101,17 +103,19 @@ impl TransformsFromConfig for RedisClusterConfig {
 fn build_error_from_redis(error: RedisError, count: Option<usize>) -> ChainResponse {
     Ok(build_error_response(
         error.code(),
+        Some(&*error.to_string()),
         error.detail(),
         None,
         count,
     ))
 }
 
-fn format_errors(code: Option<&str>, description: Option<&str>) -> Value {
+fn format_errors(code: Option<&str>, description: Option<&str>, detail: Option<&str>) -> Value {
     Value::Strings(format!(
         "{} {}",
         code.unwrap_or("ERR").to_string(),
-        description
+        detail
+            .or(description)
             .unwrap_or("Redis error from driver, couldn't determine cause")
             .to_string()
     ))
@@ -120,12 +124,13 @@ fn format_errors(code: Option<&str>, description: Option<&str>) -> Value {
 fn build_error_response(
     code: Option<&str>,
     description: Option<&str>,
+    detail: Option<&str>,
     original: Option<QueryMessage>,
     count: Option<usize>,
 ) -> Messages {
     return match count {
         None => Messages::new_single_response(
-            QueryResponse::empty_with_error(Some(format_errors(code, description))),
+            QueryResponse::empty_with_error(Some(format_errors(code, description, detail))),
             true,
             RawFrame::NONE,
         ),
@@ -134,7 +139,7 @@ fn build_error_response(
                 MessageDetails::Response(QueryResponse {
                     matching_query: original.clone(),
                     result: None,
-                    error: Some(format_errors(code, description)),
+                    error: Some(format_errors(code, description, detail)),
                     response_meta: None,
                 }),
                 true,
@@ -184,6 +189,7 @@ async fn remap_cluster_commands<'a>(
                                             )
                                         )),
                                         None,
+                                        None,
                                         Some(error_len)
                                     )));
                                 };
@@ -211,6 +217,7 @@ async fn remap_cluster_commands<'a>(
                                     Some("ERR"),
                                     Some("Could not route request"),
                                     None,
+                                    None,
                                     Some(error_len),
                                 )))
                             }
@@ -233,7 +240,10 @@ fn unwrap_borrow_mut_option<T>(option: &mut Option<T>) -> &mut T {
 
 #[async_trait]
 impl Transform for RedisCluster {
+    #[tracing::instrument(fields(upstream = ?self.connection, origin = ?qd.from_client, value = ?qd.message))]
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+        let origin_client = qd.from_client.clone();
+
         if self.connection.is_none() {
             let mut eat_message = false;
 
@@ -250,7 +260,7 @@ impl Transform for RedisCluster {
                             let command_string = String::from_utf8(b.to_vec())
                                 .unwrap_or_else(|_| "couldn't decode".to_string());
 
-                            trace!(command = %command_string, connection = ?self.client);
+                            trace!(command = %command_string, connection = ?origin_client);
 
                             if command_string == "AUTH" {
                                 eat_message = true;
@@ -278,7 +288,7 @@ impl Transform for RedisCluster {
             }
 
             if let Err(error) = self.try_connect().await {
-                trace!(error = ?error);
+                trace!(error = ?error, connection = ?origin_client);
                 return build_error_from_redis(error, None);
             }
 
@@ -297,8 +307,6 @@ impl Transform for RedisCluster {
             }
         }
 
-        trace!("Building pipelined query {:?}", qd.message.messages);
-
         // if let Some(connection) = &mut self.connection {
         if self.connection.is_some() {
             let remapped_pipe = match remap_cluster_commands(
@@ -315,11 +323,11 @@ impl Transform for RedisCluster {
             };
 
             let mut redis_results: Vec<Vec<(usize, QueryResponse)>> = vec![];
-            trace!("remapped_pipe: {:?}", remapped_pipe);
+            trace!(?remapped_pipe, connection = ?origin_client);
             for (key, ordered_pipe) in remapped_pipe {
                 let (order, mut pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
-                trace!("order: {:?}", order);
-                trace!("pipe: {:?}", pipe);
+                trace!(?order, connection = ?origin_client);
+                trace!(?pipe, connection = ?origin_client);
 
                 let result: RedisResult<Vec<RedisResult<_>>>;
 
@@ -341,7 +349,7 @@ impl Transform for RedisCluster {
                     result = redis_pipe
                         .execute_pipelined_async_raw(unwrap_borrow_mut_option(&mut self.connection))
                         .await;
-                    trace!("returned redis result {} - {:?}", key, result);
+                    trace!(?key, ?result, connection = ?origin_client);
                 }
 
                 match result {
@@ -352,9 +360,13 @@ impl Transform for RedisCluster {
                                 .zip(rv.into_iter().map(|v| {
                                     return match v {
                                         Ok(v) => QueryResponse::just_result(parse_redis(&v)),
-                                        Err(e) => QueryResponse::empty_with_error(Some(
-                                            format_errors(e.code(), e.detail()),
-                                        )),
+                                        Err(e) => {
+                                            QueryResponse::empty_with_error(Some(format_errors(
+                                                e.code(),
+                                                Some(e.description()),
+                                                e.detail(),
+                                            )))
+                                        }
                                     };
                                 }))
                                 .collect_vec(),
@@ -365,9 +377,9 @@ impl Transform for RedisCluster {
                             || ErrorKind::ResponseError == error.kind()
                         {
                             self.connection.take(); // Turns this to a None
-                            warn!("Redis Cluster Connection reset, reconnecting on next request")
+                            warn!(?error, connection = ?origin_client)
                         }
-                        trace!(error = ?error);
+                        trace!(error = ?error, connection = ?origin_client);
                         redis_results.push(
                             order
                                 .into_iter()
@@ -376,6 +388,7 @@ impl Transform for RedisCluster {
                                         u,
                                         QueryResponse::empty_with_error(Some(format_errors(
                                             error.code(),
+                                            Some(&*error.to_string()),
                                             error.detail(),
                                         ))),
                                     )
@@ -385,13 +398,13 @@ impl Transform for RedisCluster {
                     }
                 }
             }
-            trace!("Got results {:?}", redis_results);
+            trace!(?redis_results, connection = ?origin_client);
             let ordered_results = redis_results
                 .into_iter()
                 .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
                 .map(|(_order, value)| value)
                 .collect_vec();
-            trace!("Reordered {:?}", ordered_results);
+            trace!(?ordered_results, connection = ?origin_client);
 
             return Ok(Messages {
                 messages: stream::iter(ordered_results)
@@ -404,6 +417,7 @@ impl Transform for RedisCluster {
         Ok(build_error_response(
             Some("ERR"),
             Some("Shotover couldn't connect to upstream redis cluster"),
+            None,
             None,
             None,
         ))
