@@ -490,6 +490,28 @@ impl Into<Frame> for Value {
 }
 
 impl Value {
+    pub fn into_bytes(self) -> Bytes {
+        return match self {
+            Value::NULL => Bytes::new(),
+            Value::None => Bytes::new(),
+            Value::Bytes(b) => b,
+            Value::Strings(s) => Bytes::from(s),
+            Value::Integer(i) => Bytes::from(Vec::from(i.to_le_bytes())),
+            Value::Float(f) => Bytes::from(Vec::from(f.to_le_bytes())),
+            Value::Boolean(b) => Bytes::from(Vec::from(if b {
+                (1 as u8).to_le_bytes()
+            } else {
+                (0 as u8).to_le_bytes()
+            })),
+            Value::Timestamp(t) => Bytes::from(Vec::from(t.timestamp().to_le_bytes())),
+            Value::Inet(i) => Bytes::from(match i {
+                IpAddr::V4(four) => Vec::from(four.octets()),
+                IpAddr::V6(six) => Vec::from(six.octets()),
+            }),
+            _ => unimplemented!(),
+        };
+    }
+
     pub fn value_byte_string(string: String) -> Value {
         Value::Bytes(Bytes::from(string))
     }

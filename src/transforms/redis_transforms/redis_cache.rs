@@ -11,15 +11,25 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, Messages, Value as ShotoverValue};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use itertools::Itertools;
 use sqlparser::ast::{BinaryOperator, DateTimeField, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
+
+const TRUE: [u8; 1] = [0x1];
+const FALSE: [u8; 1] = [0x0];
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
     #[serde(rename = "config_values")]
     pub uri: String,
+    pub caching_schema: HashMap<String, PrimaryKey>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct PrimaryKey {
+    partition_key: Vec<String>,
+    range_key: Vec<String>,
 }
 
 #[async_trait]
@@ -35,7 +45,7 @@ impl TransformsFromConfig for RedisConfig {
 pub struct SimpleRedisCache {
     name: &'static str,
     con: MultiplexedConnection,
-    tables_to_pks: HashMap<String, Vec<String>>,
+    caching_schema: HashMap<String, PrimaryKey>,
 }
 
 impl Debug for SimpleRedisCache {
@@ -43,7 +53,7 @@ impl Debug for SimpleRedisCache {
         write!(
             f,
             "Name: {}, conversions: {:?}",
-            self.name, self.tables_to_pks
+            self.name, self.caching_schema
         )
     }
 }
@@ -54,7 +64,7 @@ impl SimpleRedisCache {
         SimpleRedisCache {
             name: "SimpleRedisCache",
             con: connection,
-            tables_to_pks: HashMap::new(),
+            caching_schema: HashMap::new(),
         }
     }
 
@@ -64,7 +74,7 @@ impl SimpleRedisCache {
         SimpleRedisCache {
             name: "SimpleRedisCache",
             con,
-            tables_to_pks: HashMap::new(),
+            caching_schema: HashMap::new(),
         }
     }
 }
@@ -72,63 +82,129 @@ impl SimpleRedisCache {
 #[derive(Serialize, Deserialize)]
 struct ValueHelper(#[serde(with = "SQLValueDef")] Value);
 
-fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: &mut Vec<u8>) {
-    println!("yo");
-    match expr {
-        Expr::BinaryOp { left, op, right } => match op {
-            BinaryOperator::Plus => {}
-            BinaryOperator::Minus => {}
-            BinaryOperator::Multiply => {}
-            BinaryOperator::Divide => {}
-            BinaryOperator::Modulus => {}
-            BinaryOperator::Gt => {}
-            BinaryOperator::Lt => {}
-            BinaryOperator::GtEq => {}
-            BinaryOperator::LtEq => {}
-            BinaryOperator::Eq => {
-                // first check if this is a related to PK
-                if let Expr::Identifier(i) = left.borrow() {
-                    let id_string = i.to_string();
-                    if pks.iter().find(|&v| v == &id_string).is_some() {
-                        //Ignore this as we build the pk constraint elsewhere
-                        return;
-                    } else {
-                        // this is a constraint
-
-                        // We will build both the min and max value of the redis zrange query
-                        // if its equality, thats the same as putting the constraint on both the
-                        // min and max side (with inclusive values)
-
-                        if let Expr::Value(v) = right.borrow() {
-                            let vh = ValueHelper(v.clone());
-                            let mut minrv = serde_json::to_vec(&vh).unwrap();
-                            let mut maxrv = minrv.clone();
-
-                            min.append(&mut minrv);
-                            min.push(':' as u8);
-
-                            max.append(&mut maxrv);
-                            max.push(':' as u8);
-                        }
-                    }
+impl ValueHelper {
+    fn as_bytes(&self) -> &[u8] {
+        return match &self.0 {
+            Value::Number(v) => v.as_bytes(),
+            Value::SingleQuotedString(v) => v.as_bytes(),
+            Value::NationalStringLiteral(v) => v.as_bytes(),
+            Value::HexStringLiteral(v) => v.as_bytes(),
+            Value::Boolean(v) => {
+                if *v {
+                    &TRUE
+                } else {
+                    &FALSE
                 }
             }
-            BinaryOperator::NotEq => {}
-            BinaryOperator::And => {
-                build_redis_commands(left, pks, min, max);
-                build_redis_commands(right, pks, min, max)
+            Value::Date(v) => v.as_bytes(),
+            Value::Time(v) => v.as_bytes(),
+            Value::Timestamp(v) => v.as_bytes(),
+            Value::Null => &[],
+            _ => unreachable!(),
+        };
+    }
+}
+
+fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: &mut Vec<u8>) {
+    match expr {
+        Expr::BinaryOp { left, op, right } => {
+            // first check if this is a related to PK
+            if let Expr::Identifier(i) = left.borrow() {
+                let id_string = i.to_string();
+                if pks.iter().find(|&v| v == &id_string).is_some() {
+                    //Ignore this as we build the pk constraint elsewhere
+                    return;
+                }
             }
-            BinaryOperator::Or => {}
-            BinaryOperator::Like => {}
-            BinaryOperator::NotLike => {}
-        },
+
+            match op {
+                BinaryOperator::Plus => {}
+                BinaryOperator::Minus => {}
+                BinaryOperator::Multiply => {}
+                BinaryOperator::Divide => {}
+                BinaryOperator::Modulus => {}
+                BinaryOperator::Gt => {
+                    // we shift the value for Gt so that it works with other GtEq operators
+                    if let Expr::Value(v) = right.borrow() {
+                        let vh = ValueHelper(v.clone());
+
+                        let mut minrv = Vec::from(vh.as_bytes());
+                        let len = minrv.len();
+
+                        let last_byte = minrv.get_mut(len - 1).unwrap();
+                        *last_byte += 1;
+
+                        min.append(&mut minrv);
+                        min.push(':' as u8);
+                    }
+                }
+                BinaryOperator::Lt => {
+                    // we shift the value for Lt so that it works with other LtEq operators
+                    if let Expr::Value(v) = right.borrow() {
+                        let vh = ValueHelper(v.clone());
+
+                        let mut maxrv = Vec::from(vh.as_bytes());
+                        let len = maxrv.len();
+
+                        let last_byte = maxrv.get_mut(len - 1).unwrap();
+                        *last_byte -= 1;
+
+                        max.append(&mut maxrv);
+                        max.push(':' as u8);
+                    }
+                }
+                BinaryOperator::GtEq => {
+                    if let Expr::Value(v) = right.borrow() {
+                        let vh = ValueHelper(v.clone());
+
+                        let mut minrv = Vec::from(vh.as_bytes());
+
+                        min.append(&mut minrv);
+                        min.push(':' as u8);
+                    }
+                }
+                BinaryOperator::LtEq => {
+                    if let Expr::Value(v) = right.borrow() {
+                        let vh = ValueHelper(v.clone());
+
+                        let mut maxrv = Vec::from(vh.as_bytes());
+
+                        max.append(&mut maxrv);
+                        max.push(':' as u8);
+                    }
+                }
+                BinaryOperator::Eq => {
+                    if let Expr::Value(v) = right.borrow() {
+                        let vh = ValueHelper(v.clone());
+
+                        let mut minrv = Vec::from(vh.as_bytes());
+                        let mut maxrv = minrv.clone();
+
+                        min.append(&mut minrv);
+                        min.push(':' as u8);
+
+                        max.append(&mut maxrv);
+                        max.push(':' as u8);
+                    }
+                }
+                BinaryOperator::NotEq => {}
+                BinaryOperator::And => {
+                    build_redis_commands(left, pks, min, max);
+                    build_redis_commands(right, pks, min, max)
+                }
+                BinaryOperator::Or => {}
+                BinaryOperator::Like => {}
+                BinaryOperator::NotLike => {}
+            }
+        }
         _ => {}
     }
 }
 
 fn build_redis_ast_from_sql(
     ast: ASTHolder,
-    primary_keys: &HashMap<String, ShotoverValue>,
+    primary_key_values: &HashMap<String, ShotoverValue>,
+    pk_schema: &PrimaryKey,
 ) -> ASTHolder {
     match &ast {
         ASTHolder::SQL(sql) => {
@@ -154,18 +230,20 @@ fn build_redis_ast_from_sql(
                 min.push('[' as u8);
                 let mut max: Vec<u8> = Vec::new();
                 max.push(']' as u8);
-                let pks = primary_keys.keys().cloned().collect_vec();
+                let pks = primary_key_values.keys().cloned().collect_vec();
 
                 build_redis_commands(expr, &pks, &mut min, &mut max);
 
                 commands_buffer.push(ShotoverValue::Strings("ZRANGEBYLEX".to_string()));
-                let pk = primary_keys
-                    .values()
-                    .cloned()
-                    .fold("".to_string(), |acc, v| {
-                        format!("{}:{}", acc, serde_json::to_string(&v).unwrap())
-                    });
-                commands_buffer.push(ShotoverValue::Strings(pk));
+                let pk =
+                    primary_key_values
+                        .values()
+                        .cloned()
+                        .fold(BytesMut::new(), |mut acc, v| {
+                            acc.extend(v.into_bytes());
+                            acc
+                        });
+                commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
                 commands_buffer.push(ShotoverValue::Bytes(Bytes::from(min)));
                 commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
                 return ASTHolder::Commands(ShotoverValue::List(commands_buffer));
@@ -456,7 +534,7 @@ impl Transform for SimpleRedisCache {
 mod test {
     use crate::message::ASTHolder;
     use crate::message::{Messages, Value as ShotoverValue};
-    use crate::transforms::redis_transforms::redis_cache::build_redis_ast_from_sql;
+    use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
     use anyhow::Result;
     use sqlparser::dialect::GenericDialect;
     use sqlparser::parser::Parser;
@@ -472,10 +550,15 @@ mod test {
     fn equal_test() -> Result<()> {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        let pk_holder = PrimaryKey {
+            partition_key: vec![],
+            range_key: vec![],
+        };
 
         let query = build_redis_ast_from_sql(
             build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965")?,
             &pks,
+            &pk_holder,
         );
 
         println!("{:#?}", query);
@@ -487,33 +570,66 @@ mod test {
     fn check_deterministic_order_test() -> Result<()> {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        let pk_holder = PrimaryKey {
+            partition_key: vec![],
+            range_key: vec![],
+        };
 
         let query_one = build_redis_ast_from_sql(
             build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965")?,
             &pks,
+            &pk_holder,
         );
 
         let query_two = build_redis_ast_from_sql(
             build_query("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123")?,
             &pks,
+            &pk_holder,
         );
 
         println!("{:#?}", query_one);
         println!("{:#?}", query_two);
 
-        assert_eq!(query_one, query_two);
+        // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
+        // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
+        assert_ne!(query_one, query_two);
 
         Ok(())
     }
 
     #[test]
-    fn range_test() -> Result<()> {
+    fn range_exclusive_test() -> Result<()> {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        let pk_holder = PrimaryKey {
+            partition_key: vec![],
+            range_key: vec![],
+        };
 
         let query = build_redis_ast_from_sql(
             build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND y < 123")?,
             &pks,
+            &pk_holder,
+        );
+
+        println!("{:#?}", query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn range_inclusive_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        let pk_holder = PrimaryKey {
+            partition_key: vec![],
+            range_key: vec![],
+        };
+
+        let query = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 123")?,
+            &pks,
+            &pk_holder,
         );
 
         println!("{:#?}", query);
