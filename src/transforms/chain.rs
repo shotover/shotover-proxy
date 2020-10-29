@@ -8,8 +8,11 @@ use futures::FutureExt;
 
 use itertools::Itertools;
 use metrics::{counter, timing};
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Receiver as OneReceiver;
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio::time::Instant;
@@ -44,6 +47,8 @@ impl Clone for TransformChain {
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
     send_handle: Sender<ChannelMessage>,
+    #[cfg(test)]
+    pub count: Arc<Mutex<usize>>,
 }
 
 impl BufferedChain {
@@ -78,15 +83,24 @@ impl TransformChain {
     ) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
+        // If this is not a test, this should get removed by the compiler
+        let mut count_outer: Arc<Mutex<usize>> = Arc::new(Mutex::new(0 as usize));
+        let mut count = count_outer.clone();
+
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
         let _jh = tokio::spawn(async move {
             let mut chain = self;
+
             while let Some(ChannelMessage {
                 return_chan,
                 messages,
             }) = rx.recv().await
             {
                 let name = chain.name.clone();
+                if cfg!(test) {
+                    let mut count = count.lock().await;
+                    *count += 1;
+                }
                 let future = async {
                     match timeout_millis {
                         None => Ok(chain.process_request(Wrapper::new(messages), name).await),
@@ -123,7 +137,11 @@ impl TransformChain {
             }
         });
 
-        BufferedChain { send_handle: tx }
+        BufferedChain {
+            send_handle: tx,
+            #[cfg(test)]
+            count: count_outer,
+        }
     }
 
     pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
