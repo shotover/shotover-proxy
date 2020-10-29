@@ -490,6 +490,23 @@ impl Into<Frame> for Value {
 }
 
 impl Value {
+    pub fn into_str_bytes(self) -> Bytes {
+        return match self {
+            Value::NULL => Bytes::from("".to_string()),
+            Value::None => Bytes::from("".to_string()),
+            Value::Bytes(b) => b,
+            Value::Strings(s) => Bytes::from(s),
+            Value::Integer(i) => Bytes::from(format!("{}", i)),
+            Value::Float(f) => Bytes::from(format!("{}", f)),
+            Value::Boolean(b) => Bytes::from(format!("{}", b)),
+            Value::Timestamp(t) => {
+                Bytes::from(String::from_utf8_lossy(&t.timestamp().to_le_bytes()).to_string())
+            }
+            Value::Inet(i) => Bytes::from(format!("{}", i)),
+            _ => unimplemented!(),
+        };
+    }
+
     pub fn into_bytes(self) -> Bytes {
         return match self {
             Value::NULL => Bytes::new(),

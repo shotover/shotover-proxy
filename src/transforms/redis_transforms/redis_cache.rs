@@ -105,6 +105,22 @@ impl ValueHelper {
     }
 }
 
+fn append_seperator(command_builder: &mut Vec<u8>) {
+    let min_size = command_builder.len();
+    let prev_char = command_builder.get_mut(min_size - 1).unwrap();
+
+    // TODO this is super fragile and depends on hiden array values to signal whether we should build the query a certain way
+    if min_size == 1 {
+        if *prev_char == '-' as u8 {
+            *prev_char = '[' as u8
+        } else if *prev_char == '+' as u8 {
+            *prev_char = ']' as u8
+        }
+    } else {
+        command_builder.push(':' as u8);
+    }
+}
+
 fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: &mut Vec<u8>) {
     match expr {
         Expr::BinaryOp { left, op, right } => {
@@ -134,8 +150,8 @@ fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: 
                         let last_byte = minrv.get_mut(len - 1).unwrap();
                         *last_byte += 1;
 
+                        append_seperator(min);
                         min.append(&mut minrv);
-                        min.push(':' as u8);
                     }
                 }
                 BinaryOperator::Lt => {
@@ -149,8 +165,8 @@ fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: 
                         let last_byte = maxrv.get_mut(len - 1).unwrap();
                         *last_byte -= 1;
 
+                        append_seperator(max);
                         max.append(&mut maxrv);
-                        max.push(':' as u8);
                     }
                 }
                 BinaryOperator::GtEq => {
@@ -159,8 +175,8 @@ fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: 
 
                         let mut minrv = Vec::from(vh.as_bytes());
 
+                        append_seperator(min);
                         min.append(&mut minrv);
-                        min.push(':' as u8);
                     }
                 }
                 BinaryOperator::LtEq => {
@@ -169,8 +185,8 @@ fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: 
 
                         let mut maxrv = Vec::from(vh.as_bytes());
 
+                        append_seperator(max);
                         max.append(&mut maxrv);
-                        max.push(':' as u8);
                     }
                 }
                 BinaryOperator::Eq => {
@@ -180,11 +196,11 @@ fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: 
                         let mut minrv = Vec::from(vh.as_bytes());
                         let mut maxrv = minrv.clone();
 
+                        append_seperator(min);
                         min.append(&mut minrv);
-                        min.push(':' as u8);
 
+                        append_seperator(max);
                         max.append(&mut maxrv);
-                        max.push(':' as u8);
                     }
                 }
                 BinaryOperator::NotEq => {}
@@ -227,22 +243,22 @@ fn build_redis_ast_from_sql(
             {
                 let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
                 let mut min: Vec<u8> = Vec::new();
-                min.push('[' as u8);
+                min.push('-' as u8);
                 let mut max: Vec<u8> = Vec::new();
-                max.push(']' as u8);
-                let pks = primary_key_values.keys().cloned().collect_vec();
+                max.push('+' as u8);
+                // let pks = primary_key_values.keys().cloned().collect_vec();
 
-                build_redis_commands(expr, &pks, &mut min, &mut max);
+                build_redis_commands(expr, &pk_schema.partition_key, &mut min, &mut max);
 
-                commands_buffer.push(ShotoverValue::Strings("ZRANGEBYLEX".to_string()));
-                let pk =
-                    primary_key_values
-                        .values()
-                        .cloned()
-                        .fold(BytesMut::new(), |mut acc, v| {
-                            acc.extend(v.into_bytes());
-                            acc
-                        });
+                commands_buffer.push(ShotoverValue::Bytes("ZRANGEBYLEX".into()));
+                let pk = pk_schema
+                    .partition_key
+                    .iter()
+                    .map(|k| primary_key_values.get(k).unwrap())
+                    .fold(BytesMut::new(), |mut acc, v| {
+                        acc.extend(v.clone().into_str_bytes());
+                        acc
+                    });
                 commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
                 commands_buffer.push(ShotoverValue::Bytes(Bytes::from(min)));
                 commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
@@ -532,13 +548,18 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::message::ASTHolder;
+    use crate::message::{ASTHolder, MessageDetails, QueryMessage};
     use crate::message::{Messages, Value as ShotoverValue};
+    use crate::protocols::redis_codec::RedisCodec;
     use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
+    use anyhow::anyhow;
     use anyhow::Result;
+    use bytes::{Bytes, BytesMut};
+    use itertools::Itertools;
     use sqlparser::dialect::GenericDialect;
     use sqlparser::parser::Parser;
     use std::collections::HashMap;
+    use tokio_util::codec::Decoder;
 
     fn build_query(query_string: &str) -> Result<ASTHolder> {
         let dialect = GenericDialect {}; //TODO write CQL dialect
@@ -546,12 +567,59 @@ mod test {
         Ok(ASTHolder::SQL(parsed_sql))
     }
 
+    fn build_redis_query_frame(query: &str) -> Result<ASTHolder> {
+        let mut codec = RedisCodec::new(false, 0);
+
+        let final_command_string = build_redis_string(query);
+
+        let mut final_command_bytes: BytesMut = final_command_string.as_str().into();
+        let mut frame: Messages = codec.decode(&mut final_command_bytes)?.unwrap();
+        return if let MessageDetails::Query(QueryMessage {
+            query_string,
+            namespace,
+            primary_key,
+            query_values,
+            projection,
+            query_type,
+            ast,
+        }) = frame.messages.remove(0).details
+        {
+            ast.ok_or(anyhow!("woops"))
+        } else {
+            Err(anyhow!("woops"))
+        };
+    }
+
+    fn build_redis_string(query: &str) -> String {
+        let query_string = query.to_string();
+        let tokens = query_string.split_ascii_whitespace().collect_vec();
+        let mut command_buffer: Vec<String> = Vec::new();
+        command_buffer.push(format!("*{}\r\n", tokens.len()));
+
+        for token in query_string.to_string().split_ascii_whitespace() {
+            command_buffer.push(format!("${}\r\n", token.len()));
+            command_buffer.push(format!("{}\r\n", token));
+        }
+
+        let final_command_string: String = command_buffer.join("");
+        final_command_string
+    }
+
+    #[test]
+    fn test_build_redis_query_string() -> Result<()> {
+        assert_eq!(
+            "*2\r\n$4\r\nLLEN\r\n$6\r\nmylist\r\n".to_string(),
+            build_redis_string("LLEN mylist")
+        );
+        Ok(())
+    }
+
     #[test]
     fn equal_test() -> Result<()> {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
-            partition_key: vec![],
+            partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
@@ -561,7 +629,9 @@ mod test {
             &pk_holder,
         );
 
-        println!("{:#?}", query);
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123:965 ]123:965")?;
+
+        assert_eq!(expected, query);
 
         Ok(())
     }
@@ -571,7 +641,7 @@ mod test {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
-            partition_key: vec![],
+            partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
@@ -602,15 +672,19 @@ mod test {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
-            partition_key: vec![],
+            partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND y < 123")?,
+            build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999")?,
             &pks,
             &pk_holder,
         );
+
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [124 ]998")?;
+
+        assert_eq!(expected, query);
 
         println!("{:#?}", query);
 
@@ -622,15 +696,102 @@ mod test {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
-            partition_key: vec![],
+            partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 123")?,
+            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999")?,
             &pks,
             &pk_holder,
         );
+
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999")?;
+
+        assert_eq!(expected, query);
+
+        println!("{:#?}", query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn single_pk_only_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        let pk_holder = PrimaryKey {
+            partition_key: vec!["z".to_string()],
+            range_key: vec![],
+        };
+
+        let query = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1")?,
+            &pks,
+            &pk_holder,
+        );
+
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +")?;
+
+        assert_eq!(expected, query);
+
+        println!("{:#?}", query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn compound_pk_only_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert("y".to_string(), ShotoverValue::Integer(2));
+        let pk_holder = PrimaryKey {
+            partition_key: vec!["z".to_string(), "y".to_string()],
+            range_key: vec![],
+        };
+
+        let query = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1 AND y = 2")?,
+            &pks,
+            &pk_holder,
+        );
+
+        let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +")?;
+
+        assert_eq!(expected, query);
+
+        println!("{:#?}", query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn open_range_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        let pk_holder = PrimaryKey {
+            partition_key: vec!["z".to_string()],
+            range_key: vec![],
+        };
+
+        let query = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123")?,
+            &pks,
+            &pk_holder,
+        );
+
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 +")?;
+
+        assert_eq!(expected, query);
+
+        let query = build_redis_ast_from_sql(
+            build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123")?,
+            &pks,
+            &pk_holder,
+        );
+
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123")?;
+
+        assert_eq!(expected, query);
 
         println!("{:#?}", query);
 
