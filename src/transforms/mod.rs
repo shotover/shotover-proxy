@@ -17,6 +17,7 @@ use crate::transforms::distributed::tunable_consistency_scatter::{
     TunableConsistency, TunableConsistencyConfig,
 };
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
+use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
 use crate::transforms::lua::LuaFilterTransform;
 use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
@@ -41,6 +42,7 @@ pub mod cassandra_codec_destination;
 pub mod chain;
 pub mod distributed;
 pub mod kafka_destination;
+pub mod load_balance;
 pub mod lua;
 pub mod mpsc;
 pub mod noop;
@@ -77,6 +79,7 @@ pub enum Transforms {
     Printer(Printer),
     SequentialMap(SequentialMap),
     ParallelMap(ParallelMap),
+    PoolConnections(ConnectionBalanceAndPool),
 }
 
 impl Debug for Transforms {
@@ -108,6 +111,7 @@ impl Transform for Transforms {
             Transforms::RedisCluster(r) => r.transform(qd).await,
             Transforms::SequentialMap(s) => s.transform(qd).await,
             Transforms::ParallelMap(s) => s.transform(qd).await,
+            Transforms::PoolConnections(s) => s.transform(qd).await,
         }
     }
 
@@ -132,6 +136,7 @@ impl Transform for Transforms {
             Transforms::RedisCluster(r) => r.get_name(),
             Transforms::SequentialMap(s) => s.get_name(),
             Transforms::ParallelMap(s) => s.get_name(),
+            Transforms::PoolConnections(s) => s.get_name(),
         }
     }
 
@@ -156,6 +161,7 @@ impl Transform for Transforms {
             Transforms::RedisCluster(r) => r.prep_transform_chain(t).await,
             Transforms::SequentialMap(s) => s.prep_transform_chain(t).await,
             Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
+            Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
         }
     }
 }
@@ -176,6 +182,7 @@ pub enum TransformsConfig {
     Printer,
     SequentialMap(SequentialMapConfig),
     ParallelMap(ParallelMapConfig),
+    PoolConnections(ConnectionBalanceAndPoolConfig),
 }
 
 impl TransformsConfig {
@@ -197,6 +204,7 @@ impl TransformsConfig {
             TransformsConfig::RedisCluster(r) => r.get_source(topics).await,
             TransformsConfig::SequentialMap(s) => s.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
+            TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
         }
     }
 }
