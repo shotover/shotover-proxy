@@ -8,7 +8,6 @@ use futures::FutureExt;
 
 use itertools::Itertools;
 use metrics::{counter, timing};
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Receiver as OneReceiver;
@@ -84,8 +83,8 @@ impl TransformChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
         // If this is not a test, this should get removed by the compiler
-        let mut count_outer: Arc<Mutex<usize>> = Arc::new(Mutex::new(0 as usize));
-        let mut count = count_outer.clone();
+        let count_outer: Arc<Mutex<usize>> = Arc::new(Mutex::new(0 as usize));
+        let count = count_outer.clone();
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
         let _jh = tokio::spawn(async move {
