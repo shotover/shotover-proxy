@@ -250,51 +250,40 @@ fn build_redis_commands(
 }
 
 fn build_redis_ast_from_sql(
-    ast: ASTHolder,
+    mut ast: ASTHolder,
     primary_key_values: &HashMap<String, ShotoverValue>,
     pk_schema: &PrimaryKey,
     query_values: &Option<HashMap<String, ShotoverValue>>,
 ) -> Result<ASTHolder> {
-    return match &ast {
+    return match &mut ast {
         ASTHolder::SQL(sql) => match sql {
-            Statement::Query(box sqlparser::ast::Query {
-                ctes: _,
-                body:
-                    SetExpr::Select(box sqlparser::ast::Select {
-                        distinct: _,
-                        projection: _,
-                        from: _,
-                        selection: Some(expr),
-                        group_by: _,
-                        having: _,
-                    }),
-                order_by: _,
-                limit: _,
-                offset: _,
-                fetch: _,
-            }) => {
-                let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
-                let mut min: Vec<u8> = Vec::new();
-                min.push('-' as u8);
-                let mut max: Vec<u8> = Vec::new();
-                max.push('+' as u8);
+            Statement::Query(ref mut q) => match q.body {
+                SetExpr::Select(ref mut s) if s.selection.is_some() => {
+                    let expr = s.selection.as_mut().unwrap();
+                    let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
+                    let mut min: Vec<u8> = Vec::new();
+                    min.push('-' as u8);
+                    let mut max: Vec<u8> = Vec::new();
+                    max.push('+' as u8);
 
-                build_redis_commands(expr, &pk_schema.partition_key, &mut min, &mut max)?;
+                    build_redis_commands(expr, &pk_schema.partition_key, &mut min, &mut max)?;
 
-                commands_buffer.push(ShotoverValue::Bytes("ZRANGEBYLEX".into()));
-                let pk = pk_schema
-                    .partition_key
-                    .iter()
-                    .map(|k| primary_key_values.get(k).unwrap())
-                    .fold(BytesMut::new(), |mut acc, v| {
-                        acc.extend(v.clone().into_str_bytes());
-                        acc
-                    });
-                commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
-                commands_buffer.push(ShotoverValue::Bytes(Bytes::from(min)));
-                commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
-                Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
-            }
+                    commands_buffer.push(ShotoverValue::Bytes("ZRANGEBYLEX".into()));
+                    let pk = pk_schema
+                        .partition_key
+                        .iter()
+                        .map(|k| primary_key_values.get(k).unwrap())
+                        .fold(BytesMut::new(), |mut acc, v| {
+                            acc.extend(v.clone().into_str_bytes());
+                            acc
+                        });
+                    commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
+                    commands_buffer.push(ShotoverValue::Bytes(Bytes::from(min)));
+                    commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
+                    Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
+                }
+                _ => Err(anyhow!("Couldn't build query")),
+            },
             Statement::Insert { .. } | Statement::Update { .. } => {
                 let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
 
@@ -419,7 +408,7 @@ impl Transform for SimpleRedisCache {
         return if updates == 0 {
             match self.get_or_update_from_cache(qd.message.clone()).await {
                 Ok(cr) => Ok(cr),
-                Err(e) => qd.call_next_transform().await,
+                Err(_e) => qd.call_next_transform().await,
             }
         } else {
             let (_cache_res, upstream) = tokio::join!(
