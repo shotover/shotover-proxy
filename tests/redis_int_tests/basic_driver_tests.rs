@@ -1,11 +1,10 @@
 #![allow(clippy::let_unit_value)]
 use anyhow::Result;
 
-use redis::{Commands, ConnectionLike, ErrorKind, RedisError, RedisResult, Value};
+use redis::{Commands, ErrorKind, RedisError, Value};
 
 use crate::load_docker_compose;
 use crate::redis_int_tests::support::TestContext;
-use rdkafka::message::ToBytes;
 use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};

@@ -2,23 +2,20 @@ use core::fmt;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{
-    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryType, Value as ShotoverValue,
-};
+use crate::message::{ASTHolder, MessageDetails, Messages, QueryType, Value as ShotoverValue};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use itertools::Itertools;
-use sqlparser::ast::{BinaryOperator, DateTimeField, Expr, SetExpr, Statement, Value};
+use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
 
 const TRUE: [u8; 1] = [0x1];
@@ -37,6 +34,7 @@ pub struct PrimaryKey {
 }
 
 impl PrimaryKey {
+    #[cfg(test)]
     fn get_compound_key(&self) -> Vec<String> {
         let mut compound = Vec::new();
         compound.extend(self.partition_key.clone());
@@ -109,8 +107,8 @@ impl SimpleRedisCache {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct ValueHelper(#[serde(with = "SQLValueDef")] Value);
+// TODO: We don't need to do it this way and allocate another struct
+struct ValueHelper(Value);
 
 impl ValueHelper {
     fn as_bytes(&self) -> &[u8] {
@@ -341,53 +339,6 @@ fn build_redis_ast_from_sql(
     };
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "Value")]
-pub enum SQLValueDef {
-    /// Numeric literal
-    #[cfg(not(feature = "bigdecimal"))]
-    Number(String),
-    #[cfg(feature = "bigdecimal")]
-    Number(BigDecimal),
-    /// 'string value'
-    SingleQuotedString(String),
-    /// N'string value'
-    NationalStringLiteral(String),
-    /// X'hex value'
-    HexStringLiteral(String),
-    /// Boolean value true or false
-    Boolean(bool),
-    /// `DATE '...'` literals
-    Date(String),
-    /// `TIME '...'` literals
-    Time(String),
-    /// `TIMESTAMP '...'` literals
-    Timestamp(String),
-    /// INTERVAL literals, roughly in the following format:
-    /// `INTERVAL '<value>' <leading_field> [ (<leading_precision>) ]
-    /// [ TO <last_field> [ (<fractional_seconds_precision>) ] ]`,
-    /// e.g. `INTERVAL '123:45.67' MINUTE(3) TO SECOND(2)`.
-    ///
-    /// The parser does not validate the `<value>`, nor does it ensure
-    /// that the `<leading_field>` units >= the units in `<last_field>`,
-    /// so the user will have to reject intervals like `HOUR TO YEAR`.
-    #[serde(skip)]
-    Interval {
-        value: String,
-        leading_field: DateTimeField,
-        leading_precision: Option<u64>,
-
-        last_field: Option<DateTimeField>,
-        /// The seconds precision can be specified in SQL source as
-        /// `INTERVAL '__' SECOND(_, x)` (in which case the `leading_field`
-        /// will be `Second` and the `last_field` will be `None`),
-        /// or as `__ TO SECOND(x)`.
-        fractional_seconds_precision: Option<u64>,
-    },
-    /// `NULL` value
-    Null,
-}
-
 #[async_trait]
 impl Transform for SimpleRedisCache {
     // #[instrument]
@@ -426,7 +377,7 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::message::{ASTHolder, MessageDetails, QueryMessage, Value};
+    use crate::message::{ASTHolder, MessageDetails, Value};
     use crate::message::{Messages, Value as ShotoverValue};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::redis_codec::RedisCodec;
@@ -435,7 +386,6 @@ mod test {
     use anyhow::Result;
     use bytes::BytesMut;
     use itertools::Itertools;
-    use sqlparser::dialect::GenericDialect;
     use std::collections::HashMap;
     use tokio_util::codec::Decoder;
 
@@ -443,10 +393,7 @@ mod test {
         query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> Result<(ASTHolder, Option<HashMap<String, Value>>)> {
-        let dialect = GenericDialect {}; //TODO write CQL dialect
-                                         // let parsed_sql = Parser::parse_sql(&dialect, query_string.to_string())?.remove(0);
         let res = CassandraCodec2::parse_query_string(query_string.to_string(), pk_col_map);
-
         Ok((ASTHolder::SQL(res.ast.unwrap()), res.colmap))
     }
 
