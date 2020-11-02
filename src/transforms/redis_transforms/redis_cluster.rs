@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,7 @@ use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo}
 use redis::{cmd as redis_cmd, Cmd, ErrorKind};
 use redis::{Pipeline, RedisError, RedisResult};
 
-use tracing::{info, trace, warn};
+use tracing::{trace, warn};
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use itertools::Itertools;

@@ -43,12 +43,12 @@ pub struct CassandraCodec2 {
     bypass: bool,
 }
 
-struct ParsedCassandraQueryString {
-    namespace: Option<Vec<String>>,
-    colmap: Option<HashMap<String, Value>>,
-    projection: Option<Vec<String>>,
-    primary_key: HashMap<String, Value>,
-    ast: Option<Statement>,
+pub(crate) struct ParsedCassandraQueryString {
+    pub namespace: Option<Vec<String>>,
+    pub colmap: Option<HashMap<String, Value>>,
+    pub projection: Option<Vec<String>>,
+    pub primary_key: HashMap<String, Value>,
+    pub ast: Option<Statement>,
 }
 
 impl CassandraCodec2 {
@@ -238,15 +238,15 @@ impl CassandraCodec2 {
         match v {
             SQLValue::Number(v)
             | SQLValue::SingleQuotedString(v)
-            | SQLValue::NationalStringLiteral(v)
-            | SQLValue::HexStringLiteral(v)
-            | SQLValue::Date(v)
-            | SQLValue::Time(v) => Value::Strings(format!("{:?}", v)),
+            | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
+            SQLValue::HexStringLiteral(v) | SQLValue::Date(v) | SQLValue::Time(v) => {
+                Value::Strings(format!("{}", v))
+            }
             SQLValue::Timestamp(v) => {
                 if let Ok(r) = DateTime::from_str(v.as_str()) {
                     return Value::Timestamp(r);
                 }
-                Value::Strings(format!("{:?}", v))
+                Value::Strings(format!("{}", v))
             }
             SQLValue::Boolean(v) => Value::Boolean(*v),
             _ => Value::Strings("NULL".to_string()),
@@ -255,13 +255,13 @@ impl CassandraCodec2 {
 
     pub fn expr_to_string(v: &SQLValue) -> String {
         match v {
-            SQLValue::Number(v)
-            | SQLValue::SingleQuotedString(v)
+            SQLValue::Number(v) => format!("{}", v),
+            SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v)
             | SQLValue::HexStringLiteral(v)
             | SQLValue::Date(v)
             | SQLValue::Time(v)
-            | SQLValue::Timestamp(v) => format!("{:?}", v),
+            | SQLValue::Timestamp(v) => format!("{}", v),
             SQLValue::Boolean(v) => format!("{:?}", v),
             _ => "NULL".to_string(),
         }
@@ -414,7 +414,7 @@ impl CassandraCodec2 {
         }
     }
 
-    fn parse_query_string(
+    pub(crate) fn parse_query_string(
         query_string: String,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> ParsedCassandraQueryString {

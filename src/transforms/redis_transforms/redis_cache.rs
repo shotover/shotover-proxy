@@ -2,16 +2,21 @@ use core::fmt;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
-use anyhow::Result;
+use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, Messages, Value as ShotoverValue};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use bytes::{Bytes, BytesMut};
+use crate::message::{
+    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryType, Value as ShotoverValue,
+};
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{
+    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+};
+use bytes::{BufMut, Bytes, BytesMut};
 use itertools::Itertools;
 use sqlparser::ast::{BinaryOperator, DateTimeField, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
@@ -21,9 +26,8 @@ const FALSE: [u8; 1] = [0x0];
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
-    #[serde(rename = "config_values")]
-    pub uri: String,
     pub caching_schema: HashMap<String, PrimaryKey>,
+    pub chain: Vec<TransformsConfig>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -32,19 +36,31 @@ pub struct PrimaryKey {
     range_key: Vec<String>,
 }
 
+impl PrimaryKey {
+    fn get_compound_key(&self) -> Vec<String> {
+        let mut compound = Vec::new();
+        compound.extend(self.partition_key.clone());
+        compound.extend(self.range_key.clone());
+        return compound;
+    }
+}
+
 #[async_trait]
 impl TransformsFromConfig for RedisConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisCache(
-            SimpleRedisCache::new_from_config(&self.uri).await,
-        ))
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+        Ok(Transforms::RedisCache(SimpleRedisCache {
+            name: "SimpleRedisCache",
+            cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, &topics)
+                .await?,
+            caching_schema: self.caching_schema.clone(),
+        }))
     }
 }
 
 #[derive(Clone)]
 pub struct SimpleRedisCache {
     name: &'static str,
-    con: MultiplexedConnection,
+    cache_chain: TransformChain,
     caching_schema: HashMap<String, PrimaryKey>,
 }
 
@@ -59,23 +75,37 @@ impl Debug for SimpleRedisCache {
 }
 
 impl SimpleRedisCache {
-    //"redis://127.0.0.1/"
-    pub fn new(connection: MultiplexedConnection) -> SimpleRedisCache {
-        SimpleRedisCache {
-            name: "SimpleRedisCache",
-            con: connection,
-            caching_schema: HashMap::new(),
-        }
-    }
+    async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
+        for message in messages.messages.iter_mut() {
+            match &mut message.details {
+                MessageDetails::Query(ref mut qm) => {
+                    let table_lookup = qm.namespace.join(".");
+                    let table = self
+                        .caching_schema
+                        .get(&table_lookup)
+                        .ok_or(anyhow!("not a caching table"))?;
 
-    pub async fn new_from_config(params: &str) -> SimpleRedisCache {
-        let client = redis::Client::open(params).unwrap();
-        let con = client.get_multiplexed_tokio_connection().await.unwrap();
-        SimpleRedisCache {
-            name: "SimpleRedisCache",
-            con,
-            caching_schema: HashMap::new(),
+                    let ast_ref = qm
+                        .ast
+                        .as_ref()
+                        .ok_or(anyhow!("No AST to convert query to cache query"))?
+                        .clone();
+
+                    qm.ast.replace(build_redis_ast_from_sql(
+                        ast_ref,
+                        &qm.primary_key,
+                        table,
+                        &qm.query_values,
+                    )?);
+                }
+                _ => return Err(anyhow!("cannot fetch from cache")),
+            };
+            message.modified = true;
         }
+
+        self.cache_chain
+            .process_request(Wrapper::new(messages), "cliebntdetailstodo".to_string())
+            .await
     }
 }
 
@@ -109,7 +139,7 @@ fn append_seperator(command_builder: &mut Vec<u8>) {
     let min_size = command_builder.len();
     let prev_char = command_builder.get_mut(min_size - 1).unwrap();
 
-    // TODO this is super fragile and depends on hiden array values to signal whether we should build the query a certain way
+    // TODO this is super fragile and depends on hidden array values to signal whether we should build the query a certain way
     if min_size == 1 {
         if *prev_char == '-' as u8 {
             *prev_char = '[' as u8
@@ -121,7 +151,12 @@ fn append_seperator(command_builder: &mut Vec<u8>) {
     }
 }
 
-fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: &mut Vec<u8>) {
+fn build_redis_commands(
+    expr: &Expr,
+    pks: &Vec<String>,
+    min: &mut Vec<u8>,
+    max: &mut Vec<u8>,
+) -> Result<()> {
     match expr {
         Expr::BinaryOp { left, op, right } => {
             // first check if this is a related to PK
@@ -129,16 +164,11 @@ fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: 
                 let id_string = i.to_string();
                 if pks.iter().find(|&v| v == &id_string).is_some() {
                     //Ignore this as we build the pk constraint elsewhere
-                    return;
+                    return Ok(());
                 }
             }
 
             match op {
-                BinaryOperator::Plus => {}
-                BinaryOperator::Minus => {}
-                BinaryOperator::Multiply => {}
-                BinaryOperator::Divide => {}
-                BinaryOperator::Modulus => {}
                 BinaryOperator::Gt => {
                     // we shift the value for Gt so that it works with other GtEq operators
                     if let Expr::Value(v) = right.borrow() {
@@ -203,52 +233,53 @@ fn build_redis_commands(expr: &Expr, pks: &Vec<String>, min: &mut Vec<u8>, max: 
                         max.append(&mut maxrv);
                     }
                 }
-                BinaryOperator::NotEq => {}
                 BinaryOperator::And => {
-                    build_redis_commands(left, pks, min, max);
-                    build_redis_commands(right, pks, min, max)
+                    build_redis_commands(left, pks, min, max)?;
+                    build_redis_commands(right, pks, min, max)?;
                 }
-                BinaryOperator::Or => {}
-                BinaryOperator::Like => {}
-                BinaryOperator::NotLike => {}
+                _ => {
+                    return Err(anyhow!("Couldn't build query"));
+                }
             }
         }
-        _ => {}
+        _ => {
+            return Err(anyhow!("Couldn't build query"));
+        }
     }
+    Ok(())
 }
 
 fn build_redis_ast_from_sql(
     ast: ASTHolder,
     primary_key_values: &HashMap<String, ShotoverValue>,
     pk_schema: &PrimaryKey,
-) -> ASTHolder {
-    match &ast {
-        ASTHolder::SQL(sql) => {
-            if let Statement::Query(box sqlparser::ast::Query {
+    query_values: &Option<HashMap<String, ShotoverValue>>,
+) -> Result<ASTHolder> {
+    return match &ast {
+        ASTHolder::SQL(sql) => match sql {
+            Statement::Query(box sqlparser::ast::Query {
                 ctes: _,
                 body:
                     SetExpr::Select(box sqlparser::ast::Select {
-                        distinct,
-                        projection,
-                        from,
+                        distinct: _,
+                        projection: _,
+                        from: _,
                         selection: Some(expr),
-                        group_by,
-                        having,
+                        group_by: _,
+                        having: _,
                     }),
                 order_by: _,
                 limit: _,
                 offset: _,
                 fetch: _,
-            }) = sql
-            {
+            }) => {
                 let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
                 let mut min: Vec<u8> = Vec::new();
                 min.push('-' as u8);
                 let mut max: Vec<u8> = Vec::new();
                 max.push('+' as u8);
-                // let pks = primary_key_values.keys().cloned().collect_vec();
 
-                build_redis_commands(expr, &pk_schema.partition_key, &mut min, &mut max);
+                build_redis_commands(expr, &pk_schema.partition_key, &mut min, &mut max)?;
 
                 commands_buffer.push(ShotoverValue::Bytes("ZRANGEBYLEX".into()));
                 let pk = pk_schema
@@ -262,15 +293,63 @@ fn build_redis_ast_from_sql(
                 commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
                 commands_buffer.push(ShotoverValue::Bytes(Bytes::from(min)));
                 commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
-                return ASTHolder::Commands(ShotoverValue::List(commands_buffer));
-            } else {
-                panic!("woops");
+                Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
             }
-        }
-        ASTHolder::Commands(a) => {
-            return ast;
-        }
-    }
+            Statement::Insert { .. } | Statement::Update { .. } => {
+                let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
+
+                commands_buffer.push(ShotoverValue::Bytes("ZADD".into()));
+
+                let pk = pk_schema
+                    .partition_key
+                    .iter()
+                    .map(|k| primary_key_values.get(k).unwrap())
+                    .fold(BytesMut::new(), |mut acc, v| {
+                        acc.extend(v.clone().into_str_bytes());
+                        acc
+                    });
+                commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
+
+                let clustering = pk_schema
+                    .range_key
+                    .iter()
+                    .map(|k| primary_key_values.get(k).unwrap())
+                    .fold(BytesMut::new(), |mut acc, v| {
+                        acc.extend(v.clone().into_str_bytes());
+                        acc
+                    });
+
+                let values = query_values
+                    .as_ref()
+                    .ok_or(anyhow!("Couldn't build query"))?
+                    .iter()
+                    .filter_map(|(p, v)| {
+                        return if !pk_schema.partition_key.contains(p)
+                            && !pk_schema.range_key.contains(p)
+                        {
+                            Some(v)
+                        } else {
+                            None
+                        };
+                    })
+                    .collect_vec();
+
+                for v in values {
+                    commands_buffer.push(ShotoverValue::Bytes(Bytes::from("0")));
+                    let mut value = clustering.clone();
+                    if value.len() != 0 {
+                        value.put_u8(':' as u8);
+                    }
+                    value.extend(v.clone().into_str_bytes());
+                    commands_buffer.push(ShotoverValue::Bytes(value.freeze()));
+                }
+
+                Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
+            }
+            _ => Err(anyhow!("Couldn't build query")),
+        },
+        ASTHolder::Commands(_) => Ok(ast),
+    };
 }
 
 #[derive(Serialize, Deserialize)]
@@ -324,221 +403,31 @@ pub enum SQLValueDef {
 impl Transform for SimpleRedisCache {
     // #[instrument]
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        // let responses = Messages::new();
-        // for m in &qd.message.messages {
-        //     if let Query(qm) = &m.details {
-        //         qm.primary_key
-        //     }
-        // }
-        // for message in &qd.message.messages {
-        //     let wrapped_message = Wrapper::new_with_next_transform(
-        //         Messages::new_from_message(message.clone()),
-        //         0,
-        //     );
-        //     if let MessageDetails::Query(qm) = &message.details {
-        //         if qm.primary_key.is_empty() {
-        //             responses
-        //                 .messages
-        //                 .append(&mut t.call_next_transform(wrapped_message).await?.messages);
-        //         } else {
-        //             if let Some(ASTHolder::SQL(ast)) = &qm.ast {
-        //                 match ast {
-        //                     Query(_) => {
-        //                         let mut client_copy = self.con.clone();
-        //
-        //                         //TODO: something something what happens if hset fails.
-        //                         // let f: RedisFuture<HashMap<String, String>> = client_copy.hgetall(&qm.get_primary_key());
-        //                         let p = &mut pipe();
-        //                         if let Some(pk) = qm.get_namespaced_primary_key() {
-        //                             if let Some(values) = &qm.projection {
-        //                                 for v in values {
-        //                                     p.hget(&pk, v);
-        //                                 }
-        //                             }
-        //                         }
-        //
-        //                         let result: RedisResult<Vec<String>> =
-        //                             p.query_async(&mut client_copy).await;
-        //                         println!("{:?}", result);
-        //
-        //                         if let Ok(ok_result) = result {
-        //                             if !ok_result.is_empty() {
-        //                                 //TODO a type translation function should be generalised here
-        //                                 let some = ok_result
-        //                                     .into_iter()
-        //                                     .map(|x| serde_json::from_str(x.as_str()).unwrap())
-        //                                     .collect::<Vec<MValue>>();
-        //
-        //                                 responses.messages.push(Message::new_response(
-        //                                     QueryResponse {
-        //                                         matching_query: Some(qm.clone()),
-        //                                         result: Some(MValue::Rows(vec![some])), //todo: Translate function
-        //                                         error: None,
-        //                                         response_meta: None,
-        //                                     },
-        //                                     true,
-        //                                     RawFrame::NONE,
-        //                                 ));
-        //                             }
-        //                         } else {
-        //                             responses.messages.append(
-        //                                 &mut t.call_next_transform(wrapped_message).await?.messages,
-        //                             );
-        //                         }
-        //                     }
-        //
-        //                     /*
-        //                     Query String: INSERT INTO cycling.cyclist_name (id, lastname, firstname) VALUES ('6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47', 'KRUIKSWIJK', 'Steven')
-        //                     AST: [Insert {
-        //                             table_name: ObjectName(["cycling", "cyclist_name"]),
-        //                             columns: ["id", "lastname", "firstname"],
-        //                             source: Query {
-        //                                 ctes: [],
-        //                                 body: Values(
-        //                                     Values(
-        //                                         [[Value(SingleQuotedString("6ab09bec-e68e-48d9-a5f8-97e6fb4c9b47")), Value(SingleQuotedString("KRUIKSWIJK")), Value(SingleQuotedString("Steven"))]]
-        //                                         )
-        //                                       ),
-        //                                       order_by: [],
-        //                                       limit: None,
-        //                                       offset: None,
-        //                                       fetch: None }
-        //                             }]
-        //                     */
-        //                     Insert {
-        //                         table_name: _,
-        //                         columns: _,
-        //                         source: _,
-        //                     } => {
-        //                         let mut insert_values: Vec<(String, String)> = Vec::new();
-        //
-        //                         if let Some(pk) = qm.get_namespaced_primary_key() {
-        //                             if let Some(value_map) = qm.query_values.borrow() {
-        //                                 for (k, v) in value_map {
-        //                                     insert_values.push((
-        //                                         k.clone(),
-        //                                         serde_json::to_string(&v).unwrap(),
-        //                                     ));
-        //                                 }
-        //
-        //                                 let mut client_copy = self.con.clone();
-        //
-        //                                 //TODO: something something what happens if hset fails.
-        //                                 let (cache_update, chain_r): (
-        //                                     RedisResult<()>,
-        //                                     ChainResponse,
-        //                                 ) = tokio::join!(
-        //                                     client_copy.hset_multiple(pk, insert_values.as_slice()),
-        //                                     t.call_next_transform(wrapped_message)
-        //                                 );
-        //
-        //                                 responses.messages.append(&mut chain_r?.messages);
-        //
-        //                                 // TODO: We update the cache asynchronously - currently errors on cache update are ignored
-        //
-        //                                 if let Err(e) = cache_update {
-        //                                     trace!("Cache update failed {:?} !", e);
-        //                                 } else {
-        //                                     trace!("Cache update success !");
-        //                                 }
-        //                             }
-        //                         } else {
-        //                             responses.messages.append(
-        //                                 &mut t.call_next_transform(wrapped_message).await?.messages,
-        //                             );
-        //                         }
-        //                     }
-        //                     Update {
-        //                         table_name: _,
-        //                         assignments: _,
-        //                         selection: _,
-        //                     } => {
-        //                         let mut insert_values: Vec<(String, String)> = Vec::new();
-        //
-        //                         if let Some(pk) = qm.get_namespaced_primary_key() {
-        //                             if let Some(value_map) = qm.query_values.borrow() {
-        //                                 for (k, v) in value_map {
-        //                                     insert_values.push((
-        //                                         k.clone(),
-        //                                         serde_json::to_string(&v).unwrap(),
-        //                                     ));
-        //                                 }
-        //
-        //                                 let mut client_copy = self.con.clone();
-        //
-        //                                 //TODO: something something what happens if hset fails.
-        //
-        //                                 let (cache_update, chain_r): (
-        //                                     RedisResult<()>,
-        //                                     ChainResponse,
-        //                                 ) = tokio::join!(
-        //                                     client_copy.hset_multiple(pk, insert_values.as_slice()),
-        //                                     t.call_next_transform(wrapped_message)
-        //                                 );
-        //
-        //                                 // TODO: We update the cache asynchronously - currently errors on cache update are ignored
-        //                                 responses.messages.append(&mut chain_r?.messages);
-        //
-        //                                 if let Err(e) = cache_update {
-        //                                     trace!("Cache update failed {:?} !", e);
-        //                                 } else {
-        //                                     trace!("Cache update success !");
-        //                                 }
-        //                             }
-        //                         } else {
-        //                             responses.messages.append(
-        //                                 &mut t.call_next_transform(wrapped_message).await?.messages,
-        //                             );
-        //                         }
-        //                     }
-        //                     Delete {
-        //                         table_name: _,
-        //                         selection: _,
-        //                     } => {
-        //                         let p = &mut pipe();
-        //                         if let Some(pk) = qm.get_namespaced_primary_key() {
-        //                             if let Some(value_map) = qm.query_values.borrow() {
-        //                                 for k in value_map.keys() {
-        //                                     p.hdel(pk.clone(), k.clone());
-        //                                 }
-        //
-        //                                 let mut client_copy = self.con.clone();
-        //
-        //                                 let (cache_update, chain_r): (
-        //                                     RedisResult<Vec<i32>>,
-        //                                     ChainResponse,
-        //                                 ) = tokio::join!(
-        //                                     p.query_async(&mut client_copy),
-        //                                     t.call_next_transform(wrapped_message)
-        //                                 );
-        //
-        //                                 // TODO: We update the cache asynchronously - currently errors on cache update are ignored
-        //                                 responses.messages.append(&mut chain_r?.messages);
-        //
-        //                                 if let Err(e) = cache_update {
-        //                                     trace!("Cache update failed {:?} !", e);
-        //                                 } else {
-        //                                     trace!("Cache update success !");
-        //                                 }
-        //                             }
-        //                         } else {
-        //                             responses.messages.append(
-        //                                 &mut t.call_next_transform(wrapped_message).await?.messages,
-        //                             );
-        //                         }
-        //                     }
-        //                     _ => {}
-        //                 }
-        //             } else {
-        //                 responses
-        //                     .messages
-        //                     .append(&mut t.call_next_transform(wrapped_message).await?.messages);
-        //             }
-        //         }
-        //     }
-        // }
-        // Ok(responses)
-        unimplemented!()
+        let updates = qd
+            .message
+            .messages
+            .iter()
+            .filter(|&p| {
+                return if let MessageDetails::Query(qm) = &p.details {
+                    qm.query_type == QueryType::Write
+                } else {
+                    false
+                };
+            })
+            .count();
+
+        return if updates == 0 {
+            match self.get_or_update_from_cache(qd.message.clone()).await {
+                Ok(cr) => Ok(cr),
+                Err(e) => qd.call_next_transform().await,
+            }
+        } else {
+            let (_cache_res, upstream) = tokio::join!(
+                self.get_or_update_from_cache(qd.message.clone()),
+                qd.call_next_transform()
+            );
+            return upstream;
+        };
     }
 
     fn get_name(&self) -> &'static str {
@@ -548,23 +437,28 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::message::{ASTHolder, MessageDetails, QueryMessage};
+    use crate::message::{ASTHolder, MessageDetails, QueryMessage, Value};
     use crate::message::{Messages, Value as ShotoverValue};
+    use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::redis_codec::RedisCodec;
     use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
     use anyhow::anyhow;
     use anyhow::Result;
-    use bytes::{Bytes, BytesMut};
+    use bytes::BytesMut;
     use itertools::Itertools;
     use sqlparser::dialect::GenericDialect;
-    use sqlparser::parser::Parser;
     use std::collections::HashMap;
     use tokio_util::codec::Decoder;
 
-    fn build_query(query_string: &str) -> Result<ASTHolder> {
+    fn build_query(
+        query_string: &str,
+        pk_col_map: &HashMap<String, Vec<String>>,
+    ) -> Result<(ASTHolder, Option<HashMap<String, Value>>)> {
         let dialect = GenericDialect {}; //TODO write CQL dialect
-        let parsed_sql = Parser::parse_sql(&dialect, query_string.to_string())?.remove(0);
-        Ok(ASTHolder::SQL(parsed_sql))
+                                         // let parsed_sql = Parser::parse_sql(&dialect, query_string.to_string())?.remove(0);
+        let res = CassandraCodec2::parse_query_string(query_string.to_string(), pk_col_map);
+
+        Ok((ASTHolder::SQL(res.ast.unwrap()), res.colmap))
     }
 
     fn build_redis_query_frame(query: &str) -> Result<ASTHolder> {
@@ -574,17 +468,8 @@ mod test {
 
         let mut final_command_bytes: BytesMut = final_command_string.as_str().into();
         let mut frame: Messages = codec.decode(&mut final_command_bytes)?.unwrap();
-        return if let MessageDetails::Query(QueryMessage {
-            query_string,
-            namespace,
-            primary_key,
-            query_values,
-            projection,
-            query_type,
-            ast,
-        }) = frame.messages.remove(0).details
-        {
-            ast.ok_or(anyhow!("woops"))
+        return if let MessageDetails::Query(qm) = frame.messages.remove(0).details {
+            qm.ast.ok_or(anyhow!("woops"))
         } else {
             Err(anyhow!("woops"))
         };
@@ -618,18 +503,102 @@ mod test {
     fn equal_test() -> Result<()> {
         let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
+
         let pk_holder = PrimaryKey {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) = build_query(
+            "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
+            &pk_col_map,
+        )?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123:965 ]123:965")?;
+
+        assert_eq!(expected, query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn insert_simple_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+
+        let pk_holder = PrimaryKey {
+            partition_key: vec!["z".to_string()],
+            range_key: vec![],
+        };
+
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) =
+            build_query("INSERT INTO foo (z, v) VALUES (1, 123)", &pk_col_map)?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+
+        let expected = build_redis_query_frame("ZADD 1 0 123")?;
+
+        assert_eq!(expected, query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn insert_simple_clustering_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
+
+        let pk_holder = PrimaryKey {
+            partition_key: vec!["z".to_string()],
+            range_key: vec!["c".to_string()],
+        };
+
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) = build_query(
+            "INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)",
+            &pk_col_map,
+        )?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+
+        let expected = build_redis_query_frame("ZADD 1 0 yo:123")?;
+
+        assert_eq!(expected, query);
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_simple_clustering_test() -> Result<()> {
+        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
+
+        let pk_holder = PrimaryKey {
+            partition_key: vec!["z".to_string()],
+            range_key: vec!["c".to_string()],
+        };
+
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) =
+            build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1", &pk_col_map)?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+
+        let expected = build_redis_query_frame("ZADD 1 0 yo:123")?;
 
         assert_eq!(expected, query);
 
@@ -645,17 +614,22 @@ mod test {
             range_key: vec![],
         };
 
-        let query_one = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
-        let query_two = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123")?,
-            &pks,
-            &pk_holder,
-        );
+        let (ast, query_values) = build_query(
+            "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
+            &pk_col_map,
+        )?;
+
+        let query_one = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+
+        let (ast, query_values) = build_query(
+            "SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123",
+            &pk_col_map,
+        )?;
+
+        let query_two = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         println!("{:#?}", query_one);
         println!("{:#?}", query_two);
@@ -676,11 +650,15 @@ mod test {
             range_key: vec![],
         };
 
-        let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) = build_query(
+            "SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999",
+            &pk_col_map,
+        )?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [124 ]998")?;
 
@@ -700,11 +678,15 @@ mod test {
             range_key: vec![],
         };
 
-        let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) = build_query(
+            "SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999",
+            &pk_col_map,
+        )?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999")?;
 
@@ -724,11 +706,12 @@ mod test {
             range_key: vec![],
         };
 
-        let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) = build_query("SELECT * FROM foo WHERE z = 1", &pk_col_map)?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +")?;
 
@@ -749,11 +732,13 @@ mod test {
             range_key: vec![],
         };
 
-        let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND y = 2")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) =
+            build_query("SELECT * FROM foo WHERE z = 1 AND y = 2", &pk_col_map)?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +")?;
 
@@ -773,21 +758,25 @@ mod test {
             range_key: vec![],
         };
 
-        let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) =
+            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123", &pk_col_map)?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 +")?;
 
         assert_eq!(expected, query);
 
-        let query = build_redis_ast_from_sql(
-            build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123")?,
-            &pks,
-            &pk_holder,
-        );
+        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+
+        let (ast, query_values) =
+            build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123", &pk_col_map)?;
+
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123")?;
 
