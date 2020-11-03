@@ -56,30 +56,45 @@ impl AsyncMpsc {
         mut chain: TransformChain,
         mut rx: Receiver<ChannelMessage>,
         name: &str,
-        shutdown: Shutdown,
+        mut shutdown: Shutdown,
         shutdown_complete: mpsc::Sender<()>,
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
-
+        let mut main_chain = chain.clone();
         let jh = Handle::current().spawn(async move {
             // This will go out of scope once we exit the loop below, indicating we are done and shutdown
             let _notifier = shutdown_complete.clone();
             while !shutdown.is_shutdown() {
-                if let Some(m) = rx.recv().await {
-                    let w: Wrapper = Wrapper::new(m.messages.clone());
-                    match m.return_chan {
-                        None => {
-                            if let Err(e) = chain.process_request(w, "AsyncMpsc".to_string()).await
-                            {
-                                warn!("Something went wrong {}", e);
-                            }
+                let channel_message = tokio::select! {
+                    res = rx.recv() => {
+                        match res {
+                            Some(m) => m,
+                            None => return Ok(())
                         }
-                        Some(tx) => {
-                            if let Err(e) =
-                                tx.send(chain.process_request(w, "AsyncMpsc".to_string()).await)
-                            {
-                                warn!("Something went wrong - couldn't return response {:?}", e);
-                            }
+                    },
+                    _ = shutdown.recv() => {
+                        return Ok(());
+                    }
+                };
+
+                let ChannelMessage {
+                    messages,
+                    return_chan,
+                } = channel_message;
+
+                let w: Wrapper = Wrapper::new(messages);
+                match return_chan {
+                    None => {
+                        if let Err(e) = main_chain.process_request(w, "AsyncMpsc".to_string()).await
+                        {
+                            warn!("Something went wrong {}", e);
+                        }
+                    }
+                    Some(tx) => {
+                        if let Err(e) =
+                            tx.send(main_chain.process_request(w, "AsyncMpsc".to_string()).await)
+                        {
+                            warn!("Something went wrong - couldn't return response {:?}", e);
                         }
                     }
                 }
