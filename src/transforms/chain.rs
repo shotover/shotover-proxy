@@ -1,10 +1,10 @@
 use crate::config::topology::ChannelMessage;
 use crate::error::ChainResponse;
 use crate::transforms::{Transforms, Wrapper};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use evmap::ReadHandleFactory;
-use futures::FutureExt;
+use futures::{FutureExt, TryFutureExt};
 
 use itertools::Itertools;
 use metrics::{counter, timing};
@@ -69,6 +69,7 @@ impl BufferedChain {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
         self.send_handle
             .send(ChannelMessage::new(wrapper.message, one_tx))
+            .map_err(|e| anyhow!("Couldn't send message to wrapped chain {}", e))
             .await?;
         Ok(one_rx)
     }
