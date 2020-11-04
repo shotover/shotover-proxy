@@ -307,6 +307,7 @@ where
                         }
                         Err(e) => {
                             error!("chain processing error - {}", e);
+                            return Ok(());
                         }
                     }
                 }
