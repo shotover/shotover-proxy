@@ -904,6 +904,41 @@ fn test_cluster_all_redis() -> Result<()> {
 }
 
 #[test]
+fn test_cluster_all_script_redis() -> Result<()> {
+    try_register_cleanup();
+    let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
+    load_docker_compose(compose_config)?;
+    let _subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init();
+
+    let rt = runtime::Builder::new()
+        .enable_all()
+        .thread_name("RPProxy-Thread")
+        .threaded_scheduler()
+        .core_threads(4)
+        .build()
+        .unwrap();
+    let _jh: _ = rt.spawn(async move {
+        if let Ok((_, mut shutdown_complete_rx)) =
+            Topology::from_file("examples/redis-cluster/config.yaml".to_string())
+                .unwrap()
+                .run_chains()
+                .await
+        {
+            //TODO: probably a better way to handle various join handles / threads
+            let _ = shutdown_complete_rx.recv().await;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+    // panic!("Loooks like we are getting some out of order issues with pipelined request");
+    for i in 0..1999 {
+        test_script();
+    }
+    Ok(())
+}
+
+#[test]
 fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
     try_register_cleanup();
     let compose_config = "examples/redis-cluster-pipeline/docker-compose.yml".to_string();
@@ -937,6 +972,10 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
 
     let ctx = TestContext::new();
     let mut con = ctx.connection();
+
+    test_cluster_script();
+    test_script();
+    test_cluster_script();
 
     //do this a few times to be sure we are not hitting a single master
     for i in 0..2000 {

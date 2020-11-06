@@ -6,6 +6,8 @@ use bytes::Bytes;
 use evmap::ReadHandleFactory;
 use futures::{FutureExt, TryFutureExt};
 
+use crate::message::{Messages, QueryResponse, Value};
+use crate::protocols::RawFrame;
 use itertools::Itertools;
 use metrics::{counter, timing};
 use std::sync::Arc;
@@ -15,7 +17,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tracing::{info, trace};
+use tracing::{info, trace, warn};
 
 type InnerChain = Vec<Transforms>;
 
@@ -69,7 +71,7 @@ impl BufferedChain {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
         self.send_handle
             .send(ChannelMessage::new(wrapper.message, one_tx))
-            .map_err(|e| anyhow!("Couldn't send message to wrapped chain {}", e))
+            .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
             .await?;
         Ok(one_rx)
     }
@@ -90,12 +92,15 @@ impl TransformChain {
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
         let _jh = tokio::spawn(async move {
             let mut chain = self;
+            let mut last_message = None;
+            let mut last_response = None;
 
             while let Some(ChannelMessage {
                 return_chan,
                 messages,
             }) = rx.recv().await
             {
+                last_message = Some(messages.clone());
                 let name = chain.name.clone();
                 if cfg!(test) {
                     let mut count = count.lock().await;
@@ -116,6 +121,15 @@ impl TransformChain {
 
                 match future.fuse().await {
                     Ok(chain_response) => {
+                        match &chain_response {
+                            Ok(m) => {
+                                last_response = Some(m.clone());
+                            }
+                            Err(e) => {
+                                warn!("Internal error in buffered chain: {:?} - resetting", e);
+                                chain = chain.clone();
+                            }
+                        };
                         match return_chan {
                             None => trace!("Ignoring response due to lack of return chan"),
                             Some(tx) => {
@@ -135,6 +149,7 @@ impl TransformChain {
                     }
                 }
             }
+            warn!("buffered chain processing thread exiting, stopping chain loop and dropping - last message {:?} - last response - {:?}", last_message, last_response);
         });
 
         BufferedChain {

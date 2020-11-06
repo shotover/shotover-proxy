@@ -17,7 +17,9 @@ use redis::{Pipeline, RedisError, RedisResult};
 use tracing::{trace, warn};
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use cached::Cached;
 use itertools::Itertools;
+use rand::RngCore;
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -148,7 +150,6 @@ async fn remap_cluster_commands<'a>(
     use_slots: bool,
 ) -> Result<HashMap<String, Vec<(usize, Cmd)>>, ChainResponse> {
     let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
-    cmd_map.insert(RANDOM_STRING.to_string(), vec![]);
     let error_len = qd.message.messages.len();
     for (i, message) in qd.message.messages.into_iter().enumerate() {
         if let MessageDetails::Query(qm) = message.details {
@@ -166,16 +167,6 @@ async fn remap_cluster_commands<'a>(
                         }
 
                         match RoutingInfo::for_packed_command(&redis_command) {
-                            Some(RoutingInfo::Random) => {
-                                if let Some(cmds) = cmd_map.get_mut(RANDOM_STRING) {
-                                    cmds.push((i, redis_command));
-                                } else {
-                                    cmd_map.insert(
-                                        RANDOM_STRING.to_string(),
-                                        vec![(i, redis_command)],
-                                    );
-                                }
-                            }
                             Some(RoutingInfo::Slot(slot)) => {
                                 let bucket = if use_slots {
                                     format!("{}", slot)
@@ -203,9 +194,16 @@ async fn remap_cluster_commands<'a>(
                                     cmd_map.insert(bucket.to_string(), vec![(i, redis_command)]);
                                 }
                             }
-                            Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
-                                for cmds in cmd_map.values_mut() {
-                                    cmds.push((i, redis_command.clone()));
+                            Some(RoutingInfo::AllNodes)
+                            | Some(RoutingInfo::AllMasters)
+                            | Some(RoutingInfo::Random) => {
+                                // these commands are special and need to go in their own bucket so the driver can work it out
+                                let mut insert_value = vec![(i, redis_command.clone())];
+                                while let Some(collision) = cmd_map
+                                    .insert(format!("{}", connection.rng.next_u64()), insert_value)
+                                {
+                                    insert_value = collision;
+                                    trace!("collision in command remapping hash")
                                 }
                             }
                             None => {
@@ -324,8 +322,6 @@ impl Transform for RedisCluster {
                 trace!("pipe: {:?}", pipe);
 
                 let result: RedisResult<Vec<RedisResult<_>>>;
-
-                //TODO: we can probably be smarter around the random unpacked group
 
                 // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
                 // But we still need to fake it being a Vec of results
