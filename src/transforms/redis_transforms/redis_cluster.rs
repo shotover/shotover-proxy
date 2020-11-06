@@ -148,7 +148,6 @@ async fn remap_cluster_commands<'a>(
     use_slots: bool,
 ) -> Result<HashMap<String, Vec<(usize, Cmd)>>, ChainResponse> {
     let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
-    cmd_map.insert(RANDOM_STRING.to_string(), vec![]);
     let error_len = qd.message.messages.len();
     for (i, message) in qd.message.messages.into_iter().enumerate() {
         if let MessageDetails::Query(qm) = message.details {
