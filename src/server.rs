@@ -127,6 +127,8 @@ where
                     .unwrap_or_else(|_| "Unknown peer".to_string())
             );
 
+            socket.set_nodelay(true)?;
+
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an
                 // `Arc`, so a clone only increments the ref count.
