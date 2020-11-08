@@ -42,7 +42,7 @@ metrics = "0.12.1"
 metrics-core = "0.5.2"
 metrics-runtime = "0.13.1"
 tracing = { version = "0.1.15", features = ["max_level_trace", "attributes"]}
-tracing-subscriber = { version="0.2.11", features = ["env-filter"]}
+tracing-subscriber = { version="0.2.15"}
 tracing-futures = "0.2.4"
 tracing-log = { version = "0.1.1", features = ["env_logger"] }
 tracing-appender = "0.1.1"

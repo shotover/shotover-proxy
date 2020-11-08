@@ -37,6 +37,9 @@ use distributed::route::{Route, RouteConfig};
 use distributed::scatter::{Scatter, ScatterConfig};
 use mlua::UserData;
 use tokio::time::Instant;
+use tracing::span;
+use tracing::{Level, Span};
+use tracing_futures::Instrument;
 
 pub mod cassandra_codec_destination;
 pub mod chain;
@@ -92,27 +95,28 @@ impl Debug for Transforms {
 impl Transform for Transforms {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CodecDestination(c) => c.transform(qd).await,
-            Transforms::KafkaDestination(k) => k.transform(qd).await,
-            Transforms::RedisCache(r) => r.transform(qd).await,
-            Transforms::MPSCTee(m) => m.transform(qd).await,
-            Transforms::MPSCForwarder(m) => m.transform(qd).await,
-            Transforms::Route(r) => r.transform(qd).await,
-            Transforms::Scatter(s) => s.transform(qd).await,
-            Transforms::Printer(p) => p.transform(qd).await,
-            Transforms::Null(n) => n.transform(qd).await,
-            Transforms::Lua(l) => l.transform(qd).await,
-            Transforms::Protect(p) => p.transform(qd).await,
-            Transforms::RepeatMessage(p) => p.transform(qd).await,
-            Transforms::RandomDelay(p) => p.transform(qd).await,
-            Transforms::TunableConsistency(tc) => tc.transform(qd).await,
-            Transforms::RedisCodecDestination(r) => r.transform(qd).await,
-            Transforms::RedisTimeStampTagger(r) => r.transform(qd).await,
-            Transforms::RedisCluster(r) => r.transform(qd).await,
-            Transforms::SequentialMap(s) => s.transform(qd).await,
-            Transforms::ParallelMap(s) => s.transform(qd).await,
-            Transforms::PoolConnections(s) => s.transform(qd).await,
+            Transforms::CodecDestination(c) => c.instrumented_transform(qd),
+            Transforms::KafkaDestination(k) => k.instrumented_transform(qd),
+            Transforms::RedisCache(r) => r.instrumented_transform(qd),
+            Transforms::MPSCTee(m) => m.instrumented_transform(qd),
+            Transforms::MPSCForwarder(m) => m.instrumented_transform(qd),
+            Transforms::Route(r) => r.instrumented_transform(qd),
+            Transforms::Scatter(s) => s.instrumented_transform(qd),
+            Transforms::Printer(p) => p.instrumented_transform(qd),
+            Transforms::Null(n) => n.instrumented_transform(qd),
+            Transforms::Lua(l) => l.instrumented_transform(qd),
+            Transforms::Protect(p) => p.instrumented_transform(qd),
+            Transforms::RepeatMessage(p) => p.instrumented_transform(qd),
+            Transforms::RandomDelay(p) => p.instrumented_transform(qd),
+            Transforms::TunableConsistency(tc) => tc.instrumented_transform(qd),
+            Transforms::RedisCodecDestination(r) => r.instrumented_transform(qd),
+            Transforms::RedisTimeStampTagger(r) => r.instrumented_transform(qd),
+            Transforms::RedisCluster(r) => r.instrumented_transform(qd),
+            Transforms::SequentialMap(s) => s.instrumented_transform(qd),
+            Transforms::ParallelMap(s) => s.instrumented_transform(qd),
+            Transforms::PoolConnections(s) => s.instrumented_transform(qd),
         }
+        .await
     }
 
     fn get_name(&self) -> &'static str {
@@ -292,14 +296,6 @@ impl<'a> Wrapper<'a> {
         }
     }
 
-    pub fn new_with_next_transform(m: Messages, _next_transform: usize) -> Self {
-        Wrapper {
-            message: m,
-            from_client: "".to_string(),
-            transforms: vec![],
-        }
-    }
-
     pub fn reset(&mut self, transforms: Vec<&'a mut Transforms>) {
         self.transforms = transforms;
     }
@@ -313,6 +309,19 @@ struct ResponseData {
 #[async_trait]
 pub trait Transform: Send {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
+
+    async fn instrumented_transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+        let name = self.get_name();
+        let client = qd.from_client.clone();
+        self.transform(qd)
+            .instrument(span!(
+                Level::DEBUG,
+                "processing_transform",
+                transform_name = ?name,
+                connection = ?client.as_str()
+            ))
+            .await
+    }
 
     fn get_name(&self) -> &'static str;
 

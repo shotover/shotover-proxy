@@ -240,7 +240,7 @@ fn unwrap_borrow_mut_option<T>(option: &mut Option<T>) -> &mut T {
 
 #[async_trait]
 impl Transform for RedisCluster {
-    #[tracing::instrument(fields(upstream = ?self.connection, origin = ?qd.from_client, value = ?qd.message))]
+    #[tracing::instrument(fields(value = ?qd.message))]
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let origin_client = qd.from_client.clone();
 
@@ -260,7 +260,7 @@ impl Transform for RedisCluster {
                             let command_string = String::from_utf8(b.to_vec())
                                 .unwrap_or_else(|_| "couldn't decode".to_string());
 
-                            trace!(command = %command_string, connection = ?origin_client);
+                            trace!(command = %command_string);
 
                             if command_string == "AUTH" {
                                 eat_message = true;
@@ -288,7 +288,7 @@ impl Transform for RedisCluster {
             }
 
             if let Err(error) = self.try_connect().await {
-                trace!(error = ?error, connection = ?origin_client);
+                trace!(error = ?error);
                 return build_error_from_redis(error, None);
             }
 
@@ -323,11 +323,11 @@ impl Transform for RedisCluster {
             };
 
             let mut redis_results: Vec<Vec<(usize, QueryResponse)>> = vec![];
-            trace!(?remapped_pipe, connection = ?origin_client);
+            trace!(?remapped_pipe);
             for (key, ordered_pipe) in remapped_pipe {
                 let (order, mut pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
-                trace!(?order, connection = ?origin_client);
-                trace!(?pipe, connection = ?origin_client);
+                trace!(?order);
+                trace!(?pipe);
 
                 let result: RedisResult<Vec<RedisResult<_>>>;
 
@@ -349,7 +349,7 @@ impl Transform for RedisCluster {
                     result = redis_pipe
                         .execute_pipelined_async_raw(unwrap_borrow_mut_option(&mut self.connection))
                         .await;
-                    trace!(?key, ?result, connection = ?origin_client);
+                    trace!(?key, ?result);
                 }
 
                 match result {
@@ -377,9 +377,9 @@ impl Transform for RedisCluster {
                             || ErrorKind::ResponseError == error.kind()
                         {
                             self.connection.take(); // Turns this to a None
-                            warn!(?error, connection = ?origin_client)
+                            warn!(?error)
                         }
-                        trace!(error = ?error, connection = ?origin_client);
+                        trace!(error = ?error);
                         redis_results.push(
                             order
                                 .into_iter()
@@ -398,13 +398,13 @@ impl Transform for RedisCluster {
                     }
                 }
             }
-            trace!(?redis_results, connection = ?origin_client);
+            trace!(?redis_results);
             let ordered_results = redis_results
                 .into_iter()
                 .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
                 .map(|(_order, value)| value)
                 .collect_vec();
-            trace!(?ordered_results, connection = ?origin_client);
+            trace!(?ordered_results);
 
             return Ok(Messages {
                 messages: stream::iter(ordered_results)
