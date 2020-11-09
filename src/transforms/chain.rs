@@ -92,15 +92,12 @@ impl TransformChain {
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
         let _jh = tokio::spawn(async move {
             let mut chain = self;
-            let mut last_message = None;
-            let mut last_response = None;
 
             while let Some(ChannelMessage {
                 return_chan,
                 messages,
             }) = rx.recv().await
             {
-                last_message = Some(messages.clone());
                 let name = chain.name.clone();
                 if cfg!(test) {
                     let mut count = count.lock().await;
@@ -121,14 +118,9 @@ impl TransformChain {
 
                 match future.fuse().await {
                     Ok(chain_response) => {
-                        match &chain_response {
-                            Ok(m) => {
-                                last_response = Some(m.clone());
-                            }
-                            Err(e) => {
-                                warn!("Internal error in buffered chain: {:?} - resetting", e);
-                                chain = chain.clone();
-                            }
+                        if let Err(e) = &chain_response {
+                            warn!("Internal error in buffered chain: {:?} - resetting", e);
+                            chain = chain.clone();
                         };
                         match return_chan {
                             None => trace!("Ignoring response due to lack of return chan"),
@@ -149,7 +141,7 @@ impl TransformChain {
                     }
                 }
             }
-            warn!("buffered chain processing thread exiting, stopping chain loop and dropping - last message {:?} - last response - {:?}", last_message, last_response);
+            trace!("buffered chain processing thread exiting, stopping chain loop and dropping");
         });
 
         BufferedChain {
