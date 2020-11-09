@@ -38,8 +38,7 @@ impl Transform for Sampler {
         return if chance < self.numerator {
             let sample = qd.clone();
             let (sample, downstream) = tokio::join!(
-                self.sample_chain
-                    .process_request(sample, self.get_name().to_string()),
+                self.sample_chain.process_request(sample),
                 qd.call_next_transform()
             );
             if sample.is_err() {

@@ -38,12 +38,13 @@ impl Transform for SequentialMap {
         while !qd.message.messages.is_empty() {
             results.push(
                 self.chain
-                    .process_request(
-                        Wrapper::new(Messages {
+                    .process_request(Wrapper::new(
+                        Messages {
                             messages: vec![qd.message.messages.remove(0)],
-                        }),
+                        },
                         "SequentialMap".to_string(),
-                    )
+                        None,
+                    ))
                     .await?,
             )
         }

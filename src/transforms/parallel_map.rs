@@ -94,12 +94,13 @@ impl Transform for ParallelMap {
             let mut future = UOFutures::new(self.ordered);
             for chain in self.chains.iter_mut() {
                 if let Some(message) = message_iter.next() {
-                    future.push(chain.process_request(
-                        Wrapper::new(Messages {
+                    future.push(chain.process_request(Wrapper::new(
+                        Messages {
                             messages: vec![message],
-                        }),
+                        },
                         "Parallel".to_string(),
-                    ));
+                        None,
+                    )));
                 }
             }
             // We do this gnarly functional chain to unwrap each individual result and pop an error on the first one

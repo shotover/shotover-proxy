@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::trace;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct ConnectionBalanceAndPoolConfig {
@@ -59,7 +60,11 @@ impl Transform for ConnectionBalanceAndPool {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
-                let chain = self.chain_to_clone.clone().build_buffered_chain(5, None);
+                let chain = self.chain_to_clone.clone().build_buffered_chain(
+                    5,
+                    None,
+                    self.name.to_string(),
+                );
                 self.active_connection.replace(chain.clone());
                 guard.push(chain);
             } else {
@@ -71,6 +76,7 @@ impl Transform for ConnectionBalanceAndPool {
             }
         }
         if let Some(chain) = &mut self.active_connection {
+            trace!("sending request to chain");
             return chain
                 .process_request(qd, "Connection Balance and Pooler".to_string())
                 .await;
@@ -124,7 +130,11 @@ mod test {
         for _ in 0..90 {
             let r = chain
                 .clone()
-                .process_request(Wrapper::new(Messages::new()), "test_client".to_string())
+                .process_request(Wrapper::new(
+                    Messages::new(),
+                    "test_client".to_string(),
+                    None,
+                ))
                 .await;
             assert_eq!(r.is_ok(), true);
         }

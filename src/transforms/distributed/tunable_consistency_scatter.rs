@@ -43,9 +43,9 @@ impl TransformsFromConfig for TunableConsistencyConfig {
 
         for (key, value) in self.route_map.clone() {
             temp.push(
-                build_chain_from_config(key, &value, topics)
+                build_chain_from_config(key.clone(), &value, topics)
                     .await?
-                    .build_buffered_chain(10, Some(1000)),
+                    .build_buffered_chain(10, Some(1000), key.clone()),
             );
         }
 
@@ -294,8 +294,8 @@ mod scatter_transform_tests {
     async fn build_chains(route_map: HashMap<String, TransformChain>) -> Vec<BufferedChain> {
         let mut temp: Vec<BufferedChain> = Vec::with_capacity(route_map.len());
 
-        for (_key, value) in route_map.clone() {
-            temp.push(value.build_buffered_chain(10, Some(1000)));
+        for (key, value) in route_map.clone() {
+            temp.push(value.build_buffered_chain(10, Some(1000), key.clone()));
         }
         temp
     }
@@ -316,19 +316,23 @@ mod scatter_transform_tests {
             t_holder.get_global_tx(),
         );
 
-        let wrapper = Wrapper::new(Messages::new_single_query(
-            QueryMessage {
-                query_string: "".to_string(),
-                namespace: vec![String::from("keyspace"), String::from("old")],
-                primary_key: Default::default(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Read,
-                ast: None,
-            },
-            true,
-            RawFrame::NONE,
-        ));
+        let wrapper = Wrapper::new(
+            Messages::new_single_query(
+                QueryMessage {
+                    query_string: "".to_string(),
+                    namespace: vec![String::from("keyspace"), String::from("old")],
+                    primary_key: Default::default(),
+                    query_values: None,
+                    projection: None,
+                    query_type: QueryType::Read,
+                    ast: None,
+                },
+                true,
+                RawFrame::NONE,
+            ),
+            "".to_string(),
+            None,
+        );
 
         let ok_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {
             message: response.clone(),

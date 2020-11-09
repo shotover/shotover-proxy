@@ -52,7 +52,6 @@ impl TransformsFromConfig for RouteConfig {
 #[async_trait]
 impl Transform for Route {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        let name = self.get_name().to_string();
         let routes: Vec<String> = self.route_map.keys().cloned().collect();
         let rt = self.lua_runtime.lock().await;
         let chosen_route = self
@@ -61,7 +60,7 @@ impl Transform for Route {
         self.route_map
             .get_mut(chosen_route.as_str())
             .unwrap()
-            .process_request(qd, name)
+            .process_request(qd)
             .await
     }
 

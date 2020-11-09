@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
-use tracing::info;
 use tracing::warn;
+use tracing::{debug_span, error, info, trace};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AsyncMpscConfig {
@@ -61,9 +61,12 @@ impl AsyncMpsc {
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
         let mut main_chain = chain.clone();
+        let name_c = name.to_string();
         let jh = Handle::current().spawn(async move {
             // This will go out of scope once we exit the loop below, indicating we are done and shutdown
             let _notifier = shutdown_complete.clone();
+            let span = debug_span!("mpsc_server", chain_type = "raw_chain", connection = ?name_c);
+
             while !shutdown.is_shutdown() {
                 let channel_message = tokio::select! {
                     res = rx.recv() => {
@@ -83,18 +86,15 @@ impl AsyncMpsc {
                     public_client,
                 } = channel_message;
 
-                let w: Wrapper = Wrapper::new(messages);
+                let w: Wrapper = Wrapper::new(messages, "AsyncMpsc".to_string(), Some(&span));
                 match return_chan {
                     None => {
-                        if let Err(e) = main_chain.process_request(w, "AsyncMpsc".to_string()).await
-                        {
+                        if let Err(e) = main_chain.process_request(w).await {
                             warn!("Something went wrong {}", e);
                         }
                     }
                     Some(tx) => {
-                        if let Err(e) =
-                            tx.send(main_chain.process_request(w, "AsyncMpsc".to_string()).await)
-                        {
+                        if let Err(e) = tx.send(main_chain.process_request(w).await) {
                             warn!("Something went wrong - couldn't return response {:?}", e);
                         }
                     }

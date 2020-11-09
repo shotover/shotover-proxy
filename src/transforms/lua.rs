@@ -64,7 +64,7 @@ impl Transform for LuaFilterTransform {
             let spawn_func = scope.create_function_mut(
                 |_lua: &Lua, _messages: Messages| -> mlua::Result<Messages> {
                     //Warning, QD's transform chain is empty after the creation of this scoped function
-                    let mut future = Wrapper::new(Messages::new());
+                    let mut future = Wrapper::new(Messages::new(), qd.from_client.clone(), None);
                     std::mem::swap(&mut future.transforms, &mut qd.transforms);
                     std::mem::swap(&mut future.message, &mut qd.message);
                     //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
@@ -133,19 +133,23 @@ return call_next_transform(qm)
             function_name: "".to_string(),
         };
 
-        let wrapper = Wrapper::new(Messages::new_single_query(
-            QueryMessage {
-                query_string: "".to_string(),
-                namespace: vec![String::from("keyspace"), String::from("old")],
-                primary_key: Default::default(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Read,
-                ast: None,
-            },
-            true,
-            RawFrame::NONE,
-        ));
+        let wrapper = Wrapper::new(
+            Messages::new_single_query(
+                QueryMessage {
+                    query_string: "".to_string(),
+                    namespace: vec![String::from("keyspace"), String::from("old")],
+                    primary_key: Default::default(),
+                    query_values: None,
+                    projection: None,
+                    query_type: QueryType::Read,
+                    ast: None,
+                },
+                true,
+                RawFrame::NONE,
+            ),
+            "".to_string(),
+            None,
+        );
 
         let transforms: Vec<Transforms> = vec![
             Transforms::Printer(Printer::new()),

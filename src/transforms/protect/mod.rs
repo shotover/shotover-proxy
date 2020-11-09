@@ -341,7 +341,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }, true, RawFrame::NONE));
+        }, true, RawFrame::NONE),  "".to_string(), None);
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
@@ -438,11 +438,11 @@ mod protect_transform_tests {
                             t_holder.get_global_tx(),
                         );
 
-                        let mut new_wrapper = Wrapper::new(Messages::new_single_query(
-                            qm.clone(),
-                            true,
-                            RawFrame::NONE,
-                        ));
+                        let mut new_wrapper = Wrapper::new(
+                            Messages::new_single_query(qm.clone(), true, RawFrame::NONE),
+                            "".to_string(),
+                            None,
+                        );
 
                         new_wrapper.reset(ret_chain.get_inner_chain_refs());
 
@@ -533,7 +533,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }, true, RawFrame::NONE));
+        }, true, RawFrame::NONE), "".to_string(), None);
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
@@ -631,8 +631,11 @@ mod protect_transform_tests {
                         t_holder.get_global_tx(),
                     );
 
-                    let mut new_wrapper =
-                        Wrapper::new(Messages::new_single_query(qm.clone(), true, RawFrame::NONE));
+                    let mut new_wrapper = Wrapper::new(
+                        Messages::new_single_query(qm.clone(), true, RawFrame::NONE),
+                        "".to_string(),
+                        None,
+                    );
 
                     new_wrapper.reset(ret_chain.get_inner_chain_refs());
 

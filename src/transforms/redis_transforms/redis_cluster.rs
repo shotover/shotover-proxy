@@ -240,7 +240,6 @@ fn unwrap_borrow_mut_option<T>(option: &mut Option<T>) -> &mut T {
 
 #[async_trait]
 impl Transform for RedisCluster {
-    #[tracing::instrument(fields(value = ?qd.message))]
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let origin_client = qd.from_client.clone();
 

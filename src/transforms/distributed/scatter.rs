@@ -71,7 +71,7 @@ impl Transform for Scatter {
             self.route_map
                 .get_mut(chosen_route.get(0).unwrap().as_str())
                 .unwrap()
-                .process_request(qd, name)
+                .process_request(qd)
                 .await
         } else if chosen_route.is_empty() {
             ChainResponse::Err(anyhow!("no routes found"))
@@ -80,7 +80,7 @@ impl Transform for Scatter {
                 |(name, chain)| {
                     if let Some(_f) = chosen_route.iter().find(|p| *p == name) {
                         let wrapper = qd.clone();
-                        Some(chain.process_request(wrapper, name.clone()))
+                        Some(chain.process_request(wrapper))
                     } else {
                         None
                     }

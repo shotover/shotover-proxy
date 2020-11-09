@@ -245,6 +245,7 @@ pub struct Wrapper<'a> {
     pub message: Messages,
     pub from_client: String,
     transforms: Vec<&'a mut Transforms>,
+    pub request_span: Span,
 }
 
 impl<'a> Clone for Wrapper<'a> {
@@ -253,6 +254,7 @@ impl<'a> Clone for Wrapper<'a> {
             message: self.message.clone(),
             from_client: self.from_client.clone(),
             transforms: vec![],
+            request_span: self.request_span.clone(),
         }
     }
 }
@@ -288,11 +290,16 @@ impl<'a> Wrapper<'a> {
         std::mem::swap(&mut self.message, &mut m);
     }
 
-    pub fn new(m: Messages) -> Self {
+    pub fn new(m: Messages, client_details: String, parent_span: Option<&Span>) -> Self {
+        let span = match parent_span {
+            None => {span!(Level::TRACE, "request", request = ?m)}
+            Some(p) => {span!(parent: p, Level::TRACE, "request", request = ?m)}
+        };
         Wrapper {
             message: m,
-            from_client: "".to_string(),
+            from_client: client_details,
             transforms: vec![],
+            request_span: span,
         }
     }
 
@@ -312,15 +319,14 @@ pub trait Transform: Send {
 
     async fn instrumented_transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let name = self.get_name();
-        let client = qd.from_client.clone();
-        self.transform(qd)
-            .instrument(span!(
-                Level::DEBUG,
-                "processing_transform",
-                transform_name = ?name,
-                connection = ?client.as_str()
-            ))
-            .await
+        let span = span!(
+            parent: &qd.request_span,
+            Level::TRACE,
+            "processing_transform",
+            transform_name = ?name,
+        );
+
+        self.transform(qd).instrument(span).await
     }
 
     fn get_name(&self) -> &'static str;

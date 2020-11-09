@@ -262,6 +262,8 @@ where
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
 
+        let span = debug_span!("tcp_server", chain_type = "raw_chain", connection = ?self.client_details.clone());
+        let g = span.enter();
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown
             // signal
@@ -288,14 +290,9 @@ where
             // terminated.
             match frame {
                 Ok(message) => {
-                    trace!("Received raw message {:?}", message);
-                    let span = debug_span!("processing_chain");
-                    match self
-                        .chain
-                        .process_request(Wrapper::new(message), self.client_details.clone())
-                        .instrument(span)
-                        .await
-                    {
+                    let wrapper = Wrapper::new(message, self.client_details.clone(), Some(&span));
+                    let _ = span.enter();
+                    match self.chain.process_request(wrapper).await {
                         Ok(modified_message) => {
                             let r = self.connection.send(modified_message).await?;
                             // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??

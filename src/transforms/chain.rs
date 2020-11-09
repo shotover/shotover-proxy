@@ -17,7 +17,8 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tracing::{info, trace, warn};
+use tracing::{debug_span, error, info, trace, warn};
+use tracing_futures::Instrument;
 
 type InnerChain = Vec<Transforms>;
 
@@ -86,6 +87,7 @@ impl TransformChain {
         self,
         buffer_size: usize,
         timeout_millis: Option<u64>,
+        chain_name: String,
     ) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
@@ -98,6 +100,11 @@ impl TransformChain {
             let mut chain = self;
             let mut last_message = None;
             let mut last_response = None;
+            let span = debug_span!(
+                "processing_chain",
+                chain_type = "buffered_chain",
+                ?chain_name
+            );
 
             while let Some(ChannelMessage {
                 return_chan,
@@ -112,13 +119,16 @@ impl TransformChain {
                     *count += 1;
                 }
                 let name = public_client.unwrap_or(chain.name.clone());
+
                 let future = async {
                     match timeout_millis {
-                        None => Ok(chain.process_request(Wrapper::new(messages), name).await),
+                        None => Ok(chain
+                            .process_request(Wrapper::new(messages, name, Some(&span)))
+                            .await),
                         Some(timeout_ms) => {
                             timeout(
                                 Duration::from_millis(timeout_ms),
-                                chain.process_request(Wrapper::new(messages), name),
+                                chain.process_request(Wrapper::new(messages, name, Some(&span))),
                             )
                             .await
                         }
@@ -155,7 +165,7 @@ impl TransformChain {
                     }
                 }
             }
-            warn!("buffered chain processing thread exiting, stopping chain loop and dropping - last message {:?} - last response - {:?}", last_message, last_response);
+            trace!("buffered chain processing thread exiting, stopping chain loop and dropping - last message {:?} - last response - {:?}", last_message, last_response);
         });
 
         BufferedChain {
@@ -210,15 +220,11 @@ impl TransformChain {
         self.chain.iter_mut().collect_vec()
     }
 
-    pub async fn process_request(
-        &mut self,
-        mut wrapper: Wrapper<'_>,
-        client_details: String,
-    ) -> ChainResponse {
+    pub async fn process_request(&mut self, mut wrapper: Wrapper<'_>) -> ChainResponse {
         let start = Instant::now();
+        let client = wrapper.from_client.clone();
         let iter = self.chain.iter_mut().collect_vec();
         wrapper.reset(iter);
-        wrapper.from_client = client_details.clone();
 
         let result = wrapper.call_next_transform().await;
         let end = Instant::now();
@@ -226,7 +232,7 @@ impl TransformChain {
         if result.is_err() {
             counter!("shotover_chain_failures", 1, "chain" => self.name.clone())
         }
-        timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);
+        timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client);
         result
     }
 }
