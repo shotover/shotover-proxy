@@ -9,9 +9,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::{AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
-use tokio::time::Duration;
+use tokio::time::timeout;
 use tokio_util::codec::{Decoder, Encoder, Framed};
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
+
+use std::time::Duration;
 
 pub struct TcpCodecListener<C>
 where
@@ -118,6 +120,11 @@ where
                 .map(|p| format!("{}", p.ip()))
                 .unwrap_or_else(|_| "Unknown peer".to_string());
 
+            let conn_string = socket
+                .peer_addr()
+                .map(|p| format!("{}:{}", p.ip(), p.port()))
+                .unwrap_or_else(|_| "Unknown peer".to_string());
+
             // Create the necessary per-connection handler state.
             info!(
                 "New connection from {}",
@@ -134,6 +141,7 @@ where
                 // `Arc`, so a clone only increments the ref count.
                 chain: self.chain.clone(),
                 client_details: peer,
+                conn_details: conn_string,
                 source_details: self.source_name.clone(),
 
                 // Initialize the connection state. This allocates read/write
@@ -209,6 +217,7 @@ where
     chain: TransformChain,
 
     client_details: String,
+    conn_details: String,
 
     #[allow(dead_code)]
     source_details: String,
@@ -268,6 +277,7 @@ where
     {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
+        let mut idle_time: u64 = 1;
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown
@@ -277,11 +287,22 @@ where
             trace!("Waiting for message");
             let frame = tokio::select! {
                 // Some(res) = self.connection.next() => res,
-                res = self.connection.next().fuse() => {
+                res = timeout(Duration::from_secs(idle_time) ,self.connection.next().fuse()) => {
                     match res {
-                        Some(m) => m,
-                        None => return Ok(())
+                        Ok(maybe_message) => {
+                            idle_time = 1;
+                            match maybe_message {
+                                Some(m) => m,
+                                None => return Ok(())
+                            }
+                        },
+                        Err(_) => {
+                            debug!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
+                            idle_time = idle_time * 2;
+                            continue
+                        }
                     }
+
                 },
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
