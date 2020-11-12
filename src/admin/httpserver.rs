@@ -13,7 +13,7 @@ use tracing_subscriber::EnvFilter;
 use metrics_runtime::observers::{JsonBuilder, PrometheusBuilder};
 
 /// Exports metrics over HTTP.
-pub struct PrometheusLogFilterHttpExporter<C, B, S> {
+pub struct LogFilterHttpExporter<C, B, S> {
     controller: C,
     builder: B,
     address: SocketAddr,
@@ -40,7 +40,7 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
         .expect("builder with known status code must not fail")
 }
 
-impl<C, B, S> PrometheusLogFilterHttpExporter<C, B, S>
+impl<C, B, S> LogFilterHttpExporter<C, B, S>
 where
     C: Observe + Send + Sync + 'static,
     B: Builder + Send + Sync + 'static,
@@ -56,7 +56,7 @@ where
         address: SocketAddr,
         handle: Handle<EnvFilter, S>,
     ) -> Self {
-        PrometheusLogFilterHttpExporter {
+        LogFilterHttpExporter {
             controller,
             builder,
             address,
@@ -83,7 +83,7 @@ where
                         let response = match (req.method(), req.uri().path()) {
                             (&Method::GET, "/metrics") => {
                                 let output = match req.uri().query() {
-                                    (Some("accept=application/json")) => {
+                                    (Some("x-accept=application/json")) => {
                                         let builder = Arc::new(JsonBuilder::new().set_pretty_json(true));
                                         let mut observer = builder.build();
                                         controller.observe(&mut observer);
