@@ -10,6 +10,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, trace};
 use tracing_subscriber::reload::Handle;
 use tracing_subscriber::EnvFilter;
+use metrics_runtime::observers::{JsonBuilder, PrometheusBuilder};
 
 /// Exports metrics over HTTP.
 pub struct PrometheusLogFilterHttpExporter<C, B, S> {
@@ -66,27 +67,35 @@ where
     /// Starts an HTTP server on the `address` the exporter was originally configured with,
     /// responding to any request with the output of the configured observer.
     pub async fn async_run(self) -> hyper::error::Result<()> {
-        let builder = Arc::new(self.builder);
         let controller = Arc::new(self.controller);
         let handle = Arc::new(self.handle);
 
         let make_svc = make_service_fn(move |_| {
-            let builder = builder.clone();
             let controller = controller.clone();
             let handle = handle.clone();
 
             async move {
                 Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let builder = builder.clone();
                     let controller = controller.clone();
                     let handle = handle.clone();
 
                     async move {
                         let response = match (req.method(), req.uri().path()) {
                             (&Method::GET, "/metrics") => {
-                                let mut observer = builder.build();
-                                controller.observe(&mut observer);
-                                let output = observer.drain();
+                                let output = match req.uri().query() {
+                                    (Some("format=json")) => {
+                                        let builder = Arc::new(JsonBuilder::new());
+                                        let mut observer = builder.build();
+                                        controller.observe(&mut observer);
+                                        observer.drain()
+                                    }
+                                    _ => {
+                                        let builder = Arc::new(PrometheusBuilder::new());
+                                        let mut observer = builder.build();
+                                        controller.observe(&mut observer);
+                                        observer.drain()
+                                    }
+                                };
                                 Response::new(Body::from(output))
                             }
                             (&Method::PUT, "/filter") => {
