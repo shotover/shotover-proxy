@@ -83,7 +83,7 @@ where
                         let response = match (req.method(), req.uri().path()) {
                             (&Method::GET, "/metrics") => {
                                 let output = match req.uri().query() {
-                                    (Some("format=json")) => {
+                                    (Some("accept=application/json")) => {
                                         let builder = Arc::new(JsonBuilder::new());
                                         let mut observer = builder.build();
                                         controller.observe(&mut observer);
