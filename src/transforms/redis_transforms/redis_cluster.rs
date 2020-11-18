@@ -8,7 +8,7 @@ use crate::message::{
     parse_redis, ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value,
 };
 use crate::protocols::RawFrame;
-use futures::stream::{self, StreamExt};
+use futures::stream::{self, FuturesUnordered, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo};
 use redis::{cmd as redis_cmd, Cmd, ErrorKind};
@@ -23,6 +23,7 @@ use rand::RngCore;
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::iter::FromIterator;
+// use tokio::stream::StreamExt as TStreamExt;
 
 // TODO this may be worth implementing with a redis codec destination
 // but... the driver already supported a ton of stuff that didn't make sense
@@ -301,7 +302,7 @@ impl Transform for RedisCluster {
 
         // if let Some(connection) = &mut self.connection {
         if self.connection.is_some() {
-            let remapped_pipe = match remap_cluster_commands(
+            let mut remapped_pipe = match remap_cluster_commands(
                 unwrap_borrow_mut_option(&mut self.connection),
                 qd,
                 false,
@@ -315,34 +316,61 @@ impl Transform for RedisCluster {
             };
 
             let mut redis_results: Vec<Vec<(usize, QueryResponse)>> = vec![];
+
             trace!("remapped_pipe: {:?}", remapped_pipe);
-            for (key, ordered_pipe) in remapped_pipe {
-                let (order, mut pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
-                trace!("order: {:?}", order);
-                trace!("pipe: {:?}", pipe);
+            let mut result_future = FuturesUnordered::new();
+            let mut cluster_connections =
+                self.connection.replace(ClusterConnection::empty()).unwrap();
 
-                let result: RedisResult<Vec<RedisResult<_>>>;
+            let keys = cluster_connections
+                .connections
+                .keys()
+                .cloned()
+                .collect_vec();
 
-                // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
-                // But we still need to fake it being a Vec of results
-                if pipe.len() == 1 {
-                    let cmd = pipe.pop().unwrap();
-                    let q_result: RedisResult<_> = cmd
-                        .query_async(unwrap_borrow_mut_option(&mut self.connection))
-                        .await;
-                    result = Ok(vec![q_result]);
-                // result = q_result.map(|r| vec![r]);
-                } else {
-                    let redis_pipe = Pipeline {
-                        commands: pipe,
-                        transaction_mode: false,
-                    };
+            for key in keys {
+                let mut connection = cluster_connections.connections.remove(&key).unwrap();
+                if let Some(ordered_pipe) = remapped_pipe.remove(&key) {
+                    result_future.push(async {
+                        let (order, mut pipe): (Vec<usize>, Vec<Cmd>) =
+                            ordered_pipe.into_iter().unzip();
+                        trace!("order: {:?}", order);
+                        trace!("pipe: {:?}", pipe);
 
-                    result = redis_pipe
-                        .execute_pipelined_async_raw(unwrap_borrow_mut_option(&mut self.connection))
-                        .await;
-                    trace!("returned redis result {} - {:?}", key, result);
+                        let result: RedisResult<Vec<RedisResult<_>>>;
+
+                        // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
+                        // But we still need to fake it being a Vec of results
+                        if pipe.len() == 1 {
+                            let cmd = pipe.pop().unwrap();
+                            let q_result: RedisResult<_> = cmd.query_async(&mut connection).await;
+                            result = Ok(vec![q_result]);
+                        // result = q_result.map(|r| vec![r]);
+                        } else {
+                            let redis_pipe = Pipeline {
+                                commands: pipe,
+                                transaction_mode: false,
+                            };
+
+                            result = redis_pipe
+                                .execute_pipelined_async_raw(&mut connection)
+                                .await;
+                            trace!("returned redis result {} - {:?}", key, result);
+                        }
+                        return (order, result, (key, connection));
+                    });
                 }
+            }
+
+            // cluster_connections.connections = HashMap::new();
+
+            let _ = self.connection.replace(cluster_connections);
+
+            for (order, result, (key, connection)) in result_future.next().await {
+                //return the connection
+                self.connection.as_mut().map(|mut c| {
+                    c.connections.insert(key, connection);
+                });
 
                 match result {
                     Ok(rv) => {
