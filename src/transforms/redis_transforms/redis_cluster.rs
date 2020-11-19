@@ -250,23 +250,48 @@ fn unwrap_borrow_mut_option<T>(option: &mut Option<T>) -> &mut T {
 
 fn handle_result(
     result: RedisResult<Vec<RedisResult<RValue>>>,
+    mut redis_pipe: Pipeline,
     order: Vec<usize>,
     results_to_populate: &mut Vec<Vec<(usize, QueryResponse)>>,
+    retry_list: &mut Vec<(usize, Cmd)>,
+    ask_list: &mut Vec<(usize, Cmd)>,
 ) {
     match result {
         Ok(rv) => {
             results_to_populate.push(
                 order
                     .into_iter()
-                    .zip(rv.into_iter().map(|v| {
+                    .zip(rv.into_iter().enumerate())
+                    .filter_map(|(u, (i, v))| {
                         return match v {
-                            Ok(v) => QueryResponse::just_result(parse_redis(&v)),
-                            Err(e) => QueryResponse::empty_with_error(Some(format_errors(
-                                e.code(),
-                                e.detail(),
-                            ))),
+                            Ok(v) => Some((u, QueryResponse::just_result(parse_redis(&v)))),
+                            Err(e) => {
+                                match e.kind() {
+                                    ErrorKind::Moved => {
+                                        retry_list.push((u, redis_pipe.commands.remove(i)));
+                                        return None;
+                                    }
+                                    ErrorKind::Ask => {
+                                        ask_list.push((u, redis_pipe.commands.remove(i)));
+                                        return None;
+                                    }
+                                    ErrorKind::TryAgain => {
+                                        retry_list.push((u, redis_pipe.commands.remove(i)));
+                                        return None;
+                                    }
+                                    _ => {}
+                                }
+
+                                Some((
+                                    u,
+                                    QueryResponse::empty_with_error(Some(format_errors(
+                                        e.code(),
+                                        e.detail(),
+                                    ))),
+                                ))
+                            }
                         };
-                    }))
+                    })
                     .collect_vec(),
             );
         }
@@ -380,120 +405,151 @@ impl Transform for RedisCluster {
 
             let mut redis_results: Vec<Vec<(usize, QueryResponse)>> = vec![];
 
-            trace!("remapped_pipe: {:?}", remapped_pipe);
+            while remapped_pipe.len() != 0 {
+                trace!("remapped_pipe: {:?}", remapped_pipe);
+                let mut moved_list: Vec<(usize, Cmd)> = Vec::new();
+                let mut ask_list: Vec<(usize, Cmd)> = Vec::new();
 
-            if let Some(ordered_pipe) = remapped_pipe.remove(MASTER_STRING) {
-                // We let the driver take care of hitting all nodes
-                let (order, mut pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
-                let result: RedisResult<Vec<RedisResult<_>>>;
+                if let Some(ordered_pipe) = remapped_pipe.remove(MASTER_STRING) {
+                    // We let the driver take care of hitting all nodes
+                    let (order, mut pipe): (Vec<usize>, Vec<Cmd>) =
+                        ordered_pipe.into_iter().unzip();
+                    let result: RedisResult<Vec<RedisResult<_>>>;
 
-                // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
-                // But we still need to fake it being a Vec of results
-                if pipe.len() == 1 {
-                    let cmd = pipe.pop().unwrap();
-                    let q_result: RedisResult<_> = cmd
-                        .query_async(unwrap_borrow_mut_option(&mut self.connection))
-                        .await;
-                    result = Ok(vec![q_result]);
-                } else {
-                    let redis_pipe = Pipeline {
-                        commands: pipe,
-                        transaction_mode: false,
-                    };
+                    // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
+                    // But we still need to fake it being a Vec of results
 
-                    result = redis_pipe
-                        .execute_pipelined_async_raw(unwrap_borrow_mut_option(&mut self.connection))
-                        .await;
-                    trace!("returned redis result ALL_MASTERS - {:?}", result);
+                    let redis_pipe;
+                    if pipe.len() == 1 {
+                        let cmd = pipe.get(0).unwrap();
+                        let q_result: RedisResult<_> = cmd
+                            .query_async(unwrap_borrow_mut_option(&mut self.connection))
+                            .await;
+                        result = Ok(vec![q_result]);
+                        redis_pipe = Pipeline {
+                            commands: pipe,
+                            transaction_mode: false,
+                        };
+                    } else {
+                        redis_pipe = Pipeline {
+                            commands: pipe,
+                            transaction_mode: false,
+                        };
+
+                        result = redis_pipe
+                            .execute_pipelined_async_raw(unwrap_borrow_mut_option(
+                                &mut self.connection,
+                            ))
+                            .await;
+                        trace!("returned redis result ALL_MASTERS - {:?}", result);
+                    }
+
+                    handle_result(
+                        result,
+                        redis_pipe,
+                        order,
+                        &mut redis_results,
+                        &mut moved_list,
+                        &mut ask_list,
+                    );
                 }
 
-                handle_result(result, order, &mut redis_results);
+                // scoping the mutable borrow of the connections
+                {
+                    let mut result_future = FuturesUnordered::new();
+
+                    let mut iter = Vec::new();
+
+                    for (key, ordered_pipe) in remapped_pipe.into_iter() {
+                        let connection_reference = self
+                            .connection
+                            .as_mut()
+                            .unwrap()
+                            .connections
+                            .remove(&key)
+                            .unwrap();
+
+                        iter.push((key, connection_reference, ordered_pipe));
+                    }
+
+                    trace!("iter {}", iter.len());
+
+                    for (key, mut connection, ordered_pipe) in iter.into_iter() {
+                        result_future.push(async move {
+                            let (order, mut pipe): (Vec<usize>, Vec<Cmd>) =
+                                ordered_pipe.into_iter().unzip();
+                            trace!("order: {:?}", order);
+                            trace!("pipe: {:?}", pipe);
+
+                            let result: RedisResult<Vec<RedisResult<_>>>;
+
+                            // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
+                            // But we still need to fake it being a Vec of results
+                            let redis_pipe;
+                            if pipe.len() == 1 {
+                                let cmd = pipe.get(0).unwrap();
+                                let q_result: RedisResult<_> =
+                                    cmd.query_async(&mut connection).await;
+                                result = Ok(vec![q_result]);
+                                redis_pipe = Pipeline {
+                                    commands: pipe,
+                                    transaction_mode: false,
+                                };
+                            // result = q_result.map(|r| vec![r]);
+                            } else {
+                                redis_pipe = Pipeline {
+                                    commands: pipe,
+                                    transaction_mode: false,
+                                };
+
+                                result = redis_pipe
+                                    .execute_pipelined_async_raw(&mut connection)
+                                    .await;
+
+                                trace!("returned redis result {} - {:?}", key, result);
+                            }
+                            return (order, (result, redis_pipe), (key, connection));
+                        });
+                    }
+
+                    while let Some((order, (result, redis_pipe), (key, connection))) =
+                        result_future.next().await
+                    {
+                        self.connection
+                            .as_mut()
+                            .unwrap()
+                            .connections
+                            .insert(key, connection);
+                        handle_result(
+                            result,
+                            redis_pipe,
+                            order,
+                            &mut redis_results,
+                            &mut moved_list,
+                            &mut ask_list,
+                        );
+                    }
+                }
+                trace!("Got results {:?}", redis_results);
+                let ordered_results = redis_results
+                    .into_iter()
+                    .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
+                    .map(|(_order, value)| value)
+                    .collect_vec();
+                trace!("Reordered {:?}", ordered_results);
+                trace!(
+                    "Connections {}",
+                    self.connection.as_ref().unwrap().connections.len()
+                );
+                assert_eq!(expected_response, ordered_results.len());
+
+                return Ok(Messages {
+                    messages: stream::iter(ordered_results)
+                        .then(|v| async move { Message::new_response(v, true, RawFrame::NONE) })
+                        .collect()
+                        .await,
+                });
             }
-
-            // scoping the mutable borrow of the connections
-            {
-                let mut result_future = FuturesUnordered::new();
-
-                let mut iter = Vec::new();
-
-                for (key, ordered_pipe) in remapped_pipe.into_iter() {
-                    let connection_reference = self
-                        .connection
-                        .as_mut()
-                        .unwrap()
-                        .connections
-                        .remove(&key)
-                        .unwrap();
-
-                    iter.push((key, connection_reference, ordered_pipe));
-                }
-
-                trace!("iter {}", iter.len());
-
-                for (key, mut connection, ordered_pipe) in iter.into_iter() {
-                    result_future.push(async move {
-                        let (order, mut pipe): (Vec<usize>, Vec<Cmd>) =
-                            ordered_pipe.into_iter().unzip();
-                        trace!("order: {:?}", order);
-                        trace!("pipe: {:?}", pipe);
-
-                        let result: RedisResult<Vec<RedisResult<_>>>;
-
-                        // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
-                        // But we still need to fake it being a Vec of results
-                        if pipe.len() == 1 {
-                            let cmd = pipe.pop().unwrap();
-                            let q_result: RedisResult<_> = cmd.query_async(&mut connection).await;
-                            result = Ok(vec![q_result]);
-                        // result = q_result.map(|r| vec![r]);
-                        } else {
-                            let redis_pipe = Pipeline {
-                                commands: pipe,
-                                transaction_mode: false,
-                            };
-
-                            result = redis_pipe
-                                .execute_pipelined_async_raw(&mut connection)
-                                .await;
-                            trace!("returned redis result {} - {:?}", key, result);
-                        }
-                        return (order, result, (key, connection));
-                    });
-                }
-
-                // trace!("leftover: {:?}", remapped_pipe);
-                // assert_eq!(remapped_pipe.len(), 0);
-
-                // cluster_connections.connections = HashMap::new();
-
-                while let Some((order, result, (key, connection))) = result_future.next().await {
-                    self.connection
-                        .as_mut()
-                        .unwrap()
-                        .connections
-                        .insert(key, connection);
-                    handle_result(result, order, &mut redis_results);
-                }
-            }
-            trace!("Got results {:?}", redis_results);
-            let ordered_results = redis_results
-                .into_iter()
-                .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
-                .map(|(_order, value)| value)
-                .collect_vec();
-            trace!("Reordered {:?}", ordered_results);
-            trace!(
-                "Connections {}",
-                self.connection.as_ref().unwrap().connections.len()
-            );
-            assert_eq!(expected_response, ordered_results.len());
-
-            return Ok(Messages {
-                messages: stream::iter(ordered_results)
-                    .then(|v| async move { Message::new_response(v, true, RawFrame::NONE) })
-                    .collect()
-                    .await,
-            });
         }
 
         Ok(build_error_response(
