@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +22,7 @@ use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
+use crate::transforms::redis_transforms::redis_cluster::PipelineOrError::ClientError;
 use rand::{
     seq::{IteratorRandom, SliceRandom},
     thread_rng, SeedableRng,
@@ -70,6 +71,36 @@ impl RedisCluster {
         // self.connection = Some(conn);
 
         Ok(())
+    }
+
+    async fn retry_mapped_commands(
+        &mut self,
+        moved_list: Vec<(usize, Cmd)>,
+        ask_list: Vec<(String, usize, Cmd)>,
+        remapped_pipe: &mut HashMap<String, Vec<(usize, Cmd)>>,
+    ) -> RedisResult<bool> {
+        let mut retry = false;
+        if moved_list.len() > 0 {
+            trace!("Retrying the following MOVE responses {:?}", ask_list);
+            let connection = unwrap_borrow_mut_option(&mut self.connection);
+            connection.refresh_slots().await?;
+            for (order, cmd) in moved_list {
+                route_command(connection, false, remapped_pipe, cmd, order, 1).await;
+            }
+            retry = true;
+        }
+
+        if ask_list.len() > 0 {
+            trace!("Retrying the following ASK responses {:?}", ask_list);
+            let connection = unwrap_borrow_mut_option(&mut self.connection);
+
+            for (host, order, cmd) in ask_list {
+                route_command(connection, false, remapped_pipe, cmd, order, 1).await;
+            }
+
+            retry = true;
+        }
+        return Ok(retry);
     }
 }
 
@@ -149,11 +180,84 @@ fn build_error_response(
     };
 }
 
+enum PipelineOrError {
+    Pipeline(HashMap<String, Vec<(usize, Cmd)>>),
+    ClientError(ChainResponse),
+}
+
+async fn route_command(
+    connection: &mut ClusterConnection,
+    use_slots: bool,
+    cmd_map: &mut HashMap<String, Vec<(usize, Cmd)>>,
+    redis_command: Cmd,
+    order: usize,
+    error_len: usize,
+) -> Option<ChainResponse> {
+    match RoutingInfo::for_packed_command(&redis_command) {
+        Some(RoutingInfo::Slot(slot)) => {
+            let bucket = if use_slots {
+                format!("{}", slot)
+            } else if let Some(server) = connection.get_connection_string(slot).await {
+                server
+            } else {
+                return Some(Ok(build_error_response(
+                    Some("ERR"),
+                    Some(&*format!(
+                        "Could not route request to redis node (couldn't calculate slot): {}",
+                        String::from_utf8_lossy(&*redis_command.get_packed_command())
+                    )),
+                    None,
+                    Some(error_len),
+                )));
+            };
+
+            if let Some(cmds) = cmd_map.get_mut(&bucket) {
+                cmds.push((order, redis_command));
+            } else {
+                cmd_map.insert(bucket.to_string(), vec![(order, redis_command)]);
+            }
+        }
+        Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
+            if let Some(cmds) = cmd_map.get_mut(MASTER_STRING) {
+                cmds.push((order, redis_command.clone()));
+            } else {
+                cmd_map.insert(
+                    MASTER_STRING.to_string(),
+                    vec![(order, redis_command.clone())],
+                );
+            }
+        }
+        Some(RoutingInfo::Random) => {
+            // these commands are special and need to go in their own bucket so the driver can work it out
+            let bucket = connection
+                .connections
+                .keys()
+                .choose(&mut connection.rng)
+                .unwrap()
+                .to_string();
+            if let Some(cmds) = cmd_map.get_mut(&bucket) {
+                cmds.push((order, redis_command));
+            } else {
+                cmd_map.insert(bucket.to_string(), vec![(order, redis_command)]);
+            }
+        }
+        None => {
+            return Some(Ok(build_error_response(
+                Some("ERR"),
+                Some("Could not route request"),
+                None,
+                Some(error_len),
+            )));
+        }
+    }
+    None
+}
+
 async fn remap_cluster_commands<'a>(
     connection: &'a mut ClusterConnection,
     qd: Wrapper<'a>,
     use_slots: bool,
-) -> Result<HashMap<String, Vec<(usize, Cmd)>>, ChainResponse> {
+) -> PipelineOrError {
     let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
     let error_len = qd.message.messages.len();
     for (i, message) in qd.message.messages.into_iter().enumerate() {
@@ -171,74 +275,24 @@ async fn remap_cluster_commands<'a>(
                             redis_command.arg(args);
                         }
 
-                        match RoutingInfo::for_packed_command(&redis_command) {
-                            Some(RoutingInfo::Slot(slot)) => {
-                                let bucket = if use_slots {
-                                    format!("{}", slot)
-                                } else if let Some(server) =
-                                    connection.get_connection_string(slot).await
-                                {
-                                    server
-                                } else {
-                                    return Err(Ok(build_error_response(
-                                        Some("ERR"),
-                                        Some(&*format!(
-                                            "Could not route request to redis node (couldn't calculate slot): {}",
-                                            String::from_utf8_lossy(
-                                                &*redis_command.get_packed_command()
-                                            )
-                                        )),
-                                        None,
-                                        Some(error_len)
-                                    )));
-                                };
-
-                                if let Some(cmds) = cmd_map.get_mut(&bucket) {
-                                    cmds.push((i, redis_command));
-                                } else {
-                                    cmd_map.insert(bucket.to_string(), vec![(i, redis_command)]);
-                                }
-                            }
-                            Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
-                                if let Some(cmds) = cmd_map.get_mut(MASTER_STRING) {
-                                    cmds.push((i, redis_command.clone()));
-                                } else {
-                                    cmd_map.insert(
-                                        MASTER_STRING.to_string(),
-                                        vec![(i, redis_command.clone())],
-                                    );
-                                }
-                            }
-                            Some(RoutingInfo::Random) => {
-                                // these commands are special and need to go in their own bucket so the driver can work it out
-                                let bucket = connection
-                                    .connections
-                                    .keys()
-                                    .choose(&mut connection.rng)
-                                    .unwrap()
-                                    .to_string();
-                                if let Some(cmds) = cmd_map.get_mut(&bucket) {
-                                    cmds.push((i, redis_command));
-                                } else {
-                                    cmd_map.insert(bucket.to_string(), vec![(i, redis_command)]);
-                                }
-                            }
-                            None => {
-                                return Err(Ok(build_error_response(
-                                    Some("ERR"),
-                                    Some("Could not route request"),
-                                    None,
-                                    Some(error_len),
-                                )))
-                            }
+                        if let Some(response) = route_command(
+                            connection,
+                            use_slots,
+                            &mut cmd_map,
+                            redis_command,
+                            i,
+                            error_len,
+                        )
+                        .await
+                        {
+                            return PipelineOrError::ClientError(response);
                         }
                     }
                 }
             }
         }
     }
-
-    return Ok(cmd_map);
+    return PipelineOrError::Pipeline(cmd_map);
 }
 
 fn unwrap_borrow_mut_option<T>(option: &mut Option<T>) -> &mut T {
@@ -254,7 +308,7 @@ fn handle_result(
     order: Vec<usize>,
     results_to_populate: &mut Vec<Vec<(usize, QueryResponse)>>,
     retry_list: &mut Vec<(usize, Cmd)>,
-    ask_list: &mut Vec<(usize, Cmd)>,
+    ask_list: &mut Vec<(String, usize, Cmd)>,
 ) {
     match result {
         Ok(rv) => {
@@ -272,7 +326,11 @@ fn handle_result(
                                         return None;
                                     }
                                     ErrorKind::Ask => {
-                                        ask_list.push((u, redis_pipe.commands.remove(i)));
+                                        ask_list.push((
+                                            e.redirect_node().unwrap().0.to_string(),
+                                            u,
+                                            redis_pipe.commands.remove(i),
+                                        ));
                                         return None;
                                     }
                                     ErrorKind::TryAgain => {
@@ -397,23 +455,24 @@ impl Transform for RedisCluster {
             )
             .await
             {
-                Ok(v) => v,
-                Err(e) => {
+                PipelineOrError::Pipeline(v) => v,
+                ClientError(e) => {
                     return e;
                 }
             };
 
             let mut redis_results: Vec<Vec<(usize, QueryResponse)>> = vec![];
+            let mut try_count = 0;
 
-            while remapped_pipe.len() != 0 {
+            while try_count < 5 {
+                try_count += 1;
                 trace!("remapped_pipe: {:?}", remapped_pipe);
                 let mut moved_list: Vec<(usize, Cmd)> = Vec::new();
-                let mut ask_list: Vec<(usize, Cmd)> = Vec::new();
+                let mut ask_list: Vec<(String, usize, Cmd)> = Vec::new();
 
                 if let Some(ordered_pipe) = remapped_pipe.remove(MASTER_STRING) {
                     // We let the driver take care of hitting all nodes
-                    let (order, mut pipe): (Vec<usize>, Vec<Cmd>) =
-                        ordered_pipe.into_iter().unzip();
+                    let (order, pipe): (Vec<usize>, Vec<Cmd>) = ordered_pipe.into_iter().unzip();
                     let result: RedisResult<Vec<RedisResult<_>>>;
 
                     // Why do we handle these differently? Well the driver unpacks single cmds in a pipeline differently and we don't want to have to handle it.
@@ -460,7 +519,7 @@ impl Transform for RedisCluster {
 
                     let mut iter = Vec::new();
 
-                    for (key, ordered_pipe) in remapped_pipe.into_iter() {
+                    for (key, ordered_pipe) in remapped_pipe.drain() {
                         let connection_reference = self
                             .connection
                             .as_mut()
@@ -476,7 +535,7 @@ impl Transform for RedisCluster {
 
                     for (key, mut connection, ordered_pipe) in iter.into_iter() {
                         result_future.push(async move {
-                            let (order, mut pipe): (Vec<usize>, Vec<Cmd>) =
+                            let (order, pipe): (Vec<usize>, Vec<Cmd>) =
                                 ordered_pipe.into_iter().unzip();
                             trace!("order: {:?}", order);
                             trace!("pipe: {:?}", pipe);
@@ -520,6 +579,7 @@ impl Transform for RedisCluster {
                             .unwrap()
                             .connections
                             .insert(key, connection);
+
                         handle_result(
                             result,
                             redis_pipe,
@@ -531,6 +591,21 @@ impl Transform for RedisCluster {
                     }
                 }
                 trace!("Got results {:?}", redis_results);
+
+                match self
+                    .retry_mapped_commands(moved_list, ask_list, &mut remapped_pipe)
+                    .await
+                {
+                    Ok(b) => {
+                        if b {
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        return build_error_from_redis(e, Some(expected_response));
+                    }
+                }
+
                 let ordered_results = redis_results
                     .into_iter()
                     .kmerge_by(|(a_order, _), (b_order, _)| a_order < b_order)
@@ -542,6 +617,7 @@ impl Transform for RedisCluster {
                     self.connection.as_ref().unwrap().connections.len()
                 );
                 assert_eq!(expected_response, ordered_results.len());
+                assert_eq!(remapped_pipe.len(), 0);
 
                 return Ok(Messages {
                     messages: stream::iter(ordered_results)
