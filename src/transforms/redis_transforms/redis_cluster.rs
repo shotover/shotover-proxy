@@ -14,7 +14,7 @@ use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo}
 use redis::{cmd as redis_cmd, Cmd, ErrorKind};
 use redis::{Pipeline, RedisError, RedisResult, Value as RValue};
 
-use tracing::{trace, warn};
+use tracing::{info, trace, warn};
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use itertools::Itertools;
@@ -185,6 +185,7 @@ enum PipelineOrError {
     ClientError(ChainResponse),
 }
 
+#[inline(always)]
 async fn route_command(
     connection: &mut ClusterConnection,
     use_slots: bool,
@@ -253,6 +254,7 @@ async fn route_command(
     None
 }
 
+#[inline(always)]
 async fn remap_cluster_commands<'a>(
     connection: &'a mut ClusterConnection,
     qd: Wrapper<'a>,
@@ -302,6 +304,7 @@ fn unwrap_borrow_mut_option<T>(option: &mut Option<T>) -> &mut T {
     }
 }
 
+#[inline(always)]
 fn handle_result(
     result: RedisResult<Vec<RedisResult<RValue>>>,
     mut redis_pipe: Pipeline,
@@ -466,6 +469,9 @@ impl Transform for RedisCluster {
 
             while try_count < 5 {
                 try_count += 1;
+                if try_count > 1 {
+                    trace!("retrying operation {}", try_count);
+                }
                 trace!("remapped_pipe: {:?}", remapped_pipe);
                 let mut moved_list: Vec<(usize, Cmd)> = Vec::new();
                 let mut ask_list: Vec<(String, usize, Cmd)> = Vec::new();
@@ -519,7 +525,7 @@ impl Transform for RedisCluster {
 
                     let mut iter = Vec::new();
 
-                    for (key, ordered_pipe) in remapped_pipe.drain() {
+                    for (key, ordered_pipe) in remapped_pipe.into_iter() {
                         let connection_reference = self
                             .connection
                             .as_mut()
@@ -592,17 +598,21 @@ impl Transform for RedisCluster {
                 }
                 trace!("Got results {:?}", redis_results);
 
-                match self
-                    .retry_mapped_commands(moved_list, ask_list, &mut remapped_pipe)
-                    .await
-                {
-                    Ok(b) => {
-                        if b {
-                            continue;
+                if moved_list.len() > 0 || ask_list.len() > 0 {
+                    remapped_pipe = HashMap::new();
+
+                    match self
+                        .retry_mapped_commands(moved_list, ask_list, &mut remapped_pipe)
+                        .await
+                    {
+                        Ok(b) => {
+                            if b {
+                                continue;
+                            }
                         }
-                    }
-                    Err(e) => {
-                        return build_error_from_redis(e, Some(expected_response));
+                        Err(e) => {
+                            return build_error_from_redis(e, Some(expected_response));
+                        }
                     }
                 }
 
@@ -617,7 +627,7 @@ impl Transform for RedisCluster {
                     self.connection.as_ref().unwrap().connections.len()
                 );
                 assert_eq!(expected_response, ordered_results.len());
-                assert_eq!(remapped_pipe.len(), 0);
+                // assert_eq!(remapped_pipe.len(), 0);
 
                 return Ok(Messages {
                     messages: stream::iter(ordered_results)
