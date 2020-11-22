@@ -20,7 +20,6 @@ use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use itertools::Itertools;
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
-use std::iter::FromIterator;
 
 use crate::transforms::redis_transforms::redis_cluster::PipelineOrError::ClientError;
 use rand::seq::IteratorRandom;
@@ -77,7 +76,7 @@ impl RedisCluster {
         remapped_pipe: &mut HashMap<String, Vec<(usize, Cmd)>>,
     ) -> RedisResult<bool> {
         let mut retry = false;
-        if moved_list.len() > 0 {
+        if !moved_list.is_empty() {
             trace!("Retrying the following MOVE responses {:?}", ask_list);
             let connection = unwrap_borrow_mut_option(&mut self.connection);
             connection.refresh_slots().await?;
@@ -87,7 +86,7 @@ impl RedisCluster {
             retry = true;
         }
 
-        if ask_list.len() > 0 {
+        if !ask_list.is_empty() {
             trace!("Retrying the following ASK responses {:?}", ask_list);
             let connection = unwrap_borrow_mut_option(&mut self.connection);
 
@@ -156,25 +155,28 @@ fn build_error_response(
     original: Option<QueryMessage>,
     count: Option<usize>,
 ) -> Messages {
-    return match count {
+    match count {
         None => Messages::new_single_response(
             QueryResponse::empty_with_error(Some(format_errors(code, description))),
             true,
             RawFrame::NONE,
         ),
-        Some(i) => Messages::from_iter((0..i).into_iter().map(|_| {
-            Message::new(
-                MessageDetails::Response(QueryResponse {
-                    matching_query: original.clone(),
-                    result: None,
-                    error: Some(format_errors(code, description)),
-                    response_meta: None,
-                }),
-                true,
-                RawFrame::NONE,
-            )
-        })),
-    };
+        Some(i) => (0..i)
+            .into_iter()
+            .map(|_| {
+                Message::new(
+                    MessageDetails::Response(QueryResponse {
+                        matching_query: original.clone(),
+                        result: None,
+                        error: Some(format_errors(code, description)),
+                        response_meta: None,
+                    }),
+                    true,
+                    RawFrame::NONE,
+                )
+            })
+            .collect(),
+    }
 }
 
 enum PipelineOrError {
@@ -570,7 +572,7 @@ impl Transform for RedisCluster {
 
                                 trace!("returned redis result {} - {:?}", key, result);
                             }
-                            return (order, (result, redis_pipe), (key, connection));
+                            (order, (result, redis_pipe), (key, connection))
                         });
                     }
 
@@ -595,7 +597,7 @@ impl Transform for RedisCluster {
                 }
                 trace!("Got results {:?}", redis_results);
 
-                if moved_list.len() > 0 || ask_list.len() > 0 {
+                if !moved_list.is_empty() || !ask_list.is_empty() {
                     remapped_pipe = HashMap::new();
 
                     match self

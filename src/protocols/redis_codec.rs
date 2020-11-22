@@ -700,12 +700,11 @@ impl Encoder<Messages> for RedisCodec {
         item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        item.into_iter()
-            .map(|m: Message| {
-                let frame = self.encode_message(m)?;
-                self.encode_raw(frame, dst)
-            })
-            .collect()
+        item.into_iter().try_for_each(|m: Message| {
+            let frame = self.encode_message(m)?;
+            self.encode_raw(frame, dst)
+        })
+        // .collect()
     }
 }
 

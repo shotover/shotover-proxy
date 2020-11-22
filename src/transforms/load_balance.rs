@@ -43,13 +43,13 @@ pub struct ConnectionBalanceAndPool {
 
 impl Clone for ConnectionBalanceAndPool {
     fn clone(&self) -> Self {
-        return ConnectionBalanceAndPool {
-            name: self.name.clone(),
+        ConnectionBalanceAndPool {
+            name: self.name,
             active_connection: None,
-            parallelism: self.parallelism.clone(),
+            parallelism: self.parallelism,
             other_connections: self.other_connections.clone(),
             chain_to_clone: self.chain_to_clone.clone(),
-        };
+        }
     }
 }
 

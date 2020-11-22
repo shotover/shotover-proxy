@@ -152,7 +152,7 @@ impl Transform for TunableConsistency {
         let max_required_successes = *required_successes
             .iter()
             .max()
-            .unwrap_or_else(|| &self.write_consistency);
+            .unwrap_or(&self.write_consistency);
 
         // Bias towards the write_consistency value for everything else
         let mut rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
@@ -186,7 +186,7 @@ impl Transform for TunableConsistency {
             < *required_successes
                 .iter()
                 .max()
-                .unwrap_or_else(|| &self.write_consistency) as usize
+                .unwrap_or(&self.write_consistency) as usize
         {
             let collated_response: Vec<Message> = required_successes
                 .iter()
