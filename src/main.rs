@@ -7,7 +7,6 @@ use metrics_runtime::Receiver;
 use tracing::{debug, info};
 // use tracing_subscriber::{filter::EnvFilter, reload::Handle};
 
-use metrics_runtime::observers::PrometheusBuilder;
 use shotover_proxy::admin::httpserver::LogFilterHttpExporter;
 use shotover_proxy::config::topology::Topology;
 use shotover_proxy::config::Config;
@@ -63,12 +62,7 @@ fn main() -> Result<()> {
 
     let socket: SocketAddr = config.observability_interface.parse()?;
 
-    let exporter = LogFilterHttpExporter::new(
-        receiver.controller(),
-        PrometheusBuilder::new(),
-        socket,
-        handle,
-    );
+    let exporter = LogFilterHttpExporter::new(receiver.controller(), socket, handle);
 
     receiver.install();
 

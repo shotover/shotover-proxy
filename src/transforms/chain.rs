@@ -6,8 +6,6 @@ use bytes::Bytes;
 use evmap::ReadHandleFactory;
 use futures::{FutureExt, TryFutureExt};
 
-use crate::message::{Messages, QueryResponse, Value};
-use crate::protocols::RawFrame;
 use itertools::Itertools;
 use metrics::{counter, timing};
 use std::sync::Arc;

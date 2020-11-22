@@ -23,7 +23,7 @@ itertools = "0.9.0"
 rand = "0.7.3"
 rand_distr = "0.2.2"
 cached = "0.16.0"
-ctrlc = "3.1.6"
+#ctrlc = "3.1.6"
 
 
 # Error handling
@@ -51,8 +51,8 @@ hyper = "0.13.7"
 
 # Transform dependencies
 #redis = {version = "0.15.1", features = ["tokio-rt-core", "cluster"]}
-#redis = {git = "https://github.com/benbromhead/redis-rs", branch = "parra_support", features = ["tokio-rt-core", "cluster"]}
-redis = {path = "/home/ben/git/redis-rs", features = ["tokio-rt-core", "cluster"]}
+redis = {git = "https://github.com/benbromhead/redis-rs", branch = "parra_support", features = ["tokio-rt-core", "cluster"]}
+#redis = {path = "/home/ben/git/redis-rs", features = ["tokio-rt-core", "cluster"]}
 redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "vecsupport" }
 #cdrs = { version = "2" }
 cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
@@ -76,7 +76,7 @@ rusoto_signature = "0.44.0"
 
 [dev-dependencies]
 criterion = "0.3"
-proptest = "0.10.0"
+#proptest = "0.10.0"
 lazy_static = "1.4.0"
 
 [[bench]]

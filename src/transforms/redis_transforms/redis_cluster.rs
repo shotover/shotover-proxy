@@ -1,4 +1,4 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,7 @@ use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo}
 use redis::{cmd as redis_cmd, Cmd, ErrorKind};
 use redis::{Pipeline, RedisError, RedisResult, Value as RValue};
 
-use tracing::{info, trace, warn};
+use tracing::{trace, warn};
 
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use itertools::Itertools;
@@ -23,10 +23,7 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 
 use crate::transforms::redis_transforms::redis_cluster::PipelineOrError::ClientError;
-use rand::{
-    seq::{IteratorRandom, SliceRandom},
-    thread_rng, SeedableRng,
-};
+use rand::seq::IteratorRandom;
 
 // use tokio::stream::StreamExt as TStreamExt;
 
@@ -94,7 +91,7 @@ impl RedisCluster {
             trace!("Retrying the following ASK responses {:?}", ask_list);
             let connection = unwrap_borrow_mut_option(&mut self.connection);
 
-            for (host, order, cmd) in ask_list {
+            for (_host, order, cmd) in ask_list {
                 route_command(connection, false, remapped_pipe, cmd, order, 1).await;
             }
 
