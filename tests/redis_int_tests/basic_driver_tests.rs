@@ -5,7 +5,7 @@ use redis::{Commands, ConnectionLike, ErrorKind, RedisError, RedisResult, Value}
 
 use crate::load_docker_compose;
 use crate::redis_int_tests::support::TestContext;
-use rdkafka::message::ToBytes;
+
 use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
@@ -863,7 +863,7 @@ fn test_cluster_auth_redis() -> Result<()> {
         .arg("testuser")
         .arg("password")
         .execute(&mut con);
-    if let Ok(s) = redis::cmd("SET")
+    if let Ok(_s) = redis::cmd("SET")
         .arg("{x}key2")
         .arg("fail")
         .query::<String>(&mut con)
@@ -932,7 +932,7 @@ fn test_cluster_all_script_redis() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     });
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
-    for i in 0..1999 {
+    for _i in 0..1999 {
         test_script();
     }
     Ok(())
