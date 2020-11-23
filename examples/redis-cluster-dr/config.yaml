@@ -3,7 +3,7 @@
 sources:
   redis_dr:
     Mpsc:
-      topic_name: "redis-dr-tee"
+      topic_name: redis-dr-tee
   redis_prod:
     Redis:
       batch_size_hint: 1000
@@ -19,7 +19,7 @@ chain_config:
               first_contact_points: [ "redis://127.0.0.1:2120/", "redis://127.0.0.1:2121/", "redis://127.0.0.1:2122/" ]
   redis_chain:
     - MPSCTee:
-        topic_name: "redis-dr-tee"
+        topic_name: redis-dr-tee
         behavior: IGNORE
     - PoolConnections:
         name: "RedisCluster-Main-subchain"
@@ -28,8 +28,8 @@ chain_config:
           - RedisCluster:
               first_contact_points: [ "redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/" ]
 named_topics:
-  - testtopic
-  - "redis-dr-tee"
+  testtopic : 5
+  redis-dr-tee : 5
 source_to_chain_mapping:
   redis_prod: redis_chain
   redis_dr: redis_dr_chain
