@@ -145,12 +145,11 @@ impl Transform for Tee {
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {
                 self.tx
-                    .send(ChannelMessage::new_with_no_return(m))
+                    .try_send(ChannelMessage::new_with_no_return(m))
                     .map_err(|e| {
                         warn!("MPSC error {}", e);
                         e
-                    })
-                    .await?;
+                    });
                 qd.call_next_transform().await
             }
             ConsistencyBehavior::FAIL => {
