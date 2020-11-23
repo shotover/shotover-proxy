@@ -4,18 +4,17 @@ use hyper::{
 };
 
 use bytes::Bytes;
-use metrics_core::{Builder, Drain, Observe, Observer};
+use metrics_core::{Builder, Drain, Observe};
+use metrics_runtime::observers::{JsonBuilder, PrometheusBuilder};
 use std::convert::Infallible;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, trace};
 use tracing_subscriber::reload::Handle;
 use tracing_subscriber::EnvFilter;
-use metrics_runtime::observers::{JsonBuilder, PrometheusBuilder};
 
 /// Exports metrics over HTTP.
-pub struct LogFilterHttpExporter<C, B, S> {
+pub struct LogFilterHttpExporter<C, S> {
     controller: C,
-    builder: B,
     address: SocketAddr,
     handle: Handle<EnvFilter, S>,
 }
@@ -40,25 +39,17 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
         .expect("builder with known status code must not fail")
 }
 
-impl<C, B, S> LogFilterHttpExporter<C, B, S>
+impl<C, S> LogFilterHttpExporter<C, S>
 where
     C: Observe + Send + Sync + 'static,
-    B: Builder + Send + Sync + 'static,
-    B::Output: Drain<String> + Observer,
     S: tracing::Subscriber + 'static,
 {
     /// Creates a new [`HttpExporter`] that listens on the given `address`.
     ///
     /// Observers expose their output by being converted into strings.
-    pub fn new(
-        controller: C,
-        builder: B,
-        address: SocketAddr,
-        handle: Handle<EnvFilter, S>,
-    ) -> Self {
+    pub fn new(controller: C, address: SocketAddr, handle: Handle<EnvFilter, S>) -> Self {
         LogFilterHttpExporter {
             controller,
-            builder,
             address,
             handle,
         }
@@ -83,14 +74,14 @@ where
                         let response = match (req.method(), req.uri().path()) {
                             (&Method::GET, "/metrics") => {
                                 let output = match req.uri().query() {
-                                    (Some("x-accept=application/json")) => {
-                                        let builder = Arc::new(JsonBuilder::new());
+                                    Some("x-accept=application/json") => {
+                                        let builder = JsonBuilder::new();
                                         let mut observer = builder.build();
                                         controller.observe(&mut observer);
                                         observer.drain()
                                     }
                                     _ => {
-                                        let builder = Arc::new(PrometheusBuilder::new());
+                                        let builder = PrometheusBuilder::new();
                                         let mut observer = builder.build();
                                         controller.observe(&mut observer);
                                         observer.drain()

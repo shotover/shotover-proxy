@@ -6,8 +6,6 @@ use bytes::Bytes;
 use evmap::ReadHandleFactory;
 use futures::{FutureExt, TryFutureExt};
 
-use crate::message::{Messages, QueryResponse, Value};
-use crate::protocols::RawFrame;
 use itertools::Itertools;
 use metrics::{counter, timing};
 use std::sync::Arc;
@@ -86,7 +84,7 @@ impl TransformChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
         // If this is not a test, this should get removed by the compiler
-        let count_outer: Arc<Mutex<usize>> = Arc::new(Mutex::new(0 as usize));
+        let count_outer: Arc<Mutex<usize>> = Arc::new(Mutex::new(0_usize));
         let count = count_outer.clone();
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.

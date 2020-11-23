@@ -298,7 +298,7 @@ where
                         },
                         Err(_) => {
                             debug!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
-                            idle_time = idle_time * 2;
+                            idle_time *= 2;
                             continue
                         }
                     }

@@ -141,7 +141,7 @@ impl CassandraCodec2 {
                                 .iter()
                                 .map(|j| {
                                     let rb: CBytes = CBytes::new(match j {
-                                        Value::NULL => (-1 as CInt).into_cbytes(),
+                                        Value::NULL => (-1_i32).into_cbytes(),
                                         Value::Bytes(x) => x.to_vec(),
                                         Value::Strings(x) => {
                                             Vec::from(x.clone().as_bytes())
@@ -683,12 +683,10 @@ impl Encoder<Messages> for CassandraCodec2 {
         item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        item.into_iter()
-            .map(|m: Message| {
-                let frame = self.encode_message(m)?;
-                self.encode_raw(frame, dst)
-            })
-            .collect()
+        item.into_iter().try_for_each(|m: Message| {
+            let frame = self.encode_message(m)?;
+            self.encode_raw(frame, dst)
+        })
     }
 }
 
@@ -840,10 +838,7 @@ mod cassandra_protocol_tests {
 
                         println!("{}", query_string);
                         println!("{}", ast);
-                        assert_eq!(
-                            query_s,
-                            ast_string
-                        );
+                        assert_eq!(query_s, ast_string);
                         Ok(())
                     } else {
                         Err(anyhow!("uh oh"))
