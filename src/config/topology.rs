@@ -22,7 +22,15 @@ use tracing::info;
 pub struct Topology {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
-    pub named_topics: Vec<String>,
+    pub named_topics: HashMap<String, usize>,
+    pub source_to_chain_mapping: HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct TopologyConfig {
+    pub sources: HashMap<String, SourcesConfig>,
+    pub chain_config: HashMap<String, Vec<TransformsConfig>>,
+    pub named_topics: Option<HashMap<String, Option<usize>>>,
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
@@ -89,8 +97,9 @@ impl TopicHolder {
 }
 
 impl Topology {
-    pub fn new_from_yaml(yaml_contents: String) -> Result<Topology> {
-        serde_yaml::from_str(&yaml_contents).map_err(|e| anyhow!(e))
+    pub fn new_from_yaml(yaml_contents: String) -> Topology {
+        let config : TopologyConfig = serde_yaml::from_str(&yaml_contents).map_err(|e| anyhow!(e)).unwrap();
+        Topology::topology_from_config(config)
     }
 
     fn build_topics(
@@ -100,8 +109,8 @@ impl Topology {
     ) -> TopicHolder {
         let mut topics_rx: HashMap<String, Receiver<ChannelMessage>> = HashMap::new();
         let mut topics_tx: HashMap<String, Sender<ChannelMessage>> = HashMap::new();
-        for name in &self.named_topics {
-            let (tx, rx) = channel::<ChannelMessage>(5);
+        for (name, size) in &self.named_topics {
+            let (tx, rx) = channel::<ChannelMessage>(*size);
             topics_rx.insert(name.clone(), rx);
             topics_tx.insert(name.clone(), tx);
         }
@@ -186,8 +195,24 @@ impl Topology {
 
     pub fn from_file(filepath: String) -> Result<Topology> {
         let file = std::fs::File::open(filepath)?;
-        let config: Topology = serde_yaml::from_reader(file)?;
-        Ok(config)
+        let config: TopologyConfig = serde_yaml::from_reader(file)?;
+        Ok(Topology::topology_from_config(config))
+    }
+
+    pub fn topology_from_config(config: TopologyConfig) -> Topology {
+        let topics = config.named_topics.unwrap_or_else(|| {
+            let mut default_topic = HashMap::new();
+            default_topic.insert("testtopic".to_owned(), Some(5));
+            default_topic
+        });
+
+        let built_topics = topics.iter().map(|(k, v)| (k.to_owned(), v.unwrap_or(5))).collect();
+        return Topology {
+            sources: config.sources,
+            chain_config: config.chain_config,
+            named_topics: built_topics,
+            source_to_chain_mapping: config.source_to_chain_mapping
+        }
     }
 
     pub fn get_demo_config() -> Topology {
@@ -245,7 +270,10 @@ impl Topology {
             String::from("async_chain"),
             vec![kafka_transform_config_obj],
         );
-        let named_topics: Vec<String> = vec![String::from("test_topic")];
+
+        let mut named_topics: HashMap<String, usize> = HashMap::new();
+        named_topics.insert(String::from("test_topic"), 1);
+
         let mut source_to_chain_mapping: HashMap<String, String> = HashMap::new();
         source_to_chain_mapping.insert(String::from("cassandra_prod"), String::from("main_chain"));
         source_to_chain_mapping.insert(String::from("mpsc_chan"), String::from("async_chain"));
@@ -295,7 +323,7 @@ chain_config:
           bootstrap.servers: "127.0.0.1:9092"
           message.timeout.ms: "5000"
 named_topics:
-  - test_topic
+  test_topic: 1
 source_to_chain_mapping:
   cassandra_prod: main_chain
   mpsc_chan: async_chain"###;
@@ -303,14 +331,16 @@ source_to_chain_mapping:
     #[test]
     fn new_test() -> Result<()> {
         let topology = Topology::get_demo_config();
-        let topology2 = Topology::new_from_yaml(String::from(TEST_STRING))?;
+        println!("{:?}", topology.named_topics);
+        let topology2 = Topology::new_from_yaml(String::from(TEST_STRING));
+        println!("{:?}", topology2.named_topics);
         assert_eq!(topology2, topology);
         Ok(())
     }
 
     #[test]
     fn test_config_parse_format() -> Result<()> {
-        let _ = Topology::new_from_yaml(String::from(TEST_STRING))?;
+        let _ = Topology::new_from_yaml(String::from(TEST_STRING));
         Ok(())
     }
 }
