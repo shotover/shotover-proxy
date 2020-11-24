@@ -38,7 +38,7 @@ chain_config:
     - RedisCluster:
         first_contact_points: ["redis://192.168.0.1/", "redis://192.168.0.2/"]
 named_topics:
-  testtopic : 5
+  testtopic: 5
 source_to_chain_mapping:
   redis_prod: redis_chain
 ```

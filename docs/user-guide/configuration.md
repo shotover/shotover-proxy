@@ -175,7 +175,7 @@ the `my_redis_chain` and the `my_main_chain` transform chains would push queries
 
 ```yaml
 named_topics:
-  testtopic : 5
+  testtopic: 5
 ```
 
 ### `source_to_chain_mapping` Chain Mapping
