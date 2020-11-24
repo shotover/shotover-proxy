@@ -144,10 +144,10 @@ impl Transform for Tee {
         let m = qd.message.clone();
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {
-                self.tx
+                let _ = self.tx
                     .try_send(ChannelMessage::new_with_no_return(m))
                     .map_err(|e| {
-                        warn!("MPSC error {}", e);
+                        trace!("MPSC error {}", e);
                         e
                     });
                 qd.call_next_transform().await
