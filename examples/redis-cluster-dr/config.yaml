@@ -3,33 +3,33 @@
 sources:
   redis_dr:
     Mpsc:
-      topic_name: "redis-dr-tee"
+      topic_name: redis-dr-tee
   redis_prod:
     Redis:
       batch_size_hint: 1000
-      listen_addr: "127.0.0.1:6379"
-      connection_limit: 30000
+      listen_addr: "0.0.0.0:6378"
+      connection_limit: 3000000
 chain_config:
   redis_dr_chain:
     - PoolConnections:
         name: "RedisCluster-DR-subchain"
-        parallelism: 1
+        parallelism: 512
         chain:
           - RedisCluster:
-              first_contact_points: [ "redis://127.0.0.1:2120/", "redis://127.0.0.1:2121/", "redis://127.0.0.1:2122/" ]
+              first_contact_points: [ "redis://107.20.71.3/", "redis://34.207.20.215/", "redis://34.225.18.239/" ]
   redis_chain:
     - MPSCTee:
-        topic_name: "redis-dr-tee"
+        topic_name: redis-dr-tee
         behavior: IGNORE
     - PoolConnections:
         name: "RedisCluster-Main-subchain"
-        parallelism: 10
+        parallelism: 512
         chain:
           - RedisCluster:
-              first_contact_points: [ "redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/" ]
+              first_contact_points: [ "redis://3.209.120.59/", "redis://107.22.193.71/", "redis://52.71.156.167/" ]
 named_topics:
-  - testtopic
-  - "redis-dr-tee"
+  testtopic: 5
+  redis-dr-tee: 5
 source_to_chain_mapping:
   redis_prod: redis_chain
   redis_dr: redis_dr_chain

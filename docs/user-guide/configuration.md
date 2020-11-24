@@ -168,12 +168,14 @@ chain_config:
 The `named_topics` top level resource is a list of topics. Each topic is backed by a Rust multi-producer, single consumer
 channel. 
 
+The value provided is a usize which defines the size of the channel, default 5.
+
 The below example creates a single topic, called `testtopic`. In the example [above](#chain_config-chain-configuration) for `chain_config`, both
 the `my_redis_chain` and the `my_main_chain` transform chains would push queries into this topic.
 
 ```yaml
 named_topics:
-  - testtopic
+  testtopic: 5
 ```
 
 ### `source_to_chain_mapping` Chain Mapping

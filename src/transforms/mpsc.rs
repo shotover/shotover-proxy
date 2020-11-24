@@ -9,9 +9,10 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::TryFutureExt;
 use itertools::Itertools;
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
-use tracing::warn;
+use tracing::{trace, warn};
 
 /*
 AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,
@@ -144,13 +145,14 @@ impl Transform for Tee {
         let m = qd.message.clone();
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {
-                self.tx
-                    .send(ChannelMessage::new_with_no_return(m))
+                let _ = self
+                    .tx
+                    .try_send(ChannelMessage::new_with_no_return(m))
                     .map_err(|e| {
-                        warn!("MPSC error {}", e);
+                        counter!("tee_dropped_messages", 1, "chain" => self.name);
+                        trace!("MPSC error {}", e);
                         e
-                    })
-                    .await?;
+                    });
                 qd.call_next_transform().await
             }
             ConsistencyBehavior::FAIL => {
@@ -186,6 +188,7 @@ impl Transform for Tee {
                 self.tx
                     .send(ChannelMessage::new(m, tx))
                     .map_err(|e| {
+                        // counter!("tee_logged_messages", 1, "chain" => self.name);
                         warn!("MPSC error {}", e);
                         e
                     })

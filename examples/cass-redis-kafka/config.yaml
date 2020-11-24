@@ -36,7 +36,7 @@ chain_config:
           bootstrap.servers: "127.0.0.1:9092"
           message.timeout.ms: "5000"
 named_topics:
-  - testtopic
+  testtopic: 5
 source_to_chain_mapping:
   cassandra_prod: main_chain
   redis_prod: redis_chain

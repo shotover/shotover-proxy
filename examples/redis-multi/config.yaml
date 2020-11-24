@@ -23,6 +23,6 @@ chain_config:
             - RedisDestination:
                 remote_address: "127.0.0.1:3333"
 named_topics:
-  - testtopic
+  testtopic: 5
 source_to_chain_mapping:
   redis_prod: redis_chain
