@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use tokio::runtime;
 
 #[derive(Clap)]
-#[clap(version = "0.0.13", author = "Instaclustr")]
+#[clap(version = "0.0.14", author = "Instaclustr")]
 struct ConfigOpts {
     #[clap(short, long, default_value = "config/topology.yaml")]
     pub topology_file: String,
