@@ -11,7 +11,7 @@ use futures::TryFutureExt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
-use tracing::warn;
+use tracing::{trace, warn};
 
 /*
 AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,
