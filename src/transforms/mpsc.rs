@@ -9,6 +9,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::TryFutureExt;
 use itertools::Itertools;
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tracing::{trace, warn};
@@ -144,9 +145,11 @@ impl Transform for Tee {
         let m = qd.message.clone();
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {
-                let _ = self.tx
+                let _ = self
+                    .tx
                     .try_send(ChannelMessage::new_with_no_return(m))
                     .map_err(|e| {
+                        counter!("tee_dropped_messages", 1, "chain" => self.name);
                         trace!("MPSC error {}", e);
                         e
                     });
@@ -185,6 +188,7 @@ impl Transform for Tee {
                 self.tx
                     .send(ChannelMessage::new(m, tx))
                     .map_err(|e| {
+                        // counter!("tee_logged_messages", 1, "chain" => self.name);
                         warn!("MPSC error {}", e);
                         e
                     })
