@@ -190,17 +190,17 @@ impl RedisCodec {
                         get_keys(values, keys, commands)?;
                     } // get the length of the value stored in a key
                     "MSET" => {
-                        query_type = QueryType::Read;
                         get_key_values(values, keys, commands)?;
                     } // set multiple keys to multiple values
                     "MSETNX" => {
-                        query_type = QueryType::Read;
                         get_key_values(values, keys, commands)?;
                     } // set multiple keys to multiple values, only if none of the keys exist
                     "GET" => {
+                        query_type = QueryType::Read;
                         get_keys(values, keys, commands)?;
                     } // get value in key
                     "GETRANGE" => {
+                        query_type = QueryType::Read;
                         get_key_values(values, keys, commands)?;
                     } // get a substring value of a key and return its old value
                     "MGET" => {
@@ -256,7 +256,6 @@ impl RedisCodec {
                         get_keys(values, keys, commands)?;
                     } // return the current length of the list
                     "LPOP" => {
-                        query_type = QueryType::ReadWrite;
                         get_keys(values, keys, commands)?;
                     } // remove the first element from the list and returns it
                     "LSET" => {
@@ -266,7 +265,6 @@ impl RedisCodec {
                         get_key_multi_values(values, keys, commands)?;
                     } // trim a list to the specified range
                     "RPOP" => {
-                        query_type = QueryType::ReadWrite;
                         get_keys(values, keys, commands)?;
                     } // remove the last element from the list and returns it
                     "SADD" => {
@@ -300,7 +298,7 @@ impl RedisCodec {
                         get_key_values(values, keys, commands)?;
                     } // move a member from one set to another
                     "SPOP" => {
-                        query_type = QueryType::ReadWrite;
+                        query_type = QueryType::Write;
                         get_key_values(values, keys, commands)?;
                     } // remove and return one or multiple random members from a set
                     "ZADD" => {
