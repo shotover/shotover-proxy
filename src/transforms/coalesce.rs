@@ -32,7 +32,23 @@ pub struct CoalesceConfig {
 #[async_trait]
 impl TransformsFromConfig for CoalesceConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        unimplemented!()
+        let hint = match self.max_behavior {
+            CoalesceBehavior::COUNT(c) => Some(c),
+            CoalesceBehavior::COUNT_OR_WAIT(c, _) => Some(c),
+            _ => None,
+        };
+        Ok(Transforms::Coalesce(Coalesce {
+            name: "Coalesce",
+            max_behavior: self.max_behavior.clone(),
+            buffer: Messages {
+                messages: if let Some(c) = hint {
+                    Vec::with_capacity(c)
+                } else {
+                    Vec::new()
+                },
+            },
+            last_write: Instant::now(),
+        }))
     }
 }
 
