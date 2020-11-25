@@ -13,9 +13,11 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::chain::TransformChain;
+use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::distributed::tunable_consistency_scatter::{
     TunableConsistency, TunableConsistencyConfig,
 };
+use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
 use crate::transforms::lua::LuaFilterTransform;
@@ -40,7 +42,9 @@ use tokio::time::Instant;
 
 pub mod cassandra_codec_destination;
 pub mod chain;
+pub mod coalesce;
 pub mod distributed;
+pub mod filter;
 pub mod kafka_destination;
 pub mod load_balance;
 pub mod lua;
@@ -80,6 +84,8 @@ pub enum Transforms {
     SequentialMap(SequentialMap),
     ParallelMap(ParallelMap),
     PoolConnections(ConnectionBalanceAndPool),
+    Coalesce(Coalesce),
+    QueryTypeFilter(QueryTypeFilter),
 }
 
 impl Debug for Transforms {
@@ -112,6 +118,8 @@ impl Transform for Transforms {
             Transforms::SequentialMap(s) => s.transform(qd).await,
             Transforms::ParallelMap(s) => s.transform(qd).await,
             Transforms::PoolConnections(s) => s.transform(qd).await,
+            Transforms::Coalesce(s) => s.transform(qd).await,
+            Transforms::QueryTypeFilter(s) => s.transform(qd).await,
         }
     }
 
@@ -137,6 +145,8 @@ impl Transform for Transforms {
             Transforms::SequentialMap(s) => s.get_name(),
             Transforms::ParallelMap(s) => s.get_name(),
             Transforms::PoolConnections(s) => s.get_name(),
+            Transforms::Coalesce(s) => s.get_name(),
+            Transforms::QueryTypeFilter(s) => s.get_name(),
         }
     }
 
@@ -162,6 +172,8 @@ impl Transform for Transforms {
             Transforms::SequentialMap(s) => s.prep_transform_chain(t).await,
             Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
             Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
+            Transforms::Coalesce(s) => s.prep_transform_chain(t).await,
+            Transforms::QueryTypeFilter(s) => s.prep_transform_chain(t).await,
         }
     }
 }
@@ -183,6 +195,8 @@ pub enum TransformsConfig {
     SequentialMap(SequentialMapConfig),
     ParallelMap(ParallelMapConfig),
     PoolConnections(ConnectionBalanceAndPoolConfig),
+    Coalesce(CoalesceConfig),
+    QueryTypeFilter(QueryTypeFilterConfig),
 }
 
 impl TransformsConfig {
@@ -205,6 +219,8 @@ impl TransformsConfig {
             TransformsConfig::SequentialMap(s) => s.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
+            TransformsConfig::Coalesce(s) => s.get_source(topics).await,
+            TransformsConfig::QueryTypeFilter(s) => s.get_source(topics).await,
         }
     }
 }
