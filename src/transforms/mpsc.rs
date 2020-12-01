@@ -92,6 +92,7 @@ pub struct Tee {
     pub tx: Sender<ChannelMessage>,
     pub fail_topic: Option<Sender<ChannelMessage>>,
     pub behavior: ConsistencyBehavior,
+    pub timeout: u64,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -105,6 +106,7 @@ pub enum ConsistencyBehavior {
 pub struct TeeConfig {
     pub topic_name: String,
     pub behavior: Option<ConsistencyBehavior>,
+    pub timeout_micros: Option<u64>,
 }
 #[async_trait]
 impl TransformsFromConfig for TeeConfig {
@@ -129,6 +131,7 @@ impl TransformsFromConfig for TeeConfig {
                 tx,
                 fail_topic,
                 behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
+                timeout: self.timeout_micros.unwrap_or(45),
             }));
         }
         Err(anyhow!(
@@ -147,7 +150,11 @@ impl Transform for Tee {
             ConsistencyBehavior::IGNORE => {
                 let _ = self
                     .tx
-                    .try_send(ChannelMessage::new_with_no_return(m))
+                    .send_timeout(
+                        ChannelMessage::new_with_no_return(m),
+                        std::time::Duration::from_micros(self.timeout),
+                    )
+                    .await
                     .map_err(|e| {
                         counter!("tee_dropped_messages", 1, "chain" => self.name);
                         trace!("MPSC error {}", e);

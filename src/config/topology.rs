@@ -98,7 +98,9 @@ impl TopicHolder {
 
 impl Topology {
     pub fn new_from_yaml(yaml_contents: String) -> Topology {
-        let config : TopologyConfig = serde_yaml::from_str(&yaml_contents).map_err(|e| anyhow!(e)).unwrap();
+        let config: TopologyConfig = serde_yaml::from_str(&yaml_contents)
+            .map_err(|e| anyhow!(e))
+            .unwrap();
         Topology::topology_from_config(config)
     }
 
@@ -206,13 +208,16 @@ impl Topology {
             default_topic
         });
 
-        let built_topics = topics.iter().map(|(k, v)| (k.to_owned(), v.unwrap_or(5))).collect();
+        let built_topics = topics
+            .iter()
+            .map(|(k, v)| (k.to_owned(), v.unwrap_or(5)))
+            .collect();
         return Topology {
             sources: config.sources,
             chain_config: config.chain_config,
             named_topics: built_topics,
-            source_to_chain_mapping: config.source_to_chain_mapping
-        }
+            source_to_chain_mapping: config.source_to_chain_mapping,
+        };
     }
 
     pub fn get_demo_config() -> Topology {
@@ -246,6 +251,7 @@ impl Topology {
 
         let mpsc_config = SourcesConfig::Mpsc(AsyncMpscConfig {
             topic_name: String::from("test_topic"),
+            coalesce_behavior: None,
         });
 
         let cassandra_source = SourcesConfig::Cassandra(CassandraConfig {
@@ -258,6 +264,7 @@ impl Topology {
         let tee_conf = TransformsConfig::MPSCTee(TeeConfig {
             topic_name: String::from("test_topic"),
             behavior: None,
+            timeout_micros: None,
         });
 
         let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
