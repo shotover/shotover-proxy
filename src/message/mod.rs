@@ -117,6 +117,10 @@ impl Messages {
         Messages { messages: vec![] }
     }
 
+    pub fn new_with_size_hint(capacity: usize) -> Self {
+        Messages { messages: Vec::with_capacity(capacity) }
+    }
+
     pub fn new_from_message(message: Message) -> Self {
         Messages {
             messages: vec![message],
