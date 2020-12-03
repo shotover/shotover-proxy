@@ -15,6 +15,7 @@ pub struct RedisCodec {
     // Redis doesn't have an explicit "Response" type as part of the protocol
     decode_as_response: bool,
     batch_hint: usize,
+    current_frames: Vec<Frame>,
 }
 
 fn get_keys(
@@ -99,6 +100,7 @@ fn get_key_values(
     Ok(())
 }
 
+#[inline]
 fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
     if let RawFrame::Redis(frame) = rf {
         Ok(frame)
@@ -131,6 +133,7 @@ impl RedisCodec {
         RedisCodec {
             decode_as_response,
             batch_hint,
+            current_frames: vec![],
         }
     }
 
@@ -547,17 +550,11 @@ impl RedisCodec {
 
     pub fn process_redis_bulk(&self, mut frames: Vec<Frame>) -> Result<Messages> {
         trace!("processing bulk response {:?}", frames);
-        if frames.len() == 1 {
-            Ok(Messages::new_from_message(
-                self.process_redis_frame(frames.remove(0))?,
-            ))
-        } else {
-            let result: Result<Messages> = frames
-                .into_iter()
-                .map(|f| self.process_redis_frame(f))
-                .collect();
-            result
-        }
+        let result: Result<Messages> = frames
+            .into_iter()
+            .map(|f| self.process_redis_frame(f))
+            .collect();
+        result
     }
 
     pub fn process_redis_frame(&self, frame: Frame) -> Result<Message> {
@@ -637,32 +634,38 @@ impl RedisCodec {
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<Frame>>> {
         // TODO: get_batch_hint may be a premature optimisation
-        let mut frames: Vec<Frame> = Vec::with_capacity(self.get_batch_hint());
-
         while src.remaining() != 0 {
             trace!("remaining {}", src.remaining());
 
-            if let (Some(frame), size) = decode_bytes(&*src).map_err(|e| {
+            match decode_bytes(&*src).map_err(|e| {
                 info!("Error decoding redis frame {:?}", e);
                 anyhow!("Error decoding redis frame {}", e)
             })? {
-                trace!("Got frame {:?}", frame);
-                src.advance(size);
-                frames.push(frame);
-            } else {
-                if !frames.is_empty() {
-                    trace!("Batch size {:?}", frames.len());
-                    return Ok(Some(frames));
+                (Some(frame), size) => {
+                    trace!("Got frame {:?}", frame);
+                    src.advance(size);
+                    self.current_frames.push(frame);
                 }
-                trace!("Not enough bytes");
-                return Ok(None);
+                (None, _) => {
+                    if src.remaining() == 0 {
+                        break;
+                    } else {
+                        return Ok(None);
+                    }
+                }
             }
         }
-        trace!("frames {:?} - remaining {}", frames, src.remaining());
+        trace!(
+            "frames {:?} - remaining {}",
+            self.current_frames,
+            src.remaining()
+        );
+        let mut return_buf: Vec<Frame> = vec![];
+        std::mem::swap(&mut self.current_frames, &mut return_buf);
 
-        if !frames.is_empty() {
-            trace!("Batch size {:?}", frames.len());
-            return Ok(Some(frames));
+        if !return_buf.is_empty() {
+            trace!("Batch size {:?}", return_buf.len());
+            return Ok(Some(return_buf));
         }
 
         Ok(None)

@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::num::Wrapping;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
 use serde::{Deserialize, Serialize};
@@ -11,9 +11,10 @@ use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use tracing::warn;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {
@@ -35,7 +36,6 @@ pub struct RedisCodecDestination {
     name: &'static str,
     address: String,
     outbound: Option<Framed<TcpStream, RedisCodec>>,
-    last_processed_clock: Wrapping<u32>,
 }
 
 impl Clone for RedisCodecDestination {
@@ -44,44 +44,26 @@ impl Clone for RedisCodecDestination {
     }
 }
 
-// pub(crate) async fn maybe_fastforward<T, I>(
-//     address: &str,
-//     outbound_framed_codec: &mut T,
-//     current_clock: Wrapping<u32>,
-//     last_processed_clock: &mut Wrapping<u32>,
-// ) where
-//     I: Debug,
-//     T: StreamExt + Stream<Item = I> + Unpin,
-// {
-//     while current_clock.sub(last_processed_clock.borrow()) > Wrapping(1) {
-//         let r = outbound_framed_codec.next().await;
-//         debug!("{} Discarding frame {:?}", address, r);
-//         *last_processed_clock += Wrapping(1);
-//     }
-// }
-
 impl RedisCodecDestination {
     pub fn new(address: String) -> RedisCodecDestination {
         RedisCodecDestination {
             address,
             outbound: None,
             name: "CodecDestination",
-            last_processed_clock: Wrapping(0),
         }
     }
+}
 
-    async fn send_message(
-        &mut self,
-        message: Messages,
-        // message_clock: Wrapping<u32>,
-    ) -> ChainResponse {
+#[async_trait]
+impl Transform for RedisCodecDestination {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         match self.outbound {
             None => {
                 let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
                 // TODO: Make this configurable
                 let mut outbound_framed_codec =
                     Framed::new(outbound_stream, RedisCodec::new(true, 1));
-                let _ = outbound_framed_codec.send(message).await;
+                let _ = outbound_framed_codec.send(qd.message).await;
                 if let Some(o) = outbound_framed_codec.next().fuse().await {
                     if let Ok(_resp) = &o {
                         self.outbound.replace(outbound_framed_codec);
@@ -91,7 +73,7 @@ impl RedisCodecDestination {
                 self.outbound.replace(outbound_framed_codec);
             }
             Some(ref mut outbound_framed_codec) => {
-                let _ = outbound_framed_codec.send(message).await;
+                let _ = outbound_framed_codec.send(qd.message).await;
 
                 let result = outbound_framed_codec
                     .next()
@@ -103,15 +85,6 @@ impl RedisCodecDestination {
             }
         }
         ChainResponse::Err(anyhow!("Something went wrong sending frame to Redis"))
-    }
-}
-
-#[async_trait]
-impl Transform for RedisCodecDestination {
-    // #[instrument]
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        let r = self.send_message(qd.message).await;
-        r
     }
 
     fn get_name(&self) -> &'static str {
