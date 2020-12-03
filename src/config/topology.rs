@@ -249,11 +249,6 @@ impl Topology {
             vec!["pk".to_string(), "clustering".to_string()],
         );
 
-        let mpsc_config = SourcesConfig::Mpsc(AsyncMpscConfig {
-            topic_name: String::from("test_topic"),
-            coalesce_behavior: None,
-        });
-
         let cassandra_source = SourcesConfig::Cassandra(CassandraConfig {
             listen_addr,
             cassandra_ks,
@@ -264,27 +259,21 @@ impl Topology {
         let tee_conf = TransformsConfig::MPSCTee(TeeConfig {
             behavior: None,
             timeout_micros: None,
-            chain: vec![],
+            chain: vec![kafka_transform_config_obj],
             buffer_size: None,
         });
 
         let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
         sources.insert(String::from("cassandra_prod"), cassandra_source);
-        sources.insert(String::from("mpsc_chan"), mpsc_config);
 
         let mut chain_config: HashMap<String, Vec<TransformsConfig>> = HashMap::new();
         chain_config.insert(String::from("main_chain"), vec![tee_conf, codec_config]);
-        chain_config.insert(
-            String::from("async_chain"),
-            vec![kafka_transform_config_obj],
-        );
 
         let mut named_topics: HashMap<String, usize> = HashMap::new();
         named_topics.insert(String::from("test_topic"), 1);
 
         let mut source_to_chain_mapping: HashMap<String, String> = HashMap::new();
         source_to_chain_mapping.insert(String::from("cassandra_prod"), String::from("main_chain"));
-        source_to_chain_mapping.insert(String::from("mpsc_chan"), String::from("async_chain"));
 
         Topology {
             sources,
@@ -314,27 +303,23 @@ sources:
         test.clustering:
           - pk
           - clustering
-  mpsc_chan:
-    Mpsc:
-      topic_name: test_topic
 chain_config:
   main_chain:
     - MPSCTee:
         topic_name: test_topic
+        chain:
+          - KafkaDestination:
+             topic: "test_topic"
+             config_values:
+               bootstrap.servers: "127.0.0.1:9092"
+               message.timeout.ms: "5000"
     - CodecDestination:
         bypass_result_processing: false
-        remote_address: "127.0.0.1:9042"
-  async_chain:
-    - KafkaDestination:
-        topic: "test_topic"
-        config_values:
-          bootstrap.servers: "127.0.0.1:9092"
-          message.timeout.ms: "5000"
+        remote_address: "127.0.0.1:9042"    
 named_topics:
   test_topic: 1
 source_to_chain_mapping:
-  cassandra_prod: main_chain
-  mpsc_chan: async_chain"###;
+  cassandra_prod: main_chain"###;
 
     #[test]
     fn new_test() -> Result<()> {
