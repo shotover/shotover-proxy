@@ -45,7 +45,7 @@ impl TransformsFromConfig for TunableConsistencyConfig {
             temp.push(
                 build_chain_from_config(key, &value, topics)
                     .await?
-                    .build_buffered_chain(10, Some(1000)),
+                    .build_buffered_chain(10, Some(1000 * 1000)),
             );
         }
 
@@ -295,7 +295,7 @@ mod scatter_transform_tests {
         let mut temp: Vec<BufferedChain> = Vec::with_capacity(route_map.len());
 
         for (_key, value) in route_map.clone() {
-            temp.push(value.build_buffered_chain(10, Some(1000)));
+            temp.push(value.build_buffered_chain(10, Some(1000 * 1000)));
         }
         temp
     }

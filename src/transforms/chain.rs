@@ -73,13 +73,25 @@ impl BufferedChain {
             .await?;
         Ok(one_rx)
     }
+
+    pub async fn process_request_no_return(
+        &mut self,
+        wrapper: Wrapper<'_>,
+        _client_details: String,
+    ) -> Result<()> {
+        self.send_handle
+            .send(ChannelMessage::new_with_no_return(wrapper.message))
+            .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+            .await?;
+        Ok(())
+    }
 }
 
 impl TransformChain {
     pub fn build_buffered_chain(
         self,
         buffer_size: usize,
-        timeout_millis: Option<u64>,
+        timeout_micros: Option<u64>,
     ) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
@@ -102,11 +114,11 @@ impl TransformChain {
                     *count += 1;
                 }
                 let future = async {
-                    match timeout_millis {
+                    match timeout_micros {
                         None => Ok(chain.process_request(Wrapper::new(messages), name).await),
-                        Some(timeout_ms) => {
+                        Some(timeout_us) => {
                             timeout(
-                                Duration::from_millis(timeout_ms),
+                                Duration::from_micros(timeout_us),
                                 chain.process_request(Wrapper::new(messages), name),
                             )
                             .await
@@ -134,8 +146,8 @@ impl TransformChain {
                         }
                     }
                     Err(e) => {
-                        info!("Upstream timeout, resetting chain {}", e);
-                        chain = chain.clone();
+                        trace!("Upstream timeout, {}", e);
+                        // chain = chain.clone();
                     }
                 }
             }

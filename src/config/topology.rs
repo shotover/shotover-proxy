@@ -262,9 +262,10 @@ impl Topology {
         });
 
         let tee_conf = TransformsConfig::MPSCTee(TeeConfig {
-            topic_name: String::from("test_topic"),
             behavior: None,
             timeout_micros: None,
+            chain: vec![],
+            buffer_size: None,
         });
 
         let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
