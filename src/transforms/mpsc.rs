@@ -4,8 +4,11 @@ use crate::config::topology::{ChannelMessage, TopicHolder};
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages, QueryResponse, Value};
 use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use anyhow::{anyhow, Result};
+use crate::transforms::chain::{BufferedChain, TransformChain};
+use crate::transforms::{
+    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+};
+use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use futures::TryFutureExt;
 use itertools::Itertools;
@@ -19,49 +22,72 @@ AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,
 It's the thing that owns tx and rx handles :D
  */
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Buffer {
     pub name: &'static str,
-    pub tx: Sender<ChannelMessage>,
+    pub tx: BufferedChain,
     pub async_mode: bool,
+    pub buffer_size: usize,
+    pub chain_to_clone: TransformChain,
+    pub timeout: Option<u64>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct BufferConfig {
-    pub topic_name: String,
     pub async_mode: bool,
+    pub chain: Vec<TransformsConfig>,
+    pub buffer_size: Option<usize>,
+    pub timeout_micros: Option<u64>,
+}
+
+impl Clone for Buffer {
+    fn clone(&self) -> Self {
+        let chain = self.chain_to_clone.clone();
+        Buffer {
+            name: self.name.clone(),
+            tx: chain.build_buffered_chain(self.buffer_size),
+            async_mode: false,
+            buffer_size: self.buffer_size,
+            chain_to_clone: self.chain_to_clone.clone(),
+            timeout: self.timeout.clone(),
+        }
+    }
 }
 
 #[async_trait]
 impl TransformsFromConfig for BufferConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        if let Some(tx) = topics.get_tx(&self.topic_name) {
-            return Ok(Transforms::MPSCForwarder(Buffer {
-                name: "forward",
-                tx,
-                async_mode: self.async_mode,
-            }));
-        }
-        Err(anyhow!(
-            "Could not find the topic {} in [{:#?}]",
-            self.topic_name.clone(),
-            &topics.topics_rx.keys()
-        ))
+        let chain = build_chain_from_config("forward".to_string(), &self.chain, &topics).await?;
+        let buffer = self.buffer_size.unwrap_or(5);
+        return Ok(Transforms::MPSCForwarder(Buffer {
+            name: "forward",
+            tx: chain.clone().build_buffered_chain(buffer),
+            async_mode: self.async_mode,
+            buffer_size: buffer,
+            chain_to_clone: chain,
+            timeout: self.timeout_micros,
+        }));
     }
 }
 
 #[async_trait]
 impl Transform for Buffer {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        if self.async_mode {
+        return if self.async_mode {
             let expected_responses = qd.message.messages.len();
-            self.tx
-                .send(ChannelMessage::new_with_no_return(qd.message))
-                .map_err(|e| {
-                    warn!("MPSC error {}", e);
-                    e
-                })
-                .await?;
+            let buffer_result = self
+                .tx
+                .process_request_no_return(qd, "Buffer".to_string(), self.timeout)
+                .await;
+
+            match buffer_result {
+                Ok(_) => {}
+                Err(e) => {
+                    counter!("tee_dropped_messages", 1, "chain" => self.name);
+                    trace!("MPSC error {}", e);
+                }
+            }
+
             ChainResponse::Ok(Messages {
                 messages: (0..expected_responses)
                     .into_iter()
@@ -69,16 +95,10 @@ impl Transform for Buffer {
                     .collect_vec(),
             })
         } else {
-            let (tx, rx) = oneshot::channel::<ChainResponse>();
             self.tx
-                .send(ChannelMessage::new(qd.message, tx))
-                .map_err(|e| {
-                    warn!("MPSC error {}", e);
-                    e
-                })
-                .await?;
-            return rx.await?;
-        }
+                .process_request(qd, "Buffer".to_string(), self.timeout)
+                .await
+        };
     }
 
     fn get_name(&self) -> &'static str {
@@ -89,91 +109,83 @@ impl Transform for Buffer {
 #[derive(Debug, Clone)]
 pub struct Tee {
     pub name: &'static str,
-    pub tx: Sender<ChannelMessage>,
-    pub fail_topic: Option<Sender<ChannelMessage>>,
+    pub tx: BufferedChain,
+    pub fail_chain: Option<BufferedChain>,
+    pub buffer_size: usize,
+    pub chain_to_clone: TransformChain,
     pub behavior: ConsistencyBehavior,
-    pub timeout: u64,
+    pub timeout: Option<u64>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub enum ConsistencyBehavior {
     IGNORE,
     FAIL,
-    LOG { topic: String },
+    LOG { fail_chain: Vec<TransformsConfig> },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct TeeConfig {
-    pub topic_name: String,
     pub behavior: Option<ConsistencyBehavior>,
     pub timeout_micros: Option<u64>,
+    pub chain: Vec<TransformsConfig>,
+    pub buffer_size: Option<usize>,
 }
 #[async_trait]
 impl TransformsFromConfig for TeeConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        if let Some(tx) = topics.get_tx(&self.topic_name) {
-            let fail_topic = if let Some(ConsistencyBehavior::LOG { topic }) = &self.behavior {
-                let topic_chan = topics.get_tx(topic);
-                if topic_chan.is_none() {
-                    return Err(anyhow!(
-                        "Could not find the fail topic {} in [{:#?}]",
-                        topic,
-                        topics.topics_rx.keys()
-                    ));
-                }
-                topic_chan
-            } else {
-                None
-            };
+        let buffer_size = self.buffer_size.unwrap_or(5);
+        let fail_chain = if let Some(ConsistencyBehavior::LOG { fail_chain }) = &self.behavior {
+            Some(
+                build_chain_from_config("fail_chain".to_string(), fail_chain, topics)
+                    .await?
+                    .build_buffered_chain(buffer_size),
+            )
+        } else {
+            None
+        };
+        let tee_chain =
+            build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
-            return Ok(Transforms::MPSCTee(Tee {
-                name: "tee",
-                tx,
-                fail_topic,
-                behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
-                timeout: self.timeout_micros.unwrap_or(45),
-            }));
-        }
-        Err(anyhow!(
-            "Could not find the topic {} in [{:#?}]",
-            &self.topic_name,
-            topics.topics_rx.keys()
-        ))
+        return Ok(Transforms::MPSCTee(Tee {
+            name: "tee",
+            tx: tee_chain.clone().build_buffered_chain(buffer_size),
+            fail_chain,
+            buffer_size,
+            chain_to_clone: tee_chain,
+            behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
+            timeout: self.timeout_micros,
+        }));
     }
 }
 
 #[async_trait]
 impl Transform for Tee {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        let m = qd.message.clone();
+        // let m = qd.message.clone();
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {
-                let _ = self
-                    .tx
-                    .send_timeout(
-                        ChannelMessage::new_with_no_return(m),
-                        std::time::Duration::from_micros(self.timeout),
-                    )
-                    .await
-                    .map_err(|e| {
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request_no_return(qd.clone(), "tee".to_string(), self.timeout),
+                    qd.call_next_transform()
+                );
+                match tee_result {
+                    Ok(_) => {}
+                    Err(e) => {
                         counter!("tee_dropped_messages", 1, "chain" => self.name);
                         trace!("MPSC error {}", e);
-                        e
-                    });
-                qd.call_next_transform().await
+                    }
+                }
+                chain_result
             }
             ConsistencyBehavior::FAIL => {
-                let (tx, rx) = oneshot::channel::<ChainResponse>();
-                self.tx
-                    .send(ChannelMessage::new(m, tx))
-                    .map_err(|e| {
-                        warn!("MPSC error {}", e);
-                        e
-                    })
-                    .await?;
-
-                let (tee_result, chain_result) = tokio::join!(rx, qd.call_next_transform());
-                let tee_response = tee_result??;
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request(qd.clone(), "tee".to_string(), self.timeout),
+                    qd.call_next_transform()
+                );
+                let tee_response = tee_result?;
                 let chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
@@ -190,29 +202,20 @@ impl Transform for Tee {
                 }
             }
             ConsistencyBehavior::LOG { .. } => {
-                let failed_message = m.clone();
-                let (tx, rx) = oneshot::channel::<ChainResponse>();
-                self.tx
-                    .send(ChannelMessage::new(m, tx))
-                    .map_err(|e| {
-                        // counter!("tee_logged_messages", 1, "chain" => self.name);
-                        warn!("MPSC error {}", e);
-                        e
-                    })
-                    .await?;
+                let failed_message = qd.clone();
+                let (tee_result, chain_result) = tokio::join!(
+                    self.tx
+                        .process_request(qd.clone(), "tee".to_string(), self.timeout),
+                    qd.call_next_transform()
+                );
 
-                let (tee_result, chain_result) = tokio::join!(rx, qd.call_next_transform());
-                let tee_response = tee_result??;
+                let tee_response = tee_result?;
                 let chain_response = chain_result?;
 
-                if !chain_response.eq(&tee_response) {
-                    if let Some(topic) = &mut self.fail_topic {
+                if chain_response.eq(&tee_response) {
+                    if let Some(topic) = &mut self.fail_chain {
                         topic
-                            .send(ChannelMessage::new_with_no_return(failed_message))
-                            .map_err(|e| {
-                                warn!("MPSC error for logging failed Tee message {}", e);
-                                e
-                            })
+                            .process_request(failed_message, "tee".to_string(), None)
                             .await?;
                     }
                 }
