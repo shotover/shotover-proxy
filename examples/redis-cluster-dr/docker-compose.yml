@@ -147,7 +147,7 @@ services:
       - redis-node-5-dr
     environment:
       - 'ALLOW_EMPTY_PASSWORD=yes'
-      - 'REDIS_CLUSTER_REPLICAS=0'
+      - 'REDIS_CLUSTER_REPLICAS=1'
       - 'REDIS_NODES=redis-node-0-dr redis-node-1-dr redis-node-2-dr redis-node-3-dr redis-node-4-dr redis-node-5-dr'
       - 'REDIS_CLUSTER_CREATOR=yes'
 

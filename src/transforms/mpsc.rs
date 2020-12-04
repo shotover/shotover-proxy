@@ -45,7 +45,7 @@ impl Clone for Buffer {
         let chain = self.chain_to_clone.clone();
         Buffer {
             name: self.name.clone(),
-            tx: chain.build_buffered_chain(self.buffer_size, None),
+            tx: chain.build_buffered_chain(self.buffer_size),
             async_mode: false,
             buffer_size: self.buffer_size,
             chain_to_clone: self.chain_to_clone.clone(),
@@ -61,7 +61,7 @@ impl TransformsFromConfig for BufferConfig {
         let buffer = self.buffer_size.unwrap_or(5);
         return Ok(Transforms::MPSCForwarder(Buffer {
             name: "forward",
-            tx: chain.clone().build_buffered_chain(buffer, None),
+            tx: chain.clone().build_buffered_chain(buffer),
             async_mode: self.async_mode,
             buffer_size: buffer,
             chain_to_clone: chain,
@@ -75,9 +75,19 @@ impl Transform for Buffer {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         return if self.async_mode {
             let expected_responses = qd.message.messages.len();
-            self.tx
-                .process_request_no_return(qd, "Buffer".to_string())
-                .await?;
+            let buffer_result = self
+                .tx
+                .process_request_no_return(qd, "Buffer".to_string(), self.timeout)
+                .await;
+
+            match buffer_result {
+                Ok(_) => {}
+                Err(e) => {
+                    counter!("tee_dropped_messages", 1, "chain" => self.name);
+                    trace!("MPSC error {}", e);
+                }
+            }
+
             ChainResponse::Ok(Messages {
                 messages: (0..expected_responses)
                     .into_iter()
@@ -85,7 +95,9 @@ impl Transform for Buffer {
                     .collect_vec(),
             })
         } else {
-            self.tx.process_request(qd, "Buffer".to_string()).await
+            self.tx
+                .process_request(qd, "Buffer".to_string(), self.timeout)
+                .await
         };
     }
 
@@ -102,7 +114,7 @@ pub struct Tee {
     pub buffer_size: usize,
     pub chain_to_clone: TransformChain,
     pub behavior: ConsistencyBehavior,
-    pub timeout: u64,
+    pub timeout: Option<u64>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -127,7 +139,7 @@ impl TransformsFromConfig for TeeConfig {
             Some(
                 build_chain_from_config("fail_chain".to_string(), fail_chain, topics)
                     .await?
-                    .build_buffered_chain(buffer_size, None),
+                    .build_buffered_chain(buffer_size),
             )
         } else {
             None
@@ -137,14 +149,12 @@ impl TransformsFromConfig for TeeConfig {
 
         return Ok(Transforms::MPSCTee(Tee {
             name: "tee",
-            tx: tee_chain
-                .clone()
-                .build_buffered_chain(buffer_size, self.timeout_micros),
+            tx: tee_chain.clone().build_buffered_chain(buffer_size),
             fail_chain,
             buffer_size,
             chain_to_clone: tee_chain,
             behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
-            timeout: self.timeout_micros.unwrap_or(45),
+            timeout: self.timeout_micros,
         }));
     }
 }
@@ -157,7 +167,7 @@ impl Transform for Tee {
             ConsistencyBehavior::IGNORE => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx
-                        .process_request_no_return(qd.clone(), "tee".to_string()),
+                        .process_request_no_return(qd.clone(), "tee".to_string(), self.timeout),
                     qd.call_next_transform()
                 );
                 match tee_result {
@@ -171,7 +181,8 @@ impl Transform for Tee {
             }
             ConsistencyBehavior::FAIL => {
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx.process_request(qd.clone(), "tee".to_string()),
+                    self.tx
+                        .process_request(qd.clone(), "tee".to_string(), self.timeout),
                     qd.call_next_transform()
                 );
                 let tee_response = tee_result?;
@@ -193,7 +204,8 @@ impl Transform for Tee {
             ConsistencyBehavior::LOG { .. } => {
                 let failed_message = qd.clone();
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx.process_request(qd.clone(), "tee".to_string()),
+                    self.tx
+                        .process_request(qd.clone(), "tee".to_string(), self.timeout),
                     qd.call_next_transform()
                 );
 
@@ -203,7 +215,7 @@ impl Transform for Tee {
                 if chain_response.eq(&tee_response) {
                     if let Some(topic) = &mut self.fail_chain {
                         topic
-                            .process_request(failed_message, "tee".to_string())
+                            .process_request(failed_message, "tee".to_string(), None)
                             .await?;
                     }
                 }

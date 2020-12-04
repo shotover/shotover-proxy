@@ -55,8 +55,9 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         client_details: String,
+        buffer_timeout_micros: Option<u64>,
     ) -> ChainResponse {
-        self.process_request_with_receiver(wrapper, client_details)
+        self.process_request_with_receiver(wrapper, client_details, buffer_timeout_micros)
             .await?
             .await?
     }
@@ -65,12 +66,27 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         _client_details: String,
+        buffer_timeout_micros: Option<u64>,
     ) -> Result<OneReceiver<ChainResponse>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
-        self.send_handle
-            .send(ChannelMessage::new(wrapper.message, one_tx))
-            .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
-            .await?;
+        match buffer_timeout_micros {
+            None => {
+                self.send_handle
+                    .send(ChannelMessage::new(wrapper.message, one_tx))
+                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                    .await?
+            }
+            Some(timeout) => {
+                self.send_handle
+                    .send_timeout(
+                        ChannelMessage::new(wrapper.message, one_tx),
+                        Duration::from_micros(timeout),
+                    )
+                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                    .await?
+            }
+        }
+
         Ok(one_rx)
     }
 
@@ -78,21 +94,31 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         _client_details: String,
+        buffer_timeout_micros: Option<u64>,
     ) -> Result<()> {
-        self.send_handle
-            .send(ChannelMessage::new_with_no_return(wrapper.message))
-            .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
-            .await?;
+        match buffer_timeout_micros {
+            None => {
+                self.send_handle
+                    .send(ChannelMessage::new_with_no_return(wrapper.message))
+                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                    .await?
+            }
+            Some(timeout) => {
+                self.send_handle
+                    .send_timeout(
+                        ChannelMessage::new_with_no_return(wrapper.message),
+                        Duration::from_micros(timeout),
+                    )
+                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                    .await?
+            }
+        }
         Ok(())
     }
 }
 
 impl TransformChain {
-    pub fn build_buffered_chain(
-        self,
-        buffer_size: usize,
-        timeout_micros: Option<u64>,
-    ) -> BufferedChain {
+    pub fn build_buffered_chain(self, buffer_size: usize) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
         // If this is not a test, this should get removed by the compiler
@@ -113,44 +139,26 @@ impl TransformChain {
                     let mut count = count.lock().await;
                     *count += 1;
                 }
-                let future = async {
-                    match timeout_micros {
-                        None => Ok(chain.process_request(Wrapper::new(messages), name).await),
-                        Some(timeout_us) => {
-                            timeout(
-                                Duration::from_micros(timeout_us),
-                                chain.process_request(Wrapper::new(messages), name),
-                            )
-                            .await
-                        }
-                    }
+
+                let chain_response = chain.process_request(Wrapper::new(messages), name).await;
+
+                if let Err(e) = &chain_response {
+                    warn!("Internal error in buffered chain: {:?} - resetting", e);
+                    chain = chain.clone();
                 };
 
-                match future.fuse().await {
-                    Ok(chain_response) => {
-                        if let Err(e) = &chain_response {
-                            warn!("Internal error in buffered chain: {:?} - resetting", e);
-                            chain = chain.clone();
-                        };
-                        match return_chan {
-                            None => trace!("Ignoring response due to lack of return chan"),
-                            Some(tx) => {
-                                match tx.send(chain_response) {
-                                    Ok(_) => {}
-                                    Err(e) => trace!(
-                                        "Dropping response message {:?} as not needed by TunableConsistency",
-                                        e
-                                    )
-                                }
-                            },
-                        }
-                    }
-                    Err(e) => {
-                        trace!("Upstream timeout, {}", e);
-                        // chain = chain.clone();
-                    }
+                match return_chan {
+                    None => trace!("Ignoring response due to lack of return chan"),
+                    Some(tx) => match tx.send(chain_response) {
+                        Ok(_) => {}
+                        Err(e) => trace!(
+                            "Dropping response message {:?} as not needed by TunableConsistency",
+                            e
+                        ),
+                    },
                 }
             }
+
             trace!("buffered chain processing thread exiting, stopping chain loop and dropping");
         });
 

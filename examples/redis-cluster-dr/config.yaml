@@ -3,25 +3,25 @@
 sources:
   redis_prod:
     Redis:
-      batch_size_hint: 100
+      batch_size_hint: 4
       listen_addr: "127.0.0.1:6379"
       connection_limit: 3000000
 chain_config:
   redis_chain:
     - MPSCTee:
         behavior: IGNORE
-        timeout_micros: 40
-        buffer_size: 5000
+#        timeout_micros: 1000
+        buffer_size: 10000
         chain:
           - QueryTypeFilter:
               filter: Read
           - Coalesce:
               max_behavior:
-                COUNT: 1000
+                COUNT: 2000
           - MPSCForwarder:
-              buffer_size: 10000
-              async_mode: false
-              timeout_micros: 100000
+              buffer_size: 100
+              async_mode: true
+              timeout_micros: 10000
               chain:
                 - PoolConnections:
                     name: "RedisCluster-DR-subchain"

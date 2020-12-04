@@ -59,7 +59,7 @@ impl Transform for ConnectionBalanceAndPool {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
-                let chain = self.chain_to_clone.clone().build_buffered_chain(5, None);
+                let chain = self.chain_to_clone.clone().build_buffered_chain(5);
                 self.active_connection.replace(chain.clone());
                 guard.push(chain);
             } else {
@@ -72,7 +72,7 @@ impl Transform for ConnectionBalanceAndPool {
         }
         if let Some(chain) = &mut self.active_connection {
             return chain
-                .process_request(qd, "Connection Balance and Pooler".to_string())
+                .process_request(qd, "Connection Balance and Pooler".to_string(), None)
                 .await;
         }
         unreachable!()
