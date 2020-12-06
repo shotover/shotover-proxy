@@ -327,15 +327,12 @@ impl RedisCodec {
                         get_keys(values, keys, commands)?;
                     } // determine the index of a member in a sorted set
                     "ZREM" => {
-                        query_type = QueryType::Read;
                         get_key_multi_values(values, keys, commands)?;
                     } // remove one or more members from a sorted set
                     "ZREMRANGEBYRANK" => {
-                        query_type = QueryType::Read;
                         get_key_multi_values(values, keys, commands)?;
                     } // remove all members in a sorted set within the given indexes
                     "ZREMRANGEBYSCORE" => {
-                        query_type = QueryType::Read;
                         get_key_multi_values(values, keys, commands)?;
                     } // remove all members in a sorted set, by index, with scores ordered from high to low
                     "ZSCORE" => {
@@ -452,7 +449,7 @@ impl RedisCodec {
                     primary_key: Default::default(),
                     query_values: None,
                     projection: None,
-                    query_type: QueryType::Read,
+                    query_type: QueryType::ReadWrite,
                     ast: None,
                 },
                 false,
@@ -481,7 +478,7 @@ impl RedisCodec {
                     primary_key: Default::default(),
                     query_values: None,
                     projection: None,
-                    query_type: QueryType::Read,
+                    query_type: QueryType::ReadWrite,
                     ast: None,
                 },
                 false,
@@ -510,7 +507,7 @@ impl RedisCodec {
                     primary_key: Default::default(),
                     query_values: None,
                     projection: None,
-                    query_type: QueryType::Read,
+                    query_type: QueryType::ReadWrite,
                     ast: None,
                 },
                 false,
@@ -539,7 +536,7 @@ impl RedisCodec {
                     primary_key: Default::default(),
                     query_values: None,
                     projection: None,
-                    query_type: QueryType::Read,
+                    query_type: QueryType::ReadWrite,
                     ast: None,
                 },
                 false,
