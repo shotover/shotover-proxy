@@ -26,6 +26,7 @@ use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
 use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
+use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
 use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
 use crate::transforms::redis_transforms::redis_cluster::{RedisCluster, RedisClusterConfig};
 use crate::transforms::redis_transforms::redis_codec_destination::{
@@ -54,6 +55,7 @@ pub mod null;
 mod parallel_map;
 pub mod printer;
 pub mod protect;
+pub mod query_counter;
 pub mod redis_transforms;
 pub mod sampler;
 pub mod sequential_map;
@@ -86,6 +88,7 @@ pub enum Transforms {
     PoolConnections(ConnectionBalanceAndPool),
     Coalesce(Coalesce),
     QueryTypeFilter(QueryTypeFilter),
+    QueryCounter(QueryCounter),
 }
 
 impl Debug for Transforms {
@@ -120,6 +123,7 @@ impl Transform for Transforms {
             Transforms::PoolConnections(s) => s.transform(qd).await,
             Transforms::Coalesce(s) => s.transform(qd).await,
             Transforms::QueryTypeFilter(s) => s.transform(qd).await,
+            Transforms::QueryCounter(s) => s.transform(qd).await,
         }
     }
 
@@ -147,6 +151,7 @@ impl Transform for Transforms {
             Transforms::PoolConnections(s) => s.get_name(),
             Transforms::Coalesce(s) => s.get_name(),
             Transforms::QueryTypeFilter(s) => s.get_name(),
+            Transforms::QueryCounter(s) => s.get_name(),
         }
     }
 
@@ -174,6 +179,7 @@ impl Transform for Transforms {
             Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
             Transforms::Coalesce(s) => s.prep_transform_chain(t).await,
             Transforms::QueryTypeFilter(s) => s.prep_transform_chain(t).await,
+            Transforms::QueryCounter(s) => s.prep_transform_chain(t).await,
         }
     }
 }
@@ -197,6 +203,7 @@ pub enum TransformsConfig {
     PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
     QueryTypeFilter(QueryTypeFilterConfig),
+    QueryCounter(QueryCounterConfig),
 }
 
 impl TransformsConfig {
@@ -221,6 +228,7 @@ impl TransformsConfig {
             TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
             TransformsConfig::Coalesce(s) => s.get_source(topics).await,
             TransformsConfig::QueryTypeFilter(s) => s.get_source(topics).await,
+            TransformsConfig::QueryCounter(s) => s.get_source(topics).await,
         }
     }
 }
