@@ -23,13 +23,16 @@ chain_config:
               async_mode: true
               timeout_micros: 10000
               chain:
+                - QueryCounter:
+                    name: "DR chain"
                 - PoolConnections:
                     name: "RedisCluster-DR-subchain"
                     parallelism: 256
                     chain:
                       - RedisCluster:
                           first_contact_points: [ "redis://127.0.0.1:2120/", "redis://127.0.0.1:2121/", "redis://127.0.0.1:2122/", "redis://127.0.0.1:2123/", "redis://127.0.0.1:2124/", "redis://127.0.0.1:2125/" ]
-
+    - QueryCounter:
+        name: "Main chain"
     - PoolConnections:
         name: "RedisCluster-Main-subchain"
         parallelism: 512
