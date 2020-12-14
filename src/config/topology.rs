@@ -201,6 +201,11 @@ impl Topology {
         Ok(Topology::topology_from_config(config))
     }
 
+    pub fn from_string(topology: String) -> Result<Topology> {
+        let config: TopologyConfig = serde_yaml::from_slice(topology.as_bytes())?;
+        Ok(Topology::topology_from_config(config))
+    }
+
     pub fn topology_from_config(config: TopologyConfig) -> Topology {
         let topics = config.named_topics.unwrap_or_else(|| {
             let mut default_topic = HashMap::new();
