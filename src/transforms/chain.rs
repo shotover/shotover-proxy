@@ -156,10 +156,10 @@ impl TransformChain {
                             e
                         ),
                     },
-                }
+                };
             }
 
-            trace!("buffered chain processing thread exiting, stopping chain loop and dropping");
+            warn!("buffered chain processing thread exiting, stopping chain loop and dropping");
         });
 
         BufferedChain {
