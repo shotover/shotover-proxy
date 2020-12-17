@@ -11,7 +11,7 @@ use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio_util::codec::{Decoder, Encoder, Framed};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use std::time::Duration;
 
@@ -297,7 +297,20 @@ where
                             }
                         },
                         Err(_) => {
-                            debug!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
+                            match idle_time {
+                                0..=10 => debug!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
+                                11..=35 => warn!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
+                                _ => {
+                                    warn!("Dropping Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
+                                    return Ok(())
+                                }
+                            }
+
+                            if idle_time > 60 {
+                                warn!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
+                            } else {
+                                debug!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
+                            }
                             idle_time *= 2;
                             continue
                         }

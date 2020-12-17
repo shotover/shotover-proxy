@@ -151,7 +151,7 @@ fn unwrap_response(qr: &mut QueryResponse) {
 #[async_trait]
 impl Transform for RedisTimestampTagger {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        let mut tagged_success: bool = false;
+        let mut tagged_success: bool = true;
         let mut exec_block: bool = false;
 
         for message in qd.message.messages.iter_mut() {
@@ -164,6 +164,7 @@ impl Transform for RedisTimestampTagger {
 
                 let tagged = try_tag_query_message(qm);
                 tagged_success = tagged_success && tagged;
+                message.modified = true;
             }
         }
 
