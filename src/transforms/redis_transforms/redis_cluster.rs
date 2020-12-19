@@ -438,15 +438,15 @@ impl Transform for RedisCluster {
                         }
 
                         if self.client.password.is_none() && command_string == "AUTH" {
-                            if commands.len() == 2 {
-                                if let Frame::BulkString(username) = commands.remove(0) {
+                            if commands.len() == 3 {
+                                if let Frame::BulkString(username) = commands.remove(1) {
                                     self.client.username.replace(
                                         String::from_utf8(username)
                                             .unwrap_or_else(|_| "couldn't decode".to_string()),
                                     );
                                 }
                             }
-                            if let Frame::BulkString(password) = commands.remove(0) {
+                            if let Frame::BulkString(password) = commands.remove(1) {
                                 self.client.password.replace(
                                     String::from_utf8(password)
                                         .unwrap_or_else(|_| "couldn't decode".to_string()),
