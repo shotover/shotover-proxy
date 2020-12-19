@@ -6,7 +6,7 @@ use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::stream::StreamExt;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -40,6 +40,7 @@ pub struct TunableConsistencyConfig {
 impl TransformsFromConfig for TunableConsistencyConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let mut temp: Vec<BufferedChain> = Vec::with_capacity(self.route_map.len());
+        warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
         for (key, value) in self.route_map.clone() {
             temp.push(

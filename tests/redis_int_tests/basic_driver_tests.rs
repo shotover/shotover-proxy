@@ -768,7 +768,7 @@ fn test_active_one_active_redis() -> Result<()> {
     // test_args();
     test_cluster_basics();
 
-    test_pipeline();
+    // test_pipeline();
     test_getset();
 
     Ok(())
