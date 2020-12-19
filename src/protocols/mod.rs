@@ -21,10 +21,10 @@ pub enum RawFrame {
 }
 
 impl RawFrame {
-    pub fn build_message(&self) -> Result<MessageDetails> {
+    pub fn build_message(&self, response: bool) -> Result<MessageDetails> {
         match self {
             RawFrame::CASSANDRA(c) => Ok(MessageDetails::Unknown),
-            RawFrame::Redis(r) => process_redis_frame(r),
+            RawFrame::Redis(r) => process_redis_frame(r, response),
             RawFrame::NONE => Ok(MessageDetails::Unknown),
         }
     }
@@ -515,7 +515,7 @@ fn handle_redis_error(error: String, decode_as_request: bool) -> Result<MessageD
     }
 }
 
-pub fn process_redis_frame(frame: &Rframe) -> Result<MessageDetails> {
+pub fn process_redis_frame(frame: &Rframe, response: bool) -> Result<MessageDetails> {
     if frame.is_pubsub_message() {
         // if let Ok((channel, message, kind)) = frame.parse_as_pubsub() {
         //     let mut map: HashMap<String, Value> = HashMap::new();
@@ -534,7 +534,7 @@ pub fn process_redis_frame(frame: &Rframe) -> Result<MessageDetails> {
         // }
         Err(anyhow!("Was pubsub but couldn't parse frame"))
     } else {
-        let decode_as_request = is_request(frame);
+        let decode_as_request = !response;
         match frame.clone() {
             Rframe::SimpleString(s) => handle_redis_string(s, decode_as_request),
             Rframe::BulkString(bs) => handle_redis_bulkstring(bs, decode_as_request),

@@ -69,9 +69,9 @@ impl Message {
         }
     }
 
-    pub fn generate_message_details(&mut self) {
+    pub fn generate_message_details(&mut self, response: bool) {
         if let MessageDetails::Unknown = self.details {
-            self.details = self.original.build_message().unwrap()
+            self.details = self.original.build_message(response).unwrap()
         }
     }
 

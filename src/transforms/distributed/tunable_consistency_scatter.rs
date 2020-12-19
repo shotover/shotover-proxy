@@ -131,7 +131,7 @@ impl Transform for TunableConsistency {
             .messages
             .iter_mut()
             .map(|m| {
-                m.generate_message_details();
+                m.generate_message_details(false);
 
                 if let MessageDetails::Query(QueryMessage {
                     query_string: _,
@@ -174,8 +174,11 @@ impl Transform for TunableConsistency {
         let mut results: Vec<Messages> = Vec::new();
         while let Some(res) = rec_fu.next().await {
             match res {
-                Ok(messages) => {
+                Ok(mut messages) => {
                     debug!("{:#?}", messages);
+                    for message in &mut messages.messages {
+                        message.generate_message_details(true);
+                    }
                     results.push(messages);
                 }
                 Err(e) => {
@@ -220,7 +223,6 @@ impl Transform for TunableConsistency {
                     let mut collated_results = vec![];
                     for res in &mut results {
                         if let Some(mut m) = res.messages.pop() {
-                            m.generate_message_details();
                             if let MessageDetails::Response(qm) = &m.details {
                                 collated_results.push(qm.clone());
                             }

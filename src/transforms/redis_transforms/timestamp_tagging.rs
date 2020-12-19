@@ -10,7 +10,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::debug;
+use tracing::{debug, trace};
 
 #[derive(Clone)]
 pub struct RedisTimestampTagger {
@@ -95,6 +95,7 @@ fn try_tag_query_message(qm: &mut QueryMessage) -> bool {
         std::mem::swap(&mut qm.ast, &mut Some(ASTHolder::Commands(wrapped)));
         return true;
     }
+    trace!("couldn't wrap commands");
     false
 }
 
@@ -155,7 +156,7 @@ impl Transform for RedisTimestampTagger {
         let mut exec_block: bool = false;
 
         for message in qd.message.messages.iter_mut() {
-            message.generate_message_details();
+            message.generate_message_details(false);
             if let MessageDetails::Query(ref mut qm) = message.details {
                 if let Some(a) = &qm.ast {
                     if a.get_command() == *"EXEC" {
@@ -174,7 +175,7 @@ impl Transform for RedisTimestampTagger {
         if let Ok(mut messages) = response {
             if tagged_success || exec_block {
                 for mut message in messages.messages.iter_mut() {
-                    message.generate_message_details();
+                    message.generate_message_details(true);
                     if let MessageDetails::Response(ref mut qr) = message.details {
                         unwrap_response(qr);
                         message.modified = true;
