@@ -69,6 +69,12 @@ impl Message {
         }
     }
 
+    pub fn generate_message_details(&mut self) {
+        if let MessageDetails::Unknown = self.details {
+            self.details = self.original.build_message().unwrap()
+        }
+    }
+
     pub fn new_query(qm: QueryMessage, modified: bool, original: RawFrame) -> Self {
         Self::new(MessageDetails::Query(qm), modified, original)
     }
@@ -118,7 +124,9 @@ impl Messages {
     }
 
     pub fn new_with_size_hint(capacity: usize) -> Self {
-        Messages { messages: Vec::with_capacity(capacity) }
+        Messages {
+            messages: Vec::with_capacity(capacity),
+        }
     }
 
     pub fn new_from_message(message: Message) -> Self {

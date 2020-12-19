@@ -6,7 +6,7 @@ use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::stream::StreamExt;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -112,6 +112,7 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
             }
         }
     }
+    trace!("fragments {:?}-{:?}", newest_fragment, biggest_fragment);
     if newest_fragment.is_some() {
         newest_fragment
     } else {
@@ -124,12 +125,14 @@ impl TunableConsistency {}
 
 #[async_trait]
 impl Transform for TunableConsistency {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let required_successes = qd
             .message
             .messages
-            .iter()
+            .iter_mut()
             .map(|m| {
+                m.generate_message_details();
+
                 if let MessageDetails::Query(QueryMessage {
                     query_string: _,
                     namespace: _,
@@ -145,7 +148,13 @@ impl Transform for TunableConsistency {
                         _ => self.write_consistency,
                     }
                 } else {
-                    self.write_consistency
+                    if std::mem::discriminant(&m.original.get_query_type())
+                        == std::mem::discriminant(&QueryType::Read)
+                    {
+                        self.read_consistency
+                    } else {
+                        self.write_consistency
+                    }
                 }
             })
             .collect_vec();
@@ -210,7 +219,8 @@ impl Transform for TunableConsistency {
                 .filter_map(|_required_successes| {
                     let mut collated_results = vec![];
                     for res in &mut results {
-                        if let Some(m) = res.messages.pop() {
+                        if let Some(mut m) = res.messages.pop() {
+                            m.generate_message_details();
                             if let MessageDetails::Response(qm) = &m.details {
                                 collated_results.push(qm.clone());
                             }
