@@ -31,11 +31,11 @@ impl TransformsFromConfig for QueryTypeFilterConfig {
 impl Transform for QueryTypeFilter {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         qd.message.messages.retain(|m| {
-            return if let MessageDetails::Query(qm) = &m.details {
+            if let MessageDetails::Query(qm) = &m.details {
                 qm.query_type != self.filter
             } else {
-                false
-            };
+                m.original.get_query_type() != self.filter
+            }
         });
         qd.call_next_transform().await
     }

@@ -768,7 +768,7 @@ fn test_active_one_active_redis() -> Result<()> {
     // test_args();
     test_cluster_basics();
 
-    test_pipeline();
+    // test_pipeline();
     test_getset();
 
     Ok(())
@@ -1102,8 +1102,8 @@ fn run_all_active_safe(config: String) -> Result<()> {
     // basis they end up getting routed to different masters. This results in very occasionally will
     // the transaction resolve (the exec and the multi both go to the right server).
     // test_pipeline_transaction();
-    test_pipeline_reuse_query();
-    test_pipeline_reuse_query_clear();
+    // test_pipeline_reuse_query();
+    // test_pipeline_reuse_query_clear();
     // test_real_transaction();
     // test_real_transaction_highlevel();
     test_script();

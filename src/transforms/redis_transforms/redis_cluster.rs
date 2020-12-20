@@ -11,7 +11,7 @@ use crate::protocols::RawFrame;
 use futures::stream::{self, FuturesUnordered, StreamExt};
 
 use redis::cluster_async::{ClusterClientBuilder, ClusterConnection, RoutingInfo};
-use redis::{cmd as redis_cmd, Cmd, ErrorKind};
+use redis::{Cmd, ErrorKind};
 use redis::{Pipeline, RedisError, RedisResult, Value as RValue};
 
 use tracing::{trace, warn};
@@ -22,6 +22,7 @@ use std::collections::HashMap;
 
 use crate::transforms::redis_transforms::redis_cluster::PipelineOrError::ClientError;
 use rand::seq::IteratorRandom;
+use redis_protocol::types::Frame;
 use tokio::time::Duration;
 
 // use tokio::stream::StreamExt as TStreamExt;
@@ -263,6 +264,22 @@ async fn route_command(
     None
 }
 
+fn populate_cmd(commands: Vec<Frame>, redis_command: &mut Cmd) -> &mut Cmd {
+    for args in commands {
+        match args {
+            Frame::SimpleString(v) => redis_command.arg(v),
+            Frame::Error(v) => redis_command.arg(v),
+            Frame::Integer(v) => redis_command.arg(v),
+            Frame::BulkString(v) => redis_command.arg(v),
+            Frame::Array(v) => populate_cmd(v, redis_command),
+            Frame::Moved(v) => redis_command.arg(v),
+            Frame::Ask(v) => redis_command.arg(v),
+            Frame::Null => redis_command.arg(std::option::Option::<bool>::None),
+        };
+    }
+    redis_command
+}
+
 #[inline(always)]
 async fn remap_cluster_commands<'a>(
     connection: &'a mut ClusterConnection,
@@ -272,32 +289,31 @@ async fn remap_cluster_commands<'a>(
     let mut cmd_map: HashMap<String, Vec<(usize, Cmd)>> = HashMap::new();
     let error_len = qd.message.messages.len();
     for (i, message) in qd.message.messages.into_iter().enumerate() {
-        if let MessageDetails::Query(qm) = message.details {
-            if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast {
-                if !commands.is_empty() {
-                    let command = commands.remove(0);
-                    if let Value::Bytes(b) = &command {
-                        let command_string = String::from_utf8(b.to_vec())
-                            .unwrap_or_else(|_| "couldn't decode".to_string());
+        if let Message {
+            details: _,
+            modified: _,
+            original: RawFrame::Redis(Frame::Array(mut commands)),
+        } = message
+        {
+            if !commands.is_empty() {
+                let command = commands.remove(0);
+                if let Frame::BulkString(b) = command {
+                    let mut redis_command = Cmd::new();
+                    redis_command.arg(b);
 
-                        let mut redis_command = redis_cmd(command_string.as_str());
+                    populate_cmd(commands, &mut redis_command);
 
-                        for args in commands {
-                            redis_command.arg(args);
-                        }
-
-                        if let Some(response) = route_command(
-                            connection,
-                            use_slots,
-                            &mut cmd_map,
-                            redis_command,
-                            i,
-                            error_len,
-                        )
-                        .await
-                        {
-                            return PipelineOrError::ClientError(response);
-                        }
+                    if let Some(response) = route_command(
+                        connection,
+                        use_slots,
+                        &mut cmd_map,
+                        redis_command,
+                        i,
+                        error_len,
+                    )
+                    .await
+                    {
+                        return PipelineOrError::ClientError(response);
                     }
                 }
             }
@@ -402,40 +418,39 @@ impl Transform for RedisCluster {
         if self.connection.is_none() {
             let mut eat_message = false;
 
+            // if let Some(ASTHolder::Commands(Value::List(mut commands))) = qd.message.messages.get(0) {
             if let Some(Message {
-                details: MessageDetails::Query(qm),
+                details: _,
                 modified: _,
-                original: _,
-            }) = &qd.message.messages.get(0)
+                original: RawFrame::Redis(Frame::Array(commands)),
+            }) = qd.message.messages.get_mut(0)
             {
-                if let Some(ASTHolder::Commands(Value::List(mut commands))) = qm.ast.clone() {
-                    if !commands.is_empty() {
-                        let command = commands.remove(0);
-                        if let Value::Bytes(b) = &command {
-                            let command_string = String::from_utf8(b.to_vec())
-                                .unwrap_or_else(|_| "couldn't decode".to_string());
+                if !commands.is_empty() {
+                    let command = commands.get(0).unwrap();
+                    if let Frame::BulkString(b) = command {
+                        let command_string = String::from_utf8(b.to_vec())
+                            .unwrap_or_else(|_| "couldn't decode".to_string());
 
-                            trace!(command = %command_string, connection = ?self.client);
+                        trace!(command = %command_string, connection = ?self.client);
 
-                            if command_string == "AUTH" {
-                                eat_message = true;
-                            }
+                        if command_string == "AUTH" {
+                            eat_message = true;
+                        }
 
-                            if self.client.password.is_none() && command_string == "AUTH" {
-                                if commands.len() == 2 {
-                                    if let Value::Bytes(username) = commands.remove(0) {
-                                        self.client.username.replace(
-                                            String::from_utf8(username.to_vec())
-                                                .unwrap_or_else(|_| "couldn't decode".to_string()),
-                                        );
-                                    }
-                                }
-                                if let Value::Bytes(password) = commands.remove(0) {
-                                    self.client.password.replace(
-                                        String::from_utf8(password.to_vec())
+                        if self.client.password.is_none() && command_string == "AUTH" {
+                            if commands.len() == 3 {
+                                if let Frame::BulkString(username) = commands.remove(1) {
+                                    self.client.username.replace(
+                                        String::from_utf8(username)
                                             .unwrap_or_else(|_| "couldn't decode".to_string()),
                                     );
                                 }
+                            }
+                            if let Frame::BulkString(password) = commands.remove(1) {
+                                self.client.password.replace(
+                                    String::from_utf8(password)
+                                        .unwrap_or_else(|_| "couldn't decode".to_string()),
+                                );
                             }
                         }
                     }
