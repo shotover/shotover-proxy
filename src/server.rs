@@ -7,7 +7,7 @@ use metrics::gauge;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::{AsyncRead, AsyncWrite};
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::{broadcast, mpsc, Semaphore, SemaphorePermit};
 use tokio::time;
 use tokio::time::timeout;
 use tokio_util::codec::{Decoder, Encoder, Framed};
@@ -31,7 +31,9 @@ where
     pub source_name: String,
 
     /// TCP listener supplied by the `run` caller.
-    pub listener: TcpListener,
+    pub listener: Option<TcpListener>,
+    pub listen_addr: String,
+    pub hard_connection_limit: bool,
 
     pub codec: C,
 
@@ -106,7 +108,33 @@ where
             // "forget" the permit, which drops the permit value **without**
             // incrementing the semaphore's permits. Then, in the handler task
             // we manually add a new permit when processing completes.
-            self.limit_connections.acquire().await.forget();
+            // self.limit_connections.acquire().await.forget();
+
+            if self.hard_connection_limit {
+                match self.limit_connections.try_acquire() {
+                    Ok(p) => {
+                        if self.listener.is_none() {
+                            self.listener =
+                                Some(TcpListener::bind(self.listen_addr.clone()).await.unwrap());
+                        }
+                        p.forget();
+                    }
+                    Err(e) => {
+                        if self.listener.is_some() {
+                            //close the socket too full!
+                            self.listener = None;
+                        }
+                        tokio::time::delay_for(Duration::new(1, 0)).await;
+                        continue;
+                    }
+                }
+            } else {
+                self.limit_connections.acquire().await.forget();
+                if self.listener.is_none() {
+                    self.listener =
+                        Some(TcpListener::bind(self.listen_addr.clone()).await.unwrap());
+                }
+            }
 
             // Accept a new socket. This will attempt to perform error handling.
             // The `accept` method internally attempts to recover errors, so an
@@ -186,7 +214,7 @@ where
         loop {
             // Perform the accept operation. If a socket is successfully
             // accepted, return it. Otherwise, save the error.
-            match self.listener.accept().await {
+            match self.listener.as_mut().unwrap().accept().await {
                 Ok((socket, _)) => return Ok(socket),
                 Err(err) => {
                     if backoff > 64 {
