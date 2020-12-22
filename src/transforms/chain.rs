@@ -12,10 +12,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::sync::Mutex;
-use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 type InnerChain = Vec<Transforms>;
 
@@ -159,7 +158,7 @@ impl TransformChain {
                 };
             }
 
-            warn!("buffered chain processing thread exiting, stopping chain loop and dropping");
+            debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
         });
 
         BufferedChain {

@@ -2,6 +2,7 @@
 #![recursion_limit = "256"]
 
 use anyhow::{anyhow, Result};
+use clap::crate_version;
 use clap::Clap;
 use metrics_runtime::Receiver;
 use tracing::{debug, info};
@@ -16,7 +17,7 @@ use std::net::SocketAddr;
 use tokio::runtime;
 
 #[derive(Clap)]
-#[clap(version = "0.0.18", author = "Instaclustr")]
+#[clap(version = crate_version!(), author = "Instaclustr")]
 struct ConfigOpts {
     #[clap(short, long, default_value = "config/topology.yaml")]
     pub topology_file: String,
@@ -50,6 +51,7 @@ fn main() -> Result<()> {
         .try_init()
         .map_err(|e| anyhow!("couldn't start logging - {}", e))?;
 
+    info!("Starting Shotover {}", crate_version!());
     info!(
         "Loaded the following configuration file: {}",
         params.config_file
