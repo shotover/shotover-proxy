@@ -22,6 +22,7 @@ pub struct CassandraConfig {
     pub cassandra_ks: HashMap<String, Vec<String>>,
     pub bypass_query_processing: bool,
     pub connection_limit: Option<usize>,
+    pub hard_connection_limit: Option<bool>,
 }
 
 #[async_trait]
@@ -42,6 +43,7 @@ impl SourcesFromConfig for CassandraConfig {
                 shutdown_complete_tx,
                 self.bypass_query_processing,
                 self.connection_limit,
+                self.hard_connection_limit,
             )
             .await,
         )])
@@ -65,8 +67,9 @@ impl CassandraSource {
         shutdown_complete_tx: mpsc::Sender<()>,
         bypass: bool,
         connection_limit: Option<usize>,
+        hard_connection_limit: Option<bool>,
     ) -> CassandraSource {
-        let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+        // let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
         let name = "Cassandra Source";
 
         info!("Starting Cassandra source on [{}]", listen_addr);
@@ -74,7 +77,9 @@ impl CassandraSource {
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
             source_name: name.to_string(),
-            listener,
+            listener: None,
+            listen_addr: listen_addr.clone(),
+            hard_connection_limit: hard_connection_limit.unwrap_or(false),
             codec: CassandraCodec2::new(cassandra_ks, bypass),
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             notify_shutdown,

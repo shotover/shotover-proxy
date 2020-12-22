@@ -259,6 +259,7 @@ impl Topology {
             cassandra_ks,
             bypass_query_processing: false,
             connection_limit: None,
+            hard_connection_limit: None,
         });
 
         let tee_conf = TransformsConfig::MPSCTee(TeeConfig {

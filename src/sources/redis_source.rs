@@ -14,12 +14,14 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use anyhow::Result;
+use cached::async_std::net::{SocketAddr, SocketAddrV4};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
     pub listen_addr: String,
     pub batch_size_hint: u64,
     pub connection_limit: Option<usize>,
+    pub hard_connection_limit: Option<bool>,
 }
 
 #[async_trait]
@@ -39,6 +41,7 @@ impl SourcesFromConfig for RedisConfig {
                 notify_shutdown,
                 shutdown_complete_tx,
                 self.connection_limit,
+                self.hard_connection_limit,
             )
             .await,
         )])
@@ -61,8 +64,16 @@ impl RedisSource {
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
         connection_limit: Option<usize>,
+        hard_connection_limit: Option<bool>,
     ) -> RedisSource {
-        let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+        // let mut socket =
+        //     socket2::Socket::new(Domain::ipv4(), Type::stream(), Some(Protocol::tcp())).unwrap();
+        // let addr = listen_addr.clone().parse::<SocketAddrV4>().unwrap();
+        // socket.bind(&addr.into()).unwrap();
+        // socket.listen(10).unwrap();
+        //
+        // // let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
+        // let listener = TcpListener::from_std(socket.into_tcp_listener()).unwrap();
 
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "Redis Source";
@@ -70,7 +81,9 @@ impl RedisSource {
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
             source_name: name.to_string(),
-            listener,
+            listener: None,
+            listen_addr: listen_addr.clone(),
+            hard_connection_limit: hard_connection_limit.unwrap_or(false),
             codec: RedisCodec::new(false, batch_hint as usize),
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             notify_shutdown,
