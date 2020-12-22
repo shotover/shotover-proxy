@@ -326,18 +326,12 @@ where
                         },
                         Err(_) => {
                             match idle_time {
-                                0..=10 => debug!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
-                                11..=35 => warn!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
+                                0..=10 => trace!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
+                                11..=35 => trace!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
                                 _ => {
-                                    warn!("Dropping Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
+                                    debug!("Dropping Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
                                     return Ok(())
                                 }
-                            }
-
-                            if idle_time > 60 {
-                                warn!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
-                            } else {
-                                debug!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
                             }
                             idle_time *= 2;
                             continue
