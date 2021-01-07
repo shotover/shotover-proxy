@@ -57,7 +57,7 @@ where
 
     /// Starts an HTTP server on the `address` the exporter was originally configured with,
     /// responding to any request with the output of the configured observer.
-    pub async fn async_run(self) -> hyper::error::Result<()> {
+    pub async fn async_run(self) -> hyper::Result<()> {
         let controller = Arc::new(self.controller);
         let handle = Arc::new(self.handle);
 

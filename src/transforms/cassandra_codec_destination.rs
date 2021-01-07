@@ -9,7 +9,7 @@ use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use futures::{FutureExt, SinkExt};
 use std::collections::HashMap;
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 use tracing::trace;
 
 use crate::error::ChainResponse;

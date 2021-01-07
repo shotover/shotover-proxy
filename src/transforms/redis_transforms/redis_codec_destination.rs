@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
@@ -94,7 +94,7 @@ impl Transform for RedisCodecDestination {
 
 #[cfg(test)]
 mod test {
-    // #[tokio::test(threaded_scheduler)]
+    // #[tokio::test(flavor = "multi_thread")]
     // pub async fn test_clock_wrap() -> Result<()> {
     //     let address = "".to_string();
     //

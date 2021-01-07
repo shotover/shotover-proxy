@@ -7,9 +7,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "0.2.20", features = ["full", "macros"] }
-tokio-util = { version = "0.3.1", features = ["codec"]}
-bytes = "0.5.*"
+tokio = { version = "1.0.1", features = ["full", "macros"] }
+tokio-util = { version = "0.6.0", features = ["codec"]}
+tokio-stream = "0.1.1"
+bytes = "1.0.0"
 futures = "0.3.5"
 futures-core = "0.3.1"
 chrono = {version = "0.4.10",  features = ["serde"]}
@@ -18,7 +19,7 @@ byteorder = "1.3.2"
 clap = "3.0.0-beta.1"
 derivative = "2.1.1"
 pin-project = "0.4.6"
-evmap = {version = "10.0.2", features = ["bytes"]}
+evmap = {version = "11.0.0-alpha.7"}
 itertools = "0.9.0"
 rand = "0.7.3"
 rand_distr = "0.2.2"
@@ -45,15 +46,17 @@ tracing-subscriber = { version="0.2.11", features = ["env-filter"]}
 tracing-futures = "0.2.4"
 tracing-log = { version = "0.1.1", features = ["env_logger"] }
 tracing-appender = "0.1.1"
-hyper = "0.13.7"
+hyper = { version = "0.14.2", features = ["server"] }
 
 
 # Transform dependencies
 #redis = {version = "0.15.1", features = ["tokio-rt-core", "cluster"]}
 redis = {git = "https://github.com/benbromhead/redis-rs", branch = "parra_support", features = ["tokio-rt-core", "cluster"]}
 #redis = {path = "/home/ben/git/redis-rs", features = ["tokio-rt-core", "cluster"]}
-redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "vecsupport" }
+#redis-protocol = { path = "/home/ben/git/redis-protocol.rs"}
+redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "bbytes2" }
 #cdrs = { version = "2" }
+#cassandra-proto = { path = "/home/ben/git/cassandra-proto", features = ["v4"]}
 cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
 rdkafka = { version = "0.24", features = ["cmake-build"] }
 
@@ -70,8 +73,8 @@ wasmer-runtime = "0.17.1"
 
 #Crypto
 sodiumoxide = "0.2.5"
-rusoto_kms = "0.44.0"
-rusoto_signature = "0.44.0"
+rusoto_kms = "0.46.0"
+rusoto_signature = "0.46.0"
 
 [dev-dependencies]
 criterion = "0.3"

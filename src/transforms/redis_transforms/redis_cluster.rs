@@ -25,7 +25,7 @@ use rand::seq::IteratorRandom;
 use redis_protocol::types::Frame;
 use tokio::time::Duration;
 
-// use tokio::stream::StreamExt as TStreamExt;
+// use tokio_stream::StreamExt as TStreamExt;
 
 // TODO this may be worth implementing with a redis codec destination
 // but... the driver already supported a ton of stuff that didn't make sense
@@ -407,7 +407,7 @@ impl Transform for RedisCluster {
                 return Err(anyhow!("too many connection resets, killing chain"));
             }
             warn!("resetting connection");
-            tokio::time::delay_for(Duration::from_millis(self.reset_backoff)).await;
+            tokio::time::sleep(Duration::from_millis(self.reset_backoff)).await;
             warn!("connection reset");
             self.reset_backoff *= 2;
             self.connection = None;

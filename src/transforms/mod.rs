@@ -242,12 +242,7 @@ pub async fn build_chain_from_config(
     for tc in transform_configs {
         transforms.push(tc.get_transforms(topics).await?)
     }
-    Ok(TransformChain::new(
-        transforms,
-        name,
-        topics.get_global_map_handle(),
-        topics.get_global_tx(),
-    ))
+    Ok(TransformChain::new(transforms, name))
 }
 
 #[async_trait]

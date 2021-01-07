@@ -128,7 +128,7 @@ macro_rules! scope {
 #[cfg(test)]
 mod test {
     use std::time::Duration;
-    use tokio::time::delay_for;
+    use tokio::time::sleep;
 
     #[test]
     fn test_scoped() {
@@ -146,7 +146,7 @@ mod test {
                         // this spawned subtask will continue running after the scoped task
                         // finished, but `scope!` will wait until this task completes.
                         scope.spawn(async move {
-                            delay_for(Duration::from_millis(500)).await;
+                            sleep(Duration::from_millis(500)).await;
                             println!("spanwed task is done: {}", local);
                         });
 
@@ -155,7 +155,7 @@ mod test {
                         /*
                         let evil = String::from("may dangle");
                         scope.spawn(async {
-                            delay_for(Duration::from_millis(200)).await;
+                            sleep(Duration::from_millis(200)).await;
                             println!("spanwed task cannot access evil: {}", evil);
                         });
                         */
@@ -165,17 +165,17 @@ mod test {
                         });
                         handle.await.unwrap(); // you can await the returned handle
 
-                        delay_for(Duration::from_millis(100)).await;
+                        sleep(Duration::from_millis(100)).await;
                         println!("scoped task is done: {}", local);
                     }
                 });
 
-                delay_for(Duration::from_millis(110)).await;
+                sleep(Duration::from_millis(110)).await;
                 println!("local can be used here: {}", local);
             }
 
             println!("local is freed");
-            delay_for(Duration::from_millis(600)).await;
+            sleep(Duration::from_millis(600)).await;
         });
     }
 
@@ -194,21 +194,21 @@ mod test {
                     async move {
                         scope.spawn(async move {
                             println!("spanwed task started: {}", local);
-                            delay_for(Duration::from_millis(500)).await;
+                            sleep(Duration::from_millis(500)).await;
                             println!("spanwed task is done: {}", local);
                         });
 
-                        delay_for(Duration::from_millis(100)).await;
+                        sleep(Duration::from_millis(100)).await;
                         panic!("scoped task panicked: {}", local);
                     }
                 });
 
-                delay_for(Duration::from_millis(110)).await;
+                sleep(Duration::from_millis(110)).await;
                 println!("local can be used here: {}", local);
             }
 
             println!("local is freed");
-            delay_for(Duration::from_millis(600)).await;
+            sleep(Duration::from_millis(600)).await;
         });
     }
 }

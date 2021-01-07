@@ -43,7 +43,7 @@ impl Transform for RandomDelayTransform {
         } else {
             delay = Duration::from_millis(self.delay);
         }
-        tokio::time::delay_for(delay).await;
+        tokio::time::sleep(delay).await;
         qd.call_next_transform().await
     }
 

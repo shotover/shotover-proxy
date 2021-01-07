@@ -54,7 +54,7 @@ mod test {
     use crate::transforms::{Transform, Transforms, Wrapper};
     use anyhow::Result;
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_filter() -> Result<()> {
         let mut coalesce = QueryTypeFilter {
             name: "QueryTypeFilter",

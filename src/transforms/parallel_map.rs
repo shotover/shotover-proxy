@@ -14,7 +14,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 
 #[derive(Debug, Clone)]
 pub struct ParallelMap {

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 use tracing::{debug, trace, warn};
 
 use crate::config::topology::TopicHolder;
@@ -313,21 +313,14 @@ mod scatter_transform_tests {
         temp
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_scatter_success() -> Result<()> {
-        let t_holder = TopicHolder::get_test_holder();
-
         let response = Messages::new_single_response(
             QueryResponse::just_result(Value::Strings("OK".to_string())),
             true,
             RawFrame::NONE,
         );
-        let _dummy_chain = TransformChain::new(
-            vec![],
-            "dummy".to_string(),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        );
+        let _dummy_chain = TransformChain::new(vec![], "dummy".to_string());
 
         let wrapper = Wrapper::new(Messages::new_single_query(
             QueryMessage {
@@ -355,30 +348,15 @@ mod scatter_transform_tests {
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
             "one".to_string(),
-            TransformChain::new(
-                vec![ok_repeat.clone()],
-                "one".to_string(),
-                t_holder.get_global_map_handle(),
-                t_holder.get_global_tx(),
-            ),
+            TransformChain::new(vec![ok_repeat.clone()], "one".to_string()),
         );
         two_of_three.insert(
             "two".to_string(),
-            TransformChain::new(
-                vec![ok_repeat.clone()],
-                "two".to_string(),
-                t_holder.get_global_map_handle(),
-                t_holder.get_global_tx(),
-            ),
+            TransformChain::new(vec![ok_repeat.clone()], "two".to_string()),
         );
         two_of_three.insert(
             "three".to_string(),
-            TransformChain::new(
-                vec![err_repeat.clone()],
-                "three".to_string(),
-                t_holder.get_global_map_handle(),
-                t_holder.get_global_tx(),
-            ),
+            TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
         let mut tuneable_success_consistency = Transforms::TunableConsistency(TunableConsistency {
@@ -403,30 +381,15 @@ mod scatter_transform_tests {
         let mut one_of_three = HashMap::new();
         one_of_three.insert(
             "one".to_string(),
-            TransformChain::new(
-                vec![ok_repeat.clone()],
-                "one".to_string(),
-                t_holder.get_global_map_handle(),
-                t_holder.get_global_tx(),
-            ),
+            TransformChain::new(vec![ok_repeat.clone()], "one".to_string()),
         );
         one_of_three.insert(
             "two".to_string(),
-            TransformChain::new(
-                vec![err_repeat.clone()],
-                "two".to_string(),
-                t_holder.get_global_map_handle(),
-                t_holder.get_global_tx(),
-            ),
+            TransformChain::new(vec![err_repeat.clone()], "two".to_string()),
         );
         one_of_three.insert(
             "three".to_string(),
-            TransformChain::new(
-                vec![err_repeat.clone()],
-                "three".to_string(),
-                t_holder.get_global_map_handle(),
-                t_holder.get_global_tx(),
-            ),
+            TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
         let mut tuneable_fail_consistency = Transforms::TunableConsistency(TunableConsistency {

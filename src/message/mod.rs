@@ -574,7 +574,7 @@ mod my_bytes {
     where
         S: Serializer,
     {
-        serializer.serialize_bytes(val.bytes())
+        serializer.serialize_bytes(val)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Bytes, D::Error>

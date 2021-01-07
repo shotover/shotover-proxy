@@ -98,7 +98,7 @@ mod test {
     use anyhow::Result;
     use std::time::{Duration, Instant};
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_count() -> Result<()> {
         let mut coalesce = Coalesce {
             name: "test",
@@ -146,7 +146,7 @@ mod test {
         Ok(())
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_wait() -> Result<()> {
         let mut coalesce = Coalesce {
             name: "wait",
@@ -167,7 +167,7 @@ mod test {
         qd.transforms = vec![&mut null];
         assert_eq!(coalesce.transform(qd).await?.messages.len(), 1);
 
-        tokio::time::delay_for(Duration::from_millis(10_u64)).await;
+        tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
         let mut qd = Wrapper::new(Messages {
             messages: messages.clone(),
@@ -175,7 +175,7 @@ mod test {
         qd.transforms = vec![&mut null];
         assert_eq!(coalesce.transform(qd).await?.messages.len(), 1);
 
-        tokio::time::delay_for(Duration::from_millis(100_u64)).await;
+        tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
         let mut qd = Wrapper::new(Messages {
             messages: messages.clone(),
@@ -192,7 +192,7 @@ mod test {
         Ok(())
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_wait_or_count() -> Result<()> {
         let mut coalesce = Coalesce {
             name: "wait",
@@ -213,7 +213,7 @@ mod test {
         qd.transforms = vec![&mut null];
         assert_eq!(coalesce.transform(qd).await?.messages.len(), 1);
 
-        tokio::time::delay_for(Duration::from_millis(10_u64)).await;
+        tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
         let mut qd = Wrapper::new(Messages {
             messages: messages.clone(),
@@ -221,7 +221,7 @@ mod test {
         qd.transforms = vec![&mut null];
         assert_eq!(coalesce.transform(qd).await?.messages.len(), 1);
 
-        tokio::time::delay_for(Duration::from_millis(100_u64)).await;
+        tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
         let mut qd = Wrapper::new(Messages {
             messages: messages.clone(),

@@ -691,11 +691,10 @@ fn test_pass_through() -> Result<()> {
 // #[test]
 #[allow(dead_code)]
 fn test_pass_through_one() -> Result<()> {
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -741,11 +740,10 @@ fn test_active_one_active_redis() -> Result<()> {
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -780,11 +778,10 @@ fn test_pass_redis_cluster_one() -> Result<()> {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -819,11 +816,10 @@ fn test_cluster_auth_redis() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -912,11 +908,10 @@ fn test_cluster_all_script_redis() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -948,11 +943,10 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -1065,11 +1059,10 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
 }
 
 fn run_all_active_safe(config: String) -> Result<()> {
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -1119,11 +1112,10 @@ fn run_all_active_safe(config: String) -> Result<()> {
 }
 
 fn run_all_cluster_safe(config: String) -> Result<()> {
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {
@@ -1172,11 +1164,10 @@ fn run_all_cluster_safe(config: String) -> Result<()> {
 }
 
 fn run_all(config: String) -> Result<()> {
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
     let _jh: _ = rt.spawn(async move {

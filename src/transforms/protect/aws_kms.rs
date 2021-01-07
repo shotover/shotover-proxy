@@ -68,8 +68,7 @@ impl AWSKeyManagement {
                     plaintext: Key::from_slice(
                         &resp
                             .plaintext
-                            .ok_or_else(|| anyhow!("no plaintext DEK provided"))?
-                            .bytes(),
+                            .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
                     )
                     .ok_or_else(|| anyhow!("couldn't create secretbox key from dek bytes"))?,
                 })
@@ -84,8 +83,7 @@ impl AWSKeyManagement {
                     plaintext: Key::from_slice(
                         &resp
                             .plaintext
-                            .ok_or_else(|| anyhow!("no plaintext DEK provided"))?
-                            .bytes(),
+                            .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
                     )
                     .ok_or_else(|| anyhow!("couldn't create secretbox key from dek bytes"))?,
                 })

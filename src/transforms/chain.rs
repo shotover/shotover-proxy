@@ -3,7 +3,6 @@ use crate::error::ChainResponse;
 use crate::transforms::{Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use evmap::ReadHandleFactory;
 use futures::{FutureExt, TryFutureExt};
 
 use itertools::Itertools;
@@ -25,20 +24,11 @@ type InnerChain = Vec<Transforms>;
 pub struct TransformChain {
     name: String,
     pub chain: InnerChain,
-    global_map: Option<ReadHandleFactory<String, Bytes>>,
-    global_updater: Option<Sender<(String, Bytes)>>,
-    pub chain_local_map: Option<ReadHandleFactory<String, Bytes>>,
-    pub chain_local_map_updater: Option<Sender<(String, Bytes)>>,
 }
 
 impl Clone for TransformChain {
     fn clone(&self) -> Self {
-        TransformChain::new(
-            self.chain.clone(),
-            self.name.clone(),
-            self.global_map.as_ref().unwrap().clone(),
-            self.global_updater.as_ref().unwrap().clone(),
-        )
+        TransformChain::new(self.chain.clone(), self.name.clone())
     }
 }
 
@@ -172,40 +162,14 @@ impl TransformChain {
         TransformChain {
             name,
             chain: transform_list,
-            global_map: None,
-            global_updater: None,
-            chain_local_map: None,
-            chain_local_map_updater: None,
         }
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn new(
-        transform_list: Vec<Transforms>,
-        name: String,
-        global_map_handle: ReadHandleFactory<String, Bytes>,
-        global_updater: Sender<(String, Bytes)>,
-    ) -> Self {
-        let (local_tx, mut local_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) =
-            channel::<(String, Bytes)>(1);
-        let (rh, mut wh) = evmap::new::<String, Bytes>();
-        wh.refresh();
-
-        let _ = tokio::spawn(async move {
-            // this loop will exit and the task will complete when all channel tx handles are dropped
-            while let Some((k, v)) = local_rx.recv().await {
-                wh.insert(k, v);
-                wh.refresh();
-            }
-        });
-
+    pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
         TransformChain {
             name,
             chain: transform_list,
-            global_map: Some(global_map_handle),
-            global_updater: Some(global_updater),
-            chain_local_map: Some(rh.factory()),
-            chain_local_map_updater: Some(local_tx),
         }
     }
 

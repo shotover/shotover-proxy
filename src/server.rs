@@ -5,8 +5,8 @@ use anyhow::Result;
 use futures::{FutureExt, SinkExt, StreamExt};
 use metrics::gauge;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::prelude::{AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore, SemaphorePermit};
 use tokio::time;
 use tokio::time::timeout;
@@ -124,12 +124,12 @@ where
                             //close the socket too full!
                             self.listener = None;
                         }
-                        tokio::time::delay_for(Duration::new(1, 0)).await;
+                        tokio::time::sleep(Duration::new(1, 0)).await;
                         continue;
                     }
                 }
             } else {
-                self.limit_connections.acquire().await.forget();
+                self.limit_connections.acquire().await?.forget();
                 if self.listener.is_none() {
                     self.listener =
                         Some(TcpListener::bind(self.listen_addr.clone()).await.unwrap());
@@ -225,7 +225,7 @@ where
             }
 
             // Pause execution until the back off period elapses.
-            time::delay_for(Duration::from_secs(backoff)).await;
+            time::sleep(Duration::from_secs(backoff)).await;
 
             // Double the back off
             backoff *= 2;
