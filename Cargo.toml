@@ -54,11 +54,12 @@ hyper = { version = "0.14.2", features = ["server"] }
 redis = {git = "https://github.com/benbromhead/redis-rs", branch = "parra_support", features = ["tokio-rt-core", "cluster"]}
 #redis = {path = "/home/ben/git/redis-rs", features = ["tokio-rt-core", "cluster"]}
 #redis-protocol = { path = "/home/ben/git/redis-protocol.rs"}
-redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "bbytes2" }
+redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "remove-parser" }
 #cdrs = { version = "2" }
 #cassandra-proto = { path = "/home/ben/git/cassandra-proto", features = ["v4"]}
 cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
 rdkafka = { version = "0.24", features = ["cmake-build"] }
+crc16 = { version = "0.4.0"}
 
 #test deps
 hex-literal = "0.2.1"
