@@ -107,7 +107,7 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
     };
 }
 
-async fn get_topology(first_contact_points: &Vec<String>) -> Result<Vec<(String, u16)>> {
+async fn get_topology(first_contact_points: &Vec<String>) -> Result<SlotsMapping> {
     for contact in first_contact_points {
         match TcpStream::connect(contact.clone()).await {
             Ok(stream) => {
@@ -127,7 +127,13 @@ async fn get_topology(first_contact_points: &Vec<String>) -> Result<Vec<(String,
                     continue;
                 }
                 if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
-                    if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {}
+                    if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {
+                        if let Ok(slotmaps) = parse_slots(contacts_raw) {
+                            return Ok(slotmaps);
+                        } else {
+                            continue;
+                        }
+                    }
                 } else {
                     continue;
                 }
@@ -135,13 +141,14 @@ async fn get_topology(first_contact_points: &Vec<String>) -> Result<Vec<(String,
             Err(e) => continue,
         }
     }
-
-    unimplemented!()
+    Err(anyhow!("Couldn't get slot map from redis"))
 }
 
 #[async_trait]
 impl TransformsFromConfig for SequentialMapConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+        let slots = get_topology(&self.first_contact_points).await?;
+
         Ok(Transforms::SequentialMap(SequentialMap {
             name: "SequentialMap",
             // chain: build_chain_from_config(self.name.clone(), &self.chain, &topics).await?,
