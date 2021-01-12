@@ -1,37 +1,142 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages, QueryResponse, Value};
+use crate::message::{Message, MessageDetails, Messages, QueryResponse, Value};
 use std::iter::*;
 
 use crate::concurrency::FuturesOrdered;
+use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::RawFrame;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
+use hyper::body::Bytes;
 use itertools::Itertools;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use tokio::io::Error;
+use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
+use tokio_util::codec::Framed;
 
 const SLOT_SIZE: usize = 16384;
 
 #[derive(Debug, Clone)]
 pub struct SequentialMap {
     name: &'static str,
-    chain: TransformChain,
+    // chain: TransformChain,
     pub slots: SlotMap,
     pub channels: ChannelMap,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct SequentialMapConfig {
-    pub name: String,
-    pub chain: Vec<TransformsConfig>,
+    pub first_contact_points: Vec<String>,
+    pub strict_close_mode: Option<bool>,
+}
+
+fn build_slot_to_server(
+    frames: &mut Vec<Frame>,
+    slots: &mut Vec<(String, u16, u16)>,
+    start: u16,
+    end: u16,
+) {
+    if frames.len() < 2 {
+        return;
+    }
+
+    let ip = if let Frame::BulkString(ref ip) = frames[0] {
+        String::from_utf8_lossy(ip.as_ref()).to_string()
+    } else {
+        return;
+    };
+
+    let port = if let Frame::Integer(port) = frames[1] {
+        port
+    } else {
+        return;
+    };
+    if start == end {
+        return;
+    }
+    slots.push((format!("{}:{}", ip, port), start, end))
+}
+
+pub struct SlotsMapping {
+    pub masters: Vec<(String, u16, u16)>,
+    pub followers: Vec<(String, u16, u16)>,
+}
+
+fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
+    let mut slots: Vec<(String, u16, u16)> = vec![];
+    let mut replica_slots: Vec<(String, u16, u16)> = vec![];
+    if let Frame::Array(response) = contacts_raw {
+        let mut response_iter = response.into_iter();
+        while let Some(Frame::Array(item)) = response_iter.next() {
+            let mut enumerator = item.into_iter().enumerate();
+
+            let mut start: u16 = 0;
+            let mut end: u16 = 0;
+
+            while let Some((index, item)) = enumerator.next() {
+                match (index, item) {
+                    (1, Frame::Integer(i)) => start = i as u16,
+                    (2, Frame::Integer(i)) => end = i as u16,
+                    (3, Frame::Array(mut master)) => {
+                        build_slot_to_server(&mut master, &mut slots, start, end)
+                    }
+                    (n, Frame::Array(mut follow)) if n > 3 => {
+                        build_slot_to_server(&mut follow, &mut replica_slots, start, end)
+                    }
+                    _ => return Err(anyhow!("Unexpected value in slot map")),
+                }
+            }
+        }
+    }
+    return if slots.is_empty() {
+        Err(anyhow!("Empty slot map!"))
+    } else {
+        Ok(SlotsMapping {
+            masters: slots,
+            followers: replica_slots,
+        })
+    };
+}
+
+async fn get_topology(first_contact_points: &Vec<String>) -> Result<Vec<(String, u16)>> {
+    for contact in first_contact_points {
+        match TcpStream::connect(contact.clone()).await {
+            Ok(stream) => {
+                let mut outbound_framed_codec = Framed::new(stream, RedisCodec::new(true, 1));
+                if outbound_framed_codec
+                    .send(Messages::new_from_message(Message {
+                        details: MessageDetails::Unknown,
+                        modified: false,
+                        original: RawFrame::Redis(Frame::Array(vec![
+                            Frame::BulkString(Bytes::from("CLUSTER")),
+                            Frame::BulkString(Bytes::from("SLOTS")),
+                        ])),
+                    }))
+                    .await
+                    .is_err()
+                {
+                    continue;
+                }
+                if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
+                    if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {}
+                } else {
+                    continue;
+                }
+            }
+            Err(e) => continue,
+        }
+    }
+
+    unimplemented!()
 }
 
 #[async_trait]
@@ -39,7 +144,7 @@ impl TransformsFromConfig for SequentialMapConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::SequentialMap(SequentialMap {
             name: "SequentialMap",
-            chain: build_chain_from_config(self.name.clone(), &self.chain, &topics).await?,
+            // chain: build_chain_from_config(self.name.clone(), &self.chain, &topics).await?,
             slots: Default::default(),
             channels: Default::default(),
         }))
