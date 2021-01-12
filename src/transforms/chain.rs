@@ -13,7 +13,7 @@ use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 type InnerChain = Vec<Transforms>;
 

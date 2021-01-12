@@ -7,11 +7,13 @@ use metrics::gauge;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, Semaphore, SemaphorePermit};
+
+use tokio::prelude::{AsyncRead, AsyncWrite};
+use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio_util::codec::{Decoder, Encoder, Framed};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 use std::time::Duration;
 
@@ -119,7 +121,7 @@ where
                         }
                         p.forget();
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         if self.listener.is_some() {
                             //close the socket too full!
                             self.listener = None;

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{
-    parse_redis, ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value,
+    parse_redis, Message, MessageDetails, Messages, QueryMessage, QueryResponse, Value,
 };
 use crate::protocols::RawFrame;
 use futures::stream::{self, FuturesUnordered, StreamExt};
@@ -21,6 +21,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 
 use crate::transforms::redis_transforms::redis_cluster::PipelineOrError::ClientError;
+use bytes::Buf;
 use rand::seq::IteratorRandom;
 use redis_protocol::types::Frame;
 use tokio::time::Duration;
@@ -270,10 +271,14 @@ fn populate_cmd(commands: Vec<Frame>, redis_command: &mut Cmd) -> &mut Cmd {
             Frame::SimpleString(v) => redis_command.arg(v),
             Frame::Error(v) => redis_command.arg(v),
             Frame::Integer(v) => redis_command.arg(v),
-            Frame::BulkString(v) => redis_command.arg(v),
+            Frame::BulkString(v) => redis_command.arg(v.bytes()),
             Frame::Array(v) => populate_cmd(v, redis_command),
-            Frame::Moved(v) => redis_command.arg(v),
-            Frame::Ask(v) => redis_command.arg(v),
+            Frame::Moved { slot, host, port } => {
+                redis_command.arg(format!("MOVED {} {}:{}", slot, host, port))
+            }
+            Frame::Ask { slot, host, port } => {
+                redis_command.arg(format!("ASK {} {}:{}", slot, host, port))
+            }
             Frame::Null => redis_command.arg(std::option::Option::<bool>::None),
         };
     }
@@ -299,7 +304,7 @@ async fn remap_cluster_commands<'a>(
                 let command = commands.remove(0);
                 if let Frame::BulkString(b) = command {
                     let mut redis_command = Cmd::new();
-                    redis_command.arg(b);
+                    redis_command.arg(b.bytes());
 
                     populate_cmd(commands, &mut redis_command);
 
@@ -440,17 +445,15 @@ impl Transform for RedisCluster {
                         if self.client.password.is_none() && command_string == "AUTH" {
                             if commands.len() == 3 {
                                 if let Frame::BulkString(username) = commands.remove(1) {
-                                    self.client.username.replace(
-                                        String::from_utf8(username)
-                                            .unwrap_or_else(|_| "couldn't decode".to_string()),
-                                    );
+                                    self.client
+                                        .username
+                                        .replace(String::from_utf8_lossy(&username).to_string());
                                 }
                             }
                             if let Frame::BulkString(password) = commands.remove(1) {
-                                self.client.password.replace(
-                                    String::from_utf8(password)
-                                        .unwrap_or_else(|_| "couldn't decode".to_string()),
-                                );
+                                self.client
+                                    .password
+                                    .replace(String::from_utf8_lossy(&password).to_string());
                             }
                         }
                     }

@@ -7,14 +7,12 @@ use crate::sources::{Sources, SourcesFromConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::net::TcpListener;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use anyhow::Result;
-use cached::async_std::net::{SocketAddr, SocketAddrV4};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {

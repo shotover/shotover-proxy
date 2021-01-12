@@ -1,24 +1,23 @@
-use crate::config::topology::{ChannelMessage, TopicHolder};
+use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages, QueryResponse, Value};
 use std::iter::*;
 
+use crate::concurrency::FuturesOrdered;
 use crate::protocols::RawFrame;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
-use anyhow::{Error, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Buf;
-use futures::stream::FuturesOrdered;
 use futures::StreamExt;
 use itertools::Itertools;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use tokio::sync::mpsc::Sender;
-use tokio::sync::oneshot::error::RecvError;
 
 const SLOT_SIZE: usize = 16384;
 
@@ -42,6 +41,8 @@ impl TransformsFromConfig for SequentialMapConfig {
         Ok(Transforms::SequentialMap(SequentialMap {
             name: "SequentialMap",
             chain: build_chain_from_config(self.name.clone(), &self.chain, &topics).await?,
+            slots: Default::default(),
+            channels: Default::default(),
         }))
     }
 }
@@ -130,22 +131,36 @@ impl RoutingInfo {
     }
 }
 
-type SlotMap = BTreeMap<u16, Sender<ChannelMessage>>;
-type ChannelMap = HashMap<String, Sender<ChannelMessage>>;
+type SlotMap = BTreeMap<u16, Sender<Request>>;
+type ChannelMap = HashMap<String, Sender<Request>>;
+type Response = (Message, ChainResponse);
 
-fn short_circuit(one_tx: tokio::sync::oneshot::Sender<ChainResponse>) {
-    one_tx.send(Ok(Messages::new_single_response(
-        QueryResponse::empty_with_error(Some(Value::Strings(
-            "ERR Could not route request".to_string(),
-        ))),
-        true,
-        RawFrame::NONE,
-    )));
+#[derive(Debug)]
+pub struct Request {
+    pub messages: Message,
+    pub return_chan: Option<tokio::sync::oneshot::Sender<Response>>,
+}
+
+fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
+    one_tx.send((
+        Message::new_bypass(RawFrame::NONE),
+        Ok(Messages::new_single_response(
+            QueryResponse::empty_with_error(Some(Value::Strings(
+                "ERR Could not route request".to_string(),
+            ))),
+            true,
+            RawFrame::NONE,
+        )),
+    ));
+}
+
+pub fn connect(host: &String, port: u16) -> Sender<Request> {
+    unimplemented!()
 }
 
 #[async_trait]
 impl Transform for SequentialMap {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let mut responses = FuturesOrdered::new();
         for message in qd.message.into_iter() {
             let sender = match &message.original {
@@ -180,16 +195,16 @@ impl Transform for SequentialMap {
                 }
             };
             if sender.is_empty() {
-                let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
+                let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
                 short_circuit(one_tx);
                 responses.push(one_rx)
             } else {
                 for chan in sender.into_iter() {
-                    let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
-                    chan.send(ChannelMessage::new(
-                        Messages::new_from_message(message.clone()),
-                        one_tx,
-                    ))
+                    let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                    chan.send(Request {
+                        messages: message.clone(),
+                        return_chan: Some(one_tx),
+                    })
                     .await?;
                     responses.push(one_rx)
                 }
@@ -198,20 +213,64 @@ impl Transform for SequentialMap {
         let mut response_buffer = vec![];
         loop {
             match responses.next().await {
-                Some(mut r) => {
-                    let mut m = r??.messages.remove(0);
-                    match m.original {
-                        RawFrame::Redis(Frame::Moved(moved_message)) => {
+                Some(s) => {
+                    let (original, response) = s?;
+                    let response_m = response?.messages.remove(0);
+                    match response_m.original {
+                        RawFrame::Redis(Frame::Moved { slot, host, port }) => {
+                            let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
+                                None => {
+                                    //here we create a new connection if there isn't one, here we update the slot map
+                                    let chan = connect(&host, port);
+                                    self.slots.insert(slot, chan.clone());
+                                    self.channels.insert(format!("{}:{}", &host, &port), chan);
+                                    self.channels
+                                        .get_mut(&*format!("{}:{}", &host, &port))
+                                        .unwrap()
+                                }
+                                Some(chan) => chan,
+                            };
+
+                            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                            chan.send(Request {
+                                messages: original.clone(),
+                                return_chan: Some(one_tx),
+                            })
+                            .await?;
+                            responses.prepend(one_rx);
+
                             //update slots
                             //handle request
                         }
-                        RawFrame::Redis(Frame::Ask(moved_message)) => {
+                        RawFrame::Redis(Frame::Ask {
+                            slot: _,
+                            host,
+                            port,
+                        }) => {
                             // see redis-protocol.rs for redirection struct so we dont need to parse the string again
-                        }
-                        _ => {}
-                    }
+                            let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
+                                None => {
+                                    //here we create a new connection if there isn't one, however we don't update the slot map
+                                    let chan = connect(&host, port);
+                                    self.channels
+                                        .insert(format!("{}:{}", &host, &port), chan.clone());
+                                    self.channels
+                                        .get_mut(&*format!("{}:{}", &host, &port))
+                                        .unwrap()
+                                }
+                                Some(chan) => chan,
+                            };
 
-                    // response_buffer.append(&mut m.messages);
+                            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                            chan.send(Request {
+                                messages: original.clone(),
+                                return_chan: Some(one_tx),
+                            })
+                            .await?;
+                            responses.prepend(one_rx);
+                        }
+                        _ => response_buffer.push(response_m),
+                    }
                 }
                 None => break,
             }

@@ -1,214 +1,172 @@
-use futures::future::{abortable, AbortHandle, Aborted};
-use pin_project::pin_project;
-use std::future::Future;
-use std::marker::PhantomData;
-use std::mem::transmute;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
-use tokio::sync::mpsc;
+use core::cmp::Ordering;
+use core::fmt::{self, Debug};
+use core::iter::FromIterator;
+use core::pin::Pin;
+use futures::stream::{FuturesUnordered, StreamExt};
+use futures_core::future::Future;
+use futures_core::ready;
+use futures_core::stream::Stream;
+use futures_core::{
+    task::{Context, Poll},
+    FusedStream,
+};
+use pin_project_lite::pin_project;
 
-enum Void {}
+use std::collections::binary_heap::{BinaryHeap, PeekMut};
 
-#[derive(Clone)]
-pub struct Scope<'env> {
-    handle: tokio::runtime::Handle,
-    chan: mpsc::Sender<Void>,
-    abort_handles: Arc<Mutex<Vec<AbortHandle>>>,
-    _marker: PhantomData<&'env mut &'env ()>,
-}
-
-#[pin_project]
-pub struct ScopedJoinHandle<'scope, R> {
-    #[pin]
-    handle: tokio::task::JoinHandle<Result<R, Aborted>>,
-    _marker: PhantomData<&'scope ()>,
-}
-
-impl<'env, R> Future for ScopedJoinHandle<'env, R> {
-    type Output = Result<R, Box<dyn std::error::Error + Send + 'static>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        match self.project().handle.poll(cx) {
-            Poll::Ready(Ok(Ok(x))) => Poll::Ready(Ok(x)),
-            Poll::Ready(Ok(Err(e))) => Poll::Ready(Err(Box::new(e))),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(Box::new(e))),
-            Poll::Pending => Poll::Pending,
-        }
+pin_project! {
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    #[derive(Debug)]
+    struct OrderWrapper<T> {
+        #[pin]
+        data: T, // A future or a future's output
+        index: usize,
     }
 }
 
-impl<'env> Scope<'env> {
-    pub fn spawn<'scope, T, R>(&'scope self, task: T) -> ScopedJoinHandle<'scope, R>
-    where
-        T: Future<Output = R> + Send + 'env,
-        R: Send + 'static, // TODO: weaken to 'env
-    {
-        let chan = self.chan.clone();
-        let (abortable, abort_handle) = abortable(task);
-        self.abort_handles.lock().unwrap().push(abort_handle);
-
-        let task_env: Pin<Box<dyn Future<Output = Result<R, Aborted>> + Send + 'env>> =
-            Box::pin(async move {
-                // the cloned channel gets dropped at the end of the task
-                let _chan = chan;
-
-                abortable.await
-            });
-
-        // SAFETY: scoped API ensures the spawned tasks will not outlive the parent scope
-        let task_static: Pin<Box<dyn Future<Output = Result<R, Aborted>> + Send + 'static>> =
-            unsafe { transmute(task_env) };
-
-        let handle = self.handle.spawn(task_static);
-
-        ScopedJoinHandle {
-            handle,
-            _marker: PhantomData,
-        }
+impl<T> PartialEq for OrderWrapper<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
     }
 }
 
-#[derive(Default)]
-struct AbortOnDrop {
-    abort_handles: Arc<Mutex<Vec<AbortHandle>>>,
-}
+impl<T> Eq for OrderWrapper<T> {}
 
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.abort_handles
-            .lock()
-            .unwrap()
-            .drain(..)
-            .for_each(|h| h.abort());
-
-        // TODO: we must wait for spawned tasks to abort synchronously here
+impl<T> PartialOrd for OrderWrapper<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
-// TODO: if `F` takes a reference to the scope, `scope.spawn` will generate a cryptic error
-#[doc(hidden)]
-pub async unsafe fn scope_impl<'env, F, T, R>(handle: tokio::runtime::Handle, f: F) -> R
+impl<T> Ord for OrderWrapper<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // BinaryHeap is a max heap, so compare backwards here.
+        other.index.cmp(&self.index)
+    }
+}
+
+impl<T> Future for OrderWrapper<T>
 where
-    F: FnOnce(Scope<'env>) -> T,
-    T: Future<Output = R> + Send,
-    R: Send,
+    T: Future,
 {
-    let mut _abort_on_drop = AbortOnDrop::default();
+    type Output = OrderWrapper<T::Output>;
 
-    // we won't send data through this channel, so reserve the minimal buffer (buffer size must be
-    // greater than 0).
-    let (tx, mut rx) = mpsc::channel(1);
-    let scope = Scope::<'env> {
-        handle,
-        chan: tx,
-        abort_handles: _abort_on_drop.abort_handles.clone(),
-        _marker: PhantomData,
-    };
-
-    // TODO: verify that `AbortOnDrop` correctly handles drop and panic.
-    let result = f(scope).await;
-
-    // yield the control until all spawned tasks finish(drop).
-    assert!(rx.recv().await.is_none());
-
-    // no need to abort tasks anymore
-    _abort_on_drop.abort_handles.lock().unwrap().clear();
-
-    result
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let index = self.index;
+        self.project().data.poll(cx).map(|output| OrderWrapper {
+            data: output,
+            index,
+        })
+    }
 }
 
-#[macro_export]
-macro_rules! scope {
-    ($handle:expr, $func:expr) => {{
-        unsafe { crate::concurrency::scope_impl($handle, $func) }.await
-    }};
+/// An unbounded queue of futures.
+///
+/// This "combinator" is similar to `FuturesUnordered`, but it imposes an order
+/// on top of the set of futures. While futures in the set will race to
+/// completion in parallel, results will only be returned in the order their
+/// originating futures were added to the queue.
+///
+/// Futures are pushed into this queue and their realized values are yielded in
+/// order. This structure is optimized to manage a large number of futures.
+/// Futures managed by `FuturesOrdered` will only be polled when they generate
+/// notifications. This reduces the required amount of work needed to coordinate
+/// large numbers of futures.
+///
+/// When a `FuturesOrdered` is first created, it does not contain any futures.
+/// Calling `poll` in this state will result in `Poll::Ready(None))` to be
+/// returned. Futures are submitted to the queue using `push`; however, the
+/// future will **not** be polled at this point. `FuturesOrdered` will only
+/// poll managed futures when `FuturesOrdered::poll` is called. As such, it
+/// is important to call `poll` after pushing new futures.
+///
+/// If `FuturesOrdered::poll` returns `Poll::Ready(None)` this means that
+/// the queue is currently not managing any futures. A future may be submitted
+/// to the queue at a later time. At that point, a call to
+/// `FuturesOrdered::poll` will either return the future's resolved value
+/// **or** `Poll::Pending` if the future has not yet completed. When
+/// multiple futures are submitted to the queue, `FuturesOrdered::poll` will
+/// return `Poll::Pending` until the first future completes, even if
+/// some of the later futures have already completed.
+///
+/// Note that you can create a ready-made `FuturesOrdered` via the
+/// [`collect`](Iterator::collect) method, or you can start with an empty queue
+/// with the `FuturesOrdered::new` constructor.
+///
+/// This type is only available when the `std` or `alloc` feature of this
+/// library is activated, and it is activated by default.
+#[must_use = "streams do nothing unless polled"]
+pub struct FuturesOrdered<T: Future> {
+    in_progress_queue: FuturesUnordered<OrderWrapper<T>>,
+    queued_outputs: BinaryHeap<OrderWrapper<T::Output>>,
+    next_incoming_index: usize,
+    next_outgoing_index: usize,
 }
 
-#[cfg(test)]
-mod test {
-    use std::time::Duration;
-    use tokio::time::sleep;
+impl<T: Future> Unpin for FuturesOrdered<T> {}
 
-    #[test]
-    fn test_scoped() {
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
-        let handle = rt.handle().clone();
-
-        rt.block_on(async {
-            {
-                let local = String::from("hello world");
-                let local = &local;
-
-                scope!(handle, |scope| {
-                    // TODO: without this `move`, we get a compilation error. why?
-                    async move {
-                        // this spawned subtask will continue running after the scoped task
-                        // finished, but `scope!` will wait until this task completes.
-                        scope.spawn(async move {
-                            sleep(Duration::from_millis(500)).await;
-                            println!("spanwed task is done: {}", local);
-                        });
-
-                        // since spawned tasks can outlive the scoped task, they cannot have
-                        // references to the scoped task's stack
-                        /*
-                        let evil = String::from("may dangle");
-                        scope.spawn(async {
-                            sleep(Duration::from_millis(200)).await;
-                            println!("spanwed task cannot access evil: {}", evil);
-                        });
-                        */
-
-                        let handle = scope.spawn(async {
-                            println!("another spawned task");
-                        });
-                        handle.await.unwrap(); // you can await the returned handle
-
-                        sleep(Duration::from_millis(100)).await;
-                        println!("scoped task is done: {}", local);
-                    }
-                });
-
-                sleep(Duration::from_millis(110)).await;
-                println!("local can be used here: {}", local);
-            }
-
-            println!("local is freed");
-            sleep(Duration::from_millis(600)).await;
-        });
+impl<Fut: Future> FuturesOrdered<Fut> {
+    /// Constructs a new, empty `FuturesOrdered`
+    ///
+    /// The returned `FuturesOrdered` does not contain any futures and, in this
+    /// state, `FuturesOrdered::poll_next` will return `Poll::Ready(None)`.
+    pub fn new() -> Self {
+        Self {
+            in_progress_queue: FuturesUnordered::new(),
+            queued_outputs: BinaryHeap::new(),
+            next_incoming_index: 0,
+            next_outgoing_index: 0,
+        }
     }
 
-    #[test]
-    #[should_panic]
-    fn test_panic() {
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
-        let handle = rt.handle().clone();
+    /// Returns the number of futures contained in the queue.
+    ///
+    /// This represents the total number of in-flight futures, both
+    /// those currently processing and those that have completed but
+    /// which are waiting for earlier futures to complete.
+    pub fn len(&self) -> usize {
+        self.in_progress_queue.len() + self.queued_outputs.len()
+    }
 
-        rt.block_on(async {
-            {
-                let local = String::from("hello world");
-                let local = &local;
+    /// Returns `true` if the queue contains no futures
+    pub fn is_empty(&self) -> bool {
+        self.in_progress_queue.is_empty() && self.queued_outputs.is_empty()
+    }
 
-                scope!(handle, |scope| {
-                    async move {
-                        scope.spawn(async move {
-                            println!("spanwed task started: {}", local);
-                            sleep(Duration::from_millis(500)).await;
-                            println!("spanwed task is done: {}", local);
-                        });
+    /// Push a future into the queue.
+    ///
+    /// This function submits the given future to the internal set for managing.
+    /// This function will not call `poll` on the submitted future. The caller
+    /// must ensure that `FuturesOrdered::poll` is called in order to receive
+    /// task notifications.
+    pub fn push(&mut self, future: Fut) {
+        let wrapped = OrderWrapper {
+            data: future,
+            index: self.next_incoming_index,
+        };
+        self.next_incoming_index += 1;
+        self.in_progress_queue.push(wrapped);
+    }
 
-                        sleep(Duration::from_millis(100)).await;
-                        panic!("scoped task panicked: {}", local);
-                    }
-                });
+    /// Prepends a future to the front of the queue.
+    ///
+    /// This function submits the given future to the internal set for managing.
+    /// This function will not call `poll` on the submitted future. The caller
+    /// must ensure that `FuturesOrdered::poll` is called in order to receive
+    /// task notifications. This future will be the next future to be returned
+    /// complete.
+    pub fn prepend(&mut self, future: Fut) {
+        let wrapped = OrderWrapper {
+            data: future,
+            index: self.next_outgoing_index - 1,
+        };
+        self.next_outgoing_index -= 1;
+        self.in_progress_queue.push(wrapped);
+    }
+}
 
-                sleep(Duration::from_millis(110)).await;
-                println!("local can be used here: {}", local);
-            }
-
-            println!("local is freed");
-            sleep(Duration::from_millis(600)).await;
-        });
+impl<Fut: Future> Default for FuturesOrdered<Fut> {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -1,7 +1,6 @@
 use std::fmt::Debug;
-use std::num::Wrapping;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
 use serde::{Deserialize, Serialize};
@@ -11,10 +10,8 @@ use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use tracing::warn;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {

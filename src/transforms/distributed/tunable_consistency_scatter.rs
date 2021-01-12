@@ -223,7 +223,7 @@ impl Transform for TunableConsistency {
                 .filter_map(|_required_successes| {
                     let mut collated_results = vec![];
                     for res in &mut results {
-                        if let Some(mut m) = res.messages.pop() {
+                        if let Some(m) = res.messages.pop() {
                             if let MessageDetails::Response(qm) = &m.details {
                                 collated_results.push(qm.clone());
                             }

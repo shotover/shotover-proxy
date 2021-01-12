@@ -1,6 +1,4 @@
-use tokio::sync::mpsc::Sender;
-
-use crate::config::topology::{ChannelMessage, TopicHolder};
+use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages, QueryResponse, Value};
 use crate::protocols::RawFrame;
@@ -8,14 +6,12 @@ use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
-use anyhow::{anyhow, Error, Result};
+use anyhow::Result;
 use async_trait::async_trait;
-use futures::TryFutureExt;
 use itertools::Itertools;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
-use tracing::{trace, warn};
+use tracing::trace;
 
 /*
 AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,

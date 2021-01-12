@@ -455,8 +455,12 @@ impl From<Frame> for Value {
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Moved(m) => Value::Strings(m),
-            Frame::Ask(a) => Value::Strings(a),
+            Frame::Moved { slot, host, port } => {
+                Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
+            }
+            Frame::Ask { slot, host, port } => {
+                Value::Strings(format!("ASK {} {}:{}", slot, host, port))
+            }
             Frame::Null => Value::NULL,
         }
     }
@@ -469,8 +473,12 @@ impl From<&Frame> for Value {
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Moved(m) => Value::Strings(m),
-            Frame::Ask(a) => Value::Strings(a),
+            Frame::Moved { slot, host, port } => {
+                Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
+            }
+            Frame::Ask { slot, host, port } => {
+                Value::Strings(format!("ASK {} {}:{}", slot, host, port))
+            }
             Frame::Null => Value::NULL,
         }
     }
@@ -481,7 +489,7 @@ impl Into<Frame> for Value {
         match self {
             Value::NULL => Frame::Null,
             Value::None => unimplemented!(),
-            Value::Bytes(b) => Frame::BulkString(b.to_vec()),
+            Value::Bytes(b) => Frame::BulkString(b),
             Value::Strings(s) => Frame::SimpleString(s),
             Value::Integer(i) => Frame::Integer(i),
             Value::Float(f) => Frame::SimpleString(f.to_string()),
