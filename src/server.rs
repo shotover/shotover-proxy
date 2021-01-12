@@ -7,8 +7,6 @@ use metrics::gauge;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-
-use tokio::prelude::{AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
 use tokio::time::timeout;

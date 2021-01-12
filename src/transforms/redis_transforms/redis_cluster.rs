@@ -271,7 +271,7 @@ fn populate_cmd(commands: Vec<Frame>, redis_command: &mut Cmd) -> &mut Cmd {
             Frame::SimpleString(v) => redis_command.arg(v),
             Frame::Error(v) => redis_command.arg(v),
             Frame::Integer(v) => redis_command.arg(v),
-            Frame::BulkString(v) => redis_command.arg(v.bytes()),
+            Frame::BulkString(v) => redis_command.arg(v.as_ref()),
             Frame::Array(v) => populate_cmd(v, redis_command),
             Frame::Moved { slot, host, port } => {
                 redis_command.arg(format!("MOVED {} {}:{}", slot, host, port))
@@ -304,7 +304,7 @@ async fn remap_cluster_commands<'a>(
                 let command = commands.remove(0);
                 if let Frame::BulkString(b) = command {
                     let mut redis_command = Cmd::new();
-                    redis_command.arg(b.bytes());
+                    redis_command.arg(b.as_ref());
 
                     populate_cmd(commands, &mut redis_command);
 

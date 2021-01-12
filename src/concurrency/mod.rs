@@ -170,3 +170,74 @@ impl<Fut: Future> Default for FuturesOrdered<Fut> {
         Self::new()
     }
 }
+
+impl<Fut: Future> Stream for FuturesOrdered<Fut> {
+    type Item = Fut::Output;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = &mut *self;
+
+        // Check to see if we've already received the next value
+        if let Some(next_output) = this.queued_outputs.peek_mut() {
+            if next_output.index == this.next_outgoing_index {
+                this.next_outgoing_index += 1;
+                return Poll::Ready(Some(PeekMut::pop(next_output).data));
+            }
+        }
+
+        loop {
+            match ready!(this.in_progress_queue.poll_next_unpin(cx)) {
+                Some(output) => {
+                    if output.index == this.next_outgoing_index {
+                        this.next_outgoing_index += 1;
+                        return Poll::Ready(Some(output.data));
+                    } else {
+                        this.queued_outputs.push(output)
+                    }
+                }
+                None => return Poll::Ready(None),
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl<Fut: Future> Debug for FuturesOrdered<Fut> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "FuturesOrdered {{ ... }}")
+    }
+}
+
+impl<Fut: Future> FromIterator<Fut> for FuturesOrdered<Fut> {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Fut>,
+    {
+        let acc = Self::new();
+        iter.into_iter().fold(acc, |mut acc, item| {
+            acc.push(item);
+            acc
+        })
+    }
+}
+
+impl<Fut: Future> FusedStream for FuturesOrdered<Fut> {
+    fn is_terminated(&self) -> bool {
+        self.in_progress_queue.is_terminated() && self.queued_outputs.is_empty()
+    }
+}
+
+impl<Fut: Future> Extend<Fut> for FuturesOrdered<Fut> {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Fut>,
+    {
+        for item in iter {
+            self.push(item);
+        }
+    }
+}

@@ -41,7 +41,7 @@ impl RawFrame {
 fn redis_query_type(frame: &Rframe) -> QueryType {
     if let Rframe::Array(frames) = frame {
         if let Some(Rframe::BulkString(bytes)) = frames.get(0) {
-            return match bytes.bytes() {
+            return match bytes.as_ref() {
                 b"APPEND" | b"BITCOUNT" | b"STRLEN" | b"GET" | b"GETRANGE" | b"MGET"
                 | b"LRANGE" | b"LINDEX" | b"LLEN" | b"SCARD" | b"SISMEMBER" | b"SMEMBERS"
                 | b"SUNION" | b"SINTER" | b"ZCARD" | b"ZCOUNT" | b"ZRANGE" | b"ZRANK"
@@ -62,7 +62,7 @@ fn get_keys(
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
         if let Some(Rframe::BulkString(v)) = commands.pop() {
-            let key = String::from_utf8_lossy(v.bytes()).to_string();
+            let key = String::from_utf8_lossy(v.as_ref()).to_string();
             fields.insert(key.clone(), Value::None);
             keys_storage.push(Rframe::BulkString(v).into());
         }
@@ -78,7 +78,7 @@ fn get_key_multi_values(
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     if let Some(Rframe::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8_lossy(v.bytes()).to_string();
+        let key = String::from_utf8_lossy(v.as_ref()).to_string();
         keys_storage.push(Rframe::BulkString(v).into());
 
         let mut values: Vec<Value> = vec![];
@@ -100,7 +100,7 @@ fn get_key_map(
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     if let Some(Rframe::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8_lossy(v.bytes()).to_string();
+        let key = String::from_utf8_lossy(v.as_ref()).to_string();
         keys_storage.push(Rframe::BulkString(v).into());
 
         let mut values: HashMap<String, Value> = HashMap::new();
@@ -108,7 +108,7 @@ fn get_key_map(
             if let Some(Rframe::BulkString(field)) = commands.pop() {
                 if let Some(frame) = commands.pop() {
                     values.insert(
-                        String::from_utf8_lossy(field.bytes()).to_string(),
+                        String::from_utf8_lossy(field.as_ref()).to_string(),
                         frame.into(),
                     );
                 }
@@ -128,7 +128,7 @@ fn get_key_values(
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
         if let Some(Rframe::BulkString(k)) = commands.pop() {
-            let key = String::from_utf8_lossy(k.bytes()).to_string();
+            let key = String::from_utf8_lossy(k.as_ref()).to_string();
             keys_storage.push(Rframe::BulkString(k).into());
             if let Some(frame) = commands.pop() {
                 fields.insert(key, frame.into());
@@ -168,7 +168,7 @@ fn handle_redis_array(
         // https://redis.io/commands and
         // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
         if let Some(Rframe::BulkString(v)) = commands.pop() {
-            let comm = String::from_utf8_lossy(v.bytes())
+            let comm = String::from_utf8_lossy(v.as_ref())
                 .to_string()
                 .to_uppercase();
             match comm.as_str() {
@@ -452,7 +452,7 @@ fn handle_redis_bulkstring(bulkstring: Bytes, decode_as_request: bool) -> Result
         }))
     } else {
         Ok(MessageDetails::Query(QueryMessage {
-            query_string: String::from_utf8_lossy(bulkstring.bytes()).to_string(),
+            query_string: String::from_utf8_lossy(bulkstring.as_ref()).to_string(),
             namespace: vec![],
             primary_key: Default::default(),
             query_values: None,

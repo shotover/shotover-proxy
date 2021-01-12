@@ -11,7 +11,6 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::Buf;
 use futures::StreamExt;
 use itertools::Itertools;
 use redis_protocol::types::Frame;
@@ -79,7 +78,7 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 impl RoutingInfo {
     pub fn for_command_frame(args: &Vec<Frame>) -> Option<RoutingInfo> {
         if let Some(Frame::BulkString(command_arg)) = args.get(0) {
-            return match command_arg.bytes() {
+            return match command_arg.as_ref() {
                 b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
                 b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE"
                 | b"PING" | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE"
@@ -101,7 +100,7 @@ impl RoutingInfo {
                 b"XGROUP" | b"XINFO" => args.get(2).and_then(RoutingInfo::for_key),
                 b"XREAD" | b"XREADGROUP" => {
                     let streams_position = args.iter().position(|a| match a {
-                        Frame::BulkString(a) => a.bytes() == b"STREAMS",
+                        Frame::BulkString(a) => a.as_ref() == b"STREAMS",
                         _ => false,
                     })?;
                     args.get(streams_position + 1)
