@@ -17,7 +17,7 @@ use hyper::body::Bytes;
 use itertools::Itertools;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::io::Error;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
@@ -41,6 +41,7 @@ pub struct SequentialMapConfig {
 
 fn build_slot_to_server(
     frames: &mut Vec<Frame>,
+    nodes: &mut HashSet<String>,
     slots: &mut Vec<(String, u16, u16)>,
     start: u16,
     end: u16,
@@ -63,17 +64,21 @@ fn build_slot_to_server(
     if start == end {
         return;
     }
-    slots.push((format!("{}:{}", ip, port), start, end))
+    nodes.insert(format!("{}:{}", ip, port));
+    slots.push((format!("{}:{}", ip, port), start, end));
 }
 
 pub struct SlotsMapping {
     pub masters: Vec<(String, u16, u16)>,
     pub followers: Vec<(String, u16, u16)>,
+    pub nodes: HashSet<String>,
 }
 
 fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
     let mut slots: Vec<(String, u16, u16)> = vec![];
     let mut replica_slots: Vec<(String, u16, u16)> = vec![];
+    let mut nodes: HashSet<String> = HashSet::new();
+
     if let Frame::Array(response) = contacts_raw {
         let mut response_iter = response.into_iter();
         while let Some(Frame::Array(item)) = response_iter.next() {
@@ -87,22 +92,28 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
                     (1, Frame::Integer(i)) => start = i as u16,
                     (2, Frame::Integer(i)) => end = i as u16,
                     (3, Frame::Array(mut master)) => {
-                        build_slot_to_server(&mut master, &mut slots, start, end)
+                        build_slot_to_server(&mut master, &mut nodes, &mut slots, start, end)
                     }
-                    (n, Frame::Array(mut follow)) if n > 3 => {
-                        build_slot_to_server(&mut follow, &mut replica_slots, start, end)
-                    }
+                    (n, Frame::Array(mut follow)) if n > 3 => build_slot_to_server(
+                        &mut follow,
+                        &mut nodes,
+                        &mut replica_slots,
+                        start,
+                        end,
+                    ),
                     _ => return Err(anyhow!("Unexpected value in slot map")),
                 }
             }
         }
     }
+
     return if slots.is_empty() {
         Err(anyhow!("Empty slot map!"))
     } else {
         Ok(SlotsMapping {
             masters: slots,
             followers: replica_slots,
+            nodes,
         })
     };
 }
@@ -149,11 +160,22 @@ impl TransformsFromConfig for SequentialMapConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let slots = get_topology(&self.first_contact_points).await?;
 
+        let connection_map: ChannelMap = slots
+            .nodes
+            .iter()
+            .map(|node| (node.clone(), connect(node)))
+            .collect();
+
+        let slot_map: SlotMap = slots
+            .masters
+            .iter()
+            .map(|(host, start, end)| (*end, connection_map.get(host).unwrap().clone()))
+            .collect();
+
         Ok(Transforms::SequentialMap(SequentialMap {
             name: "SequentialMap",
-            // chain: build_chain_from_config(self.name.clone(), &self.chain, &topics).await?,
-            slots: Default::default(),
-            channels: Default::default(),
+            slots: slot_map,
+            channels: connection_map,
         }))
     }
 }
@@ -265,7 +287,7 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
     ));
 }
 
-pub fn connect(host: &String, port: u16) -> Sender<Request> {
+pub fn connect(host: &String) -> Sender<Request> {
     unimplemented!()
 }
 
@@ -332,7 +354,7 @@ impl Transform for SequentialMap {
                             let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
                                 None => {
                                     //here we create a new connection if there isn't one, here we update the slot map
-                                    let chan = connect(&host, port);
+                                    let chan = connect(&format!("{}:{}", &host, port));
                                     self.slots.insert(slot, chan.clone());
                                     self.channels.insert(format!("{}:{}", &host, &port), chan);
                                     self.channels
@@ -362,7 +384,7 @@ impl Transform for SequentialMap {
                             let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
                                 None => {
                                     //here we create a new connection if there isn't one, however we don't update the slot map
-                                    let chan = connect(&host, port);
+                                    let chan = connect(&format!("{}:{}", &host, port));
                                     self.channels
                                         .insert(format!("{}:{}", &host, &port), chan.clone());
                                     self.channels
