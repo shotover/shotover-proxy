@@ -20,8 +20,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::io::Error;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::Sender;
-use tokio_util::codec::Framed;
+
+use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio_util::codec::{Framed, FramedRead, FramedWrite};
 
 const SLOT_SIZE: usize = 16384;
 
@@ -159,12 +160,11 @@ async fn get_topology(first_contact_points: &Vec<String>) -> Result<SlotsMapping
 impl TransformsFromConfig for SequentialMapConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let slots = get_topology(&self.first_contact_points).await?;
+        let mut connection_map: ChannelMap = ChannelMap::new();
 
-        let connection_map: ChannelMap = slots
-            .nodes
-            .iter()
-            .map(|node| (node.clone(), connect(node)))
-            .collect();
+        for node in slots.nodes {
+            connection_map.insert(node.clone(), connect(&node).await?);
+        }
 
         let slot_map: SlotMap = slots
             .masters
@@ -264,8 +264,8 @@ impl RoutingInfo {
     }
 }
 
-type SlotMap = BTreeMap<u16, Sender<Request>>;
-type ChannelMap = HashMap<String, Sender<Request>>;
+type SlotMap = BTreeMap<u16, UnboundedSender<Request>>;
+type ChannelMap = HashMap<String, UnboundedSender<Request>>;
 type Response = (Message, ChainResponse);
 
 #[derive(Debug)]
@@ -287,8 +287,42 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
     ));
 }
 
-pub fn connect(host: &String) -> Sender<Request> {
-    unimplemented!()
+pub async fn connect(host: &String) -> Result<UnboundedSender<Request>> {
+    let mut socket: TcpStream = TcpStream::connect(host).await?;
+    let (read, write) = socket.into_split();
+    let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+    let (return_tx, mut return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+
+    tokio::spawn(async move {
+        let codec = RedisCodec::new(true, 1);
+        let mut in_w = FramedWrite::new(write, codec.clone());
+
+        while let Some(req) = out_rx.recv().await {
+            in_w.send(Messages::new_from_message(req.messages.clone()))
+                .await;
+            return_tx.send(req);
+        }
+    });
+
+    tokio::spawn(async move {
+        let codec = RedisCodec::new(true, 1);
+        let mut in_r = FramedRead::new(read, codec.clone());
+
+        while let Some(Ok(req)) = in_r.next().await {
+            for m in req {
+                if let Some(Request {
+                    messages,
+                    return_chan: Some(ret),
+                }) = return_rx.recv().await
+                {
+                    //TODO convert codec to single messages
+                    ret.send((messages, Ok(Messages::new_from_message(m))));
+                }
+            }
+        }
+    });
+
+    Ok(out_tx)
 }
 
 #[async_trait]
@@ -337,8 +371,7 @@ impl Transform for SequentialMap {
                     chan.send(Request {
                         messages: message.clone(),
                         return_chan: Some(one_tx),
-                    })
-                    .await?;
+                    })?;
                     responses.push(one_rx)
                 }
             }
@@ -354,7 +387,8 @@ impl Transform for SequentialMap {
                             let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
                                 None => {
                                     //here we create a new connection if there isn't one, here we update the slot map
-                                    let chan = connect(&format!("{}:{}", &host, port));
+                                    //TODO: Connection error will break everything
+                                    let chan = connect(&format!("{}:{}", &host, port)).await?;
                                     self.slots.insert(slot, chan.clone());
                                     self.channels.insert(format!("{}:{}", &host, &port), chan);
                                     self.channels
@@ -368,8 +402,7 @@ impl Transform for SequentialMap {
                             chan.send(Request {
                                 messages: original.clone(),
                                 return_chan: Some(one_tx),
-                            })
-                            .await?;
+                            })?;
                             responses.prepend(one_rx);
 
                             //update slots
@@ -384,7 +417,8 @@ impl Transform for SequentialMap {
                             let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
                                 None => {
                                     //here we create a new connection if there isn't one, however we don't update the slot map
-                                    let chan = connect(&format!("{}:{}", &host, port));
+                                    // TODO this will break on any connection error
+                                    let chan = connect(&format!("{}:{}", &host, port)).await?;
                                     self.channels
                                         .insert(format!("{}:{}", &host, &port), chan.clone());
                                     self.channels
@@ -398,8 +432,7 @@ impl Transform for SequentialMap {
                             chan.send(Request {
                                 messages: original.clone(),
                                 return_chan: Some(one_tx),
-                            })
-                            .await?;
+                            })?;
                             responses.prepend(one_rx);
                         }
                         _ => response_buffer.push(response_m),
