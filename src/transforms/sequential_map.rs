@@ -90,12 +90,12 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
 
             while let Some((index, item)) = enumerator.next() {
                 match (index, item) {
-                    (1, Frame::Integer(i)) => start = i as u16,
-                    (2, Frame::Integer(i)) => end = i as u16,
-                    (3, Frame::Array(mut master)) => {
+                    (0, Frame::Integer(i)) => start = i as u16,
+                    (1, Frame::Integer(i)) => end = i as u16,
+                    (2, Frame::Array(mut master)) => {
                         build_slot_to_server(&mut master, &mut nodes, &mut slots, start, end)
                     }
-                    (n, Frame::Array(mut follow)) if n > 3 => build_slot_to_server(
+                    (n, Frame::Array(mut follow)) if n > 2 => build_slot_to_server(
                         &mut follow,
                         &mut nodes,
                         &mut replica_slots,
@@ -288,7 +288,7 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
 }
 
 pub async fn connect(host: &String) -> Result<UnboundedSender<Request>> {
-    let mut socket: TcpStream = TcpStream::connect(host).await?;
+    let socket: TcpStream = TcpStream::connect(host).await?;
     let (read, write) = socket.into_split();
     let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
     let (return_tx, mut return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
@@ -308,16 +308,14 @@ pub async fn connect(host: &String) -> Result<UnboundedSender<Request>> {
         let codec = RedisCodec::new(true, 1);
         let mut in_r = FramedRead::new(read, codec.clone());
 
-        while let Some(Ok(req)) = in_r.next().await {
-            for m in req {
-                if let Some(Request {
-                    messages,
-                    return_chan: Some(ret),
-                }) = return_rx.recv().await
-                {
-                    //TODO convert codec to single messages
-                    ret.send((messages, Ok(Messages::new_from_message(m))));
-                }
+        while let Some(req) = in_r.next().await {
+            if let Some(Request {
+                messages,
+                return_chan: Some(ret),
+            }) = return_rx.recv().await
+            {
+                //TODO convert codec to single messages
+                ret.send((messages, req));
             }
         }
     });
@@ -376,6 +374,10 @@ impl Transform for SequentialMap {
                 }
             }
         }
+
+        //TODO: handle multiple responses from all masters / all nodes (currently a message routed to all ndoes/ all masters will be treated
+        //as a set of pipelined responses... rather than made into a single array of responses!
+
         let mut response_buffer = vec![];
         loop {
             match responses.next().await {
