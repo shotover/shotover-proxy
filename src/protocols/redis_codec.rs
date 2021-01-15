@@ -620,9 +620,10 @@ impl RedisCodec {
                 anyhow!("Error decoding redis frame {}", e)
             })? {
                 (Some(frame), size) => {
-                    trace!("Got frame {:?}", frame);
+                    trace!("Got frame {:?} of {}", frame, size);
                     src.advance(size);
                     self.current_frames.push(frame);
+                    break;
                 }
                 (None, _) => {
                     if src.remaining() == 0 {

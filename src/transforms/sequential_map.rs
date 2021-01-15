@@ -21,7 +21,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::io::Error;
 use tokio::net::TcpStream;
 
+use futures::stream::FuturesUnordered;
+use futures::{Future, TryFuture, TryFutureExt};
+use std::pin::Pin;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::oneshot::error::RecvError;
 use tokio_util::codec::{Framed, FramedRead, FramedWrite};
 
 const SLOT_SIZE: usize = 16384;
@@ -326,9 +330,16 @@ pub async fn connect(host: &String) -> Result<UnboundedSender<Request>> {
 #[async_trait]
 impl Transform for SequentialMap {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        let mut responses = FuturesOrdered::new();
+        let mut responses: FuturesOrdered<
+            Pin<
+                Box<
+                    dyn Future<Output = Result<(Message, Result<Messages, anyhow::Error>)>>
+                        + std::marker::Send,
+                >,
+            >,
+        > = FuturesOrdered::new();
         for message in qd.message.into_iter() {
-            let sender = match &message.original {
+            let mut sender = match &message.original {
                 RawFrame::Redis(Frame::Array(ref commands)) => {
                     match RoutingInfo::for_command_frame(&commands) {
                         Some(RoutingInfo::Slot(slot)) => {
@@ -362,15 +373,71 @@ impl Transform for SequentialMap {
             if sender.is_empty() {
                 let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
                 short_circuit(one_tx);
-                responses.push(one_rx)
+                responses.push(Box::pin(async move {
+                    one_rx.await.map_err(|e| anyhow!("{}", e))
+                }))
             } else {
-                for chan in sender.into_iter() {
+                if sender.len() == 1 {
                     let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                    let chan = sender.pop().unwrap();
                     chan.send(Request {
                         messages: message.clone(),
                         return_chan: Some(one_tx),
                     })?;
-                    responses.push(one_rx)
+                    responses.push(Box::pin(async move {
+                        one_rx.await.map_err(|e| anyhow!("{}", e))
+                    }))
+                } else {
+                    let futures = sender
+                        .into_iter()
+                        .map(|chan| {
+                            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                            chan.send(Request {
+                                messages: message.clone(),
+                                return_chan: Some(one_tx),
+                            });
+                            Box::pin(async move { one_rx.await })
+                        })
+                        .fold(vec![], |mut acc, f| {
+                            acc.push(f);
+                            acc
+                        });
+                    let results = futures::future::join_all(futures).await;
+                    let result_future = Box::pin(async move {
+                        let (response, orig) = results.into_iter().fold(
+                            (vec![], Message::new_bypass(RawFrame::NONE)),
+                            |(mut acc, mut last), mut m| {
+                                match m {
+                                    Ok((orig, response)) => match response {
+                                        Ok(mut m) => {
+                                            acc.push(m.messages.pop().map_or(Frame::Null, |m| {
+                                                if let RawFrame::Redis(f) = m.original {
+                                                    f
+                                                } else {
+                                                    Frame::Error(
+                                                        "Non-redis frame detected".to_string(),
+                                                    )
+                                                }
+                                            }))
+                                        }
+                                        Err(e) => acc.push(Frame::Error(e.to_string())),
+                                    },
+                                    Err(e) => acc.push(Frame::Error(e.to_string())),
+                                }
+                                (acc, last)
+                            },
+                        );
+
+                        std::result::Result::Ok((
+                            orig.clone(),
+                            ChainResponse::Ok(Messages::new_from_message(Message {
+                                details: MessageDetails::Unknown,
+                                modified: false,
+                                original: RawFrame::Redis(Frame::Array(response)),
+                            })),
+                        ))
+                    });
+                    responses.push(result_future)
                 }
             }
         }
@@ -390,6 +457,8 @@ impl Transform for SequentialMap {
                                 None => {
                                     //here we create a new connection if there isn't one, here we update the slot map
                                     //TODO: Connection error will break everything
+
+                                    //TODO: change connections to slots for more multiple connections
                                     let chan = connect(&format!("{}:{}", &host, port)).await?;
                                     self.slots.insert(slot, chan.clone());
                                     self.channels.insert(format!("{}:{}", &host, &port), chan);
@@ -405,7 +474,9 @@ impl Transform for SequentialMap {
                                 messages: original.clone(),
                                 return_chan: Some(one_tx),
                             })?;
-                            responses.prepend(one_rx);
+                            responses.prepend(Box::pin(async move {
+                                one_rx.await.map_err(|e| anyhow!("{}", e))
+                            }));
 
                             //update slots
                             //handle request
@@ -435,7 +506,9 @@ impl Transform for SequentialMap {
                                 messages: original.clone(),
                                 return_chan: Some(one_tx),
                             })?;
-                            responses.prepend(one_rx);
+                            responses.prepend(Box::pin(async move {
+                                one_rx.await.map_err(|e| anyhow!("{}", e))
+                            }));
                         }
                         _ => response_buffer.push(response_m),
                     }
