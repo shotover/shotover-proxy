@@ -1,19 +1,20 @@
 use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
-use crate::transforms::Wrapper;
 use anyhow::Result;
-use futures::{FutureExt, SinkExt, StreamExt};
+// use futures::{Stream, StreamExt};
+use crate::transforms::Wrapper;
+use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio::time::Duration;
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_util::codec::{Decoder, Encoder};
+use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace};
-
-use std::time::Duration;
 
 pub struct TcpCodecListener<C>
 where
@@ -167,6 +168,7 @@ where
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an
                 // `Arc`, so a clone only increments the ref count.
+                // chain: self.chain.clone(),
                 chain: self.chain.clone(),
                 client_details: peer,
                 conn_details: conn_string,
@@ -178,7 +180,8 @@ where
                 // The connection state needs a handle to the max connections
                 // semaphore. When the handler is done processing the
                 // connection, a permit is added back to the semaphore.
-                connection: Framed::new(socket, self.codec.clone()),
+                codec: self.codec.clone(),
+                // connection: Framed::new(socket, self.codec.clone()),
                 limit_connections: self.limit_connections.clone(),
 
                 // Receive shutdown notifications.
@@ -188,12 +191,13 @@ where
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
             };
+            let chain = self.chain.clone();
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
             tokio::spawn(async move {
                 // Process the connection. If an error is encountered, log it.
-                if let Err(err) = handler.run().await {
+                if let Err(err) = handler.run(socket).await {
                     error!(cause = ?err, "connection error");
                 }
             });
@@ -233,7 +237,7 @@ where
     }
 }
 
-pub struct Handler<S, C>
+pub struct Handler<C>
 where
     C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
 {
@@ -243,15 +247,14 @@ where
     /// The implementation of the command is in the `cmd` module. Each command
     /// will need to interact with `db` in order to complete the work.
     chain: TransformChain,
-
     client_details: String,
     conn_details: String,
 
     #[allow(dead_code)]
     source_details: String,
+    codec: C,
 
-    connection: Framed<S, C>,
-
+    // connection: Framed<S, C>,
     /// The TCP connection decorated with the redis protocol encoder / decoder
     /// implemented using a buffered `TcpStream`.
     ///
@@ -281,10 +284,10 @@ where
     _shutdown_complete: mpsc::Sender<()>,
 }
 
-impl<S, C> Handler<S, C>
+impl<C> Handler<C>
 where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-    S: AsyncRead + AsyncWrite + Unpin,
+    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send + 'static,
+    // S: AsyncRead + AsyncWrite + Unpin,
 {
     /// Process a single connection.
     ///
@@ -299,7 +302,7 @@ where
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
-    pub async fn run(&mut self) -> Result<()>
+    pub async fn run(&mut self, mut stream: TcpStream) -> Result<()>
     where
         <C as Decoder>::Error: std::fmt::Debug,
     {
@@ -307,15 +310,41 @@ where
         // new request frame.
         let mut idle_time: u64 = 1;
 
+        let (in_tx, mut in_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
+
+        let (rx, tx) = stream.into_split();
+
+        let mut reader = FramedRead::new(rx, self.codec.clone());
+        let writer = FramedWrite::new(tx, self.codec.clone());
+
+        tokio::spawn(async move {
+            while let Some(maybe_message) = reader.next().await {
+                match maybe_message {
+                    Ok(resp_messages) => {
+                        for m in resp_messages.messages {
+                            in_tx.send(Messages { messages: vec![m] });
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Frame error - {:?}", e);
+                    }
+                };
+            }
+        });
+
+        tokio::spawn(async move {
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
+            rx_stream.forward(writer).await;
+        });
+
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown
             // signal
 
-            // let foo = self.connection.next().fuse().await?;
             trace!("Waiting for message");
             let frame = tokio::select! {
-                // Some(res) = self.connection.next() => res,
-                res = timeout(Duration::from_secs(idle_time) ,self.connection.next().fuse()) => {
+                res = timeout(Duration::from_secs(idle_time) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
                             idle_time = 1;
@@ -350,37 +379,38 @@ where
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            match frame {
-                Ok(message) => {
-                    trace!("Received raw message {:?}", message);
-                    match self
-                        .chain
-                        .process_request(Wrapper::new(message), self.client_details.clone())
-                        .await
-                    {
-                        Ok(modified_message) => {
-                            let r = self.connection.send(modified_message).await?;
-                            // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
-                            r
-                        }
-                        Err(e) => {
-                            error!("chain processing error - {}", e);
-                            return Ok(());
-                        }
-                    }
+            trace!("Received raw message {:?}", frame);
+            match self
+                .chain
+                .process_request(Wrapper::new(frame), self.client_details.clone())
+                .await
+            {
+                Ok(modified_message) => {
+                    out_tx.send(modified_message)?;
+                    // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
-                    trace!("Error handling message in TcpStream source: {:?}", e);
+                    error!("chain processing error - {}", e);
                     return Ok(());
                 }
             }
+
+            // match frame {
+            //     Ok(message) => {
+            //
+            //     }
+            //     Err(e) => {
+            //         trace!("Error handling message in TcpStream source: {:?}", e);
+            //         return Ok(());
+            //     }
+            // }
         }
 
         Ok(())
     }
 }
 
-impl<S, C> Drop for Handler<S, C>
+impl<C> Drop for Handler<C>
 where
     C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
     //       S: AsyncRead + AsyncWrite + Drop,

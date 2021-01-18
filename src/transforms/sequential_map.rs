@@ -21,12 +21,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::io::Error;
 use tokio::net::TcpStream;
 
-use futures::stream::FuturesUnordered;
 use futures::{Future, TryFuture, TryFutureExt};
 use std::pin::Pin;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
-use tokio::sync::oneshot::error::RecvError;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Framed, FramedRead, FramedWrite};
+use tracing::debug;
 
 const SLOT_SIZE: usize = 16384;
 
@@ -214,6 +214,7 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 }
 
 impl RoutingInfo {
+    #[inline(always)]
     pub fn for_command_frame(args: &Vec<Frame>) -> Option<RoutingInfo> {
         if let Some(Frame::BulkString(command_arg)) = args.get(0) {
             return match command_arg.as_ref() {
@@ -298,28 +299,30 @@ pub async fn connect(host: &String) -> Result<UnboundedSender<Request>> {
     let (return_tx, mut return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
 
     tokio::spawn(async move {
-        let codec = RedisCodec::new(true, 1);
+        let codec = RedisCodec::new(true, 4);
         let mut in_w = FramedWrite::new(write, codec.clone());
-
-        while let Some(req) = out_rx.recv().await {
-            in_w.send(Messages::new_from_message(req.messages.clone()))
-                .await;
-            return_tx.send(req);
-        }
+        let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
+            let ret = Ok(x.messages.clone());
+            return_tx.send(x);
+            ret
+        });
+        rx_stream.forward(in_w).await;
     });
 
     tokio::spawn(async move {
         let codec = RedisCodec::new(true, 1);
         let mut in_r = FramedRead::new(read, codec.clone());
 
-        while let Some(req) = in_r.next().await {
-            if let Some(Request {
-                messages,
-                return_chan: Some(ret),
-            }) = return_rx.recv().await
-            {
-                //TODO convert codec to single messages
-                ret.send((messages, req));
+        while let Some(Ok(req)) = in_r.next().await {
+            for m in req {
+                if let Some(Request {
+                    messages,
+                    return_chan: Some(ret),
+                }) = return_rx.recv().await
+                {
+                    //TODO convert codec to single messages
+                    ret.send((messages, Ok(Messages { messages: vec![m] })));
+                }
             }
         }
     });
@@ -338,112 +341,106 @@ impl Transform for SequentialMap {
                 >,
             >,
         > = FuturesOrdered::new();
-        for message in qd.message.into_iter() {
-            let mut sender = match &message.original {
-                RawFrame::Redis(Frame::Array(ref commands)) => {
-                    match RoutingInfo::for_command_frame(&commands) {
-                        Some(RoutingInfo::Slot(slot)) => {
-                            if let Some((_, sender)) = self.slots.range_mut(&slot..).next() {
-                                vec![sender]
-                            } else {
-                                vec![]
-                            }
-                        }
-                        Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
-                            self.channels.iter_mut().map(|(_, chan)| chan).collect_vec()
-                        }
-                        Some(RoutingInfo::Random) => {
-                            let key = self
-                                .channels
-                                .keys()
-                                .next()
-                                .unwrap_or(&"nothing".to_string())
-                                .clone();
-                            self.channels.get_mut(&key).into_iter().collect_vec()
-                        }
-                        None => {
+        let message = qd.message;
+        let mut sender = match &message.original {
+            RawFrame::Redis(Frame::Array(ref commands)) => {
+                match RoutingInfo::for_command_frame(&commands) {
+                    Some(RoutingInfo::Slot(slot)) => {
+                        if let Some((_, sender)) = self.slots.range_mut(&slot..).next() {
+                            vec![sender]
+                        } else {
                             vec![]
                         }
                     }
+                    Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
+                        self.channels.iter_mut().map(|(_, chan)| chan).collect_vec()
+                    }
+                    Some(RoutingInfo::Random) => {
+                        let key = self
+                            .channels
+                            .keys()
+                            .next()
+                            .unwrap_or(&"nothing".to_string())
+                            .clone();
+                        self.channels.get_mut(&key).into_iter().collect_vec()
+                    }
+                    None => {
+                        vec![]
+                    }
                 }
-                _ => {
-                    vec![]
-                }
-            };
-            if sender.is_empty() {
+            }
+            _ => {
+                vec![]
+            }
+        };
+        if sender.is_empty() {
+            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+            short_circuit(one_tx);
+            responses.push(Box::pin(async move {
+                one_rx.await.map_err(|e| anyhow!("{}", e))
+            }))
+        } else {
+            if sender.len() == 1 {
                 let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                short_circuit(one_tx);
+                let chan = sender.pop().unwrap();
+                chan.send(Request {
+                    messages: message.clone(),
+                    return_chan: Some(one_tx),
+                })?;
                 responses.push(Box::pin(async move {
                     one_rx.await.map_err(|e| anyhow!("{}", e))
                 }))
             } else {
-                if sender.len() == 1 {
-                    let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                    let chan = sender.pop().unwrap();
-                    chan.send(Request {
-                        messages: message.clone(),
-                        return_chan: Some(one_tx),
-                    })?;
-                    responses.push(Box::pin(async move {
-                        one_rx.await.map_err(|e| anyhow!("{}", e))
-                    }))
-                } else {
-                    let futures = sender
-                        .into_iter()
-                        .map(|chan| {
-                            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                            chan.send(Request {
-                                messages: message.clone(),
-                                return_chan: Some(one_tx),
-                            });
-                            Box::pin(async move { one_rx.await })
-                        })
-                        .fold(vec![], |mut acc, f| {
-                            acc.push(f);
-                            acc
+                let futures = sender
+                    .into_iter()
+                    .map(|chan| {
+                        let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                        chan.send(Request {
+                            messages: message.clone(),
+                            return_chan: Some(one_tx),
                         });
-                    let results = futures::future::join_all(futures).await;
-                    let result_future = Box::pin(async move {
-                        let (response, orig) = results.into_iter().fold(
-                            (vec![], Message::new_bypass(RawFrame::NONE)),
-                            |(mut acc, mut last), mut m| {
-                                match m {
-                                    Ok((orig, response)) => match response {
-                                        Ok(mut m) => {
-                                            acc.push(m.messages.pop().map_or(Frame::Null, |m| {
-                                                if let RawFrame::Redis(f) = m.original {
-                                                    f
-                                                } else {
-                                                    Frame::Error(
-                                                        "Non-redis frame detected".to_string(),
-                                                    )
-                                                }
-                                            }))
-                                        }
-                                        Err(e) => acc.push(Frame::Error(e.to_string())),
-                                    },
-                                    Err(e) => acc.push(Frame::Error(e.to_string())),
-                                }
-                                (acc, last)
-                            },
-                        );
-
-                        std::result::Result::Ok((
-                            orig.clone(),
-                            ChainResponse::Ok(Messages::new_from_message(Message {
-                                details: MessageDetails::Unknown,
-                                modified: false,
-                                original: RawFrame::Redis(Frame::Array(response)),
-                            })),
-                        ))
+                        Box::pin(async move { one_rx.await })
+                    })
+                    .fold(vec![], |mut acc, f| {
+                        acc.push(f);
+                        acc
                     });
-                    responses.push(result_future)
-                }
+                let results = futures::future::join_all(futures).await;
+                let result_future = Box::pin(async move {
+                    let (response, orig) = results.into_iter().fold(
+                        (vec![], Message::new_bypass(RawFrame::NONE)),
+                        |(mut acc, mut last), mut m| {
+                            match m {
+                                Ok((orig, response)) => match response {
+                                    Ok(mut m) => {
+                                        acc.push(m.messages.pop().map_or(Frame::Null, |m| {
+                                            if let RawFrame::Redis(f) = m.original {
+                                                f
+                                            } else {
+                                                Frame::Error("Non-redis frame detected".to_string())
+                                            }
+                                        }))
+                                    }
+                                    Err(e) => acc.push(Frame::Error(e.to_string())),
+                                },
+                                Err(e) => acc.push(Frame::Error(e.to_string())),
+                            }
+                            (acc, last)
+                        },
+                    );
+
+                    std::result::Result::Ok((
+                        orig.clone(),
+                        ChainResponse::Ok(Messages::new_from_message(Message {
+                            details: MessageDetails::Unknown,
+                            modified: false,
+                            original: RawFrame::Redis(Frame::Array(response)),
+                        })),
+                    ))
+                });
+                responses.push(result_future)
             }
         }
-
-        //TODO: handle multiple responses from all masters / all nodes (currently a message routed to all ndoes/ all masters will be treated
-        //as a set of pipelined responses... rather than made into a single array of responses!
 
         let mut response_buffer = vec![];
         loop {
@@ -453,6 +450,7 @@ impl Transform for SequentialMap {
                     let response_m = response?.messages.remove(0);
                     match response_m.original {
                         RawFrame::Redis(Frame::Moved { slot, host, port }) => {
+                            debug!("Got Moved frame {} {} {}", slot, host, port);
                             let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
                                 None => {
                                     //here we create a new connection if there isn't one, here we update the slot map
@@ -481,12 +479,9 @@ impl Transform for SequentialMap {
                             //update slots
                             //handle request
                         }
-                        RawFrame::Redis(Frame::Ask {
-                            slot: _,
-                            host,
-                            port,
-                        }) => {
+                        RawFrame::Redis(Frame::Ask { slot, host, port }) => {
                             // see redis-protocol.rs for redirection struct so we dont need to parse the string again
+                            debug!("Got ASK frame {} {} {}", slot, host, port);
                             let chan = match self.channels.get_mut(&*format!("{}:{}", host, port)) {
                                 None => {
                                     //here we create a new connection if there isn't one, however we don't update the slot map

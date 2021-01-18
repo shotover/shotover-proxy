@@ -623,7 +623,6 @@ impl RedisCodec {
                     trace!("Got frame {:?} of {}", frame, size);
                     src.advance(size);
                     self.current_frames.push(frame);
-                    break;
                 }
                 (None, _) => {
                     if src.remaining() == 0 {
@@ -672,19 +671,16 @@ impl Decoder for RedisCodec {
     }
 }
 
-impl Encoder<Messages> for RedisCodec {
+impl Encoder<Message> for RedisCodec {
     type Error = anyhow::Error;
 
     fn encode(
         &mut self,
-        item: Messages,
+        item: Message,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        item.into_iter().try_for_each(|m: Message| {
-            let frame = self.encode_message(m)?;
-            self.encode_raw(frame, dst)
-        })
-        // .collect()
+        let frame = self.encode_message(item)?;
+        self.encode_raw(frame, dst)
     }
 }
 
