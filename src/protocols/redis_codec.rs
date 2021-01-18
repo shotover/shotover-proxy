@@ -671,16 +671,18 @@ impl Decoder for RedisCodec {
     }
 }
 
-impl Encoder<Message> for RedisCodec {
+impl Encoder<Messages> for RedisCodec {
     type Error = anyhow::Error;
 
     fn encode(
         &mut self,
-        item: Message,
+        item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        let frame = self.encode_message(item)?;
-        self.encode_raw(frame, dst)
+        item.into_iter().try_for_each(|m: Message| {
+            let frame = self.encode_message(m)?;
+            self.encode_raw(frame, dst)
+        })
     }
 }
 

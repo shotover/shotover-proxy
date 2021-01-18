@@ -1,9 +1,8 @@
 use core::fmt;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;

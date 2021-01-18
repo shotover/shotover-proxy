@@ -302,7 +302,9 @@ pub async fn connect(host: &String) -> Result<UnboundedSender<Request>> {
         let codec = RedisCodec::new(true, 4);
         let mut in_w = FramedWrite::new(write, codec.clone());
         let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
-            let ret = Ok(x.messages.clone());
+            let ret = Ok(Messages {
+                messages: vec![x.messages.clone()],
+            });
             return_tx.send(x);
             ret
         });
@@ -332,7 +334,7 @@ pub async fn connect(host: &String) -> Result<UnboundedSender<Request>> {
 
 #[async_trait]
 impl Transform for SequentialMap {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut responses: FuturesOrdered<
             Pin<
                 Box<
@@ -341,104 +343,109 @@ impl Transform for SequentialMap {
                 >,
             >,
         > = FuturesOrdered::new();
-        let message = qd.message;
-        let mut sender = match &message.original {
-            RawFrame::Redis(Frame::Array(ref commands)) => {
-                match RoutingInfo::for_command_frame(&commands) {
-                    Some(RoutingInfo::Slot(slot)) => {
-                        if let Some((_, sender)) = self.slots.range_mut(&slot..).next() {
-                            vec![sender]
-                        } else {
+        // let message = qd.message.messages.pop().unwrap();
+        for message in qd.message {
+            let mut sender = match &message.original {
+                RawFrame::Redis(Frame::Array(ref commands)) => {
+                    match RoutingInfo::for_command_frame(&commands) {
+                        Some(RoutingInfo::Slot(slot)) => {
+                            if let Some((_, sender)) = self.slots.range_mut(&slot..).next() {
+                                vec![sender]
+                            } else {
+                                vec![]
+                            }
+                        }
+                        Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
+                            self.channels.iter_mut().map(|(_, chan)| chan).collect_vec()
+                        }
+                        Some(RoutingInfo::Random) => {
+                            let key = self
+                                .channels
+                                .keys()
+                                .next()
+                                .unwrap_or(&"nothing".to_string())
+                                .clone();
+                            self.channels.get_mut(&key).into_iter().collect_vec()
+                        }
+                        None => {
                             vec![]
                         }
                     }
-                    Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
-                        self.channels.iter_mut().map(|(_, chan)| chan).collect_vec()
-                    }
-                    Some(RoutingInfo::Random) => {
-                        let key = self
-                            .channels
-                            .keys()
-                            .next()
-                            .unwrap_or(&"nothing".to_string())
-                            .clone();
-                        self.channels.get_mut(&key).into_iter().collect_vec()
-                    }
-                    None => {
-                        vec![]
-                    }
                 }
-            }
-            _ => {
-                vec![]
-            }
-        };
-        if sender.is_empty() {
-            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-            short_circuit(one_tx);
-            responses.push(Box::pin(async move {
-                one_rx.await.map_err(|e| anyhow!("{}", e))
-            }))
-        } else {
-            if sender.len() == 1 {
+                _ => {
+                    vec![]
+                }
+            };
+
+            if sender.is_empty() {
                 let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                let chan = sender.pop().unwrap();
-                chan.send(Request {
-                    messages: message.clone(),
-                    return_chan: Some(one_tx),
-                })?;
+                short_circuit(one_tx);
                 responses.push(Box::pin(async move {
                     one_rx.await.map_err(|e| anyhow!("{}", e))
                 }))
             } else {
-                let futures = sender
-                    .into_iter()
-                    .map(|chan| {
-                        let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                        chan.send(Request {
-                            messages: message.clone(),
-                            return_chan: Some(one_tx),
+                if sender.len() == 1 {
+                    let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                    let chan = sender.pop().unwrap();
+                    chan.send(Request {
+                        messages: message.clone(),
+                        return_chan: Some(one_tx),
+                    })?;
+                    responses.push(Box::pin(async move {
+                        one_rx.await.map_err(|e| anyhow!("{}", e))
+                    }))
+                } else {
+                    let futures = sender
+                        .into_iter()
+                        .map(|chan| {
+                            let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+                            chan.send(Request {
+                                messages: message.clone(),
+                                return_chan: Some(one_tx),
+                            });
+                            Box::pin(async move { one_rx.await })
+                        })
+                        .fold(vec![], |mut acc, f| {
+                            acc.push(f);
+                            acc
                         });
-                        Box::pin(async move { one_rx.await })
-                    })
-                    .fold(vec![], |mut acc, f| {
-                        acc.push(f);
-                        acc
-                    });
-                let results = futures::future::join_all(futures).await;
-                let result_future = Box::pin(async move {
-                    let (response, orig) = results.into_iter().fold(
-                        (vec![], Message::new_bypass(RawFrame::NONE)),
-                        |(mut acc, mut last), mut m| {
-                            match m {
-                                Ok((orig, response)) => match response {
-                                    Ok(mut m) => {
-                                        acc.push(m.messages.pop().map_or(Frame::Null, |m| {
-                                            if let RawFrame::Redis(f) = m.original {
-                                                f
-                                            } else {
-                                                Frame::Error("Non-redis frame detected".to_string())
-                                            }
-                                        }))
-                                    }
+                    let results = futures::future::join_all(futures).await;
+                    let result_future = Box::pin(async move {
+                        let (response, orig) = results.into_iter().fold(
+                            (vec![], Message::new_bypass(RawFrame::NONE)),
+                            |(mut acc, mut last), mut m| {
+                                match m {
+                                    Ok((orig, response)) => match response {
+                                        Ok(mut m) => {
+                                            acc.push(m.messages.pop().map_or(Frame::Null, |m| {
+                                                if let RawFrame::Redis(f) = m.original {
+                                                    f
+                                                } else {
+                                                    Frame::Error(
+                                                        "Non-redis frame detected".to_string(),
+                                                    )
+                                                }
+                                            }))
+                                        }
+                                        Err(e) => acc.push(Frame::Error(e.to_string())),
+                                    },
                                     Err(e) => acc.push(Frame::Error(e.to_string())),
-                                },
-                                Err(e) => acc.push(Frame::Error(e.to_string())),
-                            }
-                            (acc, last)
-                        },
-                    );
+                                }
+                                (acc, last)
+                            },
+                        );
 
-                    std::result::Result::Ok((
-                        orig.clone(),
-                        ChainResponse::Ok(Messages::new_from_message(Message {
-                            details: MessageDetails::Unknown,
-                            modified: false,
-                            original: RawFrame::Redis(Frame::Array(response)),
-                        })),
-                    ))
-                });
-                responses.push(result_future)
+                        std::result::Result::Ok((
+                            orig.clone(),
+                            ChainResponse::Ok(Messages::new_from_message(Message {
+                                details: MessageDetails::Unknown,
+                                modified: false,
+                                original: RawFrame::Redis(Frame::Array(response)),
+                            })),
+                        ))
+                    });
+                    responses.push(result_future)
+                }
             }
         }
 
