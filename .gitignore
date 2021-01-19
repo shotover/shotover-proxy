@@ -1,5 +1,6 @@
 /target
 .idea/
+/old_builds
 Cargo.lock
 *.data
 *.data.old
