@@ -16,6 +16,7 @@ pub struct RedisCodec {
     decode_as_response: bool,
     batch_hint: usize,
     current_frames: Vec<Frame>,
+    enable_metadata: bool,
 }
 
 fn get_keys(
@@ -134,6 +135,7 @@ impl RedisCodec {
             decode_as_response,
             batch_hint,
             current_frames: vec![],
+            enable_metadata: false,
         }
     }
 
@@ -558,34 +560,42 @@ impl RedisCodec {
     }
 
     pub fn process_redis_frame(&self, frame: Frame) -> Result<Message> {
-        Ok(match frame.clone() {
-            Frame::SimpleString(s) => self.handle_redis_string(s, frame),
-            Frame::BulkString(bs) => self.handle_redis_bulkstring(bs, frame),
-            Frame::Array(frames) => self.handle_redis_array(frames, frame)?,
-            Frame::Moved { slot, host, port } => {
-                self.handle_redis_string(format!("MOVED {} {}:{}", slot, host, port), frame)
-            }
-            Frame::Ask { slot, host, port } => {
-                self.handle_redis_string(format!("ASK {} {}:{}", slot, host, port), frame)
-            }
-            Frame::Integer(i) => self.handle_redis_integer(i, frame),
-            Frame::Error(s) => self.handle_redis_error(s, frame),
-            Frame::Null => {
-                return if self.decode_as_response {
-                    Ok(Message::new_response(
-                        QueryResponse::empty(),
-                        false,
-                        RawFrame::Redis(frame),
-                    ))
-                } else {
-                    Ok(Message::new_query(
-                        QueryMessage::empty(),
-                        false,
-                        RawFrame::Redis(frame),
-                    ))
+        return if !self.enable_metadata {
+            Ok(Message {
+                details: MessageDetails::Unknown,
+                modified: false,
+                original: RawFrame::Redis(frame),
+            })
+        } else {
+            Ok(match frame.clone() {
+                Frame::SimpleString(s) => self.handle_redis_string(s, frame),
+                Frame::BulkString(bs) => self.handle_redis_bulkstring(bs, frame),
+                Frame::Array(frames) => self.handle_redis_array(frames, frame)?,
+                Frame::Moved { slot, host, port } => {
+                    self.handle_redis_string(format!("MOVED {} {}:{}", slot, host, port), frame)
                 }
-            }
-        })
+                Frame::Ask { slot, host, port } => {
+                    self.handle_redis_string(format!("ASK {} {}:{}", slot, host, port), frame)
+                }
+                Frame::Integer(i) => self.handle_redis_integer(i, frame),
+                Frame::Error(s) => self.handle_redis_error(s, frame),
+                Frame::Null => {
+                    return if self.decode_as_response {
+                        Ok(Message::new_response(
+                            QueryResponse::empty(),
+                            false,
+                            RawFrame::Redis(frame),
+                        ))
+                    } else {
+                        Ok(Message::new_query(
+                            QueryMessage::empty(),
+                            false,
+                            RawFrame::Redis(frame),
+                        ))
+                    }
+                }
+            })
+        };
     }
 
     pub fn build_redis_response_frame(resp: QueryResponse) -> Frame {
