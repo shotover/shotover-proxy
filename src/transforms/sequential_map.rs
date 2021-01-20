@@ -6,7 +6,6 @@ use std::iter::*;
 use crate::concurrency::FuturesOrdered;
 use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::RawFrame;
-use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
 };
@@ -18,12 +17,11 @@ use itertools::Itertools;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use tokio::io::Error;
 use tokio::net::TcpStream;
 
-use futures::{Future, TryFuture, TryFutureExt};
+use futures::Future;
 use std::pin::Pin;
-use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Framed, FramedRead, FramedWrite};
 use tracing::debug;

@@ -322,9 +322,7 @@ where
             while let Some(maybe_message) = reader.next().await {
                 match maybe_message {
                     Ok(resp_messages) => {
-                        for m in resp_messages.messages {
-                            in_tx.send(Messages { messages: vec![m] });
-                        }
+                        in_tx.send(resp_messages);
                     }
                     Err(e) => {
                         debug!("Frame error - {:?}", e);
