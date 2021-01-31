@@ -25,20 +25,12 @@ chain_config:
               chain:
                 - QueryCounter:
                     name: "DR chain"
-                - PoolConnections:
-                    name: "RedisCluster-DR-subchain"
-                    parallelism: 256
-                    chain:
-                      - RedisCluster:
-                          first_contact_points: [ "redis://127.0.0.1:2120/", "redis://127.0.0.1:2121/", "redis://127.0.0.1:2122/", "redis://127.0.0.1:2123/", "redis://127.0.0.1:2124/", "redis://127.0.0.1:2125/" ]
+                - SequentialMap:
+                    first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
     - QueryCounter:
         name: "Main chain"
-    - PoolConnections:
-        name: "RedisCluster-Main-subchain"
-        parallelism: 512
-        chain:
-          - RedisCluster:
-              first_contact_points: [ "redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/" ]
+    - SequentialMap:
+        first_contact_points: [ "127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225" ]
 named_topics:
   example: 10
 source_to_chain_mapping:

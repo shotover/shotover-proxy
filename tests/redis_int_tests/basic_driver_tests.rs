@@ -651,7 +651,7 @@ fn test_cluster_eval() {
             return redis.call("MGET", KEYS[1], KEYS[2]);
         "#,
         )
-        .arg("2")
+        .arg(2)
         .arg("{x}a")
         .arg("{x}b")
         .query(&mut con);
@@ -936,7 +936,7 @@ fn test_cluster_all_script_redis() -> Result<()> {
 #[test]
 fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
     try_register_cleanup();
-    let compose_config = "examples/redis-cluster-pipeline/docker-compose.yml".to_string();
+    let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
 
     load_docker_compose(compose_config)?;
     let _subscriber = tracing_subscriber::fmt()
@@ -951,7 +951,7 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
         .unwrap();
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster-pipeline/config.yaml".to_string())
+            Topology::from_file("examples/redis-cluster/config.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await

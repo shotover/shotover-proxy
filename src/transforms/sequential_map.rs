@@ -25,6 +25,7 @@ use futures::stream::FuturesUnordered;
 use futures::{Future, Stream, TryFuture, TryFutureExt};
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
+use rdkafka::message::ToBytes;
 use std::pin::Pin;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
@@ -85,6 +86,7 @@ fn build_slot_to_server(
     slots.push((format!("{}:{}", ip, port), start, end));
 }
 
+#[derive(Debug)]
 pub struct SlotsMapping {
     pub masters: Vec<(String, u16, u16)>,
     pub followers: Vec<(String, u16, u16)>,
@@ -176,9 +178,10 @@ async fn get_topology(first_contact_points: &Vec<String>) -> Result<SlotsMapping
 impl TransformsFromConfig for SequentialMapConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let slots = get_topology(&self.first_contact_points).await?;
+        debug!("Detected cluster: {:?}", slots);
         let mut connection_map: ChannelMap = ChannelMap::new();
 
-        for node in slots.nodes {
+        for (node, _, _) in &slots.masters {
             connection_map.insert(
                 node.clone(),
                 connect(&node, self.connection_count.unwrap_or(1)).await?,
@@ -190,6 +193,9 @@ impl TransformsFromConfig for SequentialMapConfig {
             .iter()
             .map(|(host, start, end)| (*end, host.clone()))
             .collect();
+
+        debug!("Mapped cluster: {:?}", slot_map);
+        debug!("Channels: {:?}", connection_map);
 
         Ok(Transforms::SequentialMap(SequentialMap {
             name: "SequentialMap",
@@ -244,8 +250,18 @@ impl RoutingInfo {
                 b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
                 | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
                 b"EVALSHA" | b"EVAL" => {
-                    let foo = if let Some(Frame::Integer(key_count)) = args.get(2) {
-                        if *key_count == 0 {
+                    //TODO: Appears the the codec is not decoding integers correctly
+                    let key_count = match args.get(2) {
+                        Some(Frame::Integer(key_count)) => Some(*key_count),
+                        Some(Frame::BulkString(key_count)) => String::from_utf8(key_count.to_vec())
+                            .unwrap_or("0".to_string())
+                            .parse::<i64>()
+                            .ok(),
+                        _ => None,
+                    };
+
+                    let foo = if let Some(key_count) = key_count {
+                        if key_count == 0 {
                             Some(RoutingInfo::Random)
                         } else {
                             args.get(3).and_then(RoutingInfo::for_key)
