@@ -59,6 +59,7 @@ pub mod redis_transforms;
 pub mod sampler;
 pub mod sequential_map;
 pub mod test_transforms;
+pub mod util;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
 
