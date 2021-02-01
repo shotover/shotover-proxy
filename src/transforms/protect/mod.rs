@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};

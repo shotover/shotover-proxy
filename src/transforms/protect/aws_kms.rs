@@ -1,7 +1,7 @@
 use crate::transforms::protect::KeyMaterial;
 use anyhow::anyhow;
 use anyhow::Result;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use rusoto_kms::{DecryptRequest, GenerateDataKeyRequest, Kms, KmsClient};
 use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;

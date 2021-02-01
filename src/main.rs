@@ -80,7 +80,7 @@ fn main() -> Result<()> {
 
     info!("Starting loaded topology");
 
-    let mut rt = runtime::Builder::new_multi_thread()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
         .thread_stack_size(params.stack_size)

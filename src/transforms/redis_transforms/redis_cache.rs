@@ -53,7 +53,7 @@ impl SimpleRedisCache {
         }
     }
 
-    pub async fn new_from_config(params: &str) -> SimpleRedisCache {
+    pub async fn new_from_config(_params: &str) -> SimpleRedisCache {
         // let client = redis::Client::open(params).unwrap();
         // let con = client.get_multiplexed_tokio_connection().await.unwrap();
         SimpleRedisCache {

@@ -191,7 +191,7 @@ where
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
             };
-            let chain = self.chain.clone();
+            // let chain = self.chain.clone();
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
@@ -302,7 +302,7 @@ where
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
-    pub async fn run(&mut self, mut stream: TcpStream) -> Result<()>
+    pub async fn run(&mut self, stream: TcpStream) -> Result<()>
     where
         <C as Decoder>::Error: std::fmt::Debug,
     {
@@ -311,7 +311,7 @@ where
         let mut idle_time: u64 = 1;
 
         let (in_tx, mut in_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
-        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
 
         let (rx, tx) = stream.into_split();
 

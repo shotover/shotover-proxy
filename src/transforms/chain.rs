@@ -2,13 +2,12 @@ use crate::config::topology::ChannelMessage;
 use crate::error::ChainResponse;
 use crate::transforms::{Transforms, Wrapper};
 use anyhow::{anyhow, Result};
-use bytes::Bytes;
-use futures::{FutureExt, TryFutureExt};
+use futures::TryFutureExt;
 
 use itertools::Itertools;
 use metrics::{counter, timing};
 use std::sync::Arc;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::sync::Mutex;
 use tokio::time::Duration;

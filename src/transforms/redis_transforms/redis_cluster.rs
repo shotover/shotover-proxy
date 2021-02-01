@@ -141,7 +141,7 @@ impl RedisCluster {
                         Ok(conn) => {
                             self.channels.insert(host.clone(), conn);
                         }
-                        Err(e) => {
+                        Err(_) => {
                             debug!("retrying connection failed");
                         }
                     }
@@ -394,7 +394,7 @@ async fn get_topology(first_contact_points: &Vec<String>) -> Result<SlotsMapping
                     continue;
                 }
             }
-            Err(e) => continue,
+            Err(_) => continue,
         }
     }
     Err(anyhow!("Couldn't get slot map from redis"))
@@ -439,7 +439,7 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
 
 #[async_trait]
 impl Transform for RedisCluster {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let mut responses: FuturesOrdered<
             Pin<
                 Box<
@@ -450,7 +450,7 @@ impl Transform for RedisCluster {
         > = FuturesOrdered::new();
         // let message = qd.message.messages.pop().unwrap();
         for message in qd.message {
-            let mut sender = self.get_channels(&message.original).await;
+            let sender = self.get_channels(&message.original).await;
 
             responses.push(match sender.len() {
                 0 => {
@@ -476,7 +476,7 @@ impl Transform for RedisCluster {
                     }
                     Box::pin(async move {
                         let (response, orig) = futures
-                            .fold((vec![], message), |(mut acc, mut last), mut m| async move {
+                            .fold((vec![], message), |(mut acc, last), m| async move {
                                 match m {
                                     Ok((_orig, response)) => match response {
                                         Ok(mut m) => {

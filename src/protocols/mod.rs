@@ -3,7 +3,7 @@ use cassandra_proto::frame::Frame;
 pub mod cassandra_protocol2;
 pub mod redis_codec;
 use anyhow::Result;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use redis_protocol::prelude::Frame as Rframe;
 
 use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};

@@ -1,11 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use mlua::Lua;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages, QueryMessage};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 pub struct LuaFilterTransform {
@@ -54,7 +53,7 @@ impl TransformsFromConfig for LuaConfig {
 
 #[async_trait]
 impl Transform for LuaFilterTransform {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         qd.call_next_transform().await
         // let globals = self.slua.globals();
         // let qm_v = mlua_serde::to_value(&self.slua, qd.message.clone()).unwrap();

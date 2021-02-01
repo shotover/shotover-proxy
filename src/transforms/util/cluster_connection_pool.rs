@@ -36,16 +36,6 @@ where
         }
     }
 
-    async fn add_new_host(&self, host: &String) {
-        let mut host_set = self.host_set.lock().await;
-        host_set.insert(host.clone());
-    }
-
-    async fn try_connect(&self, host: &String) -> Result<UnboundedSender<Request>> {
-        self.add_new_host(host).await;
-        unimplemented!()
-    }
-
     /// Try and grab an existing connection, if it's closed (e.g. the listener on the other side
     /// has closed due to a TCP error), we'll try to reconnect and return the new connection while
     /// updating the connection map. Errors are returned when a connection can't be established.
@@ -101,7 +91,7 @@ where
     C: Encoder<Messages, Error = anyhow::Error> + Clone + Send + 'static,
 {
     let codec = codec.clone();
-    let mut in_w = FramedWrite::new(write, codec);
+    let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
         let ret = Ok(Messages {
             messages: vec![x.messages.clone()],

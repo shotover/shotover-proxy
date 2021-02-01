@@ -9,7 +9,6 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
-use itertools::Itertools;
 use mlua::UserData;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
@@ -535,7 +534,7 @@ impl Into<cassandra_proto::types::value::Bytes> for Value {
 }
 
 mod my_bytes {
-    use bytes::{Buf, Bytes};
+    use bytes::Bytes;
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(val: &Bytes, serializer: S) -> Result<S::Ok, S::Error>

@@ -54,7 +54,7 @@ hyper = { version = "0.14.2", features = ["server"] }
 # Transform dependencies
 #redis-protocol = { path = "/home/ben/git/redis-protocol.rs"}
 redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "remove-parser" }
-#cdrs = { version = "2" }
+
 #cassandra-proto = { path = "/home/ben/git/cassandra-proto", features = ["v4"]}
 cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
 rdkafka = { version = "0.24", features = ["cmake-build"] }
