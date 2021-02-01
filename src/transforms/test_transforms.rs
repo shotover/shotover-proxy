@@ -4,6 +4,7 @@ use crate::transforms::{Transform, Wrapper};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use rand::prelude::*;
+use rand_distr::Distribution;
 use rand_distr::Normal;
 use tokio::time::Duration;
 
@@ -38,7 +39,7 @@ pub struct RandomDelayTransform {
 impl Transform for RandomDelayTransform {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let delay;
-        if let Some(dist) = self.distribution {
+        if let Some(mut dist) = self.distribution {
             delay = Duration::from_millis(dist.sample(&mut rand::thread_rng()) as u64 + self.delay);
         } else {
             delay = Duration::from_millis(self.delay);

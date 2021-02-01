@@ -11,7 +11,6 @@ use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
 use itertools::Itertools;
 use mlua::UserData;
-use redis::{RedisResult, RedisWrite, Value as RValue};
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -403,45 +402,6 @@ pub enum Value {
     NamedRows(Vec<HashMap<String, Value>>),
     Document(HashMap<String, Value>),
     FragmentedResponese(Vec<Value>),
-}
-
-pub fn parse_redis(v: &RValue) -> Value {
-    match v {
-        RValue::Nil => Value::NULL,
-        RValue::Int(i) => Value::Integer(*i),
-        RValue::Data(d) => Value::Bytes(Bytes::from(d.clone())),
-        RValue::Bulk(b) => Value::List(b.iter().map(|v| parse_redis(v)).collect_vec()),
-        RValue::Status(s) => Value::Strings(s.clone()),
-        RValue::Okay => Value::Strings("OK".to_string()),
-    }
-}
-
-impl redis::FromRedisValue for Value {
-    fn from_redis_value(v: &RValue) -> RedisResult<Self> {
-        RedisResult::Ok(parse_redis(v))
-    }
-}
-
-impl redis::ToRedisArgs for Value {
-    fn write_redis_args<W>(&self, out: &mut W)
-    where
-        W: ?Sized + RedisWrite,
-    {
-        match self {
-            Value::NULL => {}
-            Value::None => {}
-            Value::Bytes(b) => out.write_arg(b),
-            Value::Strings(s) => s.write_redis_args(out),
-            Value::Integer(i) => i.write_redis_args(out),
-            Value::Float(f) => f.write_redis_args(out),
-            Value::Boolean(b) => b.write_redis_args(out),
-            Value::Timestamp(t) => format!("{}", t).write_redis_args(out),
-            Value::Inet(i) => format!("{}", i).write_redis_args(out),
-            Value::List(l) => l.write_redis_args(out),
-            Value::Rows(r) => r.write_redis_args(out),
-            _ => unreachable!(),
-        }
-    }
 }
 
 impl From<Frame> for Value {
