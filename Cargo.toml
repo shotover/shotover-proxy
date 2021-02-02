@@ -81,6 +81,8 @@ criterion = "0.3"
 #proptest = "0.10.0"
 lazy_static = "1.4.0"
 ctrlc = "3.1.6"
+redis = {git = "https://github.com/benbromhead/redis-rs", branch = "parra_support", features = ["tokio-rt-core", "cluster"]}
+
 
 
 [[bench]]

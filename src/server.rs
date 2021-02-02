@@ -322,7 +322,7 @@ where
             while let Some(maybe_message) = reader.next().await {
                 match maybe_message {
                     Ok(resp_messages) => {
-                        in_tx.send(resp_messages);
+                        let _ = in_tx.send(resp_messages);
                     }
                     Err(e) => {
                         debug!("Frame error - {:?}", e);
@@ -333,7 +333,7 @@ where
 
         tokio::spawn(async move {
             let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
-            rx_stream.forward(writer).await;
+            let _ = rx_stream.forward(writer).await;
         });
 
         while !self.shutdown.is_shutdown() {

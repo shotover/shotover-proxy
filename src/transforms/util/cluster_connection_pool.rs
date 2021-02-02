@@ -1,8 +1,10 @@
 use crate::message::Messages;
 use crate::transforms::util::Request;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::iter::FromIterator;
 use std::sync::Arc;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -11,9 +13,9 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
-use tracing::debug;
+use tracing::{debug, info};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ConnectionPool<C>
 where
     C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
@@ -21,6 +23,19 @@ where
     host_set: Arc<Mutex<HashSet<String>>>,
     queue_map: Arc<Mutex<HashMap<String, Vec<UnboundedSender<Request>>>>>,
     codec: C,
+    auth_func: fn(&ConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
+}
+
+impl<C> fmt::Debug for ConnectionPool<C>
+where
+    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConnectionPool")
+            .field("host_set", &self.host_set)
+            .field("queue_map", &self.queue_map)
+            .finish()
+    }
 }
 
 impl<C: 'static> ConnectionPool<C>
@@ -33,6 +48,20 @@ where
             host_set: Arc::new(Mutex::new(HashSet::from_iter(hosts.into_iter()))),
             queue_map: Arc::new(Mutex::new(HashMap::new())),
             codec,
+            auth_func: |_, _| Ok(()),
+        }
+    }
+
+    pub fn new_with_auth(
+        hosts: Vec<String>,
+        codec: C,
+        auth_func: fn(&ConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
+    ) -> Self {
+        ConnectionPool {
+            host_set: Arc::new(Mutex::new(HashSet::from_iter(hosts.into_iter()))),
+            queue_map: Arc::new(Mutex::new(HashMap::new())),
+            codec,
+            auth_func,
         }
     }
 
@@ -68,13 +97,24 @@ where
         for _i in 0..connection_count {
             let socket: TcpStream = TcpStream::connect(host).await?;
             let (read, write) = socket.into_split();
-            let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+            let (mut out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
             let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
 
             tokio::spawn(tx_process(write, out_rx, return_tx, self.codec.clone()));
 
             tokio::spawn(rx_process(read, return_rx, self.codec.clone()));
-            connection_pool.push(out_tx);
+            match (self.auth_func)(&self, &mut out_tx) {
+                Ok(_) => {
+                    connection_pool.push(out_tx);
+                }
+                Err(e) => {
+                    info!("Could not authenticate to upstream TCP service - {}", e);
+                }
+            }
+        }
+
+        if connection_pool.len() == 0 {
+            return Err(anyhow!("Couldn't connect to upstream TCP service"));
         }
 
         Ok(connection_pool)
@@ -125,7 +165,7 @@ where
                     }) = return_rx.recv().await
                     {
                         // If the receiver hangs up, just silently ignore
-                        ret.send((messages, Ok(Messages { messages: vec![m] })));
+                        let _ = ret.send((messages, Ok(Messages { messages: vec![m] })));
                     }
                 }
             }

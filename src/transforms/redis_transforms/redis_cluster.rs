@@ -15,7 +15,7 @@ use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_util::codec::Framed;
+use tokio_util::codec::{Decoder, Encoder, Framed};
 use tracing::{debug, info, trace};
 
 use crate::concurrency::FuturesOrdered;
@@ -92,7 +92,6 @@ impl TransformsFromConfig for RedisClusterConfig {
 #[derive(Debug, Clone)]
 pub struct RedisCluster {
     name: &'static str,
-    // chain: TransformChain,
     pub slots: SlotMap,
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
@@ -517,9 +516,8 @@ impl Transform for RedisCluster {
             match responses.next().await {
                 Some(s) => {
                     debug!("Got resp {:?}", s);
-                    let (original, response) = match s {
-                        Ok(o) => o,
-                        Err(_) => (
+                    let (original, response) = s.or_else(|_| -> Result<(_, _)> {
+                        Ok((
                             Message::new_bypass(RawFrame::NONE),
                             Ok(Messages::new_single_response(
                                 QueryResponse::empty(),
@@ -528,9 +526,11 @@ impl Transform for RedisCluster {
                                     "ERR Could not route request".to_string(),
                                 )),
                             )),
-                        ),
-                    };
-                    let response_m = response?.messages.remove(0);
+                        ))
+                    })?;
+                    let mut response = response?;
+                    assert_eq!(response.messages.len(), 1);
+                    let response_m = response.messages.remove(0);
                     match response_m.original {
                         RawFrame::Redis(Frame::Moved { slot, host, port }) => {
                             debug!("Got MOVE frame {} {} {}", slot, host, port);
@@ -541,9 +541,9 @@ impl Transform for RedisCluster {
                                 .choose_and_send(&format!("{}:{}", &host, port), original.clone())
                                 .await?;
 
-                            responses.prepend(Box::pin(one_rx.map_err(|e| {
-                                anyhow!("0 Couldn't get short circtuited for no channels - {}", e)
-                            })));
+                            responses.prepend(Box::pin(
+                                one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
+                            ));
                         }
                         RawFrame::Redis(Frame::Ask { slot, host, port }) => {
                             debug!("Got ASK frame {} {} {}", slot, host, port);
@@ -552,9 +552,9 @@ impl Transform for RedisCluster {
                                 .choose_and_send(&format!("{}:{}", &host, port), original.clone())
                                 .await?;
 
-                            responses.prepend(Box::pin(one_rx.map_err(|e| {
-                                anyhow!("0 Couldn't get short circtuited for no channels - {}", e)
-                            })));
+                            responses.prepend(Box::pin(
+                                one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
+                            ));
                         }
                         _ => response_buffer.push(response_m),
                     }
