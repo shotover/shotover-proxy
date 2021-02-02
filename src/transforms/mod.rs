@@ -1,9 +1,8 @@
 use core::fmt;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
@@ -33,7 +32,6 @@ use crate::transforms::redis_transforms::redis_codec_destination::{
     RedisCodecConfiguration, RedisCodecDestination,
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::sequential_map::{SequentialMap, SequentialMapConfig};
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
 use core::fmt::Display;
 use distributed::route::{Route, RouteConfig};
@@ -58,8 +56,8 @@ pub mod protect;
 pub mod query_counter;
 pub mod redis_transforms;
 pub mod sampler;
-pub mod sequential_map;
 pub mod test_transforms;
+pub mod util;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
 
@@ -83,7 +81,6 @@ pub enum Transforms {
     RepeatMessage(Box<ReturnerTransform>),
     RandomDelay(RandomDelayTransform),
     Printer(Printer),
-    SequentialMap(SequentialMap),
     ParallelMap(ParallelMap),
     PoolConnections(ConnectionBalanceAndPool),
     Coalesce(Coalesce),
@@ -118,7 +115,6 @@ impl Transform for Transforms {
             Transforms::RedisCodecDestination(r) => r.transform(qd).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(qd).await,
             Transforms::RedisCluster(r) => r.transform(qd).await,
-            Transforms::SequentialMap(s) => s.transform(qd).await,
             Transforms::ParallelMap(s) => s.transform(qd).await,
             Transforms::PoolConnections(s) => s.transform(qd).await,
             Transforms::Coalesce(s) => s.transform(qd).await,
@@ -146,7 +142,6 @@ impl Transform for Transforms {
             Transforms::RedisCodecDestination(r) => r.get_name(),
             Transforms::RedisTimeStampTagger(r) => r.get_name(),
             Transforms::RedisCluster(r) => r.get_name(),
-            Transforms::SequentialMap(s) => s.get_name(),
             Transforms::ParallelMap(s) => s.get_name(),
             Transforms::PoolConnections(s) => s.get_name(),
             Transforms::Coalesce(s) => s.get_name(),
@@ -174,7 +169,6 @@ impl Transform for Transforms {
             Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCluster(r) => r.prep_transform_chain(t).await,
-            Transforms::SequentialMap(s) => s.prep_transform_chain(t).await,
             Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
             Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
             Transforms::Coalesce(s) => s.prep_transform_chain(t).await,
@@ -198,7 +192,6 @@ pub enum TransformsConfig {
     RedisCluster(RedisClusterConfig),
     RedisTimestampTagger,
     Printer,
-    SequentialMap(SequentialMapConfig),
     ParallelMap(ParallelMapConfig),
     PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
@@ -223,7 +216,6 @@ impl TransformsConfig {
             }
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
             TransformsConfig::RedisCluster(r) => r.get_source(topics).await,
-            TransformsConfig::SequentialMap(s) => s.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
             TransformsConfig::Coalesce(s) => s.get_source(topics).await,
@@ -242,12 +234,7 @@ pub async fn build_chain_from_config(
     for tc in transform_configs {
         transforms.push(tc.get_transforms(topics).await?)
     }
-    Ok(TransformChain::new(
-        transforms,
-        name,
-        topics.get_global_map_handle(),
-        topics.get_global_tx(),
-    ))
+    Ok(TransformChain::new(transforms, name))
 }
 
 #[async_trait]

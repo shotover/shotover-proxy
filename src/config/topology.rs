@@ -1,7 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
-use crate::sources::mpsc_source::AsyncMpscConfig;
 use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::cassandra_codec_destination::CodecConfiguration;
 use crate::transforms::chain::TransformChain;
@@ -9,8 +8,6 @@ use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
-use bytes::Bytes;
-use evmap::ReadHandleFactory;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -59,8 +56,6 @@ impl ChannelMessage {
 pub struct TopicHolder {
     pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
     pub topics_tx: HashMap<String, Sender<ChannelMessage>>,
-    pub global_tx: Sender<(String, Bytes)>,
-    pub global_map_handle: ReadHandleFactory<String, Bytes>,
 }
 
 impl TopicHolder {
@@ -73,27 +68,6 @@ impl TopicHolder {
         let tx = self.topics_tx.get(name)?;
         Some(tx.clone())
     }
-
-    pub fn get_global_tx(&self) -> Sender<(String, Bytes)> {
-        self.global_tx.clone()
-    }
-
-    pub fn get_global_map_handle(&self) -> ReadHandleFactory<String, Bytes> {
-        self.global_map_handle.clone()
-    }
-
-    // #[cfg(test)]
-    pub fn get_test_holder() -> Self {
-        let (global_map_r, _global_map_w) = evmap::new();
-        let (global_tx, _global_rx) = channel(1);
-
-        TopicHolder {
-            topics_rx: Default::default(),
-            topics_tx: Default::default(),
-            global_tx,
-            global_map_handle: global_map_r.factory(),
-        }
-    }
 }
 
 impl Topology {
@@ -104,11 +78,7 @@ impl Topology {
         Topology::topology_from_config(config)
     }
 
-    fn build_topics(
-        &self,
-        global_tx: Sender<(String, Bytes)>,
-        global_map_handle: ReadHandleFactory<String, Bytes>,
-    ) -> TopicHolder {
+    fn build_topics(&self) -> TopicHolder {
         let mut topics_rx: HashMap<String, Receiver<ChannelMessage>> = HashMap::new();
         let mut topics_tx: HashMap<String, Sender<ChannelMessage>> = HashMap::new();
         for (name, size) in &self.named_topics {
@@ -119,8 +89,6 @@ impl Topology {
         TopicHolder {
             topics_rx,
             topics_tx,
-            global_tx,
-            global_map_handle,
         }
     }
 
@@ -137,25 +105,13 @@ impl Topology {
 
     #[allow(clippy::type_complexity)]
     pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
-        let (global_map_r, mut global_map_w) = evmap::new();
-        let (global_tx, mut global_rx): (Sender<(String, Bytes)>, Receiver<(String, Bytes)>) =
-            channel::<(String, Bytes)>(1);
-
-        let mut topics = self.build_topics(global_tx, global_map_r.factory());
+        let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
 
         let (notify_shutdown, _) = broadcast::channel(1);
         let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
-
-        let _ = tokio::spawn(async move {
-            // this loop will exit and the task will complete when all channel tx handles are dropped
-            while let Some((k, v)) = global_rx.recv().await {
-                global_map_w.insert(k, v);
-                global_map_w.refresh();
-            }
-        });
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());

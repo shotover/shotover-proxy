@@ -1,11 +1,9 @@
 use core::fmt;
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use redis::aio::MultiplexedConnection;
-use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
 
 use crate::config::topology::TopicHolder;
@@ -31,7 +29,7 @@ impl TransformsFromConfig for RedisConfig {
 #[derive(Clone)]
 pub struct SimpleRedisCache {
     name: &'static str,
-    con: MultiplexedConnection,
+    // con: MultiplexedConnection,
     tables_to_pks: HashMap<String, Vec<String>>,
 }
 
@@ -47,20 +45,20 @@ impl Debug for SimpleRedisCache {
 
 impl SimpleRedisCache {
     //"redis://127.0.0.1/"
-    pub fn new(connection: MultiplexedConnection) -> SimpleRedisCache {
+    pub fn new() -> SimpleRedisCache {
         SimpleRedisCache {
             name: "SimpleRedisCache",
-            con: connection,
+            // con: connection,
             tables_to_pks: HashMap::new(),
         }
     }
 
-    pub async fn new_from_config(params: &str) -> SimpleRedisCache {
-        let client = redis::Client::open(params).unwrap();
-        let con = client.get_multiplexed_tokio_connection().await.unwrap();
+    pub async fn new_from_config(_params: &str) -> SimpleRedisCache {
+        // let client = redis::Client::open(params).unwrap();
+        // let con = client.get_multiplexed_tokio_connection().await.unwrap();
         SimpleRedisCache {
             name: "SimpleRedisCache",
-            con,
+            // con,
             tables_to_pks: HashMap::new(),
         }
     }

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
@@ -99,7 +99,7 @@ impl Protected {
         match value {
             Value::Bytes(b) => {
                 // let protected_something: Protected = serde_json::from_slice(b.bytes())?;
-                let protected_something: Protected = bincode::deserialize(b.bytes())?;
+                let protected_something: Protected = bincode::deserialize(b)?;
                 Ok(protected_something)
             }
             _ => Err(anyhow!(
@@ -284,16 +284,11 @@ mod protect_transform_tests {
     use crate::transforms::test_transforms::ReturnerTransform;
     use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
-        let (global_map_r, _global_map_w) = evmap::new();
-        let (global_tx, _global_rx) = channel(1);
-
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),
-            global_tx,
-            global_map_handle: global_map_r.factory(),
         };
 
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
@@ -345,12 +340,7 @@ mod protect_transform_tests {
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
-        let mut chain = TransformChain::new(
-            transforms,
-            String::from("test_chain"),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        );
+        let mut chain = TransformChain::new(transforms, String::from("test_chain"));
 
         wrapper.reset(chain.get_inner_chain_refs());
 
@@ -431,12 +421,8 @@ mod protect_transform_tests {
                                 ok: true,
                             }))];
 
-                        let mut ret_chain = TransformChain::new(
-                            ret_transforms,
-                            String::from("test_chain"),
-                            t_holder.get_global_map_handle(),
-                            t_holder.get_global_tx(),
-                        );
+                        let mut ret_chain =
+                            TransformChain::new(ret_transforms, String::from("test_chain"));
 
                         let mut new_wrapper = Wrapper::new(Messages::new_single_query(
                             qm.clone(),
@@ -466,16 +452,11 @@ mod protect_transform_tests {
         panic!()
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_kms_transform() -> Result<()> {
-        let (global_map_r, _global_map_w) = evmap::new();
-        let (global_tx, _global_rx) = channel(1);
-
         let t_holder = TopicHolder {
             topics_rx: Default::default(),
             topics_tx: Default::default(),
-            global_tx,
-            global_map_handle: global_map_r.factory(),
         };
 
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
@@ -537,12 +518,7 @@ mod protect_transform_tests {
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
-        let mut chain = TransformChain::new(
-            transforms,
-            String::from("test_chain"),
-            t_holder.get_global_map_handle(),
-            t_holder.get_global_tx(),
-        );
+        let mut chain = TransformChain::new(transforms, String::from("test_chain"));
 
         wrapper.reset(chain.get_inner_chain_refs());
 
@@ -624,12 +600,8 @@ mod protect_transform_tests {
                             ok: true,
                         }))];
 
-                    let mut ret_chain = TransformChain::new(
-                        ret_transforms,
-                        String::from("test_chain"),
-                        t_holder.get_global_map_handle(),
-                        t_holder.get_global_tx(),
-                    );
+                    let mut ret_chain =
+                        TransformChain::new(ret_transforms, String::from("test_chain"));
 
                     let mut new_wrapper =
                         Wrapper::new(Messages::new_single_query(qm.clone(), true, RawFrame::NONE));

@@ -94,10 +94,8 @@ mod test {
     use anyhow::Result;
     use std::sync::Arc;
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     pub async fn test_balance() -> Result<()> {
-        let topic_holder = TopicHolder::get_test_holder();
-
         let transform = Transforms::PoolConnections(ConnectionBalanceAndPool {
             name: "",
             active_connection: None,
@@ -109,17 +107,10 @@ mod test {
                     ok: true,
                 }))],
                 "child_test".to_string(),
-                topic_holder.global_map_handle.clone(),
-                topic_holder.global_tx.clone(),
             ),
         });
 
-        let mut chain = TransformChain::new(
-            vec![transform],
-            "test".to_string(),
-            topic_holder.global_map_handle.clone(),
-            topic_holder.global_tx.clone(),
-        );
+        let mut chain = TransformChain::new(vec![transform], "test".to_string());
 
         for _ in 0..90 {
             let r = chain
