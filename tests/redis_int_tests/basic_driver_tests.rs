@@ -807,7 +807,8 @@ fn test_pass_redis_cluster_one() -> Result<()> {
     Ok(())
 }
 
-#[test]
+// TODO Re-enable Redis Auth support
+// #[test]
 fn test_cluster_auth_redis() -> Result<()> {
     try_register_cleanup();
     let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();
