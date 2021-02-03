@@ -15,6 +15,7 @@ use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::time::timeout;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 use tracing::{debug, info, trace};
 
@@ -27,6 +28,8 @@ use crate::protocols::RawFrame;
 use crate::transforms::util::cluster_connection_pool::ConnectionPool;
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use std::borrow::Borrow;
+use tokio::time::Duration;
 
 const SLOT_SIZE: usize = 16384;
 
@@ -47,7 +50,7 @@ impl TransformsFromConfig for RedisClusterConfig {
         debug!("Detected cluster: {:?}", slots);
 
         let connection_pool = ConnectionPool::new(
-            slots.nodes.into_iter().collect_vec(),
+            slots.nodes.iter().cloned().collect_vec(),
             RedisCodec::new(true, 3),
         );
 
@@ -56,7 +59,7 @@ impl TransformsFromConfig for RedisClusterConfig {
 
         for (node, _, _) in &slots.masters {
             match connection_pool
-                .connect(&node, self.connection_count.unwrap_or(1))
+                .get_connection(&node, self.connection_count.unwrap_or(1))
                 .await
             {
                 Ok(conn) => {
@@ -85,6 +88,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             connection_count: self.connection_count.unwrap_or(1),
             connection_pool,
+            rebuild_slots: true,
         }))
     }
 }
@@ -98,9 +102,28 @@ pub struct RedisCluster {
     rng: SmallRng,
     connection_count: i32,
     connection_pool: ConnectionPool<RedisCodec>,
+    rebuild_slots: bool,
 }
 
 impl RedisCluster {
+    async fn rebuild_slot_map(&mut self) -> Result<()> {
+        let contact_points = self.channels.keys().cloned().collect_vec();
+        return if let Ok(mapping) = get_topology(&contact_points).await {
+            debug!("successfully updated map {:#?}", mapping);
+            let slot_map: SlotMap = mapping
+                .masters
+                .iter()
+                .map(|(host, _start, end)| (*end, host.clone()))
+                .collect();
+            self.slots = slot_map;
+            Ok(())
+        } else {
+            debug!("Couldn't update cluster slot map");
+            Err(anyhow!("Couldn't update cluster slot map"))
+        };
+    }
+
+    #[inline]
     async fn choose_and_send(
         &mut self,
         host: &String,
@@ -108,62 +131,72 @@ impl RedisCluster {
     ) -> Result<tokio::sync::oneshot::Receiver<(Message, ChainResponse)>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
 
-        let mut retry = true;
+        // let mut retry = true;
 
         // TODO: this is hard to read and may be bug prone
-        loop {
-            let chan = match (retry, self.channels.get_mut(host)) {
-                (_, Some(chans)) if chans.len() == 1 => {
-                    retry = false;
-                    chans.get_mut(0).unwrap()
-                }
-                (_, Some(chans)) if chans.len() > 1 => {
-                    let candidates = rand::seq::index::sample(&mut self.rng, chans.len(), 2);
-                    let aidx = candidates.index(0);
-                    let bidx = candidates.index(1);
+        let chan = match self.channels.get_mut(host) {
+            Some(chans) if chans.len() == 1 => chans.get_mut(0).unwrap(),
+            Some(chans) if chans.len() > 1 => {
+                let candidates = rand::seq::index::sample(&mut self.rng, chans.len(), 2);
+                let aidx = candidates.index(0);
+                let bidx = candidates.index(1);
 
-                    let aload = *self.load_scores.entry((host.clone(), aidx)).or_insert(0);
-                    let bload = *self.load_scores.entry((host.clone(), bidx)).or_insert(0);
+                let aload = *self.load_scores.entry((host.clone(), aidx)).or_insert(0);
+                let bload = *self.load_scores.entry((host.clone(), bidx)).or_insert(0);
 
-                    retry = false;
-                    chans
-                        .get_mut(if aload <= bload { aidx } else { bidx })
-                        .ok_or(anyhow!("Couldn't find host {}", host))?
-                }
-                (true, _) => {
-                    debug!("retrying connection failed");
-                    match self
-                        .connection_pool
-                        .get_connection(host, self.connection_count)
-                        .await
-                    {
-                        Ok(conn) => {
-                            self.channels.insert(host.clone(), conn);
-                        }
-                        Err(_) => {
-                            debug!("retrying connection failed");
-                        }
+                chans
+                    .get_mut(if aload <= bload { aidx } else { bidx })
+                    .ok_or(anyhow!("Couldn't find host {}", host))?
+            }
+            _ => {
+                debug!("connection {} doesn't exist trying to connect", host);
+                if let Ok(res) = timeout(
+                    Duration::from_millis(40),
+                    self.connection_pool
+                        .get_connection(host, self.connection_count),
+                )
+                .await
+                {
+                    if let Ok(mut conn) = res {
+                        debug!("Found {} live connections for {}", conn.len(), host);
+                        self.channels.insert(host.clone(), conn);
+                        self.channels
+                            .get_mut(host)
+                            .unwrap()
+                            .get_mut(0)
+                            .ok_or(anyhow!("Couldn't find host {}", host))?
+                    } else {
+                        debug!(
+                            "couldn't connect to {} - updating slot map from upstream cluster",
+                            host
+                        );
+                        self.rebuild_slots = true;
+                        short_circuit(one_tx);
+                        return Ok(one_rx);
                     }
-                    retry = false;
-                    continue;
-                }
-                _ => {
+                } else {
+                    debug!(
+                        "couldn't connect to {} - updating slot map from upstream cluster",
+                        host
+                    );
+                    self.rebuild_slots = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
-            };
-
-            if let Err(e) = chan.send(Request {
-                messages: message,
-                return_chan: Some(one_tx),
-            }) {
-                if let Some(error_return) = e.0.return_chan {
-                    short_circuit(error_return);
-                }
-                self.channels.remove(host);
             }
-            return Ok(one_rx);
+        };
+
+        if let Err(e) = chan.send(Request {
+            messages: message,
+            return_chan: Some(one_tx),
+        }) {
+            if let Some(error_return) = e.0.return_chan {
+                self.rebuild_slots = true;
+                short_circuit(error_return);
+            }
+            self.channels.remove(host);
         }
+        return Ok(one_rx);
     }
 
     #[inline(always)]
@@ -362,40 +395,53 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
     };
 }
 
-async fn get_topology(first_contact_points: &Vec<String>) -> Result<SlotsMapping> {
-    for contact in first_contact_points {
-        match TcpStream::connect(contact.clone()).await {
-            Ok(stream) => {
-                let mut outbound_framed_codec = Framed::new(stream, RedisCodec::new(true, 1));
-                if outbound_framed_codec
-                    .send(Messages::new_from_message(Message {
-                        details: MessageDetails::Unknown,
-                        modified: false,
-                        original: RawFrame::Redis(Frame::Array(vec![
-                            Frame::BulkString(Bytes::from("CLUSTER")),
-                            Frame::BulkString(Bytes::from("SLOTS")),
-                        ])),
-                    }))
-                    .await
-                    .is_err()
-                {
-                    continue;
-                }
-                if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
-                    if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {
-                        if let Ok(slotmaps) = parse_slots(contacts_raw) {
-                            return Ok(slotmaps);
-                        } else {
-                            continue;
-                        }
-                    }
+async fn get_topology_from_node(stream: TcpStream) -> Result<SlotsMapping> {
+    let mut outbound_framed_codec = Framed::new(stream, RedisCodec::new(true, 1));
+    if let Ok(_) = outbound_framed_codec
+        .send(Messages::new_from_message(Message {
+            details: MessageDetails::Unknown,
+            modified: false,
+            original: RawFrame::Redis(Frame::Array(vec![
+                Frame::BulkString(Bytes::from("CLUSTER")),
+                Frame::BulkString(Bytes::from("SLOTS")),
+            ])),
+        }))
+        .await
+    {
+        if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
+            if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {
+                if let Ok(slotmaps) = parse_slots(contacts_raw) {
+                    return Ok(slotmaps);
                 } else {
-                    continue;
+                    return Err(anyhow!("couldn't decode map"));
                 }
             }
-            Err(_) => continue,
+        } else {
+            return Err(anyhow!("couldn't connect"));
         }
     }
+    return Err(anyhow!("couldn't decode map"));
+}
+
+async fn get_topology(first_contact_points: &Vec<String>) -> Result<SlotsMapping> {
+    let mut results = FuturesUnordered::new();
+
+    for contact in first_contact_points {
+        let query_map = TcpStream::connect(contact.clone())
+            .map_err(|e| anyhow!("couldn't connect {}", e))
+            .and_then(get_topology_from_node);
+        results.push(query_map);
+    }
+
+    while let Some(response) = results.next().await {
+        match response {
+            Ok(map) => return Ok(map),
+            Err(e) => {
+                debug!("failed to fetch map from one host {}", e)
+            }
+        }
+    }
+
     Err(anyhow!("Couldn't get slot map from redis"))
 }
 
@@ -439,6 +485,10 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
 #[async_trait]
 impl Transform for RedisCluster {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+        if self.rebuild_slots {
+            self.rebuild_slot_map().await;
+            self.rebuild_slots = false;
+        }
         let mut responses: FuturesOrdered<
             Pin<
                 Box<
@@ -510,12 +560,12 @@ impl Transform for RedisCluster {
             });
         }
 
-        debug!("Processing response");
+        trace!("Processing response");
         let mut response_buffer = vec![];
         loop {
             match responses.next().await {
                 Some(s) => {
-                    debug!("Got resp {:?}", s);
+                    trace!("Got resp {:?}", s);
                     let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                         Ok((
                             Message::new_bypass(RawFrame::NONE),
@@ -536,6 +586,7 @@ impl Transform for RedisCluster {
                             debug!("Got MOVE frame {} {} {}", slot, host, port);
 
                             self.slots.insert(slot, format!("{}:{}", &host, &port));
+                            self.rebuild_slots = true;
 
                             let one_rx = self
                                 .choose_and_send(&format!("{}:{}", &host, port), original.clone())
