@@ -1,11 +1,14 @@
-use crate::error::ChainResponse;
-use crate::message::Messages;
-use crate::transforms::{Transform, Wrapper};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use rand_distr::Distribution;
 use rand_distr::Normal;
 use tokio::time::Duration;
+
+use crate::transforms::Wrapper;
+
+use crate::transforms::InternalTransform;
+use shotover_transforms::ChainResponse;
+use shotover_transforms::Messages;
 
 #[derive(Debug, Clone)]
 pub struct ReturnerTransform {
@@ -14,7 +17,7 @@ pub struct ReturnerTransform {
 }
 
 #[async_trait]
-impl Transform for ReturnerTransform {
+impl InternalTransform for ReturnerTransform {
     async fn transform<'a>(&'a mut self, _qd: Wrapper<'a>) -> ChainResponse {
         if self.ok {
             Ok(self.message.clone())
@@ -35,7 +38,7 @@ pub struct RandomDelayTransform {
 }
 
 #[async_trait]
-impl Transform for RandomDelayTransform {
+impl InternalTransform for RandomDelayTransform {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let delay;
         if let Some(dist) = self.distribution {

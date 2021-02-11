@@ -1,15 +1,13 @@
-use std::{fmt, error};
-use crate::message::Messages;
+use std::{error, fmt};
+
 use thiserror::Error;
 
+use shotover_transforms::Messages;
 
 #[derive(Error, Clone, Debug)]
 pub enum RequestError {
     #[error("Invalid header (expected {expected:?}, got {found:?})")]
-    InvalidHeader {
-        expected: String,
-        found: String,
-    },
+    InvalidHeader { expected: String, found: String },
     #[error("Malform Request: {0}")]
     MalformedRequest(String),
 
@@ -18,10 +16,7 @@ pub enum RequestError {
 
     #[error("Could not process chain: {0}")]
     ChainProcessingError(String),
-
-
 }
-
 
 #[derive(Error, Debug)]
 pub struct ConfigError {
@@ -50,6 +45,3 @@ impl fmt::Display for ConfigError {
         write!(f, "An error occured: {:}", self.message)
     }
 }
-
-
-pub type ChainResponse = anyhow::Result<Messages>;

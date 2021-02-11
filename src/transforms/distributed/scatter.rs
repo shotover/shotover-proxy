@@ -1,13 +1,8 @@
-use crate::config::topology::TopicHolder;
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::iter::FromIterator;
+use std::sync::Arc;
 
-use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryResponse, Value};
-use crate::protocols::RawFrame;
-use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
-use crate::transforms::chain::TransformChain;
-use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
-};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
@@ -15,11 +10,18 @@ use futures::StreamExt;
 use itertools::Itertools;
 use mlua::Lua;
 use serde::{Deserialize, Serialize};
-use std::borrow::Borrow;
-use std::collections::HashMap;
-use std::iter::FromIterator;
-use std::sync::Arc;
 use tokio::sync::Mutex;
+
+use shotover_transforms::RawFrame;
+use shotover_transforms::{ChainResponse, Message, MessageDetails, Messages, QueryResponse, Value};
+
+use crate::config::topology::TopicHolder;
+use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+};
+use crate::transforms::{InternalTransform, Wrapper};
 
 #[derive(Clone)]
 pub struct Scatter {
@@ -56,7 +58,7 @@ impl TransformsFromConfig for ScatterConfig {
 }
 
 #[async_trait]
-impl Transform for Scatter {
+impl InternalTransform for Scatter {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let name = self.get_name().to_string();
 

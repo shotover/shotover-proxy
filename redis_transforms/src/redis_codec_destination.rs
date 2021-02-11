@@ -8,12 +8,11 @@ use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use shotover_transforms::ChainResponse;
-
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
 use shotover_protocols::redis_codec::RedisCodec;
+use shotover_proxy::config::topology::TopicHolder;
+use shotover_proxy::transforms::{Transforms, TransformsFromConfig};
+use shotover_transforms::Wrapper;
+use shotover_transforms::{ChainResponse, Transform};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {
@@ -54,7 +53,7 @@ impl RedisCodecDestination {
 }
 
 #[async_trait]
-impl InternalTransform for RedisCodecDestination {
+impl Transform for RedisCodecDestination {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         match self.outbound {
             None => {

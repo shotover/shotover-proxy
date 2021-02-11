@@ -10,10 +10,10 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::config::topology::TopicHolder;
-use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::chain::TransformChain;
+use shotover_protocols::cassandra_protocol2::CassandraCodec2;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CassandraConfig {

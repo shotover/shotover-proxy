@@ -1,12 +1,15 @@
-use crate::message::{
-    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
-};
-use crate::protocols::RawFrame;
+use std::collections::HashMap;
+
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
-use itertools::Itertools;
 use redis_protocol::prelude::*;
-use std::collections::HashMap;
+
+use itertools::Itertools;
+use shotover_transforms::ast::ASTHolder;
+use shotover_transforms::RawFrame;
+use shotover_transforms::{
+    Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
 
@@ -698,10 +701,10 @@ impl Encoder<Messages> for RedisCodec {
 
 #[cfg(test)]
 mod redis_tests {
-    use crate::protocols::redis_codec::RedisCodec;
     use bytes::BytesMut;
+
+    use crate::redis_codec::RedisCodec;
     use hex_literal::hex;
-    use rdkafka::message::ToBytes;
     use tokio_util::codec::{Decoder, Encoder};
 
     const SET_MESSAGE: [u8; 45] = hex!("2a330d0a24330d0a5345540d0a2431360d0a6b65793a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");
@@ -729,7 +732,7 @@ mod redis_tests {
     fn build_bytesmut(slice: &[u8]) -> BytesMut {
         let mut v: Vec<u8> = Vec::with_capacity(slice.len());
         v.extend_from_slice(slice);
-        BytesMut::from(v.to_bytes())
+        BytesMut::from(v.as_slice())
     }
 
     fn test_frame(codec: &mut RedisCodec, raw_frame: &[u8]) {

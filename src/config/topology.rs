@@ -1,5 +1,3 @@
-use crate::error::ChainResponse;
-use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::cassandra::cassandra_codec_destination::CodecConfiguration;
@@ -9,6 +7,8 @@ use crate::transforms::mpsc::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use shotover_transforms::ChainResponse;
+use shotover_transforms::Messages;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Sender as OneSender;

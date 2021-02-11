@@ -8,16 +8,17 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
 use tracing::{debug, trace, warn};
 
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::{
-    Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+use shotover_transforms::RawFrame;
+use shotover_transforms::{
+    ChainResponse, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
 };
-use crate::protocols::RawFrame;
+
+use crate::config::topology::TopicHolder;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
 };
+use crate::transforms::{InternalTransform, Wrapper};
 
 #[derive(Clone)]
 pub struct TunableConsistency {
@@ -125,7 +126,7 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
 impl TunableConsistency {}
 
 #[async_trait]
-impl Transform for TunableConsistency {
+impl InternalTransform for TunableConsistency {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let required_successes = qd
             .message
@@ -250,19 +251,22 @@ impl Transform for TunableConsistency {
 
 #[cfg(test)]
 mod scatter_transform_tests {
-    use anyhow::anyhow;
+    use std::collections::HashMap;
 
+    use anyhow::anyhow;
+    use anyhow::Result;
+
+    use shotover_transforms::RawFrame;
+    use shotover_transforms::{
+        MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    };
+
+    use crate::config::topology::TopicHolder;
     use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
-
-    use anyhow::Result;
-
-    use crate::config::topology::TopicHolder;
-    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::RawFrame;
-    use crate::transforms::{Transform, Transforms, Wrapper};
-    use std::collections::HashMap;
+    use crate::transforms::Wrapper;
+    use crate::transforms::{InternalTransform, Transforms};
 
     fn check_ok_responses(
         mut message: Messages,

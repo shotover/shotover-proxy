@@ -1,13 +1,16 @@
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::Value::List;
-use crate::message::{ASTHolder, MessageDetails, QueryMessage};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
+
+use shotover_transforms::ast::ASTHolder;
+use shotover_transforms::Value::List;
+use shotover_transforms::{ChainResponse, MessageDetails, QueryMessage};
+
+use crate::config::topology::TopicHolder;
+use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
@@ -21,7 +24,7 @@ pub struct QueryCounterConfig {
 }
 
 #[async_trait]
-impl Transform for QueryCounter {
+impl InternalTransform for QueryCounter {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         for m in &qd.message.messages {
             if let MessageDetails::Query(QueryMessage {

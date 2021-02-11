@@ -1,16 +1,19 @@
-use crate::config::topology::TopicHolder;
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::error::ChainResponse;
-use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
+
+use shotover_transforms::ast::ASTHolder;
+use shotover_transforms::{ChainResponse, MessageDetails, QueryMessage, QueryResponse, Value};
+
+use crate::config::topology::TopicHolder;
+use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 #[derive(Clone)]
 pub struct RedisTimestampTagger {
@@ -150,7 +153,7 @@ fn unwrap_response(qr: &mut QueryResponse) {
 }
 
 #[async_trait]
-impl Transform for RedisTimestampTagger {
+impl InternalTransform for RedisTimestampTagger {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut tagged_success: bool = true;
         let mut exec_block: bool = false;

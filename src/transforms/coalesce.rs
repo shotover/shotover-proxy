@@ -1,12 +1,15 @@
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::{Messages, QueryResponse};
-use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use std::time::Instant;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+
+use shotover_transforms::RawFrame;
+use shotover_transforms::{ChainResponse, Messages, QueryResponse};
+
+use crate::config::topology::TopicHolder;
+use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 #[derive(Debug, Clone)]
 pub struct Coalesce {
@@ -53,7 +56,7 @@ impl TransformsFromConfig for CoalesceConfig {
 }
 
 #[async_trait]
-impl Transform for Coalesce {
+impl InternalTransform for Coalesce {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         self.buffer.messages.append(&mut qd.message.messages);
 
@@ -90,13 +93,17 @@ impl Transform for Coalesce {
 
 #[cfg(test)]
 mod test {
-    use crate::message::{Message, Messages, QueryMessage};
-    use crate::protocols::RawFrame;
+    use std::time::{Duration, Instant};
+
+    use anyhow::Result;
+
+    use shotover_transforms::RawFrame;
+    use shotover_transforms::{Message, Messages, QueryMessage};
+
     use crate::transforms::coalesce::{Coalesce, CoalesceBehavior};
     use crate::transforms::null::Null;
-    use crate::transforms::{Transform, Transforms, Wrapper};
-    use anyhow::Result;
-    use std::time::{Duration, Instant};
+    use crate::transforms::Wrapper;
+    use crate::transforms::{InternalTransform, Transforms};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_count() -> Result<()> {

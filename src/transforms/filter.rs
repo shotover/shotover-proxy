@@ -1,10 +1,12 @@
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::{MessageDetails, QueryType};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+use shotover_transforms::{ChainResponse, MessageDetails, QueryType};
+
+use crate::config::topology::TopicHolder;
+use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
@@ -28,7 +30,7 @@ impl TransformsFromConfig for QueryTypeFilterConfig {
 }
 
 #[async_trait]
-impl Transform for QueryTypeFilter {
+impl InternalTransform for QueryTypeFilter {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         qd.message.messages.retain(|m| {
             if let MessageDetails::Query(qm) = &m.details {
@@ -47,12 +49,15 @@ impl Transform for QueryTypeFilter {
 
 #[cfg(test)]
 mod test {
-    use crate::message::{Message, MessageDetails, Messages, QueryMessage, QueryType};
-    use crate::protocols::RawFrame;
+    use anyhow::Result;
+
+    use shotover_transforms::RawFrame;
+    use shotover_transforms::{Message, MessageDetails, Messages, QueryMessage, QueryType};
+
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::null::Null;
-    use crate::transforms::{Transform, Transforms, Wrapper};
-    use anyhow::Result;
+    use crate::transforms::Wrapper;
+    use crate::transforms::{InternalTransform, Transforms};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter() -> Result<()> {

@@ -7,11 +7,12 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use serde::{Deserialize, Serialize};
 
+use shotover_transforms::RawFrame;
+use shotover_transforms::{ChainResponse, Message, MessageDetails, Messages, QueryResponse};
+
 use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryResponse};
-use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 #[derive(Clone)]
 pub struct KafkaDestination {
@@ -69,7 +70,7 @@ impl Default for KafkaDestination {
 }
 
 #[async_trait]
-impl Transform for KafkaDestination {
+impl InternalTransform for KafkaDestination {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let mut responses: Vec<Message> = vec![];
         for message in qd.message.messages {

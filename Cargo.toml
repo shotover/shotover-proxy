@@ -1,3 +1,6 @@
+[workspace]
+members = ["data_protection", "redis_transforms", "wasm_transforms", "transforms", "shotover_protocols"]
+
 [package]
 name = "shotover-proxy"
 version = "0.0.21"
@@ -12,7 +15,6 @@ tokio-util = { version = "0.6.1", features = ["full"]}
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
 futures = "0.3.12"
-#futures = { path = "/home/ben/git/futures-rs/futures" }
 futures-core = "0.3.1"
 chrono = {version = "0.4.10",  features = ["serde"]}
 async-trait = "0.1.30"
@@ -26,6 +28,11 @@ rand_distr = "0.2.2"
 cached = "0.16.0"
 pin-project = "1.0.1"
 pin-project-lite = "0.2"
+
+#redis-transforms = {path = "redis_transforms" }
+shotover-transforms = { path = "transforms" }
+shotover-protocols = { path = "shotover_protocols"}
+libloading = "0.5"
 
 
 # Error handling

@@ -1,10 +1,12 @@
-use crate::error::ChainResponse;
-use crate::transforms::chain::TransformChain;
-use crate::transforms::{Transform, Wrapper};
-
 use async_trait::async_trait;
 use tokio::macros::support::thread_rng_n;
 use tracing::warn;
+
+use crate::transforms::Wrapper;
+
+use crate::transforms::chain::TransformChain;
+use crate::transforms::InternalTransform;
+use shotover_transforms::ChainResponse;
 
 #[derive(Debug, Clone)]
 pub struct Sampler {
@@ -32,7 +34,7 @@ impl Sampler {
 }
 
 #[async_trait]
-impl Transform for Sampler {
+impl InternalTransform for Sampler {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let chance = thread_rng_n(self.denominator);
         return if chance < self.numerator {

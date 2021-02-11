@@ -2,7 +2,6 @@ use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::{ChannelMessage, TopicHolder};
-use crate::message::Message;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::coalesce::CoalesceBehavior;
@@ -10,6 +9,7 @@ use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use shotover_transforms::Message;
 use std::time::Instant;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, mpsc};

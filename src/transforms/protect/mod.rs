@@ -11,13 +11,14 @@ use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use tracing::warn;
 
+use shotover_transforms::ChainResponse;
+use shotover_transforms::Value::Rows;
+use shotover_transforms::{MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
+
 use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::Value;
-use crate::message::Value::Rows;
-use crate::message::{MessageDetails, QueryMessage, QueryResponse, QueryType};
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 mod aws_kms;
 mod key_management;
@@ -159,7 +160,7 @@ impl TransformsFromConfig for ProtectConfig {
 }
 
 #[async_trait]
-impl Transform for Protect {
+impl InternalTransform for Protect {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         for message in qd.message.messages.iter_mut() {
             if let MessageDetails::Query(qm) = &mut message.details {
@@ -267,22 +268,25 @@ mod protect_transform_tests {
     use std::error::Error;
 
     use anyhow::{anyhow, Result};
-
     use cassandra_proto::consistency::Consistency;
     use cassandra_proto::frame::Frame;
     use sodiumoxide::crypto::secretbox;
     use tokio::sync::mpsc::channel;
 
+    use shotover_transforms::RawFrame;
+    use shotover_transforms::{
+        MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    };
+
     use crate::config::topology::TopicHolder;
-    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::cassandra_protocol2::CassandraCodec2;
-    use crate::protocols::RawFrame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::null::Null;
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+    use crate::transforms::{InternalTransform, Wrapper};
+    use crate::transforms::{Transforms, TransformsFromConfig};
+    use shotover_protocols::cassandra_protocol2::CassandraCodec2;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {

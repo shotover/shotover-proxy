@@ -1,46 +1,52 @@
-use cassandra_proto::frame::Frame;
-
-pub mod cassandra_protocol2;
-pub mod redis_codec;
-use anyhow::Result;
-use bytes::Bytes;
-use redis_protocol::prelude::Frame as Rframe;
-
-use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Eq, PartialEq, Debug, Clone, Hash, Serialize, Deserialize)]
-pub enum RawFrame {
-    CASSANDRA(Frame),
-    Redis(Rframe),
-    NONE,
+use bytes::Bytes;
+use redis_protocol::prelude::Frame;
+use sqlparser::ast::Statement;
+
+use crate::{MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
+use itertools::Itertools;
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum ASTHolder {
+    SQL(Statement),
+    Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
 }
 
-impl RawFrame {
-    pub fn build_message(&self, response: bool) -> Result<MessageDetails> {
+impl ASTHolder {
+    pub fn get_command(&self) -> String {
         match self {
-            RawFrame::CASSANDRA(_c) => Ok(MessageDetails::Unknown),
-            RawFrame::Redis(r) => process_redis_frame(r, response),
-            RawFrame::NONE => Ok(MessageDetails::Unknown),
+            ASTHolder::SQL(statement) => {
+                return match statement {
+                    Statement::Query(_) => "SELECT",
+                    Statement::Insert { .. } => "INSERT",
+                    Statement::Update { .. } => "UPDATE",
+                    Statement::Delete { .. } => "DELETE",
+                    Statement::CreateView { .. } => "CREATE VIEW",
+                    Statement::CreateTable { .. } => "CREATE TABLE",
+                    Statement::AlterTable { .. } => "ALTER TABLE",
+                    Statement::Drop { .. } => "DROP",
+                    _ => "UKNOWN",
+                }
+                .to_string();
+            }
+            ASTHolder::Commands(commands) => {
+                if let Value::List(coms) = commands {
+                    if let Some(Value::Bytes(b)) = coms.get(0) {
+                        return String::from_utf8(b.to_vec())
+                            .unwrap_or_else(|_| "couldn't decode".to_string());
+                    }
+                }
+            }
         }
-    }
-
-    #[inline]
-    pub fn get_query_type(&self) -> QueryType {
-        match self {
-            RawFrame::CASSANDRA(_) => QueryType::ReadWrite,
-            RawFrame::Redis(r) => redis_query_type(r),
-            RawFrame::NONE => QueryType::ReadWrite,
-        }
+        "UNKNOWN".to_string()
     }
 }
 
 #[inline]
-fn redis_query_type(frame: &Rframe) -> QueryType {
-    if let Rframe::Array(frames) = frame {
-        if let Some(Rframe::BulkString(bytes)) = frames.get(0) {
+pub fn redis_query_type(frame: &Frame) -> QueryType {
+    if let Frame::Array(frames) = frame {
+        if let Some(Frame::BulkString(bytes)) = frames.get(0) {
             return match bytes.as_ref() {
                 b"APPEND" | b"BITCOUNT" | b"STRLEN" | b"GET" | b"GETRANGE" | b"MGET"
                 | b"LRANGE" | b"LINDEX" | b"LLEN" | b"SCARD" | b"SISMEMBER" | b"SMEMBERS"
@@ -57,14 +63,14 @@ fn redis_query_type(frame: &Rframe) -> QueryType {
 fn get_keys(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Rframe>,
-) -> Result<()> {
+    commands: &mut Vec<Frame>,
+) -> anyhow::Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
-        if let Some(Rframe::BulkString(v)) = commands.pop() {
+        if let Some(Frame::BulkString(v)) = commands.pop() {
             let key = String::from_utf8_lossy(v.as_ref()).to_string();
             fields.insert(key.clone(), Value::None);
-            keys_storage.push(Rframe::BulkString(v).into());
+            keys_storage.push(Frame::BulkString(v).into());
         }
     }
     keys.insert("key".to_string(), Value::List(keys_storage));
@@ -74,12 +80,12 @@ fn get_keys(
 fn get_key_multi_values(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Rframe>,
-) -> Result<()> {
+    commands: &mut Vec<Frame>,
+) -> anyhow::Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
-    if let Some(Rframe::BulkString(v)) = commands.pop() {
+    if let Some(Frame::BulkString(v)) = commands.pop() {
         let key = String::from_utf8_lossy(v.as_ref()).to_string();
-        keys_storage.push(Rframe::BulkString(v).into());
+        keys_storage.push(Frame::BulkString(v).into());
 
         let mut values: Vec<Value> = vec![];
         while !commands.is_empty() {
@@ -96,16 +102,16 @@ fn get_key_multi_values(
 fn get_key_map(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Rframe>,
-) -> Result<()> {
+    commands: &mut Vec<Frame>,
+) -> anyhow::Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
-    if let Some(Rframe::BulkString(v)) = commands.pop() {
+    if let Some(Frame::BulkString(v)) = commands.pop() {
         let key = String::from_utf8_lossy(v.as_ref()).to_string();
-        keys_storage.push(Rframe::BulkString(v).into());
+        keys_storage.push(Frame::BulkString(v).into());
 
         let mut values: HashMap<String, Value> = HashMap::new();
         while !commands.is_empty() {
-            if let Some(Rframe::BulkString(field)) = commands.pop() {
+            if let Some(Frame::BulkString(field)) = commands.pop() {
                 if let Some(frame) = commands.pop() {
                     values.insert(
                         String::from_utf8_lossy(field.as_ref()).to_string(),
@@ -123,13 +129,13 @@ fn get_key_map(
 fn get_key_values(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Rframe>,
-) -> Result<()> {
+    commands: &mut Vec<Frame>,
+) -> anyhow::Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     while !commands.is_empty() {
-        if let Some(Rframe::BulkString(k)) = commands.pop() {
+        if let Some(Frame::BulkString(k)) = commands.pop() {
             let key = String::from_utf8_lossy(k.as_ref()).to_string();
-            keys_storage.push(Rframe::BulkString(k).into());
+            keys_storage.push(Frame::BulkString(k).into());
             if let Some(frame) = commands.pop() {
                 fields.insert(key, frame.into());
             }
@@ -140,16 +146,16 @@ fn get_key_values(
 }
 
 fn handle_redis_array(
-    commands_vec: Vec<Rframe>,
+    commands_vec: Vec<Frame>,
     decode_as_request: bool,
-) -> Result<MessageDetails> {
+) -> anyhow::Result<MessageDetails> {
     if decode_as_request {
         let mut keys_map: HashMap<String, Value> = HashMap::new();
         let mut values_map: HashMap<String, Value> = HashMap::new();
         let values = &mut values_map;
         let keys = &mut keys_map;
         let mut query_type: QueryType = QueryType::Write;
-        let mut commands_reversed: Vec<Rframe> = commands_vec.iter().cloned().rev().collect_vec();
+        let mut commands_reversed: Vec<Frame> = commands_vec.iter().cloned().rev().collect_vec();
         let query_string = commands_vec
             .iter()
             .filter_map(|f| f.as_str())
@@ -167,7 +173,7 @@ fn handle_redis_array(
         // Behaviour cribbed from:
         // https://redis.io/commands and
         // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
-        if let Some(Rframe::BulkString(v)) = commands.pop() {
+        if let Some(Frame::BulkString(v)) = commands.pop() {
             let comm = String::from_utf8_lossy(v.as_ref())
                 .to_string()
                 .to_uppercase();
@@ -421,7 +427,7 @@ fn handle_redis_array(
     Ok(MessageDetails::Bypass(Box::new(MessageDetails::Unknown)))
 }
 
-fn handle_redis_string(string: String, decode_as_request: bool) -> Result<MessageDetails> {
+fn handle_redis_string(string: String, decode_as_request: bool) -> anyhow::Result<MessageDetails> {
     if !decode_as_request {
         Ok(MessageDetails::Response(QueryResponse {
             matching_query: None,
@@ -442,7 +448,10 @@ fn handle_redis_string(string: String, decode_as_request: bool) -> Result<Messag
     }
 }
 
-fn handle_redis_bulkstring(bulkstring: Bytes, decode_as_request: bool) -> Result<MessageDetails> {
+fn handle_redis_bulkstring(
+    bulkstring: Bytes,
+    decode_as_request: bool,
+) -> anyhow::Result<MessageDetails> {
     if !decode_as_request {
         Ok(MessageDetails::Response(QueryResponse {
             matching_query: None,
@@ -463,7 +472,7 @@ fn handle_redis_bulkstring(bulkstring: Bytes, decode_as_request: bool) -> Result
     }
 }
 
-fn handle_redis_integer(integer: i64, decode_as_request: bool) -> Result<MessageDetails> {
+fn handle_redis_integer(integer: i64, decode_as_request: bool) -> anyhow::Result<MessageDetails> {
     if !decode_as_request {
         Ok(MessageDetails::Response(QueryResponse {
             matching_query: None,
@@ -484,7 +493,7 @@ fn handle_redis_integer(integer: i64, decode_as_request: bool) -> Result<Message
     }
 }
 
-fn handle_redis_error(error: String, decode_as_request: bool) -> Result<MessageDetails> {
+fn handle_redis_error(error: String, decode_as_request: bool) -> anyhow::Result<MessageDetails> {
     if !decode_as_request {
         Ok(MessageDetails::Response(QueryResponse {
             matching_query: None,
@@ -505,22 +514,22 @@ fn handle_redis_error(error: String, decode_as_request: bool) -> Result<MessageD
     }
 }
 
-pub fn process_redis_frame(frame: &Rframe, response: bool) -> Result<MessageDetails> {
+pub fn process_redis_frame(frame: &Frame, response: bool) -> anyhow::Result<MessageDetails> {
     let decode_as_request = !response;
     match frame.clone() {
-        Rframe::SimpleString(s) => handle_redis_string(s, decode_as_request),
-        Rframe::BulkString(bs) => handle_redis_bulkstring(bs, decode_as_request),
-        Rframe::Array(frames) => handle_redis_array(frames, decode_as_request),
-        Rframe::Moved { slot, host, port } => handle_redis_string(
+        Frame::SimpleString(s) => handle_redis_string(s, decode_as_request),
+        Frame::BulkString(bs) => handle_redis_bulkstring(bs, decode_as_request),
+        Frame::Array(frames) => handle_redis_array(frames, decode_as_request),
+        Frame::Moved { slot, host, port } => handle_redis_string(
             format!("MOVED {} {}:{}", slot, host, port),
             decode_as_request,
         ),
-        Rframe::Ask { slot, host, port } => {
+        Frame::Ask { slot, host, port } => {
             handle_redis_string(format!("ASK {} {}:{}", slot, host, port), decode_as_request)
         }
-        Rframe::Integer(i) => handle_redis_integer(i, decode_as_request),
-        Rframe::Error(s) => handle_redis_error(s, decode_as_request),
-        Rframe::Null => {
+        Frame::Integer(i) => handle_redis_integer(i, decode_as_request),
+        Frame::Error(s) => handle_redis_error(s, decode_as_request),
+        Frame::Null => {
             return if decode_as_request {
                 Ok(MessageDetails::Response(QueryResponse::empty()))
             } else {

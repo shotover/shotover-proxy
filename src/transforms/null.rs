@@ -1,9 +1,11 @@
-use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryResponse};
-use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
 use itertools::Itertools;
+
+use shotover_transforms::{ChainResponse, Message, MessageDetails, Messages, QueryResponse};
+
+use crate::transforms::InternalTransform;
+use crate::transforms::Wrapper;
+use shotover_transforms::RawFrame;
 
 #[derive(Debug, Clone)]
 pub struct Null {
@@ -34,7 +36,7 @@ impl Null {
 }
 
 #[async_trait]
-impl Transform for Null {
+impl InternalTransform for Null {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         if self.with_request {
             return ChainResponse::Ok(Messages {

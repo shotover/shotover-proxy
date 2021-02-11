@@ -3,9 +3,11 @@ use async_trait::async_trait;
 use mlua::Lua;
 use serde::{Deserialize, Serialize};
 
+use shotover_transforms::ChainResponse;
+
 use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::{Transforms, TransformsFromConfig};
 
 pub struct LuaFilterTransform {
     name: &'static str,
@@ -52,7 +54,7 @@ impl TransformsFromConfig for LuaConfig {
 }
 
 #[async_trait]
-impl Transform for LuaFilterTransform {
+impl InternalTransform for LuaFilterTransform {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         qd.call_next_transform().await
         // let globals = self.slua.globals();
@@ -105,14 +107,18 @@ impl Transform for LuaFilterTransform {
 mod lua_transform_tests {
     use std::error::Error;
 
+    use shotover_transforms::RawFrame;
+    use shotover_transforms::{
+        MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    };
+
     use crate::config::topology::TopicHolder;
-    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::RawFrame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::lua::LuaConfig;
     use crate::transforms::null::Null;
     use crate::transforms::printer::Printer;
-    use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+    use crate::transforms::{InternalTransform, Wrapper};
+    use crate::transforms::{Transforms, TransformsFromConfig};
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}

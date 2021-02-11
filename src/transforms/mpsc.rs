@@ -1,17 +1,19 @@
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::{Message, Messages, QueryResponse, Value};
-use crate::protocols::RawFrame;
-use crate::transforms::chain::{BufferedChain, TransformChain};
-use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
-};
 use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
+
+use shotover_transforms::RawFrame;
+use shotover_transforms::{ChainResponse, Message, Messages, QueryResponse, Value};
+
+use crate::config::topology::TopicHolder;
+use crate::transforms::chain::{BufferedChain, TransformChain};
+use crate::transforms::{
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+};
+use crate::transforms::{InternalTransform, Wrapper};
 
 /*
 AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,
@@ -67,7 +69,7 @@ impl TransformsFromConfig for BufferConfig {
 }
 
 #[async_trait]
-impl Transform for Buffer {
+impl InternalTransform for Buffer {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         return if self.async_mode {
             let expected_responses = qd.message.messages.len();
@@ -156,7 +158,7 @@ impl TransformsFromConfig for TeeConfig {
 }
 
 #[async_trait]
-impl Transform for Tee {
+impl InternalTransform for Tee {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         // let m = qd.message.clone();
         return match self.behavior {

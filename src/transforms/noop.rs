@@ -1,6 +1,9 @@
-use crate::error::ChainResponse;
-use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
+
+use crate::transforms::Wrapper;
+
+use crate::transforms::InternalTransform;
+use shotover_transforms::ChainResponse;
 
 #[derive(Debug, Clone)]
 pub struct NoOp {
@@ -20,7 +23,7 @@ impl Default for NoOp {
 }
 
 #[async_trait]
-impl Transform for NoOp {
+impl InternalTransform for NoOp {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         qd.call_next_transform().await
     }

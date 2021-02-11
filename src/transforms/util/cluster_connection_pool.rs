@@ -1,7 +1,7 @@
-use crate::message::Messages;
 use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
+use shotover_transforms::Messages;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Formatter;

@@ -1,10 +1,6 @@
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::message::{Message, Messages};
-use crate::transforms::chain::TransformChain;
-use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
-};
+use std::future::Future;
+use std::pin::Pin;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
@@ -12,9 +8,16 @@ use futures::task::{Context, Poll};
 use futures::Stream;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::future::Future;
-use std::pin::Pin;
 use tokio_stream::StreamExt;
+
+use shotover_transforms::{ChainResponse, Message, Messages};
+
+use crate::config::topology::TopicHolder;
+use crate::transforms::chain::TransformChain;
+use crate::transforms::{
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+};
+use crate::transforms::{InternalTransform, Wrapper};
 
 #[derive(Debug, Clone)]
 pub struct ParallelMap {
@@ -86,7 +89,7 @@ impl TransformsFromConfig for ParallelMapConfig {
 }
 
 #[async_trait]
-impl Transform for ParallelMap {
+impl InternalTransform for ParallelMap {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         let mut results: Vec<Message> = Vec::with_capacity(qd.message.messages.len());
         let mut message_iter = qd.message.messages.into_iter();

@@ -1,11 +1,11 @@
 use crate::transforms::chain::TransformChain;
 
 use crate::config::topology::TopicHolder;
-use crate::protocols::redis_codec::RedisCodec;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use shotover_protocols::redis_codec::RedisCodec;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, mpsc, Semaphore};

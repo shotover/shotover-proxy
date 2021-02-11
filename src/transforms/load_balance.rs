@@ -1,14 +1,18 @@
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::transforms::chain::{BufferedChain, TransformChain};
-use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
-};
+use std::sync::Arc;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::sync::Mutex;
+
+use shotover_transforms::ChainResponse;
+
+use crate::config::topology::TopicHolder;
+use crate::transforms::chain::{BufferedChain, TransformChain};
+use crate::transforms::{
+    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+};
+use crate::transforms::{InternalTransform, Wrapper};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct ConnectionBalanceAndPoolConfig {
@@ -54,7 +58,7 @@ impl Clone for ConnectionBalanceAndPool {
 }
 
 #[async_trait]
-impl Transform for ConnectionBalanceAndPool {
+impl InternalTransform for ConnectionBalanceAndPool {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
@@ -85,14 +89,18 @@ impl Transform for ConnectionBalanceAndPool {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
+    use anyhow::Result;
+
+    use shotover_transforms::Messages;
+
     use crate::config::topology::TopicHolder;
-    use crate::message::Messages;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::load_balance::ConnectionBalanceAndPool;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::{Transforms, Wrapper};
-    use anyhow::Result;
-    use std::sync::Arc;
+    use crate::transforms::Transforms;
+    use crate::transforms::Wrapper;
 
     #[tokio::test(flavor = "multi_thread")]
     pub async fn test_balance() -> Result<()> {
