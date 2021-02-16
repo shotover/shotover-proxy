@@ -645,7 +645,7 @@ pub trait Transform: DynClone + Send + Debug {
     }
 }
 
-#[typetag::serde(tag = "TransformConfig")]
+#[typetag::serde]
 #[async_trait]
 pub trait TransformsFromConfig: DynClone + Sync + Send + Debug {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>>;

@@ -8,11 +8,11 @@ sources:
       hard_connection_limit: false
 chain_config:
   redis_chain:
-    - PoolConnections:
+    - ConnectionBalanceAndPoolConfig:
         name: "RedisCluster-subchain"
         parallelism: 512
         chain:
-          - RedisCluster:
+          - RedisClusterConfig:
               first_contact_points: [ "redis://127.0.0.1:2220/", "redis://127.0.0.1:2221/", "redis://127.0.0.1:2222/", "redis://127.0.0.1:2223/", "redis://127.0.0.1:2224/", "redis://127.0.0.1:2225/" ]
 named_topics:
   testtopic : 5
