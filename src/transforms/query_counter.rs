@@ -2,15 +2,16 @@ use anyhow::Result;
 use async_trait::async_trait;
 use metrics::counter;
 use serde::{Deserialize, Serialize};
-use sqlparser::ast::Statement;
 
 use shotover_transforms::ast::ASTHolder;
+use shotover_transforms::sqlparser::ast::Statement;
+use shotover_transforms::TopicHolder;
 use shotover_transforms::Value::List;
-use shotover_transforms::{ChainResponse, MessageDetails, QueryMessage};
+use shotover_transforms::{
+    ChainResponse, MessageDetails, Messages, QueryMessage, Transform, TransformsFromConfig, Wrapper,
+};
 
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::InternalTransform;
 
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
@@ -24,8 +25,8 @@ pub struct QueryCounterConfig {
 }
 
 #[async_trait]
-impl InternalTransform for QueryCounter {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for QueryCounter {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         for m in &qd.message.messages {
             if let MessageDetails::Query(QueryMessage {
                 query_string: _query_string,
@@ -75,10 +76,11 @@ impl InternalTransform for QueryCounter {
     }
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for QueryCounterConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::QueryCounter(QueryCounter {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(QueryCounter {
             name: "QueryCounter",
             counter_name: self.name.clone(),
         }))

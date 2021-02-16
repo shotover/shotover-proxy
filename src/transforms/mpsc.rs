@@ -5,15 +5,16 @@ use metrics::counter;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
 
-use shotover_transforms::RawFrame;
-use shotover_transforms::{ChainResponse, Message, Messages, QueryResponse, Value};
-
-use crate::config::topology::TopicHolder;
-use crate::transforms::chain::{BufferedChain, TransformChain};
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{
+    ChainResponse, Message, Messages, QueryResponse, Transform, Value, Wrapper,
 };
-use crate::transforms::{InternalTransform, Wrapper};
+use shotover_transforms::{RawFrame, TransformsFromConfig};
+
+use crate::transforms::build_chain_from_config;
+use crate::transforms::chain::{BufferedChain, TransformChain};
+use crate::transforms::InternalTransform;
+use std::fmt::Debug;
 
 /*
 AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,
@@ -30,10 +31,10 @@ pub struct Buffer {
     pub timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct BufferConfig {
     pub async_mode: bool,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
     pub buffer_size: Option<usize>,
     pub timeout_micros: Option<u64>,
 }
@@ -52,12 +53,13 @@ impl Clone for Buffer {
     }
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for BufferConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         let chain = build_chain_from_config("forward".to_string(), &self.chain, &topics).await?;
         let buffer = self.buffer_size.unwrap_or(5);
-        return Ok(Transforms::MPSCForwarder(Buffer {
+        return Ok(Box::new(Buffer {
             name: "forward",
             tx: chain.clone().build_buffered_chain(buffer),
             async_mode: self.async_mode,
@@ -69,8 +71,8 @@ impl TransformsFromConfig for BufferConfig {
 }
 
 #[async_trait]
-impl InternalTransform for Buffer {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for Buffer {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         return if self.async_mode {
             let expected_responses = qd.message.messages.len();
             let buffer_result = self
@@ -115,27 +117,31 @@ pub struct Tee {
     pub timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ConsistencyBehavior {
     IGNORE,
     FAIL,
-    LOG { fail_chain: Vec<TransformsConfig> },
+    LOG {
+        fail_chain: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
+    },
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehavior>,
     pub timeout_micros: Option<u64>,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
     pub buffer_size: Option<usize>,
 }
+
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for TeeConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let fail_chain = if let Some(ConsistencyBehavior::LOG { fail_chain }) = &self.behavior {
             Some(
-                build_chain_from_config("fail_chain".to_string(), fail_chain, topics)
+                build_chain_from_config("fail_chain".to_string(), fail_chain.as_slice(), topics)
                     .await?
                     .build_buffered_chain(buffer_size),
             )
@@ -145,7 +151,7 @@ impl TransformsFromConfig for TeeConfig {
         let tee_chain =
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
-        return Ok(Transforms::MPSCTee(Tee {
+        return Ok(Box::new(Tee {
             name: "tee",
             tx: tee_chain.clone().build_buffered_chain(buffer_size),
             fail_chain,
@@ -158,8 +164,8 @@ impl TransformsFromConfig for TeeConfig {
 }
 
 #[async_trait]
-impl InternalTransform for Tee {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for Tee {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         // let m = qd.message.clone();
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {

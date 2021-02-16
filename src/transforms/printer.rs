@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use tracing::info;
 
-use crate::transforms::Wrapper;
+use shotover_transforms::Wrapper;
 
 use crate::transforms::InternalTransform;
-use shotover_transforms::ChainResponse;
+use shotover_transforms::{ChainResponse, Messages, Transform};
 
 #[derive(Debug, Clone)]
 pub struct Printer {
@@ -28,8 +28,8 @@ impl Printer {
 }
 
 #[async_trait]
-impl InternalTransform for Printer {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for Printer {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         info!("Request content: {:?}", qd.message);
         self.counter += 1;
         let response = qd.call_next_transform().await;

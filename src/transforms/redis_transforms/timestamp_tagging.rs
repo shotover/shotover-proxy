@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
 use shotover_transforms::ast::ASTHolder;
-use shotover_transforms::{ChainResponse, MessageDetails, QueryMessage, QueryResponse, Value};
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{
+    ChainResponse, MessageDetails, QueryMessage, QueryResponse, Transform, TransformsFromConfig,
+    Value, Wrapper,
+};
 
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::InternalTransform;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RedisTimestampTagger {
     name: &'static str,
 }
@@ -37,10 +39,11 @@ impl RedisTimestampTagger {
     }
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for RedisTimestampTaggerConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(RedisTimestampTagger {
             name: "RedisTimeStampTagger",
         }))
     }
@@ -153,7 +156,7 @@ fn unwrap_response(qr: &mut QueryResponse) {
 }
 
 #[async_trait]
-impl InternalTransform for RedisTimestampTagger {
+impl Transform for RedisTimestampTagger {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut tagged_success: bool = true;
         let mut exec_block: bool = false;

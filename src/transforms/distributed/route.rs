@@ -1,80 +1,75 @@
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use mlua::Lua;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use shotover_transforms::ChainResponse;
-use shotover_transforms::Messages;
+use shotover_scripts::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
+use shotover_transforms::{Messages, Transform};
 
-use crate::config::topology::TopicHolder;
-use crate::runtimes::{ScriptConfigurator, ScriptDefinition, ScriptHolder};
+use crate::transforms::build_chain_from_config;
 use crate::transforms::chain::TransformChain;
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
-};
-use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::InternalTransform;
+use std::fmt::Debug;
+use std::rc::Rc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Route {
     name: &'static str,
     route_map: HashMap<String, TransformChain>,
     route_script: ScriptHolder<(Messages, Vec<String>), String>,
-    lua_runtime: Arc<Mutex<mlua::Lua>>,
+    // lua_runtime: Arc<Mutex<mlua::Lua>>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct RouteConfig {
     #[serde(rename = "config_values")]
-    pub route_map: HashMap<String, Vec<TransformsConfig>>,
+    pub route_map: HashMap<String, Vec<Box<dyn TransformsFromConfig + Send + Sync>>>,
     pub route_script: ScriptConfigurator,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for RouteConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, &topics).await?,
+                build_chain_from_config(key, value.as_slice(), &topics).await?,
             );
         }
-        Ok(Transforms::Route(Route {
+        Ok(Box::new(Route {
             name: "scatter",
             route_map: temp,
             route_script: self.route_script.get_script_func()?,
-            lua_runtime: Arc::new(Mutex::new(Lua::new())),
+            // lua_runtime: Arc::new(Mutex::new(Lua::new())),
         }))
     }
 }
 
 #[async_trait]
-impl InternalTransform for Route {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        let name = self.get_name().to_string();
-        let routes: Vec<String> = self.route_map.keys().cloned().collect();
-        let rt = self.lua_runtime.lock().await;
-        let chosen_route = self
-            .route_script
-            .call(rt.borrow(), (qd.message.clone(), routes))?;
-        self.route_map
-            .get_mut(chosen_route.as_str())
-            .unwrap()
-            .process_request(qd, name)
-            .await
+impl Transform for Route {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+        // let name = self.get_name().to_string();
+        // let routes: Vec<String> = self.route_map.keys().cloned().collect();
+        // let rt = self.lua_runtime.lock().await;
+        // let chosen_route = self
+        //     .route_script
+        //     .call(rt.borrow(), (qd.message.clone(), routes))?;
+        // self.route_map
+        //     .get_mut(chosen_route.as_str())
+        //     .unwrap()
+        //     .process_request(qd, name)
+        //     .await
+        unimplemented!()
     }
 
     fn get_name(&self) -> &'static str {
         self.name
-    }
-
-    async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
-        let rt = self.lua_runtime.lock().await;
-        self.route_script.prep_lua_runtime(rt.borrow())
     }
 }

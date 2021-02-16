@@ -8,19 +8,21 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
 use tracing::{debug, trace, warn};
 
-use shotover_transforms::RawFrame;
+use shotover_transforms::TopicHolder;
 use shotover_transforms::{
-    ChainResponse, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    ChainResponse, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType,
+    Transform, Value, Wrapper,
 };
+use shotover_transforms::{RawFrame, TransformsFromConfig};
 
-use crate::config::topology::TopicHolder;
+use crate::transforms::build_chain_from_config;
 use crate::transforms::chain::BufferedChain;
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
-};
-use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::InternalTransform;
+use std::fmt::Debug;
+use std::rc::Rc;
+use std::sync::Arc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TunableConsistency {
     name: &'static str,
     route_map: Vec<BufferedChain>,
@@ -30,16 +32,17 @@ pub struct TunableConsistency {
     count: u32,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TunableConsistencyConfig {
-    pub route_map: HashMap<String, Vec<TransformsConfig>>,
+    pub route_map: HashMap<String, Vec<Box<dyn TransformsFromConfig + Send + Sync>>>,
     pub write_consistency: i32,
     pub read_consistency: i32,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for TunableConsistencyConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         let mut temp: Vec<BufferedChain> = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
@@ -51,7 +54,7 @@ impl TransformsFromConfig for TunableConsistencyConfig {
             );
         }
 
-        Ok(Transforms::TunableConsistency(TunableConsistency {
+        Ok(Box::new(TunableConsistency {
             name: "TunableConsistency",
             route_map: temp,
             write_consistency: self.write_consistency,
@@ -126,7 +129,7 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
 impl TunableConsistency {}
 
 #[async_trait]
-impl InternalTransform for TunableConsistency {
+impl Transform for TunableConsistency {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let required_successes = qd
             .message
@@ -257,15 +260,15 @@ mod scatter_transform_tests {
     use anyhow::Result;
 
     use shotover_transforms::RawFrame;
+    use shotover_transforms::TopicHolder;
+    use shotover_transforms::Wrapper;
     use shotover_transforms::{
         MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
     };
 
-    use crate::config::topology::TopicHolder;
     use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::Wrapper;
     use crate::transforms::{InternalTransform, Transforms};
 
     fn check_ok_responses(
@@ -340,11 +343,11 @@ mod scatter_transform_tests {
             RawFrame::NONE,
         ));
 
-        let ok_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {
+        let ok_repeat = Box::new(Box::new(ReturnerTransform {
             message: response.clone(),
             ok: true,
         }));
-        let err_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {
+        let err_repeat = Box::new(Box::new(ReturnerTransform {
             message: response.clone(),
             ok: false,
         }));
@@ -363,7 +366,7 @@ mod scatter_transform_tests {
             TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
-        let mut tuneable_success_consistency = Transforms::TunableConsistency(TunableConsistency {
+        let mut tuneable_success_consistency = Box::new(TunableConsistency {
             name: "TunableConsistency",
             route_map: build_chains(two_of_three).await,
             write_consistency: 2,
@@ -396,7 +399,7 @@ mod scatter_transform_tests {
             TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
-        let mut tuneable_fail_consistency = Transforms::TunableConsistency(TunableConsistency {
+        let mut tuneable_fail_consistency = Box::new(TunableConsistency {
             name: "TunableConsistency",
             route_map: build_chains(one_of_three).await,
             write_consistency: 2,

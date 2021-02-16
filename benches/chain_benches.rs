@@ -2,17 +2,17 @@ use std::collections::HashMap;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
-use shotover_proxy::config::topology::TopicHolder;
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::lua::LuaConfig;
 use shotover_proxy::transforms::null::Null;
-use shotover_proxy::transforms::Wrapper;
-use shotover_proxy::transforms::{Transforms, TransformsFromConfig};
-use shotover_transforms::RawFrame;
+use shotover_proxy::transforms::Transforms;
+use shotover_transforms::TopicHolder;
+use shotover_transforms::Wrapper;
 use shotover_transforms::{Messages, QueryMessage, QueryType};
+use shotover_transforms::{RawFrame, TransformsFromConfig};
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new_without_request())];
+    let transforms: Vec<Transforms> = vec![Box::new(Null::new_without_request())];
 
     let mut chain = TransformChain::new_no_shared_state(transforms, "bench".to_string());
     let wrapper = Wrapper::new(Messages::new_single_query(
@@ -69,7 +69,7 @@ fn lua_benchmark(c: &mut Criterion) {
 
     let transform = rt.block_on(lua_t.get_source(&t_holder)).unwrap();
 
-    let transforms: Vec<Transforms> = vec![transform, Transforms::Null(Null::new())];
+    let transforms: Vec<Transforms> = vec![transform, Box::new(Null::new())];
 
     let mut lchain = TransformChain::new_no_shared_state(transforms, String::from("test_chain"));
 

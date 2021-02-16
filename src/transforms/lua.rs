@@ -1,19 +1,19 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use mlua::Lua;
+// use mlua::Lua;
 use serde::{Deserialize, Serialize};
 
-use shotover_transforms::ChainResponse;
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, Messages, Transform, TransformsFromConfig, Wrapper};
 
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::InternalTransform;
 
+#[derive(Debug)]
 pub struct LuaFilterTransform {
     name: &'static str,
     pub function_def: String,
     pub function_name: String,
-    pub slua: &'static Lua,
+    // pub slua: &'static Lua,
 }
 
 impl Clone for LuaFilterTransform {
@@ -23,7 +23,7 @@ impl Clone for LuaFilterTransform {
             name: self.name,
             function_def: self.function_def.clone(),
             function_name: self.function_name.clone(),
-            slua: Lua::new().into_static(),
+            // slua: Lua::new().into_static(),
         }
     }
 }
@@ -39,23 +39,24 @@ pub struct LuaConfig {
     pub function_name: String,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for LuaConfig {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, _: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         let lua_t = LuaFilterTransform {
             name: "lua",
             function_def: self.function_def.clone(),
             function_name: self.function_name.clone(),
-            slua: Lua::new().into_static(),
+            // slua: Lua::new().into_static(),
         };
         // lua_t.build_lua();
-        Ok(Transforms::Lua(lua_t))
+        Ok(Box::new(lua_t))
     }
 }
 
 #[async_trait]
-impl InternalTransform for LuaFilterTransform {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for LuaFilterTransform {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         qd.call_next_transform().await
         // let globals = self.slua.globals();
         // let qm_v = mlua_serde::to_value(&self.slua, qd.message.clone()).unwrap();
@@ -107,18 +108,17 @@ impl InternalTransform for LuaFilterTransform {
 mod lua_transform_tests {
     use std::error::Error;
 
-    use shotover_transforms::RawFrame;
+    use shotover_transforms::TopicHolder;
     use shotover_transforms::{
-        MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+        MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value, Wrapper,
     };
+    use shotover_transforms::{RawFrame, TransformsFromConfig};
 
-    use crate::config::topology::TopicHolder;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::lua::LuaConfig;
     use crate::transforms::null::Null;
     use crate::transforms::printer::Printer;
-    use crate::transforms::{InternalTransform, Wrapper};
-    use crate::transforms::{Transforms, TransformsFromConfig};
+    use crate::transforms::InternalTransform;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}
@@ -152,13 +152,13 @@ return call_next_transform(qm)
     //     ));
     //
     //     let transforms: Vec<Transforms> = vec![
-    //         Transforms::Printer(Printer::new()),
-    //         Transforms::Null(Null::new()),
+    //         Box::new(Printer::new()),
+    //         Box::new(Null::new()),
     //     ];
     //
     //     let _chain = TransformChain::new(transforms, String::from("test_chain"));
     //
-    //     if let Transforms::Lua(mut lua) = lua_t.get_source(&t_holder).await? {
+    //     if let Box::new(mut lua) = lua_t.get_source(&t_holder).await? {
     //         let result = lua.transform(wrapper).await;
     //         if let Ok(m) = result {
     //             if let MessageDetails::Response(QueryResponse {

@@ -5,28 +5,28 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use shotover_transforms::ChainResponse;
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, Messages, Transform, TransformsFromConfig, Wrapper};
 
-use crate::config::topology::TopicHolder;
+use crate::transforms::build_chain_from_config;
 use crate::transforms::chain::{BufferedChain, TransformChain};
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
-};
-use crate::transforms::{InternalTransform, Wrapper};
+use crate::transforms::InternalTransform;
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ConnectionBalanceAndPoolConfig {
     pub name: String,
     pub parallelism: usize,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for ConnectionBalanceAndPoolConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let chain = build_chain_from_config(self.name.clone(), &self.chain, &topics).await?;
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        let chain =
+            build_chain_from_config(self.name.clone(), self.chain.as_slice(), &topics).await?;
 
-        Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
+        Ok(Box::new(ConnectionBalanceAndPool {
             name: "PoolConnections",
             active_connection: None,
             parallelism: self.parallelism,
@@ -58,8 +58,8 @@ impl Clone for ConnectionBalanceAndPool {
 }
 
 #[async_trait]
-impl InternalTransform for ConnectionBalanceAndPool {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for ConnectionBalanceAndPool {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
@@ -94,23 +94,22 @@ mod test {
     use anyhow::Result;
 
     use shotover_transforms::Messages;
+    use shotover_transforms::TopicHolder;
+    use shotover_transforms::Wrapper;
 
-    use crate::config::topology::TopicHolder;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::load_balance::ConnectionBalanceAndPool;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::Transforms;
-    use crate::transforms::Wrapper;
 
     #[tokio::test(flavor = "multi_thread")]
     pub async fn test_balance() -> Result<()> {
-        let transform = Transforms::PoolConnections(ConnectionBalanceAndPool {
+        let transform = Box::new(ConnectionBalanceAndPool {
             name: "",
             active_connection: None,
             parallelism: 3,
             other_connections: Arc::new(Default::default()),
             chain_to_clone: TransformChain::new(
-                vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
+                vec![Box::new(Box::new(ReturnerTransform {
                     message: Messages::new(),
                     ok: true,
                 }))],
@@ -129,7 +128,7 @@ mod test {
         }
 
         match chain.chain.remove(0) {
-            Transforms::PoolConnections(p) => {
+            Box::new(p) => {
                 let guard = p.other_connections.lock().await;
                 assert_eq!(guard.len(), 3);
                 for bc in guard.iter() {

@@ -9,10 +9,10 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use shotover_protocols::redis_codec::RedisCodec;
-use shotover_proxy::config::topology::TopicHolder;
-use shotover_proxy::transforms::{Transforms, TransformsFromConfig};
-use shotover_transforms::Wrapper;
+use shotover_proxy::transforms::Transforms;
+use shotover_transforms::TopicHolder;
 use shotover_transforms::{ChainResponse, Transform};
+use shotover_transforms::{TransformsFromConfig, Wrapper};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {
@@ -20,12 +20,11 @@ pub struct RedisCodecConfiguration {
     pub address: String,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for RedisCodecConfiguration {
     async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisCodecDestination(
-            RedisCodecDestination::new(self.address.clone()),
-        ))
+        Ok(Box::new(RedisCodecDestination::new(self.address.clone())))
     }
 }
 

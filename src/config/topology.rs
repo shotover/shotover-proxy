@@ -5,69 +5,43 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
+use std::collections::HashMap;
+
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use shotover_transforms::ChainResponse;
-use shotover_transforms::Messages;
-use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+use shotover_transforms::{ChainResponse, TopicHolder, TransformsFromConfig};
+use shotover_transforms::{ChannelMessage, Messages};
+
+use crate::sources::cassandra_source::CassandraConfig;
+use crate::sources::{Sources, SourcesConfig};
+use crate::transforms::build_chain_from_config;
+use crate::transforms::cassandra_codec_destination::CodecConfiguration;
+use crate::transforms::chain::TransformChain;
+use crate::transforms::kafka_destination::KafkaConfig;
+use crate::transforms::mpsc::TeeConfig;
+use std::fmt::Debug;
+use std::rc::Rc;
+use std::sync::Arc;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Topology {
     pub sources: HashMap<String, SourcesConfig>,
-    pub chain_config: HashMap<String, Vec<TransformsConfig>>,
+    pub chain_config: HashMap<String, Vec<Box<dyn TransformsFromConfig + Send + Sync>>>,
     pub named_topics: HashMap<String, usize>,
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TopologyConfig {
     pub sources: HashMap<String, SourcesConfig>,
-    pub chain_config: HashMap<String, Vec<TransformsConfig>>,
+    pub chain_config: HashMap<String, Vec<Box<dyn TransformsFromConfig + Send + Sync>>>,
     pub named_topics: Option<HashMap<String, Option<usize>>>,
     pub source_to_chain_mapping: HashMap<String, String>,
-}
-
-#[derive(Debug)]
-pub struct ChannelMessage {
-    pub messages: Messages,
-    pub return_chan: Option<OneSender<ChainResponse>>,
-}
-
-impl ChannelMessage {
-    pub fn new_with_no_return(m: Messages) -> Self {
-        ChannelMessage {
-            messages: m,
-            return_chan: None,
-        }
-    }
-
-    pub fn new(m: Messages, return_chan: OneSender<ChainResponse>) -> Self {
-        ChannelMessage {
-            messages: m,
-            return_chan: Some(return_chan),
-        }
-    }
-}
-
-pub struct TopicHolder {
-    pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
-    pub topics_tx: HashMap<String, Sender<ChannelMessage>>,
-}
-
-impl TopicHolder {
-    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<ChannelMessage>> {
-        let rx = self.topics_rx.remove(name)?;
-        Some(rx)
-    }
-
-    pub fn get_tx(&self, name: &str) -> Option<Sender<ChannelMessage>> {
-        let tx = self.topics_tx.get(name)?;
-        Some(tx.clone())
-    }
 }
 
 impl Topology {
@@ -97,7 +71,7 @@ impl Topology {
         for (key, value) in self.chain_config.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, &topics).await?,
+                build_chain_from_config(key, value.as_slice(), &topics).await?,
             );
         }
         Ok(temp)
@@ -182,7 +156,7 @@ impl Topology {
     }
 
     pub fn get_demo_config() -> Topology {
-        let kafka_transform_config_obj = TransformsConfig::KafkaDestination(KafkaConfig {
+        let kafka_transform_config_obj = Box::new(KafkaConfig {
             keys: [
                 ("bootstrap.servers", "127.0.0.1:9092"),
                 ("message.timeout.ms", "5000"),
@@ -197,7 +171,7 @@ impl Topology {
 
         let server_addr = "127.0.0.1:9042".to_string();
 
-        let codec_config = TransformsConfig::CodecDestination(CodecConfiguration {
+        let codec_config = Box::new(CodecConfiguration {
             address: server_addr,
             bypass_result_processing: false,
         });
@@ -218,7 +192,7 @@ impl Topology {
             hard_connection_limit: None,
         });
 
-        let tee_conf = TransformsConfig::MPSCTee(TeeConfig {
+        let tee_conf = Box::new(TeeConfig {
             behavior: None,
             timeout_micros: None,
             chain: vec![kafka_transform_config_obj],
@@ -228,7 +202,8 @@ impl Topology {
         let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
         sources.insert(String::from("cassandra_prod"), cassandra_source);
 
-        let mut chain_config: HashMap<String, Vec<TransformsConfig>> = HashMap::new();
+        let mut chain_config: HashMap<String, Vec<Box<dyn TransformsFromConfig + Send + Sync>>> =
+            HashMap::new();
         chain_config.insert(String::from("main_chain"), vec![tee_conf, codec_config]);
 
         let mut named_topics: HashMap<String, usize> = HashMap::new();
@@ -248,8 +223,9 @@ impl Topology {
 
 #[cfg(test)]
 mod topology_tests {
-    use crate::config::topology::Topology;
     use anyhow::Result;
+
+    use crate::config::topology::Topology;
 
     const TEST_STRING: &str = r###"---
 sources:

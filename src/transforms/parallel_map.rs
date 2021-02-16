@@ -10,14 +10,15 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
 
-use shotover_transforms::{ChainResponse, Message, Messages};
-
-use crate::config::topology::TopicHolder;
-use crate::transforms::chain::TransformChain;
-use crate::transforms::{
-    build_chain_from_config, Transforms, TransformsConfig, TransformsFromConfig,
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{
+    ChainResponse, Message, Messages, Transform, TransformsFromConfig, Wrapper,
 };
-use crate::transforms::{InternalTransform, Wrapper};
+
+use crate::transforms::build_chain_from_config;
+use crate::transforms::chain::TransformChain;
+use crate::transforms::InternalTransform;
+use std::fmt::Debug;
 
 #[derive(Debug, Clone)]
 pub struct ParallelMap {
@@ -65,20 +66,22 @@ where
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ParallelMapConfig {
     pub name: String,
     pub parallelism: u32,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
     pub ordered_results: bool,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for ParallelMapConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let chain = build_chain_from_config(self.name.clone(), &self.chain, &topics).await?;
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        let chain =
+            build_chain_from_config(self.name.clone(), self.chain.as_slice(), &topics).await?;
 
-        Ok(Transforms::ParallelMap(ParallelMap {
+        Ok(Box::new(ParallelMap {
             name: "SequentialMap",
             chains: std::iter::repeat(chain)
                 .take(self.parallelism as usize)
@@ -89,8 +92,8 @@ impl TransformsFromConfig for ParallelMapConfig {
 }
 
 #[async_trait]
-impl InternalTransform for ParallelMap {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for ParallelMap {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut results: Vec<Message> = Vec::with_capacity(qd.message.messages.len());
         let mut message_iter = qd.message.messages.into_iter();
         while message_iter.len() != 0 {

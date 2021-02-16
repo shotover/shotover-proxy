@@ -9,13 +9,10 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 use tracing::trace;
 
-use shotover_transforms::ChainResponse;
-use shotover_transforms::Messages;
-
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
 use shotover_protocols::cassandra_protocol2::CassandraCodec2;
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
+use shotover_transforms::{Messages, Transform};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CodecConfiguration {
@@ -24,10 +21,11 @@ pub struct CodecConfiguration {
     pub bypass_result_processing: bool,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for CodecConfiguration {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::CodecDestination(CodecDestination::new(
+    async fn get_source(&self, _: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(CodecDestination::new(
             self.address.clone(),
             self.bypass_result_processing,
         )))
@@ -112,9 +110,9 @@ impl CodecDestination {
 }
 
 #[async_trait]
-impl InternalTransform for CodecDestination {
+impl Transform for CodecDestination {
     // #[instrument]
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         self.send_message(qd.message).await
     }
 

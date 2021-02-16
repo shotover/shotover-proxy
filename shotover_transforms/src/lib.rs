@@ -1,4 +1,13 @@
 use crate::protocols::RawFrame;
+use std::collections::HashMap;
+use std::fmt::{Debug, Display, Formatter};
+use std::future::Future;
+use std::iter::FromIterator;
+use std::net::IpAddr;
+use std::pin::Pin;
+
+use anyhow::Result;
+use async_trait::async_trait;
 use bytes::Bytes;
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
 use cassandra_proto::types::data_serialization_types::{
@@ -16,6 +25,42 @@ use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::net::IpAddr;
+use metrics::{counter, timing};
+use redis_protocol::types::Frame;
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::oneshot;
+use tokio::time::Instant;
+
+use ast::ASTHolder;
+
+use crate::ast::{process_redis_frame, redis_query_type};
+use dyn_clone::DynClone;
+
+pub mod ast;
+pub mod protocol;
+pub extern crate sqlparser;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {
+        assert_eq!(2 + 2, 4);
+    }
+}
+
+pub type TransformCall =
+    fn(message: Messages) -> Pin<Box<dyn Future<Output = ChainResponse> + Send + Sync>>;
+
+#[derive(Copy, Clone, Debug)]
+pub struct LibDeclaration {
+    pub ns_version: &'static str,
+    pub rustc_version: &'static str,
+    pub transform_call: TransformCall,
+}
+
+pub type ChainResponse = anyhow::Result<Messages>;
+>>>>>>> Holy moly:shotover_transforms/src/lib.rs
 
 // TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
 // Should move the message type to just be bulk..
@@ -586,3 +631,135 @@ mod my_bytes {
         Ok(Bytes::from(val))
     }
 }
+<<<<<<< HEAD:transforms/src/lib.rs
+=======
+
+#[async_trait]
+pub trait Transform: DynClone + Send + Debug {
+    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
+
+    fn get_name(&self) -> &'static str;
+
+    async fn prep_transform_chain(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[typetag::serde(tag = "TransformConfig")]
+#[async_trait]
+pub trait TransformsFromConfig: DynClone + Sync + Send + Debug {
+    async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>>;
+}
+
+dyn_clone::clone_trait_object!(TransformsFromConfig);
+dyn_clone::clone_trait_object!(Transform);
+
+pub struct TopicHolder {
+    pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
+    pub topics_tx: HashMap<String, Sender<ChannelMessage>>,
+}
+
+impl TopicHolder {
+    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<ChannelMessage>> {
+        let rx = self.topics_rx.remove(name)?;
+        Some(rx)
+    }
+
+    pub fn get_tx(&self, name: &str) -> Option<Sender<ChannelMessage>> {
+        let tx = self.topics_tx.get(name)?;
+        Some(tx.clone())
+    }
+}
+
+#[derive(Debug)]
+pub struct ChannelMessage {
+    pub messages: Messages,
+    pub return_chan: Option<oneshot::Sender<ChainResponse>>,
+}
+
+impl ChannelMessage {
+    pub fn new_with_no_return(m: Messages) -> Self {
+        ChannelMessage {
+            messages: m,
+            return_chan: None,
+        }
+    }
+
+    pub fn new(m: Messages, return_chan: oneshot::Sender<ChainResponse>) -> Self {
+        ChannelMessage {
+            messages: m,
+            return_chan: Some(return_chan),
+        }
+    }
+}
+
+pub struct Wrapper<'a> {
+    pub message: Messages,
+    pub transforms: Vec<&'a mut Box<dyn Transform + Send + Sync>>,
+}
+
+impl<'a> Debug for Wrapper<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_list()
+            .entries(self.message.messages.iter())
+            .finish()
+    }
+}
+
+impl<'a> Clone for Wrapper<'a> {
+    fn clone(&self) -> Self {
+        Wrapper {
+            message: self.message.clone(),
+            transforms: vec![],
+        }
+    }
+}
+
+impl<'a> Display for Wrapper<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("{:#?}", self.message))
+    }
+}
+
+impl<'a> Wrapper<'a> {
+    pub async fn call_next_transform(mut self) -> ChainResponse {
+        let t = self.transforms.remove(0);
+
+        let name = t.get_name();
+        let start = Instant::now();
+        let result;
+        {
+            result = t.transform(self).await;
+        }
+        let end = Instant::now();
+        counter!("shotover_transform_total", 1, "transform" => name);
+        if result.is_err() {
+            counter!("shotover_transform_failures", 1, "transform" => name)
+        }
+        timing!("shotover_transform_latency", start, end, "transform" => name);
+        result
+    }
+
+    pub fn swap_message(&mut self, mut m: Messages) {
+        std::mem::swap(&mut self.message, &mut m);
+    }
+
+    pub fn new(m: Messages) -> Self {
+        Wrapper {
+            message: m,
+            transforms: vec![],
+        }
+    }
+
+    pub fn new_with_next_transform(m: Messages, _next_transform: usize) -> Self {
+        Wrapper {
+            message: m,
+            transforms: vec![],
+        }
+    }
+
+    pub fn reset(&mut self, transforms: Vec<&'a mut Box<dyn Transform + Send + Sync>>) {
+        self.transforms = transforms;
+    }
+}
+>>>>>>> Holy moly:shotover_transforms/src/lib.rs

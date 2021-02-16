@@ -2,19 +2,13 @@ use std::fs;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use anyhow::anyhow;
-use anyhow::Result;
 use mlua::{Function, Lua};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 use wasmer_runtime::{imports, instantiate, Func, Instance};
 
-/*
-TODO:
-A safer way to run Lua would be to have a LUA VM per Transform chain (this ends up then being on a per
-connection basis). Each message would then get it's own scope (e.g. lua.async_scope) and a transform would use the scope).
-Or get a ref to the Lua VM, maybe?
-*/
+use anyhow::{anyhow, Result};
+use std::fmt::{Debug, Formatter};
+use tokio::sync::Mutex;
 
 pub enum Script {
     Lua {
@@ -25,6 +19,25 @@ pub enum Script {
         function_name: String,
         function_def: Arc<Mutex<Instance>>,
     },
+}
+
+impl Debug for Script {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        return match self {
+            Script::Lua {
+                function_name,
+                function_def,
+            } => f
+                .debug_struct("Lua")
+                .field("name", function_name)
+                .field("def", function_def)
+                .finish(),
+            Script::Wasm {
+                function_name,
+                function_def,
+            } => f.debug_struct("Lua").field("name", function_name).finish(),
+        };
+    }
 }
 
 impl Clone for Script {
@@ -89,7 +102,7 @@ impl ScriptConfigurator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ScriptHolder<A, R> {
     pub env: Script,
     pub _phantom: PhantomData<(A, R)>,
@@ -208,10 +221,10 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
 
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
     use mlua::Lua;
 
-    use crate::runtimes::{Script, ScriptConfigurator, ScriptDefinition, ScriptHolder};
+    use crate::{Script, ScriptConfigurator, ScriptDefinition, ScriptHolder};
+    use anyhow::Result;
 
     #[test]
     fn script() -> Result<()> {

@@ -1,6 +1,6 @@
-use crate::transforms::protect::aws_kms::AWSKeyManagement;
-use crate::transforms::protect::local_kek::LocalKeyManagement;
-use crate::transforms::protect::KeyMaterial;
+use crate::protect::aws_kms::AWSKeyManagement;
+use crate::protect::local_kek::LocalKeyManagement;
+use crate::protect::KeyMaterial;
 use anyhow::Result;
 use async_trait::async_trait;
 use cached::proc_macro::cached;

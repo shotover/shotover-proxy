@@ -11,8 +11,7 @@ use tracing::{debug, info};
 use shotover_proxy::admin::httpserver::LogFilterHttpExporter;
 use shotover_proxy::config::topology::Topology;
 use shotover_proxy::config::Config;
-use shotover_proxy::transforms::Transforms;
-use shotover_proxy::transforms::Wrapper;
+use shotover_transforms::Wrapper;
 use std::net::SocketAddr;
 use tokio::runtime;
 
@@ -67,11 +66,6 @@ fn main() -> Result<()> {
     let exporter = LogFilterHttpExporter::new(receiver.controller(), socket, handle);
 
     receiver.install();
-
-    debug!(
-        "Transform overhead size on stack is {}",
-        std::mem::size_of::<Transforms>()
-    );
 
     debug!(
         "Wrapper overhead size on stack is {}",

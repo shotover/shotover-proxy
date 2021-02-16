@@ -7,17 +7,25 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use serde::{Deserialize, Serialize};
 
-use shotover_transforms::RawFrame;
-use shotover_transforms::{ChainResponse, Message, MessageDetails, Messages, QueryResponse};
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{
+    ChainResponse, Message, MessageDetails, Messages, QueryResponse, Transform, Wrapper,
+};
+use shotover_transforms::{RawFrame, TransformsFromConfig};
 
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::InternalTransform;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
 pub struct KafkaDestination {
     producer: FutureProducer,
     pub topic: String,
+}
+
+impl Debug for KafkaDestination {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        unimplemented!()
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -27,12 +35,14 @@ pub struct KafkaConfig {
     pub topic: String,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::KafkaDestination(
-            KafkaDestination::new_from_config(&self.keys, self.topic.clone()),
-        ))
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(KafkaDestination::new_from_config(
+            &self.keys,
+            self.topic.clone(),
+        )))
     }
 }
 
@@ -70,8 +80,8 @@ impl Default for KafkaDestination {
 }
 
 #[async_trait]
-impl InternalTransform for KafkaDestination {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for KafkaDestination {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut responses: Vec<Message> = vec![];
         for message in qd.message.messages {
             match message.details {

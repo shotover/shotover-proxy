@@ -8,12 +8,11 @@ use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use shotover_transforms::ChainResponse;
-
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
 use shotover_protocols::redis_codec::RedisCodec;
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, Messages, Transform, TransformsFromConfig, Wrapper};
+
+use crate::transforms::InternalTransform;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisCodecConfiguration {
@@ -21,12 +20,11 @@ pub struct RedisCodecConfiguration {
     pub address: String,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for RedisCodecConfiguration {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisCodecDestination(
-            RedisCodecDestination::new(self.address.clone()),
-        ))
+    async fn get_source(&self, _: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(RedisCodecDestination::new(self.address.clone())))
     }
 }
 
@@ -54,8 +52,8 @@ impl RedisCodecDestination {
 }
 
 #[async_trait]
-impl InternalTransform for RedisCodecDestination {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for RedisCodecDestination {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         match self.outbound {
             None => {
                 let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();

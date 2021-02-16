@@ -1,3 +1,5 @@
+pub mod protect;
+
 #[cfg(test)]
 mod tests {
     #[test]

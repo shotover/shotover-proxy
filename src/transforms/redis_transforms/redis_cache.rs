@@ -6,12 +6,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use shotover_transforms::ChainResponse;
-use shotover_transforms::Messages;
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
+use shotover_transforms::{Messages, Transform};
 
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::InternalTransform;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
@@ -19,12 +18,11 @@ pub struct RedisConfig {
     pub uri: String,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for RedisConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisCache(
-            SimpleRedisCache::new_from_config(&self.uri).await,
-        ))
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(SimpleRedisCache::new_from_config(&self.uri).await))
     }
 }
 
@@ -67,7 +65,7 @@ impl SimpleRedisCache {
 }
 
 #[async_trait]
-impl InternalTransform for SimpleRedisCache {
+impl Transform for SimpleRedisCache {
     // #[instrument]
     async fn transform<'a>(&'a mut self, _qd: Wrapper<'a>) -> ChainResponse {
         let responses = Messages::new();

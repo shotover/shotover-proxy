@@ -9,11 +9,11 @@ use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use crate::config::topology::TopicHolder;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::chain::TransformChain;
 use shotover_protocols::cassandra_protocol2::CassandraCodec2;
+use shotover_transforms::TopicHolder;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CassandraConfig {

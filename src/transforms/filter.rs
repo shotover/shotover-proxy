@@ -2,11 +2,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use shotover_transforms::{ChainResponse, MessageDetails, QueryType};
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{
+    ChainResponse, MessageDetails, QueryType, Transform, TransformsFromConfig, Wrapper,
+};
 
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::InternalTransform;
 
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
@@ -19,10 +20,11 @@ pub struct QueryTypeFilterConfig {
     pub filter: QueryType,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for QueryTypeFilterConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::QueryTypeFilter(QueryTypeFilter {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(QueryTypeFilter {
             name: "QueryType Filter",
             filter: self.filter.clone(),
         }))
@@ -30,7 +32,7 @@ impl TransformsFromConfig for QueryTypeFilterConfig {
 }
 
 #[async_trait]
-impl InternalTransform for QueryTypeFilter {
+impl Transform for QueryTypeFilter {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         qd.message.messages.retain(|m| {
             if let MessageDetails::Query(qm) = &m.details {
@@ -52,11 +54,11 @@ mod test {
     use anyhow::Result;
 
     use shotover_transforms::RawFrame;
+    use shotover_transforms::Wrapper;
     use shotover_transforms::{Message, MessageDetails, Messages, QueryMessage, QueryType};
 
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::null::Null;
-    use crate::transforms::Wrapper;
     use crate::transforms::{InternalTransform, Transforms};
 
     #[tokio::test(flavor = "multi_thread")]
@@ -66,7 +68,7 @@ mod test {
             filter: QueryType::Read,
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut null = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..26)
             .map(|i| {

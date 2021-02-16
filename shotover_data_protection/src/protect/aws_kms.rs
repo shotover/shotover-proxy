@@ -1,4 +1,4 @@
-use crate::transforms::protect::KeyMaterial;
+use crate::protect::KeyMaterial;
 use anyhow::anyhow;
 use anyhow::Result;
 use bytes::Bytes;

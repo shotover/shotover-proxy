@@ -11,13 +11,10 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
 
-use crate::transforms::Wrapper;
+use shotover_transforms::{ChainResponse, Wrapper};
+use shotover_transforms::{ChannelMessage, Transform};
 
-use crate::config::topology::ChannelMessage;
-use crate::transforms::Transforms;
-use shotover_transforms::ChainResponse;
-
-type InnerChain = Vec<Transforms>;
+type InnerChain = Vec<Box<dyn Transform + Send + Sync>>;
 
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
@@ -30,7 +27,8 @@ pub struct TransformChain {
 
 impl Clone for TransformChain {
     fn clone(&self) -> Self {
-        TransformChain::new(self.chain.clone(), self.name.clone())
+        let chain: InnerChain = self.chain.iter().cloned().collect();
+        TransformChain::new(chain, self.name.clone())
     }
 }
 
@@ -160,7 +158,7 @@ impl TransformChain {
         }
     }
 
-    pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
+    pub fn new_no_shared_state(transform_list: InnerChain, name: String) -> Self {
         TransformChain {
             name,
             chain: transform_list,
@@ -168,14 +166,14 @@ impl TransformChain {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
+    pub fn new(transform_list: InnerChain, name: String) -> Self {
         TransformChain {
             name,
             chain: transform_list,
         }
     }
 
-    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
+    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Box<dyn Transform + Send + Sync>> {
         self.chain.iter_mut().collect_vec()
     }
 

@@ -4,12 +4,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use shotover_transforms::RawFrame;
-use shotover_transforms::{ChainResponse, Messages, QueryResponse};
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, Messages, QueryResponse, Transform, Wrapper};
+use shotover_transforms::{RawFrame, TransformsFromConfig};
 
-use crate::config::topology::TopicHolder;
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
+use crate::transforms::InternalTransform;
 
 #[derive(Debug, Clone)]
 pub struct Coalesce {
@@ -32,15 +31,16 @@ pub struct CoalesceConfig {
     pub max_behavior: CoalesceBehavior,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for CoalesceConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         let hint = match self.max_behavior {
             CoalesceBehavior::COUNT(c) => Some(c),
             CoalesceBehavior::COUNT_OR_WAIT(c, _) => Some(c),
             _ => None,
         };
-        Ok(Transforms::Coalesce(Coalesce {
+        Ok(Box::new(Coalesce {
             name: "Coalesce",
             max_behavior: self.max_behavior.clone(),
             buffer: Messages {
@@ -56,7 +56,7 @@ impl TransformsFromConfig for CoalesceConfig {
 }
 
 #[async_trait]
-impl InternalTransform for Coalesce {
+impl Transform for Coalesce {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         self.buffer.messages.append(&mut qd.message.messages);
 
@@ -97,12 +97,12 @@ mod test {
 
     use anyhow::Result;
 
-    use shotover_transforms::RawFrame;
+    use shotover_transforms::Wrapper;
     use shotover_transforms::{Message, Messages, QueryMessage};
+    use shotover_transforms::{RawFrame, Transform};
 
     use crate::transforms::coalesce::{Coalesce, CoalesceBehavior};
     use crate::transforms::null::Null;
-    use crate::transforms::Wrapper;
     use crate::transforms::{InternalTransform, Transforms};
 
     #[tokio::test(flavor = "multi_thread")]
@@ -114,7 +114,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut null = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
@@ -162,7 +162,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut null = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
@@ -208,7 +208,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut null = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))

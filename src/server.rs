@@ -1,9 +1,10 @@
 use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
-use crate::transforms::Wrapper;
 use anyhow::Result;
 use futures::StreamExt;
 use metrics::gauge;
+use shotover_transforms::Messages;
+use shotover_transforms::Wrapper;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, Semaphore};

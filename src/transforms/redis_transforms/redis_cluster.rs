@@ -21,16 +21,17 @@ use tokio::time::Duration;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 use tracing::{debug, info, trace};
 
-use shotover_transforms::RawFrame;
-use shotover_transforms::{ChainResponse, Message, MessageDetails, Messages, QueryResponse};
+use shotover_protocols::redis_codec::RedisCodec;
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{
+    ChainResponse, Message, MessageDetails, Messages, QueryResponse, Transform, Wrapper,
+};
+use shotover_transforms::{RawFrame, TransformsFromConfig};
 
 use crate::concurrency::FuturesOrdered;
-use crate::config::topology::TopicHolder;
 use crate::transforms::util::cluster_connection_pool::ConnectionPool;
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{InternalTransform, Wrapper};
-use crate::transforms::{Transforms, TransformsFromConfig};
-use shotover_protocols::redis_codec::RedisCodec;
+use crate::transforms::InternalTransform;
 
 const SLOT_SIZE: usize = 16384;
 
@@ -44,9 +45,10 @@ pub struct RedisClusterConfig {
     connection_count: Option<i32>,
 }
 
+#[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for RedisClusterConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         let slots = get_topology(&self.first_contact_points).await?;
         debug!("Detected cluster: {:?}", slots);
 
@@ -81,7 +83,7 @@ impl TransformsFromConfig for RedisClusterConfig {
         debug!("Mapped cluster: {:?}", slot_map);
         debug!("Channels: {:?}", connection_map);
 
-        Ok(Transforms::RedisCluster(RedisCluster {
+        Ok(Box::new(RedisCluster {
             name: "SequentialMap",
             slots: slot_map,
             channels: connection_map,
@@ -484,8 +486,8 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
 }
 
 #[async_trait]
-impl InternalTransform for RedisCluster {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+impl Transform for RedisCluster {
+    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_slots {
             self.rebuild_slot_map().await;
             self.rebuild_slots = false;
