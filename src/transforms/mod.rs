@@ -11,24 +11,27 @@ use metrics::{counter, timing};
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
-use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
 use crate::transforms::chain::TransformChain;
-use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
-use crate::transforms::distributed::tunable_consistency_scatter::{
-    TunableConsistency, TunableConsistencyConfig,
-};
-use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
-use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
-use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
-use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
-use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
-use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
-use crate::transforms::redis_transforms::redis_cluster::{RedisCluster, RedisClusterConfig};
-use crate::transforms::redis_transforms::redis_codec_destination::{
-    RedisCodecConfiguration, RedisCodecDestination,
-};
-use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
+use shotover_transforms::TopicHolder;
+use shotover_transforms::{ChainResponse, TransformsFromConfig};
+use shotover_transforms::{LibDeclaration, Transform};
+use shotover_transforms::{Messages, Wrapper};
+// use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
+// use crate::transforms::distributed::tunable_consistency_scatter::{
+//     TunableConsistency, TunableConsistencyConfig,
+// };
+// use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
+// use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
+// use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
+// use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
+// use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
+// use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
+// use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
+// use crate::transforms::redis_transforms::redis_cluster::{RedisCluster, RedisClusterConfig};
+// use crate::transforms::redis_transforms::redis_codec_destination::{
+//     RedisCodecConfiguration, RedisCodecDestination,
+// };
+// use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
 
 pub mod cassandra_codec_destination;
 pub mod chain;
@@ -42,7 +45,6 @@ pub mod mpsc;
 pub mod noop;
 pub mod null;
 mod parallel_map;
-pub mod printer;
 pub mod query_counter;
 pub mod redis_transforms;
 pub mod sampler;
@@ -69,24 +71,28 @@ impl Transform for LibraryTransform {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
-pub struct LibraryTransformConfig {}
+pub struct LibraryTransformConfig {
+    libname: String,
+}
 
 #[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for LibraryTransformConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
-        let libname = "./target/debug/libasync_plugin.so";
-        let library = Library::new(libname).unwrap();
-        let decl = unsafe {
-            library
-                .get::<*mut LibDeclaration>(b"lib_declaration\0")
-                .unwrap()
-                .read()
-        };
-        return Ok(Box::new(LibraryTransform {
-            lib_path: libname.to_string(),
-            lib: decl,
-        }));
+        let filename = self.libname.clone();
+        let library = Library::new(filename).unwrap();
+        unsafe {
+            let conf_func: libloading::Symbol<
+                unsafe extern "C" fn(
+                    config: String,
+                )
+                    -> Pin<Box<dyn TransformsFromConfig + Send + Sync>>,
+            > = library.get(b"get_configurator")?;
+            let config_string = "".to_string();
+            let conf_struct = conf_func(config_string);
+            let fut = conf_struct.get_source_future(topics);
+            return fut.await;
+        }
     }
 }
 
@@ -96,10 +102,12 @@ pub async fn build_chain_from_config(
     topics: &TopicHolder,
 ) -> Result<TransformChain> {
     let mut transforms: Vec<Box<dyn Transform + Send + Sync>> = Vec::new();
+    let mut configs: Vec<Box<dyn TransformsFromConfig + Send + Sync>> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_source(topics).await?)
+        transforms.push(tc.get_source(topics).await?);
+        configs.push(tc.clone());
     }
-    Ok(TransformChain::new(transforms, name))
+    Ok(TransformChain::new_with_configs(transforms, name, configs))
 }
 
 #[derive(Debug, Clone)]

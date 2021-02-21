@@ -1,10 +1,11 @@
 use crate::message::Messages;
+use crate::transforms::build_chain_from_config;
 use crate::transforms::chain::TransformChain;
 use anyhow::Result;
 use futures::StreamExt;
 use metrics::gauge;
-use shotover_transforms::Messages;
 use shotover_transforms::Wrapper;
+use shotover_transforms::{Messages, TopicHolder};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -169,7 +170,12 @@ where
                 // Get a handle to the shared database. Internally, this is an
                 // `Arc`, so a clone only increments the ref count.
                 // chain: self.chain.clone(),
-                chain: self.chain.clone(),
+                chain: build_chain_from_config(
+                    self.chain.name.clone(),
+                    self.chain.config_objs.as_slice(),
+                    &TopicHolder::new(),
+                )
+                .await?,
                 client_details: peer,
                 conn_details: conn_string,
                 source_details: self.source_name.clone(),

@@ -1,5 +1,5 @@
 use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
-use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
+// use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
 use crate::sources::redis_source::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
@@ -36,7 +36,7 @@ pub mod redis_source;
 #[derive(Debug)]
 pub enum Sources {
     Cassandra(CassandraSource),
-    Mpsc(AsyncMpsc),
+    // Mpsc(AsyncMpsc),
     Redis(RedisSource),
 }
 
@@ -44,7 +44,7 @@ impl Sources {
     pub fn get_join_handles<T>(&self) -> &JoinHandle<Result<()>> {
         match self {
             Sources::Cassandra(c) => &c.join_handle,
-            Sources::Mpsc(m) => &m.rx_handle,
+            // Sources::Mpsc(m) => &m.rx_handle,
             Sources::Redis(r) => &r.join_handle,
         }
     }
@@ -53,14 +53,14 @@ impl Sources {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum SourcesConfig {
     Cassandra(CassandraConfig),
-    Mpsc(AsyncMpscConfig),
+    // Mpsc(AsyncMpscConfig),
     Redis(RedisConfig),
 }
 
 impl SourcesConfig {
     pub(crate) async fn get_source(
         &self,
-        chain: &TransformChain,
+        chain: TransformChain,
         topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
@@ -70,10 +70,10 @@ impl SourcesConfig {
                 c.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
                     .await
             }
-            SourcesConfig::Mpsc(m) => {
-                m.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
-                    .await
-            }
+            // SourcesConfig::Mpsc(m) => {
+            //     m.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
+            //         .await
+            // }
             SourcesConfig::Redis(r) => {
                 r.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
                     .await
@@ -86,7 +86,7 @@ impl SourcesConfig {
 pub trait SourcesFromConfig: Send {
     async fn get_source(
         &self,
-        chain: &TransformChain,
+        chain: TransformChain,
         topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,

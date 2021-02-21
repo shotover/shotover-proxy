@@ -19,6 +19,7 @@ use shotover_transforms::{MessageDetails, QueryMessage, QueryResponse, QueryType
 
 use crate::protect::key_management::{KeyManager, KeyManagerConfig};
 use std::fmt::{Debug, Formatter};
+use std::pin::Pin;
 
 mod aws_kms;
 mod key_management;
@@ -168,6 +169,11 @@ impl TransformsFromConfig for ProtectConfig {
             key_id: "XXXXXXX".to_string(),
         }))
     }
+}
+
+#[no_mangle]
+pub fn get_configurator<'a>(config: String) -> Pin<Box<dyn TransformsFromConfig + Send + Sync>> {
+    Box::pin(serde_json::from_str::<ProtectConfig>(&config).unwrap())
 }
 
 #[async_trait]

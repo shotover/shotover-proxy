@@ -117,8 +117,8 @@ mod lua_transform_tests {
     use crate::transforms::chain::TransformChain;
     use crate::transforms::lua::LuaConfig;
     use crate::transforms::null::Null;
-    use crate::transforms::printer::Printer;
     use crate::transforms::InternalTransform;
+    use shotover_util_transforms::Printer;
 
     const REQUEST_STRING: &str = r###"
 qm.namespace = {"aaaaaaaaaa", "bbbbb"}

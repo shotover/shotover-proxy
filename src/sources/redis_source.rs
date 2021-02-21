@@ -26,7 +26,7 @@ pub struct RedisConfig {
 impl SourcesFromConfig for RedisConfig {
     async fn get_source(
         &self,
-        chain: &TransformChain,
+        chain: TransformChain,
         _topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
@@ -56,7 +56,7 @@ pub struct RedisSource {
 impl RedisSource {
     //"127.0.0.1:9043
     pub async fn new(
-        chain: &TransformChain,
+        chain: TransformChain,
         listen_addr: String,
         batch_hint: u64,
         notify_shutdown: broadcast::Sender<()>,
@@ -77,7 +77,7 @@ impl RedisSource {
         let name = "Redis Source";
 
         let mut listener = TcpCodecListener {
-            chain: chain.clone(),
+            chain: chain,
             source_name: name.to_string(),
             listener: None,
             listen_addr: listen_addr.clone(),

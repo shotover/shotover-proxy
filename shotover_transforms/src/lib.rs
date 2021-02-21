@@ -635,7 +635,7 @@ mod my_bytes {
 =======
 
 #[async_trait]
-pub trait Transform: DynClone + Send + Debug {
+pub trait Transform: DynClone + Send + Sync + Debug {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
@@ -643,12 +643,30 @@ pub trait Transform: DynClone + Send + Debug {
     async fn prep_transform_chain(&mut self) -> Result<()> {
         Ok(())
     }
+
+    fn get_transform_future<'a>(
+        &'a mut self,
+        qd: Wrapper<'a>,
+    ) -> Pin<Box<dyn core::future::Future<Output = ChainResponse> + Send + 'a>> {
+        self.transform(qd)
+    }
 }
 
 #[typetag::serde]
 #[async_trait]
 pub trait TransformsFromConfig: DynClone + Sync + Send + Debug {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>>;
+
+    fn get_source_future<'a>(
+        &'a self,
+        topics: &'a TopicHolder,
+    ) -> Pin<
+        Box<
+            dyn core::future::Future<Output = Result<Box<dyn Transform + Send + Sync>>> + Send + 'a,
+        >,
+    > {
+        self.get_source(topics)
+    }
 }
 
 dyn_clone::clone_trait_object!(TransformsFromConfig);
@@ -668,6 +686,13 @@ impl TopicHolder {
     pub fn get_tx(&self, name: &str) -> Option<Sender<ChannelMessage>> {
         let tx = self.topics_tx.get(name)?;
         Some(tx.clone())
+    }
+
+    pub fn new() -> Self {
+        TopicHolder {
+            topics_rx: Default::default(),
+            topics_tx: Default::default(),
+        }
     }
 }
 

@@ -23,6 +23,7 @@ pub struct ConnectionBalanceAndPoolConfig {
 #[async_trait]
 impl TransformsFromConfig for ConnectionBalanceAndPoolConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        let configs = self.chain.clone();
         let chain =
             build_chain_from_config(self.name.clone(), self.chain.as_slice(), &topics).await?;
 
@@ -31,7 +32,7 @@ impl TransformsFromConfig for ConnectionBalanceAndPoolConfig {
             active_connection: None,
             parallelism: self.parallelism,
             other_connections: Arc::new(Mutex::new(Vec::with_capacity(self.parallelism))),
-            chain_to_clone: chain,
+            chain_to_clone: configs,
         }))
     }
 }
@@ -42,7 +43,7 @@ pub struct ConnectionBalanceAndPool {
     pub active_connection: Option<BufferedChain>,
     pub parallelism: usize,
     pub other_connections: Arc<Mutex<Vec<BufferedChain>>>,
-    pub chain_to_clone: TransformChain,
+    pub chain_to_clone: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
 }
 
 impl Clone for ConnectionBalanceAndPool {
@@ -63,7 +64,13 @@ impl Transform for ConnectionBalanceAndPool {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
-                let chain = self.chain_to_clone.clone().build_buffered_chain(5);
+                let chain = build_chain_from_config(
+                    self.name.clone().to_string(),
+                    self.chain_to_clone.clone().as_slice(),
+                    &TopicHolder::new(),
+                )
+                .await?
+                .build_buffered_chain(5);
                 self.active_connection.replace(chain.clone());
                 guard.push(chain);
             } else {

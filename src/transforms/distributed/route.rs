@@ -12,7 +12,7 @@ use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
 use shotover_transforms::{Messages, Transform};
 
 use crate::transforms::build_chain_from_config;
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, BufferedChain};
 use crate::transforms::InternalTransform;
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -20,7 +20,7 @@ use std::rc::Rc;
 #[derive(Clone, Debug)]
 pub struct Route {
     name: &'static str,
-    route_map: HashMap<String, TransformChain>,
+    route_map: HashMap<String, BufferedChain>,
     route_script: ScriptHolder<(Messages, Vec<String>), String>,
     // lua_runtime: Arc<Mutex<mlua::Lua>>,
 }
@@ -36,11 +36,11 @@ pub struct RouteConfig {
 #[async_trait]
 impl TransformsFromConfig for RouteConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
-        let mut temp: HashMap<String, TransformChain> = HashMap::new();
+        let mut temp: HashMap<String, BufferedChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, value.as_slice(), &topics).await?,
+                build_chain_from_config(key, value.as_slice(), &topics).await?.build_buffered_chain(5),
             );
         }
         Ok(Box::new(Route {

@@ -1,5 +1,5 @@
 [workspace]
-members = ["shotover_redis_transforms", "shotover_transforms", "shotover_protocols", "shotover_scripts", "shotover_data_protection"]
+members = [".", "shotover_redis_transforms", "shotover_transforms", "shotover_protocols", "shotover_scripts", "shotover_util_transforms"]
 
 [package]
 name = "shotover-proxy"

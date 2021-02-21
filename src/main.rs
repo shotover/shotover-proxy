@@ -12,6 +12,7 @@ use shotover_proxy::admin::httpserver::LogFilterHttpExporter;
 use shotover_proxy::config::topology::Topology;
 use shotover_proxy::config::Config;
 use shotover_transforms::Wrapper;
+use std::env;
 use std::net::SocketAddr;
 use tokio::runtime;
 
@@ -34,6 +35,9 @@ struct ConfigOpts {
 #[cfg(not(feature = "no_index"))]
 #[cfg(not(feature = "no_object"))]
 fn main() -> Result<()> {
+    let path = env::current_dir()?;
+    println!("The current directory is {}", path.display());
+
     let params = ConfigOpts::parse();
     let config = Config::from_file(params.config_file.clone())?;
 

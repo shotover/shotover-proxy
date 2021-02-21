@@ -11,7 +11,8 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
 
-use shotover_transforms::{ChainResponse, Wrapper};
+use crate::transforms::build_chain_from_config;
+use shotover_transforms::{ChainResponse, TopicHolder, TransformsFromConfig, Wrapper};
 use shotover_transforms::{ChannelMessage, Transform};
 
 type InnerChain = Vec<Box<dyn Transform + Send + Sync>>;
@@ -21,16 +22,16 @@ type InnerChain = Vec<Box<dyn Transform + Send + Sync>>;
 
 #[derive(Debug)]
 pub struct TransformChain {
-    name: String,
+    pub name: String,
     pub chain: InnerChain,
+    pub config_objs: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
 }
-
-impl Clone for TransformChain {
-    fn clone(&self) -> Self {
-        let chain: InnerChain = self.chain.iter().cloned().collect();
-        TransformChain::new(chain, self.name.clone())
-    }
-}
+//
+// impl Clone for TransformChain {
+//     fn clone(&self) -> Self {
+//         build_chain_from_config(self.name.clone(), &self.config_objs, &TopicHolder::new())
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
@@ -133,7 +134,8 @@ impl TransformChain {
 
                 if let Err(e) = &chain_response {
                     warn!("Internal error in buffered chain: {:?} - resetting", e);
-                    chain = chain.clone();
+                    //TODO: we used to reset the chain by cloneing
+                    // chain = chain.clone();
                 };
 
                 match return_chan {
@@ -162,6 +164,7 @@ impl TransformChain {
         TransformChain {
             name,
             chain: transform_list,
+            config_objs: Vec::new(),
         }
     }
 
@@ -170,6 +173,20 @@ impl TransformChain {
         TransformChain {
             name,
             chain: transform_list,
+            config_objs: Vec::new(),
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn new_with_configs(
+        transform_list: InnerChain,
+        name: String,
+        configs: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
+    ) -> Self {
+        TransformChain {
+            name,
+            chain: transform_list,
+            config_objs: configs,
         }
     }
 

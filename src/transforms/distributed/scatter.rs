@@ -20,14 +20,14 @@ use shotover_transforms::{
 use shotover_transforms::{RawFrame, TransformsFromConfig};
 
 use crate::transforms::build_chain_from_config;
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::InternalTransform;
 use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
 pub struct Scatter {
     name: &'static str,
-    route_map: HashMap<String, TransformChain>,
+    route_map: HashMap<String, BufferedChain>,
     route_script: ScriptHolder<(Messages, Vec<String>), Vec<String>>,
     // lua_runtime: Arc<Mutex<mlua::Lua>>,
 }
@@ -43,11 +43,13 @@ pub struct ScatterConfig {
 #[async_trait]
 impl TransformsFromConfig for ScatterConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
-        let mut temp: HashMap<String, TransformChain> = HashMap::new();
+        let mut temp: HashMap<String, BufferedChain> = HashMap::new();
         for (key, value) in self.route_map.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, value.as_slice(), topics).await?,
+                build_chain_from_config(key, value.as_slice(), topics)
+                    .await?
+                    .build_buffered_chain(5),
             );
         }
         Ok(Box::new(Scatter {

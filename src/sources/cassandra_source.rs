@@ -28,7 +28,7 @@ pub struct CassandraConfig {
 impl SourcesFromConfig for CassandraConfig {
     async fn get_source(
         &self,
-        chain: &TransformChain,
+        chain: TransformChain,
         _topics: &mut TopicHolder,
         notify_shutdown: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
@@ -59,7 +59,7 @@ pub struct CassandraSource {
 impl CassandraSource {
     //"127.0.0.1:9043
     pub async fn new(
-        chain: &TransformChain,
+        chain: TransformChain,
         listen_addr: String,
         cassandra_ks: HashMap<String, Vec<String>>,
         notify_shutdown: broadcast::Sender<()>,
@@ -74,7 +74,7 @@ impl CassandraSource {
         info!("Starting Cassandra source on [{}]", listen_addr);
 
         let mut listener = TcpCodecListener {
-            chain: chain.clone(),
+            chain: chain,
             source_name: name.to_string(),
             listener: None,
             listen_addr: listen_addr.clone(),

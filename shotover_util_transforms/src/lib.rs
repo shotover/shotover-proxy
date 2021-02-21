@@ -1,10 +1,9 @@
+use anyhow::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use shotover_transforms::{ChainResponse, TopicHolder, Transform, TransformsFromConfig, Wrapper};
+use std::pin::Pin;
 use tracing::info;
-
-use shotover_transforms::Wrapper;
-
-use crate::transforms::InternalTransform;
-use shotover_transforms::{ChainResponse, Messages, Transform};
 
 #[derive(Debug, Clone)]
 pub struct Printer {
@@ -18,6 +17,17 @@ impl Default for Printer {
     }
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct PrinterConfig {}
+
+#[typetag::serde]
+#[async_trait]
+impl TransformsFromConfig for PrinterConfig {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(Printer::new()))
+    }
+}
+
 impl Printer {
     pub fn new() -> Printer {
         Printer {
@@ -27,8 +37,14 @@ impl Printer {
     }
 }
 
+#[no_mangle]
+pub fn get_configurator<'a>(config: String) -> Pin<Box<dyn TransformsFromConfig + Send + Sync>> {
+    Box::pin(PrinterConfig {})
+}
+
 #[async_trait]
 impl Transform for Printer {
+    #[no_mangle]
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         info!("Request content: {:?}", qd.message);
         self.counter += 1;
@@ -37,6 +53,7 @@ impl Transform for Printer {
         response
     }
 
+    #[no_mangle]
     fn get_name(&self) -> &'static str {
         self.name
     }
