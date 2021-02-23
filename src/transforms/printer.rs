@@ -7,8 +7,8 @@ use async_trait::async_trait;
 #[derive(Debug, Clone)]
 pub struct Printer {
     name: &'static str,
+    counter: i32,
 }
-
 
 impl Default for Printer {
     fn default() -> Self {
@@ -18,7 +18,10 @@ impl Default for Printer {
 
 impl Printer {
     pub fn new() -> Printer {
-        Printer { name: "Printer" }
+        Printer {
+            name: "Printer",
+            counter: 0,
+        }
     }
 }
 
@@ -26,6 +29,7 @@ impl Printer {
 impl Transform for Printer {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         info!("Request content: {:?}", qd.message);
+        self.counter += 1;
         let response = qd.call_next_transform().await;
         info!("Response content: {:?}", response);
         response

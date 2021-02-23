@@ -189,6 +189,7 @@ impl RedisCluster {
         if let Err(e) = chan.send(Request {
             messages: message,
             return_chan: Some(one_tx),
+            message_id: None,
         }) {
             if let Some(error_return) = e.0.return_chan {
                 self.rebuild_slots = true;
