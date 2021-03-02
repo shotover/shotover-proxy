@@ -380,7 +380,10 @@ where
             trace!("Received raw message {:?}", frame);
             match self
                 .chain
-                .process_request(Wrapper::new(frame), self.client_details.clone())
+                .process_request(
+                    Wrapper::new_with_client_details(frame, self.client_details.clone()),
+                    self.client_details.clone(),
+                )
                 .await
             {
                 Ok(modified_message) => {

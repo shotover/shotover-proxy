@@ -10,7 +10,9 @@ use metrics::{counter, timing};
 
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::cassandra_codec_destination::{CodecConfiguration, CodecDestination};
+use crate::transforms::cassandra::cassandra_codec_destination::{
+    CodecConfiguration, CodecDestination,
+};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::distributed::tunable_consistency_scatter::{
@@ -39,7 +41,7 @@ use distributed::scatter::{Scatter, ScatterConfig};
 use mlua::UserData;
 use tokio::time::Instant;
 
-pub mod cassandra_codec_destination;
+pub mod cassandra;
 pub mod chain;
 pub mod coalesce;
 pub mod distributed;
@@ -252,6 +254,7 @@ pub struct Wrapper<'a> {
     pub message: Messages,
     // pub next_transform: usize,
     transforms: Vec<&'a mut Transforms>,
+    pub client_details: String,
 }
 
 impl<'a> Clone for Wrapper<'a> {
@@ -259,6 +262,7 @@ impl<'a> Clone for Wrapper<'a> {
         Wrapper {
             message: self.message.clone(),
             transforms: vec![],
+            client_details: self.client_details.clone(),
         }
     }
 }
@@ -298,6 +302,15 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             message: m,
             transforms: vec![],
+            client_details: "".to_string(),
+        }
+    }
+
+    pub fn new_with_client_details(m: Messages, client_details: String) -> Self {
+        Wrapper {
+            message: m,
+            transforms: vec![],
+            client_details,
         }
     }
 
@@ -305,6 +318,7 @@ impl<'a> Wrapper<'a> {
         Wrapper {
             message: m,
             transforms: vec![],
+            client_details: "".to_string(),
         }
     }
 

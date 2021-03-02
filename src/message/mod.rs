@@ -1,4 +1,6 @@
+use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::protocols::RawFrame;
+use crate::transforms::util::Request;
 use bytes::Bytes;
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
 use cassandra_proto::types::data_serialization_types::{
