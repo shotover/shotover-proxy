@@ -143,8 +143,6 @@ where
     loop {
         tokio::select! {
             Some(maybe_req) = in_r.next() => {
-                info!("chan map size {}", return_channel_map.len());
-                info!("message map size {}", return_message_map.len());
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
@@ -170,8 +168,6 @@ where
                 }
             },
             Some(original_request) = return_rx.recv() => {
-                info!("chan map size {}", return_channel_map.len());
-                info!("message map size {}", return_message_map.len());
                 if let Request { messages: orig , return_chan: Some(chan), message_id: Some(id) } = original_request {
                     match return_message_map.remove(&id) {
                         None => {

@@ -1,6 +1,6 @@
 use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, Value};
 use byteorder::{BigEndian, WriteBytesExt};
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::consistency::Consistency;
 use cassandra_proto::frame::frame_result::{
@@ -16,8 +16,7 @@ use tokio_util::codec::{Decoder, Encoder};
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::str::FromStr;
-use tracing::trace;
-use tracing::warn;
+use tracing::{info, trace, warn};
 
 use crate::message::{Messages, QueryType};
 use crate::protocols::RawFrame;
@@ -33,12 +32,13 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::ops::{Deref, DerefMut};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec2 {
     compressor: NoCompression,
     current_head: Option<FrameHeader>,
+    current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
 }
@@ -56,6 +56,7 @@ impl CassandraCodec2 {
         CassandraCodec2 {
             compressor: NoCompression::new(),
             current_head: None,
+            current_frames: Vec::new(),
             pk_col_map,
             bypass,
         }
@@ -197,25 +198,6 @@ impl CassandraCodec2 {
 }
 
 impl CassandraCodec2 {
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
-        trace!("Parsing C* frame");
-        let v = parser::parse_frame(src, &self.compressor, &self.current_head);
-        match v {
-            Ok((r, h)) => {
-                self.current_head = h;
-                Ok(r)
-            }
-            // Note these should be parse errors, not actual protocol errors
-            Err(e) => Err(anyhow!(e)),
-        }
-    }
-
-    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
-        let buffer = item.into_cbytes();
-        dst.put(buffer.as_slice());
-        Ok(())
-    }
-
     fn value_to_expr(v: &Value) -> SQLValue {
         match v {
             Value::NULL => SQLValue::Null,
@@ -571,6 +553,9 @@ impl CassandraCodec2 {
 
     pub fn process_cassandra_frame(&self, frame: Frame) -> Messages {
         if self.bypass {
+            // if frame.body.len() == 0 {
+            //     info!("detected zero length body");
+            // }
             return Messages::new_single_bypass(RawFrame::CASSANDRA(frame));
         }
 
@@ -625,6 +610,32 @@ impl CassandraCodec2 {
             _ => Messages::new_single_bypass(RawFrame::CASSANDRA(frame)),
         }
     }
+
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
+        // while src.remaining() != 0 {
+        //
+        // }
+
+        trace!("Parsing C* frame");
+        let v = parser::parse_frame(src, &self.compressor, &self.current_head);
+        match v {
+            Ok((r, h)) => {
+                self.current_head = h;
+                Ok(r)
+            }
+            // Note these should be parse errors, not actual protocol errors
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
+        let buffer = item.into_cbytes();
+        if buffer.len() == 0 {
+            info!("trying to send 0 length frame");
+        }
+        dst.put(buffer.as_slice());
+        Ok(())
+    }
 }
 
 impl Decoder for CassandraCodec2 {
@@ -635,9 +646,16 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        Ok(self
-            .decode_raw(src)?
-            .map(|f| self.process_cassandra_frame(f)))
+        return match self.decode_raw(src) {
+            Ok(res) => match res {
+                None => Ok(None),
+                Some(frame) => Ok(Some(self.process_cassandra_frame(frame))),
+            },
+            Err(e) => {
+                warn!("decode raw error {:?}", e);
+                Err(e)
+            }
+        };
     }
 }
 
@@ -671,6 +689,9 @@ impl CassandraCodec2 {
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
             }
         };
+        // if frame.body.len() == 0 {
+        //     info!("encoding zero length body");
+        // }
         Ok(frame)
     }
 }
@@ -683,10 +704,19 @@ impl Encoder<Messages> for CassandraCodec2 {
         item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        item.into_iter().try_for_each(|m: Message| {
-            let frame = self.encode_message(m)?;
-            self.encode_raw(frame, dst)
-        })
+        for m in item {
+            match self.encode_message(m) {
+                Ok(frame) => {
+                    if let Err(e) = self.encode_raw(frame, dst) {
+                        warn!("Couldn't write frame to buffer {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    warn!("Couldn't encode frame {:?}", e);
+                }
+            };
+        }
+        Ok(())
     }
 }
 
@@ -731,6 +761,9 @@ mod cassandra_protocol_tests {
 
     fn test_frame(codec: &mut CassandraCodec2, raw_frame: &[u8]) {
         let mut bytes: BytesMut = build_bytesmut(raw_frame);
+        bytes.extend(build_bytesmut(raw_frame));
+        bytes.extend(build_bytesmut(raw_frame));
+        bytes.extend(build_bytesmut(raw_frame).split_at(10).0);
         if let Ok(Some(message)) = codec.decode(&mut bytes) {
             let mut dest: BytesMut = BytesMut::new();
             if let Ok(()) = codec.encode(message, &mut dest) {
@@ -799,6 +832,7 @@ mod cassandra_protocol_tests {
         );
         let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &QUERY_BYTES);
+        // test_frame(&mut codec, &QUERY_BYTES);
     }
 
     fn remove_whitespace(s: &mut String) {

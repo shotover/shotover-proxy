@@ -147,13 +147,8 @@ impl Messages {
 
     pub fn new_single_bypass(raw_frame: RawFrame) -> Self {
         Messages {
-            messages: vec![Message::new(
-                MessageDetails::Bypass(Box::new(MessageDetails::Unknown)),
-                false,
-                raw_frame,
-            )],
+            messages: vec![Message::new(MessageDetails::Unknown, false, raw_frame)],
         }
-        .into_bypass()
     }
 
     pub fn new_single_bypass_response(raw_frame: RawFrame, modified: bool) -> Self {
