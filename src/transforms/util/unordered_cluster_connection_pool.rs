@@ -2,11 +2,12 @@ use crate::message::{Message, Messages};
 use crate::protocols::RawFrame;
 use crate::transforms::util::{Request, Response};
 use anyhow::{anyhow, Result};
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Formatter;
 use std::iter::FromIterator;
+use std::time::Duration;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -140,9 +141,16 @@ where
 
     let mut return_message_map: HashMap<u16, Message> = HashMap::new();
 
+    // let foo = timeout(Duration::from_millis(10), )
+
     loop {
         tokio::select! {
             Some(maybe_req) = in_r.next() => {
+
+                        if return_message_map.len() > 1 || return_channel_map.len() > 1 {
+                info!("message map {:?}", return_message_map);
+                info!("channel map {:?}", return_channel_map);
+            }
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
@@ -168,6 +176,10 @@ where
                 }
             },
             Some(original_request) = return_rx.recv() => {
+            if return_message_map.len() > 1 || return_channel_map.len() > 1 {
+                info!("message map {:?}", return_message_map);
+                info!("channel map {:?}", return_channel_map);
+            }
                 if let Request { messages: orig , return_chan: Some(chan), message_id: Some(id) } = original_request {
                     match return_message_map.remove(&id) {
                         None => {
@@ -182,7 +194,10 @@ where
                    panic!("Couldn't get valid cassandra stream id");
                 }
             },
-            else => break
+            else => {
+                // info!("tjos happened");
+                break
+            }
         }
     }
     Ok(())

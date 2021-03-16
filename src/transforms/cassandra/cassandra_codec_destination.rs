@@ -7,6 +7,7 @@ use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use futures::{FutureExt, SinkExt};
 use std::collections::HashMap;
+use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tracing::{info, trace};
 
@@ -16,8 +17,11 @@ use crate::message;
 use crate::protocols::RawFrame;
 use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
+use std::time::Duration;
+use tokio::sync::oneshot::error::RecvError;
 use tokio::sync::oneshot::Receiver;
+use tokio::time::error::Elapsed;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CodecConfiguration {
@@ -85,7 +89,7 @@ impl CodecDestination {
                         .get_mut(0)
                         .expect("No connections found");
                     let expected_size = messages.messages.len();
-                    let mut results: Result<FuturesOrdered<Receiver<(Message, ChainResponse)>>> =
+                    let results: Result<FuturesOrdered<Receiver<(Message, ChainResponse)>>> =
                         messages
                             .into_iter()
                             .map(|m| {
@@ -111,20 +115,37 @@ impl CodecDestination {
                             .collect();
 
                     let mut responses = Vec::with_capacity(expected_size);
+                    let mut results = results?;
 
-                    for prelim in results?.next().await {
-                        match prelim? {
-                            (_, Ok(mut resp)) => responses.append(&mut resp.messages),
-                            (m, Err(err)) => {
-                                responses.push(Message::new_response(
-                                    QueryResponse::empty_with_error(Some(message::Value::Strings(
-                                        format!("{}", err),
-                                    ))),
-                                    true,
-                                    m.original,
-                                ));
+                    loop {
+                        match timeout(Duration::from_secs(5), results.next()).await {
+                            Ok(Some(prelim)) => {
+                                match prelim? {
+                                    (_, Ok(mut resp)) => responses.append(&mut resp.messages),
+                                    (m, Err(err)) => {
+                                        responses.push(Message::new_response(
+                                            QueryResponse::empty_with_error(Some(
+                                                message::Value::Strings(format!("{}", err)),
+                                            )),
+                                            true,
+                                            m.original,
+                                        ));
+                                    }
+                                };
                             }
-                        };
+                            Ok(None) => break,
+                            Err(e) => {
+                                info!(
+                                    "timed out waiting for results got - {:?} expected - {:?}",
+                                    responses.len(),
+                                    expected_size
+                                );
+                                info!(
+                                    "timed out waiting for results - {:?} - {:?}",
+                                    responses, results
+                                );
+                            }
+                        }
                     }
 
                     return Ok(Messages {
