@@ -1,10 +1,10 @@
 use crate::message::Messages;
 use crate::transforms::util::Request;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::fmt::{Debug, Formatter};
+use std::fmt::Formatter;
 use std::iter::FromIterator;
 use std::sync::Arc;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -162,7 +162,7 @@ where
                     if let Some(Request {
                         messages,
                         return_chan: Some(ret),
-                        message_id,
+                        message_id: _,
                     }) = return_rx.recv().await
                     {
                         // If the receiver hangs up, just silently ignore

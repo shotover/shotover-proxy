@@ -2,18 +2,16 @@ use crate::message::{Message, Messages};
 use crate::protocols::RawFrame;
 use crate::transforms::util::{Request, Response};
 use anyhow::{anyhow, Result};
-use futures::{FutureExt, StreamExt};
-use std::collections::{HashMap, HashSet};
+use futures::StreamExt;
+use halfbrown::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
-use std::iter::FromIterator;
-use std::time::Duration;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
-use tracing::{debug, info, trace};
+use tracing::info;
 
 #[derive(Clone)]
 pub struct OwnedUnorderedConnectionPool<C>

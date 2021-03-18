@@ -346,7 +346,7 @@ impl Transform for SimpleRedisCache {
     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
         let mut updates = 0_i32;
         {
-            for mut m in &mut qd.message.messages {
+            for m in &mut qd.message.messages {
                 if let RawFrame::CASSANDRA(Frame {
                     version: _,
                     flags: _,

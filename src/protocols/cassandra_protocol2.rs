@@ -1,6 +1,6 @@
 use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, Value};
 use byteorder::{BigEndian, WriteBytesExt};
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::consistency::Consistency;
 use cassandra_proto::frame::frame_result::{
@@ -32,7 +32,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::ops::{Deref, DerefMut};
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec2 {
@@ -222,7 +222,7 @@ impl CassandraCodec2 {
             | SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
             SQLValue::HexStringLiteral(v) | SQLValue::Date(v) | SQLValue::Time(v) => {
-                Value::Strings(format!("{}", v))
+                Value::Strings(v.to_string())
             }
             SQLValue::Timestamp(v) => {
                 if let Ok(r) = DateTime::from_str(v.as_str()) {
@@ -237,14 +237,14 @@ impl CassandraCodec2 {
 
     fn expr_to_string(v: &SQLValue) -> String {
         match v {
-            SQLValue::Number(v) => format!("{}", v),
+            SQLValue::Number(v) => v.to_string(),
             SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v)
             | SQLValue::HexStringLiteral(v)
             | SQLValue::Date(v)
             | SQLValue::Time(v)
-            | SQLValue::Timestamp(v) => format!("{}", v),
-            SQLValue::Boolean(v) => format!("{}", v),
+            | SQLValue::Timestamp(v) => v.to_string(),
+            SQLValue::Boolean(v) => v.to_string(),
             _ => "NULL".to_string(),
         }
     }
@@ -628,13 +628,12 @@ impl CassandraCodec2 {
         }
     }
 
-    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
+    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
         let buffer = item.into_cbytes();
-        if buffer.len() == 0 {
+        if buffer.is_empty() {
             info!("trying to send 0 length frame");
         }
         dst.put(buffer.as_slice());
-        Ok(())
     }
 }
 
@@ -706,11 +705,7 @@ impl Encoder<Messages> for CassandraCodec2 {
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
             match self.encode_message(m) {
-                Ok(frame) => {
-                    if let Err(e) = self.encode_raw(frame, dst) {
-                        warn!("Couldn't write frame to buffer {:?}", e);
-                    }
-                }
+                Ok(frame) => self.encode_raw(frame, dst),
                 Err(e) => {
                     warn!("Couldn't encode frame {:?}", e);
                 }
@@ -761,9 +756,6 @@ mod cassandra_protocol_tests {
 
     fn test_frame(codec: &mut CassandraCodec2, raw_frame: &[u8]) {
         let mut bytes: BytesMut = build_bytesmut(raw_frame);
-        bytes.extend(build_bytesmut(raw_frame));
-        bytes.extend(build_bytesmut(raw_frame));
-        bytes.extend(build_bytesmut(raw_frame).split_at(10).0);
         if let Ok(Some(message)) = codec.decode(&mut bytes) {
             let mut dest: BytesMut = BytesMut::new();
             if let Ok(()) = codec.encode(message, &mut dest) {

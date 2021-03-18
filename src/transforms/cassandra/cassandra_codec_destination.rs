@@ -5,7 +5,6 @@ use crate::config::topology::TopicHolder;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use futures::{FutureExt, SinkExt};
 use std::collections::HashMap;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
@@ -17,11 +16,9 @@ use crate::message;
 use crate::protocols::RawFrame;
 use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use std::time::Duration;
-use tokio::sync::oneshot::error::RecvError;
 use tokio::sync::oneshot::Receiver;
-use tokio::time::error::Elapsed;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CodecConfiguration {
@@ -74,13 +71,13 @@ impl CodecDestination {
             match self.outbound {
                 None => {
                     trace!("creating outbound connection {:?}", self.address);
-                    let mut connPool = OwnedUnorderedConnectionPool::new(
+                    let mut conn_pool = OwnedUnorderedConnectionPool::new(
                         self.address.clone(),
                         CassandraCodec2::new(self.cassandra_ks.clone(), self.bypass),
                     );
                     // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
-                    connPool.connect(1).await?;
-                    self.outbound.replace(connPool);
+                    conn_pool.connect(1).await?;
+                    self.outbound.replace(conn_pool);
                 }
                 Some(ref mut outbound_framed_codec) => {
                     trace!("sending frame upstream");
@@ -134,7 +131,7 @@ impl CodecDestination {
                                 };
                             }
                             Ok(None) => break,
-                            Err(e) => {
+                            Err(_) => {
                                 info!(
                                     "timed out waiting for results got - {:?} expected - {:?}",
                                     responses.len(),

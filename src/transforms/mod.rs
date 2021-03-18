@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::{Debug, Formatter};
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -11,14 +11,8 @@ use crate::message::Messages;
 use crate::transforms::cassandra::cassandra_codec_destination::{
     CodecConfiguration, CodecDestination,
 };
-use anyhow::anyhow;
 use metrics::{counter, timing};
-use tokio::time::timeout;
-use tracing::info;
 
-use std::time::Duration;
-
-use crate::protocols::RawFrame;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::distributed::tunable_consistency_scatter::{
@@ -41,12 +35,10 @@ use crate::transforms::redis_transforms::redis_codec_destination::{
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
-use cassandra_proto::frame::Frame;
 use core::fmt::Display;
 use distributed::route::{Route, RouteConfig};
 use distributed::scatter::{Scatter, ScatterConfig};
 use mlua::UserData;
-use tokio::time::error::Elapsed;
 use tokio::time::Instant;
 
 pub mod cassandra;
@@ -289,38 +281,7 @@ impl<'a> Wrapper<'a> {
 
         let name = t.get_name();
         let start = Instant::now();
-        let m = self.message.messages.get(0).unwrap();
-        let query_frame = m.original.clone();
-        let modified = m.modified;
-        let result;
-        {
-            result = match timeout(Duration::from_secs(10), t.transform(self)).await {
-                Ok(r) => r,
-                Err(e) => {
-                    if let RawFrame::CASSANDRA(Frame {
-                        version,
-                        flags,
-                        opcode,
-                        stream,
-                        body,
-                        tracing_id,
-                        warnings,
-                    }) = query_frame
-                    {
-                        info!(
-                            "Transform {} timed out -  {} - Modified {} - ||{}||",
-                            name,
-                            e,
-                            modified,
-                            String::from_utf8_lossy(&body)
-                        );
-                    } else {
-                        info!("Not C* frame - Transform {} timed out -  {}", name, e);
-                    }
-                    Err(anyhow!("Transform {} timed out -  {}", name, e))
-                }
-            }
-        }
+        let result = t.transform(self).await;
         let end = Instant::now();
         counter!("shotover_transform_total", 1, "transform" => name);
         if result.is_err() {

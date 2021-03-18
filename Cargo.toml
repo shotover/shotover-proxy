@@ -49,6 +49,8 @@ tracing-futures = "0.2.4"
 tracing-log = { version = "0.1.1", features = ["env_logger"] }
 tracing-appender = "0.1.1"
 hyper = { version = "0.14.2", features = ["server"] }
+halfbrown = "0.1.11"
+
 
 
 # Transform dependencies
@@ -103,7 +105,7 @@ harness = false
 [profile.release]
 lto = "fat"
 codegen-units = 1
-#debug = true
+debug = true
 
 # Patches
 [patch.crates-io]

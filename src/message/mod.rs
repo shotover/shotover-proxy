@@ -1,6 +1,4 @@
-use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::protocols::RawFrame;
-use crate::transforms::util::Request;
 use bytes::Bytes;
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
 use cassandra_proto::types::data_serialization_types::{
@@ -409,7 +407,7 @@ impl From<Frame> for Value {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
-            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Moved { slot, host, port } => {
                 Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
@@ -427,7 +425,7 @@ impl From<&Frame> for Value {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
-            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Moved { slot, host, port } => {
                 Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
@@ -509,7 +507,7 @@ impl Value {
     }
 
     pub fn into_str_bytes(self) -> Bytes {
-        return match self {
+        match self {
             Value::NULL => Bytes::from("".to_string()),
             Value::None => Bytes::from("".to_string()),
             Value::Bytes(b) => b,
@@ -522,11 +520,11 @@ impl Value {
             }
             Value::Inet(i) => Bytes::from(format!("{}", i)),
             _ => unimplemented!(),
-        };
+        }
     }
 
     pub fn into_bytes(self) -> Bytes {
-        return match self {
+        match self {
             Value::NULL => Bytes::new(),
             Value::None => Bytes::new(),
             Value::Bytes(b) => b,
@@ -534,9 +532,9 @@ impl Value {
             Value::Integer(i) => Bytes::from(Vec::from(i.to_le_bytes())),
             Value::Float(f) => Bytes::from(Vec::from(f.to_le_bytes())),
             Value::Boolean(b) => Bytes::from(Vec::from(if b {
-                (1 as u8).to_le_bytes()
+                (1_u8).to_le_bytes()
             } else {
-                (0 as u8).to_le_bytes()
+                (0_u8).to_le_bytes()
             })),
             Value::Timestamp(t) => Bytes::from(Vec::from(t.timestamp().to_le_bytes())),
             Value::Inet(i) => Bytes::from(match i {
@@ -544,7 +542,7 @@ impl Value {
                 IpAddr::V6(six) => Vec::from(six.octets()),
             }),
             _ => unimplemented!(),
-        };
+        }
     }
 }
 

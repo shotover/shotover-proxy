@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::SinkExt;
 use shotover_proxy::protocols::cassandra_protocol2::CassandraCodec2;
@@ -10,6 +10,8 @@ use tokio_util::io::StreamReader;
 
 async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
     let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+    let comparator = packet_stream.clone();
+    let mut comparator_iter = comparator.into_iter();
     pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
     pk_map.insert(
         "test.clustering".to_string(),
@@ -37,8 +39,11 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
             let mut writer = FramedWrite::new(recv_buffer, write_codec.clone());
             writer.send(frame.clone()).await?;
             let results = Bytes::from(writer.into_inner().into_inner());
-            let orig_bytes = big_ol_bytes.split_to(results.len());
-            assert_eq!(orig_bytes, results);
+            if let Some(orig_bytes) = comparator_iter.next() {
+                assert_eq!(orig_bytes, results);
+            } else {
+                return Err(anyhow!("packet count mismatch"));
+            }
         }
     }
 

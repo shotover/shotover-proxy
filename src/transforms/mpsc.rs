@@ -40,12 +40,12 @@ impl Clone for Buffer {
     fn clone(&self) -> Self {
         let chain = self.chain_to_clone.clone();
         Buffer {
-            name: self.name.clone(),
+            name: <&str>::clone(&self.name),
             tx: chain.build_buffered_chain(self.buffer_size),
             async_mode: false,
             buffer_size: self.buffer_size,
             chain_to_clone: self.chain_to_clone.clone(),
-            timeout: self.timeout.clone(),
+            timeout: self.timeout,
         }
     }
 }

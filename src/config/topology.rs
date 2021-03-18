@@ -2,9 +2,7 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::cassandra::cassandra_codec_destination::{
-    CodecConfiguration, CodecDestination,
-};
+use crate::transforms::cassandra::cassandra_codec_destination::CodecConfiguration;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::TeeConfig;

@@ -1,9 +1,8 @@
 use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
-use anyhow::{Error, Result};
-// use futures::{Stream, StreamExt};
 use crate::transforms::Wrapper;
-use futures::{SinkExt, StreamExt};
+use anyhow::Result;
+use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
@@ -311,12 +310,12 @@ where
         let mut idle_time: u64 = 1;
 
         let (in_tx, mut in_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
-        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
 
         let (rx, tx) = stream.into_split();
 
         let mut reader = FramedRead::new(rx, self.codec.clone());
-        let mut writer = FramedWrite::new(tx, self.codec.clone());
+        let writer = FramedWrite::new(tx, self.codec.clone());
 
         tokio::spawn(async move {
             while let Some(maybe_message) = reader.next().await {
@@ -333,15 +332,9 @@ where
         });
 
         tokio::spawn(async move {
-            while let Some(x) = out_rx.recv().await {
-                match writer.send(x).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        warn!("Send Frame error - {:?}", e);
-                        break;
-                    }
-                }
-            }
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
+            let r = rx_stream.forward(writer).await;
+            debug!("Stream ended {:?}", r);
         });
 
         while !self.shutdown.is_shutdown() {
