@@ -44,7 +44,7 @@ jobs:
         SCCACHE_IDLE_TIMEOUT: 0
       run: sccache --start-server
     - name: Configure sscache
-      run: echo "\n[build]\n" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
+      run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
     - name: Sync S3 test files
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
