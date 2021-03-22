@@ -10,3 +10,4 @@ tests/soaktest-*
 .vscode/tasks.json
 .vscode/launch.json
 .workspace.code-workspace
+/test_tmp

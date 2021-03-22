@@ -1,0 +1,6 @@
+version: "3.3"
+services:
+  cassandra-one:
+    image: library/cassandra:3.11.10
+    ports:
+      - "9043:9042"

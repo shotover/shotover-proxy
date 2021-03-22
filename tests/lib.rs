@@ -7,6 +7,7 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 pub mod redis_int_tests;
+pub mod codec;
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     tokio::spawn(async move {

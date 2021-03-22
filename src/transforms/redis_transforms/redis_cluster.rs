@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::timeout;
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::Framed;
 use tracing::{debug, info, trace};
 
 use crate::concurrency::FuturesOrdered;
@@ -28,7 +28,6 @@ use crate::protocols::RawFrame;
 use crate::transforms::util::cluster_connection_pool::ConnectionPool;
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use std::borrow::Borrow;
 use tokio::time::Duration;
 
 const SLOT_SIZE: usize = 16384;
@@ -146,7 +145,7 @@ impl RedisCluster {
 
                 chans
                     .get_mut(if aload <= bload { aidx } else { bidx })
-                    .ok_or(anyhow!("Couldn't find host {}", host))?
+                    .ok_or_else(|| anyhow!("Couldn't find host {}", host))?
             }
             _ => {
                 debug!("connection {} doesn't exist trying to connect", host);
@@ -157,14 +156,14 @@ impl RedisCluster {
                 )
                 .await
                 {
-                    if let Ok(mut conn) = res {
+                    if let Ok(conn) = res {
                         debug!("Found {} live connections for {}", conn.len(), host);
                         self.channels.insert(host.clone(), conn);
                         self.channels
                             .get_mut(host)
                             .unwrap()
                             .get_mut(0)
-                            .ok_or(anyhow!("Couldn't find host {}", host))?
+                            .ok_or_else(|| anyhow!("Couldn't find host {}", host))?
                     } else {
                         debug!(
                             "couldn't connect to {} - updating slot map from upstream cluster",
@@ -189,6 +188,7 @@ impl RedisCluster {
         if let Err(e) = chan.send(Request {
             messages: message,
             return_chan: Some(one_tx),
+            message_id: None,
         }) {
             if let Some(error_return) = e.0.return_chan {
                 self.rebuild_slots = true;
@@ -226,7 +226,7 @@ impl RedisCluster {
                             .next()
                             .unwrap_or(&"nothing".to_string())
                             .clone();
-                        vec![key.clone()]
+                        vec![key]
                     }
                     None => {
                         vec![]
@@ -257,7 +257,7 @@ pub enum RoutingInfo {
 
 impl RoutingInfo {
     #[inline(always)]
-    pub fn for_command_frame(args: &Vec<Frame>) -> Option<RoutingInfo> {
+    pub fn for_command_frame(args: &[Frame]) -> Option<RoutingInfo> {
         if let Some(Frame::BulkString(command_arg)) = args.get(0) {
             return match command_arg.as_ref() {
                 b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
@@ -271,13 +271,13 @@ impl RoutingInfo {
                     let key_count = match args.get(2) {
                         Some(Frame::Integer(key_count)) => Some(*key_count),
                         Some(Frame::BulkString(key_count)) => String::from_utf8(key_count.to_vec())
-                            .unwrap_or("0".to_string())
+                            .unwrap_or_else(|_| "0".to_string())
                             .parse::<i64>()
                             .ok(),
                         _ => None,
                     };
 
-                    let foo = if let Some(key_count) = key_count {
+                    let route_info = if let Some(key_count) = key_count {
                         if key_count == 0 {
                             Some(RoutingInfo::Random)
                         } else {
@@ -286,7 +286,7 @@ impl RoutingInfo {
                     } else {
                         None
                     };
-                    foo
+                    route_info
                 }
                 b"XGROUP" | b"XINFO" => args.get(2).and_then(RoutingInfo::for_key),
                 b"XREAD" | b"XREADGROUP" => {
@@ -384,7 +384,7 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
         }
     }
 
-    return if slots.is_empty() {
+    if slots.is_empty() {
         Err(anyhow!("Empty slot map!"))
     } else {
         Ok(SlotsMapping {
@@ -392,12 +392,12 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
             followers: replica_slots,
             nodes,
         })
-    };
+    }
 }
 
 async fn get_topology_from_node(stream: TcpStream) -> Result<SlotsMapping> {
     let mut outbound_framed_codec = Framed::new(stream, RedisCodec::new(true, 1));
-    if let Ok(_) = outbound_framed_codec
+    if outbound_framed_codec
         .send(Messages::new_from_message(Message {
             details: MessageDetails::Unknown,
             modified: false,
@@ -407,6 +407,7 @@ async fn get_topology_from_node(stream: TcpStream) -> Result<SlotsMapping> {
             ])),
         }))
         .await
+        .is_ok()
     {
         if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
             if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {
@@ -423,7 +424,7 @@ async fn get_topology_from_node(stream: TcpStream) -> Result<SlotsMapping> {
     return Err(anyhow!("couldn't decode map"));
 }
 
-async fn get_topology(first_contact_points: &Vec<String>) -> Result<SlotsMapping> {
+async fn get_topology(first_contact_points: &[String]) -> Result<SlotsMapping> {
     let mut results = FuturesUnordered::new();
 
     for contact in first_contact_points {
@@ -486,7 +487,7 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
 impl Transform for RedisCluster {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_slots {
-            self.rebuild_slot_map().await;
+            self.rebuild_slot_map().await?;
             self.rebuild_slots = false;
         }
         let mut responses: FuturesOrdered<
@@ -548,7 +549,7 @@ impl Transform for RedisCluster {
                             .await;
 
                         std::result::Result::Ok((
-                            orig.clone(),
+                            orig,
                             ChainResponse::Ok(Messages::new_from_message(Message {
                                 details: MessageDetails::Unknown,
                                 modified: false,
@@ -562,55 +563,49 @@ impl Transform for RedisCluster {
 
         trace!("Processing response");
         let mut response_buffer = vec![];
-        loop {
-            match responses.next().await {
-                Some(s) => {
-                    trace!("Got resp {:?}", s);
-                    let (original, response) = s.or_else(|_| -> Result<(_, _)> {
-                        Ok((
-                            Message::new_bypass(RawFrame::NONE),
-                            Ok(Messages::new_single_response(
-                                QueryResponse::empty(),
-                                false,
-                                RawFrame::Redis(Frame::Error(
-                                    "ERR Could not route request".to_string(),
-                                )),
-                            )),
-                        ))
-                    })?;
-                    let mut response = response?;
-                    assert_eq!(response.messages.len(), 1);
-                    let response_m = response.messages.remove(0);
-                    match response_m.original {
-                        RawFrame::Redis(Frame::Moved { slot, host, port }) => {
-                            debug!("Got MOVE frame {} {} {}", slot, host, port);
 
-                            self.slots.insert(slot, format!("{}:{}", &host, &port));
-                            self.rebuild_slots = true;
+        while let Some(s) = responses.next().await {
+            trace!("Got resp {:?}", s);
+            let (original, response) = s.or_else(|_| -> Result<(_, _)> {
+                Ok((
+                    Message::new_bypass(RawFrame::NONE),
+                    Ok(Messages::new_single_response(
+                        QueryResponse::empty(),
+                        false,
+                        RawFrame::Redis(Frame::Error("ERR Could not route request".to_string())),
+                    )),
+                ))
+            })?;
+            let mut response = response?;
+            assert_eq!(response.messages.len(), 1);
+            let response_m = response.messages.remove(0);
+            match response_m.original {
+                RawFrame::Redis(Frame::Moved { slot, host, port }) => {
+                    debug!("Got MOVE frame {} {} {}", slot, host, port);
 
-                            let one_rx = self
-                                .choose_and_send(&format!("{}:{}", &host, port), original.clone())
-                                .await?;
+                    self.slots.insert(slot, format!("{}:{}", &host, &port));
+                    self.rebuild_slots = true;
 
-                            responses.prepend(Box::pin(
-                                one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
-                            ));
-                        }
-                        RawFrame::Redis(Frame::Ask { slot, host, port }) => {
-                            debug!("Got ASK frame {} {} {}", slot, host, port);
+                    let one_rx = self
+                        .choose_and_send(&format!("{}:{}", &host, port), original.clone())
+                        .await?;
 
-                            let one_rx = self
-                                .choose_and_send(&format!("{}:{}", &host, port), original.clone())
-                                .await?;
-
-                            responses.prepend(Box::pin(
-                                one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
-                            ));
-                        }
-                        _ => response_buffer.push(response_m),
-                    }
+                    responses.prepend(Box::pin(
+                        one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
+                    ));
                 }
-                None => break,
+                RawFrame::Redis(Frame::Ask { slot, host, port }) => {
+                    debug!("Got ASK frame {} {} {}", slot, host, port);
+
+                    let one_rx = self
+                        .choose_and_send(&format!("{}:{}", &host, port), original.clone())
+                        .await?;
+
+                    responses.prepend(Box::pin(
+                        one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
+                    ));
+                }
+                _ => response_buffer.push(response_m),
             }
         }
         return Ok(Messages {

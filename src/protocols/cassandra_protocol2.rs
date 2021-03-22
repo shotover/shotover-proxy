@@ -16,8 +16,7 @@ use tokio_util::codec::{Decoder, Encoder};
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::str::FromStr;
-use tracing::trace;
-use tracing::warn;
+use tracing::{info, trace, warn};
 
 use crate::message::{Messages, QueryType};
 use crate::protocols::RawFrame;
@@ -39,16 +38,17 @@ use anyhow::{anyhow, Result};
 pub struct CassandraCodec2 {
     compressor: NoCompression,
     current_head: Option<FrameHeader>,
+    current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
 }
 
-struct ParsedCassandraQueryString {
+pub(crate) struct ParsedCassandraQueryString {
     namespace: Option<Vec<String>>,
-    colmap: Option<HashMap<String, Value>>,
+    pub(crate) colmap: Option<HashMap<String, Value>>,
     projection: Option<Vec<String>>,
     primary_key: HashMap<String, Value>,
-    ast: Option<Statement>,
+    pub(crate) ast: Option<Statement>,
 }
 
 impl CassandraCodec2 {
@@ -56,6 +56,7 @@ impl CassandraCodec2 {
         CassandraCodec2 {
             compressor: NoCompression::new(),
             current_head: None,
+            current_frames: Vec::new(),
             pk_col_map,
             bypass,
         }
@@ -197,25 +198,6 @@ impl CassandraCodec2 {
 }
 
 impl CassandraCodec2 {
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
-        trace!("Parsing C* frame");
-        let v = parser::parse_frame(src, &self.compressor, &self.current_head);
-        match v {
-            Ok((r, h)) => {
-                self.current_head = h;
-                Ok(r)
-            }
-            // Note these should be parse errors, not actual protocol errors
-            Err(e) => Err(anyhow!(e)),
-        }
-    }
-
-    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
-        let buffer = item.into_cbytes();
-        dst.put(buffer.as_slice());
-        Ok(())
-    }
-
     fn value_to_expr(v: &Value) -> SQLValue {
         match v {
             Value::NULL => SQLValue::Null,
@@ -238,10 +220,10 @@ impl CassandraCodec2 {
         match v {
             SQLValue::Number(v)
             | SQLValue::SingleQuotedString(v)
-            | SQLValue::NationalStringLiteral(v)
-            | SQLValue::HexStringLiteral(v)
-            | SQLValue::Date(v)
-            | SQLValue::Time(v) => Value::Strings(format!("{:?}", v)),
+            | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
+            SQLValue::HexStringLiteral(v) | SQLValue::Date(v) | SQLValue::Time(v) => {
+                Value::Strings(v.to_string())
+            }
             SQLValue::Timestamp(v) => {
                 if let Ok(r) = DateTime::from_str(v.as_str()) {
                     return Value::Timestamp(r);
@@ -255,14 +237,14 @@ impl CassandraCodec2 {
 
     fn expr_to_string(v: &SQLValue) -> String {
         match v {
-            SQLValue::Number(v)
-            | SQLValue::SingleQuotedString(v)
+            SQLValue::Number(v) => v.to_string(),
+            SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v)
             | SQLValue::HexStringLiteral(v)
             | SQLValue::Date(v)
             | SQLValue::Time(v)
-            | SQLValue::Timestamp(v) => format!("{:?}", v),
-            SQLValue::Boolean(v) => format!("{:?}", v),
+            | SQLValue::Timestamp(v) => v.to_string(),
+            SQLValue::Boolean(v) => v.to_string(),
             _ => "NULL".to_string(),
         }
     }
@@ -414,7 +396,7 @@ impl CassandraCodec2 {
         }
     }
 
-    fn parse_query_string(
+    pub(crate) fn parse_query_string(
         query_string: String,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> ParsedCassandraQueryString {
@@ -571,6 +553,9 @@ impl CassandraCodec2 {
 
     pub fn process_cassandra_frame(&self, frame: Frame) -> Messages {
         if self.bypass {
+            // if frame.body.len() == 0 {
+            //     info!("detected zero length body");
+            // }
             return Messages::new_single_bypass(RawFrame::CASSANDRA(frame));
         }
 
@@ -625,6 +610,31 @@ impl CassandraCodec2 {
             _ => Messages::new_single_bypass(RawFrame::CASSANDRA(frame)),
         }
     }
+
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
+        // while src.remaining() != 0 {
+        //
+        // }
+
+        trace!("Parsing C* frame");
+        let v = parser::parse_frame(src, &self.compressor, &self.current_head);
+        match v {
+            Ok((r, h)) => {
+                self.current_head = h;
+                Ok(r)
+            }
+            // Note these should be parse errors, not actual protocol errors
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
+        let buffer = item.into_cbytes();
+        if buffer.is_empty() {
+            info!("trying to send 0 length frame");
+        }
+        dst.put(buffer.as_slice());
+    }
 }
 
 impl Decoder for CassandraCodec2 {
@@ -635,9 +645,16 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        Ok(self
-            .decode_raw(src)?
-            .map(|f| self.process_cassandra_frame(f)))
+        return match self.decode_raw(src) {
+            Ok(res) => match res {
+                None => Ok(None),
+                Some(frame) => Ok(Some(self.process_cassandra_frame(frame))),
+            },
+            Err(e) => {
+                warn!("decode raw error {:?}", e);
+                Err(e)
+            }
+        };
     }
 }
 
@@ -671,6 +688,9 @@ impl CassandraCodec2 {
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
             }
         };
+        // if frame.body.len() == 0 {
+        //     info!("encoding zero length body");
+        // }
         Ok(frame)
     }
 }
@@ -683,10 +703,15 @@ impl Encoder<Messages> for CassandraCodec2 {
         item: Messages,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        item.into_iter().try_for_each(|m: Message| {
-            let frame = self.encode_message(m)?;
-            self.encode_raw(frame, dst)
-        })
+        for m in item {
+            match self.encode_message(m) {
+                Ok(frame) => self.encode_raw(frame, dst),
+                Err(e) => {
+                    warn!("Couldn't encode frame {:?}", e);
+                }
+            };
+        }
+        Ok(())
     }
 }
 
@@ -799,6 +824,7 @@ mod cassandra_protocol_tests {
         );
         let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &QUERY_BYTES);
+        // test_frame(&mut codec, &QUERY_BYTES);
     }
 
     fn remove_whitespace(s: &mut String) {

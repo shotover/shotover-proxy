@@ -13,32 +13,23 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-20.04
-
     steps:
     - uses: actions/checkout@v2
-
-#    - name: Cache node modules
-#      uses: actions/cache@v2
-#      env:
-#        cache-name: cache-node-modules
-#      with:
-#        # cargo cache files are stored in `~/.cargo` on Linux/macOS
-#        path: ~/.cargo
-#        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-#        restore-keys: |
-#          ${{ runner.os }}-build-${{ env.cache-name }}-
-#          ${{ runner.os }}-build-
-#          ${{ runner.os }}-
-
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
-    - name: Install latest nightly
+    - name: Install latest stable
       uses: actions-rs/toolchain@v1
       with:
           toolchain: stable
@@ -50,7 +41,8 @@ jobs:
       run: |
         curl -L "$LINK/$SCCACHE_VERSION/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl.tar.gz" | tar xz
         echo "$PWD/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl/" >> $GITHUB_PATH
-
+    - name: Install libpacap
+      run: sudo apt-get install -y libpcap-dev
     - name: Start sccache
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -58,8 +50,13 @@ jobs:
         SCCACHE_BUCKET: shotover-build-caches
         SCCACHE_IDLE_TIMEOUT: 0
       run: sccache --start-server
-    - name: Run specific
-      run: cargo test --package shotover-proxy --test lib redis_int_tests::basic_driver_tests::test_cluster_all_pipeline_safe_redis -- --exact
+    - name: Configure sscache
+      run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
+    - name: Sync S3 test files
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: mkdir -p test_tmp && aws s3 sync s3://shotover-test-captures ./test_tmp
     - name: Run tests
       run: cargo test -- --test-threads 1
 #    - name: Build

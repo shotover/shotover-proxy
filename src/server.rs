@@ -1,8 +1,7 @@
 use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
-use anyhow::Result;
-// use futures::{Stream, StreamExt};
 use crate::transforms::Wrapper;
+use anyhow::Result;
 use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
@@ -14,7 +13,7 @@ use tokio::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct TcpCodecListener<C>
 where
@@ -325,7 +324,8 @@ where
                         let _ = in_tx.send(resp_messages);
                     }
                     Err(e) => {
-                        debug!("Frame error - {:?}", e);
+                        warn!("Frame error - {:?}", e);
+                        break;
                     }
                 };
             }
@@ -333,7 +333,8 @@ where
 
         tokio::spawn(async move {
             let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
-            let _ = rx_stream.forward(writer).await;
+            let r = rx_stream.forward(writer).await;
+            debug!("Stream ended {:?}", r);
         });
 
         while !self.shutdown.is_shutdown() {
@@ -380,7 +381,10 @@ where
             trace!("Received raw message {:?}", frame);
             match self
                 .chain
-                .process_request(Wrapper::new(frame), self.client_details.clone())
+                .process_request(
+                    Wrapper::new_with_client_details(frame, self.client_details.clone()),
+                    self.client_details.clone(),
+                )
                 .await
             {
                 Ok(modified_message) => {

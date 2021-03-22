@@ -19,7 +19,7 @@ use crate::transforms::chain::TransformChain;
 pub struct CassandraConfig {
     pub listen_addr: String,
     pub cassandra_ks: HashMap<String, Vec<String>>,
-    pub bypass_query_processing: bool,
+    pub bypass_query_processing: Option<bool>,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
 }
@@ -40,7 +40,7 @@ impl SourcesFromConfig for CassandraConfig {
                 self.cassandra_ks.clone(),
                 notify_shutdown,
                 shutdown_complete_tx,
-                self.bypass_query_processing,
+                self.bypass_query_processing.unwrap_or(true),
                 self.connection_limit,
                 self.hard_connection_limit,
             )

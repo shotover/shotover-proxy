@@ -145,13 +145,8 @@ impl Messages {
 
     pub fn new_single_bypass(raw_frame: RawFrame) -> Self {
         Messages {
-            messages: vec![Message::new(
-                MessageDetails::Bypass(Box::new(MessageDetails::Unknown)),
-                false,
-                raw_frame,
-            )],
+            messages: vec![Message::new(MessageDetails::Unknown, false, raw_frame)],
         }
-        .into_bypass()
     }
 
     pub fn new_single_bypass_response(raw_frame: RawFrame, modified: bool) -> Self {
@@ -412,7 +407,7 @@ impl From<Frame> for Value {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
-            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Moved { slot, host, port } => {
                 Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
@@ -430,7 +425,7 @@ impl From<&Frame> for Value {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
-            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Moved { slot, host, port } => {
                 Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
@@ -509,6 +504,45 @@ impl Value {
             };
         }
         Value::NULL
+    }
+
+    pub fn into_str_bytes(self) -> Bytes {
+        match self {
+            Value::NULL => Bytes::from("".to_string()),
+            Value::None => Bytes::from("".to_string()),
+            Value::Bytes(b) => b,
+            Value::Strings(s) => Bytes::from(s),
+            Value::Integer(i) => Bytes::from(format!("{}", i)),
+            Value::Float(f) => Bytes::from(format!("{}", f)),
+            Value::Boolean(b) => Bytes::from(format!("{}", b)),
+            Value::Timestamp(t) => {
+                Bytes::from(String::from_utf8_lossy(&t.timestamp().to_le_bytes()).to_string())
+            }
+            Value::Inet(i) => Bytes::from(format!("{}", i)),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn into_bytes(self) -> Bytes {
+        match self {
+            Value::NULL => Bytes::new(),
+            Value::None => Bytes::new(),
+            Value::Bytes(b) => b,
+            Value::Strings(s) => Bytes::from(s),
+            Value::Integer(i) => Bytes::from(Vec::from(i.to_le_bytes())),
+            Value::Float(f) => Bytes::from(Vec::from(f.to_le_bytes())),
+            Value::Boolean(b) => Bytes::from(Vec::from(if b {
+                (1_u8).to_le_bytes()
+            } else {
+                (0_u8).to_le_bytes()
+            })),
+            Value::Timestamp(t) => Bytes::from(Vec::from(t.timestamp().to_le_bytes())),
+            Value::Inet(i) => Bytes::from(match i {
+                IpAddr::V4(four) => Vec::from(four.octets()),
+                IpAddr::V6(six) => Vec::from(six.octets()),
+            }),
+            _ => unimplemented!(),
+        }
     }
 }
 
