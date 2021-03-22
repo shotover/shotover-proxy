@@ -53,6 +53,7 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test() -> Result<()> {
     let mut capture = crate::codec::util::packet_capture::PacketCapture::new();
+    println!("doing some cql");
     let packets = capture.parse_from_file("./test_tmp/cql_mixed.pcap", None, None)?;
     let mut client_packets: Vec<Bytes> = Vec::new();
     let mut server_packets: Vec<Bytes> = Vec::new();
