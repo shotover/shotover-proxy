@@ -217,7 +217,7 @@ impl ASTHolder {
                     Statement::CreateTable { .. } => "CREATE TABLE",
                     Statement::AlterTable { .. } => "ALTER TABLE",
                     Statement::Drop { .. } => "DROP",
-                    _ => "UKNOWN",
+                    _ => "UNKNOWN",
                 }
                 .to_string();
             }
