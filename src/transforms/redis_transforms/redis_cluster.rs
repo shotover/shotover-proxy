@@ -29,6 +29,7 @@ use crate::transforms::util::cluster_connection_pool::ConnectionPool;
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use tokio::time::Duration;
+use metrics::counter;
 
 const SLOT_SIZE: usize = 16384;
 
@@ -567,6 +568,7 @@ impl Transform for RedisCluster {
         while let Some(s) = responses.next().await {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
+                counter!("redis_cluster_failed_request", 1, "chain" => self.name.clone());
                 Ok((
                     Message::new_bypass(RawFrame::NONE),
                     Ok(Messages::new_single_response(
