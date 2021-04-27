@@ -471,7 +471,8 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 
 #[inline(always)]
 fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
-    trace!("short circtuiting");
+    warn!("Could not route request - short circtuiting");
+    counter!("redis_cluster_failed_request", 1, "chain" => self.name.clone());
     if let Err(e) = one_tx.send((
         Message::new_bypass(RawFrame::NONE),
         Ok(Messages::new_single_response(
@@ -569,7 +570,6 @@ impl Transform for RedisCluster {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 counter!("redis_cluster_failed_request", 1, "chain" => self.name.clone());
-                warn!("redis cluster error");
                 Ok((
                     Message::new_bypass(RawFrame::NONE),
                     Ok(Messages::new_single_response(
