@@ -171,7 +171,7 @@ impl RedisCluster {
                             host
                         );
                         self.rebuild_slots = true;
-                        short_circuit(one_tx);
+                        short_circuit(self.name, one_tx);
                         return Ok(one_rx);
                     }
                 } else {
@@ -180,7 +180,7 @@ impl RedisCluster {
                         host
                     );
                     self.rebuild_slots = true;
-                    short_circuit(one_tx);
+                    short_circuit(self.name, one_tx);
                     return Ok(one_rx);
                 }
             }
@@ -193,7 +193,7 @@ impl RedisCluster {
         }) {
             if let Some(error_return) = e.0.return_chan {
                 self.rebuild_slots = true;
-                short_circuit(error_return);
+                short_circuit(self.name, error_return);
             }
             self.channels.remove(host);
         }
@@ -470,9 +470,9 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 }
 
 #[inline(always)]
-fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
+fn short_circuit(name: &str, one_tx: tokio::sync::oneshot::Sender<Response>) {
     warn!("Could not route request - short circtuiting");
-    counter!("redis_cluster_failed_request", 1, "chain" => self.name.clone());
+    counter!("redis_cluster_failed_request", 1, "chain" => name.to_string());
     if let Err(e) = one_tx.send((
         Message::new_bypass(RawFrame::NONE),
         Ok(Messages::new_single_response(
@@ -507,7 +507,7 @@ impl Transform for RedisCluster {
             responses.push(match sender.len() {
                 0 => {
                     let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                    short_circuit(one_tx);
+                    short_circuit(self.name, one_tx);
                     Box::pin(one_rx.map_err(|e| {
                         anyhow!("0 Couldn't get short circtuited for no channels - {}", e)
                     }))
