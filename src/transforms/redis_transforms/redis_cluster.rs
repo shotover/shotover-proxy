@@ -81,7 +81,7 @@ impl TransformsFromConfig for RedisClusterConfig {
         debug!("Channels: {:?}", connection_map);
 
         Ok(Transforms::RedisCluster(RedisCluster {
-            name: "SequentialMap",
+            name: "RedisCluster",
             slots: slot_map,
             channels: connection_map,
             load_scores: HashMap::new(),
@@ -471,7 +471,7 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 
 #[inline(always)]
 fn short_circuit(name: &str, one_tx: tokio::sync::oneshot::Sender<Response>) {
-    warn!("Could not route request - short circtuiting");
+    warn!("Could not route request - short circuiting");
     counter!("redis_cluster_failed_request", 1, "chain" => name.to_string());
     if let Err(e) = one_tx.send((
         Message::new_bypass(RawFrame::NONE),
