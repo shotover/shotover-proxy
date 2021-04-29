@@ -128,6 +128,7 @@ impl RedisCluster {
         &mut self,
         host: &String,
         message: Message,
+        chain_name: &str,
     ) -> Result<tokio::sync::oneshot::Receiver<(Message, ChainResponse)>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
 
@@ -171,7 +172,7 @@ impl RedisCluster {
                             host
                         );
                         self.rebuild_slots = true;
-                        short_circuit(self.name, one_tx);
+                        short_circuit(chain_name, one_tx);
                         return Ok(one_rx);
                     }
                 } else {
@@ -180,7 +181,7 @@ impl RedisCluster {
                         host
                     );
                     self.rebuild_slots = true;
-                    short_circuit(self.name, one_tx);
+                    short_circuit(chain_name, one_tx);
                     return Ok(one_rx);
                 }
             }
@@ -193,7 +194,7 @@ impl RedisCluster {
         }) {
             if let Some(error_return) = e.0.return_chan {
                 self.rebuild_slots = true;
-                short_circuit(self.name, error_return);
+                short_circuit(chain_name, error_return);
             }
             self.channels.remove(host);
         }
@@ -470,9 +471,9 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 }
 
 #[inline(always)]
-fn short_circuit(name: &str, one_tx: tokio::sync::oneshot::Sender<Response>) {
+fn short_circuit(chain_name: &str, one_tx: tokio::sync::oneshot::Sender<Response>) {
     warn!("Could not route request - short circuiting");
-    counter!("redis_cluster_failed_request", 1, "chain" => name.to_string());
+    counter!("redis_cluster_failed_request", 1, "chain" => chain_name.to_string());
     if let Err(e) = one_tx.send((
         Message::new_bypass(RawFrame::NONE),
         Ok(Messages::new_single_response(
@@ -507,14 +508,14 @@ impl Transform for RedisCluster {
             responses.push(match sender.len() {
                 0 => {
                     let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                    short_circuit(self.name, one_tx);
+                    short_circuit(qd.chain_name.as_str(), one_tx);
                     Box::pin(one_rx.map_err(|e| {
                         anyhow!("0 Couldn't get short circtuited for no channels - {}", e)
                     }))
                 }
                 1 => {
                     let one_rx = self
-                        .choose_and_send(sender.get(0).unwrap(), message.clone())
+                        .choose_and_send(sender.get(0).unwrap(), message.clone(), qd.chain_name.as_str())
                         .await?;
                     Box::pin(one_rx.map_err(|e| anyhow!("1 {}", e)))
                 }
@@ -523,7 +524,7 @@ impl Transform for RedisCluster {
                         tokio::sync::oneshot::Receiver<(Message, ChainResponse)>,
                     > = FuturesUnordered::new();
                     for chan in sender {
-                        let one_rx = self.choose_and_send(&chan, message.clone()).await?;
+                        let one_rx = self.choose_and_send(&chan, message.clone(), qd.chain_name.as_str()).await?;
                         futures.push(one_rx);
                     }
                     Box::pin(async move {
@@ -590,7 +591,7 @@ impl Transform for RedisCluster {
                     self.rebuild_slots = true;
 
                     let one_rx = self
-                        .choose_and_send(&format!("{}:{}", &host, port), original.clone())
+                        .choose_and_send(&format!("{}:{}", &host, port), original.clone(), qd.chain_name.as_str())
                         .await?;
 
                     responses.prepend(Box::pin(
@@ -601,7 +602,7 @@ impl Transform for RedisCluster {
                     debug!("Got ASK frame {} {} {}", slot, host, port);
 
                     let one_rx = self
-                        .choose_and_send(&format!("{}:{}", &host, port), original.clone())
+                        .choose_and_send(&format!("{}:{}", &host, port), original.clone(), qd.chain_name.as_str())
                         .await?;
 
                     responses.prepend(Box::pin(

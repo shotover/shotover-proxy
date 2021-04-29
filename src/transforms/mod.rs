@@ -255,6 +255,7 @@ pub struct Wrapper<'a> {
     // pub next_transform: usize,
     transforms: Vec<&'a mut Transforms>,
     pub client_details: String,
+    chain_name: String
 }
 
 impl<'a> Clone for Wrapper<'a> {
@@ -263,6 +264,7 @@ impl<'a> Clone for Wrapper<'a> {
             message: self.message.clone(),
             transforms: vec![],
             client_details: self.client_details.clone(),
+            chain_name: self.chain_name.clone()
         }
     }
 }
@@ -300,6 +302,16 @@ impl<'a> Wrapper<'a> {
             message: m,
             transforms: vec![],
             client_details: "".to_string(),
+            chain_name: "".to_string(),
+        }
+    }
+
+    pub fn new_with_chain_name(m: Messages, chain_name: String) -> Self {
+        Wrapper {
+            message: m,
+            transforms: vec![],
+            client_details: "".to_string(),
+            chain_name,
         }
     }
 
@@ -308,6 +320,7 @@ impl<'a> Wrapper<'a> {
             message: m,
             transforms: vec![],
             client_details,
+            chain_name: "".to_string(),
         }
     }
 
@@ -316,6 +329,7 @@ impl<'a> Wrapper<'a> {
             message: m,
             transforms: vec![],
             client_details: "".to_string(),
+            chain_name: "".to_string(),
         }
     }
 
