@@ -570,7 +570,6 @@ impl Transform for RedisCluster {
         while let Some(s) = responses.next().await {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
-                counter!("redis_cluster_failed_request", 1, "chain" => self.name.clone());
                 Ok((
                     Message::new_bypass(RawFrame::NONE),
                     Ok(Messages::new_single_response(
