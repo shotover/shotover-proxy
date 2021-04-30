@@ -128,7 +128,7 @@ impl TransformChain {
                     *count += 1;
                 }
 
-                let chain_response = chain.process_request(Wrapper::new(messages), name).await;
+                let chain_response = chain.process_request(Wrapper::new_with_chain_name(messages, chain.name.clone()), name).await;
 
                 if let Err(e) = &chain_response {
                     warn!("Internal error in buffered chain: {:?} - resetting", e);
