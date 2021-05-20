@@ -1,4 +1,3 @@
-use crate::message::Messages;
 use crate::transforms::build_chain_from_config;
 use crate::transforms::chain::TransformChain;
 use anyhow::Result;
@@ -388,10 +387,7 @@ where
             trace!("Received raw message {:?}", frame);
             match self
                 .chain
-                .process_request(
-                    Wrapper::new_with_client_details(frame, self.client_details.clone()),
-                    self.client_details.clone(),
-                )
+                .process_request(Wrapper::new(frame), self.client_details.clone())
                 .await
             {
                 Ok(modified_message) => {

@@ -1,9 +1,5 @@
-use crate::protocols::RawFrame;
-use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::future::Future;
-use std::iter::FromIterator;
-use std::net::IpAddr;
 use std::pin::Pin;
 
 use anyhow::Result;
@@ -18,16 +14,13 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
-use mlua::UserData;
+use metrics::{counter, timing};
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::net::IpAddr;
-use metrics::{counter, timing};
-use redis_protocol::types::Frame;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
 use tokio::time::Instant;
@@ -60,7 +53,6 @@ pub struct LibDeclaration {
 }
 
 pub type ChainResponse = anyhow::Result<Messages>;
->>>>>>> Holy moly:shotover_transforms/src/lib.rs
 
 // TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
 // Should move the message type to just be bulk..
@@ -226,12 +218,6 @@ impl Messages {
     }
 }
 
-impl UserData for Messages {}
-
-impl UserData for QueryMessage {}
-impl UserData for QueryResponse {}
-impl UserData for RawMessage {}
-
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessage {
     pub original: RawFrame,
@@ -242,42 +228,42 @@ pub struct RawMessage {
 // encoded represntation of the query.
 // Statement can be "serialized"/rendered through it's display methods
 // Commands can be serialized by getting the underlying Value
-
-#[derive(PartialEq, Debug, Clone)]
-pub enum ASTHolder {
-    SQL(Statement),
-    Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
-}
-
-impl ASTHolder {
-    pub fn get_command(&self) -> String {
-        match self {
-            ASTHolder::SQL(statement) => {
-                return match statement {
-                    Statement::Query(_) => "SELECT",
-                    Statement::Insert { .. } => "INSERT",
-                    Statement::Update { .. } => "UPDATE",
-                    Statement::Delete { .. } => "DELETE",
-                    Statement::CreateView { .. } => "CREATE VIEW",
-                    Statement::CreateTable { .. } => "CREATE TABLE",
-                    Statement::AlterTable { .. } => "ALTER TABLE",
-                    Statement::Drop { .. } => "DROP",
-                    _ => "UKNOWN",
-                }
-                .to_string();
-            }
-            ASTHolder::Commands(commands) => {
-                if let Value::List(coms) = commands {
-                    if let Some(Value::Bytes(b)) = coms.get(0) {
-                        return String::from_utf8(b.to_vec())
-                            .unwrap_or_else(|_| "couldn't decode".to_string());
-                    }
-                }
-            }
-        }
-        "UNKNOWN".to_string()
-    }
-}
+//
+// #[derive(PartialEq, Debug, Clone)]
+// pub enum ASTHolder {
+//     SQL(Statement),
+//     Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
+// }
+//
+// impl ASTHolder {
+//     pub fn get_command(&self) -> String {
+//         match self {
+//             ASTHolder::SQL(statement) => {
+//                 return match statement {
+//                     Statement::Query(_) => "SELECT",
+//                     Statement::Insert { .. } => "INSERT",
+//                     Statement::Update { .. } => "UPDATE",
+//                     Statement::Delete { .. } => "DELETE",
+//                     Statement::CreateView { .. } => "CREATE VIEW",
+//                     Statement::CreateTable { .. } => "CREATE TABLE",
+//                     Statement::AlterTable { .. } => "ALTER TABLE",
+//                     Statement::Drop { .. } => "DROP",
+//                     _ => "UKNOWN",
+//                 }
+//                 .to_string();
+//             }
+//             ASTHolder::Commands(commands) => {
+//                 if let Value::List(coms) = commands {
+//                     if let Some(Value::Bytes(b)) = coms.get(0) {
+//                         return String::from_utf8(b.to_vec())
+//                             .unwrap_or_else(|_| "couldn't decode".to_string());
+//                     }
+//                 }
+//             }
+//         }
+//         "UNKNOWN".to_string()
+//     }
+// }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMessage {
@@ -591,6 +577,32 @@ impl Value {
     }
 }
 
+#[derive(Eq, PartialEq, Debug, Clone, Hash, Serialize, Deserialize)]
+pub enum RawFrame {
+    CASSANDRA(cassandra_proto::frame::Frame),
+    Redis(redis_protocol::types::Frame),
+    NONE,
+}
+
+impl RawFrame {
+    pub fn build_message(&self, response: bool) -> Result<MessageDetails> {
+        match self {
+            RawFrame::CASSANDRA(_c) => Ok(MessageDetails::Unknown),
+            RawFrame::Redis(r) => process_redis_frame(r, response),
+            RawFrame::NONE => Ok(MessageDetails::Unknown),
+        }
+    }
+
+    #[inline]
+    pub fn get_query_type(&self) -> QueryType {
+        match self {
+            RawFrame::CASSANDRA(_) => QueryType::ReadWrite,
+            RawFrame::Redis(r) => redis_query_type(r),
+            RawFrame::NONE => QueryType::ReadWrite,
+        }
+    }
+}
+
 impl Into<cassandra_proto::types::value::Bytes> for Value {
     fn into(self) -> cassandra_proto::types::value::Bytes {
         match self {
@@ -631,8 +643,6 @@ mod my_bytes {
         Ok(Bytes::from(val))
     }
 }
-<<<<<<< HEAD:transforms/src/lib.rs
-=======
 
 #[async_trait]
 pub trait Transform: DynClone + Send + Sync + Debug {
@@ -787,4 +797,3 @@ impl<'a> Wrapper<'a> {
         self.transforms = transforms;
     }
 }
->>>>>>> Holy moly:shotover_transforms/src/lib.rs
