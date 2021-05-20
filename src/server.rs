@@ -1,8 +1,8 @@
-use crate::transforms::build_chain_from_config;
-use crate::transforms::chain::TransformChain;
 use anyhow::Result;
 use futures::StreamExt;
 use metrics::gauge;
+use shotover_transforms::build_chain_from_config;
+use shotover_transforms::chain::TransformChain;
 use shotover_transforms::Wrapper;
 use shotover_transforms::{Messages, TopicHolder};
 use std::sync::Arc;

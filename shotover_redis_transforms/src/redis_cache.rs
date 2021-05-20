@@ -10,8 +10,6 @@ use shotover_transforms::TopicHolder;
 use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
 use shotover_transforms::{Messages, Transform};
 
-use crate::transforms::InternalTransform;
-
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
     #[serde(rename = "config_values")]
@@ -67,9 +65,9 @@ impl SimpleRedisCache {
 #[async_trait]
 impl Transform for SimpleRedisCache {
     // #[instrument]
-    async fn transform<'a>(&'a mut self, _qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, _wrapped_messages: Wrapper<'a>) -> ChainResponse {
         let responses = Messages::new();
-        // for message in &qd.message.messages {
+        // for message in &wrapped_messages.message.messages {
         //     let wrapped_message = Wrapper::new_with_next_transform(
         //         Messages::new_from_message(message.clone()),
         //         0,

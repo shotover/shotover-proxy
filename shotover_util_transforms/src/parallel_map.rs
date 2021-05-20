@@ -93,9 +93,9 @@
 //
 // #[async_trait]
 // impl Transform for ParallelMap {
-//     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-//         let mut results: Vec<Message> = Vec::with_capacity(qd.message.messages.len());
-//         let mut message_iter = qd.message.messages.into_iter();
+//     async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
+//         let mut results: Vec<Message> = Vec::with_capacity(wrapped_messages.message.messages.len());
+//         let mut message_iter = wrapped_messages.message.messages.into_iter();
 //         while message_iter.len() != 0 {
 //             let mut future = UOFutures::new(self.ordered);
 //             for chain in self.chains.iter_mut() {

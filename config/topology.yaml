@@ -8,8 +8,7 @@ sources:
       hard_connection_limit: false
 chain_config:
   redis_chain:
-    - LibraryTransformConfig:
-        libname: "/home/ben/git/proxy-poc/target/debug/libshotover_util_transforms.so"
+    - PrinterConfig: []
     - RedisClusterConfig:
         first_contact_points: [ "127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225" ]
 named_topics:

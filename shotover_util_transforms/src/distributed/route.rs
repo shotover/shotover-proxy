@@ -12,8 +12,7 @@ use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
 use shotover_transforms::{Messages, Transform};
 
 use crate::transforms::build_chain_from_config;
-use crate::transforms::chain::{TransformChain, BufferedChain};
-use crate::transforms::InternalTransform;
+use crate::transforms::chain::{BufferedChain, TransformChain};
 use std::fmt::Debug;
 use std::rc::Rc;
 
@@ -40,7 +39,9 @@ impl TransformsFromConfig for RouteConfig {
         for (key, value) in self.route_map.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, value.as_slice(), &topics).await?.build_buffered_chain(5),
+                build_chain_from_config(key, value.as_slice(), &topics)
+                    .await?
+                    .build_buffered_chain(5),
             );
         }
         Ok(Box::new(Route {
@@ -54,17 +55,17 @@ impl TransformsFromConfig for RouteConfig {
 
 #[async_trait]
 impl Transform for Route {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
         // let name = self.get_name().to_string();
         // let routes: Vec<String> = self.route_map.keys().cloned().collect();
         // let rt = self.lua_runtime.lock().await;
         // let chosen_route = self
         //     .route_script
-        //     .call(rt.borrow(), (qd.message.clone(), routes))?;
+        //     .call(rt.borrow(), (wrapped_messages.message.clone(), routes))?;
         // self.route_map
         //     .get_mut(chosen_route.as_str())
         //     .unwrap()
-        //     .process_request(qd, name)
+        //     .process_request(wrapped_messages, name)
         //     .await
         unimplemented!()
     }

@@ -1,6 +1,6 @@
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::chain::TransformChain;
-use crate::transforms::{build_chain_from_config};
+use shotover_transforms::build_chain_from_config;
+use shotover_transforms::chain::TransformChain;
 use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
@@ -9,8 +9,8 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 
+use shotover_transforms::ChannelMessage;
 use shotover_transforms::{TopicHolder, TransformsFromConfig};
-use shotover_transforms::{ChannelMessage};
 
 // use crate::sources::cassandra_source::CassandraConfig;
 // use crate::sources::{Sources, SourcesConfig};
@@ -19,7 +19,6 @@ use shotover_transforms::{ChannelMessage};
 // use crate::transforms::kafka_destination::KafkaConfig;
 // use crate::transforms::mpsc::TeeConfig;
 use std::fmt::Debug;
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Topology {

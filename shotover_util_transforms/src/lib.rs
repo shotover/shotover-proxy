@@ -5,6 +5,18 @@ use shotover_transforms::{ChainResponse, TopicHolder, Transform, TransformsFromC
 use std::pin::Pin;
 use tracing::info;
 
+pub mod coalesce;
+pub mod filter;
+pub mod kafka_destination;
+pub mod load_balance;
+pub mod mpsc;
+pub mod noop;
+pub mod null;
+pub mod parallel_map;
+pub mod query_counter;
+pub mod sampler;
+pub mod test_transforms;
+
 #[derive(Debug, Clone)]
 pub struct Printer {
     name: &'static str,
@@ -45,10 +57,10 @@ pub fn get_configurator<'a>(config: String) -> Pin<Box<dyn TransformsFromConfig 
 #[async_trait]
 impl Transform for Printer {
     #[no_mangle]
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        info!("Request content: {:?}", qd.message);
+    async fn transform<'a>(&'a mut self, wrapped_messages: Wrapper<'a>) -> ChainResponse {
+        info!("Request content: {:?}", wrapped_messages.message);
         self.counter += 1;
-        let response = qd.call_next_transform().await;
+        let response = wrapped_messages.call_next_transform().await;
         info!("Response content: {:?}", response);
         response
     }

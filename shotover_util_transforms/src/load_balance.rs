@@ -8,9 +8,8 @@ use tokio::sync::Mutex;
 use shotover_transforms::TopicHolder;
 use shotover_transforms::{ChainResponse, Messages, Transform, TransformsFromConfig, Wrapper};
 
-use crate::transforms::build_chain_from_config;
-use crate::transforms::chain::{BufferedChain, TransformChain};
-use crate::transforms::InternalTransform;
+use shotover_transforms::build_chain_from_config;
+use shotover_transforms::chain::{BufferedChain, TransformChain};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ConnectionBalanceAndPoolConfig {
@@ -60,7 +59,7 @@ impl Clone for ConnectionBalanceAndPool {
 
 #[async_trait]
 impl Transform for ConnectionBalanceAndPool {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
@@ -83,7 +82,11 @@ impl Transform for ConnectionBalanceAndPool {
         }
         if let Some(chain) = &mut self.active_connection {
             return chain
-                .process_request(qd, "Connection Balance and Pooler".to_string(), None)
+                .process_request(
+                    wrapped_messages,
+                    "Connection Balance and Pooler".to_string(),
+                    None,
+                )
                 .await;
         }
         unreachable!()
@@ -115,13 +118,10 @@ mod test {
             active_connection: None,
             parallelism: 3,
             other_connections: Arc::new(Default::default()),
-            chain_to_clone: TransformChain::new(
-                vec![Box::new(Box::new(ReturnerTransform {
-                    message: Messages::new(),
-                    ok: true,
-                }))],
-                "child_test".to_string(),
-            ),
+            chain_to_clone: vec![Box::new(Box::new(ReturnerTransform {
+                message: Messages::new(),
+                ok: true,
+            }))],
         });
 
         let mut chain = TransformChain::new(vec![transform], "test".to_string());

@@ -22,14 +22,14 @@ Transforms a where the bulk of shotover does its work. A transform is a struct t
 has one function where you implement the majority of your logic:
 
 ```rust
-async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
+async fn transform(&self, mut wrapped_messages: Wrapper, t: &TransformChain) -> ChainResponse;
 ``` 
-- Wrapper (qd) contains the Query/Message you want to operate on. 
+- Wrapper (wrapped_messages) contains the Query/Message you want to operate on. 
 - The transform chain (t) is the ordered list of transforms operating on message. 
 
 To call the downstream transform, simply call: 
 ```rust
-self.call_next_transform(qd, t).await;
+self.call_next_transform(wrapped_messages, t).await;
 ```
 This will return a ChainResponse which will include the upstream databases reponse. This means
 your transform can operate on both queries and responses. Once your transform is done handling the request and response, it will return 

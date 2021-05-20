@@ -32,9 +32,11 @@ dyn-clone = "1.0.4"
 
 
 shotover-transforms = { path = "shotover_transforms" }
+shotover-util-transforms = { path = "shotover_util_transforms" }
 shotover-protocols = { path = "shotover_protocols" }
 shotover-scripts = { path = "shotover_scripts" }
 shotover-data-protection = { path = "shotover_data_protection" }
+shotover-redis-transforms = { path = "shotover_redis_transforms" }
 libloading = "0.5"
 
 

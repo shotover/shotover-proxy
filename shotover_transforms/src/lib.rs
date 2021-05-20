@@ -17,7 +17,6 @@ use chrono::{DateTime, TimeZone, Utc};
 use metrics::{counter, timing};
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
-use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::net::IpAddr;
@@ -28,10 +27,15 @@ use tokio::time::Instant;
 use ast::ASTHolder;
 
 use crate::ast::{process_redis_frame, redis_query_type};
+use crate::chain::TransformChain;
 use dyn_clone::DynClone;
 
 pub mod ast;
+pub mod chain;
+pub mod concurrency;
 pub mod protocol;
+pub mod util;
+
 pub extern crate sqlparser;
 
 #[cfg(test)]
@@ -646,7 +650,7 @@ mod my_bytes {
 
 #[async_trait]
 pub trait Transform: DynClone + Send + Sync + Debug {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
+    async fn transform<'a>(&'a mut self, wrapped_messages: Wrapper<'a>) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
 
@@ -656,9 +660,9 @@ pub trait Transform: DynClone + Send + Sync + Debug {
 
     fn get_transform_future<'a>(
         &'a mut self,
-        qd: Wrapper<'a>,
+        wrapped_messages: Wrapper<'a>,
     ) -> Pin<Box<dyn core::future::Future<Output = ChainResponse> + Send + 'a>> {
-        self.transform(qd)
+        self.transform(wrapped_messages)
     }
 }
 
@@ -796,4 +800,18 @@ impl<'a> Wrapper<'a> {
     pub fn reset(&mut self, transforms: Vec<&'a mut Box<dyn Transform + Send + Sync>>) {
         self.transforms = transforms;
     }
+}
+
+pub async fn build_chain_from_config(
+    name: String,
+    transform_configs: &[Box<dyn TransformsFromConfig + Send + Sync>],
+    topics: &TopicHolder,
+) -> Result<TransformChain> {
+    let mut transforms: Vec<Box<dyn Transform + Send + Sync>> = Vec::new();
+    let mut configs: Vec<Box<dyn TransformsFromConfig + Send + Sync>> = Vec::new();
+    for tc in transform_configs {
+        transforms.push(tc.get_source(topics).await?);
+        configs.push(tc.clone());
+    }
+    Ok(TransformChain::new_with_configs(transforms, name, configs))
 }

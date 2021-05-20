@@ -5,7 +5,6 @@ use shotover_transforms::{
     ChainResponse, Message, MessageDetails, Messages, QueryResponse, Transform,
 };
 
-use crate::transforms::InternalTransform;
 use shotover_transforms::RawFrame;
 use shotover_transforms::Wrapper;
 
@@ -39,10 +38,10 @@ impl Null {
 
 #[async_trait]
 impl Transform for Null {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
         if self.with_request {
             return ChainResponse::Ok(Messages {
-                messages: qd
+                messages: wrapped_messages
                     .message
                     .messages
                     .into_iter()

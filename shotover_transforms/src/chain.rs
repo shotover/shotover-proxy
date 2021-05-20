@@ -11,9 +11,9 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
 
-use crate::transforms::build_chain_from_config;
-use shotover_transforms::{ChainResponse, TopicHolder, TransformsFromConfig, Wrapper};
-use shotover_transforms::{ChannelMessage, Transform};
+use crate::build_chain_from_config;
+use crate::{ChainResponse, TopicHolder, TransformsFromConfig, Wrapper};
+use crate::{ChannelMessage, Transform};
 
 type InnerChain = Vec<Box<dyn Transform + Send + Sync>>;
 
@@ -26,12 +26,6 @@ pub struct TransformChain {
     pub chain: InnerChain,
     pub config_objs: Vec<Box<dyn TransformsFromConfig + Send + Sync>>,
 }
-//
-// impl Clone for TransformChain {
-//     fn clone(&self) -> Self {
-//         build_chain_from_config(self.name.clone(), &self.config_objs, &TopicHolder::new())
-//     }
-// }
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {

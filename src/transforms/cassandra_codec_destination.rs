@@ -14,6 +14,8 @@ use shotover_transforms::TopicHolder;
 use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
 use shotover_transforms::{Messages, Transform};
 
+//TODO move this and the tokio dep out of this sub crate
+
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CodecConfiguration {
     #[serde(rename = "remote_address")]
@@ -112,8 +114,8 @@ impl CodecDestination {
 #[async_trait]
 impl Transform for CodecDestination {
     // #[instrument]
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        self.send_message(qd.message).await
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
+        self.send_message(wrapped_messages.message).await
     }
 
     fn get_name(&self) -> &'static str {

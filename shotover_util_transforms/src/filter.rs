@@ -7,8 +7,6 @@ use shotover_transforms::{
     ChainResponse, MessageDetails, QueryType, Transform, TransformsFromConfig, Wrapper,
 };
 
-use crate::transforms::InternalTransform;
-
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
     name: &'static str,
@@ -33,15 +31,15 @@ impl TransformsFromConfig for QueryTypeFilterConfig {
 
 #[async_trait]
 impl Transform for QueryTypeFilter {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        qd.message.messages.retain(|m| {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
+        wrapped_messages.message.messages.retain(|m| {
             if let MessageDetails::Query(qm) = &m.details {
                 qm.query_type != self.filter
             } else {
                 m.original.get_query_type() != self.filter
             }
         });
-        qd.call_next_transform().await
+        wrapped_messages.call_next_transform().await
     }
 
     fn get_name(&self) -> &'static str {
@@ -53,13 +51,12 @@ impl Transform for QueryTypeFilter {
 mod test {
     use anyhow::Result;
 
-    use shotover_transforms::RawFrame;
     use shotover_transforms::Wrapper;
     use shotover_transforms::{Message, MessageDetails, Messages, QueryMessage, QueryType};
+    use shotover_transforms::{RawFrame, Transform};
 
-    use crate::transforms::filter::QueryTypeFilter;
-    use crate::transforms::null::Null;
-    use crate::transforms::{InternalTransform, Transforms};
+    use crate::filter::QueryTypeFilter;
+    use crate::null::Null;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter() -> Result<()> {
@@ -94,11 +91,11 @@ mod test {
             })
             .collect();
 
-        let mut qd = Wrapper::new(Messages {
+        let mut wrapped_messages = Wrapper::new(Messages {
             messages: messages.clone(),
         });
-        qd.transforms = vec![&mut null];
-        let result = coalesce.transform(qd).await?;
+        wrapped_messages.transforms = vec![&mut null];
+        let result = coalesce.transform(wrapped_messages).await?;
         assert_eq!(result.messages.len(), 13);
         let any = result.messages.iter().find(|m| {
             if let MessageDetails::Response(qr) = &m.details {

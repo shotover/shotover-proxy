@@ -13,7 +13,6 @@ use shotover_transforms::{
 };
 use shotover_transforms::{RawFrame, TransformsFromConfig};
 
-use crate::transforms::InternalTransform;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
@@ -81,9 +80,9 @@ impl Default for KafkaDestination {
 
 #[async_trait]
 impl Transform for KafkaDestination {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
         let mut responses: Vec<Message> = vec![];
-        for message in qd.message.messages {
+        for message in wrapped_messages.message.messages {
             match message.details {
                 MessageDetails::Bypass(_) => {}
                 MessageDetails::Query(qm) => {

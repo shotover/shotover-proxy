@@ -35,21 +35,21 @@
 //
 // #[async_trait]
 // impl Transform for Sampler {
-//     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+//     async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
 //         let chance = thread_rng_n(self.denominator);
 //         return if chance < self.numerator {
-//             let sample = qd.clone();
+//             let sample = wrapped_messages.clone();
 //             let (sample, downstream) = tokio::join!(
 //                 self.sample_chain
 //                     .process_request(sample, self.get_name().to_string()),
-//                 qd.call_next_transform()
+//                 wrapped_messages.call_next_transform()
 //             );
 //             if sample.is_err() {
 //                 warn!("Could not sample request {:?}", sample);
 //             }
 //             downstream
 //         } else {
-//             qd.call_next_transform().await
+//             wrapped_messages.call_next_transform().await
 //         };
 //     }
 //

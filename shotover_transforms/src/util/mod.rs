@@ -1,5 +1,5 @@
-use shotover_transforms::ChainResponse;
-use shotover_transforms::Message;
+use crate::ChainResponse;
+use crate::Message;
 
 pub mod cluster_connection_pool;
 pub mod unordered_cluster_connection_pool;

@@ -178,8 +178,8 @@ pub fn get_configurator<'a>(config: String) -> Pin<Box<dyn TransformsFromConfig 
 
 #[async_trait]
 impl Transform for Protect {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        for message in qd.message.messages.iter_mut() {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
+        for message in wrapped_messages.message.messages.iter_mut() {
             if let MessageDetails::Query(qm) = &mut message.details {
                 // Encrypt the writes
                 if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
@@ -207,8 +207,8 @@ impl Transform for Protect {
             }
         }
 
-        let mut original_messages = qd.message.messages.clone();
-        let mut result = qd.call_next_transform().await?;
+        let mut original_messages = wrapped_messages.message.messages.clone();
+        let mut result = wrapped_messages.call_next_transform().await?;
 
         for (response, request) in result.messages.iter_mut().zip(original_messages.iter_mut()) {
             if let MessageDetails::Response(QueryResponse {

@@ -17,7 +17,6 @@ use shotover_transforms::{RawFrame, TransformsFromConfig};
 
 use crate::transforms::build_chain_from_config;
 use crate::transforms::chain::BufferedChain;
-use crate::transforms::InternalTransform;
 use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -130,8 +129,8 @@ impl TunableConsistency {}
 
 #[async_trait]
 impl Transform for TunableConsistency {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        let required_successes = qd
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
+        let required_successes = wrapped_messages
             .message
             .messages
             .iter_mut()
@@ -173,7 +172,11 @@ impl Transform for TunableConsistency {
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
         for chain in self.route_map.iter_mut() {
-            rec_fu.push(chain.process_request(qd.clone(), "TunableConsistency".to_string(), None));
+            rec_fu.push(chain.process_request(
+                wrapped_messages.clone(),
+                "TunableConsistency".to_string(),
+                None,
+            ));
         }
 
         let mut results: Vec<Messages> = Vec::new();
@@ -197,7 +200,7 @@ impl Transform for TunableConsistency {
 
         drop(rec_fu);
 
-        // info!("{:?}\n{:?}", qd, results);
+        // info!("{:?}\n{:?}", wrapped_messages, results);
 
         if results.len()
             < *required_successes
@@ -269,7 +272,6 @@ mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::{InternalTransform, Transforms};
 
     fn check_ok_responses(
         mut message: Messages,

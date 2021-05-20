@@ -157,8 +157,8 @@ impl CodecDestination {
 #[async_trait]
 impl Transform for CodecDestination {
     // #[instrument]
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        self.send_message(qd.message).await
+    async fn transform<'a>(&'a mut self, wrapped_messages: Wrapper<'a>) -> ChainResponse {
+        self.send_message(wrapped_messages.message).await
     }
 
     fn get_name(&self) -> &'static str {

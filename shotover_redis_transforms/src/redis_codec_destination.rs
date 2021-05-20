@@ -9,8 +9,8 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use shotover_protocols::redis_codec::RedisCodec;
-use shotover_proxy::transforms::Transforms;
 use shotover_transforms::TopicHolder;
+
 use shotover_transforms::{ChainResponse, Transform};
 use shotover_transforms::{TransformsFromConfig, Wrapper};
 
@@ -23,7 +23,7 @@ pub struct RedisCodecConfiguration {
 #[typetag::serde]
 #[async_trait]
 impl TransformsFromConfig for RedisCodecConfiguration {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+    async fn get_source(&self, _: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
         Ok(Box::new(RedisCodecDestination::new(self.address.clone())))
     }
 }
@@ -53,14 +53,15 @@ impl RedisCodecDestination {
 
 #[async_trait]
 impl Transform for RedisCodecDestination {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, wrapped_messages: Wrapper<'a>) -> ChainResponse {
+        println!("hello");
         match self.outbound {
             None => {
                 let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
                 // TODO: Make this configurable
                 let mut outbound_framed_codec =
                     Framed::new(outbound_stream, RedisCodec::new(true, 1));
-                let _ = outbound_framed_codec.send(qd.message).await;
+                let _ = outbound_framed_codec.send(wrapped_messages.message).await;
                 if let Some(o) = outbound_framed_codec.next().fuse().await {
                     if let Ok(_resp) = &o {
                         self.outbound.replace(outbound_framed_codec);
@@ -70,7 +71,7 @@ impl Transform for RedisCodecDestination {
                 self.outbound.replace(outbound_framed_codec);
             }
             Some(ref mut outbound_framed_codec) => {
-                let _ = outbound_framed_codec.send(qd.message).await;
+                let _ = outbound_framed_codec.send(wrapped_messages.message).await;
 
                 let result = outbound_framed_codec
                     .next()

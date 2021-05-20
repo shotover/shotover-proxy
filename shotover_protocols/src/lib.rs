@@ -8,6 +8,7 @@ use shotover_transforms::{MessageDetails, QueryMessage, QueryResponse, QueryType
 
 pub mod cassandra_protocol2;
 pub mod redis_codec;
+pub extern crate redis_protocol;
 
 #[cfg(test)]
 mod tests {

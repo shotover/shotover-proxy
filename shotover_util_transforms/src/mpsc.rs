@@ -72,12 +72,12 @@
 //
 // #[async_trait]
 // impl Transform for Buffer {
-//     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+//     async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
 //         return if self.async_mode {
-//             let expected_responses = qd.message.messages.len();
+//             let expected_responses = wrapped_messages.message.messages.len();
 //             let buffer_result = self
 //                 .tx
-//                 .process_request_no_return(qd, "Buffer".to_string(), self.timeout)
+//                 .process_request_no_return(wrapped_messages, "Buffer".to_string(), self.timeout)
 //                 .await;
 //
 //             match buffer_result {
@@ -96,7 +96,7 @@
 //             })
 //         } else {
 //             self.tx
-//                 .process_request(qd, "Buffer".to_string(), self.timeout)
+//                 .process_request(wrapped_messages, "Buffer".to_string(), self.timeout)
 //                 .await
 //         };
 //     }
@@ -165,14 +165,14 @@
 //
 // #[async_trait]
 // impl Transform for Tee {
-//     async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-//         // let m = qd.message.clone();
+//     async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
+//         // let m = wrapped_messages.message.clone();
 //         return match self.behavior {
 //             ConsistencyBehavior::IGNORE => {
 //                 let (tee_result, chain_result) = tokio::join!(
 //                     self.tx
-//                         .process_request_no_return(qd.clone(), "tee".to_string(), self.timeout),
-//                     qd.call_next_transform()
+//                         .process_request_no_return(wrapped_messages.clone(), "tee".to_string(), self.timeout),
+//                     wrapped_messages.call_next_transform()
 //                 );
 //                 match tee_result {
 //                     Ok(_) => {}
@@ -186,8 +186,8 @@
 //             ConsistencyBehavior::FAIL => {
 //                 let (tee_result, chain_result) = tokio::join!(
 //                     self.tx
-//                         .process_request(qd.clone(), "tee".to_string(), self.timeout),
-//                     qd.call_next_transform()
+//                         .process_request(wrapped_messages.clone(), "tee".to_string(), self.timeout),
+//                     wrapped_messages.call_next_transform()
 //                 );
 //                 let tee_response = tee_result?;
 //                 let chain_response = chain_result?;
@@ -206,11 +206,11 @@
 //                 }
 //             }
 //             ConsistencyBehavior::LOG { .. } => {
-//                 let failed_message = qd.clone();
+//                 let failed_message = wrapped_messages.clone();
 //                 let (tee_result, chain_result) = tokio::join!(
 //                     self.tx
-//                         .process_request(qd.clone(), "tee".to_string(), self.timeout),
-//                     qd.call_next_transform()
+//                         .process_request(wrapped_messages.clone(), "tee".to_string(), self.timeout),
+//                     wrapped_messages.call_next_transform()
 //                 );
 //
 //                 let tee_response = tee_result?;

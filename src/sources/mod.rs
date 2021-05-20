@@ -1,9 +1,9 @@
 use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
 // use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
 use crate::sources::redis_source::{RedisConfig, RedisSource};
-use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use shotover_transforms::chain::TransformChain;
 use shotover_transforms::TopicHolder;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;

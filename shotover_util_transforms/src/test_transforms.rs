@@ -6,7 +6,6 @@ use tokio::time::Duration;
 
 use shotover_transforms::Wrapper;
 
-use crate::transforms::InternalTransform;
 use shotover_transforms::Messages;
 use shotover_transforms::{ChainResponse, Transform};
 
@@ -18,7 +17,7 @@ pub struct ReturnerTransform {
 
 #[async_trait]
 impl Transform for ReturnerTransform {
-    async fn transform<'a>(&'a mut self, _qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, _wrapped_messages: Wrapper<'a>) -> ChainResponse {
         if self.ok {
             Ok(self.message.clone())
         } else {
@@ -39,7 +38,7 @@ pub struct RandomDelayTransform {
 
 #[async_trait]
 impl Transform for RandomDelayTransform {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
         let delay;
         if let Some(dist) = self.distribution {
             delay = Duration::from_millis(dist.sample(&mut rand::thread_rng()) as u64 + self.delay);
@@ -47,7 +46,7 @@ impl Transform for RandomDelayTransform {
             delay = Duration::from_millis(self.delay);
         }
         tokio::time::sleep(delay).await;
-        qd.call_next_transform().await
+        wrapped_messages.call_next_transform().await
     }
 
     fn get_name(&self) -> &'static str {

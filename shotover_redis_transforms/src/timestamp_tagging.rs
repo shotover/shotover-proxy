@@ -15,8 +15,6 @@ use shotover_transforms::{
     Value, Wrapper,
 };
 
-use crate::transforms::InternalTransform;
-
 #[derive(Clone, Debug)]
 pub struct RedisTimestampTagger {
     name: &'static str,
@@ -157,11 +155,11 @@ fn unwrap_response(qr: &mut QueryResponse) {
 
 #[async_trait]
 impl Transform for RedisTimestampTagger {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
         let mut tagged_success: bool = true;
         let mut exec_block: bool = false;
 
-        for message in qd.message.messages.iter_mut() {
+        for message in wrapped_messages.message.messages.iter_mut() {
             message.generate_message_details(false);
             if let MessageDetails::Query(ref mut qm) = message.details {
                 if let Some(a) = &qm.ast {
@@ -176,7 +174,7 @@ impl Transform for RedisTimestampTagger {
             }
         }
 
-        let response = qd.call_next_transform().await;
+        let response = wrapped_messages.call_next_transform().await;
         debug!("tagging transform got {:?}", response);
         if let Ok(mut messages) = response {
             if tagged_success || exec_block {

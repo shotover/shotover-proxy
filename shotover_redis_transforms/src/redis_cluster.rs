@@ -5,15 +5,15 @@ use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::stream::FuturesUnordered;
 use futures::{Future, TryFutureExt};
 use futures::{SinkExt, StreamExt};
-use hyper::body::Bytes;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
-use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
+use shotover_protocols::redis_protocol::types::Frame;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::timeout;
@@ -28,10 +28,9 @@ use shotover_transforms::{
 };
 use shotover_transforms::{RawFrame, TransformsFromConfig};
 
-use crate::concurrency::FuturesOrdered;
-use crate::transforms::util::cluster_connection_pool::ConnectionPool;
-use crate::transforms::util::{Request, Response};
-use crate::transforms::InternalTransform;
+use shotover_transforms::concurrency::FuturesOrdered;
+use shotover_transforms::util::cluster_connection_pool::ConnectionPool;
+use shotover_transforms::util::{Request, Response};
 
 const SLOT_SIZE: usize = 16384;
 
@@ -42,7 +41,7 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
     pub strict_close_mode: Option<bool>,
-    connection_count: Option<i32>,
+    pub connection_count: Option<i32>,
 }
 
 #[typetag::serde]
@@ -406,8 +405,8 @@ async fn get_topology_from_node(stream: TcpStream) -> Result<SlotsMapping> {
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Redis(Frame::Array(vec![
-                Frame::BulkString(Bytes::from("CLUSTER")),
-                Frame::BulkString(Bytes::from("SLOTS")),
+                Frame::BulkString(Bytes::from_static(b"CLUSTER")),
+                Frame::BulkString(Bytes::from_static(b"SLOTS")),
             ])),
         }))
         .await
@@ -488,7 +487,7 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
 
 #[async_trait]
 impl Transform for RedisCluster {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut wrapped_messages: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_slots {
             self.rebuild_slot_map().await;
             self.rebuild_slots = false;
@@ -501,8 +500,8 @@ impl Transform for RedisCluster {
                 >,
             >,
         > = FuturesOrdered::new();
-        // let message = qd.message.messages.pop().unwrap();
-        for message in qd.message {
+        // let message = wrapped_messages.message.messages.pop().unwrap();
+        for message in wrapped_messages.message {
             let sender = self.get_channels(&message.original).await;
 
             responses.push(match sender.len() {
