@@ -37,7 +37,7 @@ const SLOT_SIZE: usize = 16384;
 type SlotMap = BTreeMap<u16, String>;
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
     pub strict_close_mode: Option<bool>,

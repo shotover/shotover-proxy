@@ -15,11 +15,9 @@ use shotover_transforms::{
 };
 use shotover_transforms::{RawFrame, TransformsFromConfig};
 
-use crate::transforms::build_chain_from_config;
-use crate::transforms::chain::BufferedChain;
+use shotover_transforms::build_chain_from_config;
+use shotover_transforms::chain::BufferedChain;
 use std::fmt::Debug;
-use std::rc::Rc;
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct TunableConsistency {
@@ -263,15 +261,14 @@ mod scatter_transform_tests {
     use anyhow::Result;
 
     use shotover_transforms::RawFrame;
-    use shotover_transforms::TopicHolder;
     use shotover_transforms::Wrapper;
     use shotover_transforms::{
         MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
     };
 
-    use crate::transforms::chain::{BufferedChain, TransformChain};
-    use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
-    use crate::transforms::test_transforms::ReturnerTransform;
+    use crate::distributed::tunable_consistency_scatter::TunableConsistency;
+    use crate::test_transforms::ReturnerTransform;
+    use shotover_transforms::chain::{BufferedChain, TransformChain};
 
     fn check_ok_responses(
         mut message: Messages,

@@ -1,8 +1,11 @@
 use async_trait::async_trait;
+use anyhow::Result;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use shotover_transforms::{
-    ChainResponse, Message, MessageDetails, Messages, QueryResponse, Transform,
+    ChainResponse, Message, MessageDetails, Messages, QueryResponse, TopicHolder, Transform,
+    TransformsFromConfig,
 };
 
 use shotover_transforms::RawFrame;
@@ -12,6 +15,17 @@ use shotover_transforms::Wrapper;
 pub struct Null {
     name: &'static str,
     with_request: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
+pub struct NullConfig {}
+
+#[typetag::serde]
+#[async_trait]
+impl TransformsFromConfig for NullConfig {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(Null::default()))
+    }
 }
 
 impl Default for Null {

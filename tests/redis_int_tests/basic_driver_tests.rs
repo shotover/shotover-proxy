@@ -1066,10 +1066,10 @@ fn run_all_active_safe(config: String) -> Result<()> {
         .worker_threads(4)
         .build()
         .unwrap();
+
+    let t = Topology::from_file(config).unwrap();
     let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file(config).unwrap().run_chains().await
-        {
+        if let Ok((_, mut shutdown_complete_rx)) = t.run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }

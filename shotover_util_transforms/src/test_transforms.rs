@@ -1,10 +1,12 @@
 use anyhow::anyhow;
+use anyhow::Result;
 use async_trait::async_trait;
 use rand_distr::Distribution;
 use rand_distr::Normal;
 use tokio::time::Duration;
 
-use shotover_transforms::Wrapper;
+use serde::{Deserialize, Serialize};
+use shotover_transforms::{TopicHolder, TransformsFromConfig, Wrapper};
 
 use shotover_transforms::Messages;
 use shotover_transforms::{ChainResponse, Transform};
@@ -13,6 +15,23 @@ use shotover_transforms::{ChainResponse, Transform};
 pub struct ReturnerTransform {
     pub message: Messages,
     pub ok: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct ReturnerTransformConfig {
+    pub message: Messages,
+    pub ok: bool,
+}
+
+#[typetag::serde]
+#[async_trait]
+impl TransformsFromConfig for ReturnerTransformConfig {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(ReturnerTransform {
+            message: self.message.clone(),
+            ok: self.ok.clone(),
+        }))
+    }
 }
 
 #[async_trait]

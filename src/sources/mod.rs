@@ -8,6 +8,7 @@ use shotover_transforms::TopicHolder;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 
+use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
 use anyhow::Result;
 
 pub mod cassandra_source;
@@ -36,7 +37,7 @@ pub mod redis_source;
 #[derive(Debug)]
 pub enum Sources {
     Cassandra(CassandraSource),
-    // Mpsc(AsyncMpsc),
+    Mpsc(AsyncMpsc),
     Redis(RedisSource),
 }
 
@@ -44,7 +45,7 @@ impl Sources {
     pub fn get_join_handles<T>(&self) -> &JoinHandle<Result<()>> {
         match self {
             Sources::Cassandra(c) => &c.join_handle,
-            // Sources::Mpsc(m) => &m.rx_handle,
+            Sources::Mpsc(m) => &m.rx_handle,
             Sources::Redis(r) => &r.join_handle,
         }
     }
@@ -53,7 +54,7 @@ impl Sources {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum SourcesConfig {
     Cassandra(CassandraConfig),
-    // Mpsc(AsyncMpscConfig),
+    Mpsc(AsyncMpscConfig),
     Redis(RedisConfig),
 }
 
@@ -70,10 +71,10 @@ impl SourcesConfig {
                 c.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
                     .await
             }
-            // SourcesConfig::Mpsc(m) => {
-            //     m.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
-            //         .await
-            // }
+            SourcesConfig::Mpsc(m) => {
+                m.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
+                    .await
+            }
             SourcesConfig::Redis(r) => {
                 r.get_source(chain, topics, notify_shutdown, shutdown_complete_tx)
                     .await

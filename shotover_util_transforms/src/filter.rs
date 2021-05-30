@@ -65,7 +65,7 @@ mod test {
             filter: QueryType::Read,
         };
 
-        let mut null = Box::new(Null::new());
+        let mut null: Box<(dyn Transform + Send + Sync)> = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..26)
             .map(|i| {

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::SinkExt;
-use shotover_proxy::protocols::cassandra_protocol2::CassandraCodec2;
+use shotover_protocols::cassandra_protocol2::CassandraCodec2;
 use std::collections::HashMap;
 use tokio::io::BufWriter;
 use tokio_stream::StreamExt;

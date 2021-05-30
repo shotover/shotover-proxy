@@ -14,6 +14,9 @@ tracing = { version = "0.1.15", features = ["release_max_level_info"]}
 typetag = "0.1.7"
 dyn-clone = "1.0.4"
 tokio = { version = "1.0.2", features = ["full", "macros"] }
+tokio-stream = "0.1.2"
+futures = "0.3.12"
+
 rand = { version = "0.7.3", features = ["small_rng", "std"]}
 rand_distr = "0.2.2"
 metrics = "0.12.1"

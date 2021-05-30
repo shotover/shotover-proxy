@@ -19,16 +19,16 @@ sources:
       topic_name: testtopic
 chain_config:
   redis_chain:
-    - MPSCTee:
+    - TeeConfig:
         topic_name: testtopic
-    - RedisDestination:
+    - RedisCodecConfiguration:
         remote_address: "127.0.0.1:6378"
   main_chain:
-    - MPSCTee:
+    - TeeConfig:
         topic_name: testtopic
-    - RedisCache:
-        config_values: "redis://127.0.0.1/"
-    - CodecDestination:
+#    - RedisCache:
+#        config_values: "redis://127.0.0.1/"
+    - CassandraCodecConfig:
         remote_address: "127.0.0.1:9043"
   async_chain:
     - KafkaDestination:

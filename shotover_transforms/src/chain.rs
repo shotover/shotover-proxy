@@ -11,7 +11,6 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
 
-use crate::build_chain_from_config;
 use crate::{ChainResponse, TopicHolder, TransformsFromConfig, Wrapper};
 use crate::{ChannelMessage, Transform};
 
@@ -20,7 +19,7 @@ type InnerChain = Vec<Box<dyn Transform + Send + Sync>>;
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransformChain {
     pub name: String,
     pub chain: InnerChain,
@@ -30,8 +29,6 @@ pub struct TransformChain {
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
     send_handle: Sender<ChannelMessage>,
-    #[cfg(test)]
-    pub count: Arc<Mutex<usize>>,
 }
 
 impl BufferedChain {
@@ -102,6 +99,14 @@ impl BufferedChain {
 }
 
 impl TransformChain {
+    // pub fn clone_uninitialized(& mut self) -> Self {
+    //     TransformChain {
+    //         name: self.name.clone(),
+    //         chain: build_chain_from_config(self.config_objs, ),
+    //         config_objs: vec![]
+    //     }
+    // }
+
     pub fn build_buffered_chain(self, buffer_size: usize) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
@@ -119,10 +124,6 @@ impl TransformChain {
             }) = rx.recv().await
             {
                 let name = chain.name.clone();
-                if cfg!(test) {
-                    let mut count = count.lock().await;
-                    *count += 1;
-                }
 
                 let chain_response = chain.process_request(Wrapper::new(messages), name).await;
 

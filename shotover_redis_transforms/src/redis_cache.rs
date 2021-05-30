@@ -10,7 +10,7 @@ use shotover_transforms::TopicHolder;
 use shotover_transforms::{ChainResponse, TransformsFromConfig, Wrapper};
 use shotover_transforms::{Messages, Transform};
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 pub struct RedisConfig {
     #[serde(rename = "config_values")]
     pub uri: String,

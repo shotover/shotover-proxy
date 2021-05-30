@@ -14,7 +14,7 @@ use shotover_transforms::TopicHolder;
 use shotover_transforms::{ChainResponse, Transform};
 use shotover_transforms::{TransformsFromConfig, Wrapper};
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 pub struct RedisCodecConfiguration {
     #[serde(rename = "remote_address")]
     pub address: String,

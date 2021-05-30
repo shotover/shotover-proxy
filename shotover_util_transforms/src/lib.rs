@@ -16,6 +16,7 @@ pub mod parallel_map;
 pub mod query_counter;
 pub mod sampler;
 pub mod test_transforms;
+pub mod distributed;
 
 #[derive(Debug, Clone)]
 pub struct Printer {
@@ -29,7 +30,7 @@ impl Default for Printer {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 pub struct PrinterConfig {}
 
 #[typetag::serde]

@@ -1,36 +1,34 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::config::topology::TopicHolder;
-use crate::message::{Message, Messages, QueryResponse};
-use crate::protocols::cassandra_protocol2::CassandraCodec2;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use shotover_transforms::{Message, Messages, QueryResponse, RawFrame, TopicHolder, Value};
+use shotover_transforms::{Transform, TransformsFromConfig, Wrapper};
 use std::collections::HashMap;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tracing::{info, trace};
 
-use crate::concurrency::FuturesOrdered;
-use crate::error::ChainResponse;
-use crate::message;
-use crate::protocols::RawFrame;
-use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
-use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
+use shotover_protocols::cassandra_protocol2::CassandraCodec2;
+use shotover_transforms::concurrency::FuturesOrdered;
+use shotover_transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
+use shotover_transforms::util::Request;
+use shotover_transforms::ChainResponse;
 use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
-pub struct CodecConfiguration {
+pub struct CassandraCodecConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub bypass_result_processing: bool,
 }
 
+#[typetag::serde]
 #[async_trait]
-impl TransformsFromConfig for CodecConfiguration {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::CodecDestination(CodecDestination::new(
+impl TransformsFromConfig for CassandraCodecConfig {
+    async fn get_source(&self, _topics: &TopicHolder) -> Result<Box<dyn Transform + Send + Sync>> {
+        Ok(Box::new(CodecDestination::new(
             self.address.clone(),
             self.bypass_result_processing,
         )))
@@ -121,9 +119,9 @@ impl CodecDestination {
                                     (_, Ok(mut resp)) => responses.append(&mut resp.messages),
                                     (m, Err(err)) => {
                                         responses.push(Message::new_response(
-                                            QueryResponse::empty_with_error(Some(
-                                                message::Value::Strings(format!("{}", err)),
-                                            )),
+                                            QueryResponse::empty_with_error(Some(Value::Strings(
+                                                format!("{}", err),
+                                            ))),
                                             true,
                                             m.original,
                                         ));

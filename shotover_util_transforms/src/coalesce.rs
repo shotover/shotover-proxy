@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use shotover_transforms::util::CoalesceBehavior;
 use shotover_transforms::TopicHolder;
 use shotover_transforms::{ChainResponse, Messages, QueryResponse, Transform, Wrapper};
 use shotover_transforms::{RawFrame, TransformsFromConfig};
@@ -16,15 +17,7 @@ pub struct Coalesce {
     last_write: Instant,
 }
 
-#[allow(non_camel_case_types)]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
-pub enum CoalesceBehavior {
-    COUNT(usize),
-    WAIT_MS(u128),
-    COUNT_OR_WAIT(usize, u128),
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 pub struct CoalesceConfig {
     pub max_behavior: CoalesceBehavior,
 }
@@ -100,11 +93,12 @@ mod test {
 
     use anyhow::Result;
 
+    use shotover_transforms::util::CoalesceBehavior;
     use shotover_transforms::Wrapper;
     use shotover_transforms::{Message, Messages, QueryMessage};
     use shotover_transforms::{RawFrame, Transform};
 
-    use crate::coalesce::{Coalesce, CoalesceBehavior};
+    use crate::coalesce::Coalesce;
     use crate::null::Null;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -116,7 +110,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Box::new(Null::new());
+        let mut null: Box<(dyn Transform + Send + Sync)> = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
@@ -179,7 +173,9 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Box::new(Null::new());
+        let t = Null::new();
+
+        let mut null: Box<(dyn Transform + Send + Sync)> = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
@@ -237,7 +233,7 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Box::new(Null::new());
+        let mut null: Box<(dyn Transform + Send + Sync)> = Box::new(Null::new());
 
         let messages: Vec<Message> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
