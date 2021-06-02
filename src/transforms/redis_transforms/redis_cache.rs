@@ -347,7 +347,7 @@ impl Transform for SimpleRedisCache {
         let mut updates = 0_i32;
         {
             for m in &mut qd.message.messages {
-                if let RawFrame::CASSANDRA(Frame {
+                if let RawFrame::Cassandra(Frame {
                     version: _,
                     flags: _,
                     opcode: Opcode::Query,

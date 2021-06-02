@@ -336,7 +336,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }, true, RawFrame::NONE));
+        }, true, RawFrame::None));
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
@@ -416,7 +416,7 @@ mod protect_transform_tests {
                                 message: Messages::new_single_response(
                                     returner_message.clone(),
                                     true,
-                                    RawFrame::NONE,
+                                    RawFrame::None,
                                 ),
                                 ok: true,
                             }))];
@@ -427,7 +427,7 @@ mod protect_transform_tests {
                         let mut new_wrapper = Wrapper::new(Messages::new_single_query(
                             qm.clone(),
                             true,
-                            RawFrame::NONE,
+                            RawFrame::None,
                         ));
 
                         new_wrapper.reset(ret_chain.get_inner_chain_refs());
@@ -514,7 +514,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }, true, RawFrame::NONE));
+        }, true, RawFrame::None));
 
         let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
 
@@ -595,7 +595,7 @@ mod protect_transform_tests {
                             message: Messages::new_single_response(
                                 returner_message.clone(),
                                 true,
-                                RawFrame::NONE,
+                                RawFrame::None,
                             ),
                             ok: true,
                         }))];
@@ -604,7 +604,7 @@ mod protect_transform_tests {
                         TransformChain::new(ret_transforms, String::from("test_chain"));
 
                     let mut new_wrapper =
-                        Wrapper::new(Messages::new_single_query(qm.clone(), true, RawFrame::NONE));
+                        Wrapper::new(Messages::new_single_query(qm.clone(), true, RawFrame::None));
 
                     new_wrapper.reset(ret_chain.get_inner_chain_refs());
 

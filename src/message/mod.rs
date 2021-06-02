@@ -93,7 +93,7 @@ impl Message {
         Message {
             details,
             modified,
-            original: RawFrame::NONE,
+            original: RawFrame::None,
         }
     }
 

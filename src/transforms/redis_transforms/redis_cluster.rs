@@ -475,7 +475,7 @@ fn short_circuit(chain_name: &str, one_tx: tokio::sync::oneshot::Sender<Response
     warn!("Could not route request - short circuiting");
     counter!("redis_cluster_failed_request", 1, "chain" => chain_name.to_string());
     if let Err(e) = one_tx.send((
-        Message::new_bypass(RawFrame::NONE),
+        Message::new_bypass(RawFrame::None),
         Ok(Messages::new_single_response(
             QueryResponse::empty(),
             false,
@@ -571,7 +571,7 @@ impl Transform for RedisCluster {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 Ok((
-                    Message::new_bypass(RawFrame::NONE),
+                    Message::new_bypass(RawFrame::None),
                     Ok(Messages::new_single_response(
                         QueryResponse::empty(),
                         false,

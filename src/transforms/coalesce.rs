@@ -78,7 +78,7 @@ impl Transform for Coalesce {
             ChainResponse::Ok(Messages::new_single_response(
                 QueryResponse::empty(),
                 true,
-                RawFrame::NONE,
+                RawFrame::None,
             ))
         };
     }
@@ -110,7 +110,7 @@ mod test {
         let mut null = Transforms::Null(Null::new());
 
         let messages: Vec<Message> = (0..25)
-            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
+            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
         let mut qd = Wrapper::new(Messages {
@@ -158,7 +158,7 @@ mod test {
         let mut null = Transforms::Null(Null::new());
 
         let messages: Vec<Message> = (0..25)
-            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
+            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
         let mut qd = Wrapper::new(Messages {
@@ -204,7 +204,7 @@ mod test {
         let mut null = Transforms::Null(Null::new());
 
         let messages: Vec<Message> = (0..25)
-            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::NONE))
+            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
         let mut qd = Wrapper::new(Messages {

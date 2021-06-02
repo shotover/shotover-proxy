@@ -93,7 +93,7 @@ impl CodecDestination {
                                 let (return_chan_tx, return_chan_rx) =
                                     tokio::sync::oneshot::channel();
                                 let stream;
-                                if let RawFrame::CASSANDRA(frame) = &m.original {
+                                if let RawFrame::Cassandra(frame) = &m.original {
                                     stream = frame.stream;
                                 } else {
                                     info!("no cassandra frame found");

@@ -152,7 +152,7 @@ where
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
-                            if let RawFrame::CASSANDRA(frame) = &m.original {
+                            if let RawFrame::Cassandra(frame) = &m.original {
                                 match return_channel_map.remove(&frame.stream) {
                                     None => {
                                         return_message_map.insert(frame.stream, m);
