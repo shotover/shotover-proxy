@@ -9,6 +9,7 @@ use futures::{Future, TryFutureExt};
 use futures::{SinkExt, StreamExt};
 use hyper::body::Bytes;
 use itertools::Itertools;
+use metrics::counter;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
 use redis_protocol::types::Frame;
@@ -16,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::timeout;
+use tokio::time::Duration;
 use tokio_util::codec::Framed;
 use tracing::{debug, info, trace, warn};
 
@@ -28,8 +30,6 @@ use crate::protocols::RawFrame;
 use crate::transforms::util::cluster_connection_pool::ConnectionPool;
 use crate::transforms::util::{Request, Response};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use tokio::time::Duration;
-use metrics::counter;
 
 const SLOT_SIZE: usize = 16384;
 
@@ -515,7 +515,11 @@ impl Transform for RedisCluster {
                 }
                 1 => {
                     let one_rx = self
-                        .choose_and_send(sender.get(0).unwrap(), message.clone(), qd.chain_name.as_str())
+                        .choose_and_send(
+                            sender.get(0).unwrap(),
+                            message.clone(),
+                            qd.chain_name.as_str(),
+                        )
                         .await?;
                     Box::pin(one_rx.map_err(|e| anyhow!("1 {}", e)))
                 }
@@ -524,7 +528,9 @@ impl Transform for RedisCluster {
                         tokio::sync::oneshot::Receiver<(Message, ChainResponse)>,
                     > = FuturesUnordered::new();
                     for chan in sender {
-                        let one_rx = self.choose_and_send(&chan, message.clone(), qd.chain_name.as_str()).await?;
+                        let one_rx = self
+                            .choose_and_send(&chan, message.clone(), qd.chain_name.as_str())
+                            .await?;
                         futures.push(one_rx);
                     }
                     Box::pin(async move {
@@ -590,7 +596,11 @@ impl Transform for RedisCluster {
                     self.rebuild_slots = true;
 
                     let one_rx = self
-                        .choose_and_send(&format!("{}:{}", &host, port), original.clone(), qd.chain_name.as_str())
+                        .choose_and_send(
+                            &format!("{}:{}", &host, port),
+                            original.clone(),
+                            qd.chain_name.as_str(),
+                        )
                         .await?;
 
                     responses.prepend(Box::pin(
@@ -601,7 +611,11 @@ impl Transform for RedisCluster {
                     debug!("Got ASK frame {} {} {}", slot, host, port);
 
                     let one_rx = self
-                        .choose_and_send(&format!("{}:{}", &host, port), original.clone(), qd.chain_name.as_str())
+                        .choose_and_send(
+                            &format!("{}:{}", &host, port),
+                            original.clone(),
+                            qd.chain_name.as_str(),
+                        )
                         .await?;
 
                     responses.prepend(Box::pin(
