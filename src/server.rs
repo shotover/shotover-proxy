@@ -15,10 +15,19 @@ use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace, warn};
 
-pub struct TcpCodecListener<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-{
+// TODO: Replace with trait_alias (RFC#1733).
+pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
+impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecReadHalf for T {}
+
+// TODO: Replace with trait_alias (RFC#1733).
+pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
+impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
+
+// TODO: Replace with trait_alias (RFC#1733).
+pub trait Codec: CodecReadHalf + CodecWriteHalf {}
+impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
+
+pub struct TcpCodecListener<C: Codec> {
     /// Shared database handle.
     ///
     /// Contains the key / value store as well as the broadcast channels for
@@ -72,10 +81,7 @@ where
     pub shutdown_complete_tx: mpsc::Sender<()>,
 }
 
-impl<C> TcpCodecListener<C>
-where
-    C: 'static + Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-{
+impl<C: Codec + 'static> TcpCodecListener<C> {
     /// Run the server
     ///
     /// Listen for inbound connections. For each inbound connection, spawn a
@@ -91,10 +97,7 @@ where
     /// The process is not able to detect when a transient error resolves
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
-    pub async fn run(&mut self) -> Result<()>
-    where
-        <C as Decoder>::Error: std::marker::Send + std::fmt::Debug,
-    {
+    pub async fn run(&mut self) -> Result<()> {
         info!("accepting inbound connections");
 
         loop {
@@ -236,10 +239,7 @@ where
     }
 }
 
-pub struct Handler<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-{
+pub struct Handler<C: Codec> {
     /// Shared source handle.
     ///
     /// When a command is received from `connection`, it is applied with `db`.
@@ -283,11 +283,7 @@ where
     _shutdown_complete: mpsc::Sender<()>,
 }
 
-impl<C> Handler<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send + 'static,
-    // S: AsyncRead + AsyncWrite + Unpin,
-{
+impl<C: Codec + 'static> Handler<C> {
     /// Process a single connection.
     ///
     /// Request frames are read from the socket and processed. Responses are
@@ -301,10 +297,7 @@ where
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
-    pub async fn run(&mut self, stream: TcpStream) -> Result<()>
-    where
-        <C as Decoder>::Error: std::fmt::Debug,
-    {
+    pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         let mut idle_time: u64 = 1;
@@ -412,11 +405,7 @@ where
     }
 }
 
-impl<C> Drop for Handler<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-    //       S: AsyncRead + AsyncWrite + Drop,
-{
+impl<C: Codec> Drop for Handler<C> {
     fn drop(&mut self) {
         // Add a permit back to the semaphore.
         //

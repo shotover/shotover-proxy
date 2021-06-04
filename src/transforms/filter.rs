@@ -82,7 +82,7 @@ mod test {
                         ast: None,
                     },
                     true,
-                    RawFrame::NONE,
+                    RawFrame::None,
                 )
             })
             .collect();

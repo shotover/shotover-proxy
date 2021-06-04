@@ -209,7 +209,7 @@ impl Transform for TunableConsistency {
                             "Not enough responses".to_string(),
                         ))),
                         true,
-                        RawFrame::NONE,
+                        RawFrame::None,
                     )
                 })
                 .collect_vec();
@@ -230,7 +230,7 @@ impl Transform for TunableConsistency {
                         }
                     }
                     resolve_fragments(&mut collated_results)
-                        .map(|qr| Message::new_response(qr, true, RawFrame::NONE))
+                        .map(|qr| Message::new_response(qr, true, RawFrame::None))
                 })
                 .collect_vec();
 
@@ -318,7 +318,7 @@ mod scatter_transform_tests {
         let response = Messages::new_single_response(
             QueryResponse::just_result(Value::Strings("OK".to_string())),
             true,
-            RawFrame::NONE,
+            RawFrame::None,
         );
         let _dummy_chain = TransformChain::new(vec![], "dummy".to_string());
 
@@ -333,7 +333,7 @@ mod scatter_transform_tests {
                 ast: None,
             },
             true,
-            RawFrame::NONE,
+            RawFrame::None,
         ));
 
         let ok_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {

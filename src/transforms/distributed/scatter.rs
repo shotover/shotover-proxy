@@ -114,7 +114,7 @@ impl Transform for Scatter {
                     Message::new_response(
                         QueryResponse::just_result(Value::FragmentedResponese(collated_results)),
                         true,
-                        RawFrame::NONE,
+                        RawFrame::None,
                     )
                 })
                 .rev()

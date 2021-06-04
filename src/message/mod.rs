@@ -93,7 +93,7 @@ impl Message {
         Message {
             details,
             modified,
-            original: RawFrame::NONE,
+            original: RawFrame::None,
         }
     }
 
@@ -217,7 +217,7 @@ impl ASTHolder {
                     Statement::CreateTable { .. } => "CREATE TABLE",
                     Statement::AlterTable { .. } => "ALTER TABLE",
                     Statement::Drop { .. } => "DROP",
-                    _ => "UKNOWN",
+                    _ => "UNKNOWN",
                 }
                 .to_string();
             }
