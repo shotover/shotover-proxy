@@ -90,7 +90,7 @@ impl Transform for Buffer {
             ChainResponse::Ok(Messages {
                 messages: (0..expected_responses)
                     .into_iter()
-                    .map(|_| Message::new_response(QueryResponse::empty(), true, RawFrame::NONE))
+                    .map(|_| Message::new_response(QueryResponse::empty(), true, RawFrame::None))
                     .collect_vec(),
             })
         } else {
@@ -204,7 +204,7 @@ impl Transform for Tee {
                                 .to_string(),
                         ))),
                         true,
-                        RawFrame::NONE,
+                        RawFrame::None,
                     ))
                 } else {
                     Ok(chain_response)

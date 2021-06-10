@@ -105,7 +105,7 @@ impl Transform for KafkaDestination {
             responses.push(Message::new_response(
                 QueryResponse::empty(),
                 true,
-                RawFrame::NONE,
+                RawFrame::None,
             ))
         }
         ChainResponse::Ok(Messages {

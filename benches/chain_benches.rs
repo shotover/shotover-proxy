@@ -26,7 +26,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             ast: None,
         },
         true,
-        RawFrame::NONE,
+        RawFrame::None,
     ));
 
     c.bench_with_input(
@@ -62,7 +62,7 @@ fn lua_benchmark(c: &mut Criterion) {
             ast: None,
         },
         true,
-        RawFrame::NONE,
+        RawFrame::None,
     ));
 
     let mut rt = tokio::runtime::Runtime::new().unwrap();

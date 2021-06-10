@@ -474,7 +474,7 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
     trace!("short circtuiting");
     if let Err(e) = one_tx.send((
-        Message::new_bypass(RawFrame::NONE),
+        Message::new_bypass(RawFrame::None),
         Ok(Messages::new_single_response(
             QueryResponse::empty(),
             false,
@@ -514,7 +514,11 @@ impl Transform for RedisCluster {
                 }
                 1 => {
                     let one_rx = self
-                        .choose_and_send(sender.get(0).unwrap(), message.clone())
+                        .choose_and_send(
+                            sender.get(0).unwrap(),
+                            message.clone(),
+                            // wrapped_messages.chain_name.as_str(),
+                        )
                         .await?;
                     Box::pin(one_rx.map_err(|e| anyhow!("1 {}", e)))
                 }
@@ -523,7 +527,13 @@ impl Transform for RedisCluster {
                         tokio::sync::oneshot::Receiver<(Message, ChainResponse)>,
                     > = FuturesUnordered::new();
                     for chan in sender {
-                        let one_rx = self.choose_and_send(&chan, message.clone()).await?;
+                        let one_rx = self
+                            .choose_and_send(
+                                &chan,
+                                message.clone(),
+                                // wrapped_messages.chain_name.as_str(),
+                            )
+                            .await?;
                         futures.push(one_rx);
                     }
                     Box::pin(async move {
@@ -571,7 +581,7 @@ impl Transform for RedisCluster {
                     trace!("Got resp {:?}", s);
                     let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                         Ok((
-                            Message::new_bypass(RawFrame::NONE),
+                            Message::new_bypass(RawFrame::None),
                             Ok(Messages::new_single_response(
                                 QueryResponse::empty(),
                                 false,
@@ -601,7 +611,6 @@ impl Transform for RedisCluster {
                         }
                         RawFrame::Redis(Frame::Ask { slot, host, port }) => {
                             debug!("Got ASK frame {} {} {}", slot, host, port);
-
                             let one_rx = self
                                 .choose_and_send(&format!("{}:{}", &host, port), original.clone())
                                 .await?;

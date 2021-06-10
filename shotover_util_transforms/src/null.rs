@@ -64,7 +64,7 @@ impl Transform for Null {
                             Some(Message::new_response(
                                 QueryResponse::empty_with_matching(qm),
                                 true,
-                                RawFrame::NONE,
+                                RawFrame::None,
                             ))
                         } else {
                             None
@@ -76,7 +76,7 @@ impl Transform for Null {
         ChainResponse::Ok(Messages::new_single_response(
             QueryResponse::empty(),
             true,
-            RawFrame::NONE,
+            RawFrame::None,
         ))
     }
 

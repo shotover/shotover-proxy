@@ -1,5 +1,7 @@
 use crate::util::Request;
-use crate::Messages;
+use crate::CodecReadHalf;
+use crate::CodecWriteHalf;
+use crate::{Codec, Messages};
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
@@ -12,24 +14,18 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
+use tokio_util::codec::{Decoder, FramedRead, FramedWrite};
 use tracing::{debug, info};
 
 #[derive(Clone)]
-pub struct ConnectionPool<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-{
+pub struct ConnectionPool<C: Codec> {
     host_set: Arc<Mutex<HashSet<String>>>,
     queue_map: Arc<Mutex<HashMap<String, Vec<UnboundedSender<Request>>>>>,
     codec: C,
     auth_func: fn(&ConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
 }
 
-impl<C> fmt::Debug for ConnectionPool<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-{
+impl<C: Codec> fmt::Debug for ConnectionPool<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("ConnectionPool")
             .field("host_set", &self.host_set)
@@ -38,11 +34,7 @@ where
     }
 }
 
-impl<C: 'static> ConnectionPool<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-    <C as Decoder>::Error: std::fmt::Debug + Send,
-{
+impl<C: Codec + 'static> ConnectionPool<C> {
     pub fn new(hosts: Vec<String>, codec: C) -> Self {
         ConnectionPool {
             host_set: Arc::new(Mutex::new(HashSet::from_iter(hosts.into_iter()))),
@@ -121,17 +113,13 @@ where
     }
 }
 
-async fn tx_process<C>(
+async fn tx_process<C: CodecWriteHalf>(
     write: OwnedWriteHalf,
     out_rx: UnboundedReceiver<Request>,
     return_tx: UnboundedSender<Request>,
     codec: C,
-) -> Result<()>
-where
-    C: Encoder<Messages, Error = anyhow::Error> + Clone + Send + 'static,
-{
-    let codec = codec.clone();
-    let in_w = FramedWrite::new(write, codec);
+) -> Result<()> {
+    let in_w = FramedWrite::new(write, codec.clone());
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
         let ret = Ok(Messages {
             messages: vec![x.messages.clone()],
@@ -143,17 +131,12 @@ where
     Ok(())
 }
 
-async fn rx_process<C>(
+async fn rx_process<C: CodecReadHalf>(
     read: OwnedReadHalf,
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,
-) -> Result<()>
-where
-    C: Decoder<Item = Messages> + Clone + Send + 'static,
-    <C as Decoder>::Error: std::fmt::Debug + Send,
-{
-    let codec = codec.clone();
-    let mut in_r = FramedRead::new(read, codec);
+) -> Result<()> {
+    let mut in_r = FramedRead::new(read, codec.clone());
 
     while let Some(maybe_req) = in_r.next().await {
         match maybe_req {

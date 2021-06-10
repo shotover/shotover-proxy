@@ -1,8 +1,11 @@
 // use crate::message::{Message, Messages};
 // use crate::protocols::RawFrame;
-use crate::util::{Request, Response};
+// use crate::protocols::RawFrame;
 use crate::RawFrame;
+use crate::{Codec, CodecReadHalf, CodecWriteHalf};
 use crate::{Message, Messages};
+
+use crate::util::{Request, Response};
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use halfbrown::HashMap;
@@ -12,24 +15,18 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
+use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::info;
 
 #[derive(Clone)]
-pub struct OwnedUnorderedConnectionPool<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-{
+pub struct OwnedUnorderedConnectionPool<C: Codec> {
     host: String,
     pub connections: Vec<UnboundedSender<Request>>,
     codec: C,
     auth_func: fn(&OwnedUnorderedConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
 }
 
-impl<C> fmt::Debug for OwnedUnorderedConnectionPool<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-{
+impl<C: Codec> fmt::Debug for OwnedUnorderedConnectionPool<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("ConnectionPool")
             .field("host_set", &self.host)
@@ -38,11 +35,7 @@ where
     }
 }
 
-impl<C: 'static> OwnedUnorderedConnectionPool<C>
-where
-    C: Decoder<Item = Messages> + Encoder<Messages, Error = anyhow::Error> + Clone + Send,
-    <C as Decoder>::Error: std::fmt::Debug + Send,
-{
+impl<C: Codec + 'static> OwnedUnorderedConnectionPool<C> {
     pub fn new(host: String, codec: C) -> Self {
         OwnedUnorderedConnectionPool {
             host,
@@ -68,10 +61,7 @@ where
         }
     }
 
-    pub async fn connect(&mut self, connection_count: i32) -> Result<()>
-    where
-        <C as Decoder>::Error: std::marker::Send,
-    {
+    pub async fn connect(&mut self, connection_count: i32) -> Result<()> {
         let mut connection_pool: Vec<UnboundedSender<Request>> = Vec::new();
 
         for _i in 0..connection_count {
@@ -103,15 +93,12 @@ where
     }
 }
 
-async fn tx_process<C>(
+async fn tx_process<C: CodecWriteHalf>(
     write: OwnedWriteHalf,
     out_rx: UnboundedReceiver<Request>,
     return_tx: UnboundedSender<Request>,
     codec: C,
-) -> Result<()>
-where
-    C: Encoder<Messages, Error = anyhow::Error> + Clone + Send + 'static,
-{
+) -> Result<()> {
     let codec = codec.clone();
     let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
@@ -125,15 +112,11 @@ where
     Ok(())
 }
 
-async fn rx_process<C>(
+async fn rx_process<C: CodecReadHalf>(
     read: OwnedReadHalf,
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,
-) -> Result<()>
-where
-    C: Decoder<Item = Messages> + Clone + Send + 'static,
-    <C as Decoder>::Error: std::fmt::Debug + Send,
-{
+) -> Result<()> {
     let codec = codec.clone();
     let mut in_r = FramedRead::new(read, codec);
     let mut return_channel_map: HashMap<u16, (tokio::sync::oneshot::Sender<Response>, Message)> =
@@ -154,7 +137,7 @@ where
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
-                            if let RawFrame::CASSANDRA(frame) = &m.original {
+                            if let RawFrame::Cassandra(frame) = &m.original {
                                 match return_channel_map.remove(&frame.stream) {
                                     None => {
                                         return_message_map.insert(frame.stream, m);

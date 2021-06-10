@@ -1,4 +1,3 @@
-// use crate::::packet_parse::{PacketHeader, PacketParse, ParsedPacket};
 use crate::codec::util::packet_parse::{PacketHeader, PacketParse, ParsedPacket};
 
 use anyhow::{anyhow, Result};
@@ -137,7 +136,9 @@ impl PacketCapture {
         save_file_path: Option<&str>,
         filter: Option<String>,
     ) -> Result<Vec<Result<ParsedPacket, String>>> {
-        let pool = ThreadPool::new(num_cpus::get() * 2);
+        // TODO: Fix flakiness from out-of-order futures.
+        // let pool = ThreadPool::new(num_cpus::get() * 2);
+        let pool = ThreadPool::new(1);
         match Capture::from_file(file_name) {
             Ok(mut cap_handle) => {
                 let packets = Arc::new(Mutex::new(Vec::new()));
