@@ -1,11 +1,8 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use futures::StreamExt;
 use metrics::gauge;
-use shotover_transforms::build_chain_from_config;
-use shotover_transforms::chain::TransformChain;
-use shotover_transforms::Wrapper;
-use shotover_transforms::{Messages, TopicHolder};
-use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::time;
@@ -16,17 +13,10 @@ use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace, warn};
 
-// TODO: Replace with trait_alias (RFC#1733).
-pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
-impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecReadHalf for T {}
-
-// TODO: Replace with trait_alias (RFC#1733).
-pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
-impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
-
-// TODO: Replace with trait_alias (RFC#1733).
-pub trait Codec: CodecReadHalf + CodecWriteHalf {}
-impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
+use shotover_transforms::chain::TransformChain;
+use shotover_transforms::Wrapper;
+use shotover_transforms::{build_chain_from_config, Codec};
+use shotover_transforms::{Messages, TopicHolder};
 
 pub struct TcpCodecListener<C: Codec> {
     /// Shared database handle.

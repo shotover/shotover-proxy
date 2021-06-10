@@ -516,6 +516,6 @@ pub fn build_response_message(frame: Frame, matching_query: Option<QueryMessage>
             response_meta: None,
         },
         false,
-        RawFrame::CASSANDRA(frame),
+        RawFrame::Cassandra(frame),
     )
 }

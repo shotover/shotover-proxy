@@ -72,7 +72,7 @@ impl CassandraCodec2 {
 
     pub fn process_cassandra_frame(&self, frame: Frame) -> Messages {
         if self.bypass {
-            return Messages::new_single_bypass(RawFrame::CASSANDRA(frame));
+            return Messages::new_single_bypass(RawFrame::Cassandra(frame));
         }
 
         match frame.opcode {
@@ -87,7 +87,7 @@ impl CassandraCodec2 {
                         if parsed_string.ast.is_none() {
                             // TODO: Currently this will probably catch schema changes that don't match
                             // what the SQL parser expects
-                            return Messages::new_single_bypass(RawFrame::CASSANDRA(frame));
+                            return Messages::new_single_bypass(RawFrame::Cassandra(frame));
                         }
                         return Messages::new_single_query(
                             QueryMessage {
@@ -100,11 +100,11 @@ impl CassandraCodec2 {
                                 ast: parsed_string.ast.map(ASTHolder::SQL),
                             },
                             false,
-                            RawFrame::CASSANDRA(frame),
+                            RawFrame::Cassandra(frame),
                         );
                     }
                 }
-                Messages::new_single_bypass(RawFrame::CASSANDRA(frame))
+                Messages::new_single_bypass(RawFrame::Cassandra(frame))
             }
             Opcode::Result => build_response_message(frame, None),
             Opcode::Error => {
@@ -118,13 +118,13 @@ impl CassandraCodec2 {
                                 response_meta: None,
                             },
                             false,
-                            RawFrame::CASSANDRA(frame),
+                            RawFrame::Cassandra(frame),
                         );
                     }
                 }
-                Messages::new_single_bypass(RawFrame::CASSANDRA(frame))
+                Messages::new_single_bypass(RawFrame::Cassandra(frame))
             }
-            _ => Messages::new_single_bypass(RawFrame::CASSANDRA(frame)),
+            _ => Messages::new_single_bypass(RawFrame::Cassandra(frame)),
         }
     }
 }
@@ -144,7 +144,7 @@ impl Decoder for CassandraCodec2 {
 }
 
 fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
-    if let RawFrame::CASSANDRA(frame) = rf {
+    if let RawFrame::Cassandra(frame) = rf {
         Ok(frame)
     } else {
         warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
