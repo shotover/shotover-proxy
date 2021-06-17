@@ -50,11 +50,6 @@ jobs:
       run: sccache --start-server
     - name: Configure sscache
       run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
-    - name: Sync S3 test files
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      run: mkdir -p test_tmp && aws s3 sync s3://shotover-test-captures ./test_tmp
     - name: Benchmark
       run: cargo bench --message-format json | tee output.txt
     - name: Store benchmark result
