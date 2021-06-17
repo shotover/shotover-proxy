@@ -29,6 +29,8 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
+    - name: Install libpacap
+      run: sudo apt-get install -y gnuplot
     - name: Install latest stable
       uses: actions-rs/toolchain@v1
       with:
@@ -51,7 +53,7 @@ jobs:
     - name: Configure sscache
       run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
     - name: Benchmark
-      run: cargo bench --message-format json | tee output.txt
+      run:  cargo bench --bench redis_benches -- --output-format bencher --noplot | tee output.txt
     - name: Store benchmark result
       uses: rhysd/github-action-benchmark@v1
       with:
