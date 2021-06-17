@@ -53,6 +53,7 @@ impl ChannelMessage {
     }
 }
 
+#[derive(Default)]
 pub struct TopicHolder {
     pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
     pub topics_tx: HashMap<String, Sender<ChannelMessage>>,

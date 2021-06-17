@@ -79,7 +79,7 @@ rusoto_kms = "0.46.0"
 rusoto_signature = "0.46.0"
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = { version = "0.3", features = ["async_tokio"] }
 #proptest = "0.10.0"
 lazy_static = "1.4.0"
 ctrlc = "3.1.6"
@@ -95,8 +95,6 @@ threadpool = "1.0"
 num_cpus = "1.0"
 anyhow = "1.0.38"
 
-
-
 [[bench]]
 name = "redis_benches"
 harness = false
@@ -105,7 +103,10 @@ harness = false
 [profile.release]
 lto = "fat"
 codegen-units = 1
-debug = true
+
+[profile.bench]
+lto = "fat"
+codegen-units = 1
 
 # Patches
 [patch.crates-io]

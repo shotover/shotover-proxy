@@ -97,11 +97,10 @@ fn redis_active_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config).unwrap();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
 
@@ -160,11 +159,10 @@ fn redis_cluster_bench(c: &mut Criterion) {
         .with_max_level(Level::INFO)
         .try_init();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
 
@@ -215,11 +213,10 @@ fn redis_passthrough_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
     load_docker_compose(compose_config).unwrap();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
 
