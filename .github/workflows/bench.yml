@@ -19,6 +19,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: |
+          ./cache
           ~/.cargo/registry
           ~/.cargo/git
           target
@@ -59,6 +60,9 @@ jobs:
       with:
         tool: 'cargo'
         output-file-path: output.txt
+        external-data-json-path: ./cache/benchmark-data.json
+        comment-on-alert: true
+        github-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Cleanup docker
       run: ./tests/scripts/teardown.sh
       if: ${{ always() }}
