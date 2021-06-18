@@ -97,16 +97,15 @@ fn redis_active_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
     load_docker_compose(compose_config).unwrap();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
 
     let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::ERROR)
         .try_init();
 
     let _jh: _ = rt.spawn(async move {
@@ -143,7 +142,7 @@ fn redis_active_bench(c: &mut Criterion) {
     }
     redis::cmd("FLUSHDB").execute(&mut con);
 
-    c.bench_function("redis_speed", move |b| {
+    c.bench_function("redis_multi_speed", move |b| {
         b.iter(|| {
             redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
         })
@@ -157,14 +156,13 @@ fn redis_cluster_bench(c: &mut Criterion) {
     load_docker_compose(compose_config).unwrap();
 
     let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::ERROR)
         .try_init();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
 
@@ -202,7 +200,7 @@ fn redis_cluster_bench(c: &mut Criterion) {
     }
     redis::cmd("FLUSHDB").execute(&mut con);
 
-    c.bench_function("redis_speed", move |b| {
+    c.bench_function("redis_cluster_speed", move |b| {
         b.iter(|| {
             redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
         })
@@ -215,16 +213,15 @@ fn redis_passthrough_bench(c: &mut Criterion) {
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
     load_docker_compose(compose_config).unwrap();
 
-    let rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
-        .threaded_scheduler()
-        .core_threads(4)
+        .worker_threads(4)
         .build()
         .unwrap();
 
     let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::ERROR)
         .try_init();
 
     let _jh: _ = rt.spawn(async move {
@@ -261,7 +258,7 @@ fn redis_passthrough_bench(c: &mut Criterion) {
     }
     redis::cmd("FLUSHDB").execute(&mut con);
 
-    c.bench_function("redis_speed", move |b| {
+    c.bench_function("redis_passthrough_speed", move |b| {
         b.iter(|| {
             redis::cmd("SET").arg("foo").arg(42).execute(&mut con);
         })

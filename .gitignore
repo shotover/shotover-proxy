@@ -11,3 +11,4 @@ tests/soaktest-*
 .vscode/launch.json
 .workspace.code-workspace
 /test_tmp
+output.txt

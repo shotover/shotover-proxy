@@ -41,7 +41,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 }
 
 fn lua_benchmark(c: &mut Criterion) {
-    let t_holder = TopicHolder::get_test_holder();
+    let t_holder = TopicHolder::default();
 
     let lua_t = LuaConfig {
         function_def: "".to_string(),

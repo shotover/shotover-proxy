@@ -96,8 +96,7 @@ impl Debug for Transforms {
     }
 }
 
-#[async_trait]
-impl Transform for Transforms {
+impl Transforms {
     async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
         match self {
             Transforms::CodecDestination(c) => c.transform(qd).await,
@@ -255,7 +254,7 @@ pub struct Wrapper<'a> {
     // pub next_transform: usize,
     transforms: Vec<&'a mut Transforms>,
     pub client_details: String,
-    chain_name: String
+    chain_name: String,
 }
 
 impl<'a> Clone for Wrapper<'a> {
@@ -264,7 +263,7 @@ impl<'a> Clone for Wrapper<'a> {
             message: self.message.clone(),
             transforms: vec![],
             client_details: self.client_details.clone(),
-            chain_name: self.chain_name.clone()
+            chain_name: self.chain_name.clone(),
         }
     }
 }

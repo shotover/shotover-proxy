@@ -22,6 +22,7 @@ fn try_register_cleanup() {
 }
 
 fn test_args() {
+    info!("test_args");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -35,6 +36,7 @@ fn test_args() {
 }
 
 fn test_getset() {
+    info!("test_getset");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -51,6 +53,7 @@ fn test_getset() {
 }
 
 fn test_incr() {
+    info!("test_incr");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -59,6 +62,7 @@ fn test_incr() {
 }
 
 fn test_info() {
+    info!("test_info");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -74,6 +78,7 @@ fn test_info() {
 }
 
 fn test_hash_ops() {
+    info!("test_hash_ops");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -100,6 +105,7 @@ fn test_hash_ops() {
 }
 
 fn test_set_ops() {
+    info!("test_set_ops");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -126,6 +132,7 @@ fn test_set_ops() {
 }
 
 fn test_scan() {
+    info!("test_scan");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -145,6 +152,7 @@ fn test_scan() {
 }
 
 fn test_optionals() {
+    info!("test_optionals");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -166,6 +174,7 @@ fn test_optionals() {
 }
 
 fn test_scanning() {
+    info!("test_scanning");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
     let mut unseen = HashSet::new();
@@ -198,6 +207,7 @@ fn test_scanning() {
 }
 
 fn test_filtered_scanning() {
+    info!("test_filtered_scanning");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
     let mut unseen = HashSet::new();
@@ -223,6 +233,7 @@ fn test_filtered_scanning() {
 }
 
 fn test_pipeline_error() {
+    info!("test_pipeline_error");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -268,6 +279,7 @@ fn test_pipeline_error() {
 }
 
 fn test_pipeline() {
+    info!("test_pipeline");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -290,6 +302,7 @@ fn test_pipeline() {
 }
 
 fn test_empty_pipeline() {
+    info!("test_empty_pipeline");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -299,6 +312,7 @@ fn test_empty_pipeline() {
 }
 
 fn test_pipeline_transaction() {
+    info!("test_pipeline_transaction");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -322,6 +336,7 @@ fn test_pipeline_transaction() {
 }
 
 fn test_pipeline_reuse_query() {
+    info!("test_pipeline_reuse_query");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -359,6 +374,7 @@ fn test_pipeline_reuse_query() {
 }
 
 fn test_pipeline_reuse_query_clear() {
+    info!("test_pipeline_reuse_query_clear");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -396,6 +412,7 @@ fn test_pipeline_reuse_query_clear() {
 }
 
 fn test_real_transaction() {
+    info!("test_real_transaction");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -429,6 +446,7 @@ fn test_real_transaction() {
 }
 
 fn test_real_transaction_highlevel() {
+    info!("test_real_transaction_highlevel");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -451,6 +469,7 @@ fn test_real_transaction_highlevel() {
 }
 
 fn test_script() {
+    info!("test_script");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -471,6 +490,7 @@ fn test_script() {
 }
 
 fn test_tuple_args() {
+    info!("test_tuple_args");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -496,6 +516,7 @@ fn test_tuple_args() {
 }
 
 fn test_nice_api() {
+    info!("test_nice_api");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -518,6 +539,7 @@ fn test_nice_api() {
 }
 
 fn test_auto_m_versions() {
+    info!("test_auto_m_versions");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -526,6 +548,7 @@ fn test_auto_m_versions() {
 }
 
 fn test_nice_hash_api() {
+    info!("test_nice_hash_api");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -578,6 +601,7 @@ fn test_nice_hash_api() {
 }
 
 fn test_nice_list_api() {
+    info!("test_nice_list_api");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -595,6 +619,7 @@ fn test_nice_list_api() {
 }
 
 fn test_tuple_decoding_regression() {
+    info!("test_tuple_decoding_regression");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -612,6 +637,7 @@ fn test_tuple_decoding_regression() {
 }
 
 fn test_bit_operations() {
+    info!("test_bit_operations");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -620,6 +646,7 @@ fn test_bit_operations() {
 }
 
 fn test_cluster_basics() {
+    info!("test_cluster_basics");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -640,6 +667,7 @@ fn test_cluster_basics() {
 }
 
 fn test_cluster_eval() {
+    info!("test_cluster_eval");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -661,6 +689,7 @@ fn test_cluster_eval() {
 
 #[allow(dead_code)]
 fn test_cluster_script() {
+    info!("test_cluster_script");
     let ctx = TestContext::new();
     let mut con = ctx.connection();
 
@@ -810,6 +839,7 @@ fn test_pass_redis_cluster_one() -> Result<()> {
 // TODO Re-enable Redis Auth support
 // #[test]
 fn test_cluster_auth_redis() -> Result<()> {
+    info!("test_cluster_auth_redis");
     try_register_cleanup();
     let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();
     load_docker_compose(compose_config)?;
@@ -936,6 +966,8 @@ fn test_cluster_all_script_redis() -> Result<()> {
 
 #[test]
 fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
+    info!("test_cluster_all_pipeline_safe_redis");
+
     try_register_cleanup();
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
 
@@ -973,6 +1005,7 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
     test_cluster_script();
 
     //do this a few times to be sure we are not hitting a single master
+    info!("key string formating");
     for i in 0..2000 {
         // make sure there are no overlaps etc
         let key1 = format!("key{}", i);
@@ -999,6 +1032,7 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
         assert_eq!(k2, 43);
     }
 
+    info!("pipelining in cluster mode");
     for _ in 0..200 {
         let mut pipe = redis::pipe();
         for i in 0..1000 {
