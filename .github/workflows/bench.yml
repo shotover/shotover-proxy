@@ -8,7 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: sccache
   RUST_BACKTRACE: 1
 
 jobs:
@@ -24,12 +23,6 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
     - name: Install libpacap
       run: sudo apt-get install -y gnuplot
     - name: Install latest stable
@@ -37,22 +30,6 @@ jobs:
       with:
           toolchain: stable
           override: true
-    - name: Install sccache
-      env:
-        LINK: https://github.com/mozilla/sccache/releases/download
-        SCCACHE_VERSION: 0.2.12
-      run: |
-        curl -L "$LINK/$SCCACHE_VERSION/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl.tar.gz" | tar xz
-        echo "$PWD/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl/" >> $GITHUB_PATH
-    - name: Start sccache
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        SCCACHE_BUCKET: shotover-build-caches
-        SCCACHE_IDLE_TIMEOUT: 0
-      run: sccache --start-server
-    - name: Configure sscache
-      run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
     - name: Benchmark
       run:  cargo bench --bench redis_benches -- --output-format bencher --noplot | tee output.txt
     - name: Store benchmark result
