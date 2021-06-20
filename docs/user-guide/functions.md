@@ -1,4 +1,6 @@
 # Functions
+
+### WARNING - FUNCTION SUPPORT IS LARGELY BROKEN AT THE MOMENT
 Functions in shotover can be defined or used where ever a transform expects a ScriptConfigurator
 object. A ScriptConfigurator provides shotover with enough information to call and run your scripts.
 Currently shotover supports two ways of running user defined code.
