@@ -65,18 +65,15 @@ Shotover compiles down to a single binary and just takes a single yaml file and 
 When running a small topology (5 - 10 transforms, 1 or 2 sources, 200 or so TCP connections) memory consumptions is rather 
 small with a rough working set size between 10 - 20mb. 
 
-Currently benchmarking is limited but we see around 25k req/s inbound routed to an outbound 75k req/s max out a single logical core.
+Currently benchmarking is limited, but we see around 100k req/s per single logical core for a 1:1 request model.
 However due to the way Shotover is implemented, it will largely go as fast as your upstream datastore can go. Each tcp connection
 is driven by a single tokio thread and by default Shotover will use 4 to 8 OS threads for the bulk of it's work (this is user configurable). 
 Occasionally it will spawn additional OS threads for long running non-async code. These are practically unbounded (as defined by Tokio) but use is rare.
 
-Individual Transforms can also dramatically impact performance as well. For example, the current redis-cluster transform implementation 
-performs blocking synchronous socket operations that can will block the entire OS thread and prevent tokio from doing its thing. This
-can slow down shotover proxy significantly while increasing CPU utilisation, e.g. 60k operations per second while maxing two cores.
+Individual Transforms can also dramatically impact performance as well. 
 
-Shotover will not try to pipeline, aggregate or batch requests (though feel free to write a Transform to do so!!) unless 
-it is explicitly built into the source protocol (e.g. RESP2 supports cmd pipelining). This means single connection performance
-will not be as good as some other proxy implementations, we simply just do one request at a time. Most client drivers support
+Shotover will not try to explicitly pipeline, aggregate or batch requests (though feel free to write a Transform to do so!!) unless 
+it is built into the source protocol (e.g. RESP2 supports cmd pipelining) or via a Transform. Most client drivers support
 connection pooling and multiple connections, so feel free to ramp up the number of outbound sockets to get the best throughput.
 Shotover will happily work with 100's or 1000's of connections due to its threading model.
 

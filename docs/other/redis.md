@@ -1,4 +1,6 @@
 # Redis Benchmarking
+
+## TODO these are wildly out of date
 For redis cluster mode support, shotover performs the following throughput:
 ```
 Set - redis proxy:                      146,690.95/s

@@ -130,48 +130,49 @@ query onto caching layer that will try to resolve the query from a redis cache b
 the destination Cassandra cluster via a `CodecDestination`
 * `KafkaDestination` - A single transform chain that will serialise and forward any queries to a given Kafka topic.
 
+
 ```yaml
-# Chain configuration section
+# This example will replicate all commands to the DR datacenter on a best effort basis
+---
 chain_config:
-
-  # The name of the first chain
-  my_redis_chain:
-
-    # The first transform in the chain, this case, its the MPSCTee
+ # The name of the first chain  
+  redis_chain:
+   # The first transform in the chain, this case, its the MPSCTee
     - MPSCTee:
-        #Configuration for the transform goes here, in this case its the topic to listen on
-        topic_name: testtopic
-
-    # The second and final transform for this chain. It will send requests on to the redis server
-    # at the remote address
-    - RedisDestination:
-        remote_address: "127.0.0.1:6378"
-
-  # The second chain, containing three transforms
-  my_main_chain:
-    - MPSCTee:
-        topic_name: testtopic
-    - RedisCache:
-        config_values: "redis://127.0.0.1/"
-    - CodecDestination:
-        remote_address: "127.0.0.1:9043"
-
-  # The third chain
-  my_async_chain:
-    - KafkaDestination:
-        config_values:
-          bootstrap.servers: "127.0.0.1:9092"
-          message.timeout.ms: "5000"
+        behavior: IGNORE
+#       The buffer of messages that Tee will accumulate before passing to the child, other values include a timeout
+        buffer_size: 10000
+        #The child chain, that Tee will asynchronously pass requests to
+        chain:
+          - QueryTypeFilter:
+              filter: Read
+          - Coalesce:
+              max_behavior:
+                COUNT: 2000
+          - MPSCForwarder:
+              buffer_size: 100
+              async_mode: true
+              timeout_micros: 10000
+              chain:
+                - QueryCounter:
+                    name: "DR chain"
+                - RedisCluster:
+                    first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
+    #The rest of the chain, these transforms are blocking
+    - QueryCounter:
+        name: "Main chain"
+    - RedisCluster:
+        first_contact_points: [ "127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225" ]
 ```
 
 ### `named_topics` Named Topics
 The `named_topics` top level resource is a list of topics. Each topic is backed by a Rust multi-producer, single consumer
-channel. 
+channel. Some transforms will use these global list of topics to pass messages outside of the normal chain flow. No transforms
+currently leverage this capability to any large degree. 
 
-The value provided is a usize which defines the size of the channel, default 5.
+The value provided is an usize which defines the size of the channel, default 5.
 
-The below example creates a single topic, called `testtopic`. In the example [above](#chain_config-chain-configuration) for `chain_config`, both
-the `my_redis_chain` and the `my_main_chain` transform chains would push queries into this topic.
+The below example creates a single topic, called `testtopic`.
 
 ```yaml
 named_topics:
@@ -186,15 +187,14 @@ The below snippet would complete our entire example:
 
 ```yaml
 source_to_chain_mapping:
-  cassandra_prod: my_main_chain
-  redis_prod: my_redis_chain
-  mpsc_chan: my_async_chain
+ redis_prod: redis_chain
 ```
 
 This mapping would effectively create a solution that:
 
-* All Redis and Cassandra queries get logged to an external kafka cluster. This could be to meet audit or compliance requirements
-or even just as the start of an event bus or CQRS based architecture.
-* Cassandra queries will be cached and looked up in Redis, before being persisted to the Cassandra cluster. 
+* All redis requests are first batched and then sent to a remote redis cluster in another region. This happens asynchronously and if the remote
+  redis cluster is unavailable it will not block operations to the current cluster. 
+* Subsequently, all redis actions get identified based on command type, counted and provided as a set of metrics.
+* The redis request is then transform into a cluster aware request and routed to the correct node
 
-The entire example configuration can be found [here](/cass-redis-kafka/config.yaml).
+The entire example configuration can be found [here](/examples/redis-cluster-dr/config.yaml).

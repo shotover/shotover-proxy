@@ -1,4 +1,8 @@
 ## Benchmarking
+
+### TODO THESE ARE OUT OF DATE
+_Might be worth generating these from the CI bench runs??_
+
 Currently shotover-proxy carries a 27% overhead on pure throughput in bypass mode (no query enrichment).
 Not surprising as we are still copying a lot of bytes around and its quite hard to just pass a shared buffer around.
 shotover-proxy is a message based proxy, so we still process the C* frame and do stuff with it (e.g. create native rust types

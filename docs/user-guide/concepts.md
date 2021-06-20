@@ -19,17 +19,35 @@ representation.
  
 ## Transform
 Transforms a where the bulk of shotover does its work. A transform is a struct that implements the `Transform` trait. The trait
-has one function where you implement the majority of your logic:
+has one function where you implement the majority of your logic (transfrom), however it also includes a setup and naming method:
 
 ```rust
-async fn transform(&self, mut qd: Wrapper, t: &TransformChain) -> ChainResponse;
+#[async_trait]
+pub trait Transform: Send {
+ async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
+
+ fn get_name(&self) -> &'static str;
+
+ async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
+  Ok(())
+ }
+}
 ``` 
 - Wrapper (qd) contains the Query/Message you want to operate on. 
 - The transform chain (t) is the ordered list of transforms operating on message. 
 
 To call the downstream transform, simply call: 
 ```rust
-self.call_next_transform(qd, t).await;
+#[async_trait]
+impl Transform for NoOp {
+ async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+  qd.call_next_transform().await
+ }
+
+ fn get_name(&self) -> &'static str {
+  self.name
+ }
+}
 ```
 This will return a ChainResponse which will include the upstream databases reponse. This means
 your transform can operate on both queries and responses. Once your transform is done handling the request and response, it will return 
@@ -39,6 +57,8 @@ passing control to the upstream transform.
 A transform chain is a ordered list of transforms that a message will pass through. Transform chains can be of arbitary complexity 
 and a transform can even have its own set of child transform chains. Transform chains are defined by the user in shotovers
 configuration file and are linked to sources. 
+
+The transform chain is a vector of mutable references to the enum Transforms (which is an enum dispatch wrapper around the various transform types).
  
  ## Topology
  A topology is the final constructed set of transforms, transformchains and sources in their final state, ready to receive messages.
@@ -50,7 +70,7 @@ to a map of multi-producer, single consumer channels. The transform can only acc
 clone and share it as it sees fit. 
 A special source type called an MPSC source gets access to receiver side of the channel. This source can have a transform chain attached to it
 like any other source. This allows for complex routing and asynchonous passing of messages between trnasform chains in a topology.
-See [the cassandra and kafka example](../../examples/cass-redis-kafka) as an example.
+See [the cassandra and kafka example](/examples/cass-redis-kafka) as an example.
 
 Generally if you want to build blocking behaviour in your chain, you will use transforms that have child transform chains.
 For non-blocking behaviour (e.g. copying a query to a kafka queue while sending it the upstream service) use topic based transforms.
