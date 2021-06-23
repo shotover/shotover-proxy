@@ -15,7 +15,7 @@ pub struct ReturnerTransform {
 
 #[async_trait]
 impl Transform for ReturnerTransform {
-    async fn transform<'a>(&'a mut self, _qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.ok {
             Ok(self.message.clone())
         } else {
@@ -36,7 +36,7 @@ pub struct RandomDelayTransform {
 
 #[async_trait]
 impl Transform for RandomDelayTransform {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let delay;
         if let Some(dist) = self.distribution {
             delay = Duration::from_millis(dist.sample(&mut rand::thread_rng()) as u64 + self.delay);
@@ -44,7 +44,7 @@ impl Transform for RandomDelayTransform {
             delay = Duration::from_millis(self.delay);
         }
         tokio::time::sleep(delay).await;
-        qd.call_next_transform().await
+        message_wrapper.call_next_transform().await
     }
 
     fn get_name(&self) -> &'static str {

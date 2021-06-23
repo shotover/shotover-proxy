@@ -488,7 +488,7 @@ fn short_circuit(chain_name: &str, one_tx: tokio::sync::oneshot::Sender<Response
 
 #[async_trait]
 impl Transform for RedisCluster {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_slots {
             self.rebuild_slot_map().await?;
             self.rebuild_slots = false;
@@ -501,14 +501,14 @@ impl Transform for RedisCluster {
                 >,
             >,
         > = FuturesOrdered::new();
-        // let message = qd.message.messages.pop().unwrap();
-        for message in qd.message {
+        // let message = message_wrapper.message.messages.pop().unwrap();
+        for message in message_wrapper.message {
             let sender = self.get_channels(&message.original).await;
 
             responses.push(match sender.len() {
                 0 => {
                     let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                    short_circuit(qd.chain_name.as_str(), one_tx);
+                    short_circuit(message_wrapper.chain_name.as_str(), one_tx);
                     Box::pin(one_rx.map_err(|e| {
                         anyhow!("0 Couldn't get short circtuited for no channels - {}", e)
                     }))
@@ -518,7 +518,7 @@ impl Transform for RedisCluster {
                         .choose_and_send(
                             sender.get(0).unwrap(),
                             message.clone(),
-                            qd.chain_name.as_str(),
+                            message_wrapper.chain_name.as_str(),
                         )
                         .await?;
                     Box::pin(one_rx.map_err(|e| anyhow!("1 {}", e)))
@@ -529,7 +529,11 @@ impl Transform for RedisCluster {
                     > = FuturesUnordered::new();
                     for chan in sender {
                         let one_rx = self
-                            .choose_and_send(&chan, message.clone(), qd.chain_name.as_str())
+                            .choose_and_send(
+                                &chan,
+                                message.clone(),
+                                message_wrapper.chain_name.as_str(),
+                            )
                             .await?;
                         futures.push(one_rx);
                     }
@@ -599,7 +603,7 @@ impl Transform for RedisCluster {
                         .choose_and_send(
                             &format!("{}:{}", &host, port),
                             original.clone(),
-                            qd.chain_name.as_str(),
+                            message_wrapper.chain_name.as_str(),
                         )
                         .await?;
 
@@ -614,7 +618,7 @@ impl Transform for RedisCluster {
                         .choose_and_send(
                             &format!("{}:{}", &host, port),
                             original.clone(),
-                            qd.chain_name.as_str(),
+                            message_wrapper.chain_name.as_str(),
                         )
                         .await?;
 

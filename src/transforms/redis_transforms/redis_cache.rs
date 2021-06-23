@@ -343,10 +343,10 @@ fn build_redis_ast_from_sql(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut updates = 0_i32;
         {
-            for m in &mut qd.message.messages {
+            for m in &mut message_wrapper.message.messages {
                 if let RawFrame::Cassandra(Frame {
                     version: _,
                     flags: _,
@@ -368,14 +368,17 @@ impl Transform for SimpleRedisCache {
         }
 
         return if updates == 0 {
-            match self.get_or_update_from_cache(qd.message.clone()).await {
+            match self
+                .get_or_update_from_cache(message_wrapper.message.clone())
+                .await
+            {
                 Ok(cr) => Ok(cr),
-                Err(_e) => qd.call_next_transform().await,
+                Err(_e) => message_wrapper.call_next_transform().await,
             }
         } else {
             let (_cache_res, upstream) = tokio::join!(
-                self.get_or_update_from_cache(qd.message.clone()),
-                qd.call_next_transform()
+                self.get_or_update_from_cache(message_wrapper.message.clone()),
+                message_wrapper.call_next_transform()
             );
             return upstream;
         };

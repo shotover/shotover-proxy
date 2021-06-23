@@ -97,30 +97,30 @@ impl Debug for Transforms {
 }
 
 impl Transforms {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CodecDestination(c) => c.transform(qd).await,
-            Transforms::KafkaDestination(k) => k.transform(qd).await,
-            Transforms::RedisCache(r) => r.transform(qd).await,
-            Transforms::MPSCTee(m) => m.transform(qd).await,
-            Transforms::MPSCForwarder(m) => m.transform(qd).await,
-            Transforms::Route(r) => r.transform(qd).await,
-            Transforms::Scatter(s) => s.transform(qd).await,
-            Transforms::Printer(p) => p.transform(qd).await,
-            Transforms::Null(n) => n.transform(qd).await,
-            Transforms::Lua(l) => l.transform(qd).await,
-            Transforms::Protect(p) => p.transform(qd).await,
-            Transforms::RepeatMessage(p) => p.transform(qd).await,
-            Transforms::RandomDelay(p) => p.transform(qd).await,
-            Transforms::TunableConsistency(tc) => tc.transform(qd).await,
-            Transforms::RedisCodecDestination(r) => r.transform(qd).await,
-            Transforms::RedisTimeStampTagger(r) => r.transform(qd).await,
-            Transforms::RedisCluster(r) => r.transform(qd).await,
-            Transforms::ParallelMap(s) => s.transform(qd).await,
-            Transforms::PoolConnections(s) => s.transform(qd).await,
-            Transforms::Coalesce(s) => s.transform(qd).await,
-            Transforms::QueryTypeFilter(s) => s.transform(qd).await,
-            Transforms::QueryCounter(s) => s.transform(qd).await,
+            Transforms::CodecDestination(c) => c.transform(message_wrapper).await,
+            Transforms::KafkaDestination(k) => k.transform(message_wrapper).await,
+            Transforms::RedisCache(r) => r.transform(message_wrapper).await,
+            Transforms::MPSCTee(m) => m.transform(message_wrapper).await,
+            Transforms::MPSCForwarder(m) => m.transform(message_wrapper).await,
+            Transforms::Route(r) => r.transform(message_wrapper).await,
+            Transforms::Scatter(s) => s.transform(message_wrapper).await,
+            Transforms::Printer(p) => p.transform(message_wrapper).await,
+            Transforms::Null(n) => n.transform(message_wrapper).await,
+            Transforms::Lua(l) => l.transform(message_wrapper).await,
+            Transforms::Protect(p) => p.transform(message_wrapper).await,
+            Transforms::RepeatMessage(p) => p.transform(message_wrapper).await,
+            Transforms::RandomDelay(p) => p.transform(message_wrapper).await,
+            Transforms::TunableConsistency(tc) => tc.transform(message_wrapper).await,
+            Transforms::RedisCodecDestination(r) => r.transform(message_wrapper).await,
+            Transforms::RedisTimeStampTagger(r) => r.transform(message_wrapper).await,
+            Transforms::RedisCluster(r) => r.transform(message_wrapper).await,
+            Transforms::ParallelMap(s) => s.transform(message_wrapper).await,
+            Transforms::PoolConnections(s) => s.transform(message_wrapper).await,
+            Transforms::Coalesce(s) => s.transform(message_wrapper).await,
+            Transforms::QueryTypeFilter(s) => s.transform(message_wrapper).await,
+            Transforms::QueryCounter(s) => s.transform(message_wrapper).await,
         }
     }
 
@@ -344,7 +344,7 @@ struct ResponseData {
 
 #[async_trait]
 pub trait Transform: Send {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
     fn get_name(&self) -> &'static str;
 

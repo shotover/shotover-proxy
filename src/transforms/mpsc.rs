@@ -68,12 +68,12 @@ impl TransformsFromConfig for BufferConfig {
 
 #[async_trait]
 impl Transform for Buffer {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         return if self.async_mode {
-            let expected_responses = qd.message.messages.len();
+            let expected_responses = message_wrapper.message.messages.len();
             let buffer_result = self
                 .tx
-                .process_request_no_return(qd, "Buffer".to_string(), self.timeout)
+                .process_request_no_return(message_wrapper, "Buffer".to_string(), self.timeout)
                 .await;
 
             match buffer_result {
@@ -92,7 +92,7 @@ impl Transform for Buffer {
             })
         } else {
             self.tx
-                .process_request(qd, "Buffer".to_string(), self.timeout)
+                .process_request(message_wrapper, "Buffer".to_string(), self.timeout)
                 .await
         };
     }
@@ -157,14 +157,17 @@ impl TransformsFromConfig for TeeConfig {
 
 #[async_trait]
 impl Transform for Tee {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        // let m = qd.message.clone();
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        // let m = message_wrapper.message.clone();
         return match self.behavior {
             ConsistencyBehavior::IGNORE => {
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx
-                        .process_request_no_return(qd.clone(), "tee".to_string(), self.timeout),
-                    qd.call_next_transform()
+                    self.tx.process_request_no_return(
+                        message_wrapper.clone(),
+                        "tee".to_string(),
+                        self.timeout
+                    ),
+                    message_wrapper.call_next_transform()
                 );
                 match tee_result {
                     Ok(_) => {}
@@ -177,9 +180,12 @@ impl Transform for Tee {
             }
             ConsistencyBehavior::FAIL => {
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx
-                        .process_request(qd.clone(), "tee".to_string(), self.timeout),
-                    qd.call_next_transform()
+                    self.tx.process_request(
+                        message_wrapper.clone(),
+                        "tee".to_string(),
+                        self.timeout
+                    ),
+                    message_wrapper.call_next_transform()
                 );
                 let tee_response = tee_result?;
                 let chain_response = chain_result?;
@@ -198,11 +204,14 @@ impl Transform for Tee {
                 }
             }
             ConsistencyBehavior::LOG { .. } => {
-                let failed_message = qd.clone();
+                let failed_message = message_wrapper.clone();
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx
-                        .process_request(qd.clone(), "tee".to_string(), self.timeout),
-                    qd.call_next_transform()
+                    self.tx.process_request(
+                        message_wrapper.clone(),
+                        "tee".to_string(),
+                        self.timeout
+                    ),
+                    message_wrapper.call_next_transform()
                 );
 
                 let tee_response = tee_result?;
