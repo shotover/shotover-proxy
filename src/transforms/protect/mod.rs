@@ -160,8 +160,8 @@ impl TransformsFromConfig for ProtectConfig {
 
 #[async_trait]
 impl Transform for Protect {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        for message in qd.message.messages.iter_mut() {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        for message in message_wrapper.message.messages.iter_mut() {
             if let MessageDetails::Query(qm) = &mut message.details {
                 // Encrypt the writes
                 if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
@@ -189,8 +189,8 @@ impl Transform for Protect {
             }
         }
 
-        let mut original_messages = qd.message.messages.clone();
-        let mut result = qd.call_next_transform().await?;
+        let mut original_messages = message_wrapper.message.messages.clone();
+        let mut result = message_wrapper.call_next_transform().await?;
 
         for (response, request) in result.messages.iter_mut().zip(original_messages.iter_mut()) {
             if let MessageDetails::Response(QueryResponse {

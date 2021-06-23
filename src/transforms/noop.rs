@@ -21,8 +21,8 @@ impl Default for NoOp {
 
 #[async_trait]
 impl Transform for NoOp {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        qd.call_next_transform().await
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        message_wrapper.call_next_transform().await
     }
 
     fn get_name(&self) -> &'static str {

@@ -57,7 +57,7 @@ impl TransformsFromConfig for ScatterConfig {
 
 #[async_trait]
 impl Transform for Scatter {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let name = self.get_name().to_string();
 
         let routes: Vec<String> = self.route_map.keys().cloned().collect();
@@ -65,13 +65,13 @@ impl Transform for Scatter {
 
         let chosen_route = self
             .route_script
-            .call(rt.borrow(), (qd.message.clone(), routes))?
+            .call(rt.borrow(), (message_wrapper.message.clone(), routes))?
             .clone();
         if chosen_route.len() == 1 {
             self.route_map
                 .get_mut(chosen_route.get(0).unwrap().as_str())
                 .unwrap()
-                .process_request(qd, name)
+                .process_request(message_wrapper, name)
                 .await
         } else if chosen_route.is_empty() {
             ChainResponse::Err(anyhow!("no routes found"))
@@ -79,7 +79,7 @@ impl Transform for Scatter {
             let mut fu = FuturesUnordered::from_iter(self.route_map.iter_mut().filter_map(
                 |(name, chain)| {
                     if let Some(_f) = chosen_route.iter().find(|p| *p == name) {
-                        let wrapper = qd.clone();
+                        let wrapper = message_wrapper.clone();
                         Some(chain.process_request(wrapper, name.clone()))
                     } else {
                         None
@@ -92,7 +92,7 @@ impl Transform for Scatter {
                 results.push(messages);
             }
 
-            let collated_response: Vec<Message> = (0..qd.message.messages.len())
+            let collated_response: Vec<Message> = (0..message_wrapper.message.messages.len())
                 .into_iter()
                 .map(|_i| {
                     let mut collated_results = vec![];

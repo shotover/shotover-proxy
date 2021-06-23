@@ -126,8 +126,8 @@ impl TunableConsistency {}
 
 #[async_trait]
 impl Transform for TunableConsistency {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        let required_successes = qd
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        let required_successes = message_wrapper
             .message
             .messages
             .iter_mut()
@@ -169,7 +169,11 @@ impl Transform for TunableConsistency {
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
         for chain in self.route_map.iter_mut() {
-            rec_fu.push(chain.process_request(qd.clone(), "TunableConsistency".to_string(), None));
+            rec_fu.push(chain.process_request(
+                message_wrapper.clone(),
+                "TunableConsistency".to_string(),
+                None,
+            ));
         }
 
         let mut results: Vec<Messages> = Vec::new();
@@ -193,7 +197,7 @@ impl Transform for TunableConsistency {
 
         drop(rec_fu);
 
-        // info!("{:?}\n{:?}", qd, results);
+        // info!("{:?}\n{:?}", message_wrapper, results);
 
         if results.len()
             < *required_successes

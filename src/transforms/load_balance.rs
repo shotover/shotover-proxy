@@ -55,7 +55,7 @@ impl Clone for ConnectionBalanceAndPool {
 
 #[async_trait]
 impl Transform for ConnectionBalanceAndPool {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
@@ -72,7 +72,11 @@ impl Transform for ConnectionBalanceAndPool {
         }
         if let Some(chain) = &mut self.active_connection {
             return chain
-                .process_request(qd, "Connection Balance and Pooler".to_string(), None)
+                .process_request(
+                    message_wrapper,
+                    "Connection Balance and Pooler".to_string(),
+                    None,
+                )
                 .await;
         }
         unreachable!()

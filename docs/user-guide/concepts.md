@@ -24,7 +24,7 @@ has one function where you implement the majority of your logic (transfrom), how
 ```rust
 #[async_trait]
 pub trait Transform: Send {
- async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse;
+ async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
  fn get_name(&self) -> &'static str;
 
@@ -33,15 +33,15 @@ pub trait Transform: Send {
  }
 }
 ``` 
-- Wrapper (qd) contains the Query/Message you want to operate on. 
+- Wrapper (message_wrapper) contains the Query/Message you want to operate on. 
 - The transform chain (t) is the ordered list of transforms operating on message. 
 
 To call the downstream transform, simply call: 
 ```rust
 #[async_trait]
 impl Transform for NoOp {
- async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-  qd.call_next_transform().await
+ async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+  message_wrapper.call_next_transform().await
  }
 
  fn get_name(&self) -> &'static str {

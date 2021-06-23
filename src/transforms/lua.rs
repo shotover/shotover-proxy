@@ -53,20 +53,20 @@ impl TransformsFromConfig for LuaConfig {
 
 #[async_trait]
 impl Transform for LuaFilterTransform {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
-        qd.call_next_transform().await
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        message_wrapper.call_next_transform().await
         // let globals = self.slua.globals();
-        // let qm_v = mlua_serde::to_value(&self.slua, qd.message.clone()).unwrap();
+        // let qm_v = mlua_serde::to_value(&self.slua, message_wrapper.message.clone()).unwrap();
         //
-        // //Warning, QD's transform chain is empty after the creation of this scoped function
+        // //Warning, message_wrapper's transform chain is empty after the creation of this scoped function
         //
         // let result = self.slua.scope(|scope| {
         //     let spawn_func = scope.create_function_mut(
         //         |_lua: &Lua, _messages: Messages| -> mlua::Result<Messages> {
-        //             //Warning, QD's transform chain is empty after the creation of this scoped function
+        //             //Warning, message_wrapper's transform chain is empty after the creation of this scoped function
         //             let mut future = Wrapper::new(Messages::new());
-        //             std::mem::swap(&mut future.transforms, &mut qd.transforms);
-        //             std::mem::swap(&mut future.message, &mut qd.message);
+        //             std::mem::swap(&mut future.transforms, &mut message_wrapper.transforms);
+        //             std::mem::swap(&mut future.message, &mut message_wrapper.message);
         //             //hacky but I can't figure out how to do async_scope stuff safely in the current transformChain mess
         //             tokio::runtime::Handle::current().spawn(async {
         //                 let result = future.call_next_transform().await;

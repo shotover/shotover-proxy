@@ -70,9 +70,9 @@ impl Default for KafkaDestination {
 
 #[async_trait]
 impl Transform for KafkaDestination {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut responses: Vec<Message> = vec![];
-        for message in qd.message.messages {
+        for message in message_wrapper.message.messages {
             match message.details {
                 MessageDetails::Bypass(_) => {}
                 MessageDetails::Query(qm) => {

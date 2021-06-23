@@ -35,10 +35,10 @@ impl Null {
 
 #[async_trait]
 impl Transform for Null {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.with_request {
             return ChainResponse::Ok(Messages {
-                messages: qd
+                messages: message_wrapper
                     .message
                     .messages
                     .into_iter()

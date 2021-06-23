@@ -29,15 +29,15 @@ impl TransformsFromConfig for QueryTypeFilterConfig {
 
 #[async_trait]
 impl Transform for QueryTypeFilter {
-    async fn transform<'a>(&'a mut self, mut qd: Wrapper<'a>) -> ChainResponse {
-        qd.message.messages.retain(|m| {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        message_wrapper.message.messages.retain(|m| {
             if let MessageDetails::Query(qm) = &m.details {
                 qm.query_type != self.filter
             } else {
                 m.original.get_query_type() != self.filter
             }
         });
-        qd.call_next_transform().await
+        message_wrapper.call_next_transform().await
     }
 
     fn get_name(&self) -> &'static str {
@@ -87,11 +87,11 @@ mod test {
             })
             .collect();
 
-        let mut qd = Wrapper::new(Messages {
+        let mut message_wrapper = Wrapper::new(Messages {
             messages: messages.clone(),
         });
-        qd.transforms = vec![&mut null];
-        let result = coalesce.transform(qd).await?;
+        message_wrapper.transforms = vec![&mut null];
+        let result = coalesce.transform(message_wrapper).await?;
         assert_eq!(result.messages.len(), 13);
         let any = result.messages.iter().find(|m| {
             if let MessageDetails::Response(qr) = &m.details {

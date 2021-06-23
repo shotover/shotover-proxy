@@ -53,14 +53,14 @@ impl RedisCodecDestination {
 
 #[async_trait]
 impl Transform for RedisCodecDestination {
-    async fn transform<'a>(&'a mut self, qd: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self.outbound {
             None => {
                 let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
                 // TODO: Make this configurable
                 let mut outbound_framed_codec =
                     Framed::new(outbound_stream, RedisCodec::new(true, 1));
-                let _ = outbound_framed_codec.send(qd.message).await;
+                let _ = outbound_framed_codec.send(message_wrapper.message).await;
                 if let Some(o) = outbound_framed_codec.next().fuse().await {
                     if let Ok(_resp) = &o {
                         self.outbound.replace(outbound_framed_codec);
@@ -70,7 +70,7 @@ impl Transform for RedisCodecDestination {
                 self.outbound.replace(outbound_framed_codec);
             }
             Some(ref mut outbound_framed_codec) => {
-                let _ = outbound_framed_codec.send(qd.message).await;
+                let _ = outbound_framed_codec.send(message_wrapper.message).await;
 
                 let result = outbound_framed_codec
                     .next()
