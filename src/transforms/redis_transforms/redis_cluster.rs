@@ -358,32 +358,38 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
     let mut replica_slots: Vec<(String, u16, u16)> = vec![];
     let mut nodes: HashSet<String> = HashSet::new();
 
-    if let Frame::Array(response) = contacts_raw {
-        let mut response_iter = response.into_iter();
-        while let Some(Frame::Array(item)) = response_iter.next() {
-            let mut enumerator = item.into_iter().enumerate();
+    match contacts_raw {
+        Frame::Array(response) => {
+            let mut response_iter = response.into_iter();
+            while let Some(Frame::Array(item)) = response_iter.next() {
+                let mut enumerator = item.into_iter().enumerate();
 
-            let mut start: u16 = 0;
-            let mut end: u16 = 0;
+                let mut start: u16 = 0;
+                let mut end: u16 = 0;
 
-            while let Some((index, item)) = enumerator.next() {
-                match (index, item) {
-                    (0, Frame::Integer(i)) => start = i as u16,
-                    (1, Frame::Integer(i)) => end = i as u16,
-                    (2, Frame::Array(mut master)) => {
-                        build_slot_to_server(&mut master, &mut nodes, &mut slots, start, end)
+                while let Some((index, item)) = enumerator.next() {
+                    match (index, item) {
+                        (0, Frame::Integer(i)) => start = i as u16,
+                        (1, Frame::Integer(i)) => end = i as u16,
+                        (2, Frame::Array(mut master)) => {
+                            build_slot_to_server(&mut master, &mut nodes, &mut slots, start, end)
+                        }
+                        (n, Frame::Array(mut follow)) if n > 2 => build_slot_to_server(
+                            &mut follow,
+                            &mut nodes,
+                            &mut replica_slots,
+                            start,
+                            end,
+                        ),
+                        _ => return Err(anyhow!("Unexpected value in slot map")),
                     }
-                    (n, Frame::Array(mut follow)) if n > 2 => build_slot_to_server(
-                        &mut follow,
-                        &mut nodes,
-                        &mut replica_slots,
-                        start,
-                        end,
-                    ),
-                    _ => return Err(anyhow!("Unexpected value in slot map")),
                 }
             }
         }
+        Frame::Error(err) => {
+            return Err(anyhow!("Frame error: {}", err));
+        }
+        _ => { }
     }
 
     if slots.is_empty() {
@@ -413,17 +419,13 @@ async fn get_topology_from_node(stream: TcpStream) -> Result<SlotsMapping> {
     {
         if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
             if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {
-                if let Ok(slotmaps) = parse_slots(contacts_raw) {
-                    return Ok(slotmaps);
-                } else {
-                    return Err(anyhow!("couldn't decode map"));
-                }
+                return parse_slots(contacts_raw).map_err(|e| return anyhow!("couldn't decode map: {}", e));
             }
         } else {
             return Err(anyhow!("couldn't connect"));
         }
     }
-    return Err(anyhow!("couldn't decode map"));
+    Err(anyhow!("couldn't decode map"))
 }
 
 async fn get_topology(first_contact_points: &[String]) -> Result<SlotsMapping> {
@@ -431,7 +433,7 @@ async fn get_topology(first_contact_points: &[String]) -> Result<SlotsMapping> {
 
     for contact in first_contact_points {
         let query_map = TcpStream::connect(contact.clone())
-            .map_err(|e| anyhow!("couldn't connect {}", e))
+            .map_err(|e| anyhow!("couldn't connect: {}", e))
             .and_then(get_topology_from_node);
         results.push(query_map);
     }
@@ -439,9 +441,7 @@ async fn get_topology(first_contact_points: &[String]) -> Result<SlotsMapping> {
     while let Some(response) = results.next().await {
         match response {
             Ok(map) => return Ok(map),
-            Err(e) => {
-                debug!("failed to fetch map from one host {}", e)
-            }
+            Err(e) => warn!("failed to fetch map from one host: {}", e)
         }
     }
 
