@@ -453,6 +453,7 @@ mod protect_transform_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore] // reason: requires AWS credentials
     async fn test_protect_kms_transform() -> Result<()> {
         let t_holder = TopicHolder {
             topics_rx: Default::default(),

@@ -51,6 +51,7 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[ignore] // reason: test_tmp is sourced from AWS s3 in CI
 async fn test() -> Result<()> {
     let mut capture = crate::codec::util::packet_capture::PacketCapture::new();
     println!("doing some cql");
