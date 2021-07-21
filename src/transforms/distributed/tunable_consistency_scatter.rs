@@ -262,10 +262,9 @@ mod scatter_transform_tests {
 
     use anyhow::Result;
 
-    use crate::config::topology::TopicHolder;
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
-    use crate::transforms::{Transform, Transforms, Wrapper};
+    use crate::transforms::{Transforms, Wrapper};
     use std::collections::HashMap;
 
     fn check_ok_responses(

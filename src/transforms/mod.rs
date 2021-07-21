@@ -151,7 +151,7 @@ impl Transforms {
         }
     }
 
-    async fn prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
+    async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         match self {
             Transforms::CodecDestination(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCodecDestination(a) => a.prep_transform_chain(t).await,

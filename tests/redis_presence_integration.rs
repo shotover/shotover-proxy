@@ -120,6 +120,7 @@ fn get_redis_conn() -> Result<Connection> {
     Ok(client.get_connection()?)
 }
 
+#[allow(dead_code)]
 async fn test_presence_fresh_join_single_workflow() -> Result<()> {
     let subkey = "demo-36";
     let channel = "channel1";
@@ -175,6 +176,7 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
 
     Ok(())
 }
+#[allow(dead_code)]
 async fn test_presence_fresh_join_pipeline_workflow() -> Result<()> {
     let subkey = "demo-36";
     let channel = "channel1";
@@ -201,6 +203,7 @@ async fn test_presence_fresh_join_pipeline_workflow() -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn test_simple_pipeline_workflow() -> Result<()> {
     let mut connection = get_redis_conn().unwrap();
     run_basic_pipelined(&mut connection).unwrap();
@@ -208,7 +211,7 @@ async fn test_simple_pipeline_workflow() -> Result<()> {
 }
 
 // #[tokio::test(threaded_scheduler)]
-async fn run_all() -> Result<()> {
+async fn _run_all() -> Result<()> {
     let delaytime = time::Duration::from_secs(2);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)

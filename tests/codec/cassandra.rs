@@ -1,17 +1,16 @@
 use anyhow::{anyhow, Result};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes};
 use futures::SinkExt;
 use shotover_proxy::protocols::cassandra_protocol2::CassandraCodec2;
 use std::collections::HashMap;
 use tokio::io::BufWriter;
 use tokio_stream::StreamExt;
-use tokio_util::codec::{Framed, FramedParts, FramedRead, FramedWrite};
+use tokio_util::codec::{FramedRead, FramedWrite};
 use tokio_util::io::StreamReader;
 
 async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
     let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
-    let comparator = packet_stream.clone();
-    let mut comparator_iter = comparator.into_iter();
+    let mut comparator_iter = packet_stream.clone().into_iter();
     pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
     pk_map.insert(
         "test.clustering".to_string(),
@@ -30,8 +29,6 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
 
     let byte_stream = StreamReader::new(stream);
     let mut reader = FramedRead::new(byte_stream, codec);
-
-    let mut big_ol_bytes = packet_stream.into_iter().flatten().collect::<Bytes>();
 
     for frame in reader.next().await {
         if let Ok(frame) = frame {
@@ -54,7 +51,7 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
 async fn test() -> Result<()> {
     let mut capture = crate::codec::util::packet_capture::PacketCapture::new();
     println!("doing some cql");
-    let packets = capture.parse_from_file("./test_tmp/cql_mixed.pcap", None, None)?;
+    let packets = capture.parse_from_file("./test_tmp/cql_mixed.pcap", None)?;
     let mut client_packets: Vec<Bytes> = Vec::new();
     let mut server_packets: Vec<Bytes> = Vec::new();
     // let mut server_packets: Vec<anyhow::Result<Bytes, std::io::Error>> = Vec::new();

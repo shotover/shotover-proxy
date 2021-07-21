@@ -271,7 +271,6 @@ mod protect_transform_tests {
     use cassandra_proto::consistency::Consistency;
     use cassandra_proto::frame::Frame;
     use sodiumoxide::crypto::secretbox;
-    use tokio::sync::mpsc::channel;
 
     use crate::config::topology::TopicHolder;
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};

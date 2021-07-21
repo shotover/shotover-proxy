@@ -103,21 +103,21 @@ impl Transform for LuaFilterTransform {
 
 #[cfg(test)]
 mod lua_transform_tests {
-    use std::error::Error;
+    // use std::error::Error;
 
-    use crate::config::topology::TopicHolder;
-    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::RawFrame;
-    use crate::transforms::chain::TransformChain;
-    use crate::transforms::lua::LuaConfig;
-    use crate::transforms::null::Null;
-    use crate::transforms::printer::Printer;
-    use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+    // use crate::config::topology::TopicHolder;
+    // use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
+    // use crate::protocols::RawFrame;
+    // use crate::transforms::chain::TransformChain;
+    // use crate::transforms::lua::LuaConfig;
+    // use crate::transforms::null::Null;
+    // use crate::transforms::printer::Printer;
+    // use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
-    const REQUEST_STRING: &str = r###"
-qm.namespace = {"aaaaaaaaaa", "bbbbb"}
-return call_next_transform(qm)
-"###;
+//    const REQUEST_STRING: &str = r###"
+//qm.namespace = {"aaaaaaaaaa", "bbbbb"}
+//return call_next_transform(qm)
+//"###;
 
     // #[tokio::test(flavor = "multi_thread")]
     // async fn test_lua_script() -> Result<(), Box<dyn Error>> {

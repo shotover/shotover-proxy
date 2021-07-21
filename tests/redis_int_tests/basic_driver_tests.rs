@@ -1,7 +1,7 @@
 #![allow(clippy::let_unit_value)]
 use anyhow::Result;
 
-use redis::{Commands, ConnectionLike, ErrorKind, RedisError, RedisResult, Value};
+use redis::{Commands, ErrorKind, RedisError, Value};
 
 use crate::load_docker_compose;
 use crate::redis_int_tests::support::TestContext;
@@ -838,7 +838,7 @@ fn test_pass_redis_cluster_one() -> Result<()> {
 
 // TODO Re-enable Redis Auth support
 // #[test]
-fn test_cluster_auth_redis() -> Result<()> {
+fn _test_cluster_auth_redis() -> Result<()> {
     info!("test_cluster_auth_redis");
     try_register_cleanup();
     let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();

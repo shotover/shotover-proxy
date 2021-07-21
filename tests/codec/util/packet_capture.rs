@@ -2,7 +2,6 @@ use crate::codec::util::packet_parse::{PacketHeader, PacketParse, ParsedPacket};
 
 use anyhow::{anyhow, Result};
 use pcap::{Active, Capture, Device};
-use std::fs;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use threadpool::ThreadPool;
@@ -133,7 +132,6 @@ impl PacketCapture {
     pub fn parse_from_file(
         &mut self,
         file_name: &str,
-        save_file_path: Option<&str>,
         filter: Option<String>,
     ) -> Result<Vec<Result<ParsedPacket, String>>> {
         // TODO: Fix flakiness from out-of-order futures.
@@ -170,7 +168,7 @@ impl PacketCapture {
                 pool.join();
 
                 let packets: Vec<Result<ParsedPacket, String>> = Arc::try_unwrap(packets)
-                    .map_err(|e| anyhow!("more refs remaining"))?
+                    .map_err(|_| anyhow!("more refs remaining"))?
                     .into_inner()?;
 
                 return Ok(packets);
