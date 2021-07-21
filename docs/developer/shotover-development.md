@@ -32,9 +32,7 @@ The way you build shotover will dramatically impact performance. To build shotov
 or for any benchmarking use `cargo build --release`. The resulting executeable will be found in `target/release/shotover-proxy`. 
 
 ## Testing shotover
-See cargo's [documentation suite](https://doc.rust-lang.org/cargo/commands/cargo-test.html) for running tests. If you want to run the entire test suite,
-you will want to restrict the number of tests that can execute at any given period of time. Some of the integration tests depend on 
-external databases running in a docker environment and there are still some overlaps in port numbers etc. This means tests can only run one at a time.
+See cargo's [documentation suite](https://doc.rust-lang.org/cargo/commands/cargo-test.html) for running tests.
 
-To run the full set of shotover tests, use `cargo test -- --test-threads 1`
+To run the full set of shotover tests, use `cargo test`
 

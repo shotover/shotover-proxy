@@ -13,6 +13,7 @@ use tokio::runtime;
 use tracing::info;
 use tracing::trace;
 use tracing::Level;
+use serial_test::serial;
 
 fn try_register_cleanup() {
     let _ = ctrlc::set_handler(move || {
@@ -747,6 +748,7 @@ fn test_pass_through_one() {
 }
 
 #[test]
+#[serial(redis)]
 fn test_active_active_redis() {
     try_register_cleanup();
     let _subscriber = tracing_subscriber::fmt()
@@ -758,6 +760,7 @@ fn test_active_active_redis() {
 }
 
 #[test]
+#[serial(redis)]
 // #[allow(dead_code)]
 fn test_active_one_active_redis() {
     try_register_cleanup();
@@ -795,6 +798,7 @@ fn test_active_one_active_redis() {
 }
 
 #[test]
+#[serial(redis)]
 fn test_pass_redis_cluster_one() {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
     load_docker_compose(compose_config);
@@ -828,6 +832,7 @@ fn test_pass_redis_cluster_one() {
 
 // TODO Re-enable Redis Auth support
 // #[test]
+// #[serial(redis)]
 fn _test_cluster_auth_redis() {
     info!("test_cluster_auth_redis");
     try_register_cleanup();
@@ -906,6 +911,7 @@ fn _test_cluster_auth_redis() {
 }
 
 #[test]
+#[serial(redis)]
 fn test_cluster_all_redis() {
     try_register_cleanup();
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
@@ -918,6 +924,7 @@ fn test_cluster_all_redis() {
 }
 
 #[test]
+#[serial(redis)]
 fn test_cluster_all_script_redis() {
     try_register_cleanup();
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
@@ -951,6 +958,7 @@ fn test_cluster_all_script_redis() {
 }
 
 #[test]
+#[serial(redis)]
 fn test_cluster_all_pipeline_safe_redis() {
     info!("test_cluster_all_pipeline_safe_redis");
 
