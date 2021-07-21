@@ -89,7 +89,6 @@ impl Transform for ConnectionBalanceAndPool {
 
 #[cfg(test)]
 mod test {
-    use crate::config::topology::TopicHolder;
     use crate::message::Messages;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::load_balance::ConnectionBalanceAndPool;
