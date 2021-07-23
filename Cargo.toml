@@ -94,6 +94,7 @@ threadpool = "1.0"
 num_cpus = "1.0"
 anyhow = "1.0.38"
 serial_test = "0.5.1"
+subprocess = "0.2.7"
 
 [[bench]]
 name = "redis_benches"

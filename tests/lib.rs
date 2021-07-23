@@ -1,13 +1,60 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use shotover_proxy::config::topology::Topology;
-use std::process::Command;
 use std::thread;
 use std::time;
 use tokio::task::JoinHandle;
 use tracing::info;
+use subprocess::{Exec, Redirection};
 
 pub mod redis_int_tests;
 pub mod codec;
+
+fn run_command(command: &str, args: &[&str]) {
+    let data = Exec::cmd(command)
+        .args(args)
+        .stdout(Redirection::Pipe)
+        .stderr(Redirection::Merge)
+        .capture()
+        .unwrap();
+    if !data.exit_status.success() {
+        panic!("command {} {:?} exited with {:?} and output:\n{}", command, args, data.exit_status, data.stdout_str())
+    }
+}
+
+struct DockerCompose {
+    file_path: String
+}
+
+impl DockerCompose {
+    pub fn new(file_path: &str) -> Self {
+        DockerCompose::clean_up(file_path);
+
+        info!("bringing up docker compose {}", file_path);
+
+        run_command("docker-compose", &["-f", file_path, "up", "-d"]);
+
+        thread::sleep(time::Duration::from_secs(4));
+
+        DockerCompose {
+            file_path: file_path.to_string()
+        }
+    }
+
+    fn clean_up(file_path: &str) {
+        info!("bringing down docker compose {}", file_path);
+
+        run_command("docker-compose", &["-f", file_path, "down", "-v"]);
+        run_command("docker-compose", &["-f", file_path, "rm", "-f", "-s", "-v"]);
+
+        thread::sleep(time::Duration::from_secs(1));
+    }
+}
+
+impl Drop for DockerCompose {
+    fn drop(&mut self) {
+        DockerCompose::clean_up(&self.file_path);
+    }
+}
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     tokio::spawn(async move {
@@ -17,74 +64,4 @@ pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
         }
         Ok(())
     })
-}
-
-pub fn load_docker_compose(file_path: String) {
-    // stop_docker_compose(file_path.clone())?;
-    let mut command = Command::new("sh");
-    command
-        .arg("-c")
-        .arg(format!("docker-compose -f {} up -d", file_path.as_str()));
-
-    info!("running {:#?}", command);
-
-    let output = command
-        .status()
-        .expect("could not exec process docker-compose");
-    thread::sleep(time::Duration::from_secs(4));
-
-    if !output.success() {
-        panic!(
-            "couldn't start docker compose {}",
-            output.to_string()
-        );
-    }
-}
-
-pub fn stop_docker_compose(file_path: String) -> Result<()> {
-    let mut command = Command::new("sh");
-    command
-        .arg("-c")
-        .arg(format!("docker-compose -f {} down", file_path.as_str()));
-
-    info!("running {:#?}", command);
-
-    let output = command
-        .status()
-        .expect("could not exec process docker-compose");
-
-    let mut command2 = Command::new("sh");
-    command2.arg("-c").arg(format!(
-        "docker-compose -f {} rm -f -s -v",
-        file_path.as_str()
-    ));
-
-    info!("running {:#?}", command2);
-
-    let output2 = command2
-        .status()
-        .expect("could not exec process docker-compose");
-
-    thread::sleep(time::Duration::from_secs(1));
-
-    let mut command3 = Command::new("sh");
-    command3
-        .arg("-c")
-        .arg("yes | docker network prune".to_string());
-
-    info!("running {:#?}", command3);
-
-    let output3 = command3
-        .status()
-        .expect("could not exec process docker-compose");
-
-    output3.success();
-
-    if output.success() || output2.success() {
-        return Ok(());
-    }
-    Err(anyhow!(
-        "couldn't start docker compose {}",
-        output.to_string()
-    ))
 }

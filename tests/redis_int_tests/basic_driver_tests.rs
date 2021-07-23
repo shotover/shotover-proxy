@@ -2,24 +2,17 @@
 
 use redis::{Commands, ErrorKind, RedisError, Value};
 
-use crate::load_docker_compose;
+use crate::DockerCompose;
 use crate::redis_int_tests::support::TestContext;
 
 use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
-use std::process::exit;
 use tokio::runtime;
 use tracing::info;
 use tracing::trace;
 use tracing::Level;
 use serial_test::serial;
-
-fn try_register_cleanup() {
-    let _ = ctrlc::set_handler(move || {
-        exit(0);
-    });
-}
 
 fn test_args() {
     info!("test_args");
@@ -706,17 +699,17 @@ fn test_cluster_script() {
 }
 
 #[test]
+#[serial(redis)]
 fn test_pass_through() {
-    try_register_cleanup();
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
-    let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
     run_all("examples/redis-passthrough/config.yaml".to_string());
 }
 
 // #[test]
+// #[serial(redis)]
 #[allow(dead_code)]
 fn test_pass_through_one() {
     let rt = runtime::Builder::new_multi_thread()
@@ -741,8 +734,7 @@ fn test_pass_through_one() {
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
-    let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
 
     test_real_transaction();
 }
@@ -750,22 +742,17 @@ fn test_pass_through_one() {
 #[test]
 #[serial(redis)]
 fn test_active_active_redis() {
-    try_register_cleanup();
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
-    let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
     run_all_active_safe("examples/redis-multi/config.yaml".to_string());
 }
 
 #[test]
 #[serial(redis)]
-// #[allow(dead_code)]
 fn test_active_one_active_redis() {
-    try_register_cleanup();
-    let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
@@ -800,8 +787,7 @@ fn test_active_one_active_redis() {
 #[test]
 #[serial(redis)]
 fn test_pass_redis_cluster_one() {
-    let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
@@ -835,9 +821,7 @@ fn test_pass_redis_cluster_one() {
 // #[serial(redis)]
 fn _test_cluster_auth_redis() {
     info!("test_cluster_auth_redis");
-    try_register_cleanup();
-    let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml");
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -913,9 +897,7 @@ fn _test_cluster_auth_redis() {
 #[test]
 #[serial(redis)]
 fn test_cluster_all_redis() {
-    try_register_cleanup();
-    let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -926,9 +908,7 @@ fn test_cluster_all_redis() {
 #[test]
 #[serial(redis)]
 fn test_cluster_all_script_redis() {
-    try_register_cleanup();
-    let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config);
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -962,10 +942,8 @@ fn test_cluster_all_script_redis() {
 fn test_cluster_all_pipeline_safe_redis() {
     info!("test_cluster_all_pipeline_safe_redis");
 
-    try_register_cleanup();
-    let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
 
-    load_docker_compose(compose_config);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
