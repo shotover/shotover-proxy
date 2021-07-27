@@ -1,4 +1,3 @@
-use anyhow::Result;
 use redis::{Commands, Connection, RedisResult};
 use shotover_proxy::config::topology::Topology;
 use std::{thread, time};
@@ -13,17 +12,16 @@ const LUA2: &str = r###"
 return {KEYS[1],ARGV[1],ARGV[2]}
 "###;
 
-pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
+pub fn start_proxy(config: String) -> JoinHandle<()> {
     tokio::spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config)?.run_chains().await {
+        if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config).unwrap().run_chains().await {
             //TODO: probably a better way to handle various join handles / threads
             let _ = shutdown_complete_rx.recv().await;
         }
-        Ok(())
     })
 }
 
-fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
+fn run_basic_pipelined(connection: &mut Connection) {
     let pipel: Vec<i64> = redis::pipe()
         .cmd("INCR")
         .arg("key")
@@ -33,7 +31,8 @@ fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
         .arg("key")
         .cmd("INCR")
         .arg("key")
-        .query(connection)?;
+        .query(connection)
+        .unwrap();
     info!("Got the following {:#?}", pipel);
     let pipel: Vec<i64> = redis::pipe()
         .cmd("INCR")
@@ -44,7 +43,8 @@ fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
         .arg("key")
         .cmd("INCR")
         .arg("key")
-        .query(connection)?;
+        .query(connection)
+        .unwrap();
     info!("Got the following {:#?}", pipel);
     let pipel: Vec<i64> = redis::pipe()
         .cmd("INCR")
@@ -55,9 +55,9 @@ fn run_basic_pipelined(connection: &mut Connection) -> Result<()> {
         .arg("key")
         .cmd("INCR")
         .arg("key")
-        .query(connection)?;
+        .query(connection)
+        .unwrap();
     info!("Got the following {:#?}", pipel);
-    Ok(())
 }
 
 async fn run_register_flow_pipelined<BK, BCK, BKU>(
@@ -66,7 +66,7 @@ async fn run_register_flow_pipelined<BK, BCK, BKU>(
     build_c_key: BCK,
     build_key_user: BKU,
     channel: &str,
-) -> Result<()>
+)
 where
     BK: Fn() -> String,
     BCK: Fn() -> String,
@@ -80,7 +80,7 @@ where
     let func_sha2 = redis::Script::new(LUA2);
     let _other: RedisResult<Vec<String>> = func_sha1.invoke(connection);
 
-    let pipe: RedisResult<String> = redis::pipe()
+    let pipe: String = redis::pipe()
         .ttl(build_key())
         .ignore()
         .cmd("EVALSHA")
@@ -106,22 +106,21 @@ where
         .ignore()
         .expire(build_key(), time)
         .ignore()
-        .query(connection);
+        .query(connection)
+        .unwrap();
 
     info!("pipelined -- {:?}", pipe);
-
-    pipe?;
-
-    Ok(())
 }
 
-fn get_redis_conn() -> Result<Connection> {
-    let client = redis::Client::open("redis://127.0.0.1:6379/")?;
-    Ok(client.get_connection()?)
+fn get_redis_conn() -> Connection {
+    redis::Client::open("redis://127.0.0.1:6379/")
+        .unwrap()
+        .get_connection()
+        .unwrap()
 }
 
 #[allow(dead_code)]
-async fn test_presence_fresh_join_single_workflow() -> Result<()> {
+async fn test_presence_fresh_join_single_workflow() {
     let subkey = "demo-36";
     let channel = "channel1";
     let user = "user2";
@@ -132,7 +131,7 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
 
     let build_key_user = || -> String { format!("{}:{}:{}", subkey, channel, user) };
 
-    let connection = &mut get_redis_conn().unwrap();
+    let connection = &mut get_redis_conn();
 
     let func_sha1 = redis::Script::new(LUA1);
     let _some: RedisResult<Vec<String>> = func_sha1.invoke(connection);
@@ -164,20 +163,19 @@ async fn test_presence_fresh_join_single_workflow() -> Result<()> {
         .arg("1509861014.276593")
         .query(connection);
 
-    let sadd: i32 = connection.sadd(build_key_user(), channel)?;
-    let expire: i32 = connection.expire(build_key_user(), time)?;
-    let sadd2: i32 = connection.sadd(build_key(), channel)?;
-    let expire2: i32 = connection.expire(build_key(), time)?;
+    let sadd: i32 = connection.sadd(build_key_user(), channel).unwrap();
+    let expire: i32 = connection.expire(build_key_user(), time).unwrap();
+    let sadd2: i32 = connection.sadd(build_key(), channel).unwrap();
+    let expire2: i32 = connection.expire(build_key(), time).unwrap();
 
     info!("Got the following {:?}", sadd);
     info!("Got the following {:?}", expire);
     info!("Got the following {:?}", sadd2);
     info!("Got the following {:?}", expire2);
-
-    Ok(())
 }
+
 #[allow(dead_code)]
-async fn test_presence_fresh_join_pipeline_workflow() -> Result<()> {
+async fn test_presence_fresh_join_pipeline_workflow() {
     let subkey = "demo-36";
     let channel = "channel1";
     let user = "user2";
@@ -188,7 +186,7 @@ async fn test_presence_fresh_join_pipeline_workflow() -> Result<()> {
 
     let build_key_user = || -> String { format!("{}:{}:{}", subkey, channel, user) };
 
-    let mut connection = get_redis_conn().unwrap();
+    let mut connection = get_redis_conn();
 
     run_register_flow_pipelined(
         &mut connection,
@@ -198,28 +196,23 @@ async fn test_presence_fresh_join_pipeline_workflow() -> Result<()> {
         channel,
     )
     .await
-    .unwrap();
-
-    Ok(())
 }
 
 #[allow(dead_code)]
-async fn test_simple_pipeline_workflow() -> Result<()> {
-    let mut connection = get_redis_conn().unwrap();
-    run_basic_pipelined(&mut connection).unwrap();
-    Ok(())
+async fn test_simple_pipeline_workflow() {
+    let mut connection = get_redis_conn();
+    run_basic_pipelined(&mut connection);
 }
 
 // #[tokio::test(threaded_scheduler)]
-async fn _run_all() -> Result<()> {
+async fn _run_all() {
     let delaytime = time::Duration::from_secs(2);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
     let _jh = start_proxy("examples/redis-multi/config.yaml".to_string());
     thread::sleep(delaytime);
-    test_simple_pipeline_workflow().await?;
-    test_presence_fresh_join_pipeline_workflow().await?;
-    test_presence_fresh_join_single_workflow().await?;
-    Ok(())
+    test_simple_pipeline_workflow().await;
+    test_presence_fresh_join_pipeline_workflow().await;
+    test_presence_fresh_join_single_workflow().await;
 }

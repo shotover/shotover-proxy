@@ -250,7 +250,6 @@ impl Topology {
 #[cfg(test)]
 mod topology_tests {
     use crate::config::topology::Topology;
-    use anyhow::Result;
 
     const TEST_STRING: &str = r###"---
 sources:
@@ -285,18 +284,16 @@ source_to_chain_mapping:
   cassandra_prod: main_chain"###;
 
     #[test]
-    fn new_test() -> Result<()> {
+    fn new_test() {
         let topology = Topology::get_demo_config();
         println!("{:?}", topology.named_topics);
         let topology2 = Topology::new_from_yaml(String::from(TEST_STRING));
         println!("{:?}", topology2.named_topics);
         assert_eq!(topology2, topology);
-        Ok(())
     }
 
     #[test]
-    fn test_config_parse_format() -> Result<()> {
-        let _ = Topology::new_from_yaml(String::from(TEST_STRING));
-        Ok(())
+    fn test_config_parse_format() {
+        Topology::new_from_yaml(String::from(TEST_STRING));
     }
 }

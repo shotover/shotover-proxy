@@ -701,7 +701,6 @@ mod redis_tests {
     use crate::protocols::redis_codec::RedisCodec;
     use bytes::BytesMut;
     use hex_literal::hex;
-    use rdkafka::message::ToBytes;
     use tokio_util::codec::{Decoder, Encoder};
 
     const SET_MESSAGE: [u8; 45] = hex!("2a330d0a24330d0a5345540d0a2431360d0a6b65793a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");
@@ -726,22 +725,15 @@ mod redis_tests {
 
     const HSET_MESSAGE: [u8; 75] = hex!("2a340d0a24340d0a485345540d0a2431380d0a6d797365743a5f5f72616e645f696e745f5f0d0a2432300d0a656c656d656e743a5f5f72616e645f696e745f5f0d0a24330d0a7878780d0a");
 
-    fn build_bytesmut(slice: &[u8]) -> BytesMut {
-        let mut v: Vec<u8> = Vec::with_capacity(slice.len());
-        v.extend_from_slice(slice);
-        BytesMut::from(v.to_bytes())
-    }
-
     fn test_frame(codec: &mut RedisCodec, raw_frame: &[u8]) {
-        let mut bytes: BytesMut = build_bytesmut(raw_frame);
-        if let Ok(Some(message)) = codec.decode(&mut bytes) {
-            let mut dest: BytesMut = BytesMut::new();
-            if let Ok(()) = codec.encode(message, &mut dest) {
-                assert_eq!(build_bytesmut(raw_frame), dest)
-            }
-        } else {
-            panic!("Could not decode frame");
-        }
+        let message = codec
+            .decode(&mut BytesMut::from(raw_frame))
+            .unwrap()
+            .unwrap();
+
+        let mut dest = BytesMut::new();
+        codec.encode(message, &mut dest).unwrap();
+        assert_eq!(raw_frame, &dest);
     }
 
     #[test]

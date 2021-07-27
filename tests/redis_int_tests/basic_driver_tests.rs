@@ -1,5 +1,4 @@
 #![allow(clippy::let_unit_value)]
-use anyhow::Result;
 
 use redis::{Commands, ErrorKind, RedisError, Value};
 
@@ -706,20 +705,19 @@ fn test_cluster_script() {
 }
 
 #[test]
-fn test_pass_through() -> Result<()> {
+fn test_pass_through() {
     try_register_cleanup();
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
-    run_all("examples/redis-passthrough/config.yaml".to_string())?;
-    Ok(())
+    load_docker_compose(compose_config);
+    run_all("examples/redis-passthrough/config.yaml".to_string());
 }
 
 // #[test]
 #[allow(dead_code)]
-fn test_pass_through_one() -> Result<()> {
+fn test_pass_through_one() {
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
@@ -743,31 +741,28 @@ fn test_pass_through_one() -> Result<()> {
         .with_max_level(Level::INFO)
         .try_init();
     let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
+    load_docker_compose(compose_config);
 
     test_real_transaction();
-
-    Ok(())
 }
 
 #[test]
-fn test_active_active_redis() -> Result<()> {
+fn test_active_active_redis() {
     try_register_cleanup();
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
-    run_all_active_safe("examples/redis-multi/config.yaml".to_string())?;
-    Ok(())
+    load_docker_compose(compose_config);
+    run_all_active_safe("examples/redis-multi/config.yaml".to_string());
 }
 
 #[test]
 // #[allow(dead_code)]
-fn test_active_one_active_redis() -> Result<()> {
+fn test_active_one_active_redis() {
     try_register_cleanup();
     let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
+    load_docker_compose(compose_config);
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
@@ -797,15 +792,12 @@ fn test_active_one_active_redis() -> Result<()> {
 
     // test_pipeline();
     test_getset();
-
-    Ok(())
 }
 
 #[test]
-// #[allow(dead_code)]
-fn test_pass_redis_cluster_one() -> Result<()> {
+fn test_pass_redis_cluster_one() {
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
+    load_docker_compose(compose_config);
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
@@ -832,17 +824,15 @@ fn test_pass_redis_cluster_one() -> Result<()> {
 
     // test_args()test_args;
     test_pipeline_error(); //TODO: script does not seem to be loading in the server?
-
-    Ok(())
 }
 
 // TODO Re-enable Redis Auth support
 // #[test]
-fn _test_cluster_auth_redis() -> Result<()> {
+fn _test_cluster_auth_redis() {
     info!("test_cluster_auth_redis");
     try_register_cleanup();
     let compose_config = "examples/redis-cluster-auth/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
+    load_docker_compose(compose_config);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -913,28 +903,25 @@ fn _test_cluster_auth_redis() -> Result<()> {
         redis::cmd("GET").arg("{x}key3").query(&mut con),
         Ok("food".to_string())
     );
-
-    Ok(())
 }
 
 #[test]
-fn test_cluster_all_redis() -> Result<()> {
+fn test_cluster_all_redis() {
     try_register_cleanup();
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
+    load_docker_compose(compose_config);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
-    run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string())?;
-    Ok(())
+    run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string());
 }
 
 #[test]
-fn test_cluster_all_script_redis() -> Result<()> {
+fn test_cluster_all_script_redis() {
     try_register_cleanup();
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config)?;
+    load_docker_compose(compose_config);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -961,17 +948,16 @@ fn test_cluster_all_script_redis() -> Result<()> {
     for _i in 0..1999 {
         test_script();
     }
-    Ok(())
 }
 
 #[test]
-fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
+fn test_cluster_all_pipeline_safe_redis() {
     info!("test_cluster_all_pipeline_safe_redis");
 
     try_register_cleanup();
     let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
 
-    load_docker_compose(compose_config)?;
+    load_docker_compose(compose_config);
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
@@ -1089,11 +1075,9 @@ fn test_cluster_all_pipeline_safe_redis() -> Result<()> {
     test_nice_list_api();
     test_tuple_decoding_regression();
     test_bit_operations();
-
-    Ok(())
 }
 
-fn run_all_active_safe(config: String) -> Result<()> {
+fn run_all_active_safe(config: String) {
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
@@ -1143,10 +1127,9 @@ fn run_all_active_safe(config: String) -> Result<()> {
     test_tuple_decoding_regression();
     test_bit_operations();
     // test_invalid_protocol();
-    Ok(())
 }
 
-fn run_all_cluster_safe(config: String) -> Result<()> {
+fn run_all_cluster_safe(config: String) {
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
@@ -1195,10 +1178,9 @@ fn run_all_cluster_safe(config: String) -> Result<()> {
     test_tuple_decoding_regression();
     test_bit_operations();
     // test_invalid_protocol();
-    Ok(())
 }
 
-fn run_all(config: String) -> Result<()> {
+fn run_all(config: String) {
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("RPProxy-Thread")
@@ -1247,5 +1229,4 @@ fn run_all(config: String) -> Result<()> {
     test_tuple_decoding_regression();
     test_bit_operations();
     // test_invalid_protocol();
-    Ok(())
 }
