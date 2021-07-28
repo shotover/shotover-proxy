@@ -93,10 +93,11 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
 fn try_tag_query_message(qm: &mut QueryMessage) -> bool {
     if let Ok(wrapped) = wrap_command(qm) {
         std::mem::swap(&mut qm.ast, &mut Some(ASTHolder::Commands(wrapped)));
-        return true;
+        true
+    } else {
+        trace!("couldn't wrap commands");
+        false
     }
-    trace!("couldn't wrap commands");
-    false
 }
 
 fn unwrap_response(qr: &mut QueryResponse) {

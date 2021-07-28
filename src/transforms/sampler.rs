@@ -35,7 +35,7 @@ impl Sampler {
 impl Transform for Sampler {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let chance = thread_rng_n(self.denominator);
-        return if chance < self.numerator {
+        if chance < self.numerator {
             let sample = message_wrapper.clone();
             let (sample, downstream) = tokio::join!(
                 self.sample_chain
@@ -48,7 +48,7 @@ impl Transform for Sampler {
             downstream
         } else {
             message_wrapper.call_next_transform().await
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {

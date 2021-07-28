@@ -106,7 +106,7 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub fn build_buffered_chain(self, buffer_size: usize) -> BufferedChain {
+    pub fn into_buffered_chain(self, buffer_size: usize) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
         // If this is not a test, this should get removed by the compiler

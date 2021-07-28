@@ -208,7 +208,7 @@ impl ASTHolder {
     pub fn get_command(&self) -> String {
         match self {
             ASTHolder::SQL(statement) => {
-                return match statement {
+                match statement {
                     Statement::Query(_) => "SELECT",
                     Statement::Insert { .. } => "INSERT",
                     Statement::Update { .. } => "UPDATE",
@@ -219,18 +219,21 @@ impl ASTHolder {
                     Statement::Drop { .. } => "DROP",
                     _ => "UNKNOWN",
                 }
-                .to_string();
+                .to_string()
             }
             ASTHolder::Commands(commands) => {
                 if let Value::List(coms) = commands {
                     if let Some(Value::Bytes(b)) = coms.get(0) {
-                        return String::from_utf8(b.to_vec())
-                            .unwrap_or_else(|_| "couldn't decode".to_string());
+                        String::from_utf8(b.to_vec())
+                            .unwrap_or_else(|_| "couldn't decode".to_string())
+                    } else {
+                        "UNKNOWN".to_string()
                     }
+                } else {
+                    "UNKNOWN".to_string()
                 }
             }
         }
-        "UNKNOWN".to_string()
     }
 }
 
@@ -279,15 +282,14 @@ impl QueryMessage {
     }
 
     pub fn get_namespaced_primary_key(&self) -> Option<String> {
-        if let Some(pk) = self.get_primary_key() {
+        self.get_primary_key().map(|pk| {
             let mut buffer = String::new();
-            let f: String = self.namespace.join(".");
+            let f = self.namespace.join(".");
             buffer.push_str(f.as_str());
             buffer.push('.');
             buffer.push_str(serde_json::to_string(&pk).unwrap().as_str());
-            return Some(buffer);
-        }
-        None
+            buffer
+        })
     }
 }
 
@@ -474,19 +476,18 @@ impl Value {
 
     pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> Value {
         if let Some(actual_bytes) = data.as_slice() {
-            return match spec.col_type.id {
-                ColType::Ascii => return Value::Strings(decode_ascii(actual_bytes).unwrap()),
-                ColType::Bigint => return Value::Integer(decode_bigint(actual_bytes).unwrap()),
-                ColType::Blob => return Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
-                ColType::Boolean => return Value::Boolean(decode_boolean(actual_bytes).unwrap()),
+            match spec.col_type.id {
+                ColType::Ascii => Value::Strings(decode_ascii(actual_bytes).unwrap()),
+                ColType::Bigint => Value::Integer(decode_bigint(actual_bytes).unwrap()),
+                ColType::Blob => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
+                ColType::Boolean => Value::Boolean(decode_boolean(actual_bytes).unwrap()),
                 ColType::Counter => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
                 ColType::Decimal => Value::Float(decode_decimal(actual_bytes).unwrap().as_plain()),
                 ColType::Double => Value::Float(decode_double(actual_bytes).unwrap()),
                 ColType::Float => Value::Float(decode_float(actual_bytes).unwrap() as f64),
                 ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Timestamp => {
-                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap()))
-                }
+                ColType::Timestamp =>
+                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap())),
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
                 ColType::Varint => Value::Integer(decode_varint(actual_bytes).unwrap()),
@@ -496,14 +497,13 @@ impl Value {
                 ColType::Time => Value::NULL,
                 ColType::Smallint => Value::Integer(decode_smallint(actual_bytes).unwrap() as i64),
                 ColType::Tinyint => Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64),
-                _ => {
-                    Value::NULL
-                    // todo: process collection types based on ColTypeOption
-                    // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
-                }
-            };
+                // todo: process collection types based on ColTypeOption
+                // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
+                _ => Value::NULL,
+            }
+        } else {
+            Value::NULL
         }
-        Value::NULL
     }
 
     pub fn into_str_bytes(self) -> Bytes {

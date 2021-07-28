@@ -108,7 +108,7 @@ pub struct RedisCluster {
 impl RedisCluster {
     async fn rebuild_slot_map(&mut self) -> Result<()> {
         let contact_points = self.channels.keys().cloned().collect_vec();
-        return if let Ok(mapping) = get_topology(&contact_points).await {
+        if let Ok(mapping) = get_topology(&contact_points).await {
             debug!("successfully updated map {:#?}", mapping);
             let slot_map: SlotMap = mapping
                 .masters
@@ -120,7 +120,7 @@ impl RedisCluster {
         } else {
             debug!("Couldn't update cluster slot map");
             Err(anyhow!("Couldn't update cluster slot map"))
-        };
+        }
     }
 
     #[inline]
@@ -198,12 +198,12 @@ impl RedisCluster {
             }
             self.channels.remove(host);
         }
-        return Ok(one_rx);
+        Ok(one_rx)
     }
 
     #[inline(always)]
     async fn get_channels(&mut self, redis_frame: &RawFrame) -> Vec<String> {
-        return match &redis_frame {
+        match &redis_frame {
             RawFrame::Redis(Frame::Array(ref commands)) => {
                 match RoutingInfo::for_command_frame(&commands) {
                     Some(RoutingInfo::Slot(slot)) => {
@@ -215,11 +215,7 @@ impl RedisCluster {
                         }
                     }
                     Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
-                        let mut conns = vec![];
-                        for host in self.channels.keys() {
-                            conns.push(host.clone());
-                        }
-                        conns
+                        self.channels.keys().cloned().collect()
                     }
                     Some(RoutingInfo::Random) => {
                         let key = self
@@ -230,15 +226,11 @@ impl RedisCluster {
                             .clone();
                         vec![key]
                     }
-                    None => {
-                        vec![]
-                    }
+                    None => vec![]
                 }
             }
-            _ => {
-                vec![]
-            }
-        };
+            _ => vec![]
+        }
     }
 }
 
@@ -261,7 +253,7 @@ impl RoutingInfo {
     #[inline(always)]
     pub fn for_command_frame(args: &[Frame]) -> Option<RoutingInfo> {
         if let Some(Frame::BulkString(command_arg)) = args.get(0) {
-            return match command_arg.as_ref() {
+            match command_arg.as_ref() {
                 b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
                 b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE"
                 | b"PING" | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE"
@@ -303,9 +295,10 @@ impl RoutingInfo {
                     Some(key) => RoutingInfo::for_key(key),
                     None => Some(RoutingInfo::Random),
                 },
-            };
+            }
+        } else {
+            None
         }
-        None
     }
 
     #[inline(always)]
@@ -419,13 +412,16 @@ async fn get_topology_from_node(stream: TcpStream) -> Result<SlotsMapping> {
     {
         if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
             if let RawFrame::Redis(contacts_raw) = o.messages.pop().unwrap().original {
-                return parse_slots(contacts_raw).map_err(|e| return anyhow!("couldn't decode map: {}", e));
+                parse_slots(contacts_raw).map_err(|e| anyhow!("couldn't decode map: {}", e))
+            } else {
+                Err(anyhow!("couldn't decode map"))
             }
         } else {
-            return Err(anyhow!("couldn't connect"));
+            Err(anyhow!("couldn't connect"))
         }
+    } else {
+        Err(anyhow!("couldn't decode map"))
     }
-    Err(anyhow!("couldn't decode map"))
 }
 
 async fn get_topology(first_contact_points: &[String]) -> Result<SlotsMapping> {
@@ -450,24 +446,15 @@ async fn get_topology(first_contact_points: &[String]) -> Result<SlotsMapping> {
 
 #[inline(always)]
 fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
-    let open = key.iter().position(|v| *v == b'{');
-    let open = match open {
-        Some(open) => open,
-        None => return None,
-    };
-
-    let close = key[open..].iter().position(|v| *v == b'}');
-    let close = match close {
-        Some(close) => close,
-        None => return None,
-    };
-
-    let rv = &key[open + 1..open + close];
-    if rv.is_empty() {
-        None
-    } else {
-        Some(rv)
+    if let Some(open) = key.iter().position(|v| *v == b'{') {
+        if let Some(close) = key[open..].iter().position(|v| *v == b'}') {
+            let rv = &key[open + 1..open + close];
+            if !rv.is_empty() {
+                return Some(rv)
+            }
+        }
     }
+    None
 }
 
 #[inline(always)]
@@ -629,9 +616,9 @@ impl Transform for RedisCluster {
                 _ => response_buffer.push(response_m),
             }
         }
-        return Ok(Messages {
+        Ok(Messages {
             messages: response_buffer,
-        });
+        })
     }
 
     fn get_name(&self) -> &'static str {
