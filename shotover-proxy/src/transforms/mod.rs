@@ -36,6 +36,7 @@ use crate::transforms::redis_transforms::redis_codec_destination::{
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
+use crate::transforms::wasm::{WasmTransform, WasmTransformConfig};
 use core::fmt::Display;
 use tokio::time::Instant;
 
@@ -57,6 +58,7 @@ pub mod redis_transforms;
 pub mod sampler;
 pub mod test_transforms;
 pub mod util;
+pub mod wasm;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
 
@@ -69,6 +71,7 @@ pub enum Transforms {
     MPSCTee(Tee),
     MPSCForwarder(Buffer),
     Null(Null),
+    Wasm(WasmTransform),
     Protect(Protect),
     TunableConsistency(TunableConsistency),
     RedisTimeStampTagger(RedisTimestampTagger),
@@ -100,6 +103,7 @@ impl Transforms {
             Transforms::MPSCForwarder(m) => m.transform(message_wrapper).await,
             Transforms::Printer(p) => p.transform(message_wrapper).await,
             Transforms::Null(n) => n.transform(message_wrapper).await,
+            Transforms::Wasm(w) => w.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
             Transforms::RepeatMessage(p) => p.transform(message_wrapper).await,
             Transforms::RandomDelay(p) => p.transform(message_wrapper).await,
@@ -124,6 +128,7 @@ impl Transforms {
             Transforms::MPSCForwarder(m) => m.get_name(),
             Transforms::Printer(p) => p.get_name(),
             Transforms::Null(n) => n.get_name(),
+            Transforms::Wasm(w) => w.get_name(),
             Transforms::Protect(p) => p.get_name(),
             Transforms::TunableConsistency(t) => t.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
@@ -149,6 +154,7 @@ impl Transforms {
             Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
             Transforms::Printer(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
+            Transforms::Wasm(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
             Transforms::TunableConsistency(a) => a.prep_transform_chain(t).await,
             Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
@@ -182,6 +188,7 @@ pub enum TransformsConfig {
     Coalesce(CoalesceConfig),
     QueryTypeFilter(QueryTypeFilterConfig),
     QueryCounter(QueryCounterConfig),
+    Wasm(WasmTransformConfig),
 }
 
 impl TransformsConfig {
@@ -205,6 +212,7 @@ impl TransformsConfig {
             TransformsConfig::Coalesce(s) => s.get_source(topics).await,
             TransformsConfig::QueryTypeFilter(s) => s.get_source(topics).await,
             TransformsConfig::QueryCounter(s) => s.get_source(topics).await,
+            TransformsConfig::Wasm(w) => w.get_source(topics).await,
         }
     }
 }

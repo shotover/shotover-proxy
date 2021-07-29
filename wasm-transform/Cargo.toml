@@ -1,0 +1,18 @@
+[package]
+name = "wasm-transform"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+shotover-types = { path = "../shotover-types" }
+serde = { version = "1.0.111", features = ["derive"] }
+bincode = "1.3.1"
+redis-protocol = { git = "https://github.com/benbromhead/redis-protocol.rs", branch = "remove-parser" }
+bytes = "1.0.0"

@@ -2,6 +2,7 @@
 members = [
     "shotover-proxy",
     "test-helpers",
+    "shotover-types",
 ]
 
 # https://deterministic.space/high-performance-rust.html

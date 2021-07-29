@@ -602,6 +602,15 @@ fn test_cluster_script(connection: &mut Connection) {
 
 #[test]
 #[serial(redis)]
+fn test_wasm_transform() {
+    let _compose = DockerCompose::new("examples/wasm/docker-compose.yml");
+    let shotover_manager = ShotoverManager::from_topology_file("examples/wasm/topology.yaml");
+    let mut connection = shotover_manager.redis_connection(6379);
+    run_all(&mut connection);
+}
+
+#[test]
+#[serial(redis)]
 fn test_pass_through() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
     let shotover_manager =
