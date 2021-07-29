@@ -208,27 +208,25 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
 
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
     use mlua::Lua;
 
     use crate::runtimes::{Script, ScriptConfigurator, ScriptDefinition, ScriptHolder};
 
     #[test]
-    fn script() -> Result<()> {
+    fn script() {
         let lua = Lua::new();
         let script_definition = "function identity(arg)
             return arg
         end"
         .to_string();
         let sh: ScriptHolder<i32, i32> =
-            ScriptHolder::new(Script::new_lua("identity".to_string(), script_definition)?);
-        sh.prep_lua_runtime(&lua)?;
-        assert_eq!(400, sh.call(&lua, 400)?);
-        Ok(())
+            ScriptHolder::new(Script::new_lua("identity".to_string(), script_definition).unwrap());
+        sh.prep_lua_runtime(&lua).unwrap();
+        assert_eq!(400, sh.call(&lua, 400).unwrap());
     }
 
     #[test]
-    fn config() -> Result<()> {
+    fn config() {
         let lua = Lua::new();
         let config = ScriptConfigurator {
             script_type: "lua".to_string(),
@@ -238,9 +236,8 @@ mod test {
         end"
             .to_string(),
         };
-        let sh: ScriptHolder<i32, i32> = config.get_script_func()?;
-        sh.prep_lua_runtime(&lua)?;
-        assert_eq!(400, sh.call(&lua, 400)?);
-        Ok(())
+        let sh: ScriptHolder<i32, i32> = config.get_script_func().unwrap();
+        sh.prep_lua_runtime(&lua).unwrap();
+        assert_eq!(400, sh.call(&lua, 400).unwrap());
     }
 }

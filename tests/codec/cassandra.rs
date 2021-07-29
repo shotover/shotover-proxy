@@ -1,5 +1,4 @@
-use anyhow::{anyhow, Result};
-use bytes::{Bytes};
+use bytes::Bytes;
 use futures::SinkExt;
 use shotover_proxy::protocols::cassandra_protocol2::CassandraCodec2;
 use std::collections::HashMap;
@@ -8,8 +7,8 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tokio_util::io::StreamReader;
 
-async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
-    let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
+    let mut pk_map = HashMap::new();
     let mut comparator_iter = packet_stream.clone().into_iter();
     pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
     pk_map.insert(
@@ -34,27 +33,22 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) -> Result<()> {
         if let Ok(frame) = frame {
             let recv_buffer = BufWriter::new(Vec::new());
             let mut writer = FramedWrite::new(recv_buffer, write_codec.clone());
-            writer.send(frame.clone()).await?;
+            writer.send(frame.clone()).await.unwrap();
             let results = Bytes::from(writer.into_inner().into_inner());
-            if let Some(orig_bytes) = comparator_iter.next() {
-                assert_eq!(orig_bytes, results);
-            } else {
-                return Err(anyhow!("packet count mismatch"));
-            }
+            let orig_bytes = comparator_iter.next().expect("packet count mismatch");
+            assert_eq!(orig_bytes, results);
         }
     }
-
-    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[ignore] // reason: test_tmp is sourced from AWS s3 in CI
-async fn test() -> Result<()> {
+async fn test() {
     let mut capture = crate::codec::util::packet_capture::PacketCapture::new();
     println!("doing some cql");
-    let packets = capture.parse_from_file("./test_tmp/cql_mixed.pcap", None)?;
-    let mut client_packets: Vec<Bytes> = Vec::new();
-    let mut server_packets: Vec<Bytes> = Vec::new();
+    let packets = capture.parse_from_file("./test_tmp/cql_mixed.pcap", None);
+    let mut client_packets = Vec::new();
+    let mut server_packets = Vec::new();
     // let mut server_packets: Vec<anyhow::Result<Bytes, std::io::Error>> = Vec::new();
     for packet in packets {
         if let Ok(packet) = packet {
@@ -67,6 +61,6 @@ async fn test() -> Result<()> {
             }
         }
     }
-    check_vec_of_bytes(client_packets).await?;
-    check_vec_of_bytes(server_packets).await
+    check_vec_of_bytes(client_packets).await;
+    check_vec_of_bytes(server_packets).await;
 }

@@ -1,6 +1,6 @@
 use crate::codec::util::packet_parse::{PacketHeader, PacketParse, ParsedPacket};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use pcap::{Active, Capture, Device};
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
@@ -15,11 +15,10 @@ impl PacketCapture {
         PacketCapture { err_count: 0 }
     }
 
-    pub fn list_devices() -> Result<(), pcap::Error> {
-        let devices: Vec<String> = Device::list()?.iter().map(|val| val.name.clone()).collect();
+    pub fn list_devices() {
+        let devices: Vec<String> = Device::list().unwrap().iter().map(|val| val.name.clone()).collect();
         println!("All Interfaces : ");
         devices.iter().for_each(|val| println!("* {}", val));
-        Ok(())
     }
 
     fn print_err(&mut self, err: String) {
@@ -46,7 +45,7 @@ impl PacketCapture {
         while let Ok(packet) = cap_handle.next() {
             let data = packet.data.to_owned();
             let len = packet.header.len;
-            let ts: String = format!(
+            let ts = format!(
                 "{}.{:06}",
                 &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
             );
@@ -133,49 +132,42 @@ impl PacketCapture {
         &mut self,
         file_name: &str,
         filter: Option<String>,
-    ) -> Result<Vec<Result<ParsedPacket, String>>> {
+    ) -> Vec<Result<ParsedPacket, String>> {
         // TODO: Fix flakiness from out-of-order futures.
         // let pool = ThreadPool::new(num_cpus::get() * 2);
         let pool = ThreadPool::new(1);
-        match Capture::from_file(file_name) {
-            Ok(mut cap_handle) => {
-                let packets = Arc::new(Mutex::new(Vec::new()));
+        let mut cap_handle = Capture::from_file(file_name).unwrap();
+        let packets = Arc::new(Mutex::new(Vec::new()));
 
-                if let Some(filter) = filter {
-                    cap_handle
-                        .filter(&filter)
-                        .expect("Filters invalid, please check the documentation.");
-                }
-
-                while let Ok(packet) = cap_handle.next() {
-                    let data = packet.data.to_owned();
-                    let len = packet.header.len;
-                    let ts: String = format!(
-                        "{}.{:06}",
-                        &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
-                    );
-
-                    let packets = packets.clone();
-
-                    pool.execute(move || {
-                        let packet_parse = PacketParse::new();
-                        let parsed_packet = packet_parse.parse_packet(data, len, ts);
-
-                        packets.lock().unwrap().push(parsed_packet);
-                    });
-                }
-
-                pool.join();
-
-                let packets: Vec<Result<ParsedPacket, String>> = Arc::try_unwrap(packets)
-                    .map_err(|_| anyhow!("more refs remaining"))?
-                    .into_inner()?;
-
-                return Ok(packets);
-            }
-            Err(err) => {
-                return Err(anyhow!("uh oh {}", err));
-            }
+        if let Some(filter) = filter {
+            cap_handle
+                .filter(&filter)
+                .expect("Filters invalid, please check the documentation.");
         }
+
+        while let Ok(packet) = cap_handle.next() {
+            let data = packet.data.to_owned();
+            let len = packet.header.len;
+            let ts = format!(
+                "{}.{:06}",
+                &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
+            );
+
+            let packets = packets.clone();
+
+            pool.execute(move || {
+                let packet_parse = PacketParse::new();
+                let parsed_packet = packet_parse.parse_packet(data, len, ts);
+
+                packets.lock().unwrap().push(parsed_packet);
+            });
+        }
+
+        pool.join();
+
+        Arc::try_unwrap(packets)
+            .expect("more refs remaining")
+            .into_inner()
+            .unwrap()
     }
 }

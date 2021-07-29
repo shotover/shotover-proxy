@@ -396,8 +396,6 @@ mod test {
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::redis_codec::RedisCodec;
     use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
-    use anyhow::anyhow;
-    use anyhow::Result;
     use bytes::BytesMut;
     use itertools::Itertools;
     use std::collections::HashMap;
@@ -406,56 +404,51 @@ mod test {
     fn build_query(
         query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
-    ) -> Result<(ASTHolder, Option<HashMap<String, Value>>)> {
+    ) -> (ASTHolder, Option<HashMap<String, Value>>) {
         let res = CassandraCodec2::parse_query_string(query_string.to_string(), pk_col_map);
-        Ok((ASTHolder::SQL(res.ast.unwrap()), res.colmap))
+        (ASTHolder::SQL(res.ast.unwrap()), res.colmap)
     }
 
-    fn build_redis_query_frame(query: &str) -> Result<ASTHolder> {
+    fn build_redis_query_frame(query: &str) -> ASTHolder {
         let mut codec = RedisCodec::new(false, 0);
 
-        let final_command_string = build_redis_string(query);
+        let mut final_command_bytes: BytesMut = build_redis_string(query).as_str().into();
+        let mut frame: Messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
+        for message in &mut frame.messages {
+            message.generate_message_details(false);
+        }
 
-        let mut final_command_bytes: BytesMut = final_command_string.as_str().into();
-        let mut frame: Messages = codec.decode(&mut final_command_bytes)?.unwrap();
-        frame
-            .messages
-            .iter_mut()
-            .for_each(|m| m.generate_message_details(false));
-        return if let MessageDetails::Query(qm) = frame.messages.remove(0).details {
-            qm.ast.ok_or(anyhow!("woops"))
-        } else {
-            Err(anyhow!("woops"))
-        };
+        match frame.messages.remove(0).details {
+            MessageDetails::Query(qm) => qm.ast.unwrap(),
+            details => panic!("Exepected message details to be a query but was: {:?}", details),
+        }
     }
 
     fn build_redis_string(query: &str) -> String {
-        let query_string = query.to_string();
-        let tokens = query_string.split_ascii_whitespace().collect_vec();
-        let mut command_buffer: Vec<String> = Vec::new();
-        command_buffer.push(format!("*{}\r\n", tokens.len()));
+        let mut command_buffer = String::new();
 
-        for token in query_string.to_string().split_ascii_whitespace() {
-            command_buffer.push(format!("${}\r\n", token.len()));
-            command_buffer.push(format!("{}\r\n", token));
+        let tokens = query.split_ascii_whitespace().collect_vec();
+        command_buffer.push_str(&format!("*{}\r\n", tokens.len()));
+
+        for token in tokens {
+            command_buffer.push_str(&format!("${}\r\n", token.len()));
+            command_buffer.push_str(&format!("{}\r\n", token));
         }
 
-        let final_command_string: String = command_buffer.join("");
-        final_command_string
+        command_buffer
     }
 
     #[test]
-    fn test_build_redis_query_string() -> Result<()> {
+    fn test_build_redis_query_string() {
         assert_eq!(
             "*2\r\n$4\r\nLLEN\r\n$6\r\nmylist\r\n".to_string(),
             build_redis_string("LLEN mylist")
         );
-        Ok(())
     }
 
     #[test]
-    fn equal_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn equal_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
 
         let pk_holder = PrimaryKey {
@@ -463,26 +456,24 @@ mod test {
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
             &pk_col_map,
-        )?;
+        );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123:965 ]123:965")?;
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123:965 ]123:965");
 
         assert_eq!(expected, query);
-
-        Ok(())
     }
 
     #[test]
-    fn insert_simple_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn insert_simple_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
 
         let pk_holder = PrimaryKey {
@@ -490,24 +481,22 @@ mod test {
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) =
-            build_query("INSERT INTO foo (z, v) VALUES (1, 123)", &pk_col_map)?;
+            build_query("INSERT INTO foo (z, v) VALUES (1, 123)", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZADD 1 0 123")?;
+        let expected = build_redis_query_frame("ZADD 1 0 123");
 
         assert_eq!(expected, query);
-
-        Ok(())
     }
 
     #[test]
-    fn insert_simple_clustering_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn insert_simple_clustering_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
 
@@ -516,26 +505,24 @@ mod test {
             range_key: vec!["c".to_string()],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) = build_query(
             "INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)",
             &pk_col_map,
-        )?;
+        );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZADD 1 0 yo:123")?;
+        let expected = build_redis_query_frame("ZADD 1 0 yo:123");
 
         assert_eq!(expected, query);
-
-        Ok(())
     }
 
     #[test]
-    fn update_simple_clustering_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn update_simple_clustering_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
 
@@ -544,46 +531,44 @@ mod test {
             range_key: vec!["c".to_string()],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) =
-            build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1", &pk_col_map)?;
+            build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZADD 1 0 yo:123")?;
+        let expected = build_redis_query_frame("ZADD 1 0 yo:123");
 
         assert_eq!(expected, query);
-
-        Ok(())
     }
 
     #[test]
-    fn check_deterministic_order_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn check_deterministic_order_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
             &pk_col_map,
-        )?;
+        );
 
-        let query_one = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query_one = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123",
             &pk_col_map,
-        )?;
+        );
 
-        let query_two = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query_two = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
         println!("{:#?}", query_one);
         println!("{:#?}", query_two);
@@ -591,94 +576,86 @@ mod test {
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
         assert_ne!(query_one, query_two);
-
-        Ok(())
     }
 
     #[test]
-    fn range_exclusive_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn range_exclusive_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999",
             &pk_col_map,
-        )?;
+        );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [124 ]998")?;
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [124 ]998");
 
         assert_eq!(expected, query);
 
         println!("{:#?}", query);
-
-        Ok(())
     }
 
     #[test]
-    fn range_inclusive_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn range_inclusive_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999",
             &pk_col_map,
-        )?;
+        );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999")?;
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999");
 
         assert_eq!(expected, query);
 
         println!("{:#?}", query);
-
-        Ok(())
     }
 
     #[test]
-    fn single_pk_only_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn single_pk_only_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
-        let (ast, query_values) = build_query("SELECT * FROM foo WHERE z = 1", &pk_col_map)?;
+        let (ast, query_values) = build_query("SELECT * FROM foo WHERE z = 1", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +")?;
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +");
 
         assert_eq!(expected, query);
 
         println!("{:#?}", query);
-
-        Ok(())
     }
 
     #[test]
-    fn compound_pk_only_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn compound_pk_only_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         pks.insert("y".to_string(), ShotoverValue::Integer(2));
         let pk_holder = PrimaryKey {
@@ -686,58 +663,54 @@ mod test {
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) =
-            build_query("SELECT * FROM foo WHERE z = 1 AND y = 2", &pk_col_map)?;
+            build_query("SELECT * FROM foo WHERE z = 1 AND y = 2", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +")?;
+        let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +");
 
         assert_eq!(expected, query);
 
         println!("{:#?}", query);
-
-        Ok(())
     }
 
     #[test]
-    fn open_range_test() -> Result<()> {
-        let mut pks: HashMap<String, ShotoverValue> = HashMap::new();
+    fn open_range_test() {
+        let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         let pk_holder = PrimaryKey {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) =
-            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123", &pk_col_map)?;
+            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 +")?;
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 +");
 
         assert_eq!(expected, query);
 
-        let mut pk_col_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_col_map = HashMap::new();
         pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
 
         let (ast, query_values) =
-            build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123", &pk_col_map)?;
+            build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values)?;
+        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123")?;
+        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123");
 
         assert_eq!(expected, query);
 
         println!("{:#?}", query);
-
-        Ok(())
     }
 }

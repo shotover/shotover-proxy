@@ -645,7 +645,7 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        return match self.decode_raw(src) {
+        match self.decode_raw(src) {
             Ok(res) => match res {
                 None => Ok(None),
                 Some(frame) => Ok(Some(self.process_cassandra_frame(frame))),
@@ -654,7 +654,7 @@ impl Decoder for CassandraCodec2 {
                 warn!("decode raw error {:?}", e);
                 Err(e)
             }
-        };
+        }
     }
 }
 
@@ -717,12 +717,10 @@ impl Encoder<Messages> for CassandraCodec2 {
 
 #[cfg(test)]
 mod cassandra_protocol_tests {
-    use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage};
+    use crate::message::{ASTHolder, MessageDetails, QueryMessage};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
-    use anyhow::{anyhow, Result};
     use bytes::BytesMut;
     use hex_literal::hex;
-    use rdkafka::message::ToBytes;
     use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 
@@ -748,27 +746,20 @@ mod cassandra_protocol_tests {
     573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
     );
 
-    fn build_bytesmut(slice: &[u8]) -> BytesMut {
-        let mut v: Vec<u8> = Vec::new();
-        v.extend_from_slice(slice);
-        BytesMut::from(v.to_bytes())
-    }
-
     fn test_frame(codec: &mut CassandraCodec2, raw_frame: &[u8]) {
-        let mut bytes: BytesMut = build_bytesmut(raw_frame);
-        if let Ok(Some(message)) = codec.decode(&mut bytes) {
-            let mut dest: BytesMut = BytesMut::new();
-            if let Ok(()) = codec.encode(message, &mut dest) {
-                assert_eq!(build_bytesmut(raw_frame), dest)
-            }
-        } else {
-            panic!("Could not decode frame");
-        }
+        let message = codec
+            .decode(&mut BytesMut::from(raw_frame))
+            .unwrap()
+            .unwrap();
+
+        let mut dest = BytesMut::new();
+        codec.encode(message, &mut dest).unwrap();
+        assert_eq!(raw_frame, &dest);
     }
 
     #[test]
     fn test_startup_codec() {
-        let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
@@ -780,7 +771,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_ready_codec() {
-        let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
@@ -792,7 +783,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_register_codec() {
-        let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
@@ -804,7 +795,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_result_codec() {
-        let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
@@ -816,7 +807,7 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_query_codec() {
-        let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
@@ -824,16 +815,11 @@ mod cassandra_protocol_tests {
         );
         let mut codec = CassandraCodec2::new(pk_map, false);
         test_frame(&mut codec, &QUERY_BYTES);
-        // test_frame(&mut codec, &QUERY_BYTES);
-    }
-
-    fn remove_whitespace(s: &mut String) {
-        s.retain(|c| !c.is_whitespace());
     }
 
     #[test]
     fn test_query_codec_ast_builder() {
-        let mut pk_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
@@ -841,39 +827,25 @@ mod cassandra_protocol_tests {
         );
 
         let mut codec = CassandraCodec2::new(pk_map, false);
-        let mut bytes: BytesMut = build_bytesmut(&QUERY_BYTES);
-        if let Ok(Some(messages)) = codec.decode(&mut bytes) {
-            let answer: Result<()> = messages
-                .into_iter()
-                .map(|m: Message| {
-                    if let MessageDetails::Query(QueryMessage {
-                        query_string,
-                        namespace: _,
-                        primary_key: _,
-                        query_values: _,
-                        projection: _,
-                        query_type: _,
-                        ast: Some(ASTHolder::SQL(ast)),
-                    }) = m.details
-                    {
-                        let mut query_s = query_string.clone();
-                        let mut ast_string = format!("{}", ast);
+        let mut bytes = BytesMut::from(QUERY_BYTES.as_ref());
+        let messages = codec.decode(&mut bytes).unwrap().unwrap();
+        for message in messages {
+            match message.details {
+                MessageDetails::Query(QueryMessage {
+                    query_string,
+                    ast: Some(ASTHolder::SQL(ast)),
+                    ..
+                }) => {
+                    println!("{}", query_string);
+                    println!("{}", ast);
 
-                        remove_whitespace(&mut query_s);
-                        remove_whitespace(&mut ast_string);
-
-                        println!("{}", query_string);
-                        println!("{}", ast);
-                        assert_eq!(query_s, ast_string);
-                        Ok(())
-                    } else {
-                        Err(anyhow!("uh oh"))
-                    }
-                })
-                .collect();
-            assert_eq!(true, answer.is_ok());
-        } else {
-            panic!("Could not decode frame");
+                    assert_eq!(
+                        query_string.replace(char::is_whitespace, ""),
+                        ast.to_string().replace(char::is_whitespace, ""),
+                    );
+                }
+                details => panic!("Unexpected details: {:?}", details)
+            }
         }
     }
 }
