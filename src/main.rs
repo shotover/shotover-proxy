@@ -37,7 +37,6 @@ struct ConfigOpts {
 fn main() -> Result<()> {
     let params = ConfigOpts::parse();
     let config = Config::from_file(params.config_file.clone())?;
-
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
 
     let builder = tracing_subscriber::fmt()
@@ -98,10 +97,15 @@ fn main() -> Result<()> {
         );
         info!(topology = ?topology);
 
-        if let Ok((_, mut shutdown_complete_rx)) = topology.run_chains().await {
-            let _ = shutdown_complete_rx.recv().await;
-            info!("Goodbye!");
+        match topology.run_chains().await {
+            Ok((_, mut shutdown_complete_rx)) => {
+                let _ = shutdown_complete_rx.recv().await;
+                info!("Goodbye!");
+                Ok(())
+            }
+            Err(error) => {
+                Err(anyhow!("Failed to run chains: {}", error))
+            }
         }
-        Ok(())
     })
 }
