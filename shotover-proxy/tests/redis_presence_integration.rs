@@ -210,7 +210,7 @@ async fn _run_all() {
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .try_init();
-    let _jh = start_proxy("examples/redis-multi/config.yaml".to_string());
+    let _jh = start_proxy("examples/redis-multi/topology.yaml".to_string());
     thread::sleep(delaytime);
     test_simple_pipeline_workflow().await;
     test_presence_fresh_join_pipeline_workflow().await;

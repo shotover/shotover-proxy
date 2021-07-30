@@ -197,4 +197,4 @@ This mapping would effectively create a solution that:
 * Subsequently, all redis actions get identified based on command type, counted and provided as a set of metrics.
 * The redis request is then transform into a cluster aware request and routed to the correct node
 
-The entire example configuration can be found [here](/examples/redis-cluster-dr/config.yaml).
+The entire example configuration can be found [here](/examples/redis-cluster-dr/topology.yaml).
