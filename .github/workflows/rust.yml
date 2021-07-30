@@ -63,5 +63,5 @@ jobs:
 #    - name: Build
 #      run: cargo build
     - name: Cleanup docker
-      run: ./tests/scripts/teardown.sh
+      run: ./shotover-proxy/tests/scripts/teardown.sh
       if: ${{ always() }}

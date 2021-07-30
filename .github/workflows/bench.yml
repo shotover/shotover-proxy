@@ -41,5 +41,5 @@ jobs:
         comment-on-alert: true
         github-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Cleanup docker
-      run: ./tests/scripts/teardown.sh
+      run: ./shotover-proxy/tests/scripts/teardown.sh
       if: ${{ always() }}
