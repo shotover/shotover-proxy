@@ -84,12 +84,11 @@ impl<C: Codec + 'static> OwnedUnorderedConnectionPool<C> {
         }
 
         if connection_pool.len() == 0 {
-            return Err(anyhow!("Couldn't connect to upstream TCP service"));
+            Err(anyhow!("Couldn't connect to upstream TCP service"))
+        } else {
+            self.connections = connection_pool;
+            Ok(())
         }
-
-        self.connections = connection_pool;
-
-        Ok(())
     }
 }
 

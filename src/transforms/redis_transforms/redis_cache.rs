@@ -41,7 +41,7 @@ impl PrimaryKey {
         let mut compound = Vec::new();
         compound.extend(self.partition_key.clone());
         compound.extend(self.range_key.clone());
-        return compound;
+        compound
     }
 }
 
@@ -114,7 +114,7 @@ struct ValueHelper(Value);
 
 impl ValueHelper {
     fn as_bytes(&self) -> &[u8] {
-        return match &self.0 {
+        match &self.0 {
             Value::Number(v) => v.as_bytes(),
             Value::SingleQuotedString(v) => v.as_bytes(),
             Value::NationalStringLiteral(v) => v.as_bytes(),
@@ -131,7 +131,7 @@ impl ValueHelper {
             Value::Timestamp(v) => v.as_bytes(),
             Value::Null => &[],
             _ => unreachable!(),
-        };
+        }
     }
 }
 
@@ -255,7 +255,7 @@ fn build_redis_ast_from_sql(
     pk_schema: &PrimaryKey,
     query_values: &Option<HashMap<String, ShotoverValue>>,
 ) -> Result<ASTHolder> {
-    return match &mut ast {
+    match &mut ast {
         ASTHolder::SQL(sql) => match sql {
             Statement::Query(ref mut q) => match q.body {
                 SetExpr::Select(ref mut s) if s.selection.is_some() => {
@@ -313,13 +313,13 @@ fn build_redis_ast_from_sql(
                     .ok_or(anyhow!("Couldn't build query"))?
                     .iter()
                     .filter_map(|(p, v)| {
-                        return if !pk_schema.partition_key.contains(p)
+                        if !pk_schema.partition_key.contains(p)
                             && !pk_schema.range_key.contains(p)
                         {
                             Some(v)
                         } else {
                             None
-                        };
+                        }
                     })
                     .collect_vec();
 
@@ -338,7 +338,7 @@ fn build_redis_ast_from_sql(
             _ => Err(anyhow!("Couldn't build query")),
         },
         ASTHolder::Commands(_) => Ok(ast),
-    };
+    }
 }
 
 #[async_trait]
@@ -367,7 +367,7 @@ impl Transform for SimpleRedisCache {
             }
         }
 
-        return if updates == 0 {
+        if updates == 0 {
             match self
                 .get_or_update_from_cache(message_wrapper.message.clone())
                 .await
@@ -380,8 +380,8 @@ impl Transform for SimpleRedisCache {
                 self.get_or_update_from_cache(message_wrapper.message.clone()),
                 message_wrapper.call_next_transform()
             );
-            return upstream;
-        };
+            upstream
+        }
     }
 
     fn get_name(&self) -> &'static str {

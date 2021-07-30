@@ -73,7 +73,7 @@ impl<C: Codec + 'static> ConnectionPool<C> {
         }
         let connection = self.connect(&host, connection_count).await?;
         queue_map.insert(host.clone(), connection.clone());
-        return Ok(connection);
+        Ok(connection)
     }
 
     pub async fn connect(
@@ -106,10 +106,10 @@ impl<C: Codec + 'static> ConnectionPool<C> {
         }
 
         if connection_pool.len() == 0 {
-            return Err(anyhow!("Couldn't connect to upstream TCP service"));
+            Err(anyhow!("Couldn't connect to upstream TCP service"))
+        } else {
+            Ok(connection_pool)
         }
-
-        Ok(connection_pool)
     }
 }
 

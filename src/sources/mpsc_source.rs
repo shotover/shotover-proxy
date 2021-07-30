@@ -37,20 +37,21 @@ impl SourcesFromConfig for AsyncMpscConfig {
                 .coalesce_behavior
                 .clone()
                 .unwrap_or(CoalesceBehavior::COUNT(10000));
-            return Ok(vec![Sources::Mpsc(AsyncMpsc::new(
+            Ok(vec![Sources::Mpsc(AsyncMpsc::new(
                 chain.clone(),
                 rx,
                 &self.topic_name,
                 Shutdown::new(notify_shutdown.subscribe()),
                 shutdown_complete_tx,
                 behavior.clone(),
-            ))]);
+            ))])
+        } else {
+            Err(anyhow!(
+                "Could not find the topic {} in [{:#?}]",
+                self.topic_name,
+                topics.topics_rx.keys()
+            ))
         }
-        Err(anyhow!(
-            "Could not find the topic {} in [{:#?}]",
-            self.topic_name,
-            topics.topics_rx.keys()
-        ))
     }
 }
 

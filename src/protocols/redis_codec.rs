@@ -403,7 +403,7 @@ impl RedisCodec {
                     } // merge N HyperLogLogs into a single one
                     _ => {}
                 }
-                return Ok(Message::new_query(
+                Ok(Message::new_query(
                     QueryMessage {
                         query_string,
                         namespace: vec![],
@@ -415,10 +415,12 @@ impl RedisCodec {
                     },
                     false,
                     RawFrame::Redis(frame),
-                ));
+                ))
+            } else {
+                Ok(Message::new_bypass(RawFrame::Redis(frame)))
             }
         } else {
-            return Ok(Message::new_response(
+            Ok(Message::new_response(
                 QueryResponse {
                     matching_query: None,
                     result: Some(Value::List(
@@ -429,9 +431,8 @@ impl RedisCodec {
                 },
                 false,
                 RawFrame::Redis(frame),
-            ));
+            ))
         }
-        Ok(Message::new_bypass(RawFrame::Redis(frame)))
     }
 
     fn handle_redis_string(&self, string: String, frame: Frame) -> Message {
@@ -560,7 +561,7 @@ impl RedisCodec {
     }
 
     pub fn process_redis_frame(&self, frame: Frame) -> Result<Message> {
-        return if !self.enable_metadata {
+        if !self.enable_metadata {
             Ok(Message {
                 details: MessageDetails::Unknown,
                 modified: false,
@@ -580,22 +581,22 @@ impl RedisCodec {
                 Frame::Integer(i) => self.handle_redis_integer(i, frame),
                 Frame::Error(s) => self.handle_redis_error(s, frame),
                 Frame::Null => {
-                    return if self.decode_as_response {
-                        Ok(Message::new_response(
+                    if self.decode_as_response {
+                        Message::new_response(
                             QueryResponse::empty(),
                             false,
                             RawFrame::Redis(frame),
-                        ))
+                        )
                     } else {
-                        Ok(Message::new_query(
+                        Message::new_query(
                             QueryMessage::empty(),
                             false,
                             RawFrame::Redis(frame),
-                        ))
+                        )
                     }
                 }
             })
-        };
+        }
     }
 
     pub fn build_redis_response_frame(resp: QueryResponse) -> Frame {
@@ -614,10 +615,10 @@ impl RedisCodec {
 
     pub fn build_redis_query_frame(query: QueryMessage) -> Frame {
         if let Some(ASTHolder::Commands(Value::List(ast))) = &query.ast {
-            let commands: Vec<Frame> = ast.iter().cloned().map(|v| v.into()).collect_vec();
-            return Frame::Array(commands);
+            Frame::Array(ast.iter().cloned().map(|v| v.into()).collect())
+        } else {
+            Frame::SimpleString(query.query_string)
         }
-        Frame::SimpleString(query.query_string)
     }
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<Frame>>> {
@@ -651,12 +652,12 @@ impl RedisCodec {
         let mut return_buf: Vec<Frame> = vec![];
         std::mem::swap(&mut self.current_frames, &mut return_buf);
 
-        if !return_buf.is_empty() {
+        if return_buf.is_empty() {
+            Ok(None)
+        } else {
             trace!("Batch size {:?}", return_buf.len());
-            return Ok(Some(return_buf));
+            Ok(Some(return_buf))
         }
-
-        Ok(None)
     }
 
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {

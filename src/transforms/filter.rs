@@ -99,7 +99,8 @@ mod test {
                     return qm.query_type == QueryType::Read;
                 }
             }
-            return false;
+
+            false
         });
 
         assert_eq!(any, None);

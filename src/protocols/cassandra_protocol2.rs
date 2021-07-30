@@ -226,9 +226,10 @@ impl CassandraCodec2 {
             }
             SQLValue::Timestamp(v) => {
                 if let Ok(r) = DateTime::from_str(v.as_str()) {
-                    return Value::Timestamp(r);
+                    Value::Timestamp(r)
+                } else {
+                    Value::Strings(format!("{:?}", v))
                 }
-                Value::Strings(format!("{:?}", v))
             }
             SQLValue::Boolean(v) => Value::Boolean(*v),
             _ => Value::Strings("NULL".to_string()),
@@ -646,10 +647,8 @@ impl Decoder for CassandraCodec2 {
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
         match self.decode_raw(src) {
-            Ok(res) => match res {
-                None => Ok(None),
-                Some(frame) => Ok(Some(self.process_cassandra_frame(frame))),
-            },
+            Ok(Some(frame)) => Ok(Some(self.process_cassandra_frame(frame))),
+            Ok(None) => Ok(None),
             Err(e) => {
                 warn!("decode raw error {:?}", e);
                 Err(e)

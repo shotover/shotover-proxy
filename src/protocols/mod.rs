@@ -400,7 +400,7 @@ fn handle_redis_array(
                 } // merge N HyperLogLogs into a single one
                 _ => {}
             }
-            return Ok(MessageDetails::Query(QueryMessage {
+            Ok(MessageDetails::Query(QueryMessage {
                 query_string,
                 namespace: vec![],
                 primary_key: keys_map,
@@ -408,19 +408,20 @@ fn handle_redis_array(
                 projection: None,
                 query_type,
                 ast: Some(ast),
-            }));
+            }))
+        } else {
+            Ok(MessageDetails::Bypass(Box::new(MessageDetails::Unknown)))
         }
     } else {
-        return Ok(MessageDetails::Response(QueryResponse {
+        Ok(MessageDetails::Response(QueryResponse {
             matching_query: None,
             result: Some(Value::List(
                 commands_vec.iter().map(|f| f.clone().into()).collect_vec(),
             )),
             error: None,
             response_meta: None,
-        }));
+        }))
     }
-    Ok(MessageDetails::Bypass(Box::new(MessageDetails::Unknown)))
 }
 
 fn handle_redis_string(string: String, decode_as_request: bool) -> Result<MessageDetails> {
@@ -523,7 +524,7 @@ pub fn process_redis_frame(frame: &RedisFrame, response: bool) -> Result<Message
         RedisFrame::Integer(i) => handle_redis_integer(i, decode_as_request),
         RedisFrame::Error(s) => handle_redis_error(s, decode_as_request),
         RedisFrame::Null => {
-            return if decode_as_request {
+            if decode_as_request {
                 Ok(MessageDetails::Response(QueryResponse::empty()))
             } else {
                 Ok(MessageDetails::Query(QueryMessage::empty()))

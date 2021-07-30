@@ -41,7 +41,7 @@ impl Clone for Buffer {
         let chain = self.chain_to_clone.clone();
         Buffer {
             name: <&str>::clone(&self.name),
-            tx: chain.build_buffered_chain(self.buffer_size),
+            tx: chain.into_buffered_chain(self.buffer_size),
             async_mode: false,
             buffer_size: self.buffer_size,
             chain_to_clone: self.chain_to_clone.clone(),
@@ -55,21 +55,21 @@ impl TransformsFromConfig for BufferConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config("forward".to_string(), &self.chain, &topics).await?;
         let buffer = self.buffer_size.unwrap_or(5);
-        return Ok(Transforms::MPSCForwarder(Buffer {
+        Ok(Transforms::MPSCForwarder(Buffer {
             name: "forward",
-            tx: chain.clone().build_buffered_chain(buffer),
+            tx: chain.clone().into_buffered_chain(buffer),
             async_mode: self.async_mode,
             buffer_size: buffer,
             chain_to_clone: chain,
             timeout: self.timeout_micros,
-        }));
+        }))
     }
 }
 
 #[async_trait]
 impl Transform for Buffer {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        return if self.async_mode {
+        if self.async_mode {
             let expected_responses = message_wrapper.message.messages.len();
             let buffer_result = self
                 .tx
@@ -94,7 +94,7 @@ impl Transform for Buffer {
             self.tx
                 .process_request(message_wrapper, "Buffer".to_string(), self.timeout)
                 .await
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {
@@ -135,7 +135,7 @@ impl TransformsFromConfig for TeeConfig {
             Some(
                 build_chain_from_config("fail_chain".to_string(), fail_chain, topics)
                     .await?
-                    .build_buffered_chain(buffer_size),
+                    .into_buffered_chain(buffer_size),
             )
         } else {
             None
@@ -143,15 +143,15 @@ impl TransformsFromConfig for TeeConfig {
         let tee_chain =
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
-        return Ok(Transforms::MPSCTee(Tee {
+        Ok(Transforms::MPSCTee(Tee {
             name: "tee",
-            tx: tee_chain.clone().build_buffered_chain(buffer_size),
+            tx: tee_chain.clone().into_buffered_chain(buffer_size),
             fail_chain,
             buffer_size,
             chain_to_clone: tee_chain,
             behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
             timeout: self.timeout_micros,
-        }));
+        }))
     }
 }
 
@@ -159,7 +159,7 @@ impl TransformsFromConfig for TeeConfig {
 impl Transform for Tee {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // let m = message_wrapper.message.clone();
-        return match self.behavior {
+        match self.behavior {
             ConsistencyBehavior::IGNORE => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx.process_request_no_return(
@@ -227,7 +227,7 @@ impl Transform for Tee {
 
                 Ok(chain_response)
             }
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {

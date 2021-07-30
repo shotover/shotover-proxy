@@ -198,9 +198,10 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
 
                     let updated: Self::Return;
                     updated = bincode::deserialize::<Self::Return>(&updated_bytes)?;
-                    return Ok(updated);
+                    Ok(updated)
+                } else {
+                    unimplemented!()
                 }
-                unimplemented!()
             }
         }
     }

@@ -59,7 +59,7 @@ impl Transform for Coalesce {
             .messages
             .append(&mut message_wrapper.message.messages);
 
-        return if match self.max_behavior {
+        if match self.max_behavior {
             CoalesceBehavior::COUNT(c) => self.buffer.messages.len() >= c,
             CoalesceBehavior::WAIT_MS(w) => self.last_write.elapsed().as_millis() >= w,
             CoalesceBehavior::COUNT_OR_WAIT(c, w) => {
@@ -85,7 +85,7 @@ impl Transform for Coalesce {
                 true,
                 RawFrame::None,
             ))
-        };
+        }
     }
 
     fn get_name(&self) -> &'static str {

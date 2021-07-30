@@ -59,7 +59,7 @@ impl Transform for ConnectionBalanceAndPool {
         if self.active_connection.is_none() {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
-                let chain = self.chain_to_clone.clone().build_buffered_chain(5);
+                let chain = self.chain_to_clone.clone().into_buffered_chain(5);
                 self.active_connection.replace(chain.clone());
                 guard.push(chain);
             } else {
@@ -71,15 +71,16 @@ impl Transform for ConnectionBalanceAndPool {
             }
         }
         if let Some(chain) = &mut self.active_connection {
-            return chain
+            chain
                 .process_request(
                     message_wrapper,
                     "Connection Balance and Pooler".to_string(),
                     None,
                 )
-                .await;
+                .await
+        } else {
+            unreachable!()
         }
-        unreachable!()
     }
 
     fn get_name(&self) -> &'static str {

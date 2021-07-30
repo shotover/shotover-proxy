@@ -174,12 +174,13 @@ impl Topology {
             .iter()
             .map(|(k, v)| (k.to_owned(), v.unwrap_or(5)))
             .collect();
-        return Topology {
+
+        Topology {
             sources: config.sources,
             chain_config: config.chain_config,
             named_topics: built_topics,
             source_to_chain_mapping: config.source_to_chain_mapping,
-        };
+        }
     }
 
     pub fn get_demo_config() -> Topology {
