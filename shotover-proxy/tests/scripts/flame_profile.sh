@@ -16,7 +16,7 @@ sleep 5
 echo "Running shotover"
 
 cd $SCRIPT_DIR/../../
-timeout 30 cargo flamegraph --bin shotover-proxy -- --topology-file examples/redis-cluster/config.yaml --config-file config/config.yaml &
+timeout 30 cargo flamegraph --bin shotover-proxy -- --topology-file examples/redis-cluster/topology.yaml --config-file config/config.yaml &
 sleep 10
 timeout 20 ~/Downloads/redis-5.0.8/src/redis-benchmark -t set,get -l -q
 

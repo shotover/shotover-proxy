@@ -15,6 +15,6 @@ trap defer EXIT
 
 docker-compose -f $SCRIPT_DIR/../../examples/cassandra-standalone/docker-compose.yml up
 
-#cargo run -- --topology-file $SCRIPT_DIR/../../examples/redis-cluster/config.yaml --config-file $SCRIPT_DIR/../../config/config.yaml
+#cargo run -- --topology-file $SCRIPT_DIR/../../examples/redis-cluster/topology.yaml --config-file $SCRIPT_DIR/../../config/config.yaml
 
 

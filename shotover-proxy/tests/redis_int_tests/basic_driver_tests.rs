@@ -705,7 +705,7 @@ fn test_pass_through() {
         .with_max_level(Level::INFO)
         .try_init();
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-    run_all("examples/redis-passthrough/config.yaml".to_string());
+    run_all("examples/redis-passthrough/topology.yaml".to_string());
 }
 
 // #[test]
@@ -720,7 +720,7 @@ fn test_pass_through_one() {
         .unwrap();
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-passthrough/config.yaml".to_string())
+            Topology::from_file("examples/redis-passthrough/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
@@ -746,7 +746,7 @@ fn test_active_active_redis() {
         .with_max_level(Level::INFO)
         .try_init();
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-    run_all_active_safe("examples/redis-multi/config.yaml".to_string());
+    run_all_active_safe("examples/redis-multi/topology.yaml".to_string());
 }
 
 #[test]
@@ -762,7 +762,7 @@ fn test_active_one_active_redis() {
         .unwrap();
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-multi/config.yaml".to_string())
+            Topology::from_file("examples/redis-multi/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
@@ -797,7 +797,7 @@ fn test_pass_redis_cluster_one() {
         .unwrap();
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster/config.yaml".to_string())
+            Topology::from_file("examples/redis-cluster/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
@@ -834,7 +834,7 @@ fn _test_cluster_auth_redis() {
         .unwrap();
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster-auth/config.yaml".to_string())
+            Topology::from_file("examples/redis-cluster-auth/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
@@ -902,7 +902,7 @@ fn test_cluster_all_redis() {
         .with_max_level(Level::INFO)
         .try_init();
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
-    run_all_cluster_safe("examples/redis-cluster/config.yaml".to_string());
+    run_all_cluster_safe("examples/redis-cluster/topology.yaml".to_string());
 }
 
 #[test]
@@ -921,7 +921,7 @@ fn test_cluster_all_script_redis() {
         .unwrap();
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster/config.yaml".to_string())
+            Topology::from_file("examples/redis-cluster/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
@@ -956,7 +956,7 @@ fn test_cluster_all_pipeline_safe_redis() {
         .unwrap();
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster/config.yaml".to_string())
+            Topology::from_file("examples/redis-cluster/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await

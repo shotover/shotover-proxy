@@ -110,7 +110,7 @@ fn redis_active_bench(c: &mut Criterion) {
 
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-multi/config.yaml".to_string())
+            Topology::from_file("examples/redis-multi/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
@@ -168,7 +168,7 @@ fn redis_cluster_bench(c: &mut Criterion) {
 
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster/config.yaml".to_string())
+            Topology::from_file("examples/redis-cluster/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
@@ -226,7 +226,7 @@ fn redis_passthrough_bench(c: &mut Criterion) {
 
     let _jh: _ = rt.spawn(async move {
         if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-passthrough/config.yaml".to_string())
+            Topology::from_file("examples/redis-passthrough/topology.yaml".to_string())
                 .unwrap()
                 .run_chains()
                 .await
