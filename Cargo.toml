@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "shotover-proxy",
+    "test-helpers",
 ]
 
 # https://deterministic.space/high-performance-rust.html

@@ -32,7 +32,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         BenchmarkId::new("input_example", "Empty Message"),
         &wrapper,
         move |b, s| {
-            let mut rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = tokio::runtime::Runtime::new().unwrap();
             b.iter(|| {
                 let _ = rt.block_on(chain.process_request(s.clone(), "".to_string()));
             })
@@ -64,7 +64,7 @@ fn lua_benchmark(c: &mut Criterion) {
         RawFrame::None,
     ));
 
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
 
     let transform = rt.block_on(lua_t.get_source(&t_holder)).unwrap();
 

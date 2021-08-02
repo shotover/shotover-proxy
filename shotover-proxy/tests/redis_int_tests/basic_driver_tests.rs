@@ -2,7 +2,7 @@
 
 use redis::{Commands, ErrorKind, RedisError, Value};
 
-use crate::DockerCompose;
+use test_helpers::docker_compose::DockerCompose;
 use crate::redis_int_tests::support::TestContext;
 
 use shotover_proxy::config::topology::Topology;
