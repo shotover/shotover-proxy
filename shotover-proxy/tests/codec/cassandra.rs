@@ -46,7 +46,7 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
 async fn test() {
     let mut capture = crate::codec::util::packet_capture::PacketCapture::new();
     println!("doing some cql");
-    let packets = capture.parse_from_file("./test_tmp/cql_mixed.pcap", None);
+    let packets = capture.parse_from_file("../test_tmp/cql_mixed.pcap", None);
     let mut client_packets = Vec::new();
     let mut server_packets = Vec::new();
     // let mut server_packets: Vec<anyhow::Result<Bytes, std::io::Error>> = Vec::new();
