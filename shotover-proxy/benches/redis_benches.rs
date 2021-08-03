@@ -1,16 +1,14 @@
-use anyhow::{anyhow, Result};
-
-use tracing::info;
+use anyhow::Result;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use shotover_proxy::config::topology::Topology;
-use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
-use std::{thread, time};
+use std::time;
 use tokio::runtime;
 use tokio::task::JoinHandle;
 use tracing::Level;
+use test_helpers::docker_compose::DockerCompose;
 
 pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     tokio::spawn(async move {
@@ -22,80 +20,8 @@ pub fn start_proxy(config: String) -> JoinHandle<Result<()>> {
     })
 }
 
-pub fn load_docker_compose(file_path: String) -> Result<()> {
-    // stop_docker_compose(file_path.clone())?;
-    let mut command = Command::new("sh");
-    command
-        .arg("-c")
-        .arg(format!("docker-compose -f {} up -d", file_path.as_str()));
-
-    info!("running {:#?}", command);
-
-    let output = command
-        .status()
-        .expect("could not exec process docker-compose");
-    thread::sleep(time::Duration::from_secs(4));
-
-    if output.success() {
-        return Ok(());
-    }
-    Err(anyhow!(
-        "couldn't start docker compose {}",
-        output.to_string()
-    ))
-}
-
-pub fn stop_docker_compose(file_path: String) -> Result<()> {
-    let mut command = Command::new("sh");
-    command
-        .arg("-c")
-        .arg(format!("docker-compose -f {} down", file_path.as_str()));
-
-    info!("running {:#?}", command);
-
-    let output = command
-        .status()
-        .expect("could not exec process docker-compose");
-
-    let mut command2 = Command::new("sh");
-    command2.arg("-c").arg(format!(
-        "docker-compose -f {} rm -f -s -v",
-        file_path.as_str()
-    ));
-
-    info!("running {:#?}", command2);
-
-    let output2 = command2
-        .status()
-        .expect("could not exec process docker-compose");
-
-    thread::sleep(time::Duration::from_secs(1));
-
-    let mut command3 = Command::new("sh");
-    command3
-        .arg("-c")
-        .arg("yes | docker network prune".to_string());
-
-    info!("running {:#?}", command3);
-
-    let output3 = command3
-        .status()
-        .expect("could not exec process docker-compose");
-
-    output3.success();
-
-    if output.success() || output2.success() {
-        return Ok(());
-    }
-    Err(anyhow!(
-        "couldn't start docker compose {}",
-        output.to_string()
-    ))
-}
-
 fn redis_active_bench(c: &mut Criterion) {
-    let compose_config = "examples/redis-multi/docker-compose.yml".to_string();
-    load_docker_compose(compose_config).unwrap();
+    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
@@ -152,8 +78,7 @@ fn redis_active_bench(c: &mut Criterion) {
 }
 
 fn redis_cluster_bench(c: &mut Criterion) {
-    let compose_config = "examples/redis-cluster/docker-compose.yml".to_string();
-    load_docker_compose(compose_config).unwrap();
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
 
     let _subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::ERROR)
@@ -210,8 +135,7 @@ fn redis_cluster_bench(c: &mut Criterion) {
 }
 
 fn redis_passthrough_bench(c: &mut Criterion) {
-    let compose_config = "examples/redis-passthrough/docker-compose.yml".to_string();
-    load_docker_compose(compose_config).unwrap();
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
