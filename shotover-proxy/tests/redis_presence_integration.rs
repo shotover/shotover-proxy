@@ -1,8 +1,9 @@
+mod helpers;
+
 use redis::{Commands, Connection, RedisResult};
-use shotover_proxy::config::topology::Topology;
 use std::{thread, time};
-use tokio::task::JoinHandle;
-use tracing::{info, Level};
+use tracing::info;
+use helpers::run_shotover_with_topology;
 
 const LUA1: &str = r###"
 return {KEYS[1],ARGV[1],ARGV[2]}
@@ -11,15 +12,6 @@ return {KEYS[1],ARGV[1],ARGV[2]}
 const LUA2: &str = r###"
 return {KEYS[1],ARGV[1],ARGV[2]}
 "###;
-
-pub fn start_proxy(config: String) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) = Topology::from_file(config).unwrap().run_chains().await {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-    })
-}
 
 fn run_basic_pipelined(connection: &mut Connection) {
     let pipel: Vec<i64> = redis::pipe()
@@ -205,13 +197,10 @@ async fn test_simple_pipeline_workflow() {
 }
 
 // #[tokio::test(threaded_scheduler)]
-async fn _run_all() {
-    let delaytime = time::Duration::from_secs(2);
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
-    let _jh = start_proxy("examples/redis-multi/topology.yaml".to_string());
-    thread::sleep(delaytime);
+#[allow(dead_code)]
+async fn run_all() {
+    let _running = run_shotover_with_topology("examples/redis-multi/topology.yaml");
+    thread::sleep(time::Duration::from_secs(2));
     test_simple_pipeline_workflow().await;
     test_presence_fresh_join_pipeline_workflow().await;
     test_presence_fresh_join_single_workflow().await;
