@@ -1,17 +1,16 @@
 #![allow(clippy::let_unit_value)]
 
+
 use redis::{Commands, ErrorKind, RedisError, Value};
 
 use test_helpers::docker_compose::DockerCompose;
+use crate::helpers::run_shotover_with_topology;
 use crate::redis_int_tests::support::TestContext;
 
-use shotover_proxy::config::topology::Topology;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
-use tokio::runtime;
 use tracing::info;
 use tracing::trace;
-use tracing::Level;
 use serial_test::serial;
 
 fn test_args() {
@@ -426,14 +425,9 @@ fn test_real_transaction() {
             .query(&mut con)
             .unwrap();
 
-        match response {
-            None => {
-                continue;
-            }
-            Some(response) => {
-                assert_eq!(response, (43,));
-                break;
-            }
+        if let Some(response) = response {
+            assert_eq!(response, (43,));
+            break;
         }
     }
 }
@@ -701,81 +695,33 @@ fn test_cluster_script() {
 #[test]
 #[serial(redis)]
 fn test_pass_through() {
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-    run_all("examples/redis-passthrough/topology.yaml".to_string());
+    let _running = run_shotover_with_topology("examples/redis-passthrough/topology.yaml");
+    run_all();
 }
 
 // #[test]
 // #[serial(redis)]
 #[allow(dead_code)]
 fn test_pass_through_one() {
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-passthrough/topology.yaml".to_string())
-                .unwrap()
-                .run_chains()
-                .await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-
+    let _running = run_shotover_with_topology("examples/redis-passthrough/topology.yaml");
     test_real_transaction();
 }
 
 #[test]
 #[serial(redis)]
 fn test_active_active_redis() {
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-    run_all_active_safe("examples/redis-multi/topology.yaml".to_string());
+    let _running = run_shotover_with_topology("examples/redis-multi/topology.yaml");
+    run_all_active_safe();
 }
 
 #[test]
 #[serial(redis)]
 fn test_active_one_active_redis() {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-multi/topology.yaml".to_string())
-                .unwrap()
-                .run_chains()
-                .await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
+    let _running = run_shotover_with_topology("examples/redis-multi/topology.yaml");
 
     // test_args();
     test_cluster_basics();
@@ -788,29 +734,7 @@ fn test_active_one_active_redis() {
 #[serial(redis)]
 fn test_pass_redis_cluster_one() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster/topology.yaml".to_string())
-                .unwrap()
-                .run_chains()
-                .await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
+    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
 
     // test_args()test_args;
     test_pipeline_error(); //TODO: script does not seem to be loading in the server?
@@ -820,30 +744,8 @@ fn test_pass_redis_cluster_one() {
 // #[test]
 // #[serial(redis)]
 fn _test_cluster_auth_redis() {
-    info!("test_cluster_auth_redis");
     let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml");
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
-
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster-auth/topology.yaml".to_string())
-                .unwrap()
-                .run_chains()
-                .await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
+    let _running = run_shotover_with_topology("examples/redis-cluster-auth/topology.yaml");
 
     let ctx = TestContext::new_auth();
     let mut con = ctx.connection();
@@ -898,39 +800,16 @@ fn _test_cluster_auth_redis() {
 #[serial(redis)]
 fn test_cluster_all_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
+    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
-    run_all_cluster_safe("examples/redis-cluster/topology.yaml".to_string());
+    run_all_cluster_safe();
 }
 
 #[test]
 #[serial(redis)]
 fn test_cluster_all_script_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
-
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster/topology.yaml".to_string())
-                .unwrap()
-                .run_chains()
-                .await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
+    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
     for _i in 0..1999 {
         test_script();
@@ -940,34 +819,8 @@ fn test_cluster_all_script_redis() {
 #[test]
 #[serial(redis)]
 fn test_cluster_all_pipeline_safe_redis() {
-    info!("test_cluster_all_pipeline_safe_redis");
-
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-
-    let _subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .try_init();
-
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file("examples/redis-cluster/topology.yaml".to_string())
-                .unwrap()
-                .run_chains()
-                .await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
-    info!("Starting test");
+    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
 
     let ctx = TestContext::new();
     let mut con = ctx.connection();
@@ -1063,23 +916,7 @@ fn test_cluster_all_pipeline_safe_redis() {
     test_bit_operations();
 }
 
-fn run_all_active_safe(config: String) {
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file(config).unwrap().run_chains().await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
+fn run_all_active_safe() {
     test_cluster_basics();
     test_cluster_eval();
     test_cluster_script(); //TODO: script does not seem to be loading in the server?
@@ -1115,23 +952,7 @@ fn run_all_active_safe(config: String) {
     // test_invalid_protocol();
 }
 
-fn run_all_cluster_safe(config: String) {
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file(config).unwrap().run_chains().await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
+fn run_all_cluster_safe() {
     test_cluster_basics();
     test_cluster_eval();
     test_cluster_script(); //TODO: script does not seem to be loading in the server?
@@ -1166,23 +987,7 @@ fn run_all_cluster_safe(config: String) {
     // test_invalid_protocol();
 }
 
-fn run_all(config: String) {
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("RPProxy-Thread")
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let _jh: _ = rt.spawn(async move {
-        if let Ok((_, mut shutdown_complete_rx)) =
-            Topology::from_file(config).unwrap().run_chains().await
-        {
-            //TODO: probably a better way to handle various join handles / threads
-            let _ = shutdown_complete_rx.recv().await;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
+fn run_all() {
     test_args();
     test_getset();
     test_incr();
