@@ -8,6 +8,6 @@ use shotover_proxy::runner::{ConfigOpts, Runner};
 
 fn main() -> Result<()> {
     Runner::new(ConfigOpts::parse())?
-        .with_logging()?
+        .with_observability_interface()?
         .run_block()
 }
