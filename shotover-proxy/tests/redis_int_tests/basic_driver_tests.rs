@@ -1,16 +1,13 @@
 #![allow(clippy::let_unit_value)]
 
-
 use redis::{Commands, ErrorKind, RedisError, Value};
 
 use test_helpers::docker_compose::DockerCompose;
 use crate::helpers::run_shotover_with_topology;
 use crate::redis_int_tests::support::TestContext;
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::collections::{HashMap, HashSet};
-use tracing::info;
-use tracing::trace;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use tracing::{info, trace};
 use serial_test::serial;
 
 fn test_args() {
@@ -596,7 +593,7 @@ fn test_nice_list_api() {
     assert_eq!(con.rpush("my_list", &[5, 6, 7, 8]), Ok(8));
     assert_eq!(con.llen("my_list"), Ok(8));
 
-    assert_eq!(con.lpop("my_list"), Ok(1));
+    assert_eq!(con.lpop("my_list", None), Ok(1));
     assert_eq!(con.llen("my_list"), Ok(7));
 
     assert_eq!(con.lrange("my_list", 0, 2), Ok((2, 3, 4)));

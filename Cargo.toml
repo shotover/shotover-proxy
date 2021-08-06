@@ -12,7 +12,3 @@ codegen-units = 1
 [profile.bench]
 lto = "fat"
 codegen-units = 1
-
-# Patches
-[patch.crates-io]
-cached = { git = "https://github.com/drwilco/cached", branch = "cloneless-result" }
