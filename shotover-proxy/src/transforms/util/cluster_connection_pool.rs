@@ -1,122 +1,192 @@
-use crate::server::CodecReadHalf;
-use crate::server::CodecWriteHalf;
-use crate::transforms::util::Request;
-use crate::{message::Messages, server::Codec};
-use anyhow::{anyhow, Result};
-use futures::StreamExt;
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::fmt::Formatter;
-use std::iter::FromIterator;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
+use derivative::Derivative;
+use futures::StreamExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_util::codec::{Decoder, FramedRead, FramedWrite};
-use tracing::{debug, info};
+use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::trace;
+use tracing::{debug, warn};
 
-#[derive(Clone)]
-pub struct ConnectionPool<C: Codec> {
-    host_set: Arc<Mutex<HashSet<String>>>,
-    queue_map: Arc<Mutex<HashMap<String, Vec<UnboundedSender<Request>>>>>,
+use crate::server::CodecReadHalf;
+use crate::server::CodecWriteHalf;
+use crate::transforms::util::ConnectionError;
+use crate::transforms::util::Request;
+use crate::{message::Messages, server::Codec};
+
+type Address = String;
+pub type Connection = UnboundedSender<Request>;
+pub type Lane = HashMap<Address, Vec<Connection>>;
+
+#[async_trait]
+pub trait Authenticator<T> {
+    type Error: std::error::Error + Sync + Send + 'static;
+    async fn authenticate(&self, sender: &mut Connection, token: &T) -> Result<(), Self::Error>;
+}
+
+// TODO: Replace with trait_alias (RFC#1733).
+pub trait Token: Send + Sync + std::hash::Hash + Eq + Clone {}
+impl<T: Send + Sync + std::hash::Hash + Eq + Clone> Token for T {}
+
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
+    lanes: Arc<Mutex<HashMap<Option<T>, Lane>>>,
+
+    #[derivative(Debug = "ignore")]
     codec: C,
-    auth_func: fn(&ConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
+
+    #[derivative(Debug = "ignore")]
+    authenticator: A,
 }
 
-impl<C: Codec> fmt::Debug for ConnectionPool<C> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ConnectionPool")
-            .field("host_set", &self.host_set)
-            .field("queue_map", &self.queue_map)
-            .finish()
-    }
-}
-
-impl<C: Codec + 'static> ConnectionPool<C> {
-    pub fn new(hosts: Vec<String>, codec: C) -> Self {
-        ConnectionPool {
-            host_set: Arc::new(Mutex::new(HashSet::from_iter(hosts.into_iter()))),
-            queue_map: Arc::new(Mutex::new(HashMap::new())),
+impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
+    // TODO: Support non-authenticated connection pools (with RFC#1216?).
+    pub fn new_with_auth(codec: C, authenticator: A) -> Self {
+        Self {
+            lanes: Arc::new(Mutex::new(HashMap::new())),
             codec,
-            auth_func: |_, _| Ok(()),
-        }
-    }
-
-    pub fn new_with_auth(
-        hosts: Vec<String>,
-        codec: C,
-        auth_func: fn(&ConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
-    ) -> Self {
-        ConnectionPool {
-            host_set: Arc::new(Mutex::new(HashSet::from_iter(hosts.into_iter()))),
-            queue_map: Arc::new(Mutex::new(HashMap::new())),
-            codec,
-            auth_func,
+            authenticator,
         }
     }
 
     /// Try and grab an existing connection, if it's closed (e.g. the listener on the other side
     /// has closed due to a TCP error), we'll try to reconnect and return the new connection while
     /// updating the connection map. Errors are returned when a connection can't be established.
-    pub async fn get_connection(
+    pub async fn get_connections(
         &self,
-        host: &String,
-        connection_count: i32,
-    ) -> Result<Vec<UnboundedSender<Request>>> {
-        let mut queue_map = self.queue_map.lock().await;
-        if let Some(x) = queue_map.get(host) {
-            if x.iter().all(|x| !x.is_closed()) {
-                return Ok(x.clone());
+        address: Address,
+        token: &Option<T>,
+        connection_count: usize,
+    ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
+        // TODO: Extract return type using generic associated types (RFC#1598).
+
+        let mut lanes = self.lanes.lock().await;
+        let lane = lanes.entry(token.clone()).or_insert_with(HashMap::new);
+
+        let mut connections: Vec<Connection> = lane
+            .get_mut(&address)
+            .map(|existing_connections| {
+                existing_connections.retain(|connection| !connection.is_closed());
+                existing_connections
+                    .iter()
+                    .filter(|connection| !connection.is_closed())
+                    .take(connection_count)
+                    .cloned()
+            })
+            .into_iter()
+            .flatten()
+            .collect();
+
+        let shortfall = connection_count - connections.len();
+
+        if shortfall > 0 {
+            // We need more connections, but let's create one at a time for now.
+            connections.append(&mut self.new_connections(&address, token, 1).await?);
+        }
+
+        // NOTE: This replaces the whole lane (i.e. disowns the old one).
+        // IDEA: Maintain weak references so the pool can track active count including disowned?
+        lane.insert(address, connections.clone());
+
+        return Ok(connections);
+    }
+
+    /// Create multiple connections not owned by the pool.
+    async fn new_connections(
+        &self,
+        address: &Address,
+        token: &Option<T>,
+        connection_count: usize,
+    ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
+        let mut connections: Vec<Connection> = Vec::new();
+        let mut errors = Vec::new();
+
+        for i in 0..connection_count {
+            match self.new_connection(address, &token).await {
+                Ok(connection) => {
+                    connections.push(connection);
+                }
+                Err(error) => {
+                    debug!(
+                        "Could not authenticate to upstream TCP service for connection {}/{} to {} - {}",
+                        i + 1,
+                        connection_count,
+                        address,
+                        error
+                    );
+                    errors.push(error);
+                }
             }
         }
-        let connection = self.connect(&host, connection_count).await?;
-        queue_map.insert(host.clone(), connection.clone());
+
+        if connections.is_empty() && !errors.is_empty() {
+            // On total failure, propagate any error.
+            return Err(errors.into_iter().next().unwrap());
+        } else if connections.len() < connection_count {
+            warn!(
+                "attempted {} connections, but only {} succeeded",
+                connection_count,
+                connections.len()
+            );
+        }
+
+        Ok(connections)
+    }
+
+    /// Create a connection that is not owned by the pool.
+    pub async fn new_connection(
+        &self,
+        address: &Address,
+        token: &Option<T>,
+    ) -> Result<Connection, ConnectionError<A::Error>> {
+        let stream: TcpStream = TcpStream::connect(address)
+            .await
+            .map_err(ConnectionError::IO)?;
+
+        let mut connection = spawn_from_stream(&self.codec, stream);
+
+        if let Some(token) = token {
+            self.authenticator
+                .authenticate(&mut connection, token)
+                .await
+                .map_err(ConnectionError::Authenticator)?;
+        }
+
         Ok(connection)
     }
+}
 
-    pub async fn connect(
-        &self,
-        host: &String,
-        connection_count: i32,
-    ) -> Result<Vec<UnboundedSender<Request>>>
-    where
-        <C as Decoder>::Error: std::marker::Send,
-    {
-        let mut connection_pool: Vec<UnboundedSender<Request>> = Vec::new();
+pub fn spawn_from_stream<C: Codec + 'static>(codec: &C, stream: TcpStream) -> Connection {
+    let (read, write) = stream.into_split();
+    let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+    let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
 
-        for _i in 0..connection_count {
-            let socket: TcpStream = TcpStream::connect(host).await?;
-            let (read, write) = socket.into_split();
-            let (mut out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
-            let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+    tokio::spawn(tx_process(
+        write,
+        out_rx,
+        return_tx,
+        shutdown_rx,
+        codec.clone(),
+    ));
+    tokio::spawn(rx_process(read, return_rx, shutdown_tx, codec.clone()));
 
-            tokio::spawn(tx_process(write, out_rx, return_tx, self.codec.clone()));
-
-            tokio::spawn(rx_process(read, return_rx, self.codec.clone()));
-            match (self.auth_func)(&self, &mut out_tx) {
-                Ok(_) => {
-                    connection_pool.push(out_tx);
-                }
-                Err(e) => {
-                    info!("Could not authenticate to upstream TCP service - {}", e);
-                }
-            }
-        }
-
-        if connection_pool.len() == 0 {
-            Err(anyhow!("Couldn't connect to upstream TCP service"))
-        } else {
-            Ok(connection_pool)
-        }
-    }
+    out_tx
 }
 
 async fn tx_process<C: CodecWriteHalf>(
     write: OwnedWriteHalf,
     out_rx: UnboundedReceiver<Request>,
-    return_tx: UnboundedSender<Request>,
+    return_tx: Connection,
+    shutdown_rx: oneshot::Receiver<()>,
     codec: C,
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec.clone());
@@ -127,13 +197,22 @@ async fn tx_process<C: CodecWriteHalf>(
         return_tx.send(x)?;
         ret
     });
-    rx_stream.forward(in_w).await?;
+
+    tokio::select! {
+       _ = rx_stream.forward(in_w) => trace!("connection write-closed by writer"),
+       _ = shutdown_rx => {
+           trace!("connection write-closed by reader");
+           debug!("connection closed by remote upstream")
+       },
+    }
+
     Ok(())
 }
 
 async fn rx_process<C: CodecReadHalf>(
     read: OwnedReadHalf,
     mut return_rx: UnboundedReceiver<Request>,
+    shutdown_tx: oneshot::Sender<()>,
     codec: C,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec.clone());
@@ -155,6 +234,10 @@ async fn rx_process<C: CodecReadHalf>(
             }
             Err(e) => {
                 debug!("Couldn't decode message from upstream host {:?}", e);
+
+                // Stop writer if not already stopped.
+                let _ = shutdown_tx.send(());
+
                 return Err(anyhow!(
                     "Couldn't decode message from upstream host {:?}",
                     e
@@ -162,5 +245,11 @@ async fn rx_process<C: CodecReadHalf>(
             }
         }
     }
+
+    trace!("connection read-closed");
+
+    // Stop writer if not already stopped.
+    let _ = shutdown_tx.send(());
+
     Ok(())
 }

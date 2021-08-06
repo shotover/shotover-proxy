@@ -1,8 +1,8 @@
-use redis::{RedisResult, Value};
-
 use std::io;
 use std::thread::sleep;
 use std::time::Duration;
+
+use redis::{RedisResult, Value};
 use tracing::info;
 
 pub struct TestContext {
@@ -16,19 +16,27 @@ impl Default for TestContext {
 }
 
 impl TestContext {
+    // IDEA: Use typed-builder instead of multiple constructors?
+
     pub fn new_auth() -> TestContext {
-        TestContext::new_internal("redis://default:shotover@127.0.0.1:6379/".to_string())
+        TestContext::new_internal("redis://default:shotover@127.0.0.1:6379/", true)
     }
 
     pub fn new() -> TestContext {
-        TestContext::new_internal("redis://127.0.0.1:6379/".to_string())
+        TestContext::new_internal("redis://127.0.0.1:6379/", true)
     }
 
-    pub fn new_internal(conn_string: String) -> TestContext {
-        let client = redis::Client::open(conn_string.as_str()).unwrap();
+    pub fn new_without_test() -> Self {
+        TestContext::new_internal("redis://127.0.0.1:6379/", false)
+    }
+
+    pub fn new_internal(conn_string: &str, test: bool) -> TestContext {
+        info!("using connection string: {}", conn_string);
+
+        let client = redis::Client::open(conn_string).unwrap();
         let mut con;
 
-        let attempts = 30;
+        let attempts = 300;
         let mut current_attempt = 0;
 
         loop {
@@ -49,6 +57,11 @@ impl TestContext {
                 }
                 Ok(x) => {
                     con = x;
+
+                    if !test {
+                        break;
+                    }
+
                     let result: RedisResult<Option<String>> =
                         redis::cmd("GET").arg("nosdjkghsdjghsdkghj").query(&mut con);
                     match result {
@@ -66,7 +79,10 @@ impl TestContext {
                 }
             }
         }
-        redis::cmd("FLUSHDB").execute(&mut con);
+
+        if test {
+            redis::cmd("FLUSHDB").execute(&mut con);
+        }
 
         TestContext { client }
     }

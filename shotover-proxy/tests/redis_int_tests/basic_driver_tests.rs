@@ -1,14 +1,15 @@
 #![allow(clippy::let_unit_value)]
 
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
 use redis::{Commands, ErrorKind, RedisError, Value};
+use serial_test::serial;
+use tracing::{info, trace};
+
+use test_helpers::docker_compose::DockerCompose;
 
 use crate::helpers::run_shotover_with_topology;
 use crate::redis_int_tests::support::TestContext;
-use test_helpers::docker_compose::DockerCompose;
-
-use serial_test::serial;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use tracing::{info, trace};
 
 fn test_args() {
     info!("test_args");
@@ -737,10 +738,9 @@ fn test_pass_redis_cluster_one() {
     test_pipeline_error(); //TODO: script does not seem to be loading in the server?
 }
 
-// TODO Re-enable Redis Auth support
-// #[test]
-// #[serial(redis)]
-fn _test_cluster_auth_redis() {
+#[test]
+#[serial(redis)]
+fn test_cluster_auth_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml");
     let _running = run_shotover_with_topology("examples/redis-cluster-auth/topology.yaml");
 
@@ -760,25 +760,50 @@ fn _test_cluster_auth_redis() {
         Ok(("foo".to_string(), b"bar".to_vec()))
     );
 
-    // create a user, auth as them, try to set a key but should fail as they have no access
+    // create broken read-only user, auth as them unsuccessfully
     redis::cmd("ACL")
-        .arg(&["SETUSER", "testuser", "+@read", "on", ">password"])
+        .arg(&["SETUSER", "brokenuser", "+@read", "on", ">password"])
+        .execute(&mut con);
+    match redis::cmd("AUTH")
+        .arg("brokenuser")
+        .arg("password")
+        .query::<String>(&mut con)
+    {
+        Ok(_) => {
+            panic!("authenticating with user lacking CLUSTER SLOTS permission should fail")
+        }
+        Err(e) => {
+            assert_eq!(e.code(), Some("NOPERM"));
+        }
+    }
+
+    // create read-only user, auth as them, try to set a key but should fail as they have no access
+    redis::cmd("ACL")
+        .arg(&[
+            "SETUSER",
+            "testuser",
+            "+@read",
+            "+cluster|slots",
+            "on",
+            ">password",
+        ])
         .execute(&mut con);
     redis::cmd("AUTH")
         .arg("testuser")
         .arg("password")
         .execute(&mut con);
-    if let Ok(_s) = redis::cmd("SET")
+    match redis::cmd("SET")
         .arg("{x}key2")
         .arg("fail")
         .query::<String>(&mut con)
     {
-        panic!("This should fail!")
+        Ok(_s) => {
+            panic!("write attempt with read-only user should fail")
+        }
+        Err(e) => {
+            assert_eq!(e.code(), Some("NOPERM"));
+        }
     }
-    // assert_eq!(
-    //     redis::cmd("GET").arg("{x}key2").query(&mut con),
-    //     Ok("bar".to_string())
-    // );
 
     // set auth context back to default user using non acl style auth command
     redis::cmd("AUTH").arg("shotover").execute(&mut con);
@@ -791,6 +816,37 @@ fn _test_cluster_auth_redis() {
         redis::cmd("GET").arg("{x}key3").query(&mut con),
         Ok("food".to_string())
     );
+
+    // check failed write did not get through to upstream
+    assert_eq!(
+        redis::cmd("GET").arg("{x}key2").query(&mut con),
+        Ok("bar".to_string())
+    );
+
+    let mut con2 = ctx.connection();
+
+    let bad_password_result: Result<String, RedisError> = redis::cmd("AUTH")
+        .arg("with a bad password")
+        .query(&mut con2);
+
+    if let Err(error) = bad_password_result {
+        assert!(error.to_string().starts_with("WRONGPASS"))
+    } else {
+        panic!("expected WRONGPASS error");
+    }
+
+    let anonymous_context = TestContext::new_without_test();
+    let mut anonymous_connection = anonymous_context.connection();
+
+    let no_auth_result: Result<String, RedisError> = redis::cmd("GET")
+        .arg("without authenticating")
+        .query(&mut anonymous_connection);
+
+    if let Err(error) = no_auth_result {
+        assert!(error.to_string().starts_with("NOAUTH"))
+    } else {
+        panic!("expected NOAUTH error")
+    }
 }
 
 #[test]

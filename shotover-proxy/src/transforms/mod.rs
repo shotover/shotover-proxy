@@ -1,13 +1,16 @@
 use core::fmt;
 use std::fmt::{Debug, Formatter};
+use std::pin::Pin;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::Future;
 use serde::{Deserialize, Serialize};
 
+use crate::concurrency::FuturesOrdered;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::transforms::cassandra::cassandra_codec_destination::{
     CodecConfiguration, CodecDestination,
 };
@@ -276,19 +279,30 @@ impl<'a> Display for Wrapper<'a> {
     }
 }
 
+tokio::task_local! {
+    pub static CONTEXT_CHAIN_NAME: String;
+}
+
 impl<'a> Wrapper<'a> {
     pub async fn call_next_transform(mut self) -> ChainResponse {
-        let t = self.transforms.remove(0);
+        let transform = self.transforms.remove(0);
 
-        let name = t.get_name();
+        let transform_name = transform.get_name();
+        let chain_name = self.chain_name.clone();
+
         let start = Instant::now();
-        let result = t.transform(self).await;
+
+        let result = CONTEXT_CHAIN_NAME
+            .scope(chain_name, transform.transform(self))
+            .await;
+
         let end = Instant::now();
-        counter!("shotover_transform_total", 1, "transform" => name);
+
+        counter!("shotover_transform_total", 1, "transform" => transform_name);
         if result.is_err() {
-            counter!("shotover_transform_failures", 1, "transform" => name)
+            counter!("shotover_transform_failures", 1, "transform" => transform_name)
         }
-        timing!("shotover_transform_latency", start, end, "transform" => name);
+        timing!("shotover_transform_latency", start, end, "transform" => transform_name);
         result
     }
 
@@ -352,3 +366,7 @@ pub trait Transform: Send {
         Ok(())
     }
 }
+
+pub type ResponseFuturesOrdered = FuturesOrdered<
+    Pin<Box<dyn Future<Output = Result<(Message, Result<Messages>)>> + std::marker::Send>>,
+>;

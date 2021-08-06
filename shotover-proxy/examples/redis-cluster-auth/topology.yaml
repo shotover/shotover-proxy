@@ -7,7 +7,15 @@ sources:
 chain_config:
   redis_chain:
     - RedisCluster:
-        first_contact_points: ["redis://127.0.0.1:2230/", "redis://127.0.0.1:2231/", "redis://127.0.0.1:2232/", "redis://127.0.0.1:2233/", "redis://127.0.0.1:2234/", "redis://127.0.0.1:2235/"]
+        first_contact_points:
+          [
+            "127.0.0.1:2230",
+            "127.0.0.1:2231",
+            "127.0.0.1:2232",
+            "127.0.0.1:2233",
+            "127.0.0.1:2234",
+            "127.0.0.1:2235",
+          ]
 named_topics:
   testtopic: 5
 source_to_chain_mapping:
