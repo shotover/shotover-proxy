@@ -92,6 +92,7 @@ httparse = "1.3.0"
 threadpool = "1.0"
 num_cpus = "1.0"
 serial_test = "0.5.1"
+cassandra-cpp = "0.17.0"
 test-helpers = { path = "../test-helpers" }
 
 [[bench]]
