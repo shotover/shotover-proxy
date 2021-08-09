@@ -1,3 +1,4 @@
+use std::env;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
@@ -118,7 +119,18 @@ impl TracingState {
 
         let builder = tracing_subscriber::fmt()
             .with_writer(non_blocking)
-            .with_env_filter(log_level)
+            .with_env_filter({
+                // Override directives using RUST_LOG environment variable. Workaround for tokio-rs/tracing#512.
+                let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
+                let directives = [Some(log_level), overrides.as_deref()]
+                    .iter()
+                    .flat_map(Option::as_deref)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                EnvFilter::new(directives)
+            })
             .with_filter_reloading();
         let handle = builder.reload_handle();
 
