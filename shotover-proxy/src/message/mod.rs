@@ -207,20 +207,18 @@ pub enum ASTHolder {
 impl ASTHolder {
     pub fn get_command(&self) -> String {
         match self {
-            ASTHolder::SQL(statement) => {
-                match statement {
-                    Statement::Query(_) => "SELECT",
-                    Statement::Insert { .. } => "INSERT",
-                    Statement::Update { .. } => "UPDATE",
-                    Statement::Delete { .. } => "DELETE",
-                    Statement::CreateView { .. } => "CREATE VIEW",
-                    Statement::CreateTable { .. } => "CREATE TABLE",
-                    Statement::AlterTable { .. } => "ALTER TABLE",
-                    Statement::Drop { .. } => "DROP",
-                    _ => "UNKNOWN",
-                }
-                .to_string()
+            ASTHolder::SQL(statement) => match statement {
+                Statement::Query(_) => "SELECT",
+                Statement::Insert { .. } => "INSERT",
+                Statement::Update { .. } => "UPDATE",
+                Statement::Delete { .. } => "DELETE",
+                Statement::CreateView { .. } => "CREATE VIEW",
+                Statement::CreateTable { .. } => "CREATE TABLE",
+                Statement::AlterTable { .. } => "ALTER TABLE",
+                Statement::Drop { .. } => "DROP",
+                _ => "UNKNOWN",
             }
+            .to_string(),
             ASTHolder::Commands(commands) => {
                 if let Value::List(coms) = commands {
                     if let Some(Value::Bytes(b)) = coms.get(0) {
@@ -486,8 +484,9 @@ impl Value {
                 ColType::Double => Value::Float(decode_double(actual_bytes).unwrap()),
                 ColType::Float => Value::Float(decode_float(actual_bytes).unwrap() as f64),
                 ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Timestamp =>
-                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap())),
+                ColType::Timestamp => {
+                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap()))
+                }
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
                 ColType::Varint => Value::Integer(decode_varint(actual_bytes).unwrap()),

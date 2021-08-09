@@ -313,8 +313,7 @@ fn build_redis_ast_from_sql(
                     .ok_or(anyhow!("Couldn't build query"))?
                     .iter()
                     .filter_map(|(p, v)| {
-                        if !pk_schema.partition_key.contains(p)
-                            && !pk_schema.range_key.contains(p)
+                        if !pk_schema.partition_key.contains(p) && !pk_schema.range_key.contains(p)
                         {
                             Some(v)
                         } else {
@@ -420,7 +419,10 @@ mod test {
 
         match frame.messages.remove(0).details {
             MessageDetails::Query(qm) => qm.ast.unwrap(),
-            details => panic!("Exepected message details to be a query but was: {:?}", details),
+            details => panic!(
+                "Exepected message details to be a query but was: {:?}",
+                details
+            ),
         }
     }
 

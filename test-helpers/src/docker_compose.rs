@@ -1,7 +1,7 @@
 use std::thread;
 use std::time;
-use tracing::info;
 use subprocess::{Exec, Redirection};
+use tracing::info;
 
 fn run_command(command: &str, args: &[&str]) {
     let data = Exec::cmd(command)
@@ -11,12 +11,18 @@ fn run_command(command: &str, args: &[&str]) {
         .capture()
         .unwrap();
     if !data.exit_status.success() {
-        panic!("command {} {:?} exited with {:?} and output:\n{}", command, args, data.exit_status, data.stdout_str())
+        panic!(
+            "command {} {:?} exited with {:?} and output:\n{}",
+            command,
+            args,
+            data.exit_status,
+            data.stdout_str()
+        )
     }
 }
 
 pub struct DockerCompose {
-    file_path: String
+    file_path: String,
 }
 
 impl DockerCompose {
@@ -30,7 +36,7 @@ impl DockerCompose {
         thread::sleep(time::Duration::from_secs(4));
 
         DockerCompose {
-            file_path: file_path.to_string()
+            file_path: file_path.to_string(),
         }
     }
 
