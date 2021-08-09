@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -32,8 +33,8 @@ pub trait Authenticator<T> {
 }
 
 // TODO: Replace with trait_alias (RFC#1733).
-pub trait Token: Send + Sync + std::hash::Hash + Eq + Clone {}
-impl<T: Send + Sync + std::hash::Hash + Eq + Clone> Token for T {}
+pub trait Token: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug {}
+impl<T: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug> Token for T {}
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
@@ -67,6 +68,13 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         connection_count: usize,
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
         // TODO: Extract return type using generic associated types (RFC#1598).
+
+        trace!(
+            "getting {} pool connections to {} with token: {:?}",
+            connection_count,
+            address,
+            token
+        );
 
         let mut lanes = self.lanes.lock().await;
         let lane = lanes.entry(token.clone()).or_insert_with(HashMap::new);

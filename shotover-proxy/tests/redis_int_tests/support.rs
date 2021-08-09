@@ -3,7 +3,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use redis::{RedisResult, Value};
-use tracing::info;
+use tracing::{info, info_span};
 
 pub struct TestContext {
     pub client: redis::Client,
@@ -41,15 +41,19 @@ impl TestContext {
 
         loop {
             current_attempt += 1;
-            info!("attempt {}", current_attempt);
+            let span = info_span!("connection_test", attempt = current_attempt);
+            let _span_ctx = span.enter();
+
             if current_attempt > attempts {
                 panic!("Could not connect!")
             }
+
             let millisecond = Duration::from_millis(100 * current_attempt);
 
             match client.get_connection() {
                 Err(err) => {
                     if err.is_connection_refusal() {
+                        info!("{}: {}", err.category(), err);
                         sleep(millisecond);
                     } else {
                         panic!("Could not connect: {}", err);
