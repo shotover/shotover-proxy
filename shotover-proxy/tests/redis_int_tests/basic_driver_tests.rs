@@ -2,13 +2,13 @@
 
 use redis::{Commands, ErrorKind, RedisError, Value};
 
-use test_helpers::docker_compose::DockerCompose;
 use crate::helpers::run_shotover_with_topology;
 use crate::redis_int_tests::support::TestContext;
+use test_helpers::docker_compose::DockerCompose;
 
+use serial_test::serial;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tracing::{info, trace};
-use serial_test::serial;
 
 fn test_args() {
     info!("test_args");

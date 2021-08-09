@@ -843,7 +843,7 @@ mod cassandra_protocol_tests {
                         ast.to_string().replace(char::is_whitespace, ""),
                     );
                 }
-                details => panic!("Unexpected details: {:?}", details)
+                details => panic!("Unexpected details: {:?}", details),
             }
         }
     }

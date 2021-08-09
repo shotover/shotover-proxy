@@ -582,17 +582,9 @@ impl RedisCodec {
                 Frame::Error(s) => self.handle_redis_error(s, frame),
                 Frame::Null => {
                     if self.decode_as_response {
-                        Message::new_response(
-                            QueryResponse::empty(),
-                            false,
-                            RawFrame::Redis(frame),
-                        )
+                        Message::new_response(QueryResponse::empty(), false, RawFrame::Redis(frame))
                     } else {
-                        Message::new_query(
-                            QueryMessage::empty(),
-                            false,
-                            RawFrame::Redis(frame),
-                        )
+                        Message::new_query(QueryMessage::empty(), false, RawFrame::Redis(frame))
                     }
                 }
             })

@@ -1,9 +1,9 @@
 mod helpers;
 
+use helpers::run_shotover_with_topology;
 use redis::{Commands, Connection, RedisResult};
 use std::{thread, time};
 use tracing::info;
-use helpers::run_shotover_with_topology;
 
 const LUA1: &str = r###"
 return {KEYS[1],ARGV[1],ARGV[2]}
@@ -58,8 +58,7 @@ async fn run_register_flow_pipelined<BK, BCK, BKU>(
     build_c_key: BCK,
     build_key_user: BKU,
     channel: &str,
-)
-where
+) where
     BK: Fn() -> String,
     BCK: Fn() -> String,
     BKU: Fn() -> String,

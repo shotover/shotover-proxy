@@ -1,13 +1,13 @@
 use anyhow::Result;
 use shotover_proxy::runner::{ConfigOpts, Runner};
-use tokio::task::JoinHandle;
 use tokio::runtime::Runtime;
+use tokio::task::JoinHandle;
 
 pub fn run_shotover_with_topology(topology_path: &str) -> (Runtime, JoinHandle<Result<()>>) {
     let opts = ConfigOpts {
         topology_file: topology_path.into(),
         config_file: "config/config.yaml".into(),
-        .. ConfigOpts::default()
+        ..ConfigOpts::default()
     };
     let spawn = Runner::new(opts).unwrap().run_spawn();
 

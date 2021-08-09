@@ -226,10 +226,10 @@ impl RedisCluster {
                             .clone();
                         vec![key]
                     }
-                    None => vec![]
+                    None => vec![],
                 }
             }
-            _ => vec![]
+            _ => vec![],
         }
     }
 }
@@ -382,7 +382,7 @@ fn parse_slots(contacts_raw: Frame) -> Result<SlotsMapping> {
         Frame::Error(err) => {
             return Err(anyhow!("Frame error: {}", err));
         }
-        _ => { }
+        _ => {}
     }
 
     if slots.is_empty() {
@@ -437,7 +437,7 @@ async fn get_topology(first_contact_points: &[String]) -> Result<SlotsMapping> {
     while let Some(response) = results.next().await {
         match response {
             Ok(map) => return Ok(map),
-            Err(e) => warn!("failed to fetch map from one host: {}", e)
+            Err(e) => warn!("failed to fetch map from one host: {}", e),
         }
     }
 
@@ -450,7 +450,7 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
         if let Some(close) = key[open..].iter().position(|v| *v == b'}') {
             let rv = &key[open + 1..open + close];
             if !rv.is_empty() {
-                return Some(rv)
+                return Some(rv);
             }
         }
     }

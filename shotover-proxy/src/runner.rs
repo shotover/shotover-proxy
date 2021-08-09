@@ -6,18 +6,18 @@ use metrics_runtime::Receiver;
 use tokio::runtime::{self, Runtime};
 use tokio::task::JoinHandle;
 use tracing::{debug, info};
-use tracing_appender::non_blocking::{WorkerGuard, NonBlocking};
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_subscriber::fmt::format::{DefaultFields, Format};
 use tracing_subscriber::fmt::Layer;
-use tracing_subscriber::fmt::format::{Format, DefaultFields};
 use tracing_subscriber::layer::Layered;
 use tracing_subscriber::reload::Handle;
 use tracing_subscriber::{EnvFilter, Registry};
 
+use crate::admin::httpserver::LogFilterHttpExporter;
 use crate::config::topology::Topology;
 use crate::config::Config;
 use crate::transforms::Transforms;
 use crate::transforms::Wrapper;
-use crate::admin::httpserver::LogFilterHttpExporter;
 
 #[derive(Clap, Clone)]
 #[clap(version = crate_version!(), author = "Instaclustr")]
@@ -41,7 +41,7 @@ impl Default for ConfigOpts {
             topology_file: "config/topology.yaml".into(),
             config_file: "config/config.yaml".into(),
             core_threads: 4,
-            stack_size: 2097152
+            stack_size: 2097152,
         }
     }
 }
@@ -68,13 +68,21 @@ impl Runner {
 
         let tracing = TracingState::new(config.main_log_level.as_str());
 
-        Ok(Runner { runtime, topology, config, tracing })
+        Ok(Runner {
+            runtime,
+            topology,
+            config,
+            tracing,
+        })
     }
 
     pub fn with_observability_interface(self) -> Result<Self> {
-        let receiver = Receiver::builder().build().expect("failed to create receiver");
+        let receiver = Receiver::builder()
+            .build()
+            .expect("failed to create receiver");
         let socket: SocketAddr = self.config.observability_interface.parse()?;
-        let exporter = LogFilterHttpExporter::new(receiver.controller(), socket, self.tracing.handle.clone());
+        let exporter =
+            LogFilterHttpExporter::new(receiver.controller(), socket, self.tracing.handle.clone());
 
         receiver.install();
         self.runtime.spawn(exporter.async_run());
@@ -100,7 +108,8 @@ impl Runner {
 struct TracingState {
     /// Once this is dropped tracing logs are ignored
     guard: WorkerGuard,
-    handle: Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>,
+    handle:
+        Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>,
 }
 
 impl TracingState {
@@ -120,7 +129,6 @@ impl TracingState {
         TracingState { guard, handle }
     }
 }
-
 
 pub struct RunnerSpawned {
     pub runtime: Runtime,
@@ -149,8 +157,6 @@ pub async fn run(topology: Topology, config: Config) -> Result<()> {
             info!("Goodbye!");
             Ok(())
         }
-        Err(error) => {
-            Err(anyhow!("Failed to run chains: {}", error))
-        }
+        Err(error) => Err(anyhow!("Failed to run chains: {}", error)),
     }
 }

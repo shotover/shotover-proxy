@@ -16,7 +16,11 @@ impl PacketCapture {
     }
 
     pub fn list_devices() {
-        let devices: Vec<String> = Device::list().unwrap().iter().map(|val| val.name.clone()).collect();
+        let devices: Vec<String> = Device::list()
+            .unwrap()
+            .iter()
+            .map(|val| val.name.clone())
+            .collect();
         println!("All Interfaces : ");
         devices.iter().for_each(|val| println!("* {}", val));
     }
