@@ -64,7 +64,11 @@ jobs:
     - name: Build
       run: cargo build --all-targets
     - name: Run tests
-      run: cargo test -- --include-ignored
+      run: |
+        cd wasm-transform
+        cargo build --release
+        cd ..
+        cargo test -- --include-ignored
       timeout-minutes: 30
     - name: Cleanup docker
       run: ./shotover-proxy/tests/scripts/teardown.sh

@@ -3,6 +3,7 @@ use crate::error::ChainResponse;
 use crate::transforms::{Messages, Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use byteorder::{BigEndian, ByteOrder};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use wasmer::{imports, Instance, Module, NativeFunc, Store};
@@ -13,7 +14,7 @@ type WasmAddress = u64;
 pub struct WasmTransform {
     module: Module,
     instance: Instance,
-    run: NativeFunc<(WasmAddress, u64), u64>,
+    run: NativeFunc<(WasmAddress, u64), WasmAddress>,
     allocate: NativeFunc<u64, WasmAddress>,
     deallocate: NativeFunc<WasmAddress, ()>,
 }
@@ -36,7 +37,7 @@ impl WasmTransform {
         let run = instance
             .exports
             .get_function("run")?
-            .native::<(WasmAddress, u64), u64>()?;
+            .native::<(WasmAddress, u64), WasmAddress>()?;
 
         let allocate = instance
             .exports
@@ -71,26 +72,19 @@ impl WasmTransform {
         Ok((address, length))
     }
 
-    unsafe fn read_messages_from_wasm_memory(
-        &self,
-        address: WasmAddress,
-        length: u64,
-    ) -> Result<Messages> {
-        info!("a1");
+    unsafe fn read_messages_from_wasm_memory(&self, address: WasmAddress) -> Result<Messages> {
         let memory = self.instance.exports.get_memory("memory").unwrap();
-        info!("a2");
         let memory_data = memory.data_unchecked();
-        info!("address: {}", address);
-        info!("memory_data: {:?}", &memory_data[address as usize..(address + length) as usize]);
-        //let messages = bincode::deserialize::<std::result::Result<Messages, String>>(
-        let messages = bincode::deserialize::<Messages>(
-            &memory_data[address as usize..(address + length) as usize],
+        let response_data = &memory_data[address as usize..];
+
+        let length = BigEndian::read_u64(&response_data[..8]) as usize;
+        info!("address: {}, length: {}", address, length);
+        info!("response_data: {:?}", &response_data[..length + 8]);
+        let messages = bincode::deserialize::<std::result::Result<Messages, String>>(
+            &response_data[8..length + 8],
         )?;
-        info!("a4");
         self.deallocate.call(address)?;
-        info!("a5");
-        //messages.map_err(|x| anyhow!(x))
-        Ok(messages)
+        messages.map_err(|x| anyhow!(x))
     }
 }
 
@@ -101,15 +95,17 @@ impl Transform for WasmTransform {
         //  as it is this entire function should be marked unsafe
         //  ... can we avoid unsafe altogether?
         unsafe {
-            let (address, send_length) = self.write_messages_to_wasm_memory(&message_wrapper.message)?;
+            let (send_address, send_length) =
+                self.write_messages_to_wasm_memory(&message_wrapper.message)?;
+            info!(
+                "send_address {:?} send_length {:?}",
+                send_address, send_length
+            );
 
-            let response_length = self.run.call(address, send_length)?;
-            info!("send_length {:?}", send_length);
-            info!("response_length {:?}", response_length);
+            let response_address = self.run.call(send_address, send_length)?;
 
             info!("before {:?}", message_wrapper.message);
-            message_wrapper.message =
-                self.read_messages_from_wasm_memory(address, response_length)?;
+            message_wrapper.message = self.read_messages_from_wasm_memory(response_address)?;
             info!("after {:?}", message_wrapper.message);
         }
 

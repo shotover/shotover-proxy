@@ -35,6 +35,9 @@ jobs:
     - name: Benchmark
       run: |
         set -o pipefail # Needed to make the cargo bench fail early on e.g. compiler error.
+        cd wasm-transform
+        cargo build --release
+        cd ..
         cargo bench --bench redis_benches -- --output-format bencher --noplot | tee bench_redis.txt
         cargo bench --bench chain_benches -- --output-format bencher --noplot | tee bench_chains.txt
     - name: Store benchmark result
