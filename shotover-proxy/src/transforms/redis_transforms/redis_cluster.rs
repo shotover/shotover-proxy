@@ -146,7 +146,7 @@ pub struct RedisCluster {
 }
 
 impl RedisCluster {
-    fn get_contact_points(&self) -> Vec<String> {
+    fn latest_contact_points(&self) -> Vec<String> {
         if !self.slots.nodes.is_empty() {
             // Use latest node addresses as contact points.
             self.slots.nodes.iter().cloned().collect::<Vec<_>>()
@@ -158,7 +158,7 @@ impl RedisCluster {
 
     async fn rebuild_slot_map(&mut self) -> Result<(), TransformError> {
         debug!("rebuilding slot map");
-        let addresses = self.get_contact_points();
+        let addresses = self.latest_contact_points();
         // IDEA: Retry with original contact points on failure?
         Ok(self.rebuild_slot_map_from_addresses(&addresses).await?)
     }
@@ -293,7 +293,7 @@ impl RedisCluster {
                 let aidx = candidates.index(0);
                 let bidx = candidates.index(1);
 
-                // TODO: Actually use or remove, and figure out the intention behind this weird stuff.
+                // TODO: Actually use or remove these "load balancing" scores.
                 let aload = *self.load_scores.entry((host.clone(), aidx)).or_insert(0);
                 let bload = *self.load_scores.entry((host.clone(), bidx)).or_insert(0);
 
@@ -563,14 +563,11 @@ fn build_slot_to_server(
         return;
     }
 
+    // Allow extra fields for forwards compatibility, but don't expect more than two.
+
     if frames.len() < 2 {
         return;
     }
-
-    // Warning: Newer versions of Redis Cluster will output, for each Redis instance,
-    // not just the IP and port, but also the node ID as third element of the array.
-    // In future versions there could be more elements describing the node better.
-    // Allow extra fields, but don't expect more than two.
 
     let ip = if let Frame::BulkString(ref ip) = frames[0] {
         String::from_utf8_lossy(ip.as_ref()).to_string()
@@ -746,13 +743,11 @@ async fn receive_frame_response(
 ) -> Result<Frame> {
     let (_, result) = receiver.await?;
 
-    // TODO: Is it possible for unwrap to panic here?
+    // At least one Redis frame is guaranteed by the Redis codec on success.
     let message = result?.messages.pop().unwrap().original;
 
     match message {
         RawFrame::Redis(frame) => Ok(frame),
-
-        // TODO: Are non-Redis frames possible? If so, should we ignore?
         _ => unreachable!(),
     }
 }
@@ -901,7 +896,8 @@ impl Transform for RedisCluster {
                 RawFrame::Redis(Frame::Moved { slot, host, port }) => {
                     debug!("Got MOVE frame {} {} {}", slot, host, port);
 
-                    // TODO: Is it okay to always insert into "masters"?
+                    // TODO: Can we assume the destination of a MOVED is always a master node?
+
                     self.slots
                         .masters
                         .insert(slot, format!("{}:{}", &host, &port));
