@@ -5,7 +5,7 @@ use clap::{crate_version, Clap};
 use metrics_runtime::Receiver;
 use tokio::runtime::{self, Runtime};
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::fmt::format::{DefaultFields, Format};
 use tracing_subscriber::fmt::Layer;
@@ -153,10 +153,15 @@ pub async fn run(topology: Topology, config: Config) -> Result<()> {
 
     match topology.run_chains().await {
         Ok((_, mut shutdown_complete_rx)) => {
-            let _ = shutdown_complete_rx.recv().await;
-            info!("Goodbye!");
+            shutdown_complete_rx.recv().await;
+            info!("Shotover was shutdown cleanly.");
             Ok(())
         }
-        Err(error) => Err(anyhow!("Failed to run chains: {}", error)),
+        Err(error) => {
+            error!("{:?}", error);
+            Err(anyhow!(
+                "Shotover failed to initialize, the fatal error was logged."
+            ))
+        }
     }
 }
