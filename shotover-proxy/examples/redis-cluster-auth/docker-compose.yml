@@ -5,7 +5,7 @@ services:
     ports:
       - "2230:6379"
     volumes:
-      - redis-cluster_data-0:/bitnami/redis/data
+      - redis-cluster-auth_data-0:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -15,7 +15,7 @@ services:
     ports:
       - "2231:6379"
     volumes:
-      - redis-cluster_data-1:/bitnami/redis/data
+      - redis-cluster-auth_data-1:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -25,7 +25,7 @@ services:
     ports:
       - "2232:6379"
     volumes:
-      - redis-cluster_data-2:/bitnami/redis/data
+      - redis-cluster-auth_data-2:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -35,7 +35,7 @@ services:
     ports:
       - "2233:6379"
     volumes:
-      - redis-cluster_data-3:/bitnami/redis/data
+      - redis-cluster-auth_data-3:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -45,7 +45,7 @@ services:
     ports:
       - "2234:6379"
     volumes:
-      - redis-cluster_data-4:/bitnami/redis/data
+      - redis-cluster-auth_data-4:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -55,7 +55,7 @@ services:
     ports:
       - "2235:6379"
     volumes:
-      - redis-cluster_data-5:/bitnami/redis/data
+      - redis-cluster-auth_data-5:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -77,15 +77,15 @@ services:
       - 'REDIS_CLUSTER_CREATOR=yes'
 
 volumes:
-  redis-cluster_data-0:
+  redis-cluster-auth_data-0:
     driver: local
-  redis-cluster_data-1:
+  redis-cluster-auth_data-1:
     driver: local
-  redis-cluster_data-2:
+  redis-cluster-auth_data-2:
     driver: local
-  redis-cluster_data-3:
+  redis-cluster-auth_data-3:
     driver: local
-  redis-cluster_data-4:
+  redis-cluster-auth_data-4:
     driver: local
-  redis-cluster_data-5:
+  redis-cluster-auth_data-5:
     driver: local
