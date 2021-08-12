@@ -2,7 +2,7 @@
 
 use redis::{Commands, ErrorKind, RedisError, Value};
 
-use crate::helpers::run_shotover_with_topology;
+use crate::helpers::ShotoverManager;
 use crate::redis_int_tests::support::TestContext;
 use test_helpers::docker_compose::DockerCompose;
 
@@ -693,7 +693,9 @@ fn test_cluster_script() {
 #[serial(redis)]
 fn test_pass_through() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-passthrough/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
+
     run_all();
 }
 
@@ -702,7 +704,9 @@ fn test_pass_through() {
 #[allow(dead_code)]
 fn test_pass_through_one() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-passthrough/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
+
     test_real_transaction();
 }
 
@@ -710,7 +714,9 @@ fn test_pass_through_one() {
 #[serial(redis)]
 fn test_active_active_redis() {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-multi/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
+
     run_all_active_safe();
 }
 
@@ -718,7 +724,8 @@ fn test_active_active_redis() {
 #[serial(redis)]
 fn test_active_one_active_redis() {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-multi/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
 
     // test_args();
     test_cluster_basics();
@@ -731,7 +738,8 @@ fn test_active_one_active_redis() {
 #[serial(redis)]
 fn test_pass_redis_cluster_one() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
 
     // test_args()test_args;
     test_pipeline_error(); //TODO: script does not seem to be loading in the server?
@@ -742,7 +750,8 @@ fn test_pass_redis_cluster_one() {
 // #[serial(redis)]
 fn _test_cluster_auth_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-cluster-auth/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
 
     let ctx = TestContext::new_auth();
     let mut con = ctx.connection();
@@ -797,7 +806,8 @@ fn _test_cluster_auth_redis() {
 #[serial(redis)]
 fn test_cluster_all_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
     run_all_cluster_safe();
 }
@@ -806,7 +816,8 @@ fn test_cluster_all_redis() {
 #[serial(redis)]
 fn test_cluster_all_script_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
     for _i in 0..1999 {
         test_script();
@@ -817,7 +828,8 @@ fn test_cluster_all_script_redis() {
 #[serial(redis)]
 fn test_cluster_all_pipeline_safe_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    let _running = run_shotover_with_topology("examples/redis-cluster/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
 
     let ctx = TestContext::new();
     let mut con = ctx.connection();

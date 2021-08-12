@@ -28,7 +28,7 @@ impl SourcesFromConfig for RedisConfig {
         &self,
         chain: &TransformChain,
         _topics: &mut TopicHolder,
-        notify_shutdown: broadcast::Sender<()>,
+        trigger_shutdown_tx: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Redis(
@@ -36,7 +36,7 @@ impl SourcesFromConfig for RedisConfig {
                 chain,
                 self.listen_addr.clone(),
                 self.batch_size_hint,
-                notify_shutdown,
+                trigger_shutdown_tx,
                 shutdown_complete_tx,
                 self.connection_limit,
                 self.hard_connection_limit,
@@ -59,7 +59,7 @@ impl RedisSource {
         chain: &TransformChain,
         listen_addr: String,
         batch_hint: u64,
-        notify_shutdown: broadcast::Sender<()>,
+        trigger_shutdown_tx: broadcast::Sender<()>,
         shutdown_complete_tx: mpsc::Sender<()>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
@@ -76,6 +76,8 @@ impl RedisSource {
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "Redis Source";
 
+        let mut trigger_shutdown_rx = trigger_shutdown_tx.subscribe();
+
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
             source_name: name.to_string(),
@@ -84,7 +86,7 @@ impl RedisSource {
             hard_connection_limit: hard_connection_limit.unwrap_or(false),
             codec: RedisCodec::new(false, batch_hint as usize),
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
-            notify_shutdown,
+            trigger_shutdown_tx,
             shutdown_complete_tx,
         };
 
@@ -95,19 +97,19 @@ impl RedisSource {
                         error!(cause = %err, "failed to accept");
                     }
                 }
-                _ = tokio::signal::ctrl_c() => {
-                    info!("Shutdown signal received - shutting down")
+                _ = trigger_shutdown_rx.recv() => {
+                    info!("redis source shutting down")
                 }
             }
 
             let TcpCodecListener {
-                notify_shutdown,
+                trigger_shutdown_tx,
                 shutdown_complete_tx,
                 ..
             } = listener;
 
             drop(shutdown_complete_tx);
-            drop(notify_shutdown);
+            drop(trigger_shutdown_tx);
 
             // let _ shutd
 

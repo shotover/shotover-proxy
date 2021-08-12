@@ -4,8 +4,10 @@ use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
 use metrics_runtime::Receiver;
 use tokio::runtime::{self, Runtime};
+use tokio::signal;
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::fmt::format::{DefaultFields, Format};
 use tracing_subscriber::fmt::Layer;
@@ -91,17 +93,30 @@ impl Runner {
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {
-        let handle = self.runtime.spawn(run(self.topology, self.config));
+        let (trigger_shutdown_tx, _) = broadcast::channel(1);
+        let handle =
+            self.runtime
+                .spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
 
         RunnerSpawned {
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
+            trigger_shutdown_tx,
             handle,
         }
     }
 
     pub fn run_block(self) -> Result<()> {
-        self.runtime.block_on(run(self.topology, self.config))
+        let (trigger_shutdown_tx, _) = broadcast::channel(1);
+
+        let trigger_shutdown_tx_clone = trigger_shutdown_tx.clone();
+        self.runtime.spawn(async move {
+            signal::ctrl_c().await.unwrap();
+            trigger_shutdown_tx_clone.send(()).unwrap();
+        });
+
+        self.runtime
+            .block_on(run(self.topology, self.config, trigger_shutdown_tx))
     }
 }
 
@@ -134,9 +149,14 @@ pub struct RunnerSpawned {
     pub runtime: Runtime,
     pub handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
+    pub trigger_shutdown_tx: broadcast::Sender<()>,
 }
 
-pub async fn run(topology: Topology, config: Config) -> Result<()> {
+pub async fn run(
+    topology: Topology,
+    config: Config,
+    trigger_shutdown_tx: broadcast::Sender<()>,
+) -> Result<()> {
     info!("Starting Shotover {}", crate_version!());
     info!(configuration = ?config);
     info!(topology = ?topology);
@@ -151,12 +171,17 @@ pub async fn run(topology: Topology, config: Config) -> Result<()> {
         std::mem::size_of::<Wrapper<'_>>()
     );
 
-    match topology.run_chains().await {
+    match topology.run_chains(trigger_shutdown_tx).await {
         Ok((_, mut shutdown_complete_rx)) => {
-            let _ = shutdown_complete_rx.recv().await;
-            info!("Goodbye!");
+            shutdown_complete_rx.recv().await;
+            info!("Shotover was shutdown cleanly.");
             Ok(())
         }
-        Err(error) => Err(anyhow!("Failed to run chains: {}", error)),
+        Err(error) => {
+            error!("{:?}", error);
+            Err(anyhow!(
+                "Shotover failed to initialize, the fatal error was logged."
+            ))
+        }
     }
 }

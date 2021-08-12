@@ -8,3 +8,4 @@ edition = "2018"
 [dependencies]
 tracing = "0.1.15"
 subprocess = "0.2.7"
+anyhow = "1.0.42"

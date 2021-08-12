@@ -105,13 +105,15 @@ impl Topology {
     }
 
     #[allow(clippy::type_complexity)]
-    pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
+    pub async fn run_chains(
+        &self,
+        trigger_shutdown_rx: broadcast::Sender<()>,
+    ) -> Result<(Vec<Sources>, Receiver<()>)> {
         let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let (notify_shutdown, _) = broadcast::channel(1);
         let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
 
         let chains = self.build_chains(&topics).await?;
@@ -125,7 +127,7 @@ impl Topology {
                             .get_source(
                                 chain,
                                 &mut topics,
-                                notify_shutdown.clone(),
+                                trigger_shutdown_rx.clone(),
                                 shutdown_complete_tx.clone(),
                             )
                             .await?,
