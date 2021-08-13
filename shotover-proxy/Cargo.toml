@@ -26,6 +26,8 @@ rand_distr = "0.4.1"
 cached = "0.25.0"
 pin-project = "1.0.1"
 pin-project-lite = "0.2"
+tokio-openssl = "0.6.2"
+openssl = { version = "0.10.36", features = ["vendored"] }
 
 # Error handling
 thiserror = "1.0"

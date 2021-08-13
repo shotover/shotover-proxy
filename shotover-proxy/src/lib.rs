@@ -7,4 +7,5 @@ pub mod protocols;
 pub mod runner;
 pub mod server;
 pub mod sources;
+pub mod tls;
 pub mod transforms;
