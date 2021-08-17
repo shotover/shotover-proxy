@@ -54,7 +54,6 @@ pub struct RedisSource {
 }
 
 impl RedisSource {
-    //"127.0.0.1:9043
     pub async fn new(
         chain: &TransformChain,
         listen_addr: String,
@@ -64,15 +63,6 @@ impl RedisSource {
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
     ) -> RedisSource {
-        // let mut socket =
-        //     socket2::Socket::new(Domain::ipv4(), Type::stream(), Some(Protocol::tcp())).unwrap();
-        // let addr = listen_addr.clone().parse::<SocketAddrV4>().unwrap();
-        // socket.bind(&addr.into()).unwrap();
-        // socket.listen(10).unwrap();
-        //
-        // // let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
-        // let listener = TcpListener::from_std(socket.into_tcp_listener()).unwrap();
-
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "Redis Source";
 
@@ -88,7 +78,7 @@ impl RedisSource {
             shutdown_complete_tx,
         };
 
-        let jh = Handle::current().spawn(async move {
+        let join_handle = Handle::current().spawn(async move {
             tokio::select! {
                 res = listener.run() => {
                     if let Err(err) = res {
@@ -109,14 +99,12 @@ impl RedisSource {
             drop(shutdown_complete_tx);
             drop(notify_shutdown);
 
-            // let _ shutd
-
             Ok(())
         });
 
         RedisSource {
             name,
-            join_handle: jh,
+            join_handle,
             listen_addr: listen_addr.clone(),
         }
     }

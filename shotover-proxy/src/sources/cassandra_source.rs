@@ -57,7 +57,6 @@ pub struct CassandraSource {
 }
 
 impl CassandraSource {
-    //"127.0.0.1:9043
     pub async fn new(
         chain: &TransformChain,
         listen_addr: String,
@@ -68,7 +67,6 @@ impl CassandraSource {
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
     ) -> CassandraSource {
-        // let listener = TcpListener::bind(listen_addr.clone()).await.unwrap();
         let name = "Cassandra Source";
 
         info!("Starting Cassandra source on [{}]", listen_addr);
@@ -96,8 +94,6 @@ impl CassandraSource {
                     info!("Shutdown signal received - shutting down")
                 }
             }
-
-            // listener.run().await?;
 
             let TcpCodecListener {
                 notify_shutdown,

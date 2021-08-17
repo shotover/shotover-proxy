@@ -12,7 +12,6 @@ tokio-util = { version = "0.6.1", features = ["full"]}
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
 futures = "0.3.12"
-#futures = { path = "/home/ben/git/futures-rs/futures" }
 futures-core = "0.3.1"
 chrono = {version = "0.4.10",  features = ["serde"]}
 async-trait = "0.1.30"
@@ -65,7 +64,6 @@ mlua_serde = { version = "0.5", features = ["lua53"] }
 
 #wasm
 wasmer-runtime = "0.17.1"
-#wasmer-runtime = "0.13.1"
 
 #Crypto
 sodiumoxide = "0.2.5"
