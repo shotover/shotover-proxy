@@ -315,10 +315,7 @@ impl RoutingInfo {
     #[inline(always)]
     pub fn for_key(key: &Frame) -> Option<RoutingInfo> {
         if let Frame::BulkString(key) = key {
-            let key = match get_hashtag(&key) {
-                Some(tag) => tag,
-                None => &key,
-            };
+            let key = get_hashtag(&key).unwrap_or(&key);
             Some(RoutingInfo::Slot(
                 crc16::State::<crc16::XMODEM>::calculate(key) % SLOT_SIZE as u16,
             ))
@@ -406,7 +403,7 @@ fn parse_slots(response: Frame) -> Result<SlotMap> {
 
 async fn get_topology_from_node(stream: TcpStream) -> Result<SlotMap> {
     let mut outbound_framed_codec = Framed::new(stream, RedisCodec::new(true, 1));
-    if outbound_framed_codec
+    outbound_framed_codec
         .send(Messages::new_from_message(Message {
             details: MessageDetails::Unknown,
             modified: false,
@@ -415,20 +412,16 @@ async fn get_topology_from_node(stream: TcpStream) -> Result<SlotMap> {
                 Frame::BulkString(Bytes::from("SLOTS")),
             ])),
         }))
-        .await
-        .is_ok()
-    {
-        if let Some(Ok(mut o)) = outbound_framed_codec.next().await {
-            if let RawFrame::Redis(response) = o.messages.pop().unwrap().original {
-                parse_slots(response).map_err(|e| anyhow!("couldn't decode map: {}", e))
-            } else {
-                Err(anyhow!("couldn't decode map"))
-            }
+        .await?;
+
+    if let Some(messages) = outbound_framed_codec.next().await {
+        if let RawFrame::Redis(response) = messages?.messages.pop().unwrap().original {
+            parse_slots(response).map_err(|e| anyhow!("couldn't decode map: {}", e))
         } else {
-            Err(anyhow!("couldn't connect"))
+            Err(anyhow!("Redis did not respond with a redis message"))
         }
     } else {
-        Err(anyhow!("couldn't decode map"))
+        Err(anyhow!("Redis did not respond with a message"))
     }
 }
 
@@ -482,7 +475,7 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
             RawFrame::Redis(Frame::Error("ERR Could not route request".to_string())),
         )),
     )) {
-        trace!("short circtuiting - couldn't send error - {:?}", e);
+        trace!("short circuiting - couldn't send error - {:?}", e);
     }
 }
 
@@ -504,7 +497,7 @@ impl Transform for RedisCluster {
                     let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
                     short_circuit(one_tx);
                     Box::pin(one_rx.map_err(|e| {
-                        anyhow!("0 Couldn't get short circtuited for no channels - {}", e)
+                        anyhow!("0 Couldn't get short circuited for no channels - {}", e)
                     }))
                 }
                 1 => {
@@ -545,7 +538,7 @@ impl Transform for RedisCluster {
                             })
                             .await;
 
-                        std::result::Result::Ok((
+                        Ok((
                             orig,
                             ChainResponse::Ok(Messages::new_from_message(Message {
                                 details: MessageDetails::Unknown,
