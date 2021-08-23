@@ -1,5 +1,9 @@
 use anyhow::Result;
+use redis::{Client, Connection};
 use shotover_proxy::runner::{ConfigOpts, Runner};
+use std::net::TcpStream;
+use std::thread;
+use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -28,6 +32,25 @@ impl ShotoverManager {
             handle: Some(spawn.handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
         }
+    }
+
+    fn wait_for_socket_to_open(port: u16) {
+        let mut tries = 0;
+        while TcpStream::connect(("127.0.0.1", port)).is_err() {
+            thread::sleep(Duration::from_millis(100));
+            assert!(tries < 50, "Ran out of retries to connect to the socket");
+            tries += 1;
+        }
+    }
+
+    #[allow(unused)]
+    // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
+    pub fn redis_connection(&self, port: u16) -> Connection {
+        ShotoverManager::wait_for_socket_to_open(port);
+        Client::open(("127.0.0.1", port))
+            .unwrap()
+            .get_connection()
+            .unwrap()
     }
 }
 
