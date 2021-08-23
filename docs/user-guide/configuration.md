@@ -16,7 +16,8 @@ running.
 
 This can be done by a POST HTTP request to the `/filter` endpoint (configured located at the observability interface) with the 
 env_filter string set as the POST data. For example:
-```shell script
+
+```shell
 curl -X PUT -d 'info,shotover_proxy=info' http://127.0.0.1:9001/filter
 ```
 
