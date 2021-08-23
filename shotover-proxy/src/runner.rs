@@ -69,7 +69,7 @@ impl Runner {
             .build()
             .unwrap();
 
-        let tracing = TracingState::new(config.main_log_level.as_str());
+        let tracing = TracingState::new(config.main_log_level.as_str())?;
 
         Ok(Runner {
             runtime,
@@ -129,13 +129,14 @@ struct TracingState {
 }
 
 impl TracingState {
-    fn new(log_level: &str) -> Self {
+    fn new(log_level: &str) -> Result<Self> {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
 
         let builder = tracing_subscriber::fmt()
             .with_writer(non_blocking)
             .with_env_filter({
-                // Apply overrides from RUST_LOG environment variable. Workaround for tokio-rs/tracing#1466.
+                // Load log directives from shotover config and then from the RUST_LOG env var, the latter takes priority.
+                // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
                 let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
                 let directives = [Some(log_level), overrides.as_deref()]
                     .iter()
@@ -144,7 +145,7 @@ impl TracingState {
                     .filter(|s| !s.is_empty())
                     .collect::<Vec<_>>()
                     .join(",");
-                EnvFilter::new(directives)
+                EnvFilter::try_new(directives)?
             })
             .with_filter_reloading();
         let handle = builder.reload_handle();
@@ -153,7 +154,7 @@ impl TracingState {
         // Currently the implementation of try_init will only fail when it is called multiple times.
         builder.try_init().ok();
 
-        TracingState { guard, handle }
+        Ok(TracingState { guard, handle })
     }
 }
 
