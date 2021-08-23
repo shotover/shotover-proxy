@@ -129,6 +129,25 @@ struct TracingState {
         Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>,
 }
 
+/// Returns a new `EnvFilter` by parsing each directive string, or an error if any directive is invalid.
+/// The parsing is robust to formatting, but will reject the first invalid directive (e.g. bad log level).
+fn try_parse_log_directives(directives: &[Option<&str>]) -> Result<EnvFilter> {
+    let directives: Vec<Directive> = directives
+        .iter()
+        .flat_map(Option::as_deref)
+        .flat_map(|s| s.split(','))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().map_err(|e| anyhow!("{}: {}", e, s)))
+        .collect::<Result<_>>()?;
+
+    Ok(directives
+        .into_iter()
+        .fold(EnvFilter::default(), |filter, directive| {
+            filter.add_directive(directive)
+        }))
+}
+
 impl TracingState {
     fn new(log_level: &str) -> Result<Self> {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
@@ -136,23 +155,10 @@ impl TracingState {
         let builder = tracing_subscriber::fmt()
             .with_writer(non_blocking)
             .with_env_filter({
-                // Load log directives from shotover config and then from the RUST_LOG env var, the latter takes priority.
+                // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.
                 // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
                 let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
-                let directives: Vec<Directive> = [Some(log_level), overrides.as_deref()]
-                    .iter()
-                    .flat_map(Option::as_deref)
-                    .flat_map(|s| s.split(','))
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.parse().map_err(|e| anyhow!("{}: {}", e, s)))
-                    .collect::<Result<_>>()?;
-
-                directives
-                    .into_iter()
-                    .fold(EnvFilter::default(), |filter, directive| {
-                        filter.add_directive(directive)
-                    })
+                try_parse_log_directives(&[Some(log_level), overrides.as_deref()])?
             })
             .with_filter_reloading();
         let handle = builder.reload_handle();
