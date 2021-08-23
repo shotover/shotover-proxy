@@ -141,11 +141,13 @@ fn try_parse_log_directives(directives: &[Option<&str>]) -> Result<EnvFilter> {
         .map(|s| s.parse().map_err(|e| anyhow!("{}: {}", e, s)))
         .collect::<Result<_>>()?;
 
-    Ok(directives
+    let filter = directives
         .into_iter()
         .fold(EnvFilter::default(), |filter, directive| {
             filter.add_directive(directive)
-        }))
+        });
+
+    Ok(filter)
 }
 
 impl TracingState {
@@ -209,5 +211,25 @@ pub async fn run(
                 "Shotover failed to initialize, the fatal error was logged."
             ))
         }
+    }
+}
+
+#[test]
+fn test_try_parse_log_directives() {
+    assert_eq!(
+        try_parse_log_directives(&[
+            Some("info,short=warn,error"),
+            None,
+            Some("debug"),
+            Some("alongname=trace")
+        ])
+        .unwrap()
+        .to_string(),
+        // Ordered by descending specificity.
+        "alongname=trace,short=warn,debug"
+    );
+    match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {
+        Ok(_) => panic!(),
+        Err(e) => assert_eq!(e.to_string(), "invalid filter directive: bad=blah"),
     }
 }
