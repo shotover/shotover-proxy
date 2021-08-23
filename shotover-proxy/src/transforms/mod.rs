@@ -1,13 +1,16 @@
 use core::fmt;
 use std::fmt::{Debug, Formatter};
+use std::pin::Pin;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::Future;
 use serde::{Deserialize, Serialize};
 
+use crate::concurrency::FuturesOrdered;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::transforms::cassandra::cassandra_codec_destination::{
     CodecConfiguration, CodecDestination,
 };
@@ -361,3 +364,7 @@ pub trait Transform: Send {
         Ok(())
     }
 }
+
+pub type ResponseFuturesOrdered = FuturesOrdered<
+    Pin<Box<dyn Future<Output = Result<(Message, Result<Messages>)>> + std::marker::Send>>,
+>;
