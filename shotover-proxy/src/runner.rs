@@ -10,6 +10,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_subscriber::filter::Directive;
 use tracing_subscriber::fmt::format::{DefaultFields, Format};
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::layer::Layered;
@@ -138,14 +139,20 @@ impl TracingState {
                 // Load log directives from shotover config and then from the RUST_LOG env var, the latter takes priority.
                 // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
                 let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
-                let directives = [Some(log_level), overrides.as_deref()]
+                let directives: Vec<Directive> = [Some(log_level), overrides.as_deref()]
                     .iter()
                     .flat_map(Option::as_deref)
+                    .flat_map(|s| s.split(','))
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                EnvFilter::try_new(directives)?
+                    .map(|s| s.parse().map_err(|e| anyhow!("{}: {}", e, s)))
+                    .collect::<Result<_>>()?;
+
+                directives
+                    .into_iter()
+                    .fold(EnvFilter::default(), |filter, directive| {
+                        filter.add_directive(directive)
+                    })
             })
             .with_filter_reloading();
         let handle = builder.reload_handle();
