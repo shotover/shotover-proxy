@@ -14,7 +14,7 @@ use crate::message::{Message, Messages};
 use crate::transforms::cassandra::cassandra_codec_destination::{
     CodecConfiguration, CodecDestination,
 };
-use metrics::{counter, timing};
+use metrics::{counter, histogram};
 
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
@@ -294,13 +294,11 @@ impl<'a> Wrapper<'a> {
         let result = CONTEXT_CHAIN_NAME
             .scope(chain_name, transform.transform(self))
             .await;
-        let end = Instant::now();
-
         counter!("shotover_transform_total", 1, "transform" => transform_name);
         if result.is_err() {
             counter!("shotover_transform_failures", 1, "transform" => transform_name)
         }
-        timing!("shotover_transform_latency", start, end, "transform" => transform_name);
+        histogram!("shotover_transform_latency", start.elapsed(),  "transform" => name);
         result
     }
 
