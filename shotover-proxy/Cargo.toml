@@ -72,7 +72,7 @@ rusoto_signature = "0.47.0"
 criterion = { version = "0.3", features = ["async_tokio", "html_reports"] }
 redis = { version = "0.21.0", features = ["tokio-comp", "cluster"] }
 pcap = "0.8.1"
-pktparse = {version = "0.4.0", features = ["derive"]}
+pktparse = {version = "0.6.1", features = ["serde"]}
 dns-parser = "0.8"
 tls-parser = "0.10.0"
 threadpool = "1.0"
