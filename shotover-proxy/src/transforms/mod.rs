@@ -291,11 +291,9 @@ impl<'a> Wrapper<'a> {
         let chain_name = self.chain_name.clone();
 
         let start = Instant::now();
-
         let result = CONTEXT_CHAIN_NAME
             .scope(chain_name, transform.transform(self))
             .await;
-
         let end = Instant::now();
 
         counter!("shotover_transform_total", 1, "transform" => transform_name);

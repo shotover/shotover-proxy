@@ -49,7 +49,7 @@ impl Transform for NoOp {
  }
 }
 ```
-This will return a ChainResponse which will include the upstream databases reponse. This means
+This will return a ChainResponse which will include the upstream databases response. This means
 your transform can operate on both queries and responses. Once your transform is done handling the request and response, it will return 
 passing control to the upstream transform. 
 
@@ -60,8 +60,8 @@ configuration file and are linked to sources.
 
 The transform chain is a vector of mutable references to the enum Transforms (which is an enum dispatch wrapper around the various transform types).
  
- ## Topology
- A topology is the final constructed set of transforms, transformchains and sources in their final state, ready to receive messages.
+## Topology
+ A topology is the final constructed set of transforms, transform chains and sources in their final state, ready to receive messages.
  
 # Other concepts
 ## Topics
@@ -69,7 +69,7 @@ When a transform is first created, or cloned for a new connection. It gets acces
 to a map of multi-producer, single consumer channels. The transform can only access the sender part of the channel and can freely
 clone and share it as it sees fit. 
 A special source type called an MPSC source gets access to receiver side of the channel. This source can have a transform chain attached to it
-like any other source. This allows for complex routing and asynchonous passing of messages between trnasform chains in a topology.
+like any other source. This allows for complex routing and asynchonous passing of messages between transform chains in a topology.
 See [the cassandra and kafka example](/examples/cass-redis-kafka) as an example.
 
 Generally if you want to build blocking behaviour in your chain, you will use transforms that have child transform chains.

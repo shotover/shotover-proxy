@@ -1,6 +1,6 @@
 mod helpers;
 
-use helpers::run_shotover_with_topology;
+use helpers::ShotoverManager;
 use redis::{Commands, Connection, RedisResult};
 use std::{thread, time};
 use tracing::info;
@@ -198,7 +198,8 @@ async fn test_simple_pipeline_workflow() {
 // #[tokio::test(threaded_scheduler)]
 #[allow(dead_code)]
 async fn run_all() {
-    let _running = run_shotover_with_topology("examples/redis-multi/topology.yaml");
+    let _manager = ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
+
     thread::sleep(time::Duration::from_secs(2));
     test_simple_pipeline_workflow().await;
     test_presence_fresh_join_pipeline_workflow().await;

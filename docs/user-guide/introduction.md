@@ -42,9 +42,9 @@ Shotover prioritises the following principals in the order listed:
 
 
 Shotover provides a set of predefined transforms that can modify, route and control queries from any number of sources 
-to a similar number of destinations. As the user you can construct chains of these transforms to acheive the behaviour required. 
+to a similar number of destinations. As the user you can construct chains of these transforms to achieve the behaviour required. 
 Each transform is configurable and functionality can generally be extended by Lua or WASM scripts. Each chain can then be attached
-to a "source" that speaks a the native protocol of you chosen database. The transform chain will process each request with access to
+to a "source" that speaks the native protocol of you chosen database. The transform chain will process each request with access to
 a unified/simplified representation of a generic query, the original raw query and optionally (for SQL like protocols) a 
 parsed AST representing the query.
 

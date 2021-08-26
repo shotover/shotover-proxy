@@ -5,9 +5,12 @@ use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
 use metrics_runtime::Receiver;
 use tokio::runtime::{self, Runtime};
+use tokio::signal;
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_subscriber::filter::Directive;
 use tracing_subscriber::fmt::format::{DefaultFields, Format};
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::layer::Layered;
@@ -67,7 +70,7 @@ impl Runner {
             .build()
             .unwrap();
 
-        let tracing = TracingState::new(config.main_log_level.as_str());
+        let tracing = TracingState::new(config.main_log_level.as_str())?;
 
         Ok(Runner {
             runtime,
@@ -92,17 +95,30 @@ impl Runner {
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {
-        let handle = self.runtime.spawn(run(self.topology, self.config));
+        let (trigger_shutdown_tx, _) = broadcast::channel(1);
+        let handle =
+            self.runtime
+                .spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
 
         RunnerSpawned {
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
+            trigger_shutdown_tx,
             handle,
         }
     }
 
     pub fn run_block(self) -> Result<()> {
-        self.runtime.block_on(run(self.topology, self.config))
+        let (trigger_shutdown_tx, _) = broadcast::channel(1);
+
+        let trigger_shutdown_tx_clone = trigger_shutdown_tx.clone();
+        self.runtime.spawn(async move {
+            signal::ctrl_c().await.unwrap();
+            trigger_shutdown_tx_clone.send(()).unwrap();
+        });
+
+        self.runtime
+            .block_on(run(self.topology, self.config, trigger_shutdown_tx))
     }
 }
 
@@ -113,23 +129,38 @@ struct TracingState {
         Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>,
 }
 
+/// Returns a new `EnvFilter` by parsing each directive string, or an error if any directive is invalid.
+/// The parsing is robust to formatting, but will reject the first invalid directive (e.g. bad log level).
+fn try_parse_log_directives(directives: &[Option<&str>]) -> Result<EnvFilter> {
+    let directives: Vec<Directive> = directives
+        .iter()
+        .flat_map(Option::as_deref)
+        .flat_map(|s| s.split(','))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().map_err(|e| anyhow!("{}: {}", e, s)))
+        .collect::<Result<_>>()?;
+
+    let filter = directives
+        .into_iter()
+        .fold(EnvFilter::default(), |filter, directive| {
+            filter.add_directive(directive)
+        });
+
+    Ok(filter)
+}
+
 impl TracingState {
-    fn new(log_level: &str) -> Self {
+    fn new(log_level: &str) -> Result<Self> {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
 
         let builder = tracing_subscriber::fmt()
             .with_writer(non_blocking)
             .with_env_filter({
-                // Override directives using RUST_LOG environment variable. Workaround for tokio-rs/tracing#512.
+                // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.
+                // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
                 let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
-                let directives = [Some(log_level), overrides.as_deref()]
-                    .iter()
-                    .flat_map(Option::as_deref)
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                EnvFilter::new(directives)
+                try_parse_log_directives(&[Some(log_level), overrides.as_deref()])?
             })
             .with_filter_reloading();
         let handle = builder.reload_handle();
@@ -138,7 +169,7 @@ impl TracingState {
         // Currently the implementation of try_init will only fail when it is called multiple times.
         builder.try_init().ok();
 
-        TracingState { guard, handle }
+        Ok(TracingState { guard, handle })
     }
 }
 
@@ -146,9 +177,14 @@ pub struct RunnerSpawned {
     pub runtime: Runtime,
     pub handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
+    pub trigger_shutdown_tx: broadcast::Sender<()>,
 }
 
-pub async fn run(topology: Topology, config: Config) -> Result<()> {
+pub async fn run(
+    topology: Topology,
+    config: Config,
+    trigger_shutdown_tx: broadcast::Sender<()>,
+) -> Result<()> {
     info!("Starting Shotover {}", crate_version!());
     info!(configuration = ?config);
     info!(topology = ?topology);
@@ -163,12 +199,37 @@ pub async fn run(topology: Topology, config: Config) -> Result<()> {
         std::mem::size_of::<Wrapper<'_>>()
     );
 
-    match topology.run_chains().await {
+    match topology.run_chains(trigger_shutdown_tx).await {
         Ok((_, mut shutdown_complete_rx)) => {
-            let _ = shutdown_complete_rx.recv().await;
-            info!("Goodbye!");
+            shutdown_complete_rx.recv().await;
+            info!("Shotover was shutdown cleanly.");
             Ok(())
         }
-        Err(error) => Err(anyhow!("Failed to run chains: {}", error)),
+        Err(error) => {
+            error!("{:?}", error);
+            Err(anyhow!(
+                "Shotover failed to initialize, the fatal error was logged."
+            ))
+        }
+    }
+}
+
+#[test]
+fn test_try_parse_log_directives() {
+    assert_eq!(
+        try_parse_log_directives(&[
+            Some("info,short=warn,error"),
+            None,
+            Some("debug"),
+            Some("alongname=trace")
+        ])
+        .unwrap()
+        .to_string(),
+        // Ordered by descending specificity.
+        "alongname=trace,short=warn,debug"
+    );
+    match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {
+        Ok(_) => panic!(),
+        Err(e) => assert_eq!(e.to_string(), "invalid filter directive: bad=blah"),
     }
 }

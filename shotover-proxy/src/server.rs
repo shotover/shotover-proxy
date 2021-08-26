@@ -64,7 +64,7 @@ pub struct TcpCodecListener<C: Codec> {
     /// handle. When a graceful shutdown is initiated, a `()` value is sent via
     /// the broadcast::Sender. Each active connection receives it, reaches a
     /// safe terminal state, and completes the task.
-    pub notify_shutdown: broadcast::Sender<()>,
+    pub trigger_shutdown_tx: broadcast::Sender<()>,
 
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
@@ -111,8 +111,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // "forget" the permit, which drops the permit value **without**
             // incrementing the semaphore's permits. Then, in the handler task
             // we manually add a new permit when processing completes.
-            // self.limit_connections.acquire().await.forget();
-
             if self.hard_connection_limit {
                 match self.limit_connections.try_acquire() {
                     Ok(p) => {
@@ -170,7 +168,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an
                 // `Arc`, so a clone only increments the ref count.
-                // chain: self.chain.clone(),
                 chain: self.chain.clone(),
                 client_details: peer,
                 conn_details: conn_string,
@@ -187,13 +184,12 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 limit_connections: self.limit_connections.clone(),
 
                 // Receive shutdown notifications.
-                shutdown: Shutdown::new(self.notify_shutdown.subscribe()),
+                shutdown: Shutdown::new(self.trigger_shutdown_tx.subscribe()),
 
                 // Notifies the receiver half once all clones are
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
             };
-            // let chain = self.chain.clone();
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
@@ -300,7 +296,7 @@ impl<C: Codec + 'static> Handler<C> {
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
-        let mut idle_time: u64 = 1;
+        let mut idle_time_seconds: u64 = 1;
 
         let (in_tx, mut in_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
@@ -331,30 +327,26 @@ impl<C: Codec + 'static> Handler<C> {
         });
 
         while !self.shutdown.is_shutdown() {
-            // While reading a request frame, also listen for the shutdown
-            // signal
-
+            // While reading a request frame, also listen for the shutdown signal
             trace!("Waiting for message");
             let frame = tokio::select! {
-                res = timeout(Duration::from_secs(idle_time) , in_rx.recv()) => {
+                res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
-                            idle_time = 1;
+                            idle_time_seconds = 1;
                             match maybe_message {
                                 Some(m) => m,
                                 None => return Ok(())
                             }
                         },
                         Err(_) => {
-                            match idle_time {
-                                0..=10 => trace!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
-                                11..=35 => trace!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
-                                _ => {
-                                    debug!("Dropping Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
-                                    return Ok(())
-                                }
+                            if idle_time_seconds < 35 {
+                                trace!("Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                            } else {
+                                debug!("Dropping. Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                                return Ok(());
                             }
-                            idle_time *= 2;
+                            idle_time_seconds *= 2;
                             continue
                         }
                     }
@@ -389,16 +381,6 @@ impl<C: Codec + 'static> Handler<C> {
                     return Ok(());
                 }
             }
-
-            // match frame {
-            //     Ok(message) => {
-            //
-            //     }
-            //     Err(e) => {
-            //         trace!("Error handling message in TcpStream source: {:?}", e);
-            //         return Ok(());
-            //     }
-            // }
         }
 
         Ok(())
@@ -462,7 +444,7 @@ impl Shutdown {
         }
 
         // Cannot receive a "lag error" as only one value is ever sent.
-        let _ = self.notify.recv().await;
+        self.notify.recv().await.unwrap();
 
         // Remember that the signal has been received.
         self.shutdown = true;

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::{fmt, iter::*};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -35,44 +35,6 @@ use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 const SLOT_SIZE: usize = 16384;
 
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
-
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
-pub struct SlotMap {
-    masters: BTreeMap<u16, String>,
-    followers: BTreeMap<u16, String>,
-
-    // Hide redundant information.
-    #[derivative(Debug = "ignore")]
-    nodes: HashSet<String>,
-}
-
-impl SlotMap {
-    fn new() -> Self {
-        Self {
-            masters: BTreeMap::new(),
-            followers: BTreeMap::new(),
-            nodes: HashSet::new(),
-        }
-    }
-}
-
-impl From<RawSlotMapping> for SlotMap {
-    fn from(mapping: RawSlotMapping) -> Self {
-        fn to_interval_map(slot_entries: Vec<(String, u16, u16)>) -> BTreeMap<u16, String> {
-            slot_entries
-                .iter()
-                .map(|(host, _start, end)| (*end, host.clone()))
-                .collect()
-        }
-
-        Self {
-            masters: to_interval_map(mapping.masters),
-            followers: to_interval_map(mapping.followers),
-            nodes: mapping.nodes,
-        }
-    }
-}
 
 fn fmt_channels(channels: &ChannelMap, fmt: &mut fmt::Formatter) -> fmt::Result {
     fmt.write_fmt(format_args!("Channels: {:?}", channels.keys()))
@@ -129,10 +91,12 @@ impl TransformsFromConfig for RedisClusterConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Derivative, Clone)]
+#[derivative(Debug)]
 pub struct RedisCluster {
     name: &'static str,
     pub slots: SlotMap,
+    #[derivative(Debug(format_with = "fmt_channels"))]
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
@@ -243,8 +207,8 @@ impl RedisCluster {
             }
         }
 
-        debug!("building follower connections");
-        for (_, node) in &self.slots.followers {
+        debug!("building replica connections");
+        for (_, node) in &self.slots.replicas {
             match self
                 .connection_pool
                 .get_connections(node.clone(), &self.token, self.connection_count)
@@ -451,15 +415,50 @@ impl RedisCluster {
     }
 }
 
-#[derive(Derivative)]
+#[derive(Clone, Derivative)]
 #[derivative(Debug)]
-pub struct RawSlotMapping {
-    pub masters: Vec<(String, u16, u16)>,
-    pub followers: Vec<(String, u16, u16)>,
+pub struct SlotMap {
+    masters: BTreeMap<u16, String>,
+    replicas: BTreeMap<u16, String>,
 
     // Hide redundant information.
     #[derivative(Debug = "ignore")]
-    pub nodes: HashSet<String>,
+    nodes: HashSet<String>,
+}
+
+impl SlotMap {
+    fn new() -> Self {
+        Self {
+            masters: BTreeMap::new(),
+            replicas: BTreeMap::new(),
+            nodes: HashSet::new(),
+        }
+    }
+
+    fn from_entries(
+        master_entries: Vec<(String, u16, u16)>,
+        replica_entries: Vec<(String, u16, u16)>,
+    ) -> Self {
+        fn to_interval_map(slot_entries: Vec<(String, u16, u16)>) -> BTreeMap<u16, String> {
+            slot_entries
+                .into_iter()
+                .map(|(host, _start, end)| (end, host))
+                .collect()
+        }
+
+        let nodes: HashSet<_> = master_entries
+            .iter()
+            .map(|e| &e.0)
+            .chain(replica_entries.iter().map(|e| &e.0))
+            .cloned()
+            .collect();
+
+        Self {
+            masters: to_interval_map(master_entries),
+            replicas: to_interval_map(replica_entries),
+            nodes,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -553,88 +552,96 @@ impl RoutingInfo {
 }
 
 fn build_slot_to_server(
-    frames: &Vec<Frame>,
-    nodes: &mut HashSet<String>,
-    slots: &mut Vec<(String, u16, u16)>,
+    frames: &[Frame],
+    slot_entries: &mut Vec<(String, u16, u16)>,
     start: u16,
     end: u16,
-) {
-    if end < start {
-        return;
-    }
-
-    // Allow extra fields for forwards compatibility, but don't expect more than two.
-
-    if frames.len() < 2 {
-        return;
-    }
+) -> Result<()> {
+    ensure!(start <= end, "invalid slot range: {}-{}", start, end);
+    ensure!(frames.len() >= 2, "expected at least two fields");
 
     let ip = if let Frame::BulkString(ref ip) = frames[0] {
         String::from_utf8_lossy(ip.as_ref()).to_string()
     } else {
-        return;
+        bail!("unexpected type for ip");
     };
 
     if ip.is_empty() {
         warn!("Master IP unknown for slots {}-{}.", start, end);
-        return;
+        return Ok(());
     }
 
     let port = if let Frame::Integer(port) = frames[1] {
         port
     } else {
-        return;
+        bail!("unexpected type for port");
     };
 
-    nodes.insert(format!("{}:{}", ip, port));
-    slots.push((format!("{}:{}", ip, port), start, end));
+    slot_entries.push((format!("{}:{}", ip, port), start, end));
+
+    Ok(())
 }
 
-fn parse_slots(results: &Vec<Frame>) -> Result<RawSlotMapping, TransformError> {
-    let mut master_slots: Vec<(String, u16, u16)> = vec![];
-    let mut replica_slots: Vec<(String, u16, u16)> = vec![];
-    let mut nodes: HashSet<String> = HashSet::new();
+fn parse_slots(results: &Vec<Frame>) -> Result<SlotMap, TransformError> {
+    let mut master_entries: Vec<(String, u16, u16)> = vec![];
+    let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
-    let mut result_iter = results.into_iter();
-    while let Some(Frame::Array(item)) = result_iter.next() {
-        let mut enumerator = item.into_iter().enumerate();
+    for result in results.into_iter() {
+        match result {
+            Frame::Array(result) => {
+                let mut start: u16 = 0;
+                let mut end: u16 = 0;
 
-        let mut start: u16 = 0;
-        let mut end: u16 = 0;
-
-        while let Some((index, ref item)) = enumerator.next() {
-            match (index, item) {
-                (0, Frame::Integer(i)) => start = *i as u16,
-                (1, Frame::Integer(i)) => end = *i as u16,
-                (2, Frame::Array(master)) => {
-                    build_slot_to_server(master, &mut nodes, &mut master_slots, start, end)
+                for (index, item) in result.into_iter().enumerate() {
+                    match (index, item) {
+                        (0, Frame::Integer(i)) => start = *i as u16,
+                        (1, Frame::Integer(i)) => end = *i as u16,
+                        (2, Frame::Array(master)) => {
+                            build_slot_to_server(&master, &mut master_entries, start, end).map_err(
+                                |e| {
+                                    TransformError::Protocol(format!(
+                                        "Failed to decode master slots: {}",
+                                        e,
+                                    ))
+                                },
+                            )?
+                        }
+                        (_, Frame::Array(replica)) => {
+                            build_slot_to_server(&replica, &mut replica_entries, start, end)
+                                .map_err(|e| {
+                                    TransformError::Protocol(format!(
+                                        "Failed to decode replica slots: {}",
+                                        e,
+                                    ))
+                                })?
+                        }
+                        _ => {
+                            return Err(TransformError::Protocol(
+                                "unexpected value in slot map".to_string(),
+                            ))
+                        }
+                    }
                 }
-                (n, Frame::Array(follow)) if n > 2 => {
-                    build_slot_to_server(&follow, &mut nodes, &mut replica_slots, start, end)
-                }
-                _ => {
-                    return Err(TransformError::Protocol(
-                        "unexpected value in slot map".to_string(),
-                    ))
-                }
+            }
+            _ => {
+                return Err(TransformError::Protocol(
+                    "unexpected value in slot map".to_string(),
+                ))
             }
         }
     }
 
-    if master_slots.is_empty() {
+    // TODO: Only check masters?
+    if master_entries.is_empty() {
         Err(TransformError::Other(anyhow!("empty slot map!")))
     } else {
-        Ok(RawSlotMapping {
-            masters: master_slots,
-            followers: replica_slots,
-            nodes,
-        })
+        Ok(SlotMap::from_entries(master_entries, replica_entries))
     }
 }
 
 async fn get_topology_from_node(
     sender: &UnboundedSender<Request>,
-) -> Result<RawSlotMapping, TransformError> {
+) -> Result<SlotMap, TransformError> {
     let return_chan_rx = send_frame_request(
         sender,
         Frame::Array(vec![
@@ -649,7 +656,7 @@ async fn get_topology_from_node(
             message.as_str(),
         ))),
         frame => Err(TransformError::Protocol(format!(
-            "unexpected response frame: {}",
+            "unexpected response frame: {:?}",
             frame
         ))),
     }
@@ -693,10 +700,7 @@ fn send_error_response(
     if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
         counter!("redis_cluster_failed_request", 1, "chain" => chain_name.clone());
     }) {
-        trace!(
-            "failed to count failed request due to missing chain name: {}",
-            e
-        );
+        error!("failed to count failed request - missing chain name: {}", e)
     };
     send_frame_response(one_tx, Frame::Error(message.to_string()))
         .map_err(|_| anyhow!("failed to send error: {}", message))
@@ -781,7 +785,7 @@ impl Transform for RedisCluster {
             self.rebuild_slots = false;
         }
 
-        let mut responses: ResponseFuturesOrdered = ResponseFuturesOrdered::new();
+        let mut responses = ResponseFuturesOrdered::new();
 
         for message in message_wrapper.message {
             let command = match &message.original {
