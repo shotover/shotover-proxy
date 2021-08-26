@@ -4,8 +4,7 @@ use hyper::{
 };
 
 use bytes::Bytes;
-use metrics_core::{Builder, Drain, Observe};
-use metrics_runtime::observers::{JsonBuilder, PrometheusBuilder};
+use metrics_exporter_prometheus::PrometheusHandle;
 use std::convert::Infallible;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, trace};
@@ -13,8 +12,8 @@ use tracing_subscriber::reload::Handle;
 use tracing_subscriber::EnvFilter;
 
 /// Exports metrics over HTTP.
-pub struct LogFilterHttpExporter<C, S> {
-    controller: C,
+pub struct LogFilterHttpExporter<S> {
+    recorder_handle: PrometheusHandle,
     address: SocketAddr,
     handle: Handle<EnvFilter, S>,
 }
@@ -39,17 +38,20 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
         .expect("builder with known status code must not fail")
 }
 
-impl<C, S> LogFilterHttpExporter<C, S>
+impl<S> LogFilterHttpExporter<S>
 where
-    C: Observe + Send + Sync + 'static,
     S: tracing::Subscriber + 'static,
 {
     /// Creates a new [`HttpExporter`] that listens on the given `address`.
     ///
     /// Observers expose their output by being converted into strings.
-    pub fn new(controller: C, address: SocketAddr, handle: Handle<EnvFilter, S>) -> Self {
+    pub fn new(
+        recorder_handle: PrometheusHandle,
+        address: SocketAddr,
+        handle: Handle<EnvFilter, S>,
+    ) -> Self {
         LogFilterHttpExporter {
-            controller,
+            recorder_handle,
             address,
             handle,
         }
@@ -58,7 +60,7 @@ where
     /// Starts an HTTP server on the `address` the exporter was originally configured with,
     /// responding to any request with the output of the configured observer.
     pub async fn async_run(self) -> hyper::Result<()> {
-        let controller = Arc::new(self.controller);
+        let controller = Arc::new(self.recorder_handle);
         let handle = Arc::new(self.handle);
 
         let make_svc = make_service_fn(move |_| {
@@ -73,21 +75,7 @@ where
                     async move {
                         let response = match (req.method(), req.uri().path()) {
                             (&Method::GET, "/metrics") => {
-                                let output = match req.uri().query() {
-                                    Some("x-accept=application/json") => {
-                                        let builder = JsonBuilder::new();
-                                        let mut observer = builder.build();
-                                        controller.observe(&mut observer);
-                                        observer.drain()
-                                    }
-                                    _ => {
-                                        let builder = PrometheusBuilder::new();
-                                        let mut observer = builder.build();
-                                        controller.observe(&mut observer);
-                                        observer.drain()
-                                    }
-                                };
-                                Response::new(Body::from(output))
+                                Response::new(Body::from(controller.as_ref().render()))
                             }
                             (&Method::PUT, "/filter") => {
                                 trace!("setting filter");
