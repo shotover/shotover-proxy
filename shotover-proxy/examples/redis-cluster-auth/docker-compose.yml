@@ -4,8 +4,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2230:6379"
-    volumes:
-      - redis-cluster-auth_data-0:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -14,8 +12,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2231:6379"
-    volumes:
-      - redis-cluster-auth_data-1:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -24,8 +20,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2232:6379"
-    volumes:
-      - redis-cluster-auth_data-2:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -34,8 +28,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2233:6379"
-    volumes:
-      - redis-cluster-auth_data-3:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -44,8 +36,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2234:6379"
-    volumes:
-      - redis-cluster-auth_data-4:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -54,8 +44,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2235:6379"
-    volumes:
-      - redis-cluster-auth_data-5:/bitnami/redis/data
     environment:
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -75,17 +63,3 @@ services:
       - 'REDIS_CLUSTER_REPLICAS=1'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_CLUSTER_CREATOR=yes'
-
-volumes:
-  redis-cluster-auth_data-0:
-    driver: local
-  redis-cluster-auth_data-1:
-    driver: local
-  redis-cluster-auth_data-2:
-    driver: local
-  redis-cluster-auth_data-3:
-    driver: local
-  redis-cluster-auth_data-4:
-    driver: local
-  redis-cluster-auth_data-5:
-    driver: local
