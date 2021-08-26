@@ -21,7 +21,11 @@ impl ShotoverManager {
             config_file: "config/config.yaml".into(),
             ..ConfigOpts::default()
         };
-        let spawn = Runner::new(opts).unwrap().run_spawn();
+        let spawn = Runner::new(opts)
+            .unwrap()
+            .with_observability_interface()
+            .unwrap()
+            .run_spawn();
 
         // If we allow the tracing_guard to be dropped then the following tests in the same file will not get tracing so we mem::forget it.
         // This is because tracing can only be initialized once in the same execution, secondary attempts to initalize tracing will silently fail.
