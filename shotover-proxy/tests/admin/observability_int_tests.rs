@@ -5,7 +5,7 @@ use test_helpers::docker_compose::DockerCompose;
 
 #[test]
 #[serial]
-fn test_metrics() -> Result<()> {
+fn test_metrics() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
 
     let shotover_manager =
@@ -34,6 +34,4 @@ fn test_metrics() -> Result<()> {
     assert!(body.contains("# TYPE shotover_available_connections gauge"));
     assert!(body.contains("# TYPE shotover_transform_latency summary"));
     assert!(body.contains("# TYPE shotover_chain_latency summary"));
-
-    Ok(())
 }
