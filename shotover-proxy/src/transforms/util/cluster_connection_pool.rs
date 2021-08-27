@@ -195,3 +195,85 @@ async fn rx_process<C: CodecReadHalf>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use crate::protocols::redis_codec::RedisCodec;
+    use crate::transforms::util::cluster_connection_pool::spawn_from_stream;
+    use std::time::Duration;
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
+    use tokio::net::TcpStream;
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn test_remote_shutdown() {
+        let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+
+        let builder = tracing_subscriber::fmt()
+            .with_writer(non_blocking)
+            .with_env_filter("TRACE")
+            .with_filter_reloading();
+
+        // let _handle = builder.reload_handle();
+        builder.try_init().ok();
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let remote = tokio::spawn(async move {
+            // Accept connection and immediately close.
+            listener.accept().await.is_ok()
+        });
+
+        let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let codec = RedisCodec::new(true, 3);
+        let sender = spawn_from_stream(&codec, stream);
+
+        assert!(remote.await.unwrap());
+
+        assert!(
+            // NOTE: Typically within 1-10ms.
+            timeout(Duration::from_millis(100), sender.closed())
+                .await
+                .is_ok(),
+            "local did not detect remote shutdown"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_local_shutdown() {
+        let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+
+        let builder = tracing_subscriber::fmt()
+            .with_writer(non_blocking)
+            .with_env_filter("TRACE")
+            .with_filter_reloading();
+
+        // let _handle = builder.reload_handle();
+        builder.try_init().ok();
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let remote = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+
+            // Discard bytes until EOF.
+            let mut buffer = [0; 1];
+            while socket.read(&mut buffer[..]).await.unwrap() > 0 {}
+        });
+
+        let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let codec = RedisCodec::new(true, 3);
+
+        // Drop immediately.
+        let _ = spawn_from_stream(&codec, stream);
+
+        assert!(
+            // NOTE: Typically within 1-10ms.
+            timeout(Duration::from_millis(100), remote).await.is_ok(),
+            "remote did not detect local shutdown"
+        );
+    }
+}
