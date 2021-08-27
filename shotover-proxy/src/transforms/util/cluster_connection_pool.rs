@@ -198,14 +198,16 @@ async fn rx_process<C: CodecReadHalf>(
 
 #[cfg(test)]
 mod test {
-    use crate::protocols::redis_codec::RedisCodec;
-    use crate::transforms::util::cluster_connection_pool::spawn_from_stream;
     use std::mem;
     use std::time::Duration;
+
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
     use tokio::net::TcpStream;
     use tokio::time::timeout;
+
+    use crate::protocols::redis_codec::RedisCodec;
+    use crate::transforms::util::cluster_connection_pool::spawn_from_stream;
 
     #[tokio::test]
     async fn test_remote_shutdown() {
