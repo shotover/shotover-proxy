@@ -200,6 +200,7 @@ async fn rx_process<C: CodecReadHalf>(
 mod test {
     use crate::protocols::redis_codec::RedisCodec;
     use crate::transforms::util::cluster_connection_pool::spawn_from_stream;
+    use std::mem;
     use std::time::Duration;
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
@@ -208,14 +209,15 @@ mod test {
 
     #[tokio::test]
     async fn test_remote_shutdown() {
-        let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+        let (log_writer, _log_guard) = tracing_appender::non_blocking(std::io::stdout());
+        mem::forget(_log_guard);
 
         let builder = tracing_subscriber::fmt()
-            .with_writer(non_blocking)
+            .with_writer(log_writer)
             .with_env_filter("TRACE")
             .with_filter_reloading();
 
-        // let _handle = builder.reload_handle();
+        let _handle = builder.reload_handle();
         builder.try_init().ok();
 
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -244,13 +246,14 @@ mod test {
     #[tokio::test]
     async fn test_local_shutdown() {
         let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+        mem::forget(_guard);
 
         let builder = tracing_subscriber::fmt()
             .with_writer(non_blocking)
             .with_env_filter("TRACE")
             .with_filter_reloading();
 
-        // let _handle = builder.reload_handle();
+        let _handle = builder.reload_handle();
         builder.try_init().ok();
 
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -267,7 +270,7 @@ mod test {
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let codec = RedisCodec::new(true, 3);
 
-        // Drop immediately.
+        // Drop sender immediately.
         let _ = spawn_from_stream(&codec, stream);
 
         assert!(
