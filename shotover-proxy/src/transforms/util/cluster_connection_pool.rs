@@ -245,11 +245,11 @@ mod test {
 
     #[tokio::test]
     async fn test_local_shutdown() {
-        let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
-        mem::forget(_guard);
+        let (log_writer, _log_guard) = tracing_appender::non_blocking(std::io::stdout());
+        mem::forget(_log_guard);
 
         let builder = tracing_subscriber::fmt()
-            .with_writer(non_blocking)
+            .with_writer(log_writer)
             .with_env_filter("TRACE")
             .with_filter_reloading();
 
