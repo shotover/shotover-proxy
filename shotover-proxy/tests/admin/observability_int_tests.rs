@@ -23,7 +23,10 @@ fn test_metrics() -> Result<()> {
         .arg(43)
         .execute(&mut connection);
 
-    let body = reqwest::blocking::get("http://localhost:9001/metrics")?.text()?;
+    let body = reqwest::blocking::get("http://localhost:9001/metrics")
+        .unwrap()
+        .text()
+        .unwrap();
 
     // If the body contains these substrings, we can assume metrics are working
     assert!(body.contains("# TYPE shotover_transform_total counter"));
