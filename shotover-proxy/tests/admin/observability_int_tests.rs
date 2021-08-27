@@ -1,8 +1,10 @@
 use crate::helpers::ShotoverManager;
 use anyhow::Result;
+use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
 #[test]
+#[serial(redis)]
 fn test_metrics() -> Result<()> {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
 

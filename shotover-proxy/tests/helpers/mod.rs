@@ -70,6 +70,7 @@ impl Drop for ShotoverManager {
                 .block_on(self.handle.take().unwrap())
                 .unwrap()
                 .unwrap();
+            metrics::clear_recorder();
         }
     }
 }
