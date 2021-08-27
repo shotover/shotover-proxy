@@ -23,10 +23,9 @@ fn test_metrics() -> Result<()> {
         .arg(43)
         .execute(&mut connection);
 
-    let body: String = ureq::get("http://localhost:9001/metrics")
-        .call()?
-        .into_string()?;
+    let body = reqwest::blocking::get("http://localhost:9001/metrics")?.text()?;
 
+    // If the body contains these substrings, we can assume metrics are working
     assert!(body.contains("# TYPE shotover_transform_total counter"));
     assert!(body.contains("# TYPE shotover_chain_total counter"));
     assert!(body.contains("# TYPE shotover_available_connections gauge"));
