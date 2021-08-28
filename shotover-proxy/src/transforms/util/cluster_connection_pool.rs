@@ -216,7 +216,7 @@ mod test {
 
         let builder = tracing_subscriber::fmt()
             .with_writer(log_writer)
-            .with_env_filter("TRACE")
+            .with_env_filter("INFO")
             .with_filter_reloading();
 
         let _handle = builder.reload_handle();
@@ -252,7 +252,7 @@ mod test {
 
         let builder = tracing_subscriber::fmt()
             .with_writer(log_writer)
-            .with_env_filter("TRACE")
+            .with_env_filter("INFO")
             .with_filter_reloading();
 
         let _handle = builder.reload_handle();
