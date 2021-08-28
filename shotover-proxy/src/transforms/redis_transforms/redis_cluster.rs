@@ -57,7 +57,7 @@ impl TransformsFromConfig for RedisClusterConfig {
 
         for node in slots.masters.values() {
             match connection_pool
-                .get_connection(&node, self.connection_count.unwrap_or(1))
+                .get_connections(&node, self.connection_count.unwrap_or(1))
                 .await
             {
                 Ok(conn) => {
@@ -134,7 +134,7 @@ impl RedisCluster {
                 if let Ok(res) = timeout(
                     Duration::from_millis(40),
                     self.connection_pool
-                        .get_connection(host, self.connection_count),
+                        .get_connections(host, self.connection_count),
                 )
                 .await
                 {
