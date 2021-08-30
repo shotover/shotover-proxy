@@ -1,5 +1,4 @@
 use crate::helpers::ShotoverManager;
-use anyhow::Result;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 

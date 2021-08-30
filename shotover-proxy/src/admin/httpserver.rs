@@ -23,7 +23,7 @@ where
     S: tracing::Subscriber + 'static,
 {
     use std::str;
-    let body = str::from_utf8(&bytes.as_ref()).map_err(|e| format!("{}", e))?;
+    let body = str::from_utf8(bytes.as_ref()).map_err(|e| format!("{}", e))?;
     trace!(request.body = ?body);
     let new_filter = body
         .parse::<tracing_subscriber::filter::EnvFilter>()
