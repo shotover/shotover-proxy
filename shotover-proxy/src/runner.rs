@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
-use metrics_runtime::Receiver;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::runtime::{self, Runtime};
 use tokio::signal;
 use tokio::sync::broadcast;
@@ -81,14 +81,12 @@ impl Runner {
     }
 
     pub fn with_observability_interface(self) -> Result<Self> {
-        let receiver = Receiver::builder()
-            .build()
-            .expect("failed to create receiver");
-        let socket: SocketAddr = self.config.observability_interface.parse()?;
-        let exporter =
-            LogFilterHttpExporter::new(receiver.controller(), socket, self.tracing.handle.clone());
+        let recorder = PrometheusBuilder::new().build();
+        let handle = recorder.handle();
+        metrics::set_boxed_recorder(Box::new(recorder))?;
 
-        receiver.install();
+        let socket: SocketAddr = self.config.observability_interface.parse()?;
+        let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
         self.runtime.spawn(exporter.async_run());
 
         Ok(self)
