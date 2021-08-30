@@ -9,7 +9,6 @@ use futures::StreamExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
@@ -172,20 +171,42 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     }
 }
 
-pub fn spawn_from_stream<C: Codec + 'static>(codec: &C, stream: TcpStream) -> Connection {
+pub fn spawn_from_stream<C: Codec + 'static>(
+    codec: &C,
+    stream: TcpStream,
+) -> UnboundedSender<Request> {
     let (read, write) = stream.into_split();
     let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
     let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
-    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
 
-    tokio::spawn(tx_process(
-        write,
-        out_rx,
-        return_tx,
-        shutdown_rx,
-        codec.clone(),
-    ));
-    tokio::spawn(rx_process(read, return_rx, shutdown_tx, codec.clone()));
+    let codec_clone = codec.clone();
+
+    tokio::spawn(async move {
+        tokio::select! {
+            result = tx_process(write, out_rx, return_tx, codec_clone) => if let Err(e) = result {
+                trace!("connection write-closed with error: {:?}", e);
+            } else {
+                trace!("connection write-closed gracefully");
+            },
+            _ = closed_rx => {
+                trace!("connection write-closed by remote upstream");
+            },
+        }
+    });
+
+    let codec_clone = codec.clone();
+
+    tokio::spawn(async move {
+        if let Err(e) = rx_process(read, return_rx, codec_clone).await {
+            trace!("connection read-closed with error: {:?}", e);
+        } else {
+            trace!("connection read-closed gracefully");
+        }
+
+        // Signal the writer to also exit, which then closes `out_tx` - what we consider as the connection.
+        closed_tx.send(())
+    });
 
     out_tx
 }
@@ -194,7 +215,6 @@ async fn tx_process<C: CodecWriteHalf>(
     write: OwnedWriteHalf,
     out_rx: UnboundedReceiver<Request>,
     return_tx: Connection,
-    shutdown_rx: oneshot::Receiver<()>,
     codec: C,
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec.clone());
@@ -205,22 +225,12 @@ async fn tx_process<C: CodecWriteHalf>(
         return_tx.send(x)?;
         ret
     });
-
-    tokio::select! {
-       _ = rx_stream.forward(in_w) => trace!("connection write-closed by writer"),
-       _ = shutdown_rx => {
-           trace!("connection write-closed by reader");
-           debug!("connection closed by remote upstream")
-       },
-    }
-
-    Ok(())
+    rx_stream.forward(in_w).await
 }
 
 async fn rx_process<C: CodecReadHalf>(
     read: OwnedReadHalf,
     mut return_rx: UnboundedReceiver<Request>,
-    shutdown_tx: oneshot::Sender<()>,
     codec: C,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec.clone());
@@ -242,10 +252,6 @@ async fn rx_process<C: CodecReadHalf>(
             }
             Err(e) => {
                 debug!("Couldn't decode message from upstream host {:?}", e);
-
-                // Stop writer if not already stopped.
-                let _ = shutdown_tx.send(());
-
                 return Err(anyhow!(
                     "Couldn't decode message from upstream host {:?}",
                     e
@@ -254,10 +260,92 @@ async fn rx_process<C: CodecReadHalf>(
         }
     }
 
-    trace!("connection read-closed");
-
-    // Stop writer if not already stopped.
-    let _ = shutdown_tx.send(());
-
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use std::mem;
+    use std::time::Duration;
+
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
+    use tokio::net::TcpStream;
+    use tokio::time::timeout;
+
+    use crate::protocols::redis_codec::RedisCodec;
+    use crate::transforms::util::cluster_connection_pool::spawn_from_stream;
+
+    #[tokio::test]
+    async fn test_remote_shutdown() {
+        let (log_writer, _log_guard) = tracing_appender::non_blocking(std::io::stdout());
+        mem::forget(_log_guard);
+
+        let builder = tracing_subscriber::fmt()
+            .with_writer(log_writer)
+            .with_env_filter("INFO")
+            .with_filter_reloading();
+
+        let _handle = builder.reload_handle();
+        builder.try_init().ok();
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let remote = tokio::spawn(async move {
+            // Accept connection and immediately close.
+            listener.accept().await.is_ok()
+        });
+
+        let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let codec = RedisCodec::new(true, 3);
+        let sender = spawn_from_stream(&codec, stream);
+
+        assert!(remote.await.unwrap());
+
+        assert!(
+            // NOTE: Typically within 1-10ms.
+            timeout(Duration::from_millis(100), sender.closed())
+                .await
+                .is_ok(),
+            "local did not detect remote shutdown"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_local_shutdown() {
+        let (log_writer, _log_guard) = tracing_appender::non_blocking(std::io::stdout());
+        mem::forget(_log_guard);
+
+        let builder = tracing_subscriber::fmt()
+            .with_writer(log_writer)
+            .with_env_filter("INFO")
+            .with_filter_reloading();
+
+        let _handle = builder.reload_handle();
+        builder.try_init().ok();
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let remote = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+
+            // Discard bytes until EOF.
+            let mut buffer = [0; 1];
+            while socket.read(&mut buffer[..]).await.unwrap() > 0 {}
+        });
+
+        let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let codec = RedisCodec::new(true, 3);
+
+        // Drop sender immediately.
+        let _ = spawn_from_stream(&codec, stream);
+
+        assert!(
+            // NOTE: Typically within 1-10ms.
+            timeout(Duration::from_millis(100), remote).await.is_ok(),
+            "remote did not detect local shutdown"
+        );
+    }
 }
