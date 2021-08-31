@@ -4,12 +4,13 @@ use shotover_proxy::runner::{ConfigOpts, Runner};
 use std::net::TcpStream;
 use std::thread;
 use std::time::Duration;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle as RuntimeHandle, Runtime};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 pub struct ShotoverManager {
-    pub runtime: Runtime,
+    pub runtime: Option<Runtime>,
+    pub runtime_handle: RuntimeHandle,
     pub handle: Option<JoinHandle<Result<()>>>,
     pub trigger_shutdown_tx: broadcast::Sender<()>,
 }
@@ -32,6 +33,7 @@ impl ShotoverManager {
         std::mem::forget(spawn.tracing_guard);
 
         ShotoverManager {
+            runtime_handle: spawn.runtime_handle,
             runtime: spawn.runtime,
             handle: Some(spawn.handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
@@ -69,8 +71,8 @@ impl Drop for ShotoverManager {
             // So skipping shutdown on panic is fine.
         } else {
             self.trigger_shutdown_tx.send(()).unwrap();
-            self.runtime
-                .block_on(self.handle.take().unwrap())
+            let _g = self.runtime_handle.enter();
+            futures::executor::block_on(self.handle.take().unwrap())
                 .unwrap()
                 .unwrap();
         }

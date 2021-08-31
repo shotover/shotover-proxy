@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
 use tokio::signal;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -51,32 +51,40 @@ impl Default for ConfigOpts {
 }
 
 pub struct Runner {
-    runtime: Runtime,
     topology: Topology,
     config: Config,
+    opts: ConfigOpts,
     tracing: TracingState,
 }
 
 impl Runner {
+    fn runtime(&self) -> (RuntimeHandle, Option<Runtime>) {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            (handle, None)
+        } else {
+            let runtime = runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("Shotover-Proxy-Thread")
+                .thread_stack_size(self.opts.stack_size)
+                .worker_threads(self.opts.core_threads)
+                .build()
+                .unwrap();
+
+            (runtime.handle().clone(), Some(runtime))
+        }
+    }
+
     pub fn new(params: ConfigOpts) -> Result<Self> {
         let config = Config::from_file(params.config_file.clone())?;
         let topology = Topology::from_file(params.topology_file.clone())?;
 
-        let runtime = runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("RPProxy-Thread")
-            .thread_stack_size(params.stack_size)
-            .worker_threads(params.core_threads)
-            .build()
-            .unwrap();
-
         let tracing = TracingState::new(config.main_log_level.as_str())?;
 
         Ok(Runner {
-            runtime,
             topology,
             config,
             tracing,
+            opts: params,
         })
     }
 
@@ -87,36 +95,42 @@ impl Runner {
 
         let socket: SocketAddr = self.config.observability_interface.parse()?;
         let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
-        self.runtime.spawn(exporter.async_run());
+
+        let (runtime_handle, _runtime) = self.runtime();
+        runtime_handle.spawn(exporter.async_run());
 
         Ok(self)
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {
+        let (runtime_handle, runtime) = self.runtime();
+
         let (trigger_shutdown_tx, _) = broadcast::channel(1);
-        let handle =
-            self.runtime
-                .spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
+
+        let join_handle =
+            runtime_handle.spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
 
         RunnerSpawned {
-            runtime: self.runtime,
+            runtime_handle,
+            runtime,
             tracing_guard: self.tracing.guard,
             trigger_shutdown_tx,
-            handle,
+            handle: join_handle,
         }
     }
 
     pub fn run_block(self) -> Result<()> {
+        let (runtime_handle, _runtime) = self.runtime();
+
         let (trigger_shutdown_tx, _) = broadcast::channel(1);
 
         let trigger_shutdown_tx_clone = trigger_shutdown_tx.clone();
-        self.runtime.spawn(async move {
+        runtime_handle.spawn(async move {
             signal::ctrl_c().await.unwrap();
             trigger_shutdown_tx_clone.send(()).unwrap();
         });
 
-        self.runtime
-            .block_on(run(self.topology, self.config, trigger_shutdown_tx))
+        runtime_handle.block_on(run(self.topology, self.config, trigger_shutdown_tx))
     }
 }
 
@@ -172,7 +186,8 @@ impl TracingState {
 }
 
 pub struct RunnerSpawned {
-    pub runtime: Runtime,
+    pub runtime: Option<Runtime>,
+    pub runtime_handle: RuntimeHandle,
     pub handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
     pub trigger_shutdown_tx: broadcast::Sender<()>,
