@@ -58,22 +58,6 @@ pub struct Runner {
 }
 
 impl Runner {
-    fn runtime(&self) -> (RuntimeHandle, Option<Runtime>) {
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            (handle, None)
-        } else {
-            let runtime = runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_name("Shotover-Proxy-Thread")
-                .thread_stack_size(self.opts.stack_size)
-                .worker_threads(self.opts.core_threads)
-                .build()
-                .unwrap();
-
-            (runtime.handle().clone(), Some(runtime))
-        }
-    }
-
     pub fn new(params: ConfigOpts) -> Result<Self> {
         let config = Config::from_file(params.config_file.clone())?;
         let topology = Topology::from_file(params.topology_file.clone())?;
@@ -131,6 +115,23 @@ impl Runner {
         });
 
         runtime_handle.block_on(run(self.topology, self.config, trigger_shutdown_tx))
+    }
+
+    /// Get handle for an existing runtime or create one
+    fn runtime(&self) -> (RuntimeHandle, Option<Runtime>) {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            (handle, None)
+        } else {
+            let runtime = runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("Shotover-Proxy-Thread")
+                .thread_stack_size(self.opts.stack_size)
+                .worker_threads(self.opts.core_threads)
+                .build()
+                .unwrap();
+
+            (runtime.handle().clone(), Some(runtime))
+        }
     }
 }
 

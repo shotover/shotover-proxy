@@ -33,14 +33,14 @@ impl ShotoverManager {
         std::mem::forget(spawn.tracing_guard);
 
         ShotoverManager {
-            runtime_handle: spawn.runtime_handle,
             runtime: spawn.runtime,
+            runtime_handle: spawn.runtime_handle,
             handle: Some(spawn.handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
         }
     }
 
-    fn wait_for_socket_to_open(port: u16) {
+    pub fn wait_for_socket_to_open(&self, port: u16) {
         let mut tries = 0;
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
             thread::sleep(Duration::from_millis(100));
@@ -52,7 +52,7 @@ impl ShotoverManager {
     #[allow(unused)]
     // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
     pub fn redis_connection(&self, port: u16) -> Connection {
-        ShotoverManager::wait_for_socket_to_open(port);
+        self.wait_for_socket_to_open(port);
         Client::open(("127.0.0.1", port))
             .unwrap()
             .get_connection()
