@@ -75,7 +75,7 @@ impl Drop for ShotoverManager {
             // Cannot use self.runtime_handle.block_on because it will panic if run from within a test's runtime
             // More details:
             //https://stackoverflow.com/questions/66035290/how-do-i-await-a-future-inside-a-non-async-method-which-was-called-from-an-async
-            let _g = self.runtime_handle.enter();
+            let _enter_guard = self.runtime_handle.enter();
             futures::executor::block_on(self.join_handle.take().unwrap())
                 .unwrap()
                 .unwrap();
