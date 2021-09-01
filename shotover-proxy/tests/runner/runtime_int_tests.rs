@@ -7,7 +7,7 @@ use crate::helpers::ShotoverManager;
 #[serial]
 async fn test_runtime_use_existing() {
     let shotover_manager = ShotoverManager::from_topology_file("examples/null/topology.yaml");
-    ShotoverManager::wait_for_socket_to_open(6379);
+    //ShotoverManager::wait_for_socket_to_open(6379);
 
     // Assert that shotover is using the test runtime
     let handle = tokio::runtime::Handle::current();
@@ -21,7 +21,7 @@ async fn test_runtime_use_existing() {
 #[serial]
 fn test_runtime_create() {
     let shotover_manager = ShotoverManager::from_topology_file("examples/null/topology.yaml");
-    ShotoverManager::wait_for_socket_to_open(6379);
+    //ShotoverManager::wait_for_socket_to_open(6379);
 
     // Assert that shotover created a runtime for itself
     assert!(shotover_manager.runtime.is_some());

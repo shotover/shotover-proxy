@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 pub struct ShotoverManager {
     pub runtime: Option<Runtime>,
     pub runtime_handle: RuntimeHandle,
-    pub handle: Option<JoinHandle<Result<()>>>,
+    pub join_handle: Option<JoinHandle<Result<()>>>,
     pub trigger_shutdown_tx: broadcast::Sender<()>,
 }
 
@@ -35,7 +35,7 @@ impl ShotoverManager {
         ShotoverManager {
             runtime: spawn.runtime,
             runtime_handle: spawn.runtime_handle,
-            handle: Some(spawn.handle),
+            join_handle: Some(spawn.join_handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
         }
     }
@@ -76,7 +76,7 @@ impl Drop for ShotoverManager {
             // More details:
             //https://stackoverflow.com/questions/66035290/how-do-i-await-a-future-inside-a-non-async-method-which-was-called-from-an-async
             let _g = self.runtime_handle.enter();
-            futures::executor::block_on(self.handle.take().unwrap())
+            futures::executor::block_on(self.join_handle.take().unwrap())
                 .unwrap()
                 .unwrap();
         }

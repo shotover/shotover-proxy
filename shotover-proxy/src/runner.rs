@@ -101,7 +101,7 @@ impl Runner {
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
             trigger_shutdown_tx,
-            handle: join_handle,
+            join_handle,
         }
     }
 
@@ -190,7 +190,7 @@ impl TracingState {
 pub struct RunnerSpawned {
     pub runtime: Option<Runtime>,
     pub runtime_handle: RuntimeHandle,
-    pub handle: JoinHandle<Result<()>>,
+    pub join_handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
     pub trigger_shutdown_tx: broadcast::Sender<()>,
 }
