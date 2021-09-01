@@ -196,6 +196,7 @@ pub enum TransformsConfig {
     RedisCluster(RedisClusterConfig),
     RedisTimestampTagger,
     Printer,
+    Null,
     ParallelMap(ParallelMapConfig),
     PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
@@ -219,6 +220,7 @@ impl TransformsConfig {
                 Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
             }
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
+            TransformsConfig::Null => Ok(Transforms::Null(Null::new())),
             TransformsConfig::RedisCluster(r) => r.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
