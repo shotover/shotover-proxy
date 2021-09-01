@@ -142,7 +142,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
-            gauge!("shotover_available_connections", self.limit_connections.available_permits() as i64 ,"source" => self.source_name.clone());
+            gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64,"source" => self.source_name.clone());
 
             let peer = socket
                 .peer_addr()

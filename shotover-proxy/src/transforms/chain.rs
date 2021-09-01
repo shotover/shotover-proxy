@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use futures::TryFutureExt;
 
 use itertools::Itertools;
-use metrics::{counter, timing};
+use metrics::{counter, histogram};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
@@ -191,12 +191,11 @@ impl TransformChain {
         wrapper.reset(iter);
 
         let result = wrapper.call_next_transform().await;
-        let end = Instant::now();
         counter!("shotover_chain_total", 1, "chain" => self.name.clone());
         if result.is_err() {
             counter!("shotover_chain_failures", 1, "chain" => self.name.clone())
         }
-        timing!("shotover_chain_latency", start, end, "chain" => self.name.clone(), "client_details" => client_details);
+        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
     }
 }

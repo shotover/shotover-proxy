@@ -21,7 +21,11 @@ impl ShotoverManager {
             config_file: "config/config.yaml".into(),
             ..ConfigOpts::default()
         };
-        let spawn = Runner::new(opts).unwrap().run_spawn();
+        let spawn = Runner::new(opts)
+            .unwrap()
+            .with_observability_interface()
+            .unwrap()
+            .run_spawn();
 
         // If we allow the tracing_guard to be dropped then the following tests in the same file will not get tracing so we mem::forget it.
         // This is because tracing can only be initialized once in the same execution, secondary attempts to initalize tracing will silently fail.
@@ -56,6 +60,9 @@ impl ShotoverManager {
 
 impl Drop for ShotoverManager {
     fn drop(&mut self) {
+        // Must clear the recorder before skipping a shutdown on panic; if one test panics and the recorder is not cleared,
+        // the following tests will panic because they will try to set another recorder
+        metrics::clear_recorder();
         if std::thread::panicking() {
             // If already panicking do nothing in order to avoid a double panic.
             // We only shutdown shotover to test the shutdown process not because we need to clean up any resources.
