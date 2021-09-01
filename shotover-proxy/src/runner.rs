@@ -51,9 +51,10 @@ impl Default for ConfigOpts {
 }
 
 pub struct Runner {
+    runtime: Option<Runtime>,
+    runtime_handle: RuntimeHandle,
     topology: Topology,
     config: Config,
-    opts: ConfigOpts,
     tracing: TracingState,
 }
 
@@ -64,11 +65,14 @@ impl Runner {
 
         let tracing = TracingState::new(config.main_log_level.as_str())?;
 
+        let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);
+
         Ok(Runner {
+            runtime,
+            runtime_handle,
             topology,
             config,
             tracing,
-            opts: params,
         })
     }
 
@@ -80,23 +84,21 @@ impl Runner {
         let socket: SocketAddr = self.config.observability_interface.parse()?;
         let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
 
-        let (runtime_handle, _runtime) = self.runtime();
-        runtime_handle.spawn(exporter.async_run());
+        self.runtime_handle.spawn(exporter.async_run());
 
         Ok(self)
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {
-        let (runtime_handle, runtime) = self.runtime();
-
         let (trigger_shutdown_tx, _) = broadcast::channel(1);
 
         let join_handle =
-            runtime_handle.spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
+            self.runtime_handle
+                .spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
 
         RunnerSpawned {
-            runtime_handle,
-            runtime,
+            runtime_handle: self.runtime_handle,
+            runtime: self.runtime,
             tracing_guard: self.tracing.guard,
             trigger_shutdown_tx,
             handle: join_handle,
@@ -104,29 +106,28 @@ impl Runner {
     }
 
     pub fn run_block(self) -> Result<()> {
-        let (runtime_handle, _runtime) = self.runtime();
-
         let (trigger_shutdown_tx, _) = broadcast::channel(1);
 
         let trigger_shutdown_tx_clone = trigger_shutdown_tx.clone();
-        runtime_handle.spawn(async move {
+        self.runtime_handle.spawn(async move {
             signal::ctrl_c().await.unwrap();
             trigger_shutdown_tx_clone.send(()).unwrap();
         });
 
-        runtime_handle.block_on(run(self.topology, self.config, trigger_shutdown_tx))
+        self.runtime_handle
+            .block_on(run(self.topology, self.config, trigger_shutdown_tx))
     }
 
     /// Get handle for an existing runtime or create one
-    fn runtime(&self) -> (RuntimeHandle, Option<Runtime>) {
+    fn get_runtime(stack_size: usize, core_threads: usize) -> (RuntimeHandle, Option<Runtime>) {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             (handle, None)
         } else {
             let runtime = runtime::Builder::new_multi_thread()
                 .enable_all()
                 .thread_name("Shotover-Proxy-Thread")
-                .thread_stack_size(self.opts.stack_size)
-                .worker_threads(self.opts.core_threads)
+                .thread_stack_size(stack_size)
+                .worker_threads(core_threads)
                 .build()
                 .unwrap();
 
