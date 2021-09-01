@@ -40,7 +40,7 @@ impl ShotoverManager {
         }
     }
 
-    pub fn wait_for_socket_to_open(&self, port: u16) {
+    pub fn wait_for_socket_to_open(port: u16) {
         let mut tries = 0;
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
             thread::sleep(Duration::from_millis(100));
@@ -52,7 +52,7 @@ impl ShotoverManager {
     #[allow(unused)]
     // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
     pub fn redis_connection(&self, port: u16) -> Connection {
-        self.wait_for_socket_to_open(port);
+        ShotoverManager::wait_for_socket_to_open(port);
         Client::open(("127.0.0.1", port))
             .unwrap()
             .get_connection()
