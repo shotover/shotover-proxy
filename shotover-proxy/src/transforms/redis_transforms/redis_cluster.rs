@@ -710,10 +710,10 @@ fn send_simple_response(one_tx: oneshot::Sender<Response>, message: &str) -> Res
 #[inline(always)]
 fn send_error_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
     if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
-        counter!("redis_cluster_failed_request", 1, "chain" => chain_name.clone());
+        counter!("redis_cluster_failed_request", 1, "chain" => chain_name.to_string());
     }) {
-        error!("failed to count failed request - missing chain name: {}", e)
-    };
+        error!("failed to count failed request - missing chain name: {}", e);
+    }
     send_frame_response(one_tx, Frame::Error(message.to_string()))
         .map_err(|_| anyhow!("failed to send error: {}", message))
 }
@@ -722,8 +722,8 @@ fn send_error_response(one_tx: oneshot::Sender<Response>, message: &str) -> Resu
 fn send_frame_request(
     sender: &UnboundedSender<Request>,
     frame: Frame,
-) -> Result<tokio::sync::oneshot::Receiver<(Message, Result<Messages>)>> {
-    let (return_chan_tx, return_chan_rx) = tokio::sync::oneshot::channel();
+) -> Result<oneshot::Receiver<(Message, Result<Messages>)>> {
+    let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
     sender.send(Request {
         messages: Message {
@@ -740,7 +740,7 @@ fn send_frame_request(
 
 #[inline(always)]
 async fn receive_frame_response(
-    receiver: tokio::sync::oneshot::Receiver<(Message, Result<Messages>)>,
+    receiver: oneshot::Receiver<(Message, Result<Messages>)>,
 ) -> Result<Frame> {
     let (_, result) = receiver.await?;
 
