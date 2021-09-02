@@ -1,24 +1,22 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt;
 use std::iter::*;
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
-use futures::{Future, SinkExt, StreamExt, TryFutureExt};
+use futures::{Future, StreamExt, TryFutureExt};
 use hyper::body::Bytes;
-use itertools::Itertools;
 use metrics::counter;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_util::codec::Framed;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::topology::TopicHolder;
@@ -26,62 +24,52 @@ use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::RawFrame;
-use crate::transforms::util::cluster_connection_pool::ConnectionPool;
+use crate::transforms::redis_transforms::{RedisError, TransformError};
+use crate::transforms::util::cluster_connection_pool::{ConnectionPool, NoopAuthenticator};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::CONTEXT_CHAIN_NAME;
 use crate::transforms::{ResponseFuture, ResponseFuturesOrdered};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::util::Fmt;
 
 const SLOT_SIZE: usize = 16384;
 
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
+fn fmt_channels(channels: &ChannelMap, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fmt.write_fmt(format_args!("Channels: {:?}", channels.keys()))
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
     pub strict_close_mode: Option<bool>,
-    connection_count: Option<i32>,
+    connection_count: Option<usize>,
 }
 
 #[async_trait]
 impl TransformsFromConfig for RedisClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        let slots = get_topology(&self.first_contact_points).await?;
-        debug!("Detected cluster: {:?}", slots);
+        let connection_pool = ConnectionPool::new(RedisCodec::new(true, 3), NoopAuthenticator {});
 
-        let connection_pool = ConnectionPool::new(
-            slots.nodes.iter().cloned().collect_vec(),
-            RedisCodec::new(true, 3),
-        );
-
-        let mut connection_map: ChannelMap = ChannelMap::new();
-
-        for node in slots.masters.values() {
-            match connection_pool
-                .get_connections(&node, self.connection_count.unwrap_or(1))
-                .await
-            {
-                Ok(conn) => {
-                    connection_map.insert(node.clone(), conn);
-                }
-                Err(e) => {
-                    info!("Could not create connection to {} - {}", node, e);
-                }
-            }
-        }
-
-        debug!("Channels: {:?}", connection_map);
-
-        Ok(Transforms::RedisCluster(RedisCluster {
+        let mut cluster = RedisCluster {
             name: "RedisCluster",
-            slots,
-            channels: connection_map,
+            slots: SlotMap::new(),
+            channels: ChannelMap::new(),
             load_scores: HashMap::new(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             connection_count: self.connection_count.unwrap_or(1),
             connection_pool,
             rebuild_slots: true,
-        }))
+            first_contact_points: self.first_contact_points.clone(),
+        };
+
+        match cluster.rebuild_connections().await {
+            Ok(()) => info!("connected to upstream cluster"),
+            Err(e) => bail!("failed to connect to upstream: {}", e),
+        }
+
+        Ok(Transforms::RedisCluster(cluster))
     }
 }
 
@@ -92,9 +80,10 @@ pub struct RedisCluster {
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
-    connection_count: i32,
-    connection_pool: ConnectionPool<RedisCodec>,
+    connection_count: usize,
+    connection_pool: ConnectionPool<RedisCodec, NoopAuthenticator, ()>,
     rebuild_slots: bool,
+    first_contact_points: Vec<String>,
 }
 
 impl RedisCluster {
@@ -161,10 +150,117 @@ impl RedisCluster {
         })
     }
 
-    async fn rebuild_slot_map(&mut self) -> Result<()> {
-        let contact_points = self.channels.keys().cloned().collect_vec();
-        self.slots = get_topology(&contact_points).await?;
-        debug!("successfully updated map {:#?}", self.slots);
+    fn latest_contact_points(&self) -> Vec<String> {
+        if !self.slots.nodes.is_empty() {
+            // Use latest node addresses as contact points.
+            self.slots.nodes.iter().cloned().collect::<Vec<_>>()
+        } else {
+            // Fallback to initial contact points.
+            self.first_contact_points.clone()
+        }
+    }
+
+    async fn rebuild_slot_map(&mut self) -> Result<(), TransformError> {
+        debug!("rebuilding slot map");
+        let addresses = self.latest_contact_points();
+        // IDEA: Retry with original contact points on failure?
+        Ok(self.rebuild_slot_map_from_addresses(&addresses).await?)
+    }
+
+    async fn rebuild_slot_map_from_addresses(
+        &mut self,
+        addresses: &[String],
+    ) -> Result<(), TransformError> {
+        let mut errors = Vec::new();
+
+        for address in addresses {
+            match self.connection_pool.new_connection(&address, &None).await {
+                Ok(sender) => match get_topology_from_node(&sender).await {
+                    Ok(mapping) => {
+                        trace!("successfully updated map {:?}", mapping);
+                        self.slots = mapping.into();
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        trace!("failed to get slot map from: {}, error: {}", address, e);
+                        errors.push(e)
+                    }
+                },
+                Err(e) => errors.push(e.into()),
+            }
+        }
+
+        debug!("failed to fetch slot map from all hosts");
+        Err(TransformError::choose_upstream_or_first(errors).unwrap())
+    }
+
+    // async fn rebuild_slot_map(&mut self) -> Result<()> {
+    //     let contact_points = self.channels.keys().cloned().collect_vec();
+    //     self.slots = get_topology(&contact_points).await?;
+    //     debug!("successfully updated map {:#?}", self.slots);
+    //     Ok(())
+    // }
+
+    async fn rebuild_connections(&mut self) -> Result<(), TransformError> {
+        // NOTE: Requiring slot map rebuild ensures credentials are still accepted by upstream before allowing reuse of authenticated connections.
+        self.rebuild_slot_map().await.map_err(|e| {
+            debug!("failed to rebuild slot map: {}", e);
+            e
+        })?;
+
+        debug!("mapped cluster: {:?}", self.slots);
+
+        let mut channels = ChannelMap::new();
+        let mut errors = Vec::new();
+
+        // TODO: Eliminate code duplication for master and follower.
+
+        debug!("building master connections");
+        for (_, node) in &self.slots.masters {
+            match self
+                .connection_pool
+                .get_connections(node.as_str(), &None, self.connection_count)
+                .await
+            {
+                Ok(connections) => {
+                    channels.insert(node.to_string(), connections);
+                }
+                Err(e) => {
+                    info!("Could not create connection to {} - {}", node, e);
+                    errors.push(e.into());
+                }
+            }
+        }
+
+        debug!("building replica connections");
+        for (_, node) in &self.slots.replicas {
+            match self
+                .connection_pool
+                .get_connections(node.as_str(), &None, self.connection_count)
+                .await
+            {
+                Ok(connections) => {
+                    channels.insert(node.to_string(), connections);
+                }
+                Err(e) => {
+                    info!("Could not create connection to {} - {}", node, e);
+                    errors.push(e.into());
+                }
+            }
+        }
+
+        if channels.is_empty() && !errors.is_empty() {
+            debug!("total failure trying to rebuild connections");
+            return Err(TransformError::choose_upstream_or_first(errors).unwrap());
+        }
+
+        self.channels = channels;
+
+        debug!(
+            "Connected to cluster: {:?}",
+            Fmt(|f| fmt_channels(&self.channels, f))
+        );
+
         Ok(())
     }
 
@@ -196,7 +292,7 @@ impl RedisCluster {
                 if let Ok(result) = timeout(
                     Duration::from_millis(40),
                     self.connection_pool
-                        .get_connections(host, self.connection_count),
+                        .get_connections(host, &None, self.connection_count),
                 )
                 .await
                 {
@@ -273,6 +369,14 @@ pub struct SlotMap {
 }
 
 impl SlotMap {
+    fn new() -> Self {
+        Self {
+            masters: BTreeMap::new(),
+            replicas: BTreeMap::new(),
+            nodes: HashSet::new(),
+        }
+    }
+
     fn from_entries(
         master_entries: Vec<(String, u16, u16)>,
         replica_entries: Vec<(String, u16, u16)>,
@@ -402,93 +506,84 @@ fn build_slot_to_server(
     Ok(())
 }
 
-fn parse_slots(response: Frame) -> Result<SlotMap> {
+fn parse_slots(results: &Vec<Frame>) -> Result<SlotMap, TransformError> {
     let mut master_entries: Vec<(String, u16, u16)> = vec![];
     let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
-    match response {
-        Frame::Array(results) => {
-            for result in results.into_iter() {
-                match result {
-                    Frame::Array(result) => {
-                        let mut start: u16 = 0;
-                        let mut end: u16 = 0;
+    for result in results.into_iter() {
+        match result {
+            Frame::Array(result) => {
+                let mut start: u16 = 0;
+                let mut end: u16 = 0;
 
-                        for (index, item) in result.into_iter().enumerate() {
-                            match (index, item) {
-                                (0, Frame::Integer(i)) => start = i as u16,
-                                (1, Frame::Integer(i)) => end = i as u16,
-                                (2, Frame::Array(master)) => {
-                                    build_slot_to_server(&master, &mut master_entries, start, end)
-                                        .context("Failed to decode master slots")?
-                                }
-                                (_, Frame::Array(replica)) => {
-                                    build_slot_to_server(&replica, &mut replica_entries, start, end)
-                                        .context("Failed to decode replica slots")?
-                                }
-                                _ => bail!("Unexpected value in slot map"),
-                            }
+                for (index, item) in result.into_iter().enumerate() {
+                    match (index, item) {
+                        (0, Frame::Integer(i)) => start = *i as u16,
+                        (1, Frame::Integer(i)) => end = *i as u16,
+                        (2, Frame::Array(master)) => {
+                            build_slot_to_server(&master, &mut master_entries, start, end).map_err(
+                                |e| {
+                                    TransformError::Protocol(format!(
+                                        "Failed to decode master slots: {}",
+                                        e,
+                                    ))
+                                },
+                            )?
+                        }
+                        (_, Frame::Array(replica)) => {
+                            build_slot_to_server(&replica, &mut replica_entries, start, end)
+                                .map_err(|e| {
+                                    TransformError::Protocol(format!(
+                                        "Failed to decode replica slots: {}",
+                                        e,
+                                    ))
+                                })?
+                        }
+                        _ => {
+                            return Err(TransformError::Protocol(
+                                "unexpected value in slot map".to_string(),
+                            ))
                         }
                     }
-                    _ => bail!("Unexpected value in slot map"),
                 }
             }
+            _ => {
+                return Err(TransformError::Protocol(
+                    "unexpected value in slot map".to_string(),
+                ))
+            }
         }
-        Frame::Error(err) => {
-            bail!("Frame error: {}", err);
-        }
-        _ => {}
     }
 
+    // TODO: Only check masters?
     if master_entries.is_empty() {
-        Err(anyhow!("Empty slot map!"))
+        Err(TransformError::Other(anyhow!("empty slot map!")))
     } else {
         Ok(SlotMap::from_entries(master_entries, replica_entries))
     }
 }
 
-async fn get_topology_from_node(stream: TcpStream) -> Result<SlotMap> {
-    let mut outbound_framed_codec = Framed::new(stream, RedisCodec::new(true, 1));
-    outbound_framed_codec
-        .send(Messages::new_from_message(Message {
-            details: MessageDetails::Unknown,
-            modified: false,
-            original: RawFrame::Redis(Frame::Array(vec![
-                Frame::BulkString(Bytes::from("CLUSTER")),
-                Frame::BulkString(Bytes::from("SLOTS")),
-            ])),
-        }))
-        .await?;
+async fn get_topology_from_node(
+    sender: &UnboundedSender<Request>,
+) -> Result<SlotMap, TransformError> {
+    let return_chan_rx = send_frame_request(
+        sender,
+        Frame::Array(vec![
+            Frame::BulkString(Bytes::from("CLUSTER")),
+            Frame::BulkString(Bytes::from("SLOTS")),
+        ]),
+    )?;
 
-    if let Some(messages) = outbound_framed_codec.next().await {
-        if let RawFrame::Redis(response) = messages?.messages.pop().unwrap().original {
-            parse_slots(response).map_err(|e| anyhow!("couldn't decode map: {}", e))
-        } else {
-            Err(anyhow!("Redis did not respond with a redis message"))
-        }
-    } else {
-        Err(anyhow!("Redis did not respond with a message"))
+    match receive_frame_response(return_chan_rx).await? {
+        Frame::Array(results) => parse_slots(&results),
+        Frame::Error(message) => Err(TransformError::Upstream(RedisError::from_message(
+            message.as_str(),
+        ))),
+        frame => Err(TransformError::Protocol(format!(
+            "unexpected response frame: {:?}",
+            frame
+        ))),
     }
-}
-
-async fn get_topology(first_contact_points: &[String]) -> Result<SlotMap> {
-    let mut results = FuturesUnordered::new();
-
-    for contact in first_contact_points {
-        let query_map = TcpStream::connect(contact.clone())
-            .map_err(|e| anyhow!("couldn't connect: {}", e))
-            .and_then(get_topology_from_node);
-        results.push(query_map);
-    }
-
-    while let Some(response) = results.next().await {
-        match response {
-            Ok(map) => return Ok(map),
-            Err(e) => warn!("failed to fetch map from one host: {}", e),
-        }
-    }
-
-    Err(anyhow!("Couldn't get slot map from redis"))
 }
 
 #[inline(always)]
@@ -521,6 +616,41 @@ fn send_error_response(one_tx: oneshot::Sender<Response>, message: &str) -> Resu
     };
     send_frame_response(one_tx, Frame::Error(message.to_string()))
         .map_err(|_| anyhow!("failed to send error: {}", message))
+}
+
+#[inline(always)]
+fn send_frame_request(
+    sender: &UnboundedSender<Request>,
+    frame: Frame,
+) -> Result<tokio::sync::oneshot::Receiver<(Message, Result<Messages>)>> {
+    let (return_chan_tx, return_chan_rx) = tokio::sync::oneshot::channel();
+
+    sender.send(Request {
+        messages: Message {
+            details: MessageDetails::Unknown,
+            modified: false,
+            original: RawFrame::Redis(frame),
+        },
+        return_chan: Some(return_chan_tx),
+        message_id: None,
+    })?;
+
+    Ok(return_chan_rx)
+}
+
+#[inline(always)]
+async fn receive_frame_response(
+    receiver: tokio::sync::oneshot::Receiver<(Message, Result<Messages>)>,
+) -> Result<Frame> {
+    let (_, result) = receiver.await?;
+
+    // Exactly one Redis response is guaranteed by the codec on success.
+    let message = result?.messages.pop().unwrap().original;
+
+    match message {
+        RawFrame::Redis(frame) => Ok(frame),
+        _ => unreachable!(),
+    }
 }
 
 #[inline(always)]
