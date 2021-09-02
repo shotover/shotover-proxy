@@ -363,6 +363,7 @@ pub trait Transform: Send {
     }
 }
 
-pub type ResponseFuturesOrdered = FuturesOrdered<
-    Pin<Box<dyn Future<Output = Result<(Message, Result<Messages>)>> + std::marker::Send>>,
->;
+pub type ResponseFuture =
+    Pin<Box<dyn Future<Output = Result<(Message, Result<Messages>)>> + std::marker::Send>>;
+
+pub type ResponseFuturesOrdered = FuturesOrdered<ResponseFuture>;

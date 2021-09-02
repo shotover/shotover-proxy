@@ -15,6 +15,7 @@ use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio_util::codec::Framed;
@@ -27,8 +28,8 @@ use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::RawFrame;
 use crate::transforms::util::cluster_connection_pool::ConnectionPool;
 use crate::transforms::util::{Request, Response};
-use crate::transforms::ResponseFuturesOrdered;
 use crate::transforms::CONTEXT_CHAIN_NAME;
+use crate::transforms::{ResponseFuture, ResponseFuturesOrdered};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 const SLOT_SIZE: usize = 16384;
@@ -97,6 +98,69 @@ pub struct RedisCluster {
 }
 
 impl RedisCluster {
+    #[inline]
+    async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
+        let command = match message.original {
+            RawFrame::Redis(Frame::Array(ref command)) => command,
+            _ => bail!("syntax error: bad command"),
+        };
+
+        let channels = self.get_channels(command).await?;
+
+        Ok(match channels.len() {
+            0 => {
+                let (one_tx, one_rx) = oneshot::channel();
+                short_circuit(one_tx);
+                Box::pin(one_rx.map_err(|_| unreachable!()))
+            }
+            1 => {
+                let channel = channels.get(0).unwrap();
+                let one_rx = self.choose_and_send(channel, message).await?;
+                Box::pin(one_rx.map_err(move |_| anyhow!("no response from single channel")))
+            }
+            _ => {
+                let responses = FuturesUnordered::new();
+
+                for channel in channels {
+                    responses.push(self.choose_and_send(&channel, message.clone()).await?);
+                }
+
+                // Reassemble upstream responses in any order into an array, as the downstream response.
+                // TODO: Improve error messages within the reassembled response. E.g. which channel failed.
+
+                Box::pin(async move {
+                    let response = responses
+                        .fold(vec![], |mut acc, response| async move {
+                            match response {
+                                Ok((_, response)) => match response {
+                                    Ok(mut messages) => acc.push(messages.messages.pop().map_or(
+                                        Frame::Null,
+                                        |message| match message.original {
+                                            RawFrame::Redis(frame) => frame,
+                                            _ => unreachable!(),
+                                        },
+                                    )),
+                                    Err(e) => acc.push(Frame::Error(e.to_string())),
+                                },
+                                Err(e) => acc.push(Frame::Error(e.to_string())),
+                            }
+                            acc
+                        })
+                        .await;
+
+                    Ok((
+                        message,
+                        ChainResponse::Ok(Messages::new_from_message(Message {
+                            details: MessageDetails::Unknown,
+                            modified: false,
+                            original: RawFrame::Redis(Frame::Array(response)),
+                        })),
+                    ))
+                })
+            }
+        })
+    }
+
     async fn rebuild_slot_map(&mut self) -> Result<()> {
         let contact_points = self.channels.keys().cloned().collect_vec();
         self.slots = get_topology(&contact_points).await?;
@@ -112,54 +176,42 @@ impl RedisCluster {
     ) -> Result<tokio::sync::oneshot::Receiver<(Message, ChainResponse)>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
 
-        // let mut retry = true;
-
-        // TODO: this is hard to read and may be bug prone
-        let chan = match self.channels.get_mut(host) {
-            Some(chans) if chans.len() == 1 => chans.get_mut(0).unwrap(),
-            Some(chans) if chans.len() > 1 => {
-                let candidates = rand::seq::index::sample(&mut self.rng, chans.len(), 2);
+        let channel = match self.channels.get_mut(host) {
+            Some(channels) if channels.len() == 1 => channels.get_mut(0).unwrap(),
+            Some(channels) if channels.len() > 1 => {
+                let candidates = rand::seq::index::sample(&mut self.rng, channels.len(), 2);
                 let aidx = candidates.index(0);
                 let bidx = candidates.index(1);
 
+                // TODO: Actually update or remove these "load balancing" scores.
                 let aload = *self.load_scores.entry((host.clone(), aidx)).or_insert(0);
                 let bload = *self.load_scores.entry((host.clone(), bidx)).or_insert(0);
 
-                chans
+                channels
                     .get_mut(if aload <= bload { aidx } else { bidx })
-                    .ok_or_else(|| anyhow!("Couldn't find host {}", host))?
+                    .unwrap()
             }
             _ => {
                 debug!("connection {} doesn't exist trying to connect", host);
-                if let Ok(res) = timeout(
+                if let Ok(result) = timeout(
                     Duration::from_millis(40),
                     self.connection_pool
                         .get_connections(host, self.connection_count),
                 )
                 .await
                 {
-                    if let Ok(conn) = res {
-                        debug!("Found {} live connections for {}", conn.len(), host);
-                        self.channels.insert(host.clone(), conn);
-                        self.channels
-                            .get_mut(host)
-                            .unwrap()
-                            .get_mut(0)
-                            .ok_or_else(|| anyhow!("Couldn't find host {}", host))?
+                    if let Ok(connections) = result {
+                        debug!("Found {} live connections for {}", connections.len(), host);
+                        self.channels.insert(host.to_string(), connections);
+                        self.channels.get_mut(host).unwrap().get_mut(0).unwrap()
                     } else {
-                        debug!(
-                            "couldn't connect to {} - updating slot map from upstream cluster",
-                            host
-                        );
+                        debug!("failed to connect to {}", host);
                         self.rebuild_slots = true;
                         short_circuit(one_tx);
                         return Ok(one_rx);
                     }
                 } else {
-                    debug!(
-                        "couldn't connect to {} - updating slot map from upstream cluster",
-                        host
-                    );
+                    debug!("timed out connecting to {}", host);
                     self.rebuild_slots = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
@@ -167,7 +219,7 @@ impl RedisCluster {
             }
         };
 
-        if let Err(e) = chan.send(Request {
+        if let Err(e) = channel.send(Request {
             messages: message,
             return_chan: Some(one_tx),
             message_id: None,
@@ -182,35 +234,30 @@ impl RedisCluster {
     }
 
     #[inline(always)]
-    async fn get_channels(&mut self, redis_frame: &RawFrame) -> Vec<String> {
-        match &redis_frame {
-            RawFrame::Redis(Frame::Array(ref commands)) => {
-                match RoutingInfo::for_command_frame(&commands) {
-                    Some(RoutingInfo::Slot(slot)) => {
-                        if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
-                            // let idx = self.choose(lookup);
-                            vec![lookup.clone()]
-                        } else {
-                            vec![]
-                        }
-                    }
-                    Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
-                        self.channels.keys().cloned().collect()
-                    }
-                    Some(RoutingInfo::Random) => {
-                        let key = self
-                            .channels
-                            .keys()
-                            .next()
-                            .unwrap_or(&"nothing".to_string())
-                            .clone();
-                        vec![key]
-                    }
-                    None => vec![],
+    async fn get_channels(&mut self, command: &Vec<Frame>) -> Result<Vec<String>> {
+        Ok(match RoutingInfo::for_command_frame(command)? {
+            Some(RoutingInfo::Slot(slot)) => {
+                if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
+                    // let idx = self.choose(lookup);
+                    vec![lookup.clone()]
+                } else {
+                    vec![]
                 }
             }
-            _ => vec![],
-        }
+            Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
+                self.channels.keys().cloned().collect()
+            }
+            Some(RoutingInfo::Random) => {
+                let key = self
+                    .channels
+                    .keys()
+                    .next()
+                    .unwrap_or(&"nothing".to_string())
+                    .clone();
+                vec![key]
+            }
+            None => vec![],
+        })
     }
 }
 
@@ -262,54 +309,53 @@ pub enum RoutingInfo {
 
 impl RoutingInfo {
     #[inline(always)]
-    pub fn for_command_frame(args: &[Frame]) -> Option<RoutingInfo> {
-        if let Some(Frame::BulkString(command_arg)) = args.get(0) {
-            match command_arg.as_ref() {
-                b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
-                b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE"
-                | b"PING" | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE"
-                | b"TIME" | b"KEYS" | b"AUTH" => Some(RoutingInfo::AllNodes),
-                b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
-                | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
-                b"EVALSHA" | b"EVAL" => {
-                    //TODO: Appears the the codec is not decoding integers correctly
-                    let key_count = match args.get(2) {
-                        Some(Frame::Integer(key_count)) => Some(*key_count),
-                        Some(Frame::BulkString(key_count)) => String::from_utf8(key_count.to_vec())
-                            .unwrap_or_else(|_| "0".to_string())
-                            .parse::<i64>()
-                            .ok(),
-                        _ => None,
-                    };
+    pub fn for_command_frame(args: &[Frame]) -> Result<Option<RoutingInfo>> {
+        let command_name = match args.get(0) {
+            Some(Frame::BulkString(command_name)) => command_name,
+            _ => bail!("syntax error: bad command name"),
+        };
 
-                    let route_info = if let Some(key_count) = key_count {
-                        if key_count == 0 {
-                            Some(RoutingInfo::Random)
-                        } else {
-                            args.get(3).and_then(RoutingInfo::for_key)
-                        }
-                    } else {
-                        None
-                    };
-                    route_info
+        Ok(match command_name.as_ref() {
+            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
+            b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
+            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE" | b"TIME"
+            | b"KEYS" | b"AUTH" => Some(RoutingInfo::AllNodes),
+            b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
+            | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
+            b"EVALSHA" | b"EVAL" => {
+                //TODO: Appears the the codec is not decoding integers correctly
+                match args.get(2) {
+                    Some(Frame::Integer(key_count)) => Some(*key_count),
+                    Some(Frame::BulkString(key_count)) => String::from_utf8(key_count.to_vec())
+                        .unwrap_or_else(|_| "0".to_string())
+                        .parse::<i64>()
+                        .ok(),
+                    _ => None,
                 }
-                b"XGROUP" | b"XINFO" => args.get(2).and_then(RoutingInfo::for_key),
-                b"XREAD" | b"XREADGROUP" => {
-                    let streams_position = args.iter().position(|a| match a {
-                        Frame::BulkString(a) => a.as_ref() == b"STREAMS",
-                        _ => false,
-                    })?;
+                .and_then(|key_count| {
+                    if key_count == 0 {
+                        Some(RoutingInfo::Random)
+                    } else {
+                        args.get(3).and_then(RoutingInfo::for_key)
+                    }
+                })
+            }
+            b"XGROUP" | b"XINFO" => args.get(2).and_then(RoutingInfo::for_key),
+            b"XREAD" | b"XREADGROUP" => args
+                .iter()
+                .position(|a| match a {
+                    Frame::BulkString(a) => a.as_ref() == b"STREAMS",
+                    _ => false,
+                })
+                .and_then(|streams_position| {
                     args.get(streams_position + 1)
                         .and_then(RoutingInfo::for_key)
-                }
-                _ => match args.get(1) {
-                    Some(key) => RoutingInfo::for_key(key),
-                    None => Some(RoutingInfo::Random),
-                },
-            }
-        } else {
-            None
-        }
+                }),
+            _ => match args.get(1) {
+                Some(key) => RoutingInfo::for_key(key),
+                None => Some(RoutingInfo::Random),
+            },
+        })
     }
 
     #[inline(always)]
@@ -461,22 +507,38 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 #[inline(always)]
 fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
     warn!("Could not route request - short circuiting");
-    if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
-        counter!("redis_cluster_failed_request", 1, "chain" => chain_name.to_string());
-    }) {
-        error!("failed to count failed request - missing chain name: {}", e);
-    };
+    if let Err(e) = send_error_response(one_tx, "ERR Could not route request") {
+        trace!("short circuiting - couldn't send error - {:?}", e);
+    }
+}
 
-    if let Err(e) = one_tx.send((
+#[inline(always)]
+fn send_error_response(
+    one_tx: tokio::sync::oneshot::Sender<Response>,
+    message: &str,
+) -> Result<()> {
+    if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
+        counter!("redis_cluster_failed_request", 1, "chain" => chain_name.clone());
+    }) {
+        error!("failed to count failed request - missing chain name: {}", e)
+    };
+    send_frame_response(one_tx, Frame::Error(message.to_string()))
+        .map_err(|_| anyhow!("failed to send error: {}", message))
+}
+
+#[inline(always)]
+fn send_frame_response(
+    one_tx: tokio::sync::oneshot::Sender<Response>,
+    frame: Frame,
+) -> Result<(), Response> {
+    one_tx.send((
         Message::new_bypass(RawFrame::None),
         Ok(Messages::new_single_response(
             QueryResponse::empty(),
             false,
-            RawFrame::Redis(Frame::Error("ERR Could not route request".to_string())),
+            RawFrame::Redis(frame),
         )),
-    )) {
-        trace!("short circuiting - couldn't send error - {:?}", e);
-    }
+    ))
 }
 
 #[async_trait]
@@ -490,63 +552,12 @@ impl Transform for RedisCluster {
         let mut responses = ResponseFuturesOrdered::new();
 
         for message in message_wrapper.message {
-            let sender = self.get_channels(&message.original).await;
-
-            responses.push(match sender.len() {
-                0 => {
-                    let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-                    short_circuit(one_tx);
-                    Box::pin(one_rx.map_err(|e| {
-                        anyhow!("0 Couldn't get short circuited for no channels - {}", e)
-                    }))
-                }
-                1 => {
-                    let one_rx = self
-                        .choose_and_send(sender.get(0).unwrap(), message.clone())
-                        .await?;
-                    Box::pin(one_rx.map_err(|e| anyhow!("1 {}", e)))
-                }
-                _ => {
-                    let futures: FuturesUnordered<
-                        tokio::sync::oneshot::Receiver<(Message, ChainResponse)>,
-                    > = FuturesUnordered::new();
-                    for chan in sender {
-                        let one_rx = self.choose_and_send(&chan, message.clone()).await?;
-                        futures.push(one_rx);
-                    }
-                    Box::pin(async move {
-                        let (response, orig) = futures
-                            .fold((vec![], message), |(mut acc, last), m| async move {
-                                match m {
-                                    Ok((_orig, response)) => match response {
-                                        Ok(mut m) => {
-                                            acc.push(m.messages.pop().map_or(Frame::Null, |m| {
-                                                if let RawFrame::Redis(f) = m.original {
-                                                    f
-                                                } else {
-                                                    Frame::Error(
-                                                        "Non-redis frame detected".to_string(),
-                                                    )
-                                                }
-                                            }))
-                                        }
-                                        Err(e) => acc.push(Frame::Error(e.to_string())),
-                                    },
-                                    Err(e) => acc.push(Frame::Error(e.to_string())),
-                                }
-                                (acc, last)
-                            })
-                            .await;
-
-                        Ok((
-                            orig,
-                            ChainResponse::Ok(Messages::new_from_message(Message {
-                                details: MessageDetails::Unknown,
-                                modified: false,
-                                original: RawFrame::Redis(Frame::Array(response)),
-                            })),
-                        ))
-                    })
+            responses.push(match self.dispatch_message(message).await {
+                Ok(response) => response,
+                Err(e) => {
+                    let (err_tx, err_rx) = oneshot::channel();
+                    send_error_response(err_tx, &format!("ERR transform error: {}", e))?;
+                    Box::pin(err_rx.map_err(|_| unreachable!()))
                 }
             });
         }

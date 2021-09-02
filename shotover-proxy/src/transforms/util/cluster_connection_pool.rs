@@ -59,7 +59,7 @@ impl<C: Codec + 'static> ConnectionPool<C> {
     /// updating the connection map. Errors are returned when a connection can't be established.
     pub async fn get_connections(
         &self,
-        host: &String,
+        host: &str,
         connection_count: i32,
     ) -> Result<Vec<UnboundedSender<Request>>> {
         let mut queue_map = self.queue_map.lock().await;
@@ -68,14 +68,14 @@ impl<C: Codec + 'static> ConnectionPool<C> {
                 return Ok(x.clone());
             }
         }
-        let connections = self.new_connections(&host, connection_count).await?;
-        queue_map.insert(host.clone(), connections.clone());
+        let connections = self.new_connections(host, connection_count).await?;
+        queue_map.insert(host.to_string(), connections.clone());
         Ok(connections)
     }
 
     pub async fn new_connections(
         &self,
-        host: &String,
+        host: &str,
         connection_count: i32,
     ) -> Result<Vec<UnboundedSender<Request>>>
     where
