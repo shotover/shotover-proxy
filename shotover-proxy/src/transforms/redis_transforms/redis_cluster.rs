@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::{fmt, iter::*};
+use std::fmt;
+use std::iter::*;
 
 use anyhow::{anyhow, bail, ensure, Result};
 use async_trait::async_trait;
@@ -23,7 +24,6 @@ use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::RawFrame;
-use crate::transforms::redis_transforms::Fmt;
 use crate::transforms::redis_transforms::RedisError;
 use crate::transforms::redis_transforms::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
@@ -31,6 +31,7 @@ use crate::transforms::util::{Request, Response};
 use crate::transforms::CONTEXT_CHAIN_NAME;
 use crate::transforms::{ResponseFuture, ResponseFuturesOrdered};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::util::Fmt;
 
 const SLOT_SIZE: usize = 16384;
 
@@ -62,7 +63,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             contact_points: self.first_contact_points.clone(),
             connection_count: self.connection_count.unwrap_or(1),
-            connection_pool: ConnectionPool::new_with_auth(RedisCodec::new(true, 3), authenticator),
+            connection_pool: ConnectionPool::new(RedisCodec::new(true, 3), authenticator),
             connection_error: None,
             rebuild_slots: false,
             rebuild_connections: true,
@@ -78,12 +79,14 @@ impl TransformsFromConfig for RedisClusterConfig {
             });
 
         match cluster.build_connections(token).await {
-            Ok(()) => info!("eager connections established"),
+            Ok(()) => {
+                info!("connected to upstream cluster");
+            }
             Err(TransformError::Upstream(RedisError::NotAuthenticated)) => {
-                info!("deferring connections due to auth");
+                info!("deferring connection due to auth");
             }
             Err(e) => {
-                bail!("failed to connect to upstream: {}", e)
+                bail!("failed to connect to upstream: {}", e);
             }
         }
 
@@ -194,7 +197,7 @@ impl RedisCluster {
         for (_, node) in &self.slots.masters {
             match self
                 .connection_pool
-                .get_connections(node.clone(), &self.token, self.connection_count)
+                .get_connections(node, &self.token, self.connection_count)
                 .await
             {
                 Ok(connections) => {
@@ -211,7 +214,7 @@ impl RedisCluster {
         for (_, node) in &self.slots.replicas {
             match self
                 .connection_pool
-                .get_connections(node.clone(), &self.token, self.connection_count)
+                .get_connections(node, &self.token, self.connection_count)
                 .await
             {
                 Ok(connections) => {
@@ -352,11 +355,8 @@ impl RedisCluster {
                 debug!("connection {} doesn't exist trying to connect", host);
                 if let Ok(result) = timeout(
                     Duration::from_millis(40),
-                    self.connection_pool.get_connections(
-                        host.clone(),
-                        &self.token,
-                        self.connection_count,
-                    ),
+                    self.connection_pool
+                        .get_connections(host, &self.token, self.connection_count),
                 )
                 .await
                 {
@@ -744,18 +744,6 @@ fn send_error_response(one_tx: oneshot::Sender<Response>, message: &str) -> Resu
 }
 
 #[inline(always)]
-fn send_frame_response(one_tx: oneshot::Sender<Response>, frame: Frame) -> Result<(), Response> {
-    one_tx.send((
-        Message::new_bypass(RawFrame::None),
-        Ok(Messages::new_single_response(
-            QueryResponse::empty(),
-            false,
-            RawFrame::Redis(frame),
-        )),
-    ))
-}
-
-#[inline(always)]
 fn send_frame_request(
     sender: &UnboundedSender<Request>,
     frame: Frame,
@@ -788,6 +776,18 @@ async fn receive_frame_response(
         RawFrame::Redis(frame) => Ok(frame),
         _ => unreachable!(),
     }
+}
+
+#[inline(always)]
+fn send_frame_response(one_tx: oneshot::Sender<Response>, frame: Frame) -> Result<(), Response> {
+    one_tx.send((
+        Message::new_bypass(RawFrame::None),
+        Ok(Messages::new_single_response(
+            QueryResponse::empty(),
+            false,
+            RawFrame::Redis(frame),
+        )),
+    ))
 }
 
 fn immediate_responder() -> (

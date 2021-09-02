@@ -1,4 +1,4 @@
-use std::{fmt, io};
+use std::io;
 
 use crate::transforms::util::ConnectionError;
 
@@ -66,18 +66,5 @@ impl From<ConnectionError<TransformError>> for TransformError {
             ConnectionError::IO(e) => TransformError::IO(e),
             ConnectionError::Authenticator(e) => e,
         }
-    }
-}
-
-pub struct Fmt<F>(pub F)
-where
-    F: Fn(&mut fmt::Formatter) -> fmt::Result;
-
-impl<F> fmt::Debug for Fmt<F>
-where
-    F: Fn(&mut fmt::Formatter) -> fmt::Result,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (self.0)(f)
     }
 }

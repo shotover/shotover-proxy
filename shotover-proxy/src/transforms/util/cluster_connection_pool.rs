@@ -12,8 +12,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::trace;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
@@ -21,14 +20,28 @@ use crate::transforms::util::ConnectionError;
 use crate::transforms::util::Request;
 use crate::{message::Messages, server::Codec};
 
-type Address = String;
 pub type Connection = UnboundedSender<Request>;
-pub type Lane = HashMap<Address, Vec<Connection>>;
+pub type Lane = HashMap<String, Vec<Connection>>;
 
 #[async_trait]
 pub trait Authenticator<T> {
     type Error: std::error::Error + Sync + Send + 'static;
     async fn authenticate(&self, sender: &mut Connection, token: &T) -> Result<(), Self::Error>;
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum NoopError {}
+
+#[derive(Clone)]
+pub struct NoopAuthenticator {}
+
+#[async_trait]
+impl Authenticator<()> for NoopAuthenticator {
+    type Error = NoopError;
+
+    async fn authenticate(&self, _sender: &mut Connection, _token: &()) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 // TODO: Replace with trait_alias (RFC#1733).
@@ -49,7 +62,7 @@ pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
 
 impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
     // TODO: Support non-authenticated connection pools (with RFC#1216?).
-    pub fn new_with_auth(codec: C, authenticator: A) -> Self {
+    pub fn new(codec: C, authenticator: A) -> Self {
         Self {
             lanes: Arc::new(Mutex::new(HashMap::new())),
             codec,
@@ -62,7 +75,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     /// updating the connection map. Errors are returned when a connection can't be established.
     pub async fn get_connections(
         &self,
-        address: Address,
+        address: &str,
         token: &Option<T>,
         connection_count: usize,
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
@@ -77,16 +90,13 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
 
         let mut lanes = self.lanes.lock().await;
         let lane = lanes.entry(token.clone()).or_insert_with(HashMap::new);
+        let address = address.to_string();
 
         let mut connections: Vec<Connection> = lane
             .get_mut(&address)
             .map(|existing_connections| {
                 existing_connections.retain(|connection| !connection.is_closed());
-                existing_connections
-                    .iter()
-                    .filter(|connection| !connection.is_closed())
-                    .take(connection_count)
-                    .cloned()
+                existing_connections.iter().take(connection_count).cloned()
             })
             .into_iter()
             .flatten()
@@ -109,7 +119,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     /// Create multiple connections not owned by the pool.
     async fn new_connections(
         &self,
-        address: &Address,
+        address: &str,
         token: &Option<T>,
         connection_count: usize,
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
@@ -151,7 +161,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     /// Create a connection that is not owned by the pool.
     pub async fn new_connection(
         &self,
-        address: &Address,
+        address: &str,
         token: &Option<T>,
     ) -> Result<Connection, ConnectionError<A::Error>> {
         let stream: TcpStream = TcpStream::connect(address)
