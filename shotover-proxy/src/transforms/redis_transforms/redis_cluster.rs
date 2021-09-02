@@ -5,8 +5,7 @@ use anyhow::{anyhow, bail, ensure, Result};
 use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
-use futures::TryFutureExt;
-use futures::{Future, StreamExt};
+use futures::{Future, StreamExt, TryFutureExt};
 use hyper::body::Bytes;
 use metrics::counter;
 use rand::prelude::SmallRng;
@@ -258,14 +257,14 @@ impl RedisCluster {
 
         Ok(match channels.len() {
             0 => {
-                let (one_tx, one_rx) = oneshot::channel();
+                let (one_tx, one_rx) = immediate_responder();
                 match self.connection_error {
                     Some(message) => {
                         send_error_response(one_tx, message).ok();
                     }
                     None => short_circuit(one_tx),
                 };
-                Box::pin(one_rx.map_err(|_| unreachable!()))
+                Box::pin(one_rx)
             }
             1 => {
                 let channel = channels.get(0).unwrap();
@@ -320,8 +319,8 @@ impl RedisCluster {
         &mut self,
         host: &String,
         message: Message,
-    ) -> Result<tokio::sync::oneshot::Receiver<(Message, ChainResponse)>> {
-        let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
+    ) -> Result<oneshot::Receiver<(Message, ChainResponse)>> {
+        let (one_tx, one_rx) = oneshot::channel::<Response>();
 
         let channel = match self.channels.get_mut(host) {
             Some(channels) if channels.len() == 1 => channels.get_mut(0),
@@ -425,7 +424,7 @@ impl RedisCluster {
     }
 
     async fn on_auth(&mut self, command: &[Frame]) -> Result<ResponseFuture> {
-        let (one_tx, one_rx) = response_channel();
+        let (one_tx, one_rx) = immediate_responder();
 
         let mut args = command
             .iter()
@@ -720,7 +719,7 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 }
 
 #[inline(always)]
-fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
+fn short_circuit(one_tx: oneshot::Sender<Response>) {
     warn!("Could not route request - short circuiting");
     if let Err(e) = send_error_response(one_tx, "ERR Could not route request") {
         trace!("short circuiting - couldn't send error - {:?}", e);
@@ -728,19 +727,13 @@ fn short_circuit(one_tx: tokio::sync::oneshot::Sender<Response>) {
 }
 
 #[inline(always)]
-fn send_simple_response(
-    one_tx: tokio::sync::oneshot::Sender<Response>,
-    message: &str,
-) -> Result<()> {
+fn send_simple_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
     send_frame_response(one_tx, Frame::SimpleString(message.to_string()))
         .map_err(|_| anyhow!("failed to send simple: {}", message))
 }
 
 #[inline(always)]
-fn send_error_response(
-    one_tx: tokio::sync::oneshot::Sender<Response>,
-    message: &str,
-) -> Result<()> {
+fn send_error_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
     if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
         counter!("redis_cluster_failed_request", 1, "chain" => chain_name.clone());
     }) {
@@ -751,10 +744,7 @@ fn send_error_response(
 }
 
 #[inline(always)]
-fn send_frame_response(
-    one_tx: tokio::sync::oneshot::Sender<Response>,
-    frame: Frame,
-) -> Result<(), Response> {
+fn send_frame_response(one_tx: oneshot::Sender<Response>, frame: Frame) -> Result<(), Response> {
     one_tx.send((
         Message::new_bypass(RawFrame::None),
         Ok(Messages::new_single_response(
@@ -791,7 +781,7 @@ async fn receive_frame_response(
 ) -> Result<Frame> {
     let (_, result) = receiver.await?;
 
-    // At least one Redis frame is guaranteed by the Redis codec on success.
+    // Exactly one Redis response is guaranteed by the codec on success.
     let message = result?.messages.pop().unwrap().original;
 
     match message {
@@ -800,15 +790,15 @@ async fn receive_frame_response(
     }
 }
 
-fn response_channel() -> (
+fn immediate_responder() -> (
     oneshot::Sender<Response>,
     impl Future<Output = Result<Response>>,
 ) {
     let (one_tx, one_rx) = oneshot::channel::<Response>();
     (one_tx, async {
         one_rx.await.map_err(|_| {
-            error!("unused response channel");
-            anyhow!("no response provided")
+            error!("unused responder");
+            anyhow!("missing response")
         })
     })
 }
@@ -838,9 +828,9 @@ impl Transform for RedisCluster {
             responses.push(match self.dispatch_message(message).await {
                 Ok(response) => response,
                 Err(e) => {
-                    let (err_tx, err_rx) = oneshot::channel();
-                    send_error_response(err_tx, &format!("ERR transform error: {}", e))?;
-                    Box::pin(err_rx.map_err(|_| unreachable!()))
+                    let (one_tx, one_rx) = immediate_responder();
+                    send_error_response(one_tx, &format!("ERR transform error: {}", e))?;
+                    Box::pin(one_rx)
                 }
             });
         }
