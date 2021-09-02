@@ -6,7 +6,7 @@ use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, watch, Semaphore};
+use tokio::sync::{watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
@@ -310,7 +310,7 @@ impl<C: Codec + 'static> Handler<C> {
         });
 
         tokio::spawn(async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
             let r = rx_stream.forward(writer).await;
             debug!("Stream ended {:?}", r);
         });
