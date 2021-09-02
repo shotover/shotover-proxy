@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::topology::TopicHolder;
 use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
 use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
@@ -5,7 +7,7 @@ use crate::sources::redis_source::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use anyhow::Result;
@@ -62,8 +64,8 @@ impl SourcesConfig {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        trigger_shutdown_tx: broadcast::Sender<()>,
-        shutdown_complete_tx: mpsc::Sender<()>,
+        trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: Arc<watch::Sender<bool>>,
     ) -> Result<Vec<Sources>> {
         match self {
             SourcesConfig::Cassandra(c) => {
@@ -88,7 +90,7 @@ pub trait SourcesFromConfig: Send {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        trigger_shutdown: broadcast::Sender<()>,
-        shutdown_complete_tx: mpsc::Sender<()>,
+        trigger_shutdown: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: Arc<watch::Sender<bool>>,
     ) -> Result<Vec<Sources>>;
 }

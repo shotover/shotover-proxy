@@ -4,9 +4,10 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use std::sync::Arc;
 use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
 use tokio::signal;
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
@@ -90,32 +91,37 @@ impl Runner {
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {
-        let (trigger_shutdown_tx, _) = broadcast::channel(1);
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
+        let trigger_shutdown_tx_arc = Arc::new(trigger_shutdown_tx);
 
-        let join_handle =
-            self.runtime_handle
-                .spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
+        let join_handle = self.runtime_handle.spawn(run(
+            self.topology,
+            self.config,
+            trigger_shutdown_tx_arc.clone(),
+        ));
 
         RunnerSpawned {
             runtime_handle: self.runtime_handle,
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
-            trigger_shutdown_tx,
+            trigger_shutdown_tx: trigger_shutdown_tx_arc,
+            trigger_shutdown_rx,
             join_handle,
         }
     }
 
     pub fn run_block(self) -> Result<()> {
-        let (trigger_shutdown_tx, _) = broadcast::channel(1);
+        let (trigger_shutdown_tx, _) = watch::channel(false);
 
-        let trigger_shutdown_tx_clone = trigger_shutdown_tx.clone();
+        let trigger_shutdown_tx_arc = Arc::new(trigger_shutdown_tx);
+        let trigger_shutdown_tx_arc_c = trigger_shutdown_tx_arc.clone();
         self.runtime_handle.spawn(async move {
             signal::ctrl_c().await.unwrap();
-            trigger_shutdown_tx_clone.send(()).unwrap();
+            trigger_shutdown_tx_arc_c.send(true).unwrap();
         });
 
         self.runtime_handle
-            .block_on(run(self.topology, self.config, trigger_shutdown_tx))
+            .block_on(run(self.topology, self.config, trigger_shutdown_tx_arc))
     }
 
     /// Get handle for an existing runtime or create one
@@ -192,13 +198,14 @@ pub struct RunnerSpawned {
     pub runtime_handle: RuntimeHandle,
     pub join_handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
-    pub trigger_shutdown_tx: broadcast::Sender<()>,
+    pub trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+    pub trigger_shutdown_rx: watch::Receiver<bool>,
 }
 
 pub async fn run(
     topology: Topology,
     config: Config,
-    trigger_shutdown_tx: broadcast::Sender<()>,
+    trigger_shutdown_tx: Arc<watch::Sender<bool>>,
 ) -> Result<()> {
     info!("Starting Shotover {}", crate_version!());
     info!(configuration = ?config);
@@ -216,7 +223,7 @@ pub async fn run(
 
     match topology.run_chains(trigger_shutdown_tx).await {
         Ok((_, mut shutdown_complete_rx)) => {
-            shutdown_complete_rx.recv().await;
+            shutdown_complete_rx.changed().await.unwrap();
             info!("Shotover was shutdown cleanly.");
             Ok(())
         }

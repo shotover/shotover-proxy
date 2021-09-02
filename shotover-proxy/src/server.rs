@@ -6,7 +6,7 @@ use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
@@ -61,24 +61,14 @@ pub struct TcpCodecListener<C: Codec> {
     /// The initial `shutdown` trigger is provided by the `run` caller. The
     /// server is responsible for gracefully shutting down active connections.
     /// When a connection task is spawned, it is passed a broadcast receiver
-    /// handle. When a graceful shutdown is initiated, a `()` value is sent via
-    /// the broadcast::Sender. Each active connection receives it, reaches a
+    /// handle. When a graceful shutdown is initiated, a `true` value is sent via
+    /// the watch::Sender. Each active connection receives it, reaches a
     /// safe terminal state, and completes the task.
-    pub trigger_shutdown_tx: broadcast::Sender<()>,
+    pub trigger_shutdown_tx: Arc<watch::Sender<bool>>,
 
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
-    ///
-    /// Tokio channels are closed once all `Sender` handles go out of scope.
-    /// When a channel is closed, the receiver receives `None`. This is
-    /// leveraged to detect all connection handlers completing. When a
-    /// connection handler is initialized, it is assigned a clone of
-    /// `shutdown_complete_tx`. When the listener shuts down, it drops the
-    /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
-    /// complete, all clones of the `Sender` are also dropped. This results in
-    /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
-    /// is safe to exit the server process.
-    pub shutdown_complete_tx: mpsc::Sender<()>,
+    pub shutdown_complete_tx: Arc<watch::Sender<bool>>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -188,7 +178,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
                 // Notifies the receiver half once all clones are
                 // dropped.
-                _shutdown_complete: self.shutdown_complete_tx.clone(),
+                shutdown_complete: self.shutdown_complete_tx.clone(),
             };
 
             // Spawn a new task to process the connections. Tokio tasks are like
@@ -275,8 +265,7 @@ pub struct Handler<C: Codec> {
     /// which point the connection is terminated.
     shutdown: Shutdown,
 
-    /// Not used directly. Instead, when `Handler` is dropped...?
-    _shutdown_complete: mpsc::Sender<()>,
+    shutdown_complete: Arc<watch::Sender<bool>>,
 }
 
 impl<C: Codec + 'static> Handler<C> {
@@ -355,6 +344,7 @@ impl<C: Codec + 'static> Handler<C> {
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
                     // This will result in the task terminating.
+                    self.shutdown_complete.send(true).unwrap();
                     return Ok(());
                 }
             };
@@ -418,12 +408,12 @@ pub struct Shutdown {
     shutdown: bool,
 
     /// The receive half of the channel used to listen for shutdown.
-    notify: broadcast::Receiver<()>,
+    notify: watch::Receiver<bool>,
 }
 
 impl Shutdown {
     /// Create a new `Shutdown` backed by the given `broadcast::Receiver`.
-    pub(crate) fn new(notify: broadcast::Receiver<()>) -> Shutdown {
+    pub(crate) fn new(notify: watch::Receiver<bool>) -> Shutdown {
         Shutdown {
             shutdown: false,
             notify,
@@ -443,8 +433,11 @@ impl Shutdown {
             return;
         }
 
-        // Cannot receive a "lag error" as only one value is ever sent.
-        self.notify.recv().await.unwrap();
+        // check we didn't receive a shutdown message before the receiver was created
+        if !*self.notify.borrow() {
+            // Await the shutdown messsage
+            self.notify.changed().await.unwrap();
+        }
 
         // Remember that the signal has been received.
         self.shutdown = true;
