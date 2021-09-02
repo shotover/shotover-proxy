@@ -832,8 +832,7 @@ impl Transform for RedisCluster {
                 RawFrame::Redis(Frame::Moved { slot, host, port }) => {
                     debug!("Got MOVE frame {} {} {}", slot, host, port);
 
-                    // TODO: Can we assume the destination of a MOVED is always a master node?
-
+                    // The destination of a MOVE should always be a master.
                     self.slots
                         .masters
                         .insert(slot, format!("{}:{}", &host, &port));
