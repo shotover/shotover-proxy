@@ -6,8 +6,7 @@ use crate::helpers::ShotoverManager;
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_runtime_use_existing() {
-    let shotover_manager = ShotoverManager::from_topology_file("examples/null/topology.yaml");
-    //ShotoverManager::wait_for_socket_to_open(6379);
+    let shotover_manager = ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
 
     // Assert that shotover is using the test runtime
     let handle = tokio::runtime::Handle::current();
@@ -20,9 +19,15 @@ async fn test_runtime_use_existing() {
 #[test]
 #[serial]
 fn test_runtime_create() {
-    let shotover_manager = ShotoverManager::from_topology_file("examples/null/topology.yaml");
-    //ShotoverManager::wait_for_socket_to_open(6379);
+    let shotover_manager = ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
 
     // Assert that shotover created a runtime for itself
     assert!(shotover_manager.runtime.is_some());
+}
+
+#[test]
+#[serial]
+fn test_early_shutdown_cassandra_source() {
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/null-cassandra/topology.yaml");
 }

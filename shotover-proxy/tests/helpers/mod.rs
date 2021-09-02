@@ -2,17 +2,19 @@ use anyhow::Result;
 use redis::{Client, Connection};
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use std::net::TcpStream;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 pub struct ShotoverManager {
     pub runtime: Option<Runtime>,
     pub runtime_handle: RuntimeHandle,
     pub join_handle: Option<JoinHandle<Result<()>>>,
-    pub trigger_shutdown_tx: broadcast::Sender<()>,
+    pub trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+    pub trigger_shutdown_rx: watch::Receiver<bool>,
 }
 
 impl ShotoverManager {
@@ -37,6 +39,7 @@ impl ShotoverManager {
             runtime_handle: spawn.runtime_handle,
             join_handle: Some(spawn.join_handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
+            trigger_shutdown_rx: spawn.trigger_shutdown_rx,
         }
     }
 
@@ -70,7 +73,7 @@ impl Drop for ShotoverManager {
             // We only shutdown shotover to test the shutdown process not because we need to clean up any resources.
             // So skipping shutdown on panic is fine.
         } else {
-            self.trigger_shutdown_tx.send(()).unwrap();
+            self.trigger_shutdown_tx.send(true).unwrap();
 
             // Cannot use self.runtime_handle.block_on because it will panic if run from within a test's runtime
             // More details:

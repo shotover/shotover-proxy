@@ -14,9 +14,7 @@ sources:
           - clustering
 chain_config:
   main_chain:
-    - CodecDestination:
-        bypass_result_processing: true
-        remote_address: "172.18.0.2:9042"
+    - Null
 named_topics:
   testtopic: 5
 source_to_chain_mapping:

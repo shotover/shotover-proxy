@@ -10,9 +10,10 @@ use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio::sync::oneshot::Sender as OneSender;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::watch;
 use tracing::info;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -55,17 +56,17 @@ impl ChannelMessage {
 
 #[derive(Default)]
 pub struct TopicHolder {
-    pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
-    pub topics_tx: HashMap<String, Sender<ChannelMessage>>,
+    pub topics_rx: HashMap<String, mpsc::Receiver<ChannelMessage>>,
+    pub topics_tx: HashMap<String, mpsc::Sender<ChannelMessage>>,
 }
 
 impl TopicHolder {
-    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<ChannelMessage>> {
+    pub fn get_rx(&mut self, name: &str) -> Option<mpsc::Receiver<ChannelMessage>> {
         let rx = self.topics_rx.remove(name)?;
         Some(rx)
     }
 
-    pub fn get_tx(&self, name: &str) -> Option<Sender<ChannelMessage>> {
+    pub fn get_tx(&self, name: &str) -> Option<mpsc::Sender<ChannelMessage>> {
         let tx = self.topics_tx.get(name)?;
         Some(tx.clone())
     }
@@ -80,10 +81,10 @@ impl Topology {
     }
 
     fn build_topics(&self) -> TopicHolder {
-        let mut topics_rx: HashMap<String, Receiver<ChannelMessage>> = HashMap::new();
-        let mut topics_tx: HashMap<String, Sender<ChannelMessage>> = HashMap::new();
+        let mut topics_rx: HashMap<String, mpsc::Receiver<ChannelMessage>> = HashMap::new();
+        let mut topics_tx: HashMap<String, mpsc::Sender<ChannelMessage>> = HashMap::new();
         for (name, size) in &self.named_topics {
-            let (tx, rx) = channel::<ChannelMessage>(*size);
+            let (tx, rx) = mpsc::channel::<ChannelMessage>(*size);
             topics_rx.insert(name.clone(), rx);
             topics_tx.insert(name.clone(), tx);
         }
@@ -107,14 +108,15 @@ impl Topology {
     #[allow(clippy::type_complexity)]
     pub async fn run_chains(
         &self,
-        trigger_shutdown_rx: broadcast::Sender<()>,
-    ) -> Result<(Vec<Sources>, Receiver<()>)> {
+        trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+    ) -> Result<(Vec<Sources>, watch::Receiver<bool>)> {
         let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
+        let (shutdown_complete_tx, shutdown_complete_rx) = watch::channel(false);
+        let shutdown_complete_tx_arc = Arc::new(shutdown_complete_tx);
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
@@ -127,8 +129,8 @@ impl Topology {
                             .get_source(
                                 chain,
                                 &mut topics,
-                                trigger_shutdown_rx.clone(),
-                                shutdown_complete_tx.clone(),
+                                trigger_shutdown_tx.clone(),
+                                shutdown_complete_tx_arc.clone(),
                             )
                             .await?,
                     );

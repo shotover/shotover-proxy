@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -30,8 +30,8 @@ impl SourcesFromConfig for CassandraConfig {
         &self,
         chain: &TransformChain,
         _topics: &mut TopicHolder,
-        trigger_shutdown_tx: broadcast::Sender<()>,
-        shutdown_complete_tx: mpsc::Sender<()>,
+        trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: Arc<watch::Sender<bool>>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Cassandra(
             CassandraSource::new(
@@ -61,8 +61,8 @@ impl CassandraSource {
         chain: &TransformChain,
         listen_addr: String,
         cassandra_ks: HashMap<String, Vec<String>>,
-        trigger_shutdown_tx: broadcast::Sender<()>,
-        shutdown_complete_tx: mpsc::Sender<()>,
+        trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: Arc<watch::Sender<bool>>,
         bypass: bool,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
@@ -85,33 +85,34 @@ impl CassandraSource {
             shutdown_complete_tx,
         };
 
-        let jh = Handle::current().spawn(async move {
-            tokio::select! {
-                res = listener.run() => {
-                    if let Err(err) = res {
-                        error!(cause = %err, "failed to accept");
+        let join_handle = Handle::current().spawn(async move {
+            // Check we didn't receive a shutdown signal before the receiver was created
+            if !*trigger_shutdown_rx.borrow() {
+                tokio::select! {
+                    res = listener.run() => {
+                        if let Err(err) = res {
+                            error!(cause = %err, "failed to accept");
+                        }
                     }
-                }
-                _ = trigger_shutdown_rx.recv() => {
-                    info!("cassandra source shutting down")
+                    _ = trigger_shutdown_rx.changed() => {
+                        info!("cassandra source shutting down")
+                    }
                 }
             }
 
             let TcpCodecListener {
-                trigger_shutdown_tx,
                 shutdown_complete_tx,
                 ..
             } = listener;
 
-            drop(shutdown_complete_tx);
-            drop(trigger_shutdown_tx);
+            shutdown_complete_tx.send(true).unwrap();
 
             Ok(())
         });
 
         CassandraSource {
             name,
-            join_handle: jh,
+            join_handle,
             listen_addr,
         }
     }
