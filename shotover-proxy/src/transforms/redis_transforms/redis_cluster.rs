@@ -5,8 +5,8 @@ use anyhow::{anyhow, bail, ensure, Result};
 use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use futures::TryFutureExt;
+use futures::{Future, StreamExt};
 use hyper::body::Bytes;
 use metrics::counter;
 use rand::prelude::SmallRng;
@@ -14,6 +14,7 @@ use rand::SeedableRng;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
@@ -28,8 +29,8 @@ use crate::transforms::redis_transforms::RedisError;
 use crate::transforms::redis_transforms::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::ResponseFuturesOrdered;
 use crate::transforms::CONTEXT_CHAIN_NAME;
+use crate::transforms::{ResponseFuture, ResponseFuturesOrdered};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 const SLOT_SIZE: usize = 16384;
@@ -240,32 +241,100 @@ impl RedisCluster {
     }
 
     #[inline]
+    async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
+        let command = match message.original {
+            RawFrame::Redis(Frame::Array(ref command)) => command,
+            _ => bail!("syntax error: bad command"),
+        };
+
+        let channels = match self.get_channels(command).await? {
+            Ok(channels) => channels,
+            Err(command_name) => match command_name {
+                Command::AUTH => {
+                    return self.on_auth(command).await;
+                }
+            },
+        };
+
+        Ok(match channels.len() {
+            0 => {
+                let (one_tx, one_rx) = oneshot::channel();
+                match self.connection_error {
+                    Some(message) => {
+                        send_error_response(one_tx, message).ok();
+                    }
+                    None => short_circuit(one_tx),
+                };
+                Box::pin(one_rx.map_err(|_| unreachable!()))
+            }
+            1 => {
+                let channel = channels.get(0).unwrap();
+                let one_rx = self.choose_and_send(channel, message).await?;
+                Box::pin(one_rx.map_err(move |_| anyhow!("no response from single channel")))
+            }
+            _ => {
+                let responses = FuturesUnordered::new();
+
+                for channel in channels {
+                    responses.push(self.choose_and_send(&channel, message.clone()).await?);
+                }
+
+                // Reassemble upstream responses in any order into an array, as the downstream response.
+                // TODO: Improve error messages within the reassembled response. E.g. which channel failed.
+
+                Box::pin(async move {
+                    let response = responses
+                        .fold(vec![], |mut acc, response| async move {
+                            match response {
+                                Ok((_, response)) => match response {
+                                    Ok(mut messages) => acc.push(messages.messages.pop().map_or(
+                                        Frame::Null,
+                                        |message| match message.original {
+                                            RawFrame::Redis(frame) => frame,
+                                            _ => unreachable!(),
+                                        },
+                                    )),
+                                    Err(e) => acc.push(Frame::Error(e.to_string())),
+                                },
+                                Err(e) => acc.push(Frame::Error(e.to_string())),
+                            }
+                            acc
+                        })
+                        .await;
+
+                    Ok((
+                        message,
+                        ChainResponse::Ok(Messages::new_from_message(Message {
+                            details: MessageDetails::Unknown,
+                            modified: false,
+                            original: RawFrame::Redis(Frame::Array(response)),
+                        })),
+                    ))
+                })
+            }
+        })
+    }
+
+    #[inline]
     async fn choose_and_send(
         &mut self,
-        host: String,
+        host: &String,
         message: Message,
     ) -> Result<tokio::sync::oneshot::Receiver<(Message, ChainResponse)>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
 
-        // TODO: Implement better retry mechanism?
-
-        let channel = match self.channels.get_mut(&host) {
-            Some(channels) if channels.len() == 1 => Some(channels.get_mut(0).unwrap()),
+        let channel = match self.channels.get_mut(host) {
+            Some(channels) if channels.len() == 1 => channels.get_mut(0),
             Some(channels) if channels.len() > 1 => {
                 let candidates = rand::seq::index::sample(&mut self.rng, channels.len(), 2);
-
                 let aidx = candidates.index(0);
                 let bidx = candidates.index(1);
 
-                // TODO: Actually use or remove these "load balancing" scores.
+                // TODO: Actually update or remove these "load balancing" scores.
                 let aload = *self.load_scores.entry((host.clone(), aidx)).or_insert(0);
                 let bload = *self.load_scores.entry((host.clone(), bidx)).or_insert(0);
 
-                Some(
-                    channels
-                        .get_mut(if aload <= bload { aidx } else { bidx })
-                        .ok_or_else(|| anyhow!("Couldn't find host {}", host))?,
-                )
+                channels.get_mut(if aload <= bload { aidx } else { bidx })
             }
             _ => None,
         }
@@ -282,7 +351,7 @@ impl RedisCluster {
             Some(channel) => channel,
             None => {
                 debug!("connection {} doesn't exist trying to connect", host);
-                if let Ok(res) = timeout(
+                if let Ok(result) = timeout(
                     Duration::from_millis(40),
                     self.connection_pool.get_connections(
                         host.clone(),
@@ -292,28 +361,18 @@ impl RedisCluster {
                 )
                 .await
                 {
-                    if let Ok(conn) = res {
-                        debug!("Found {} live connections for {}", conn.len(), host);
-                        self.channels.insert(host.clone(), conn);
-                        self.channels
-                            .get_mut(&host)
-                            .unwrap()
-                            .get_mut(0)
-                            .ok_or_else(|| anyhow!("Couldn't find host {}", host))?
+                    if let Ok(connections) = result {
+                        debug!("Found {} live connections for {}", connections.len(), host);
+                        self.channels.insert(host.to_string(), connections);
+                        self.channels.get_mut(host).unwrap().get_mut(0).unwrap()
                     } else {
-                        debug!(
-                            "couldn't connect to {} - updating slot map from upstream cluster",
-                            host
-                        );
+                        debug!("failed to connect to {}", host);
                         self.rebuild_connections = true;
                         short_circuit(one_tx);
                         return Ok(one_rx);
                     }
                 } else {
-                    debug!(
-                        "timed out connecting to {} - updating slot map from upstream cluster",
-                        host
-                    );
+                    debug!("timed out connecting to {}", host);
                     self.rebuild_connections = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
@@ -330,16 +389,16 @@ impl RedisCluster {
                 self.rebuild_slots = true;
                 short_circuit(error_return);
             }
-            self.channels.remove(&host);
+            self.channels.remove(host);
         }
         return Ok(one_rx);
     }
 
     #[inline(always)]
-    async fn get_channels(&mut self, command: &Vec<Frame>) -> ChannelsResult {
-        match RoutingInfo::for_command_frame(&command) {
+    async fn get_channels(&mut self, command: &Vec<Frame>) -> Result<Result<Vec<String>, Command>> {
+        Ok(match RoutingInfo::for_command_frame(&command)? {
             Some(RoutingInfo::Slot(slot)) => {
-                ChannelsResult::Channels(
+                Ok(
                     if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
                         // let idx = self.choose(lookup);
                         vec![lookup.clone()]
@@ -348,34 +407,27 @@ impl RedisCluster {
                     },
                 )
             }
-            Some(RoutingInfo::AllNodes) => {
-                ChannelsResult::Channels(Vec::from_iter(self.slots.nodes.iter().cloned()))
-            }
+            Some(RoutingInfo::AllNodes) => Ok(Vec::from_iter(self.slots.nodes.iter().cloned())),
             Some(RoutingInfo::AllMasters) => {
-                ChannelsResult::Channels(Vec::from_iter(self.slots.masters.values().cloned()))
+                Ok(Vec::from_iter(self.slots.masters.values().cloned()))
             }
-            Some(RoutingInfo::Random) => ChannelsResult::Channels(
-                self.slots
-                    .masters
-                    .values()
-                    .next()
-                    .map(|key| vec![key.clone()])
-                    .unwrap_or(vec![])
-                    .clone(),
-            ),
-            Some(RoutingInfo::Other(name)) => ChannelsResult::Command(name),
-            None => ChannelsResult::Channels(vec![]),
-        }
+            Some(RoutingInfo::Random) => Ok(self
+                .slots
+                .masters
+                .values()
+                .next()
+                .map(|key| vec![key.clone()])
+                .unwrap_or(vec![])
+                .clone()),
+            Some(RoutingInfo::Other(name)) => Err(name),
+            None => Ok(vec![]),
+        })
     }
 
-    async fn on_auth(
-        &mut self,
-        commands: &[Frame],
-        responses: &mut ResponseFuturesOrdered,
-    ) -> Result<()> {
-        let one_tx = response_sender(responses);
+    async fn on_auth(&mut self, command: &[Frame]) -> Result<ResponseFuture> {
+        let (one_tx, one_rx) = response_channel();
 
-        let mut args = commands
+        let mut args = command
             .iter()
             .skip(1)
             .rev()
@@ -390,7 +442,8 @@ impl RedisCluster {
             Some(password) => password,
             None => {
                 debug!("password not supplied");
-                return send_error_response(one_tx, "ERR syntax error");
+                send_error_response(one_tx, "ERR syntax error").ok();
+                return Ok(Box::pin(one_rx));
             }
         };
         let username = args.next();
@@ -399,19 +452,21 @@ impl RedisCluster {
         match self.build_connections(Some(token)).await {
             Ok(()) => {
                 self.connection_error = None;
-                send_simple_response(one_tx, "OK")
+                send_simple_response(one_tx, "OK")?;
             }
             Err(TransformError::Upstream(RedisError::BadCredentials)) => {
-                send_error_response(one_tx, "WRONGPASS invalid username-password")
+                send_error_response(one_tx, "WRONGPASS invalid username-password")?;
             }
             Err(TransformError::Upstream(RedisError::NotAuthorized)) => {
-                send_error_response(one_tx, "NOPERM upstream user lacks required permission")
+                send_error_response(one_tx, "NOPERM upstream user lacks required permission")?;
             }
             Err(e) => {
                 warn!("failed to build authenticated connections: {:?}", e);
-                send_error_response(one_tx, "ERR could not connect to upstream with auth")
+                send_error_response(one_tx, "ERR could not connect to upstream with auth")?;
             }
         }
+
+        Ok(Box::pin(one_rx))
     }
 }
 
@@ -475,64 +530,56 @@ pub enum Command {
     AUTH,
 }
 
-enum ChannelsResult {
-    Channels(Vec<String>),
-    Command(Command),
-}
-
 impl RoutingInfo {
     #[inline(always)]
-    pub fn for_command_frame(args: &[Frame]) -> Option<RoutingInfo> {
+    pub fn for_command_frame(args: &[Frame]) -> Result<Option<RoutingInfo>> {
         let command_name = match args.get(0) {
             Some(Frame::BulkString(command_name)) => command_name,
-            Some(_) => return None,
-            _ => return None,
+            _ => bail!("syntax error: bad command name"),
         };
 
-        return match command_name.as_ref() {
-            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" => Some(RoutingInfo::AllMasters),
-            b"ACL" | b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE"
-            | b"PING" | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE"
-            | b"TIME" | b"KEYS" => Some(RoutingInfo::AllNodes),
+        Ok(match command_name.as_ref() {
+            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
+            b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
+            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE" | b"TIME"
+            | b"KEYS" => Some(RoutingInfo::AllNodes),
             b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
             | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
             b"EVALSHA" | b"EVAL" => {
                 //TODO: Appears the the codec is not decoding integers correctly
-                let key_count = match args.get(2) {
+                match args.get(2) {
                     Some(Frame::Integer(key_count)) => Some(*key_count),
                     Some(Frame::BulkString(key_count)) => String::from_utf8(key_count.to_vec())
                         .unwrap_or_else(|_| "0".to_string())
                         .parse::<i64>()
                         .ok(),
                     _ => None,
-                };
-
-                let route_info = if let Some(key_count) = key_count {
+                }
+                .and_then(|key_count| {
                     if key_count == 0 {
                         Some(RoutingInfo::Random)
                     } else {
                         args.get(3).and_then(RoutingInfo::for_key)
                     }
-                } else {
-                    None
-                };
-                route_info
+                })
             }
             b"XGROUP" | b"XINFO" => args.get(2).and_then(RoutingInfo::for_key),
-            b"XREAD" | b"XREADGROUP" => {
-                let streams_position = args.iter().position(|a| match a {
+            b"XREAD" | b"XREADGROUP" => args
+                .iter()
+                .position(|a| match a {
                     Frame::BulkString(a) => a.as_ref() == b"STREAMS",
                     _ => false,
-                })?;
-                args.get(streams_position + 1)
-                    .and_then(RoutingInfo::for_key)
-            }
+                })
+                .and_then(|streams_position| {
+                    args.get(streams_position + 1)
+                        .and_then(RoutingInfo::for_key)
+                }),
             b"AUTH" => Some(RoutingInfo::Other(Command::AUTH)),
             _ => match args.get(1) {
                 Some(key) => RoutingInfo::for_key(key),
                 None => Some(RoutingInfo::Random),
             },
-        };
+        })
     }
 
     #[inline(always)]
@@ -753,14 +800,17 @@ async fn receive_frame_response(
     }
 }
 
-fn response_sender(
-    responses: &mut ResponseFuturesOrdered,
-) -> tokio::sync::oneshot::Sender<Response> {
-    let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-    responses.push(Box::pin(one_rx.map_err(|e| {
-        anyhow!("did not send, causing failed to receive: {}", e)
-    })));
-    one_tx
+fn response_channel() -> (
+    oneshot::Sender<Response>,
+    impl Future<Output = Result<Response>>,
+) {
+    let (one_tx, one_rx) = oneshot::channel::<Response>();
+    (one_tx, async {
+        one_rx.await.map_err(|_| {
+            error!("unused response channel");
+            anyhow!("no response provided")
+        })
+    })
 }
 
 #[async_trait]
@@ -785,92 +835,12 @@ impl Transform for RedisCluster {
         let mut responses = ResponseFuturesOrdered::new();
 
         for message in message_wrapper.message {
-            let command = match &message.original {
-                RawFrame::Redis(Frame::Array(ref command)) => command,
-                RawFrame::Redis(_) => {
-                    warn!("ignoring non-command frame - bad client?");
-                    continue;
-                }
-                _ => {
-                    warn!("ignoring non-Redis frame - not possible?");
-                    continue;
-                }
-            };
-
-            let channels = match self.get_channels(command).await {
-                ChannelsResult::Channels(channels) => channels,
-                ChannelsResult::Command(name) => {
-                    // Handle special command routing.
-                    match name {
-                        Command::AUTH => {
-                            self.on_auth(command, &mut responses).await?;
-                        }
-                    }
-                    continue;
-                }
-            };
-
-            responses.push(match channels.len() {
-                0 => {
-                    let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
-
-                    match self.connection_error {
-                        Some(message) => {
-                            let _ = send_error_response(one_tx, message);
-                        }
-                        None => short_circuit(one_tx),
-                    };
-
-                    Box::pin(one_rx.map_err(anyhow::Error::msg))
-                }
-                1 => {
-                    let one_rx = self
-                        .choose_and_send(channels.get(0).unwrap().clone(), message.clone())
-                        .await?;
-
-                    Box::pin(one_rx.map_err(anyhow::Error::msg))
-                }
-                _ => {
-                    let futures: FuturesUnordered<
-                        tokio::sync::oneshot::Receiver<(Message, ChainResponse)>,
-                    > = FuturesUnordered::new();
-                    for chan in channels {
-                        let one_rx = self.choose_and_send(chan, message.clone()).await?;
-                        futures.push(one_rx);
-                    }
-                    Box::pin(async move {
-                        let (response, orig) = futures
-                            .fold((vec![], message), |(mut acc, last), m| async move {
-                                match m {
-                                    Ok((_orig, response)) => match response {
-                                        Ok(mut m) => {
-                                            acc.push(m.messages.pop().map_or(Frame::Null, |m| {
-                                                if let RawFrame::Redis(f) = m.original {
-                                                    f
-                                                } else {
-                                                    Frame::Error(
-                                                        "Non-redis frame detected".to_string(),
-                                                    )
-                                                }
-                                            }))
-                                        }
-                                        Err(e) => acc.push(Frame::Error(e.to_string())),
-                                    },
-                                    Err(e) => acc.push(Frame::Error(e.to_string())),
-                                }
-                                (acc, last)
-                            })
-                            .await;
-
-                        Ok((
-                            orig,
-                            ChainResponse::Ok(Messages::new_from_message(Message {
-                                details: MessageDetails::Unknown,
-                                modified: false,
-                                original: RawFrame::Redis(Frame::Array(response)),
-                            })),
-                        ))
-                    })
+            responses.push(match self.dispatch_message(message).await {
+                Ok(response) => response,
+                Err(e) => {
+                    let (err_tx, err_rx) = oneshot::channel();
+                    send_error_response(err_tx, &format!("ERR transform error: {}", e))?;
+                    Box::pin(err_rx.map_err(|_| unreachable!()))
                 }
             });
         }
@@ -905,7 +875,7 @@ impl Transform for RedisCluster {
                     self.rebuild_slots = true;
 
                     let one_rx = self
-                        .choose_and_send(format!("{}:{}", host, port), original.clone())
+                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
                         .await?;
 
                     responses.prepend(Box::pin(
@@ -916,7 +886,7 @@ impl Transform for RedisCluster {
                     debug!("Got ASK frame {} {} {}", slot, host, port);
 
                     let one_rx = self
-                        .choose_and_send(format!("{}:{}", host, port), original.clone())
+                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
                         .await?;
 
                     responses.prepend(Box::pin(
