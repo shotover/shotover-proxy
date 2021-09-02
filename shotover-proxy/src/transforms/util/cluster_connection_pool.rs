@@ -133,7 +133,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
                 }
                 Err(error) => {
                     debug!(
-                        "Could not authenticate to upstream TCP service for connection {}/{} to {} - {}",
+                        "Failed to connect to upstream TCP service for attempt {}/{} to {} - {}",
                         i + 1,
                         connection_count,
                         address,
