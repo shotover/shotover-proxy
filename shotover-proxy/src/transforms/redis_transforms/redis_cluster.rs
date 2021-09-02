@@ -38,7 +38,7 @@ const SLOT_SIZE: usize = 16384;
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
 fn fmt_channels(channels: &ChannelMap, fmt: &mut fmt::Formatter) -> fmt::Result {
-    fmt.write_fmt(format_args!("Channels: {:?}", channels.keys()))
+    write!(fmt, "{:?}", channels.keys())
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -115,27 +115,18 @@ impl RedisCluster {
 
     async fn rebuild_slot_map(&mut self) -> Result<(), TransformError> {
         debug!("rebuilding slot map");
-        let addresses = self.latest_contact_points();
-        // IDEA: Retry with original contact points on failure?
-        Ok(self.rebuild_slot_map_from_addresses(&addresses).await?)
-    }
-
-    async fn rebuild_slot_map_from_addresses(
-        &mut self,
-        addresses: &[String],
-    ) -> Result<(), TransformError> {
         let mut errors = Vec::new();
 
-        for address in addresses {
+        for address in self.latest_contact_points() {
             match self
                 .connection_pool
                 .new_connection(&address, &self.token)
                 .await
             {
                 Ok(sender) => match get_topology_from_node(&sender).await {
-                    Ok(mapping) => {
-                        trace!("successfully updated map {:?}", mapping);
-                        self.slots = mapping.into();
+                    Ok(slots) => {
+                        trace!("successfully mapped cluster: {:?}", slots);
+                        self.slots = slots;
                         return Ok(());
                     }
                     Err(e) => {
@@ -170,13 +161,7 @@ impl RedisCluster {
     }
 
     async fn rebuild_connections(&mut self) -> Result<(), TransformError> {
-        // NOTE: Requiring slot map rebuild ensures credentials are still accepted by upstream before allowing reuse of authenticated connections.
-        self.rebuild_slot_map().await.map_err(|e| {
-            debug!("failed to rebuild slot map: {}", e);
-            e
-        })?;
-
-        debug!("mapped cluster: {:?}", self.slots);
+        self.rebuild_slot_map().await?;
 
         let mut channels = ChannelMap::new();
         let mut errors = Vec::new();
