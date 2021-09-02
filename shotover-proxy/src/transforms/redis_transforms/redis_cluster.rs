@@ -46,8 +46,6 @@ pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
     pub strict_close_mode: Option<bool>,
     connection_count: Option<usize>,
-    username: Option<String>,
-    password: Option<String>,
 }
 
 #[async_trait]
@@ -70,15 +68,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             token: None,
         };
 
-        let token = self
-            .password
-            .as_ref()
-            .map(|password| UsernamePasswordToken {
-                username: self.username.clone(),
-                password: password.clone(),
-            });
-
-        match cluster.build_connections(token).await {
+        match cluster.build_connections(None).await {
             Ok(()) => {
                 info!("connected to upstream cluster");
             }
