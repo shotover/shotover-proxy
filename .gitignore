@@ -1,14 +1,14 @@
 /target
 .idea/
 /old_builds
-Cargo.lock
 *.data
 *.data.old
 tests/soaktest-*
 *.svg
 *.gz
-.vscode/tasks.json
-.vscode/launch.json
+/.vscode
 .workspace.code-workspace
 /test_tmp
 output.txt
+**/.DS_Store
+/.project
