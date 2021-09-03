@@ -57,7 +57,7 @@ impl TransformsFromConfig for RedisClusterConfig {
 
         for node in slots.masters.values() {
             match connection_pool
-                .get_connections(&node, self.connection_count.unwrap_or(1))
+                .get_connections(node, self.connection_count.unwrap_or(1))
                 .await
             {
                 Ok(conn) => {
@@ -107,7 +107,7 @@ impl RedisCluster {
     #[inline]
     async fn choose_and_send(
         &mut self,
-        host: &String,
+        host: &str,
         message: Message,
     ) -> Result<tokio::sync::oneshot::Receiver<(Message, ChainResponse)>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<Response>();
@@ -122,8 +122,14 @@ impl RedisCluster {
                 let aidx = candidates.index(0);
                 let bidx = candidates.index(1);
 
-                let aload = *self.load_scores.entry((host.clone(), aidx)).or_insert(0);
-                let bload = *self.load_scores.entry((host.clone(), bidx)).or_insert(0);
+                let aload = *self
+                    .load_scores
+                    .entry((host.to_string(), aidx))
+                    .or_insert(0);
+                let bload = *self
+                    .load_scores
+                    .entry((host.to_string(), bidx))
+                    .or_insert(0);
 
                 chans
                     .get_mut(if aload <= bload { aidx } else { bidx })
@@ -140,7 +146,7 @@ impl RedisCluster {
                 {
                     if let Ok(conn) = res {
                         debug!("Found {} live connections for {}", conn.len(), host);
-                        self.channels.insert(host.clone(), conn);
+                        self.channels.insert(host.to_string(), conn);
                         self.channels
                             .get_mut(host)
                             .unwrap()
@@ -185,7 +191,7 @@ impl RedisCluster {
     async fn get_channels(&mut self, redis_frame: &RawFrame) -> Vec<String> {
         match &redis_frame {
             RawFrame::Redis(Frame::Array(ref commands)) => {
-                match RoutingInfo::for_command_frame(&commands) {
+                match RoutingInfo::for_command_frame(commands) {
                     Some(RoutingInfo::Slot(slot)) => {
                         if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
                             // let idx = self.choose(lookup);
@@ -315,7 +321,7 @@ impl RoutingInfo {
     #[inline(always)]
     pub fn for_key(key: &Frame) -> Option<RoutingInfo> {
         if let Frame::BulkString(key) = key {
-            let key = get_hashtag(&key).unwrap_or(&key);
+            let key = get_hashtag(key).unwrap_or(key);
             Some(RoutingInfo::Slot(
                 crc16::State::<crc16::XMODEM>::calculate(key) % SLOT_SIZE as u16,
             ))
