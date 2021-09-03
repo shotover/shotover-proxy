@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -31,7 +31,7 @@ impl SourcesFromConfig for CassandraConfig {
         chain: &TransformChain,
         _topics: &mut TopicHolder,
         trigger_shutdown_tx: Arc<watch::Sender<bool>>,
-        shutdown_complete_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Cassandra(
             CassandraSource::new(
@@ -62,7 +62,7 @@ impl CassandraSource {
         listen_addr: String,
         cassandra_ks: HashMap<String, Vec<String>>,
         trigger_shutdown_tx: Arc<watch::Sender<bool>>,
-        shutdown_complete_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: mpsc::Sender<()>,
         bypass: bool,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
@@ -105,7 +105,7 @@ impl CassandraSource {
                 ..
             } = listener;
 
-            shutdown_complete_tx.send(true).unwrap();
+            drop(shutdown_complete_tx);
 
             Ok(())
         });

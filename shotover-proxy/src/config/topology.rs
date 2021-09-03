@@ -109,14 +109,13 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_tx: Arc<watch::Sender<bool>>,
-    ) -> Result<(Vec<Sources>, watch::Receiver<bool>)> {
+    ) -> Result<(Vec<Sources>, mpsc::Receiver<()>)> {
         let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let (shutdown_complete_tx, shutdown_complete_rx) = watch::channel(false);
-        let shutdown_complete_tx_arc = Arc::new(shutdown_complete_tx);
+        let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
@@ -130,7 +129,7 @@ impl Topology {
                                 chain,
                                 &mut topics,
                                 trigger_shutdown_tx.clone(),
-                                shutdown_complete_tx_arc.clone(),
+                                shutdown_complete_tx.clone(),
                             )
                             .await?,
                     );

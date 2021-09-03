@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::runtime::Handle;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tracing::info;
 use tracing::warn;
@@ -31,7 +31,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
         chain: &TransformChain,
         topics: &mut TopicHolder,
         trigger_shutdown_on_drop_rx: Arc<watch::Sender<bool>>,
-        shutdown_complete_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         if let Some(rx) = topics.get_rx(&self.topic_name) {
             let behavior = self
@@ -68,7 +68,7 @@ impl AsyncMpsc {
         mut rx: Receiver<ChannelMessage>,
         name: &str,
         mut shutdown: Shutdown,
-        shutdown_complete: Arc<watch::Sender<bool>>,
+        shutdown_complete: mpsc::Sender<()>,
         max_behavior: CoalesceBehavior,
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);

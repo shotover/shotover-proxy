@@ -7,7 +7,7 @@ use crate::sources::redis_source::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use anyhow::Result;
@@ -65,7 +65,7 @@ impl SourcesConfig {
         chain: &TransformChain,
         topics: &mut TopicHolder,
         trigger_shutdown_tx: Arc<watch::Sender<bool>>,
-        shutdown_complete_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         match self {
             SourcesConfig::Cassandra(c) => {
@@ -91,6 +91,6 @@ pub trait SourcesFromConfig: Send {
         chain: &TransformChain,
         topics: &mut TopicHolder,
         trigger_shutdown: Arc<watch::Sender<bool>>,
-        shutdown_complete_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>>;
 }

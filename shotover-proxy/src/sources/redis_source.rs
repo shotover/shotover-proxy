@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::runtime::Handle;
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -29,7 +29,7 @@ impl SourcesFromConfig for RedisConfig {
         chain: &TransformChain,
         _topics: &mut TopicHolder,
         trigger_shutdown_tx: Arc<watch::Sender<bool>>,
-        shutdown_complete_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Redis(
             RedisSource::new(
@@ -59,7 +59,7 @@ impl RedisSource {
         listen_addr: String,
         batch_hint: u64,
         trigger_shutdown_tx: Arc<watch::Sender<bool>>,
-        shutdown_complete_tx: Arc<watch::Sender<bool>>,
+        shutdown_complete_tx: mpsc::Sender<()>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
     ) -> RedisSource {
@@ -101,7 +101,7 @@ impl RedisSource {
                 ..
             } = listener;
 
-            shutdown_complete_tx.send(true).unwrap();
+            drop(shutdown_complete_tx);
 
             Ok(())
         });

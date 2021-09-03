@@ -223,7 +223,7 @@ pub async fn run(
 
     match topology.run_chains(trigger_shutdown_tx).await {
         Ok((_, mut shutdown_complete_rx)) => {
-            shutdown_complete_rx.changed().await.unwrap();
+            shutdown_complete_rx.recv().await;
             info!("Shotover was shutdown cleanly.");
             Ok(())
         }

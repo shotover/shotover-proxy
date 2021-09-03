@@ -6,7 +6,7 @@ use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
@@ -68,7 +68,7 @@ pub struct TcpCodecListener<C: Codec> {
 
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
-    pub shutdown_complete_tx: Arc<watch::Sender<bool>>,
+    pub shutdown_complete_tx: mpsc::Sender<()>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -178,7 +178,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
                 // Notifies the receiver half once all clones are
                 // dropped.
-                shutdown_complete: self.shutdown_complete_tx.clone(),
+                _shutdown_complete: self.shutdown_complete_tx.clone(),
             };
 
             // Spawn a new task to process the connections. Tokio tasks are like
@@ -265,7 +265,7 @@ pub struct Handler<C: Codec> {
     /// which point the connection is terminated.
     shutdown: Shutdown,
 
-    shutdown_complete: Arc<watch::Sender<bool>>,
+    _shutdown_complete: mpsc::Sender<()>,
 }
 
 impl<C: Codec + 'static> Handler<C> {
@@ -344,7 +344,6 @@ impl<C: Codec + 'static> Handler<C> {
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
                     // This will result in the task terminating.
-                    self.shutdown_complete.send(true).unwrap();
                     return Ok(());
                 }
             };
