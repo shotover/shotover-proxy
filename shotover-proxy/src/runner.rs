@@ -111,7 +111,7 @@ impl Runner {
     }
 
     pub fn run_block(self) -> Result<()> {
-        let (trigger_shutdown_tx, _) = watch::channel(false);
+        let (trigger_shutdown_tx, _trigger_shutdown_rx) = watch::channel(false);
 
         let trigger_shutdown_tx_arc = Arc::new(trigger_shutdown_tx);
         let trigger_shutdown_tx_arc_c = trigger_shutdown_tx_arc.clone();
