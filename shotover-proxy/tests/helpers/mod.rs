@@ -43,7 +43,7 @@ impl ShotoverManager {
         }
     }
 
-    pub fn wait_for_socket_to_open(port: u16) {
+    fn wait_for_socket_to_open(port: u16) {
         let mut tries = 0;
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
             thread::sleep(Duration::from_millis(100));
