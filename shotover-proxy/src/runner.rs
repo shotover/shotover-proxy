@@ -94,14 +94,13 @@ impl Runner {
 
         let join_handle =
             self.runtime_handle
-                .spawn(run(self.topology, self.config, trigger_shutdown_rx.clone()));
+                .spawn(run(self.topology, self.config, trigger_shutdown_rx));
 
         RunnerSpawned {
             runtime_handle: self.runtime_handle,
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
             trigger_shutdown_tx,
-            trigger_shutdown_rx,
             join_handle,
         }
     }
@@ -193,7 +192,6 @@ pub struct RunnerSpawned {
     pub join_handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
     pub trigger_shutdown_tx: watch::Sender<bool>,
-    pub trigger_shutdown_rx: watch::Receiver<bool>,
 }
 
 pub async fn run(

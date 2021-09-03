@@ -2,7 +2,6 @@ use anyhow::Result;
 use redis::{Client, Connection};
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use std::net::TcpStream;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
@@ -14,7 +13,6 @@ pub struct ShotoverManager {
     pub runtime_handle: RuntimeHandle,
     pub join_handle: Option<JoinHandle<Result<()>>>,
     pub trigger_shutdown_tx: watch::Sender<bool>,
-    pub trigger_shutdown_rx: watch::Receiver<bool>,
 }
 
 impl ShotoverManager {
@@ -39,7 +37,6 @@ impl ShotoverManager {
             runtime_handle: spawn.runtime_handle,
             join_handle: Some(spawn.join_handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
-            trigger_shutdown_rx: spawn.trigger_shutdown_rx,
         }
     }
 
