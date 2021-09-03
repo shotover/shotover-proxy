@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::watch;
 use tracing::info;
@@ -56,17 +56,17 @@ impl ChannelMessage {
 
 #[derive(Default)]
 pub struct TopicHolder {
-    pub topics_rx: HashMap<String, mpsc::Receiver<ChannelMessage>>,
-    pub topics_tx: HashMap<String, mpsc::Sender<ChannelMessage>>,
+    pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
+    pub topics_tx: HashMap<String, Sender<ChannelMessage>>,
 }
 
 impl TopicHolder {
-    pub fn get_rx(&mut self, name: &str) -> Option<mpsc::Receiver<ChannelMessage>> {
+    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<ChannelMessage>> {
         let rx = self.topics_rx.remove(name)?;
         Some(rx)
     }
 
-    pub fn get_tx(&self, name: &str) -> Option<mpsc::Sender<ChannelMessage>> {
+    pub fn get_tx(&self, name: &str) -> Option<Sender<ChannelMessage>> {
         let tx = self.topics_tx.get(name)?;
         Some(tx.clone())
     }
@@ -81,10 +81,10 @@ impl Topology {
     }
 
     fn build_topics(&self) -> TopicHolder {
-        let mut topics_rx: HashMap<String, mpsc::Receiver<ChannelMessage>> = HashMap::new();
-        let mut topics_tx: HashMap<String, mpsc::Sender<ChannelMessage>> = HashMap::new();
+        let mut topics_rx: HashMap<String, Receiver<ChannelMessage>> = HashMap::new();
+        let mut topics_tx: HashMap<String, Sender<ChannelMessage>> = HashMap::new();
         for (name, size) in &self.named_topics {
-            let (tx, rx) = mpsc::channel::<ChannelMessage>(*size);
+            let (tx, rx) = channel::<ChannelMessage>(*size);
             topics_rx.insert(name.clone(), rx);
             topics_tx.insert(name.clone(), tx);
         }
@@ -109,13 +109,13 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_tx: Arc<watch::Sender<bool>>,
-    ) -> Result<(Vec<Sources>, mpsc::Receiver<()>)> {
+    ) -> Result<(Vec<Sources>, Receiver<()>)> {
         let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
+        let (shutdown_complete_tx, shutdown_complete_rx) = channel(1);
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
