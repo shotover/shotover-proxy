@@ -61,7 +61,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             contact_points: self.first_contact_points.clone(),
             connection_count: self.connection_count.unwrap_or(1),
-            connection_pool: ConnectionPool::new(RedisCodec::new(true, 3), authenticator),
+            connection_pool: ConnectionPool::new_with_auth(RedisCodec::new(true, 3), authenticator),
             connection_error: None,
             rebuild_slots: false,
             rebuild_connections: true,
