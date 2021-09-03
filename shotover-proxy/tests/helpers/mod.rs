@@ -74,14 +74,9 @@ impl Drop for ShotoverManager {
             // So skipping shutdown on panic is fine.
         } else {
             self.trigger_shutdown_tx.send(true).unwrap();
-
-            // Cannot use self.runtime_handle.block_on because it will panic if run from within a test's runtime
-            // More details:
-            //https://stackoverflow.com/questions/66035290/how-do-i-await-a-future-inside-a-non-async-method-which-was-called-from-an-async
-            let _enter_guard = self.runtime_handle.enter();
-            futures::executor::block_on(self.join_handle.take().unwrap())
-                .unwrap()
-                .unwrap();
+            tokio::task::block_in_place(move || {
+                self.join_handle.take().unwrap();
+            })
         }
     }
 }
