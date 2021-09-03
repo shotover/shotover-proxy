@@ -487,7 +487,7 @@ fn build_slot_to_server(
     Ok(())
 }
 
-fn parse_slots(results: &Vec<Frame>) -> Result<SlotMap, TransformError> {
+fn parse_slots(results: &Vec<Frame>) -> Result<SlotMap> {
     let mut master_entries: Vec<(String, u16, u16)> = vec![];
     let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
@@ -502,46 +502,33 @@ fn parse_slots(results: &Vec<Frame>) -> Result<SlotMap, TransformError> {
                         (0, Frame::Integer(i)) => start = *i as u16,
                         (1, Frame::Integer(i)) => end = *i as u16,
                         (2, Frame::Array(master)) => {
-                            build_slot_to_server(&master, &mut master_entries, start, end).map_err(
-                                |e| {
-                                    TransformError::Protocol(format!(
-                                        "Failed to decode master slots: {}",
-                                        e,
-                                    ))
-                                },
-                            )?
+                            if let Err(e) =
+                                build_slot_to_server(&master, &mut master_entries, start, end)
+                            {
+                                bail!("Failed to decode master slots: {}", e,);
+                            }
                         }
                         (_, Frame::Array(replica)) => {
-                            build_slot_to_server(&replica, &mut replica_entries, start, end)
-                                .map_err(|e| {
-                                    TransformError::Protocol(format!(
-                                        "Failed to decode replica slots: {}",
-                                        e,
-                                    ))
-                                })?
+                            if let Err(e) =
+                                build_slot_to_server(&replica, &mut replica_entries, start, end)
+                            {
+                                bail!("Failed to decode replica slots: {}", e,);
+                            }
                         }
-                        _ => {
-                            return Err(TransformError::Protocol(
-                                "unexpected value in slot map".to_string(),
-                            ))
-                        }
+                        _ => bail!("unexpected value in slot map",),
                     }
                 }
             }
-            _ => {
-                return Err(TransformError::Protocol(
-                    "unexpected value in slot map".to_string(),
-                ))
-            }
+            _ => bail!("unexpected value in slot map".to_string(),),
         }
     }
 
     // TODO: Only check masters?
     if master_entries.is_empty() {
-        Err(TransformError::Other(anyhow!("empty slot map!")))
-    } else {
-        Ok(SlotMap::from_entries(master_entries, replica_entries))
+        bail!("empty slot map!");
     }
+
+    Ok(SlotMap::from_entries(master_entries, replica_entries))
 }
 
 async fn get_topology_from_node(
@@ -556,12 +543,14 @@ async fn get_topology_from_node(
     )?;
 
     match receive_frame_response(return_chan_rx).await? {
-        Frame::Array(results) => parse_slots(&results),
+        Frame::Array(results) => {
+            parse_slots(&results).map_err(|e| TransformError::Protocol(e.to_string()))
+        }
         Frame::Error(message) => Err(TransformError::Upstream(RedisError::from_message(
             message.as_str(),
         ))),
         frame => Err(TransformError::Protocol(format!(
-            "unexpected response frame: {:?}",
+            "unexpected response for cluster slots: {:?}",
             frame
         ))),
     }
