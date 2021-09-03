@@ -322,9 +322,8 @@ impl RedisCluster {
                     vec![]
                 }
             }
-            Some(RoutingInfo::AllNodes) | Some(RoutingInfo::AllMasters) => {
-                self.channels.keys().cloned().collect()
-            }
+            Some(RoutingInfo::AllNodes) => Vec::from_iter(self.slots.nodes.iter().cloned()),
+            Some(RoutingInfo::AllMasters) => Vec::from_iter(self.slots.masters.values().cloned()),
             Some(RoutingInfo::Random) => {
                 let key = self
                     .channels
