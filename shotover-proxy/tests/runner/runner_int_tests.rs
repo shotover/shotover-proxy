@@ -16,6 +16,15 @@ async fn test_runtime_use_existing() {
     assert!(shotover_manager.runtime.is_none());
 }
 
+#[tokio::test(flavor = "current_thread")]
+#[ntest::timeout(100)]
+async fn test_shotover_panics_in_single_thread_runtime() {
+    let result = std::panic::catch_unwind(|| {
+        ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
+    });
+    assert!(result.is_err());
+}
+
 #[test]
 #[serial]
 fn test_runtime_create() {

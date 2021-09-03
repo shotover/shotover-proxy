@@ -120,6 +120,11 @@ impl Runner {
     /// Get handle for an existing runtime or create one
     fn get_runtime(stack_size: usize, core_threads: usize) -> (RuntimeHandle, Option<Runtime>) {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // Using block_in_place to trigger a panic in case the runtime is set up in single-threaded mode.
+            // Shotover does not function correctly in single threaded mode (currently hangs)
+            // and block_in_place gives an error message explaining to setup the runtime in multi-threaded mode.
+            tokio::task::block_in_place(|| {});
+
             (handle, None)
         } else {
             let runtime = runtime::Builder::new_multi_thread()

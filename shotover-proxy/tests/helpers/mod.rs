@@ -71,9 +71,11 @@ impl Drop for ShotoverManager {
             // So skipping shutdown on panic is fine.
         } else {
             self.trigger_shutdown_tx.send(true).unwrap();
-            tokio::task::block_in_place(move || {
-                self.join_handle.take().unwrap();
-            })
+
+            let _enter_guard = self.runtime_handle.enter();
+            futures::executor::block_on(self.join_handle.take().unwrap())
+                .unwrap()
+                .unwrap();
         }
     }
 }
