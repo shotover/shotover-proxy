@@ -50,7 +50,7 @@ pub struct RedisClusterConfig {
 #[async_trait]
 impl TransformsFromConfig for RedisClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        let connection_pool = ConnectionPool::new(RedisCodec::new(true, 3), NoopAuthenticator {});
+        let connection_pool = ConnectionPool::new(RedisCodec::new(true, 3));
 
         let mut cluster = RedisCluster {
             name: "RedisCluster",

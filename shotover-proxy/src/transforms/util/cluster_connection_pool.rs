@@ -60,9 +60,14 @@ pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
     authenticator: A,
 }
 
+impl<C: Codec + 'static> ConnectionPool<C, NoopAuthenticator, ()> {
+    pub fn new(codec: C) -> Self {
+        ConnectionPool::new_with_auth(codec, NoopAuthenticator {})
+    }
+}
+
 impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
-    // TODO: Support non-authenticated connection pools (with RFC#1216?).
-    pub fn new(codec: C, authenticator: A) -> Self {
+    pub fn new_with_auth(codec: C, authenticator: A) -> Self {
         Self {
             lanes: Arc::new(Mutex::new(HashMap::new())),
             codec,
