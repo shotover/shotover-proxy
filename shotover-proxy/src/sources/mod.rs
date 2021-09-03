@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::config::topology::TopicHolder;
 use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
 use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
@@ -64,20 +62,20 @@ impl SourcesConfig {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         match self {
             SourcesConfig::Cassandra(c) => {
-                c.get_source(chain, topics, trigger_shutdown_tx, shutdown_complete_tx)
+                c.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
                     .await
             }
             SourcesConfig::Mpsc(m) => {
-                m.get_source(chain, topics, trigger_shutdown_tx, shutdown_complete_tx)
+                m.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
                     .await
             }
             SourcesConfig::Redis(r) => {
-                r.get_source(chain, topics, trigger_shutdown_tx, shutdown_complete_tx)
+                r.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
                     .await
             }
         }
@@ -90,7 +88,7 @@ pub trait SourcesFromConfig: Send {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        trigger_shutdown: Arc<watch::Sender<bool>>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>>;
 }

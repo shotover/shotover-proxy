@@ -10,7 +10,6 @@ use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::watch;
@@ -108,7 +107,7 @@ impl Topology {
     #[allow(clippy::type_complexity)]
     pub async fn run_chains(
         &self,
-        trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(Vec<Sources>, Receiver<()>)> {
         let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
@@ -128,7 +127,7 @@ impl Topology {
                             .get_source(
                                 chain,
                                 &mut topics,
-                                trigger_shutdown_tx.clone(),
+                                trigger_shutdown_rx.clone(),
                                 shutdown_complete_tx.clone(),
                             )
                             .await?,

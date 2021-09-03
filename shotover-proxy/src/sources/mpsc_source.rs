@@ -10,7 +10,6 @@ use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::time::Instant;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
@@ -30,7 +29,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        trigger_shutdown_on_drop_rx: Arc<watch::Sender<bool>>,
+        trigger_shutdown_on_drop_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         if let Some(rx) = topics.get_rx(&self.topic_name) {
@@ -42,7 +41,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
                 chain.clone(),
                 rx,
                 &self.topic_name,
-                Shutdown::new(trigger_shutdown_on_drop_rx.subscribe()),
+                Shutdown::new(trigger_shutdown_on_drop_rx),
                 shutdown_complete_tx,
                 behavior.clone(),
             ))])

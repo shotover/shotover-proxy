@@ -13,7 +13,7 @@ pub struct ShotoverManager {
     pub runtime: Option<Runtime>,
     pub runtime_handle: RuntimeHandle,
     pub join_handle: Option<JoinHandle<Result<()>>>,
-    pub trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+    pub trigger_shutdown_tx: watch::Sender<bool>,
     pub trigger_shutdown_rx: watch::Receiver<bool>,
 }
 

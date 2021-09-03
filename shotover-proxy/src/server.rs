@@ -64,7 +64,7 @@ pub struct TcpCodecListener<C: Codec> {
     /// handle. When a graceful shutdown is initiated, a `true` value is sent via
     /// the watch::Sender. Each active connection receives it, reaches a
     /// safe terminal state, and completes the task.
-    pub trigger_shutdown_tx: Arc<watch::Sender<bool>>,
+    pub trigger_shutdown_rx: watch::Receiver<bool>,
 
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
@@ -174,7 +174,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 limit_connections: self.limit_connections.clone(),
 
                 // Receive shutdown notifications.
-                shutdown: Shutdown::new(self.trigger_shutdown_tx.subscribe()),
+                shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
                 // Notifies the receiver half once all clones are
                 // dropped.
