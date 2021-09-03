@@ -623,7 +623,9 @@ async fn test_tls() {
         private_key_path: "examples/redis-tls/tls_keys/redis.key".into(),
     };
 
-    let mut connection = shotover_manager.async_tls_redis_connection(6379, tls_config).await;
+    let mut connection = shotover_manager
+        .async_tls_redis_connection(6379, tls_config)
+        .await;
 
     redis::cmd("SET")
         .arg("key1")

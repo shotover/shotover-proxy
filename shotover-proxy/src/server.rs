@@ -8,15 +8,15 @@ use metrics::gauge;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 // TODO: Replace with trait_alias (RFC#1733).
 pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
@@ -293,7 +293,18 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(async move {
         while let Some(message) = reader.next().await {
-            in_tx.send(message.unwrap()).unwrap();
+            match message {
+                Ok(message) => {
+                    if let Err(error) = in_tx.send(message) {
+                        warn!("failed to send message: {}", error);
+                        return;
+                    }
+                }
+                Err(error) => {
+                    warn!("failed to decode message: {}", error);
+                    return;
+                }
+            }
         }
     });
 
