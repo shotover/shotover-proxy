@@ -106,12 +106,13 @@ impl BufferedChain {
 }
 
 impl TransformChain {
+    #![allow(clippy::redundant_clone)]
     pub fn into_buffered_chain(self, buffer_size: usize) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
         // If this is not a test, this should get removed by the compiler
         let count_outer: Arc<Mutex<usize>> = Arc::new(Mutex::new(0_usize));
-        let count = count_outer.clone();
+        let count = count_outer.clone(); // allow redundant clone
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
         let _jh = tokio::spawn(async move {

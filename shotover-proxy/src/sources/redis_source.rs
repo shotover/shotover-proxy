@@ -107,7 +107,7 @@ impl RedisSource {
         RedisSource {
             name,
             join_handle,
-            listen_addr: listen_addr.clone(),
+            listen_addr,
         }
     }
 }

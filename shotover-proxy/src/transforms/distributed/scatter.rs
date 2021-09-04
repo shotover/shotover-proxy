@@ -99,15 +99,11 @@ impl Transform for Scatter {
                     for res in &mut results {
                         if let Some(m) = res.messages.pop() {
                             if let MessageDetails::Response(QueryResponse {
-                                matching_query: _,
-                                result,
-                                error: _,
-                                response_meta: _,
+                                result: Some(res),
+                                ..
                             }) = &m.details
                             {
-                                if let Some(res) = result {
-                                    collated_results.push(res.clone());
-                                }
+                                collated_results.push(res.clone());
                             }
                         }
                     }

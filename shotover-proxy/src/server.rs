@@ -321,7 +321,7 @@ impl<C: Codec + 'static> Handler<C> {
         });
 
         tokio::spawn(async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
             let r = rx_stream.forward(writer).await;
             debug!("Stream ended {:?}", r);
         });

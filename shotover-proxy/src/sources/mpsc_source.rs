@@ -43,7 +43,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
                 &self.topic_name,
                 Shutdown::new(trigger_shutdown_on_drop_rx.subscribe()),
                 shutdown_complete_tx,
-                behavior.clone(),
+                behavior,
             ))])
         } else {
             Err(anyhow!(
@@ -71,8 +71,7 @@ impl AsyncMpsc {
         max_behavior: CoalesceBehavior,
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
-        let mut main_chain = chain.clone();
-        let max_behavior = max_behavior.clone();
+        let mut main_chain = chain;
         let mut buffer: Vec<Message> = Vec::new();
 
         let jh = Handle::current().spawn(async move {
