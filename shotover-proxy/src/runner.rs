@@ -120,11 +120,13 @@ impl Runner {
     }
 }
 
+type TracingStateHandle =
+    Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>;
+
 struct TracingState {
     /// Once this is dropped tracing logs are ignored
     guard: WorkerGuard,
-    handle:
-        Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>,
+    handle: TracingStateHandle,
 }
 
 /// Returns a new `EnvFilter` by parsing each directive string, or an error if any directive is invalid.
