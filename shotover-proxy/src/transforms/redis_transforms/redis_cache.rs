@@ -322,7 +322,7 @@ fn build_redis_ast_from_sql(
                 for v in values {
                     commands_buffer.push(ShotoverValue::Bytes(Bytes::from("0")));
                     let mut value = clustering.clone();
-                    if value.is_empty() {
+                    if !value.is_empty() {
                         value.put_u8(b':');
                     }
                     value.extend(v.clone().into_str_bytes());
