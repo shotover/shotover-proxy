@@ -438,9 +438,9 @@ impl From<&Frame> for Value {
     }
 }
 
-impl Into<Frame> for Value {
-    fn into(self) -> Frame {
-        match self {
+impl From<Value> for Frame {
+    fn from(value: Value) -> Frame {
+        match value {
             Value::NULL => Frame::Null,
             Value::None => unimplemented!(),
             Value::Bytes(b) => Frame::BulkString(b),
@@ -545,9 +545,9 @@ impl Value {
     }
 }
 
-impl Into<cassandra_proto::types::value::Bytes> for Value {
-    fn into(self) -> cassandra_proto::types::value::Bytes {
-        match self {
+impl From<Value> for cassandra_proto::types::value::Bytes {
+    fn from(value: Value) -> cassandra_proto::types::value::Bytes {
+        match value {
             Value::NULL => (-1).into(),
             Value::None => cassandra_proto::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_proto::types::value::Bytes::new(b.to_vec()),
