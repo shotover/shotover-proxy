@@ -33,7 +33,7 @@ pub struct ConnectionPool<C: Codec> {
 impl<C: Codec + 'static> ConnectionPool<C> {
     pub fn new(hosts: Vec<String>, codec: C) -> Self {
         ConnectionPool {
-            host_set: Arc::new(Mutex::new(hosts.into_iter().collect::<HashSet<_>>())),
+            host_set: Arc::new(Mutex::new(hosts.into_iter().collect())),
             queue_map: Arc::new(Mutex::new(HashMap::new())),
             codec,
             auth_func: |_, _| Ok(()),
@@ -46,7 +46,7 @@ impl<C: Codec + 'static> ConnectionPool<C> {
         auth_func: fn(&ConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
     ) -> Self {
         ConnectionPool {
-            host_set: Arc::new(Mutex::new(hosts.into_iter().collect::<HashSet<_>>())),
+            host_set: Arc::new(Mutex::new(hosts.into_iter().collect())),
             queue_map: Arc::new(Mutex::new(HashMap::new())),
             codec,
             auth_func,

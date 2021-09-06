@@ -6,10 +6,8 @@ use futures::TryFutureExt;
 
 use itertools::Itertools;
 use metrics::{counter, histogram};
-use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
-use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
@@ -35,7 +33,7 @@ impl Clone for TransformChain {
 pub struct BufferedChain {
     send_handle: Sender<ChannelMessage>,
     #[cfg(test)]
-    pub count: Arc<Mutex<usize>>,
+    pub count: std::sync::Arc<tokio::sync::Mutex<usize>>,
 }
 
 impl BufferedChain {
@@ -106,13 +104,13 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    #![allow(clippy::redundant_clone)]
     pub fn into_buffered_chain(self, buffer_size: usize) -> BufferedChain {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
 
-        // If this is not a test, this should get removed by the compiler
-        let count_outer: Arc<Mutex<usize>> = Arc::new(Mutex::new(0_usize));
-        let count = count_outer.clone(); // allow redundant clone
+        #[cfg(test)]
+        let count = std::sync::Arc::new(tokio::sync::Mutex::new(0_usize));
+        #[cfg(test)]
+        let count_clone = count.clone();
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
         let _jh = tokio::spawn(async move {
@@ -124,7 +122,9 @@ impl TransformChain {
             }) = rx.recv().await
             {
                 let name = chain.name.clone();
-                if cfg!(test) {
+
+                #[cfg(test)]
+                {
                     let mut count = count.lock().await;
                     *count += 1;
                 }
@@ -159,7 +159,7 @@ impl TransformChain {
         BufferedChain {
             send_handle: tx,
             #[cfg(test)]
-            count: count_outer,
+            count: count_clone,
         }
     }
 
