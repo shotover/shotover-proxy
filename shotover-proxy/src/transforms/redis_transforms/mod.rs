@@ -18,8 +18,8 @@ pub enum RedisError {
     #[error("username or password is incorrect")]
     BadCredentials,
 
-    #[error("unknown error: {0}")]
-    Unknown(String),
+    #[error("{0}")]
+    Other(String),
 }
 
 impl RedisError {
@@ -28,7 +28,7 @@ impl RedisError {
             Some("NOAUTH") => RedisError::NotAuthenticated,
             Some("NOPERM") => RedisError::NotAuthorized,
             Some("WRONGPASS") => RedisError::BadCredentials,
-            _ => RedisError::Unknown(error.to_string()),
+            _ => RedisError::Other(error.to_string()),
         }
     }
 }

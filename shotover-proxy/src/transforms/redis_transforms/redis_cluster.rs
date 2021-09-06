@@ -438,6 +438,9 @@ impl RedisCluster {
             Err(TransformError::Upstream(RedisError::NotAuthorized)) => {
                 send_error_response(one_tx, "NOPERM upstream user lacks required permission")?;
             }
+            Err(TransformError::Upstream(e)) => {
+                send_error_response(one_tx, e.to_string().as_str())?;
+            }
             Err(e) => {
                 warn!("failed to build authenticated connections: {:?}", e);
                 send_error_response(one_tx, "ERR could not connect to upstream with auth")?;
@@ -796,7 +799,7 @@ impl Transform for RedisCluster {
                 Ok(response) => response,
                 Err(e) => {
                     let (one_tx, one_rx) = immediate_responder();
-                    send_error_response(one_tx, &format!("ERR transform error: {}", e))?;
+                    send_error_response(one_tx, &format!("ERR {}", e))?;
                     Box::pin(one_rx)
                 }
             });
@@ -897,24 +900,18 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
             Frame::Array(args)
         };
 
-        let return_chan_rx = send_frame_request(sender, auth_frame)?;
+        let return_rx = send_frame_request(sender, auth_frame)?;
 
-        match receive_frame_response(return_chan_rx).await? {
-            Frame::SimpleString(s) => {
-                if s != "OK" {
-                    return Err(TransformError::Protocol("bad response value".to_string()));
-                }
+        match receive_frame_response(return_rx).await? {
+            Frame::SimpleString(s) if s == "OK" => {
                 trace!("authenticated upstream as user: {:?}", token.username);
                 Ok(())
             }
-            Frame::Error(e) => {
-                if let RedisError::BadCredentials = RedisError::from_message(&e) {
-                    return Err(TransformError::Upstream(RedisError::BadCredentials));
-                } else {
-                    return Err(TransformError::Protocol(format!("bad auth error: {}", e)));
-                }
+            Frame::SimpleString(_) => {
+                Err(TransformError::Protocol("bad response value".to_string()))
             }
-            _ => return Err(TransformError::Protocol("bad response type".to_string())),
+            Frame::Error(e) => Err(TransformError::Upstream(RedisError::from_message(&e))),
+            _ => Err(TransformError::Protocol("bad response type".to_string())),
         }
     }
 }
