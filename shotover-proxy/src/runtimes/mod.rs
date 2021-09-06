@@ -99,7 +99,7 @@ pub trait ScriptDefinition<A, R> {
     type Args;
     type Return;
 
-    fn call<'de>(&self, lua: &'de Lua, args: Self::Args) -> Result<Self::Return>
+    fn call(&self, lua: &Lua, args: Self::Args) -> Result<Self::Return>
     where
         A: serde::Serialize + Clone,
         R: serde::de::DeserializeOwned + Clone;
@@ -176,16 +176,16 @@ impl<A, R> ScriptDefinition<A, R> for ScriptHolder<A, R> {
                     let func: Func<(i32, u32), i32> =
                         wasm_inst.exports.get(function_name.as_str())?;
                     let start = func
-                        .call(5 as i32, len as u32)
+                        .call(5_i32, len as u32)
                         .map_err(|e| anyhow!("wasm error: {}", e))?;
                     let new_view = mmemory.view::<u8>();
                     let mut new_len_bytes = [0u8; 4];
 
-                    for i in 0..4 {
+                    for (i, item) in new_len_bytes.iter_mut().enumerate() {
                         // attempt to get i+1 from the memory view (1,2,3,4)
                         // If we can, return the value it contains, otherwise
                         // default back to 0
-                        new_len_bytes[i] = new_view.get(i + 1).map(|c| c.get()).unwrap_or(0);
+                        *item = new_view.get(i + 1).map(|c| c.get()).unwrap_or(0);
                     }
 
                     let new_len = u32::from_ne_bytes(new_len_bytes) as usize;

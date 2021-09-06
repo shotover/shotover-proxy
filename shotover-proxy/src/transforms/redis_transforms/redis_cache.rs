@@ -50,7 +50,7 @@ impl TransformsFromConfig for RedisConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisCache(SimpleRedisCache {
             name: "SimpleRedisCache",
-            cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, &topics)
+            cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, topics)
                 .await?,
             caching_schema: self.caching_schema.clone(),
         }))
@@ -83,12 +83,12 @@ impl SimpleRedisCache {
                     let table = self
                         .caching_schema
                         .get(&table_lookup)
-                        .ok_or(anyhow!("not a caching table"))?;
+                        .ok_or_else(|| anyhow!("not a caching table"))?;
 
                     let ast_ref = qm
                         .ast
                         .as_ref()
-                        .ok_or(anyhow!("No AST to convert query to cache query"))?
+                        .ok_or_else(|| anyhow!("No AST to convert query to cache query"))?
                         .clone();
 
                     qm.ast.replace(build_redis_ast_from_sql(
@@ -141,19 +141,19 @@ fn append_seperator(command_builder: &mut Vec<u8>) {
 
     // TODO this is super fragile and depends on hidden array values to signal whether we should build the query a certain way
     if min_size == 1 {
-        if *prev_char == '-' as u8 {
-            *prev_char = '[' as u8
-        } else if *prev_char == '+' as u8 {
-            *prev_char = ']' as u8
+        if *prev_char == b'-' {
+            *prev_char = b'['
+        } else if *prev_char == b'+' {
+            *prev_char = b']'
         }
     } else {
-        command_builder.push(':' as u8);
+        command_builder.push(b':');
     }
 }
 
 fn build_redis_commands(
     expr: &Expr,
-    pks: &Vec<String>,
+    pks: &[String],
     min: &mut Vec<u8>,
     max: &mut Vec<u8>,
 ) -> Result<()> {
@@ -162,7 +162,7 @@ fn build_redis_commands(
             // first check if this is a related to PK
             if let Expr::Identifier(i) = left.borrow() {
                 let id_string = i.to_string();
-                if pks.iter().find(|&v| v == &id_string).is_some() {
+                if pks.iter().any(|v| v == &id_string) {
                     //Ignore this as we build the pk constraint elsewhere
                     return Ok(());
                 }
@@ -261,10 +261,8 @@ fn build_redis_ast_from_sql(
                 SetExpr::Select(ref mut s) if s.selection.is_some() => {
                     let expr = s.selection.as_mut().unwrap();
                     let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
-                    let mut min: Vec<u8> = Vec::new();
-                    min.push('-' as u8);
-                    let mut max: Vec<u8> = Vec::new();
-                    max.push('+' as u8);
+                    let mut min: Vec<u8> = vec![b'-'];
+                    let mut max: Vec<u8> = vec![b'+'];
 
                     build_redis_commands(expr, &pk_schema.partition_key, &mut min, &mut max)?;
 
@@ -285,9 +283,8 @@ fn build_redis_ast_from_sql(
                 _ => Err(anyhow!("Couldn't build query")),
             },
             Statement::Insert { .. } | Statement::Update { .. } => {
-                let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
-
-                commands_buffer.push(ShotoverValue::Bytes("ZADD".into()));
+                let mut commands_buffer: Vec<ShotoverValue> =
+                    vec![ShotoverValue::Bytes("ZADD".into())];
 
                 let pk = pk_schema
                     .partition_key
@@ -310,7 +307,7 @@ fn build_redis_ast_from_sql(
 
                 let values = query_values
                     .as_ref()
-                    .ok_or(anyhow!("Couldn't build query"))?
+                    .ok_or_else(|| anyhow!("Couldn't build query"))?
                     .iter()
                     .filter_map(|(p, v)| {
                         if !pk_schema.partition_key.contains(p) && !pk_schema.range_key.contains(p)
@@ -325,8 +322,8 @@ fn build_redis_ast_from_sql(
                 for v in values {
                     commands_buffer.push(ShotoverValue::Bytes(Bytes::from("0")));
                     let mut value = clustering.clone();
-                    if value.len() != 0 {
-                        value.put_u8(':' as u8);
+                    if !value.is_empty() {
+                        value.put_u8(b':');
                     }
                     value.extend(v.clone().into_str_bytes());
                     commands_buffer.push(ShotoverValue::Bytes(value.freeze()));

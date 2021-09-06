@@ -57,6 +57,7 @@ pub struct CassandraSource {
 }
 
 impl CassandraSource {
+    #![allow(clippy::too_many_arguments)]
     pub async fn new(
         chain: &TransformChain,
         listen_addr: String,

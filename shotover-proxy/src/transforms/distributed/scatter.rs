@@ -17,7 +17,6 @@ use mlua::Lua;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::iter::FromIterator;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -76,16 +75,18 @@ impl Transform for Scatter {
         } else if chosen_route.is_empty() {
             ChainResponse::Err(anyhow!("no routes found"))
         } else {
-            let mut fu = FuturesUnordered::from_iter(self.route_map.iter_mut().filter_map(
-                |(name, chain)| {
+            let mut fu: FuturesUnordered<_> = self
+                .route_map
+                .iter_mut()
+                .filter_map(|(name, chain)| {
                     if let Some(_f) = chosen_route.iter().find(|p| *p == name) {
                         let wrapper = message_wrapper.clone();
                         Some(chain.process_request(wrapper, name.clone()))
                     } else {
                         None
                     }
-                },
-            ));
+                })
+                .collect();
 
             let mut results: Vec<Messages> = Vec::new();
             while let Some(Ok(messages)) = fu.next().await {
@@ -99,15 +100,11 @@ impl Transform for Scatter {
                     for res in &mut results {
                         if let Some(m) = res.messages.pop() {
                             if let MessageDetails::Response(QueryResponse {
-                                matching_query: _,
-                                result,
-                                error: _,
-                                response_meta: _,
+                                result: Some(res),
+                                ..
                             }) = &m.details
                             {
-                                if let Some(res) = result {
-                                    collated_results.push(res.clone());
-                                }
+                                collated_results.push(res.clone());
                             }
                         }
                     }

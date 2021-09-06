@@ -98,7 +98,7 @@ impl Topology {
         for (key, value) in self.chain_config.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, &topics).await?,
+                build_chain_from_config(key, &value, topics).await?,
             );
         }
         Ok(temp)

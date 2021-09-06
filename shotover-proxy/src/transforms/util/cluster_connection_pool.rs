@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -34,7 +33,7 @@ pub struct ConnectionPool<C: Codec> {
 impl<C: Codec + 'static> ConnectionPool<C> {
     pub fn new(hosts: Vec<String>, codec: C) -> Self {
         ConnectionPool {
-            host_set: Arc::new(Mutex::new(HashSet::from_iter(hosts.into_iter()))),
+            host_set: Arc::new(Mutex::new(hosts.into_iter().collect())),
             queue_map: Arc::new(Mutex::new(HashMap::new())),
             codec,
             auth_func: |_, _| Ok(()),
@@ -47,7 +46,7 @@ impl<C: Codec + 'static> ConnectionPool<C> {
         auth_func: fn(&ConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
     ) -> Self {
         ConnectionPool {
-            host_set: Arc::new(Mutex::new(HashSet::from_iter(hosts.into_iter()))),
+            host_set: Arc::new(Mutex::new(hosts.into_iter().collect())),
             queue_map: Arc::new(Mutex::new(HashMap::new())),
             codec,
             auth_func,
@@ -59,23 +58,23 @@ impl<C: Codec + 'static> ConnectionPool<C> {
     /// updating the connection map. Errors are returned when a connection can't be established.
     pub async fn get_connections(
         &self,
-        host: &String,
+        host: &str,
         connection_count: i32,
     ) -> Result<Vec<UnboundedSender<Request>>> {
         let mut queue_map = self.queue_map.lock().await;
         if let Some(x) = queue_map.get(host) {
             if x.iter().all(|x| !x.is_closed()) {
-                return Ok(x.clone());
+                return Ok(x.to_vec());
             }
         }
-        let connections = self.new_connections(&host, connection_count).await?;
-        queue_map.insert(host.clone(), connections.clone());
+        let connections = self.new_connections(host, connection_count).await?;
+        queue_map.insert(host.to_string(), connections.clone());
         Ok(connections)
     }
 
     pub async fn new_connections(
         &self,
-        host: &String,
+        host: &str,
         connection_count: i32,
     ) -> Result<Vec<UnboundedSender<Request>>>
     where
@@ -87,7 +86,7 @@ impl<C: Codec + 'static> ConnectionPool<C> {
             let stream = TcpStream::connect(host).await?;
             let mut out_tx = spawn_from_stream(&self.codec, stream);
 
-            match (self.auth_func)(&self, &mut out_tx) {
+            match (self.auth_func)(self, &mut out_tx) {
                 Ok(_) => {
                     connections.push(out_tx);
                 }
@@ -97,7 +96,7 @@ impl<C: Codec + 'static> ConnectionPool<C> {
             }
         }
 
-        if connections.len() == 0 {
+        if connections.is_empty() {
             Err(anyhow!("Couldn't connect to upstream TCP service"))
         } else {
             Ok(connections)
