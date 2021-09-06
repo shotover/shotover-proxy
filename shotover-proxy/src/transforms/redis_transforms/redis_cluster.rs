@@ -169,7 +169,7 @@ impl RedisCluster {
         // TODO: Eliminate code duplication for master and follower.
 
         debug!("building master connections");
-        for (_, node) in &self.slots.masters {
+        for node in self.slots.masters.values() {
             match self
                 .connection_pool
                 .get_connections(node, &self.token, self.connection_count)
@@ -186,7 +186,7 @@ impl RedisCluster {
         }
 
         debug!("building replica connections");
-        for (_, node) in &self.slots.replicas {
+        for node in self.slots.replicas.values() {
             match self
                 .connection_pool
                 .get_connections(node, &self.token, self.connection_count)
@@ -295,7 +295,7 @@ impl RedisCluster {
     #[inline]
     async fn choose_and_send(
         &mut self,
-        host: &String,
+        host: &str,
         message: Message,
     ) -> Result<oneshot::Receiver<(Message, ChainResponse)>> {
         let (one_tx, one_rx) = oneshot::channel::<Response>();
@@ -308,8 +308,14 @@ impl RedisCluster {
                 let bidx = candidates.index(1);
 
                 // TODO: Actually update or remove these "load balancing" scores.
-                let aload = *self.load_scores.entry((host.clone(), aidx)).or_insert(0);
-                let bload = *self.load_scores.entry((host.clone(), bidx)).or_insert(0);
+                let aload = *self
+                    .load_scores
+                    .entry((host.to_string(), aidx))
+                    .or_insert(0);
+                let bload = *self
+                    .load_scores
+                    .entry((host.to_string(), bidx))
+                    .or_insert(0);
 
                 channels.get_mut(if aload <= bload { aidx } else { bidx })
             }
@@ -369,8 +375,8 @@ impl RedisCluster {
     }
 
     #[inline(always)]
-    async fn get_channels(&mut self, command: &Vec<Frame>) -> Result<Result<Vec<String>, Command>> {
-        Ok(match RoutingInfo::for_command_frame(&command)? {
+    async fn get_channels(&mut self, command: &[Frame]) -> Result<Result<Vec<String>, Command>> {
+        Ok(match RoutingInfo::for_command_frame(command)? {
             Some(RoutingInfo::Slot(slot)) => {
                 Ok(
                     if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
@@ -381,10 +387,8 @@ impl RedisCluster {
                     },
                 )
             }
-            Some(RoutingInfo::AllNodes) => Ok(Vec::from_iter(self.slots.nodes.iter().cloned())),
-            Some(RoutingInfo::AllMasters) => {
-                Ok(Vec::from_iter(self.slots.masters.values().cloned()))
-            }
+            Some(RoutingInfo::AllNodes) => Ok(self.slots.nodes.iter().cloned().collect()),
+            Some(RoutingInfo::AllMasters) => Ok(self.slots.masters.values().cloned().collect()),
             Some(RoutingInfo::Random) => Ok(self
                 .slots
                 .masters
@@ -559,7 +563,7 @@ impl RoutingInfo {
     #[inline(always)]
     pub fn for_key(key: &Frame) -> Option<RoutingInfo> {
         if let Frame::BulkString(key) = key {
-            let key = get_hashtag(&key).unwrap_or(&key);
+            let key = get_hashtag(key).unwrap_or(&key);
             Some(RoutingInfo::Slot(
                 crc16::State::<crc16::XMODEM>::calculate(key) % SLOT_SIZE as u16,
             ))
@@ -600,30 +604,30 @@ fn build_slot_to_server(
     Ok(())
 }
 
-fn parse_slots(results: &Vec<Frame>) -> Result<SlotMap> {
+fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
     let mut master_entries: Vec<(String, u16, u16)> = vec![];
     let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
-    for result in results.into_iter() {
+    for result in results.iter() {
         match result {
             Frame::Array(result) => {
                 let mut start: u16 = 0;
                 let mut end: u16 = 0;
 
-                for (index, item) in result.into_iter().enumerate() {
+                for (index, item) in result.iter().enumerate() {
                     match (index, item) {
                         (0, Frame::Integer(i)) => start = *i as u16,
                         (1, Frame::Integer(i)) => end = *i as u16,
                         (2, Frame::Array(master)) => {
                             if let Err(e) =
-                                build_slot_to_server(&master, &mut master_entries, start, end)
+                                build_slot_to_server(master, &mut master_entries, start, end)
                             {
                                 bail!("Failed to decode master slots: {}", e,);
                             }
                         }
                         (_, Frame::Array(replica)) => {
                             if let Err(e) =
-                                build_slot_to_server(&replica, &mut replica_entries, start, end)
+                                build_slot_to_server(replica, &mut replica_entries, start, end)
                             {
                                 bail!("Failed to decode replica slots: {}", e,);
                             }

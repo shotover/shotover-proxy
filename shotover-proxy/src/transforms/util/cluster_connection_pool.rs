@@ -132,7 +132,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         let mut errors = Vec::new();
 
         for i in 0..connection_count {
-            match self.new_connection(address, &token).await {
+            match self.new_connection(address, token).await {
                 Ok(connection) => {
                     connections.push(connection);
                 }
