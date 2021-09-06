@@ -371,7 +371,8 @@ impl RedisCluster {
             }
             self.channels.remove(host);
         }
-        return Ok(one_rx);
+
+        Ok(one_rx)
     }
 
     #[inline(always)]
@@ -395,8 +396,7 @@ impl RedisCluster {
                 .values()
                 .next()
                 .map(|key| vec![key.clone()])
-                .unwrap_or(vec![])
-                .clone()),
+                .unwrap_or_default()),
             Some(RoutingInfo::Other(name)) => Err(name),
             None => Ok(vec![]),
         })
@@ -777,13 +777,12 @@ impl Transform for RedisCluster {
         if self.rebuild_connections {
             match self.rebuild_connections().await {
                 Ok(()) => self.rebuild_connections = false,
-                Err(e) => match e {
-                    TransformError::Upstream(RedisError::NotAuthenticated) => {
+                Err(e) => {
+                    if let TransformError::Upstream(RedisError::NotAuthenticated) = e {
                         self.connection_error = Some("NOAUTH Authentication required (cached)");
                         self.rebuild_connections = false;
                     }
-                    _ => (),
-                },
+                }
             }
         } else if self.rebuild_slots {
             self.rebuild_slot_map().await?;
@@ -886,9 +885,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
         token: &UsernamePasswordToken,
     ) -> Result<(), TransformError> {
         let auth_frame = {
-            let mut args = Vec::new();
-
-            args.push(Frame::BulkString(Bytes::from("AUTH")));
+            let mut args = vec![Frame::BulkString(Bytes::from("AUTH"))];
 
             // Support non-ACL / username-less.
             if let Some(username) = &token.username {
