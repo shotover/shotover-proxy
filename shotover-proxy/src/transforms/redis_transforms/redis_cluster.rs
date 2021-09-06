@@ -312,7 +312,7 @@ impl RedisCluster {
     }
 
     #[inline(always)]
-    async fn get_channels(&mut self, command: &Vec<Frame>) -> Result<Vec<String>> {
+    async fn get_channels(&mut self, command: &[Frame]) -> Result<Vec<String>> {
         Ok(match RoutingInfo::for_command_frame(command)? {
             Some(RoutingInfo::Slot(slot)) => {
                 if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
@@ -487,7 +487,7 @@ fn build_slot_to_server(
     Ok(())
 }
 
-fn parse_slots(results: &Vec<Frame>) -> Result<SlotMap> {
+fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
     let mut master_entries: Vec<(String, u16, u16)> = vec![];
     let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
