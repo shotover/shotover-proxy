@@ -563,7 +563,7 @@ impl RoutingInfo {
     #[inline(always)]
     pub fn for_key(key: &Frame) -> Option<RoutingInfo> {
         if let Frame::BulkString(key) = key {
-            let key = get_hashtag(key).unwrap_or(&key);
+            let key = get_hashtag(key).unwrap_or(key);
             Some(RoutingInfo::Slot(
                 crc16::State::<crc16::XMODEM>::calculate(key) % SLOT_SIZE as u16,
             ))

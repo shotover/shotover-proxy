@@ -118,7 +118,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         // IDEA: Maintain weak references so the pool can track active count including disowned?
         lane.insert(address, connections.clone());
 
-        return Ok(connections);
+        Ok(connections)
     }
 
     /// Create multiple connections not owned by the pool.
