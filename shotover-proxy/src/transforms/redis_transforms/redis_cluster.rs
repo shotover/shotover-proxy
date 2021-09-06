@@ -19,6 +19,7 @@ use tokio::time::timeout;
 use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
+use crate::concurrency::FuturesOrdered;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
@@ -27,8 +28,8 @@ use crate::protocols::RawFrame;
 use crate::transforms::redis_transforms::{RedisError, TransformError};
 use crate::transforms::util::cluster_connection_pool::{ConnectionPool, NoopAuthenticator};
 use crate::transforms::util::{Request, Response};
+use crate::transforms::ResponseFuture;
 use crate::transforms::CONTEXT_CHAIN_NAME;
-use crate::transforms::{ResponseFuture, ResponseFuturesOrdered};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use crate::util::Fmt;
 
@@ -662,7 +663,7 @@ impl Transform for RedisCluster {
             self.rebuild_slots = false;
         }
 
-        let mut responses = ResponseFuturesOrdered::new();
+        let mut responses = FuturesOrdered::new();
 
         for message in message_wrapper.message {
             responses.push(match self.dispatch_message(message).await {
