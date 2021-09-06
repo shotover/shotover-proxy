@@ -479,7 +479,7 @@ impl RedisCodec {
         } else {
             Message::new_query(
                 QueryMessage {
-                    query_string: unsafe { String::from_utf8_unchecked(bulkstring.to_vec()) },
+                    query_string: String::from_utf8_lossy(bulkstring.as_ref()).to_string(),
                     namespace: vec![],
                     primary_key: Default::default(),
                     query_values: None,
