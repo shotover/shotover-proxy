@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -30,7 +30,7 @@ impl SourcesFromConfig for CassandraConfig {
         &self,
         chain: &TransformChain,
         _topics: &mut TopicHolder,
-        trigger_shutdown_tx: broadcast::Sender<()>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Cassandra(
@@ -38,7 +38,7 @@ impl SourcesFromConfig for CassandraConfig {
                 chain,
                 self.listen_addr.clone(),
                 self.cassandra_ks.clone(),
-                trigger_shutdown_tx,
+                trigger_shutdown_rx,
                 shutdown_complete_tx,
                 self.bypass_query_processing.unwrap_or(true),
                 self.connection_limit,
@@ -61,7 +61,7 @@ impl CassandraSource {
         chain: &TransformChain,
         listen_addr: String,
         cassandra_ks: HashMap<String, Vec<String>>,
-        trigger_shutdown_tx: broadcast::Sender<()>,
+        mut trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
         bypass: bool,
         connection_limit: Option<usize>,
@@ -71,8 +71,6 @@ impl CassandraSource {
 
         info!("Starting Cassandra source on [{}]", listen_addr);
 
-        let mut trigger_shutdown_rx = trigger_shutdown_tx.subscribe();
-
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
             source_name: name.to_string(),
@@ -81,37 +79,38 @@ impl CassandraSource {
             hard_connection_limit: hard_connection_limit.unwrap_or(false),
             codec: CassandraCodec2::new(cassandra_ks, bypass),
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
-            trigger_shutdown_tx,
+            trigger_shutdown_rx: trigger_shutdown_rx.clone(),
             shutdown_complete_tx,
         };
 
-        let jh = Handle::current().spawn(async move {
-            tokio::select! {
-                res = listener.run() => {
-                    if let Err(err) = res {
-                        error!(cause = %err, "failed to accept");
+        let join_handle = Handle::current().spawn(async move {
+            // Check we didn't receive a shutdown signal before the receiver was created
+            if !*trigger_shutdown_rx.borrow() {
+                tokio::select! {
+                    res = listener.run() => {
+                        if let Err(err) = res {
+                            error!(cause = %err, "failed to accept");
+                        }
                     }
-                }
-                _ = trigger_shutdown_rx.recv() => {
-                    info!("cassandra source shutting down")
+                    _ = trigger_shutdown_rx.changed() => {
+                        info!("cassandra source shutting down")
+                    }
                 }
             }
 
             let TcpCodecListener {
-                trigger_shutdown_tx,
                 shutdown_complete_tx,
                 ..
             } = listener;
 
             drop(shutdown_complete_tx);
-            drop(trigger_shutdown_tx);
 
             Ok(())
         });
 
         CassandraSource {
             name,
-            join_handle: jh,
+            join_handle,
             listen_addr,
         }
     }

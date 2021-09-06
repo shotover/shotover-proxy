@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tracing::info;
 use tracing::warn;
@@ -29,7 +29,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        trigger_shutdown_on_drop_rx: broadcast::Sender<()>,
+        trigger_shutdown_on_drop_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         if let Some(rx) = topics.get_rx(&self.topic_name) {
@@ -41,7 +41,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
                 chain.clone(),
                 rx,
                 &self.topic_name,
-                Shutdown::new(trigger_shutdown_on_drop_rx.subscribe()),
+                Shutdown::new(trigger_shutdown_on_drop_rx),
                 shutdown_complete_tx,
                 behavior.clone(),
             ))])
