@@ -73,7 +73,7 @@ pub struct ParallelMapConfig {
 #[async_trait]
 impl TransformsFromConfig for ParallelMapConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let chain = build_chain_from_config(self.name.clone(), &self.chain, &topics).await?;
+        let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
             name: "SequentialMap",

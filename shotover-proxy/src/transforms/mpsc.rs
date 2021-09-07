@@ -53,7 +53,7 @@ impl Clone for Buffer {
 #[async_trait]
 impl TransformsFromConfig for BufferConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let chain = build_chain_from_config("forward".to_string(), &self.chain, &topics).await?;
+        let chain = build_chain_from_config("forward".to_string(), &self.chain, topics).await?;
         let buffer = self.buffer_size.unwrap_or(5);
         Ok(Transforms::MPSCForwarder(Buffer {
             name: "forward",

@@ -73,7 +73,7 @@ impl<C: Codec + 'static> OwnedUnorderedConnectionPool<C> {
             tokio::spawn(tx_process(write, out_rx, return_tx, self.codec.clone()));
 
             tokio::spawn(rx_process(read, return_rx, self.codec.clone()));
-            match (self.auth_func)(&self, &mut out_tx) {
+            match (self.auth_func)(self, &mut out_tx) {
                 Ok(_) => {
                     connection_pool.push(out_tx);
                 }
@@ -83,7 +83,7 @@ impl<C: Codec + 'static> OwnedUnorderedConnectionPool<C> {
             }
         }
 
-        if connection_pool.len() == 0 {
+        if connection_pool.is_empty() {
             Err(anyhow!("Couldn't connect to upstream TCP service"))
         } else {
             self.connections = connection_pool;

@@ -23,7 +23,6 @@ use crate::transforms::distributed::tunable_consistency_scatter::{
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
-use crate::transforms::lua::LuaFilterTransform;
 use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
@@ -38,9 +37,6 @@ use crate::transforms::redis_transforms::redis_codec_destination::{
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
 use core::fmt::Display;
-use distributed::route::{Route, RouteConfig};
-use distributed::scatter::{Scatter, ScatterConfig};
-use mlua::UserData;
 use tokio::time::Instant;
 
 pub mod cassandra;
@@ -50,7 +46,6 @@ pub mod distributed;
 pub mod filter;
 pub mod kafka_destination;
 pub mod load_balance;
-pub mod lua;
 pub mod mpsc;
 pub mod noop;
 pub mod null;
@@ -73,10 +68,7 @@ pub enum Transforms {
     RedisCache(SimpleRedisCache),
     MPSCTee(Tee),
     MPSCForwarder(Buffer),
-    Route(Route),
-    Scatter(Scatter),
     Null(Null),
-    Lua(LuaFilterTransform),
     Protect(Protect),
     TunableConsistency(TunableConsistency),
     RedisTimeStampTagger(RedisTimestampTagger),
@@ -106,11 +98,8 @@ impl Transforms {
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::MPSCTee(m) => m.transform(message_wrapper).await,
             Transforms::MPSCForwarder(m) => m.transform(message_wrapper).await,
-            Transforms::Route(r) => r.transform(message_wrapper).await,
-            Transforms::Scatter(s) => s.transform(message_wrapper).await,
             Transforms::Printer(p) => p.transform(message_wrapper).await,
             Transforms::Null(n) => n.transform(message_wrapper).await,
-            Transforms::Lua(l) => l.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
             Transforms::RepeatMessage(p) => p.transform(message_wrapper).await,
             Transforms::RandomDelay(p) => p.transform(message_wrapper).await,
@@ -133,11 +122,8 @@ impl Transforms {
             Transforms::RedisCache(r) => r.get_name(),
             Transforms::MPSCTee(m) => m.get_name(),
             Transforms::MPSCForwarder(m) => m.get_name(),
-            Transforms::Route(r) => r.get_name(),
-            Transforms::Scatter(s) => s.get_name(),
             Transforms::Printer(p) => p.get_name(),
             Transforms::Null(n) => n.get_name(),
-            Transforms::Lua(l) => l.get_name(),
             Transforms::Protect(p) => p.get_name(),
             Transforms::TunableConsistency(t) => t.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
@@ -161,11 +147,8 @@ impl Transforms {
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::MPSCTee(a) => a.prep_transform_chain(t).await,
             Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
-            Transforms::Route(a) => a.prep_transform_chain(t).await,
-            Transforms::Scatter(a) => a.prep_transform_chain(t).await,
             Transforms::Printer(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
-            Transforms::Lua(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
             Transforms::TunableConsistency(a) => a.prep_transform_chain(t).await,
             Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
@@ -189,12 +172,11 @@ pub enum TransformsConfig {
     RedisCache(RedisConfig),
     MPSCTee(TeeConfig),
     MPSCForwarder(BufferConfig),
-    Route(RouteConfig),
     ConsistentScatter(TunableConsistencyConfig),
-    Scatter(ScatterConfig),
     RedisCluster(RedisClusterConfig),
     RedisTimestampTagger,
     Printer,
+    Null,
     ParallelMap(ParallelMapConfig),
     PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
@@ -210,14 +192,13 @@ impl TransformsConfig {
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::MPSCTee(t) => t.get_source(topics).await,
             TransformsConfig::MPSCForwarder(f) => f.get_source(topics).await,
-            TransformsConfig::Route(r) => r.get_source(topics).await,
-            TransformsConfig::Scatter(s) => s.get_source(topics).await,
             TransformsConfig::RedisDestination(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
             }
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
+            TransformsConfig::Null => Ok(Transforms::Null(Null::new())),
             TransformsConfig::RedisCluster(r) => r.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
@@ -269,8 +250,6 @@ impl<'a> Clone for Wrapper<'a> {
         }
     }
 }
-
-impl<'a> UserData for Wrapper<'a> {}
 
 impl<'a> Display for Wrapper<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {

@@ -4,9 +4,9 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
 use tokio::signal;
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
@@ -51,7 +51,8 @@ impl Default for ConfigOpts {
 }
 
 pub struct Runner {
-    runtime: Runtime,
+    runtime: Option<Runtime>,
+    runtime_handle: RuntimeHandle,
     topology: Topology,
     config: Config,
     tracing: TracingState,
@@ -62,18 +63,13 @@ impl Runner {
         let config = Config::from_file(params.config_file.clone())?;
         let topology = Topology::from_file(params.topology_file.clone())?;
 
-        let runtime = runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("RPProxy-Thread")
-            .thread_stack_size(params.stack_size)
-            .worker_threads(params.core_threads)
-            .build()
-            .unwrap();
-
         let tracing = TracingState::new(config.main_log_level.as_str())?;
+
+        let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);
 
         Ok(Runner {
             runtime,
+            runtime_handle,
             topology,
             config,
             tracing,
@@ -87,44 +83,70 @@ impl Runner {
 
         let socket: SocketAddr = self.config.observability_interface.parse()?;
         let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
-        self.runtime.spawn(exporter.async_run());
+
+        self.runtime_handle.spawn(exporter.async_run());
 
         Ok(self)
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {
-        let (trigger_shutdown_tx, _) = broadcast::channel(1);
-        let handle =
-            self.runtime
-                .spawn(run(self.topology, self.config, trigger_shutdown_tx.clone()));
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
+
+        let join_handle =
+            self.runtime_handle
+                .spawn(run(self.topology, self.config, trigger_shutdown_rx));
 
         RunnerSpawned {
+            runtime_handle: self.runtime_handle,
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
             trigger_shutdown_tx,
-            handle,
+            join_handle,
         }
     }
 
     pub fn run_block(self) -> Result<()> {
-        let (trigger_shutdown_tx, _) = broadcast::channel(1);
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
-        let trigger_shutdown_tx_clone = trigger_shutdown_tx.clone();
-        self.runtime.spawn(async move {
+        self.runtime_handle.spawn(async move {
             signal::ctrl_c().await.unwrap();
-            trigger_shutdown_tx_clone.send(()).unwrap();
+            trigger_shutdown_tx.send(true).unwrap();
         });
 
-        self.runtime
-            .block_on(run(self.topology, self.config, trigger_shutdown_tx))
+        self.runtime_handle
+            .block_on(run(self.topology, self.config, trigger_shutdown_rx))
+    }
+
+    /// Get handle for an existing runtime or create one
+    fn get_runtime(stack_size: usize, core_threads: usize) -> (RuntimeHandle, Option<Runtime>) {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // Using block_in_place to trigger a panic in case the runtime is set up in single-threaded mode.
+            // Shotover does not function correctly in single threaded mode (currently hangs)
+            // and block_in_place gives an error message explaining to setup the runtime in multi-threaded mode.
+            tokio::task::block_in_place(|| {});
+
+            (handle, None)
+        } else {
+            let runtime = runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("Shotover-Proxy-Thread")
+                .thread_stack_size(stack_size)
+                .worker_threads(core_threads)
+                .build()
+                .unwrap();
+
+            (runtime.handle().clone(), Some(runtime))
+        }
     }
 }
+
+type TracingStateHandle =
+    Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>;
 
 struct TracingState {
     /// Once this is dropped tracing logs are ignored
     guard: WorkerGuard,
-    handle:
-        Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>,
+    handle: TracingStateHandle,
 }
 
 /// Returns a new `EnvFilter` by parsing each directive string, or an error if any directive is invalid.
@@ -172,16 +194,17 @@ impl TracingState {
 }
 
 pub struct RunnerSpawned {
-    pub runtime: Runtime,
-    pub handle: JoinHandle<Result<()>>,
+    pub runtime: Option<Runtime>,
+    pub runtime_handle: RuntimeHandle,
+    pub join_handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
-    pub trigger_shutdown_tx: broadcast::Sender<()>,
+    pub trigger_shutdown_tx: watch::Sender<bool>,
 }
 
 pub async fn run(
     topology: Topology,
     config: Config,
-    trigger_shutdown_tx: broadcast::Sender<()>,
+    trigger_shutdown_tx: watch::Receiver<bool>,
 ) -> Result<()> {
     info!("Starting Shotover {}", crate_version!());
     info!(configuration = ?config);

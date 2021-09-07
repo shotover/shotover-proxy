@@ -2,9 +2,9 @@ use crate::helpers::ShotoverManager;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
-fn test_metrics() {
+async fn test_metrics() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
 
     let shotover_manager =
@@ -22,10 +22,11 @@ fn test_metrics() {
         .arg(43)
         .execute(&mut connection);
 
-    let body = reqwest::blocking::get("http://localhost:9001/metrics")
-        .unwrap()
-        .text()
-        .unwrap();
+    let client = hyper::Client::new();
+    let uri = "http://localhost:9001/metrics".parse().unwrap();
+    let res = client.get(uri).await.unwrap();
+    let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
 
     // If the body contains these substrings, we can assume metrics are working
     assert!(body.contains("# TYPE shotover_transform_total counter"));
