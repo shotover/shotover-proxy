@@ -1,6 +1,4 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt;
-use std::iter::*;
 
 use anyhow::{anyhow, bail, ensure, Result};
 use async_trait::async_trait;
@@ -31,15 +29,10 @@ use crate::transforms::util::{Request, Response};
 use crate::transforms::ResponseFuture;
 use crate::transforms::CONTEXT_CHAIN_NAME;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
-use crate::util::Fmt;
 
 const SLOT_SIZE: usize = 16384;
 
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
-
-fn fmt_channels(channels: &ChannelMap, fmt: &mut fmt::Formatter) -> fmt::Result {
-    write!(fmt, "{:?}", channels.keys())
-}
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisClusterConfig {
@@ -83,7 +76,6 @@ impl TransformsFromConfig for RedisClusterConfig {
 pub struct RedisCluster {
     name: &'static str,
     pub slots: SlotMap,
-    #[derivative(Debug(format_with = "fmt_channels"))]
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
@@ -243,13 +235,8 @@ impl RedisCluster {
             return Err(TransformError::choose_upstream_or_first(errors).unwrap());
         }
 
+        debug!("Connected to cluster: {:?}", channels.keys());
         self.channels = channels;
-
-        debug!(
-            "Connected to cluster: {:?}",
-            Fmt(|f| fmt_channels(&self.channels, f))
-        );
-
         Ok(())
     }
 
