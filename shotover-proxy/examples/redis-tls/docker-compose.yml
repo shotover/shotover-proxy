@@ -4,6 +4,3 @@ services:
     image: library/redis:5.0.9
     ports:
       - "1111:6379"
-    volumes:
-    - ./redis.conf:/usr/local/etc/redis/redis.conf
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
