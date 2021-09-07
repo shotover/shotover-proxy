@@ -19,12 +19,10 @@ byteorder = "1.3.2"
 clap = "=3.0.0-beta.4"
 clap_derive = "=3.0.0-beta.4"
 derivative = "2.1.1"
-#evmap = {version = "11.0.0-alpha.7"}
 itertools = "0.10.1"
 rand = { version = "0.8.4", features = ["small_rng", "std"]}
 rand_distr = "0.4.1"
 cached = "0.25.0"
-pin-project = "1.0.1"
 pin-project-lite = "0.2"
 
 # Error handling
@@ -43,7 +41,6 @@ metrics = "0.17.0"
 metrics-exporter-prometheus = "0.6.0"
 tracing = { version = "0.1.15", features = ["release_max_level_info"]}
 tracing-subscriber = { version = "0.2.11", features = ["env-filter"]}
-tracing-futures = "0.2.4"
 tracing-log = { version = "0.1.1", features = ["env_logger"] }
 tracing-appender = "0.1.1"
 hyper = { version = "0.14.2", features = ["server"] }
@@ -56,13 +53,6 @@ cassandra-proto = { git = "https://github.com/benbromhead/cassandra-proto", bran
 rdkafka = { version = "0.26", features = ["cmake-build"] }
 crc16 = { version = "0.4.0"}
 
-#lua
-mlua = { version = "0.4.1", features = ["async","send", "vendored","lua53"] }
-mlua_serde = { version = "0.5", features = ["lua53"] }
-
-#wasm
-wasmer-runtime = "0.17.1"
-
 #Crypto
 sodiumoxide = "0.2.5"
 rusoto_kms = "0.47.0"
@@ -72,7 +62,7 @@ rusoto_signature = "0.47.0"
 criterion = { version = "0.3", features = ["async_tokio", "html_reports"] }
 redis = { version = "0.21.0", features = ["tokio-comp", "cluster"] }
 pcap = "0.8.1"
-pktparse = {version = "0.6.1", features = ["serde"]}
+pktparse = {version = "0.7.0", features = ["serde"]}
 dns-parser = "0.8"
 tls-parser = "0.10.0"
 threadpool = "1.0"

@@ -9,7 +9,6 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
-use mlua::UserData;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -180,12 +179,6 @@ impl Messages {
         }
     }
 }
-
-impl UserData for Messages {}
-
-impl UserData for QueryMessage {}
-impl UserData for QueryResponse {}
-impl UserData for RawMessage {}
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessage {
