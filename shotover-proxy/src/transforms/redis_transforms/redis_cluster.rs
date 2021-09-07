@@ -708,7 +708,7 @@ impl Transform for RedisCluster {
                     self.rebuild_slots = true;
 
                     let one_rx = self
-                        .choose_and_send(&format!("{}:{}", &host, port), original.clone())
+                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
                         .await?;
 
                     responses.prepend(Box::pin(
@@ -719,7 +719,7 @@ impl Transform for RedisCluster {
                     debug!("Got ASK frame {} {} {}", slot, host, port);
 
                     let one_rx = self
-                        .choose_and_send(&format!("{}:{}", &host, port), original.clone())
+                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
                         .await?;
 
                     responses.prepend(Box::pin(
