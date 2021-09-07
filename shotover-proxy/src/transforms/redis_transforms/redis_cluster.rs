@@ -47,15 +47,18 @@ impl TransformsFromConfig for RedisClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         let authenticator = RedisAuthenticator {};
 
+        let connection_pool =
+            ConnectionPool::new_with_auth(RedisCodec::new(true, 3), authenticator);
+
         let mut cluster = RedisCluster {
             name: "RedisCluster",
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
             load_scores: HashMap::new(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            contact_points: self.first_contact_points.clone(),
+            first_contact_points: self.first_contact_points.clone(),
             connection_count: self.connection_count.unwrap_or(1),
-            connection_pool: ConnectionPool::new_with_auth(RedisCodec::new(true, 3), authenticator),
+            connection_pool,
             connection_error: None,
             rebuild_slots: false,
             rebuild_connections: true,
@@ -91,7 +94,7 @@ pub struct RedisCluster {
     connection_error: Option<&'static str>,
     rebuild_slots: bool,
     rebuild_connections: bool,
-    contact_points: Vec<String>,
+    first_contact_points: Vec<String>,
     token: Option<UsernamePasswordToken>,
 }
 
@@ -177,7 +180,7 @@ impl RedisCluster {
             self.slots.nodes.iter().cloned().collect::<Vec<_>>()
         } else {
             // Fallback to initial contact points.
-            self.contact_points.clone()
+            self.first_contact_points.clone()
         }
     }
 
@@ -817,6 +820,7 @@ impl Transform for RedisCluster {
                     self.slots
                         .masters
                         .insert(slot, format!("{}:{}", &host, &port));
+
                     self.rebuild_slots = true;
 
                     let one_rx = self
@@ -841,9 +845,9 @@ impl Transform for RedisCluster {
                 _ => response_buffer.push(response_m),
             }
         }
-        return Ok(Messages {
+        Ok(Messages {
             messages: response_buffer,
-        });
+        })
     }
 
     fn get_name(&self) -> &'static str {
