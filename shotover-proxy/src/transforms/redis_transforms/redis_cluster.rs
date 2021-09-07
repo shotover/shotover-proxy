@@ -318,33 +318,33 @@ impl RedisCluster {
             }
         });
 
-        let channel = match channel {
-            Some(channel) => channel,
-            None => {
-                debug!("connection {} doesn't exist trying to connect", host);
-                if let Ok(result) = timeout(
-                    Duration::from_millis(40),
-                    self.connection_pool
-                        .get_connections(host, &self.token, self.connection_count),
-                )
-                .await
-                {
-                    if let Ok(connections) = result {
-                        debug!("Found {} live connections for {}", connections.len(), host);
-                        self.channels.insert(host.to_string(), connections);
-                        self.channels.get_mut(host).unwrap().get_mut(0).unwrap()
-                    } else {
-                        debug!("failed to connect to {}", host);
-                        self.rebuild_connections = true;
-                        short_circuit(one_tx);
-                        return Ok(one_rx);
-                    }
+        let channel = if let Some(channel) = channel {
+            channel
+        } else {
+            debug!("connection {} doesn't exist trying to connect", host);
+            if let Ok(result) = timeout(
+                Duration::from_millis(40),
+                self.connection_pool
+                    .get_connections(host, &self.token, self.connection_count),
+            )
+            .await
+            {
+                if let Ok(connections) = result {
+                    debug!("Found {} live connections for {}", connections.len(), host);
+                    self.channels.insert(host.to_string(), connections);
+                    self.channels.get_mut(host).unwrap().get_mut(0).unwrap()
                 } else {
-                    debug!("timed out connecting to {}", host);
+                    debug!("failed to connect to {}", host);
                     self.rebuild_connections = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
+            } else {
+                debug!("timed out connecting to {}", host);
+                self.rebuild_connections = true;
+
+                short_circuit(one_tx);
+                return Ok(one_rx);
             }
         };
 
