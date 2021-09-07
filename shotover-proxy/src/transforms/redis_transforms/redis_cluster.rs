@@ -229,6 +229,7 @@ impl RedisCluster {
     }
 
     async fn rebuild_connections(&mut self) -> Result<(), TransformError> {
+        // NOTE: Successful slot rebuild ensures validity of credentials before reusing pool connections.
         self.rebuild_slot_map().await?;
 
         let mut channels = ChannelMap::new();
