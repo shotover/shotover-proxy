@@ -1,11 +1,14 @@
 use crate::message::Messages;
+use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::Result;
 use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
@@ -69,6 +72,8 @@ pub struct TcpCodecListener<C: Codec> {
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
     pub shutdown_complete_tx: mpsc::Sender<()>,
+
+    pub tls: Option<TlsAcceptor>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -179,6 +184,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 // Notifies the receiver half once all clones are
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
+
+                tls: self.tls.clone(),
             };
 
             // Spawn a new task to process the connections. Tokio tasks are like
@@ -266,6 +273,46 @@ pub struct Handler<C: Codec> {
     shutdown: Shutdown,
 
     _shutdown_complete: mpsc::Sender<()>,
+
+    tls: Option<TlsAcceptor>,
+}
+
+fn spawn_read_write_tasks<
+    C: Codec + 'static,
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+>(
+    codec: C,
+    rx: R,
+    tx: W,
+    in_tx: UnboundedSender<Messages>,
+    out_rx: UnboundedReceiver<Messages>,
+) {
+    let mut reader = FramedRead::new(rx, codec.clone());
+    let writer = FramedWrite::new(tx, codec);
+
+    tokio::spawn(async move {
+        while let Some(message) = reader.next().await {
+            match message {
+                Ok(message) => {
+                    if let Err(error) = in_tx.send(message) {
+                        warn!("failed to send message: {}", error);
+                        return;
+                    }
+                }
+                Err(error) => {
+                    warn!("failed to decode message: {}", error);
+                    return;
+                }
+            }
+        }
+    });
+
+    tokio::spawn(async move {
+        let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+        let r = rx_stream.forward(writer).await;
+        debug!("Stream ended {:?}", r);
+    });
 }
 
 impl<C: Codec + 'static> Handler<C> {
@@ -287,33 +334,17 @@ impl<C: Codec + 'static> Handler<C> {
         // new request frame.
         let mut idle_time_seconds: u64 = 1;
 
-        let (in_tx, mut in_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
+        let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Messages>();
+        let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
-        let (rx, tx) = stream.into_split();
-
-        let mut reader = FramedRead::new(rx, self.codec.clone());
-        let writer = FramedWrite::new(tx, self.codec.clone());
-
-        tokio::spawn(async move {
-            while let Some(maybe_message) = reader.next().await {
-                match maybe_message {
-                    Ok(resp_messages) => {
-                        let _ = in_tx.send(resp_messages);
-                    }
-                    Err(e) => {
-                        warn!("Frame error - {:?}", e);
-                        break;
-                    }
-                };
-            }
-        });
-
-        tokio::spawn(async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-            let r = rx_stream.forward(writer).await;
-            debug!("Stream ended {:?}", r);
-        });
+        if let Some(tls) = &self.tls {
+            let tls_stream = tls.accept(stream).await?;
+            let (rx, tx) = tokio::io::split(tls_stream);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+        } else {
+            let (rx, tx) = stream.into_split();
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+        };
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal

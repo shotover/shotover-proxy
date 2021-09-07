@@ -1,7 +1,9 @@
 use anyhow::Result;
 use redis::{Client, Connection};
 use shotover_proxy::runner::{ConfigOpts, Runner};
+use shotover_proxy::tls::{TlsConfig, TlsConnector};
 use std::net::TcpStream;
+use std::pin::Pin;
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
@@ -57,6 +59,47 @@ impl ShotoverManager {
             .unwrap()
             .get_connection()
             .unwrap()
+    }
+
+    #[allow(unused)]
+    pub async fn async_redis_connection(&self, port: u16) -> redis::aio::Connection {
+        use redis::aio::AsyncStream;
+        use tokio::net::TcpStream;
+
+        ShotoverManager::wait_for_socket_to_open(port);
+
+        let stream = Box::pin(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
+        let connection_info = Default::default();
+        redis::aio::Connection::new(
+            &connection_info,
+            stream as Pin<Box<dyn AsyncStream + Send + Sync>>,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[allow(unused)]
+    pub async fn async_tls_redis_connection(
+        &self,
+        port: u16,
+        config: TlsConfig,
+    ) -> redis::aio::Connection {
+        use redis::aio::AsyncStream;
+        use tokio::net::TcpStream;
+
+        ShotoverManager::wait_for_socket_to_open(port);
+
+        let tcp_stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let connector = TlsConnector::new(config).unwrap();
+        let tls_stream = connector.connect(tcp_stream).await.unwrap();
+
+        let connection_info = Default::default();
+        redis::aio::Connection::new(
+            &connection_info,
+            Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>,
+        )
+        .await
+        .unwrap()
     }
 }
 
