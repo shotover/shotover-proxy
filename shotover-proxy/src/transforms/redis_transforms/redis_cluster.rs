@@ -200,7 +200,7 @@ impl RedisCluster {
         for node in self.slots.masters.values() {
             match self
                 .connection_pool
-                .get_connections(node.as_str(), &None, self.connection_count)
+                .get_connections(node, &None, self.connection_count)
                 .await
             {
                 Ok(connections) => {
@@ -217,7 +217,7 @@ impl RedisCluster {
         for node in self.slots.replicas.values() {
             match self
                 .connection_pool
-                .get_connections(node.as_str(), &None, self.connection_count)
+                .get_connections(node, &None, self.connection_count)
                 .await
             {
                 Ok(connections) => {
@@ -670,7 +670,7 @@ impl Transform for RedisCluster {
                 Ok(response) => response,
                 Err(e) => {
                     let (one_tx, one_rx) = immediate_responder();
-                    send_error_response(one_tx, &format!("ERR transform error: {}", e))?;
+                    send_error_response(one_tx, &format!("ERR {}", e))?;
                     Box::pin(one_rx)
                 }
             });
