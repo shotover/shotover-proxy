@@ -72,6 +72,7 @@ num_cpus = "1.0"
 serial_test = "0.5.1"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
+nix = "0.22.1"
 rusty-fork = "0.3.0"
 
 [[bench]]

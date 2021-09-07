@@ -1,9 +1,12 @@
 use anyhow::Result;
+use nix::sys::signal::Signal;
+use nix::unistd::Pid;
 use redis::{Client, Connection};
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use shotover_proxy::tls::{TlsConfig, TlsConnector};
 use std::net::TcpStream;
 use std::pin::Pin;
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
@@ -120,5 +123,45 @@ impl Drop for ShotoverManager {
                 .unwrap()
                 .unwrap();
         }
+    }
+}
+
+pub struct ShotoverProcess {
+    pub child: Child,
+}
+
+impl ShotoverProcess {
+    #[allow(unused)]
+    pub fn new(topology_path: &str) -> ShotoverProcess {
+        let all_args = vec!["run", "--", "-t", topology_path];
+        let child = Command::new(env!("CARGO"))
+            .env("RUST_LOG", "debug,shotover_proxy=debug")
+            .args(all_args)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        ShotoverProcess { child }
+    }
+
+    #[allow(unused)]
+    pub fn pid(&self) -> Pid {
+        Pid::from_raw(self.child.id() as i32)
+    }
+
+    #[allow(unused)]
+    pub fn signal(&self, signal: Signal) {
+        nix::sys::signal::kill(self.pid(), signal).unwrap();
+    }
+
+    #[allow(unused)]
+    pub fn wait(self) -> (Option<i32>, String, String) {
+        let output = self.child.wait_with_output().unwrap();
+
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+
+        (output.status.code(), stdout, stderr)
     }
 }
