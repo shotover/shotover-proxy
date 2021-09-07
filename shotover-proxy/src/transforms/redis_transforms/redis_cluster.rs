@@ -170,7 +170,11 @@ impl RedisCluster {
         let mut errors = Vec::new();
 
         for address in self.latest_contact_points() {
-            match self.connection_pool.new_connection(&address, &None).await {
+            match self
+                .connection_pool
+                .new_unpooled_connection(&address, &None)
+                .await
+            {
                 Ok(sender) => match get_topology_from_node(&sender).await {
                     Ok(slots) => {
                         trace!("successfully mapped cluster: {:?}", slots);
@@ -323,7 +327,6 @@ impl RedisCluster {
         Ok(match RoutingInfo::for_command_frame(command)? {
             Some(RoutingInfo::Slot(slot)) => {
                 if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
-                    // let idx = self.choose(lookup);
                     vec![lookup.clone()]
                 } else {
                     vec![]

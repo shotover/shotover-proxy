@@ -86,11 +86,9 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
         // TODO: Extract return type using generic associated types (RFC#1598).
 
-        trace!(
+        debug!(
             "getting {} pool connections to {} with token: {:?}",
-            connection_count,
-            address,
-            token
+            connection_count, address, token
         );
 
         let mut lanes = self.lanes.lock().await;
@@ -107,22 +105,21 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
             .flatten()
             .collect();
 
-        let shortfall = connection_count - connections.len();
+        let shortfall_count = connection_count.saturating_sub(connections.len());
 
-        if shortfall > 0 {
-            // We need more connections, but let's create one at a time for now.
-            connections.append(&mut self.new_connections(&address, token, 1).await?);
+        if shortfall_count > 0 {
+            // IDEA: Set min/max connections at the pool level, and create more than one at a time?
+            connections.append(&mut self.new_unpooled_connections(&address, token, 1).await?);
         }
 
-        // NOTE: This replaces the whole lane (i.e. disowns the old one).
-        // IDEA: Maintain weak references so the pool can track active count including disowned?
+        // NOTE: This replaces the whole lane, disowning the old one.
+        // IDEA: Maintain weak references so the pool can track disowned connections?
         lane.insert(address, connections.clone());
 
         Ok(connections)
     }
 
-    /// Create multiple connections not owned by the pool.
-    async fn new_connections(
+    async fn new_unpooled_connections(
         &self,
         address: &str,
         token: &Option<T>,
@@ -132,13 +129,13 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         let mut errors = Vec::new();
 
         for i in 0..connection_count {
-            match self.new_connection(address, token).await {
+            match self.new_unpooled_connection(address, token).await {
                 Ok(connection) => {
                     connections.push(connection);
                 }
                 Err(error) => {
                     debug!(
-                        "Failed to connect to upstream TCP service for attempt {}/{} to {} - {}",
+                        "Failed to connect to upstream TCP service for connection {}/{} to {} - {}",
                         i + 1,
                         connection_count,
                         address,
@@ -163,8 +160,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         Ok(connections)
     }
 
-    /// Create a connection that is not owned by the pool.
-    pub async fn new_connection(
+    pub async fn new_unpooled_connection(
         &self,
         address: &str,
         token: &Option<T>,
