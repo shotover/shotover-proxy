@@ -248,7 +248,7 @@ impl RedisCluster {
                 .await
             {
                 Ok(connections) => {
-                    channels.insert(node.clone(), connections);
+                    channels.insert(node.to_string(), connections);
                 }
                 Err(e) => {
                     info!("Could not create connection to {} - {}", node, e);
@@ -265,7 +265,7 @@ impl RedisCluster {
                 .await
             {
                 Ok(connections) => {
-                    channels.insert(node.clone(), connections);
+                    channels.insert(node.to_string(), connections);
                 }
                 Err(e) => {
                     info!("Could not create connection to {} - {}", node, e);
