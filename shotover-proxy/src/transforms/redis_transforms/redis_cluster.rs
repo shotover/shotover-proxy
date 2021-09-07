@@ -96,6 +96,81 @@ pub struct RedisCluster {
 }
 
 impl RedisCluster {
+    #[inline]
+    async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
+        let command = match message.original {
+            RawFrame::Redis(Frame::Array(ref command)) => command,
+            _ => bail!("syntax error: bad command"),
+        };
+
+        let channels = match self.get_channels(command).await? {
+            Ok(channels) => channels,
+            Err(command_name) => match command_name {
+                Command::AUTH => {
+                    return self.on_auth(command).await;
+                }
+            },
+        };
+
+        Ok(match channels.len() {
+            0 => {
+                let (one_tx, one_rx) = immediate_responder();
+                match self.connection_error {
+                    Some(message) => {
+                        send_error_response(one_tx, message).ok();
+                    }
+                    None => short_circuit(one_tx),
+                };
+                Box::pin(one_rx)
+            }
+            1 => {
+                let channel = channels.get(0).unwrap();
+                let one_rx = self.choose_and_send(channel, message).await?;
+                Box::pin(one_rx.map_err(move |_| anyhow!("no response from single channel")))
+            }
+            _ => {
+                let responses = FuturesUnordered::new();
+
+                for channel in channels {
+                    responses.push(self.choose_and_send(&channel, message.clone()).await?);
+                }
+
+                // Reassemble upstream responses in any order into an array, as the downstream response.
+                // TODO: Improve error messages within the reassembled response. E.g. which channel failed.
+
+                Box::pin(async move {
+                    let response = responses
+                        .fold(vec![], |mut acc, response| async move {
+                            match response {
+                                Ok((_, response)) => match response {
+                                    Ok(mut messages) => acc.push(messages.messages.pop().map_or(
+                                        Frame::Null,
+                                        |message| match message.original {
+                                            RawFrame::Redis(frame) => frame,
+                                            _ => unreachable!(),
+                                        },
+                                    )),
+                                    Err(e) => acc.push(Frame::Error(e.to_string())),
+                                },
+                                Err(e) => acc.push(Frame::Error(e.to_string())),
+                            }
+                            acc
+                        })
+                        .await;
+
+                    Ok((
+                        message,
+                        ChainResponse::Ok(Messages::new_from_message(Message {
+                            details: MessageDetails::Unknown,
+                            modified: false,
+                            original: RawFrame::Redis(Frame::Array(response)),
+                        })),
+                    ))
+                })
+            }
+        })
+    }
+
     fn latest_contact_points(&self) -> Vec<String> {
         if !self.slots.nodes.is_empty() {
             // Use latest node addresses as contact points.
@@ -203,81 +278,6 @@ impl RedisCluster {
         debug!("Connected to cluster: {:?}", channels.keys());
         self.channels = channels;
         Ok(())
-    }
-
-    #[inline]
-    async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
-        let command = match message.original {
-            RawFrame::Redis(Frame::Array(ref command)) => command,
-            _ => bail!("syntax error: bad command"),
-        };
-
-        let channels = match self.get_channels(command).await? {
-            Ok(channels) => channels,
-            Err(command_name) => match command_name {
-                Command::AUTH => {
-                    return self.on_auth(command).await;
-                }
-            },
-        };
-
-        Ok(match channels.len() {
-            0 => {
-                let (one_tx, one_rx) = immediate_responder();
-                match self.connection_error {
-                    Some(message) => {
-                        send_error_response(one_tx, message).ok();
-                    }
-                    None => short_circuit(one_tx),
-                };
-                Box::pin(one_rx)
-            }
-            1 => {
-                let channel = channels.get(0).unwrap();
-                let one_rx = self.choose_and_send(channel, message).await?;
-                Box::pin(one_rx.map_err(move |_| anyhow!("no response from single channel")))
-            }
-            _ => {
-                let responses = FuturesUnordered::new();
-
-                for channel in channels {
-                    responses.push(self.choose_and_send(&channel, message.clone()).await?);
-                }
-
-                // Reassemble upstream responses in any order into an array, as the downstream response.
-                // TODO: Improve error messages within the reassembled response. E.g. which channel failed.
-
-                Box::pin(async move {
-                    let response = responses
-                        .fold(vec![], |mut acc, response| async move {
-                            match response {
-                                Ok((_, response)) => match response {
-                                    Ok(mut messages) => acc.push(messages.messages.pop().map_or(
-                                        Frame::Null,
-                                        |message| match message.original {
-                                            RawFrame::Redis(frame) => frame,
-                                            _ => unreachable!(),
-                                        },
-                                    )),
-                                    Err(e) => acc.push(Frame::Error(e.to_string())),
-                                },
-                                Err(e) => acc.push(Frame::Error(e.to_string())),
-                            }
-                            acc
-                        })
-                        .await;
-
-                    Ok((
-                        message,
-                        ChainResponse::Ok(Messages::new_from_message(Message {
-                            details: MessageDetails::Unknown,
-                            modified: false,
-                            original: RawFrame::Redis(Frame::Array(response)),
-                        })),
-                    ))
-                })
-            }
-        })
     }
 
     #[inline]
