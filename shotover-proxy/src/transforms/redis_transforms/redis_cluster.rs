@@ -78,10 +78,12 @@ impl TransformsFromConfig for RedisClusterConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Derivative, Clone)]
+#[derivative(Debug)]
 pub struct RedisCluster {
     name: &'static str,
     pub slots: SlotMap,
+    #[derivative(Debug(format_with = "fmt_channels"))]
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
