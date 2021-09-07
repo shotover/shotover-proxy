@@ -479,7 +479,7 @@ impl RedisCodec {
         } else {
             Message::new_query(
                 QueryMessage {
-                    query_string: unsafe { String::from_utf8_unchecked(bulkstring.to_vec()) },
+                    query_string: String::from_utf8_lossy(bulkstring.as_ref()).to_string(),
                     namespace: vec![],
                     primary_key: Default::default(),
                     query_values: None,
@@ -595,10 +595,8 @@ impl RedisCodec {
         if let Some(result) = &resp.result {
             return result.clone().into();
         }
-        if let Some(result) = &resp.error {
-            if let Value::Strings(s) = result {
-                return Frame::Error(s.clone());
-            }
+        if let Some(Value::Strings(s)) = &resp.error {
+            return Frame::Error(s.clone());
         }
 
         debug!("{:?}", resp);

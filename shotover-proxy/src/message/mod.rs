@@ -9,7 +9,6 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
-use mlua::UserData;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -180,12 +179,6 @@ impl Messages {
         }
     }
 }
-
-impl UserData for Messages {}
-
-impl UserData for QueryMessage {}
-impl UserData for QueryResponse {}
-impl UserData for RawMessage {}
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessage {
@@ -438,9 +431,9 @@ impl From<&Frame> for Value {
     }
 }
 
-impl Into<Frame> for Value {
-    fn into(self) -> Frame {
-        match self {
+impl From<Value> for Frame {
+    fn from(value: Value) -> Frame {
+        match value {
             Value::NULL => Frame::Null,
             Value::None => unimplemented!(),
             Value::Bytes(b) => Frame::BulkString(b),
@@ -545,9 +538,9 @@ impl Value {
     }
 }
 
-impl Into<cassandra_proto::types::value::Bytes> for Value {
-    fn into(self) -> cassandra_proto::types::value::Bytes {
-        match self {
+impl From<Value> for cassandra_proto::types::value::Bytes {
+    fn from(value: Value) -> cassandra_proto::types::value::Bytes {
+        match value {
             Value::NULL => (-1).into(),
             Value::None => cassandra_proto::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_proto::types::value::Bytes::new(b.to_vec()),

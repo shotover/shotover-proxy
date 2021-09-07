@@ -4,14 +4,15 @@ use shotover_proxy::runner::{ConfigOpts, Runner};
 use std::net::TcpStream;
 use std::thread;
 use std::time::Duration;
-use tokio::runtime::Runtime;
-use tokio::sync::broadcast;
+use tokio::runtime::{Handle as RuntimeHandle, Runtime};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 pub struct ShotoverManager {
-    pub runtime: Runtime,
-    pub handle: Option<JoinHandle<Result<()>>>,
-    pub trigger_shutdown_tx: broadcast::Sender<()>,
+    pub runtime: Option<Runtime>,
+    pub runtime_handle: RuntimeHandle,
+    pub join_handle: Option<JoinHandle<Result<()>>>,
+    pub trigger_shutdown_tx: watch::Sender<bool>,
 }
 
 impl ShotoverManager {
@@ -33,7 +34,8 @@ impl ShotoverManager {
 
         ShotoverManager {
             runtime: spawn.runtime,
-            handle: Some(spawn.handle),
+            runtime_handle: spawn.runtime_handle,
+            join_handle: Some(spawn.join_handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
         }
     }
@@ -68,9 +70,10 @@ impl Drop for ShotoverManager {
             // We only shutdown shotover to test the shutdown process not because we need to clean up any resources.
             // So skipping shutdown on panic is fine.
         } else {
-            self.trigger_shutdown_tx.send(()).unwrap();
-            self.runtime
-                .block_on(self.handle.take().unwrap())
+            self.trigger_shutdown_tx.send(true).unwrap();
+
+            let _enter_guard = self.runtime_handle.enter();
+            futures::executor::block_on(self.join_handle.take().unwrap())
                 .unwrap()
                 .unwrap();
         }

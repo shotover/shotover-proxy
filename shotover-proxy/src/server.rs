@@ -6,7 +6,7 @@ use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
@@ -61,23 +61,13 @@ pub struct TcpCodecListener<C: Codec> {
     /// The initial `shutdown` trigger is provided by the `run` caller. The
     /// server is responsible for gracefully shutting down active connections.
     /// When a connection task is spawned, it is passed a broadcast receiver
-    /// handle. When a graceful shutdown is initiated, a `()` value is sent via
-    /// the broadcast::Sender. Each active connection receives it, reaches a
+    /// handle. When a graceful shutdown is initiated, a `true` value is sent via
+    /// the watch::Sender. Each active connection receives it, reaches a
     /// safe terminal state, and completes the task.
-    pub trigger_shutdown_tx: broadcast::Sender<()>,
+    pub trigger_shutdown_rx: watch::Receiver<bool>,
 
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
-    ///
-    /// Tokio channels are closed once all `Sender` handles go out of scope.
-    /// When a channel is closed, the receiver receives `None`. This is
-    /// leveraged to detect all connection handlers completing. When a
-    /// connection handler is initialized, it is assigned a clone of
-    /// `shutdown_complete_tx`. When the listener shuts down, it drops the
-    /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
-    /// complete, all clones of the `Sender` are also dropped. This results in
-    /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
-    /// is safe to exit the server process.
     pub shutdown_complete_tx: mpsc::Sender<()>,
 }
 
@@ -184,7 +174,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 limit_connections: self.limit_connections.clone(),
 
                 // Receive shutdown notifications.
-                shutdown: Shutdown::new(self.trigger_shutdown_tx.subscribe()),
+                shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
                 // Notifies the receiver half once all clones are
                 // dropped.
@@ -275,7 +265,6 @@ pub struct Handler<C: Codec> {
     /// which point the connection is terminated.
     shutdown: Shutdown,
 
-    /// Not used directly. Instead, when `Handler` is dropped...?
     _shutdown_complete: mpsc::Sender<()>,
 }
 
@@ -321,7 +310,7 @@ impl<C: Codec + 'static> Handler<C> {
         });
 
         tokio::spawn(async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
             let r = rx_stream.forward(writer).await;
             debug!("Stream ended {:?}", r);
         });
@@ -418,12 +407,12 @@ pub struct Shutdown {
     shutdown: bool,
 
     /// The receive half of the channel used to listen for shutdown.
-    notify: broadcast::Receiver<()>,
+    notify: watch::Receiver<bool>,
 }
 
 impl Shutdown {
     /// Create a new `Shutdown` backed by the given `broadcast::Receiver`.
-    pub(crate) fn new(notify: broadcast::Receiver<()>) -> Shutdown {
+    pub(crate) fn new(notify: watch::Receiver<bool>) -> Shutdown {
         Shutdown {
             shutdown: false,
             notify,
@@ -443,8 +432,11 @@ impl Shutdown {
             return;
         }
 
-        // Cannot receive a "lag error" as only one value is ever sent.
-        self.notify.recv().await.unwrap();
+        // check we didn't receive a shutdown message before the receiver was created
+        if !*self.notify.borrow() {
+            // Await the shutdown messsage
+            self.notify.changed().await.unwrap();
+        }
 
         // Remember that the signal has been received.
         self.shutdown = true;

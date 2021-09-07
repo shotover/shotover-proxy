@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -28,7 +28,7 @@ impl SourcesFromConfig for RedisConfig {
         &self,
         chain: &TransformChain,
         _topics: &mut TopicHolder,
-        trigger_shutdown_tx: broadcast::Sender<()>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Redis(
@@ -36,7 +36,7 @@ impl SourcesFromConfig for RedisConfig {
                 chain,
                 self.listen_addr.clone(),
                 self.batch_size_hint,
-                trigger_shutdown_tx,
+                trigger_shutdown_rx,
                 shutdown_complete_tx,
                 self.connection_limit,
                 self.hard_connection_limit,
@@ -58,15 +58,13 @@ impl RedisSource {
         chain: &TransformChain,
         listen_addr: String,
         batch_hint: u64,
-        trigger_shutdown_tx: broadcast::Sender<()>,
+        mut trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
     ) -> RedisSource {
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "Redis Source";
-
-        let mut trigger_shutdown_rx = trigger_shutdown_tx.subscribe();
 
         let mut listener = TcpCodecListener {
             chain: chain.clone(),
@@ -76,30 +74,32 @@ impl RedisSource {
             hard_connection_limit: hard_connection_limit.unwrap_or(false),
             codec: RedisCodec::new(false, batch_hint as usize),
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
-            trigger_shutdown_tx,
+            trigger_shutdown_rx: trigger_shutdown_rx.clone(),
             shutdown_complete_tx,
         };
 
         let join_handle = Handle::current().spawn(async move {
-            tokio::select! {
-                res = listener.run() => {
-                    if let Err(err) = res {
-                        error!(cause = %err, "failed to accept");
+            // Check we didn't receive a shutdown signal before the receiver was created
+            if !*trigger_shutdown_rx.borrow() {
+                tokio::select! {
+                    res = listener.run() => {
+                        if let Err(err) = res {
+                            error!(cause = %err, "failed to accept");
+                        }
                     }
-                }
-                _ = trigger_shutdown_rx.recv() => {
-                    info!("redis source shutting down")
+                    _ =  trigger_shutdown_rx.changed() => {
+                        info!("redis source shutting down")
+                    }
+
                 }
             }
 
             let TcpCodecListener {
-                trigger_shutdown_tx,
                 shutdown_complete_tx,
                 ..
             } = listener;
 
             drop(shutdown_complete_tx);
-            drop(trigger_shutdown_tx);
 
             Ok(())
         });
@@ -107,7 +107,7 @@ impl RedisSource {
         RedisSource {
             name,
             join_handle,
-            listen_addr: listen_addr.clone(),
+            listen_addr,
         }
     }
 }
