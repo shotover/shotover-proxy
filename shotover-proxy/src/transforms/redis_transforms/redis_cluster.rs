@@ -334,15 +334,13 @@ impl RedisCluster {
             }
             Some(RoutingInfo::AllNodes) => self.slots.nodes.iter().cloned().collect(),
             Some(RoutingInfo::AllMasters) => self.slots.masters.values().cloned().collect(),
-            Some(RoutingInfo::Random) => {
-                let key = self
-                    .channels
-                    .keys()
-                    .next()
-                    .unwrap_or(&"nothing".to_string())
-                    .clone();
-                vec![key]
-            }
+            Some(RoutingInfo::Random) => self
+                .slots
+                .masters
+                .values()
+                .next()
+                .map(|key| vec![key.clone()])
+                .unwrap_or_default(),
             None => vec![],
         })
     }
