@@ -249,7 +249,7 @@ impl RedisCluster {
         let (one_tx, one_rx) = oneshot::channel::<Response>();
 
         let channel = match self.channels.get_mut(host) {
-            Some(channels) if channels.len() == 1 => channels.get_mut(0).unwrap(),
+            Some(channels) if channels.len() == 1 => channels.get_mut(0),
             Some(channels) if channels.len() > 1 => {
                 let candidates = rand::seq::index::sample(&mut self.rng, channels.len(), 2);
                 let aidx = candidates.index(0);
@@ -265,35 +265,45 @@ impl RedisCluster {
                     .entry((host.to_string(), bidx))
                     .or_insert(0);
 
-                channels
-                    .get_mut(if aload <= bload { aidx } else { bidx })
-                    .unwrap()
+                channels.get_mut(if aload <= bload { aidx } else { bidx })
             }
-            _ => {
-                debug!("connection {} doesn't exist trying to connect", host);
-                if let Ok(result) = timeout(
-                    Duration::from_millis(40),
-                    self.connection_pool
-                        .get_connections(host, &None, self.connection_count),
-                )
-                .await
-                {
-                    if let Ok(connections) = result {
-                        debug!("Found {} live connections for {}", connections.len(), host);
-                        self.channels.insert(host.to_string(), connections);
-                        self.channels.get_mut(host).unwrap().get_mut(0).unwrap()
-                    } else {
-                        debug!("failed to connect to {}", host);
-                        self.rebuild_slots = true;
-                        short_circuit(one_tx);
-                        return Ok(one_rx);
-                    }
+            _ => None,
+        }
+        .and_then(|channel| {
+            // Treat closed connection as non-existent.
+            if channel.is_closed() {
+                None
+            } else {
+                Some(channel)
+            }
+        });
+
+        let channel = if let Some(channel) = channel {
+            channel
+        } else {
+            debug!("connection {} doesn't exist trying to connect", host);
+            if let Ok(result) = timeout(
+                Duration::from_millis(40),
+                self.connection_pool
+                    .get_connections(host, &None, self.connection_count),
+            )
+            .await
+            {
+                if let Ok(connections) = result {
+                    debug!("Found {} live connections for {}", connections.len(), host);
+                    self.channels.insert(host.to_string(), connections);
+                    self.channels.get_mut(host).unwrap().get_mut(0).unwrap()
                 } else {
-                    debug!("timed out connecting to {}", host);
+                    debug!("failed to connect to {}", host);
                     self.rebuild_slots = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
+            } else {
+                debug!("timed out connecting to {}", host);
+                self.rebuild_slots = true;
+                short_circuit(one_tx);
+                return Ok(one_rx);
             }
         };
 
