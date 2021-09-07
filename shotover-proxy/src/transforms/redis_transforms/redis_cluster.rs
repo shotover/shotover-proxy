@@ -19,6 +19,7 @@ use tokio::time::timeout;
 use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
+use crate::concurrency::FuturesOrdered;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
@@ -28,8 +29,8 @@ use crate::transforms::redis_transforms::RedisError;
 use crate::transforms::redis_transforms::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
+use crate::transforms::ResponseFuture;
 use crate::transforms::CONTEXT_CHAIN_NAME;
-use crate::transforms::{ResponseFuture, ResponseFuturesOrdered};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use crate::util::Fmt;
 
@@ -120,7 +121,7 @@ impl RedisCluster {
         for address in self.latest_contact_points() {
             match self
                 .connection_pool
-                .new_connection(&address, &self.token)
+                .new_unpooled_connection(&address, &self.token)
                 .await
             {
                 Ok(sender) => match get_topology_from_node(&sender).await {
@@ -378,16 +379,13 @@ impl RedisCluster {
     #[inline(always)]
     async fn get_channels(&mut self, command: &[Frame]) -> Result<Result<Vec<String>, Command>> {
         Ok(match RoutingInfo::for_command_frame(command)? {
-            Some(RoutingInfo::Slot(slot)) => {
-                Ok(
-                    if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
-                        // let idx = self.choose(lookup);
-                        vec![lookup.clone()]
-                    } else {
-                        vec![]
-                    },
-                )
-            }
+            Some(RoutingInfo::Slot(slot)) => Ok(
+                if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
+                    vec![lookup.clone()]
+                } else {
+                    vec![]
+                },
+            ),
             Some(RoutingInfo::AllNodes) => Ok(self.slots.nodes.iter().cloned().collect()),
             Some(RoutingInfo::AllMasters) => Ok(self.slots.masters.values().cloned().collect()),
             Some(RoutingInfo::Random) => Ok(self
@@ -792,7 +790,7 @@ impl Transform for RedisCluster {
             self.rebuild_slots = false;
         }
 
-        let mut responses = ResponseFuturesOrdered::new();
+        let mut responses = FuturesOrdered::new();
 
         for message in message_wrapper.message {
             responses.push(match self.dispatch_message(message).await {
