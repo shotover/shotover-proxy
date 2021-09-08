@@ -104,7 +104,7 @@ impl RedisCluster {
             1 => {
                 let channel = channels.get(0).unwrap();
                 let one_rx = self.choose_and_send(channel, message).await?;
-                Box::pin(one_rx.map_err(move |_| anyhow!("no response from single channel")))
+                Box::pin(one_rx.map_err(|_| anyhow!("no response from single channel")))
             }
             _ => {
                 let responses = FuturesUnordered::new();
