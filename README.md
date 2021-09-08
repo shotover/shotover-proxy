@@ -2,22 +2,24 @@
 
 [![Rust](https://github.com/shotover/shotover-proxy/workflows/Rust/badge.svg)](https://github.com/shotover/shotover-proxy/actions?query=workflow%3ARust)
 
-
 ## Documentation
 For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
+
+## Building
+Shotover is supported on Linux and macOS.
+To build shotover from source please refer to [the shotover development guide](https://docs.shotover.io/developer/shotover-development/)
 
 ## What is Shotover?
 Shotover-proxy is a high performance, configurable and extensible L7 data-layer proxy for controlling, managing and modifying the flow of database requests in transit. It can be used to solve many different operational and interoperability challenges by transparently intercepting and transforming queries. It is transparent in the sense that it can be plugged into your architecture without requiring application change.
 
-Shotover-proxy currently support intercepting requests for the following technologies (sources):
+Shotover-proxy currently supports intercepting requests for the following technologies (sources):
 * Cassandra (CQL4)
 * Redis (RESP2)
 
-It current supports writing output the to following technologies (sinks):
+It currently supports writing output to the following technologies (sinks):
 * Cassandra
 * Redis
 * Kafka
-
 
 ## What problems does Shotover solve?
 Concrete examples where shotover-proxy has been applied include:
@@ -39,7 +41,7 @@ all fall into three categories:
 * As an application sidecar - Shotover is pretty lightweight, so feel free to deploy it as a sidecar to each of your application
 instances.
 * As a stand alone proxy - If you are building a Service/DBaaS/Common data layer, you can deploy Shotover on standalone hardware
-and really let it fly.\
+and really let it fly.
 * As a sidecar to your database - You can also stick Shotover on the same instance/server as your database is running on, we do it, so
 we won't judge you. 
 
