@@ -510,10 +510,10 @@ impl RoutingInfo {
         };
 
         Ok(match command_name.as_ref() {
-            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
+            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" => Some(RoutingInfo::AllMasters),
             b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
             | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE" | b"TIME"
-            | b"KEYS" => Some(RoutingInfo::AllNodes),
+            | b"KEYS" | b"ACL" => Some(RoutingInfo::AllNodes),
             b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
             | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
             b"EVALSHA" | b"EVAL" => {
