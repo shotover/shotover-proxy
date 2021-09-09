@@ -44,7 +44,7 @@ impl Authenticator<()> for NoopAuthenticator {
     }
 }
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait Token: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug {}
 impl<T: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug> Token for T {}
 
@@ -84,8 +84,6 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         token: &Option<T>,
         connection_count: usize,
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
-        // TODO: Extract return type using generic associated types (RFC#1598).
-
         debug!(
             "getting {} pool connections to {} with token: {:?}",
             connection_count, address, token

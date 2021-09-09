@@ -15,15 +15,15 @@ use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace, warn};
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecReadHalf for T {}
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait Codec: CodecReadHalf + CodecWriteHalf {}
 impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
