@@ -82,6 +82,7 @@ impl CassandraSource {
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx: trigger_shutdown_rx.clone(),
             shutdown_complete_tx,
+            tls: None,
         };
 
         let join_handle = Handle::current().spawn(async move {

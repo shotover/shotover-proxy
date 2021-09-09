@@ -4,8 +4,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use redis::{Commands, Connection, ErrorKind, RedisError, Value};
 use serial_test::serial;
-use test_helpers::docker_compose::DockerCompose;
 use tracing::{info, trace};
+
+use shotover_proxy::tls::TlsConfig;
+use test_helpers::docker_compose::DockerCompose;
 
 use crate::helpers::ShotoverManager;
 
@@ -607,6 +609,43 @@ fn test_pass_through() {
     let mut connection = shotover_manager.redis_connection(6379);
 
     run_all(&mut connection);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial(redis)]
+async fn test_tls() {
+    let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml");
+    let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
+
+    let tls_config = TlsConfig {
+        certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt".into(),
+        certificate_path: "examples/redis-tls/tls_keys/redis.crt".into(),
+        private_key_path: "examples/redis-tls/tls_keys/redis.key".into(),
+    };
+
+    let mut connection = shotover_manager
+        .async_tls_redis_connection(6379, tls_config)
+        .await;
+
+    redis::cmd("SET")
+        .arg("key1")
+        .arg(b"foo")
+        .query_async::<_, ()>(&mut connection)
+        .await
+        .unwrap();
+    redis::cmd("SET")
+        .arg(&["key2", "bar"])
+        .query_async::<_, ()>(&mut connection)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        redis::cmd("MGET")
+            .arg(&["key1", "key2"])
+            .query_async(&mut connection)
+            .await,
+        Ok(("foo".to_string(), b"bar".to_vec()))
+    );
 }
 
 // #[test]

@@ -44,7 +44,7 @@ impl Authenticator<()> for NoopAuthenticator {
     }
 }
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait Token: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug {}
 impl<T: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug> Token for T {}
 
@@ -84,8 +84,6 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         token: &Option<T>,
         connection_count: usize,
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
-        // TODO: Extract return type using generic associated types (RFC#1598).
-
         debug!(
             "getting {} pool connections to {} with token: {:?}",
             connection_count, address, token
@@ -125,10 +123,10 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         token: &Option<T>,
         connection_count: usize,
     ) -> Result<Vec<Connection>, ConnectionError<A::Error>> {
-        let mut connections: Vec<Connection> = Vec::new();
+        let mut connections = Vec::new();
         let mut errors = Vec::new();
 
-        for i in 0..connection_count {
+        for i in 1..=connection_count {
             match self.new_unpooled_connection(address, token).await {
                 Ok(connection) => {
                     connections.push(connection);
@@ -136,10 +134,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
                 Err(error) => {
                     debug!(
                         "Failed to connect to upstream TCP service for connection {}/{} to {} - {}",
-                        i + 1,
-                        connection_count,
-                        address,
-                        error
+                        i, connection_count, address, error
                     );
                     errors.push(error);
                 }
@@ -165,7 +160,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         address: &str,
         token: &Option<T>,
     ) -> Result<Connection, ConnectionError<A::Error>> {
-        let stream: TcpStream = TcpStream::connect(address)
+        let stream = TcpStream::connect(address)
             .await
             .map_err(ConnectionError::IO)?;
 
