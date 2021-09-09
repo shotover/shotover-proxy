@@ -1,9 +1,10 @@
-use crate::transforms::chain::TransformChain;
-
 use crate::config::topology::TopicHolder;
 use crate::protocols::redis_codec::RedisCodec;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
+use crate::tls::{TlsAcceptor, TlsConfig};
+use crate::transforms::chain::TransformChain;
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -12,14 +13,13 @@ use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use anyhow::Result;
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct RedisConfig {
     pub listen_addr: String,
     pub batch_size_hint: u64,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
+    pub tls: Option<TlsConfig>,
 }
 
 #[async_trait]
@@ -31,18 +31,18 @@ impl SourcesFromConfig for RedisConfig {
         trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
-        Ok(vec![Sources::Redis(
-            RedisSource::new(
-                chain,
-                self.listen_addr.clone(),
-                self.batch_size_hint,
-                trigger_shutdown_rx,
-                shutdown_complete_tx,
-                self.connection_limit,
-                self.hard_connection_limit,
-            )
-            .await,
-        )])
+        RedisSource::new(
+            chain,
+            self.listen_addr.clone(),
+            self.batch_size_hint,
+            trigger_shutdown_rx,
+            shutdown_complete_tx,
+            self.connection_limit,
+            self.hard_connection_limit,
+            self.tls.clone(),
+        )
+        .await
+        .map(|x| vec![Sources::Redis(x)])
     }
 }
 
@@ -62,7 +62,8 @@ impl RedisSource {
         shutdown_complete_tx: mpsc::Sender<()>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
-    ) -> RedisSource {
+        tls: Option<TlsConfig>,
+    ) -> Result<RedisSource> {
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "Redis Source";
 
@@ -76,6 +77,7 @@ impl RedisSource {
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx: trigger_shutdown_rx.clone(),
             shutdown_complete_tx,
+            tls: tls.map(|x| TlsAcceptor::new(x)).transpose()?,
         };
 
         let join_handle = Handle::current().spawn(async move {
@@ -104,10 +106,10 @@ impl RedisSource {
             Ok(())
         });
 
-        RedisSource {
+        Ok(RedisSource {
             name,
             join_handle,
             listen_addr,
-        }
+        })
     }
 }
