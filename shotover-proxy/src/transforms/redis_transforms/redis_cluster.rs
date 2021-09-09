@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
@@ -511,18 +511,12 @@ fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
                         (0, Frame::Integer(i)) => start = *i as u16,
                         (1, Frame::Integer(i)) => end = *i as u16,
                         (2, Frame::Array(master)) => {
-                            if let Err(e) =
-                                build_slot_to_server(master, &mut master_entries, start, end)
-                            {
-                                bail!("Failed to decode master slots: {}", e,);
-                            }
+                            build_slot_to_server(master, &mut master_entries, start, end)
+                                .context("failed to decode master slots")?
                         }
                         (_, Frame::Array(replica)) => {
-                            if let Err(e) =
-                                build_slot_to_server(replica, &mut replica_entries, start, end)
-                            {
-                                bail!("Failed to decode replica slots: {}", e,);
-                            }
+                            build_slot_to_server(replica, &mut replica_entries, start, end)
+                                .context("failed to decode replica slots")?;
                         }
                         _ => bail!("unexpected value in slot map",),
                     }
