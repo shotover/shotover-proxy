@@ -120,16 +120,15 @@ impl RedisCluster {
                     let response = responses
                         .fold(vec![], |mut acc, response| async move {
                             match response {
-                                Ok((_, response)) => match response {
-                                    Ok(mut messages) => acc.push(messages.messages.pop().map_or(
-                                        Frame::Null,
-                                        |message| match message.original {
+                                Ok((_, Ok(mut messages))) => acc.push(
+                                    messages.messages.pop().map_or(Frame::Null, |message| {
+                                        match message.original {
                                             RawFrame::Redis(frame) => frame,
                                             _ => unreachable!(),
-                                        },
-                                    )),
-                                    Err(e) => acc.push(Frame::Error(e.to_string())),
-                                },
+                                        }
+                                    }),
+                                ),
+                                Ok((_, Err(e))) => acc.push(Frame::Error(e.to_string())),
                                 Err(e) => acc.push(Frame::Error(e.to_string())),
                             }
                             acc
@@ -282,28 +281,31 @@ impl RedisCluster {
             channel
         } else {
             debug!("connection {} doesn't exist trying to connect", host);
-            if let Ok(result) = timeout(
+
+            match timeout(
                 Duration::from_millis(40),
                 self.connection_pool
                     .get_connections(host, &None, self.connection_count),
             )
             .await
             {
-                if let Ok(connections) = result {
+                Ok(Ok(connections)) => {
                     debug!("Found {} live connections for {}", connections.len(), host);
                     self.channels.insert(host.to_string(), connections);
                     self.channels.get_mut(host).unwrap().get_mut(0).unwrap()
-                } else {
-                    debug!("failed to connect to {}", host);
+                }
+                Ok(Err(e)) => {
+                    debug!("failed to connect to {}: {}", host, e);
                     self.rebuild_slots = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
-            } else {
-                debug!("timed out connecting to {}", host);
-                self.rebuild_slots = true;
-                short_circuit(one_tx);
-                return Ok(one_rx);
+                Err(_) => {
+                    debug!("timed out connecting to {}", host);
+                    self.rebuild_slots = true;
+                    short_circuit(one_tx);
+                    return Ok(one_rx);
+                }
             }
         };
 
@@ -498,7 +500,7 @@ fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
     let mut master_entries: Vec<(String, u16, u16)> = vec![];
     let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
-    for result in results.iter() {
+    for result in results {
         match result {
             Frame::Array(result) => {
                 let mut start: u16 = 0;
@@ -526,11 +528,10 @@ fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
                     }
                 }
             }
-            _ => bail!("unexpected value in slot map".to_string(),),
+            _ => bail!("unexpected value in slot map"),
         }
     }
 
-    // TODO: Only check masters?
     if master_entries.is_empty() {
         bail!("empty slot map!");
     }
@@ -648,10 +649,9 @@ fn immediate_responder() -> (
 ) {
     let (one_tx, one_rx) = oneshot::channel::<Response>();
     (one_tx, async {
-        one_rx.await.map_err(|_| {
-            error!("unused responder");
-            anyhow!("missing response")
-        })
+        one_rx
+            .await
+            .map_err(|_| panic!("immediate responder must be used"))
     })
 }
 
@@ -748,18 +748,19 @@ mod test {
 
         let mut codec = RedisCodec::new(true, 3);
 
-        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = codec
+        let raw_frame = codec
             .decode(&mut slots_pcap.into())
             .unwrap()
             .unwrap()
             .messages
             .pop()
             .unwrap()
-            .original
-        {
+            .original;
+
+        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame.clone() {
             frames
         } else {
-            panic!("bad input or codec")
+            panic!("bad input: {:?}", raw_frame)
         };
 
         let slots = parse_slots(&slots_frames).unwrap();
