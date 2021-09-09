@@ -106,8 +106,12 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         let shortfall_count = connection_count.saturating_sub(connections.len());
 
         if shortfall_count > 0 {
-            // IDEA: Set min/max connections at the pool level, and create more than one at a time?
-            connections.append(&mut self.new_unpooled_connections(&address, token, 1).await?);
+            // IDEA: Set min/max connections at the pool level? Limit number of new connections per call?
+            connections.append(
+                &mut self
+                    .new_unpooled_connections(&address, token, shortfall_count)
+                    .await?,
+            );
         }
 
         // NOTE: This replaces the whole lane, disowning the old one.
