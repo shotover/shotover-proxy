@@ -704,8 +704,8 @@ fn test_cluster_auth_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
-
     let mut connection = shotover_manager.redis_connection(6379);
+
     redis::cmd("AUTH").arg("shotover").execute(&mut connection);
 
     redis::cmd("SET")
@@ -723,7 +723,7 @@ fn test_cluster_auth_redis() {
         Ok(("foo".to_string(), b"bar".to_vec()))
     );
 
-    // create broken read-only user, auth as them unsuccessfully
+    // Read-only user with no other permissions should not be able to auth.
     redis::cmd("ACL")
         .arg(&["SETUSER", "brokenuser", "+@read", "on", ">password"])
         .execute(&mut connection);
@@ -733,14 +733,14 @@ fn test_cluster_auth_redis() {
         .query::<String>(&mut connection)
     {
         Ok(_) => {
-            panic!("authenticating with user lacking CLUSTER SLOTS permission should fail")
+            panic!("expected NOPERM error for AUTH")
         }
         Err(e) => {
             assert_eq!(e.code(), Some("NOPERM"));
         }
     }
 
-    // create read-only user, auth as them, try to set a key but should fail as they have no access
+    // Read-only user with CLUSTER SLOTS permission should be able to auth, but cannot perform writes.
     redis::cmd("ACL")
         .arg(&[
             "SETUSER",
@@ -760,15 +760,15 @@ fn test_cluster_auth_redis() {
         .arg("fail")
         .query::<String>(&mut connection)
     {
-        Ok(_s) => {
-            panic!("write attempt with read-only user should fail")
+        Ok(_) => {
+            panic!("expected NOPERM error for SET")
         }
         Err(e) => {
             assert_eq!(e.code(), Some("NOPERM"));
         }
     }
 
-    // set auth context back to default user using non acl style auth command
+    // Switch back to the superuser.
     redis::cmd("AUTH").arg("shotover").execute(&mut connection);
     redis::cmd("SET")
         .arg("{x}key3")
@@ -780,7 +780,7 @@ fn test_cluster_auth_redis() {
         Ok("food".to_string())
     );
 
-    // check failed write did not get through to upstream
+    // Double check the previous write-attempt (with read-only user) did not go through.
     assert_eq!(
         redis::cmd("GET").arg("{x}key2").query(&mut connection),
         Ok("bar".to_string())

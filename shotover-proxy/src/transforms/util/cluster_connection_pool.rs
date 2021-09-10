@@ -224,7 +224,7 @@ pub fn spawn_from_stream<C: Codec + 'static>(
 async fn tx_process<C: CodecWriteHalf>(
     write: OwnedWriteHalf,
     out_rx: UnboundedReceiver<Request>,
-    return_tx: Connection,
+    return_tx: UnboundedSender<Request>,
     codec: C,
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec.clone());
