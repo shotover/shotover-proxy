@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use futures::Future;
 use serde::{Deserialize, Serialize};
 
-use crate::concurrency::FuturesOrdered;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages};
@@ -342,6 +341,5 @@ pub trait Transform: Send {
     }
 }
 
-pub type ResponseFuturesOrdered = FuturesOrdered<
-    Pin<Box<dyn Future<Output = Result<(Message, Result<Messages>)>> + std::marker::Send>>,
->;
+pub type ResponseFuture =
+    Pin<Box<dyn Future<Output = Result<(Message, Result<Messages>)>> + std::marker::Send>>;
