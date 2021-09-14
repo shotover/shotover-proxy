@@ -123,6 +123,7 @@ impl Runner {
             // Using block_in_place to trigger a panic in case the runtime is set up in single-threaded mode.
             // Shotover does not function correctly in single threaded mode (currently hangs)
             // and block_in_place gives an error message explaining to setup the runtime in multi-threaded mode.
+            // This does not protect us when calling Runtime::enter() or when no runtime is set up at all.
             tokio::task::block_in_place(|| {});
 
             (handle, None)
