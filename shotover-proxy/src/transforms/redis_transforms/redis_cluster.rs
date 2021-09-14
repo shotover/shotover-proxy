@@ -64,7 +64,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             token: None,
         };
 
-        match cluster.build_connections_with_token(None).await {
+        match cluster.build_connections(None).await {
             Ok(()) => {
                 info!("connected to upstream cluster");
             }
@@ -181,24 +181,26 @@ impl RedisCluster {
         }
     }
 
-    async fn rebuild_slot_map(&mut self) -> Result<(), TransformError> {
-        debug!("rebuilding slot map");
+    async fn fetch_slot_map(
+        &mut self,
+        token: &Option<UsernamePasswordToken>,
+    ) -> Result<SlotMap, TransformError> {
+        debug!("fetching slot map");
         let mut errors = Vec::new();
 
         for address in self.latest_contact_points() {
             match self
                 .connection_pool
-                .new_unpooled_connection(&address, &self.token)
+                .new_unpooled_connection(&address, token)
                 .await
             {
                 Ok(sender) => match get_topology_from_node(&sender).await {
                     Ok(slots) => {
-                        trace!("successfully mapped cluster: {:?}", slots);
-                        self.slots = slots;
-                        return Ok(());
+                        trace!("fetched slot map from {}: {:?}", address, slots);
+                        return Ok(slots);
                     }
                     Err(e) => {
-                        trace!("failed to get slot map from: {}, error: {}", address, e);
+                        trace!("error fetching slot map from {}: {}", address, e);
                         errors.push(e)
                     }
                 },
@@ -210,74 +212,44 @@ impl RedisCluster {
         Err(TransformError::choose_upstream_or_first(errors).unwrap())
     }
 
-    async fn build_connections_with_token(
+    async fn build_connections(
         &mut self,
         token: Option<UsernamePasswordToken>,
     ) -> Result<(), TransformError> {
-        // Backup existing state to restore on failure.
-        let old_channels = self.channels.clone();
-        let old_token = self.token.clone();
-
-        debug!("building connections with: {:?}", token);
-        self.token = token;
-
-        self.build_connections().await.map_err(|e| {
-            self.channels = old_channels;
-            self.token = old_token;
-            e
-        })
-    }
-
-    async fn build_connections(&mut self) -> Result<(), TransformError> {
-        // NOTE: Successful slot rebuild ensures validity of credentials before reusing pool connections.
-        self.rebuild_slot_map().await?;
+        // NOTE: Fetch slot map uses unpooled connections, to check token validity before reusing pooled connections.
+        let slots = self.fetch_slot_map(&token).await?;
 
         let mut channels = ChannelMap::new();
         let mut errors = Vec::new();
 
-        // TODO: Eliminate code duplication for master and follower.
-
-        debug!("building master connections");
-        for node in self.slots.masters.values() {
+        debug!("building connections");
+        for node in slots.masters.values().chain(slots.replicas.values()) {
             match self
                 .connection_pool
-                .get_connections(node, &self.token, self.connection_count)
+                .get_connections(node, &token, self.connection_count)
                 .await
             {
                 Ok(connections) => {
                     channels.insert(node.to_string(), connections);
                 }
                 Err(e) => {
-                    info!("Could not create connection to {} - {}", node, e);
-                    errors.push(e.into());
-                }
-            }
-        }
-
-        debug!("building replica connections");
-        for node in self.slots.replicas.values() {
-            match self
-                .connection_pool
-                .get_connections(node, &self.token, self.connection_count)
-                .await
-            {
-                Ok(connections) => {
-                    channels.insert(node.to_string(), connections);
-                }
-                Err(e) => {
-                    info!("Could not create connection to {} - {}", node, e);
+                    warn!("failed to connect to {}: {}", node, e);
                     errors.push(e.into());
                 }
             }
         }
 
         if channels.is_empty() && !errors.is_empty() {
-            debug!("total failure trying to rebuild connections");
+            debug!("failed to connect to all hosts");
             return Err(TransformError::choose_upstream_or_first(errors).unwrap());
         }
 
         debug!("Connected to cluster: {:?}", channels.keys());
+
+        self.token = token;
+        self.slots = slots;
         self.channels = channels;
+
         Ok(())
     }
 
@@ -420,7 +392,7 @@ impl RedisCluster {
         let username = args.next();
         let token = UsernamePasswordToken { username, password };
 
-        match self.build_connections_with_token(Some(token)).await {
+        match self.build_connections(Some(token)).await {
             Ok(()) => {
                 self.connection_error = None;
                 send_simple_response(one_tx, "OK")?;
@@ -768,7 +740,7 @@ fn immediate_responder() -> (
 impl Transform for RedisCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
-            match self.build_connections().await {
+            match self.build_connections(self.token.clone()).await {
                 Ok(()) => self.rebuild_connections = false,
                 Err(e) => {
                     if let TransformError::Upstream(RedisError::NotAuthenticated) = e {
