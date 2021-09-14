@@ -3,8 +3,9 @@ use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
 use tracing::info;
+use tracing::field::debug;
 
-fn run_command(command: &str, args: &[&str]) -> Result<()> {
+fn run_command(command: &str, args: &[&str]) -> Result<&str> {
     let data = Exec::cmd(command)
         .args(args)
         .stdout(Redirection::Pipe)
@@ -12,7 +13,7 @@ fn run_command(command: &str, args: &[&str]) -> Result<()> {
         .capture()?;
 
     if data.exit_status.success() {
-        Ok(())
+        Ok(data.stdout_str().as_str())
     } else {
         Err(anyhow!(
             "command {} {:?} exited with {:?} and output:\n{}",
@@ -41,6 +42,19 @@ impl DockerCompose {
         DockerCompose {
             file_path: file_path.to_string(),
         }
+    }
+
+    pub fn wait_for(&self, log_text : &str) -> Result<()> {
+        info!("waiting for {}", log_text );
+        let args = ["-f", self.file_path, "logs"];
+        let re = Regex::new( log_text ).unwrap();
+
+        let mut result = run_command( "docker-compose", &args ).unwrap();
+        while ! result.contains(&re) {
+            debug!( &result );
+            result = run_command( "docker-compose", &args ).unwrap();
+        }
+        Ok(())
     }
 
     fn clean_up(file_path: &str) -> Result<()> {

@@ -759,8 +759,10 @@ fn _test_cluster_auth_redis() {
 #[serial(redis)]
 fn test_cluster_all_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
+    _compose.wait_for( "Cluster correctly created");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
+
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
     let mut connection = shotover_manager.redis_connection(6379);
     run_all_cluster_safe(&mut connection);
