@@ -7,6 +7,7 @@ use helpers::ShotoverManager;
 
 fn redis_active_bench(c: &mut Criterion) {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
+    _compose.wait_for( "Cluster correctly created").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
 
@@ -25,6 +26,7 @@ fn redis_active_bench(c: &mut Criterion) {
 
 fn redis_cluster_bench(c: &mut Criterion) {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
+    _compose.wait_for( "Cluster correctly created").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
 
@@ -43,6 +45,7 @@ fn redis_cluster_bench(c: &mut Criterion) {
 
 fn redis_passthrough_bench(c: &mut Criterion) {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
+    _compose.wait_for( "Cluster correctly created").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
 

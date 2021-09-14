@@ -5,7 +5,15 @@ use subprocess::{Exec, Redirection};
 use tracing::info;
 use regex::Regex;
 
-fn run_command<'a>(command: &'a str, args: &'a [&str]) -> Result<String> {
+/// Runs a command and returns the output as a string.
+///
+/// Both stderr and stdout are returned in the result.
+///
+/// # Arguments
+/// * `command` - The system command to run
+/// * `args` - An array of command line arguments for the command
+///
+fn run_command(command: &str, args: &[&str]) -> Result<String> {
     let data = Exec::cmd(command)
         .args(args)
         .stdout(Redirection::Pipe)
@@ -30,6 +38,16 @@ pub struct DockerCompose {
 }
 
 impl DockerCompose {
+    /// Creates a new DockerCompose object by submitting a file to the underlying docker-compose
+    /// system.  Executes `docker-compose -f [file_path] up -d`
+    ///
+    /// # Notes:
+    /// * Does not sleep - Calling processes should sleep or use `wait_for()` to delay until the
+    /// containers are ready.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the docker-compose yaml file.
+    ///
     pub fn new(file_path: &str) -> Self {
         DockerCompose::clean_up(file_path).unwrap();
 
@@ -37,13 +55,17 @@ impl DockerCompose {
 
         info!("{}", run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap());
 
-        //thread::sleep(time::Duration::from_secs(4));
-
         DockerCompose {
             file_path: file_path.to_string(),
         }
     }
 
+    /// Waits for a string to appear in the docker-compose log output.
+    ///
+    /// # Arguments
+    /// `log_text` - A regular expression defining the text to find in the docker-container log
+    /// output.
+    ///
     pub fn wait_for(&self, log_text : &str) -> Result<()> {
         info!("wait_for: '{}'", log_text );
         let args = ["-f", &self.file_path, "logs"];
@@ -58,6 +80,10 @@ impl DockerCompose {
         Ok(())
     }
 
+    /// Cleans up the docker-compose by shutting down the running system and removing the images.
+    ///
+    /// # Arguments
+    /// * `file_path` - The path to the docker-compose yaml file that was used to start docker.
     fn clean_up(file_path: &str) -> Result<()> {
         info!("bringing down docker compose {}", file_path);
 
