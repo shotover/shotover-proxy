@@ -732,12 +732,8 @@ fn test_cluster_auth_redis() {
         .arg("password")
         .query::<String>(&mut connection)
     {
-        Ok(_) => {
-            panic!("expected NOPERM error for AUTH")
-        }
-        Err(e) => {
-            assert_eq!(e.code(), Some("NOPERM"));
-        }
+        Ok(_) => panic!("expected NOPERM error for AUTH"),
+        Err(e) => assert_eq!(e.code(), Some("NOPERM")),
     }
 
     // Read-only user with CLUSTER SLOTS permission should be able to auth, but cannot perform writes.
@@ -760,12 +756,8 @@ fn test_cluster_auth_redis() {
         .arg("fail")
         .query::<String>(&mut connection)
     {
-        Ok(_) => {
-            panic!("expected NOPERM error for SET")
-        }
-        Err(e) => {
-            assert_eq!(e.code(), Some("NOPERM"));
-        }
+        Ok(_) => panic!("expected NOPERM error for SET"),
+        Err(e) => assert_eq!(e.code(), Some("NOPERM")),
     }
 
     // Switch back to the superuser.

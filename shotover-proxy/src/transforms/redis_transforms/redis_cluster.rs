@@ -60,12 +60,11 @@ impl TransformsFromConfig for RedisClusterConfig {
             connection_count: self.connection_count.unwrap_or(1),
             connection_pool,
             connection_error: None,
-            rebuild_slots: false,
             rebuild_connections: true,
             token: None,
         };
 
-        match cluster.build_connections(None).await {
+        match cluster.build_connections_with_token(None).await {
             Ok(()) => {
                 info!("connected to upstream cluster");
             }
@@ -92,7 +91,6 @@ pub struct RedisCluster {
     connection_count: usize,
     connection_pool: ConnectionPool<RedisCodec, RedisAuthenticator, UsernamePasswordToken>,
     connection_error: Option<&'static str>,
-    rebuild_slots: bool,
     rebuild_connections: bool,
     first_contact_points: Vec<String>,
     token: Option<UsernamePasswordToken>,
@@ -101,16 +99,16 @@ pub struct RedisCluster {
 impl RedisCluster {
     #[inline]
     async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
-        let command = match message.original {
+        let command_args = match message.original {
             RawFrame::Redis(Frame::Array(ref command)) => command,
             _ => bail!("syntax error: bad command"),
         };
 
-        let channels = match self.get_channels(command).await? {
-            Ok(channels) => channels,
-            Err(command_name) => match command_name {
+        let channels = match self.get_channels(command_args).await? {
+            ChannelResult::Channels(channels) => channels,
+            ChannelResult::Other(command_name) => match command_name {
                 Command::AUTH => {
-                    return self.on_auth(command).await;
+                    return self.on_auth(command_args).await;
                 }
             },
         };
@@ -212,7 +210,7 @@ impl RedisCluster {
         Err(TransformError::choose_upstream_or_first(errors).unwrap())
     }
 
-    async fn build_connections(
+    async fn build_connections_with_token(
         &mut self,
         token: Option<UsernamePasswordToken>,
     ) -> Result<(), TransformError> {
@@ -223,14 +221,14 @@ impl RedisCluster {
         debug!("building connections with: {:?}", token);
         self.token = token;
 
-        self.rebuild_connections().await.map_err(|e| {
+        self.build_connections().await.map_err(|e| {
             self.channels = old_channels;
             self.token = old_token;
             e
         })
     }
 
-    async fn rebuild_connections(&mut self) -> Result<(), TransformError> {
+    async fn build_connections(&mut self) -> Result<(), TransformError> {
         // NOTE: Successful slot rebuild ensures validity of credentials before reusing pool connections.
         self.rebuild_slot_map().await?;
 
@@ -340,13 +338,13 @@ impl RedisCluster {
                 }
                 Ok(Err(e)) => {
                     debug!("failed to connect to {}: {}", host, e);
-                    self.rebuild_slots = true;
+                    self.rebuild_connections = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
                 Err(_) => {
                     debug!("timed out connecting to {}", host);
-                    self.rebuild_slots = true;
+                    self.rebuild_connections = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
@@ -359,7 +357,7 @@ impl RedisCluster {
             message_id: None,
         }) {
             if let Some(error_return) = e.0.return_chan {
-                self.rebuild_slots = true;
+                self.rebuild_connections = true;
                 short_circuit(error_return);
             }
             self.channels.remove(host);
@@ -369,26 +367,31 @@ impl RedisCluster {
     }
 
     #[inline(always)]
-    async fn get_channels(&mut self, command: &[Frame]) -> Result<Result<Vec<String>, Command>> {
+    async fn get_channels(&mut self, command: &[Frame]) -> Result<ChannelResult> {
         Ok(match RoutingInfo::for_command_frame(command)? {
-            Some(RoutingInfo::Slot(slot)) => Ok(
+            Some(RoutingInfo::Slot(slot)) => ChannelResult::Channels(
                 if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
                     vec![lookup.clone()]
                 } else {
                     vec![]
                 },
             ),
-            Some(RoutingInfo::AllNodes) => Ok(self.slots.nodes.iter().cloned().collect()),
-            Some(RoutingInfo::AllMasters) => Ok(self.slots.masters.values().cloned().collect()),
-            Some(RoutingInfo::Random) => Ok(self
-                .slots
-                .masters
-                .values()
-                .next()
-                .map(|key| vec![key.clone()])
-                .unwrap_or_default()),
-            Some(RoutingInfo::Other(name)) => Err(name),
-            None => Ok(vec![]),
+            Some(RoutingInfo::AllNodes) => {
+                ChannelResult::Channels(self.slots.nodes.iter().cloned().collect())
+            }
+            Some(RoutingInfo::AllMasters) => {
+                ChannelResult::Channels(self.slots.masters.values().cloned().collect())
+            }
+            Some(RoutingInfo::Random) => ChannelResult::Channels(
+                self.slots
+                    .masters
+                    .values()
+                    .next()
+                    .map(|key| vec![key.clone()])
+                    .unwrap_or_default(),
+            ),
+            Some(RoutingInfo::Other(name)) => ChannelResult::Other(name),
+            None => ChannelResult::Channels(vec![]),
         })
     }
 
@@ -417,7 +420,7 @@ impl RedisCluster {
         let username = args.next();
         let token = UsernamePasswordToken { username, password };
 
-        match self.build_connections(Some(token)).await {
+        match self.build_connections_with_token(Some(token)).await {
             Ok(()) => {
                 self.connection_error = None;
                 send_simple_response(one_tx, "OK")?;
@@ -499,6 +502,11 @@ pub enum RoutingInfo {
 #[derive(Debug, Clone, Copy)]
 pub enum Command {
     AUTH,
+}
+
+enum ChannelResult {
+    Channels(Vec<String>),
+    Other(Command),
 }
 
 impl RoutingInfo {
@@ -760,7 +768,7 @@ fn immediate_responder() -> (
 impl Transform for RedisCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
-            match self.rebuild_connections().await {
+            match self.build_connections().await {
                 Ok(()) => self.rebuild_connections = false,
                 Err(e) => {
                     if let TransformError::Upstream(RedisError::NotAuthenticated) = e {
@@ -769,9 +777,6 @@ impl Transform for RedisCluster {
                     }
                 }
             }
-        } else if self.rebuild_slots {
-            self.rebuild_slot_map().await?;
-            self.rebuild_slots = false;
         }
 
         let mut responses = FuturesOrdered::new();
@@ -814,7 +819,7 @@ impl Transform for RedisCluster {
                         .masters
                         .insert(slot, format!("{}:{}", &host, &port));
 
-                    self.rebuild_slots = true;
+                    self.rebuild_connections = true;
 
                     let one_rx = self
                         .choose_and_send(&format!("{}:{}", host, port), original.clone())
@@ -870,31 +875,31 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
         sender: &mut UnboundedSender<Request>,
         token: &UsernamePasswordToken,
     ) -> Result<(), TransformError> {
-        let auth_frame = {
-            let mut args = vec![Frame::BulkString(Bytes::from("AUTH"))];
+        let mut auth_args = vec![Frame::BulkString(Bytes::from("AUTH"))];
 
-            // Support non-ACL / username-less.
-            if let Some(username) = &token.username {
-                args.push(Frame::BulkString(Bytes::from(username.clone())));
-            }
+        // Support non-ACL / username-less.
+        if let Some(username) = &token.username {
+            auth_args.push(Frame::BulkString(Bytes::from(username.clone())));
+        }
 
-            args.push(Frame::BulkString(Bytes::from(token.password.clone())));
+        auth_args.push(Frame::BulkString(Bytes::from(token.password.clone())));
 
-            Frame::Array(args)
-        };
-
-        let return_rx = send_frame_request(sender, auth_frame)?;
+        let return_rx = send_frame_request(sender, Frame::Array(auth_args))?;
 
         match receive_frame_response(return_rx).await? {
             Frame::SimpleString(s) if s == "OK" => {
                 trace!("authenticated upstream as user: {:?}", token.username);
                 Ok(())
             }
-            Frame::SimpleString(_) => {
-                Err(TransformError::Protocol("bad response value".to_string()))
-            }
+            Frame::SimpleString(s) => Err(TransformError::Protocol(format!(
+                "expected OK but got: {}",
+                s
+            ))),
             Frame::Error(e) => Err(TransformError::Upstream(RedisError::from_message(&e))),
-            _ => Err(TransformError::Protocol("bad response type".to_string())),
+            f => Err(TransformError::Protocol(format!(
+                "unexpected response type: {:?}",
+                f
+            ))),
         }
     }
 }

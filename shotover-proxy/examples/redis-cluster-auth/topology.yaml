@@ -16,7 +16,5 @@ chain_config:
             "127.0.0.1:2234",
             "127.0.0.1:2235",
           ]
-named_topics:
-  testtopic: 5
 source_to_chain_mapping:
   redis_prod: redis_chain
