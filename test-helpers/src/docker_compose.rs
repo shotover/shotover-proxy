@@ -72,7 +72,7 @@ impl DockerCompose {
         info!("wait_for: '{}'", log_text );
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new( log_text ).unwrap();
-        let sys_time = SystemTime::now();
+        let sys_time = time::SystemTime::now();
         let mut result = run_command( "docker-compose", &args ).unwrap();
         while ! re.is_match(&result) {
             match sys_time.elapsed() {
