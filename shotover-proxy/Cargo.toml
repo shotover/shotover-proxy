@@ -77,3 +77,7 @@ rusty-fork = "0.3.0"
 [[bench]]
 name = "redis_benches"
 harness = false
+
+[[bench]]
+name = "chain_benches"
+harness = false
