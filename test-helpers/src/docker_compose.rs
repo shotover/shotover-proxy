@@ -78,7 +78,7 @@ impl DockerCompose {
             match sys_time.elapsed() {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > 60 {
-                        Err("wait_for: Timer expired" );
+                        return Err(anyhow!("wait_for: Timer expired" ));
                     }
                 }
                 Err(e) => {
