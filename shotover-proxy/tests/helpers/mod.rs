@@ -146,7 +146,7 @@ impl ShotoverProcess {
     }
 
     #[allow(unused)]
-    pub fn pid(&self) -> Pid {
+    fn pid(&self) -> Pid {
         Pid::from_raw(self.child.id() as i32)
     }
 
