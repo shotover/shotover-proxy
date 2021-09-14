@@ -61,11 +61,11 @@ jobs:
       run: mkdir -p test_tmp && aws s3 sync s3://shotover-test-captures ./test_tmp
     - name: Check `cargo fmt` was run
       run: cargo fmt --all -- --check
+    - name: Build
+      run: cargo build --all-targets
     - name: Run tests
       run: cargo test -- --include-ignored
       timeout-minutes: 30
-#    - name: Build
-#      run: cargo build
     - name: Cleanup docker
       run: ./shotover-proxy/tests/scripts/teardown.sh
       if: ${{ always() }}
