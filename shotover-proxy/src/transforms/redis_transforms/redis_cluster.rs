@@ -66,10 +66,10 @@ impl TransformsFromConfig for RedisClusterConfig {
 
         match cluster.build_connections(None).await {
             Ok(()) => {
-                info!("connected to upstream cluster");
+                info!("connected to upstream");
             }
             Err(TransformError::Upstream(RedisError::NotAuthenticated)) => {
-                info!("deferring connection due to auth");
+                info!("upstream requires auth");
             }
             Err(e) => {
                 bail!("failed to connect to upstream: {}", e);
@@ -216,17 +216,47 @@ impl RedisCluster {
         &mut self,
         token: Option<UsernamePasswordToken>,
     ) -> Result<(), TransformError> {
-        // NOTE: Fetch slot map uses unpooled connections, to check token validity before reusing pooled connections.
-        let slots = self.fetch_slot_map(&token).await?;
+        debug!("building connections");
+        match self.build_connections_inner(&token).await {
+            Ok((slots, channels)) => {
+                debug!("connected to cluster: {:?}", channels.keys());
+
+                self.token = token;
+                self.slots = slots;
+                self.channels = channels;
+
+                self.connection_error = None;
+                self.rebuild_connections = false;
+
+                Ok(())
+            }
+            Err(error) => {
+                if let TransformError::Upstream(RedisError::NotAuthenticated) = error {
+                    // Assume retry is pointless if authentication is required.
+                    self.connection_error = Some("NOAUTH Authentication required (cached)");
+                    self.rebuild_connections = false;
+                } else {
+                    debug!("failed to connect to all hosts: {:?}", error);
+                }
+
+                Err(error)
+            }
+        }
+    }
+
+    async fn build_connections_inner(
+        &mut self,
+        token: &Option<UsernamePasswordToken>,
+    ) -> Result<(SlotMap, ChannelMap), TransformError> {
+        // NOTE: Fetch slot map uses unpooled connections to check token validity before reusing pooled connections.
+        let slots = self.fetch_slot_map(token).await?;
 
         let mut channels = ChannelMap::new();
         let mut errors = Vec::new();
-
-        debug!("building connections");
         for node in slots.masters.values().chain(slots.replicas.values()) {
             match self
                 .connection_pool
-                .get_connections(node, &token, self.connection_count)
+                .get_connections(node, token, self.connection_count)
                 .await
             {
                 Ok(connections) => {
@@ -240,17 +270,10 @@ impl RedisCluster {
         }
 
         if channels.is_empty() && !errors.is_empty() {
-            debug!("failed to connect to all hosts");
-            return Err(TransformError::choose_upstream_or_first(errors).unwrap());
+            Err(TransformError::choose_upstream_or_first(errors).unwrap())
+        } else {
+            Ok((slots, channels))
         }
-
-        debug!("Connected to cluster: {:?}", channels.keys());
-
-        self.token = token;
-        self.slots = slots;
-        self.channels = channels;
-
-        Ok(())
     }
 
     #[inline]
@@ -394,7 +417,6 @@ impl RedisCluster {
 
         match self.build_connections(Some(token)).await {
             Ok(()) => {
-                self.connection_error = None;
                 send_simple_response(one_tx, "OK")?;
             }
             Err(TransformError::Upstream(RedisError::BadCredentials)) => {
@@ -740,15 +762,7 @@ fn immediate_responder() -> (
 impl Transform for RedisCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
-            match self.build_connections(self.token.clone()).await {
-                Ok(()) => self.rebuild_connections = false,
-                Err(e) => {
-                    if let TransformError::Upstream(RedisError::NotAuthenticated) = e {
-                        self.connection_error = Some("NOAUTH Authentication required (cached)");
-                        self.rebuild_connections = false;
-                    }
-                }
-            }
+            self.build_connections(self.token.clone()).await.ok();
         }
 
         let mut responses = FuturesOrdered::new();
