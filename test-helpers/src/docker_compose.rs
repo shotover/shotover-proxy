@@ -62,6 +62,8 @@ impl DockerCompose {
 
     /// Waits for a string to appear in the docker-compose log output.
     ///
+    /// If `log_text` does not appear in 60 seconds an `Err` is created.
+    ///
     /// # Arguments
     /// `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
@@ -70,9 +72,20 @@ impl DockerCompose {
         info!("wait_for: '{}'", log_text );
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new( log_text ).unwrap();
-
+        let sys_time = SystemTime::now();
         let mut result = run_command( "docker-compose", &args ).unwrap();
         while ! re.is_match(&result) {
+            match sys_time.elapsed() {
+                Ok(elapsed) => {
+                    if elapsed.as_secs() > 60 {
+                        Err("wait_for: Timer expired" );
+                    }
+                }
+                Err(e) => {
+                    // an error occurred!
+                    info!("Clock aberration: {:?}", e);
+                }
+            }
             info!( "wait_for: looping" );
             result = run_command( "docker-compose", &args ).unwrap();
         }
