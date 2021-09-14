@@ -20,6 +20,15 @@ pub struct ShotoverManager {
     pub trigger_shutdown_tx: watch::Sender<bool>,
 }
 
+fn wait_for_socket_to_open(port: u16) {
+    let mut tries = 0;
+    while TcpStream::connect(("127.0.0.1", port)).is_err() {
+        thread::sleep(Duration::from_millis(100));
+        assert!(tries < 50, "Ran out of retries to connect to the socket");
+        tries += 1;
+    }
+}
+
 impl ShotoverManager {
     pub fn from_topology_file(topology_path: &str) -> ShotoverManager {
         let opts = ConfigOpts {
@@ -45,19 +54,10 @@ impl ShotoverManager {
         }
     }
 
-    fn wait_for_socket_to_open(port: u16) {
-        let mut tries = 0;
-        while TcpStream::connect(("127.0.0.1", port)).is_err() {
-            thread::sleep(Duration::from_millis(100));
-            assert!(tries < 50, "Ran out of retries to connect to the socket");
-            tries += 1;
-        }
-    }
-
     #[allow(unused)]
     // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
     pub fn redis_connection(&self, port: u16) -> Connection {
-        ShotoverManager::wait_for_socket_to_open(port);
+        wait_for_socket_to_open(port);
         Client::open(("127.0.0.1", port))
             .unwrap()
             .get_connection()
@@ -69,7 +69,7 @@ impl ShotoverManager {
         use redis::aio::AsyncStream;
         use tokio::net::TcpStream;
 
-        ShotoverManager::wait_for_socket_to_open(port);
+        wait_for_socket_to_open(port);
 
         let stream = Box::pin(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
         let connection_info = Default::default();
@@ -90,7 +90,7 @@ impl ShotoverManager {
         use redis::aio::AsyncStream;
         use tokio::net::TcpStream;
 
-        ShotoverManager::wait_for_socket_to_open(port);
+        wait_for_socket_to_open(port);
 
         let tcp_stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let connector = TlsConnector::new(config).unwrap();
@@ -141,7 +141,8 @@ impl ShotoverProcess {
             .spawn()
             .unwrap();
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        wait_for_socket_to_open(9001); // Wait for observability metrics port to open
+
         ShotoverProcess { child }
     }
 
