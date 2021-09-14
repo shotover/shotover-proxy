@@ -604,7 +604,7 @@ fn test_cluster_script(connection: &mut Connection) {
 #[serial(redis)]
 fn test_pass_through() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-    _compose.wait_for( "Cluster correctly created").unwrap();
+    _compose.wait_for( "Ready to accept connections").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -616,7 +616,7 @@ fn test_pass_through() {
 #[serial(redis)]
 async fn test_tls() {
     let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml");
-    _compose.wait_for( "Cluster correctly created").unwrap();
+    _compose.wait_for( "Ready to accept connections").unwrap();
     let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
 
     let tls_config = TlsConfig {
@@ -667,7 +667,7 @@ fn test_pass_through_one() {
 #[serial(redis)]
 fn test_active_active_redis() {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-    _compose.wait_for( "Cluster correctly created").unwrap();
+    _compose.wait_for( "Ready to accept connections").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -679,7 +679,7 @@ fn test_active_active_redis() {
 #[serial(redis)]
 fn test_active_one_active_redis() {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-    _compose.wait_for( "Cluster correctly created").unwrap();
+    _compose.wait_for( "Ready to accept connections").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);

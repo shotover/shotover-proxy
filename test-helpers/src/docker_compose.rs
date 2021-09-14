@@ -14,6 +14,7 @@ use regex::Regex;
 /// * `args` - An array of command line arguments for the command
 ///
 fn run_command(command: &str, args: &[&str]) -> Result<String> {
+    info!("executing {}",command);
     let data = Exec::cmd(command)
         .args(args)
         .stdout(Redirection::Pipe)
@@ -52,8 +53,10 @@ impl DockerCompose {
         DockerCompose::clean_up(file_path).unwrap();
 
         info!("bringing up docker compose {}", file_path);
+        println!("bringing up docker compose {}", file_path);
 
         info!("{}", run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap());
+        println!("docker-compose result: {}", run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap());
 
         DockerCompose {
             file_path: file_path.to_string(),
@@ -70,6 +73,7 @@ impl DockerCompose {
     ///
     pub fn wait_for(&self, log_text : &str) -> Result<()> {
         info!("wait_for: '{}'", log_text );
+        println!("wait_for: '{}'", log_text );
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new( log_text ).unwrap();
         let sys_time = time::SystemTime::now();
@@ -78,6 +82,8 @@ impl DockerCompose {
             match sys_time.elapsed() {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > 60 {
+                        info!( "{}", result );
+                        println!( "{}", result );
                         return Err(anyhow!("wait_for: Timer expired" ));
                     }
                 }
@@ -87,9 +93,11 @@ impl DockerCompose {
                 }
             }
             info!( "wait_for: looping" );
+            println!( "wait_for: {}", result );
             result = run_command( "docker-compose", &args ).unwrap();
         }
         info!( "wait_for: found '{}'", log_text );
+        println!( "wait_for: found '{}'", log_text );
         Ok(())
     }
 
