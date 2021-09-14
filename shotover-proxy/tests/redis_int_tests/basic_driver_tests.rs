@@ -759,7 +759,7 @@ fn _test_cluster_auth_redis() {
 #[serial(redis)]
 fn test_cluster_all_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    _compose.wait_for( "Cluster correctly created");
+    _compose.wait_for( "Cluster correctly created").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
 

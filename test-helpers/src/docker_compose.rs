@@ -3,9 +3,9 @@ use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
 use tracing::info;
-use tracing::field::debug;
+use regex::Regex;
 
-fn run_command(command: &str, args: &[&str]) -> Result<&str> {
+fn run_command<'a>(command: &'a str, args: &'a [&str]) -> Result<String> {
     let data = Exec::cmd(command)
         .args(args)
         .stdout(Redirection::Pipe)
@@ -13,7 +13,7 @@ fn run_command(command: &str, args: &[&str]) -> Result<&str> {
         .capture()?;
 
     if data.exit_status.success() {
-        Ok(data.stdout_str().as_str())
+        Ok(data.stdout_str().to_string())
     } else {
         Err(anyhow!(
             "command {} {:?} exited with {:?} and output:\n{}",
@@ -35,9 +35,9 @@ impl DockerCompose {
 
         info!("bringing up docker compose {}", file_path);
 
-        run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
+        info!("{}", run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap());
 
-        thread::sleep(time::Duration::from_secs(4));
+        //thread::sleep(time::Duration::from_secs(4));
 
         DockerCompose {
             file_path: file_path.to_string(),
@@ -45,15 +45,16 @@ impl DockerCompose {
     }
 
     pub fn wait_for(&self, log_text : &str) -> Result<()> {
-        info!("waiting for {}", log_text );
-        let args = ["-f", self.file_path, "logs"];
+        info!("wait_for: '{}'", log_text );
+        let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new( log_text ).unwrap();
 
         let mut result = run_command( "docker-compose", &args ).unwrap();
-        while ! result.contains(&re) {
-            debug!( &result );
+        while ! re.is_match(&result) {
+            info!( "wait_for: looping" );
             result = run_command( "docker-compose", &args ).unwrap();
         }
+        info!( "wait_for: found '{}'", log_text );
         Ok(())
     }
 
