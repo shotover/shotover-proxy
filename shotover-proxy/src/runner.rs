@@ -116,7 +116,7 @@ impl Runner {
                 _ = interrupt.recv() => {
                     debug!("received SIGINT");
                 },
-                _ =  terminate.recv() => {
+                _ = terminate.recv() => {
                     debug!("received SIGTERM");
                 },
             };
