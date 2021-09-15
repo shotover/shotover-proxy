@@ -240,7 +240,7 @@ impl RedisCluster {
                 Err(err)
             }
             Err(err) => {
-                warn!("failed to connect to all hosts: {:?}", err);
+                warn!("failed to build connections: {}", err);
                 Err(err)
             }
         }
@@ -434,8 +434,7 @@ impl RedisCluster {
                 send_error_response(one_tx, e.to_string().as_str())?;
             }
             Err(e) => {
-                warn!("failed to build authenticated connections: {:?}", e);
-                send_error_response(one_tx, "ERR could not connect to upstream with auth")?;
+                send_error_response(one_tx, &format!("ERR authentication failed: {}", e))?;
             }
         }
 
