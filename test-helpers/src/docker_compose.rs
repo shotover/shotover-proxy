@@ -18,7 +18,7 @@ use tracing::info;
 /// * `args` - An array of command line arguments for the command
 ///
 fn run_command(command: &str, args: &[&str]) -> Result<String> {
-    info!("executing {}", command);
+    debug!("executing {}", command);
     let data = Exec::cmd(command)
         .args(args)
         .stdout(Redirection::Pipe)
@@ -67,9 +67,6 @@ impl DockerCompose {
         DockerCompose::clean_up(file_path).unwrap();
 
         let mut result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
-        info!("Stopping {}: {}", file_path, result);
-
-        result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
         info!("Starting {}: {}", file_path, result);
 
         DockerCompose {
@@ -88,29 +85,7 @@ impl DockerCompose {
     /// output.
     ///
     pub fn wait_for(&self, log_text: &str) -> Result<()> {
-        info!("wait_for: '{}'", log_text);
-        let args = ["-f", &self.file_path, "logs"];
-        let re = Regex::new(log_text).unwrap();
-        let sys_time = time::SystemTime::now();
-        let mut result = run_command("docker-compose", &args).unwrap();
-        while !re.is_match(&result) {
-            match sys_time.elapsed() {
-                Ok(elapsed) => {
-                    if elapsed.as_secs() > 60 {
-                        debug!("{}", result);
-                        return Err(anyhow!("wait_for: Timer expired"));
-                    }
-                }
-                Err(e) => {
-                    // an error occurred!
-                    info!("Clock aberration: {:?}", e);
-                }
-            }
-            debug!("wait_for: looping");
-            result = run_command("docker-compose", &args).unwrap();
-        }
-        info!("wait_for: found '{}'", log_text);
-        Ok(())
+        self.wait_for_n( log_text, 1 )
     }
 
     /// Waits for a string to appear in the docker-compose log output `count` times.
