@@ -404,9 +404,7 @@ impl RedisCluster {
                 Frame::BulkString(s) => Ok(s),
                 _ => bail!("syntax error: expected bulk string"),
             })
-            .map(|b| {
-                String::from_utf8(b?.to_vec()).map_err(|_| anyhow!("syntax error: expected utf-8"))
-            })
+            .map(|b| String::from_utf8(b?.to_vec()).context("syntax error: expected utf-8"))
             .collect::<Result<Vec<_>>>()?
             .into_iter();
 
@@ -417,7 +415,13 @@ impl RedisCluster {
                 return Ok(Box::pin(one_rx));
             }
         };
+
         let username = args.next();
+
+        if args.next().is_some() {
+            bail!("syntax error: too many args")
+        }
+
         let token = UsernamePasswordToken { username, password };
 
         match self.build_connections(Some(token)).await {
