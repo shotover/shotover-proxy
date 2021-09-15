@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
-use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
@@ -109,7 +109,18 @@ impl Runner {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
         self.runtime_handle.spawn(async move {
-            signal::ctrl_c().await.unwrap();
+            let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+            let mut terminate = signal(SignalKind::terminate()).unwrap();
+
+            tokio::select! {
+                _ = interrupt.recv() => {
+                    debug!("received SIGINT");
+                },
+                _ = terminate.recv() => {
+                    debug!("received SIGTERM");
+                },
+            };
+
             trigger_shutdown_tx.send(true).unwrap();
         });
 
