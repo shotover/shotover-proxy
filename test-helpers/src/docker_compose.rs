@@ -51,6 +51,9 @@ impl DockerCompose {
     /// # Arguments
     /// * `file_path` - The path to the docker-compose yaml file.
     ///
+    /// # Panics
+    /// * Will panic if docker-compose is not installed
+    ///
     pub fn new(file_path: &str) -> Self {
         if let Err(ErrorKind::NotFound) = Command::new("docker-compose")
             .output()
@@ -113,6 +116,49 @@ impl DockerCompose {
         }
         info!("wait_for: found '{}'", log_text);
         println!("wait_for: found '{}'", log_text);
+        Ok(())
+    }
+
+    /// Waits for a string to appear in the docker-compose log output.
+    ///
+    /// If `log_text` does not appear in 60 seconds an `Err` is created.
+    ///
+    /// # Arguments
+    /// `log_text` - A regular expression defining the text to find in the docker-container log
+    /// output.
+    ///
+    pub fn wait_for_N(&self, log_text: &str, count : usize) -> Result<()> {
+        info!("wait_for_n: '{}' {}", log_text, count);
+        println!("wait_for_n: '{}' {}", log_text, count);
+        let mut n = 0;
+        let args = ["-f", &self.file_path, "logs"];
+        let re = Regex::new(log_text).unwrap();
+        let sys_time = time::SystemTime::now();
+        let mut result = run_command("docker-compose", &args).unwrap();
+        while n < count {
+            if re.is_match(&result) {
+                n += 1;
+            }
+
+            match sys_time.elapsed() {
+                Ok(elapsed) => {
+                    if elapsed.as_secs() > 60 {
+                        info!("{}", result);
+                        println!("{}", result);
+                        return Err(anyhow!("wait_for: Timer expired"));
+                    }
+                }
+                Err(e) => {
+                    // an error occurred!
+                    info!("Clock aberration: {:?}", e);
+                }
+            }
+            info!("wait_for_n: looping");
+            println!("wait_for_n: {}", result);
+            result = run_command("docker-compose", &args).unwrap();
+        }
+        info!("wait_for_n: found '{}' {} times", log_text, count);
+        println!("wait_for_n: found '{}' {} times", log_text, count);
         Ok(())
     }
 
