@@ -99,18 +99,16 @@ pub struct RedisCluster {
 impl RedisCluster {
     #[inline]
     async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
-        let command_args = match message.original {
+        let command = match message.original {
             RawFrame::Redis(Frame::Array(ref command)) => command,
             _ => bail!("syntax error: bad command"),
         };
 
-        let channels = match self.get_channels(command_args).await? {
+        let channels = match self.get_channels(command).await? {
             ChannelResult::Channels(channels) => channels,
-            ChannelResult::Other(command_name) => match command_name {
-                Command::AUTH => {
-                    return self.on_auth(command_args).await;
-                }
-            },
+            ChannelResult::Other(Command::AUTH) => {
+                return self.on_auth(command).await;
+            }
         };
 
         Ok(match channels.len() {
