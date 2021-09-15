@@ -85,7 +85,7 @@ impl DockerCompose {
     /// output.
     ///
     pub fn wait_for(&self, log_text: &str) -> Result<()> {
-        self.wait_for_n( log_text, 1 )
+        self.wait_for_n(log_text, 1)
     }
 
     /// Waits for a string to appear in the docker-compose log output `count` times.
