@@ -126,19 +126,16 @@ impl DockerCompose {
     /// # Arguments
     /// `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
+    /// `count` - The number of times the regular expression should be found.
     ///
-    pub fn wait_for_N(&self, log_text: &str, count : usize) -> Result<()> {
+    pub fn wait_for_n(&self, log_text: &str, count : usize) -> Result<()> {
         info!("wait_for_n: '{}' {}", log_text, count);
         println!("wait_for_n: '{}' {}", log_text, count);
-        let mut n = 0;
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::SystemTime::now();
         let mut result = run_command("docker-compose", &args).unwrap();
-        while n < count {
-            if re.is_match(&result) {
-                n += 1;
-            }
+        while re.find_iter( &result ).count() < count {
 
             match sys_time.elapsed() {
                 Ok(elapsed) => {
