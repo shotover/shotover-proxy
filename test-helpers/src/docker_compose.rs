@@ -66,7 +66,7 @@ impl DockerCompose {
 
         DockerCompose::clean_up(file_path).unwrap();
 
-        let mut result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
+        let result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
         info!("Starting {}: {}", file_path, result);
 
         DockerCompose {
