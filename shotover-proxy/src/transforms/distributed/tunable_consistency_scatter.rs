@@ -148,14 +148,12 @@ impl Transform for TunableConsistency {
                         QueryType::Read => self.read_consistency,
                         _ => self.write_consistency,
                     }
+                } else if std::mem::discriminant(&m.original.get_query_type())
+                    == std::mem::discriminant(&QueryType::Read)
+                {
+                    self.read_consistency
                 } else {
-                    if std::mem::discriminant(&m.original.get_query_type())
-                        == std::mem::discriminant(&QueryType::Read)
-                    {
-                        self.read_consistency
-                    } else {
-                        self.write_consistency
-                    }
+                    self.write_consistency
                 }
             })
             .collect_vec();

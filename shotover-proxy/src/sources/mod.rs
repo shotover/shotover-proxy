@@ -1,43 +1,43 @@
 use crate::config::topology::TopicHolder;
 use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
 use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
-use crate::transforms::chain::{TransformChain};
+use crate::sources::redis_source::{RedisConfig, RedisSource};
+use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
-use crate::sources::redis_source::{RedisSource, RedisConfig};
-use tokio::sync::{broadcast, mpsc};
 
-use anyhow::{Result};
+use anyhow::Result;
 
 pub mod cassandra_source;
 pub mod mpsc_source;
 pub mod redis_source;
 
 /*
-    notify_shutdown: broadcast::Sender<()>,
+   notify_shutdown: broadcast::Sender<()>,
 
-    /// Used as part of the graceful shutdown process to wait for client
-    /// connections to complete processing.
-    ///
-    /// Tokio channels are closed once all `Sender` handles go out of scope.
-    /// When a channel is closed, the receiver receives `None`. This is
-    /// leveraged to detect all connection handlers completing. When a
-    /// connection handler is initialized, it is assigned a clone of
-    /// `shutdown_complete_tx`. When the listener shuts down, it drops the
-    /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
-    /// complete, all clones of the `Sender` are also dropped. This results in
-    /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
-    /// is safe to exit the server process.
-    shutdown_complete_rx: mpsc::Receiver<()>,
-    shutdown_complete_tx: mpsc::Sender<()>,
- */
+   /// Used as part of the graceful shutdown process to wait for client
+   /// connections to complete processing.
+   ///
+   /// Tokio channels are closed once all `Sender` handles go out of scope.
+   /// When a channel is closed, the receiver receives `None`. This is
+   /// leveraged to detect all connection handlers completing. When a
+   /// connection handler is initialized, it is assigned a clone of
+   /// `shutdown_complete_tx`. When the listener shuts down, it drops the
+   /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
+   /// complete, all clones of the `Sender` are also dropped. This results in
+   /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
+   /// is safe to exit the server process.
+   shutdown_complete_rx: mpsc::Receiver<()>,
+   shutdown_complete_tx: mpsc::Sender<()>,
+*/
 
 #[derive(Debug)]
 pub enum Sources {
     Cassandra(CassandraSource),
     Mpsc(AsyncMpsc),
-    Redis(RedisSource)
+    Redis(RedisSource),
 }
 
 impl Sources {
@@ -54,7 +54,7 @@ impl Sources {
 pub enum SourcesConfig {
     Cassandra(CassandraConfig),
     Mpsc(AsyncMpscConfig),
-    Redis(RedisConfig)
+    Redis(RedisConfig),
 }
 
 impl SourcesConfig {
@@ -62,13 +62,22 @@ impl SourcesConfig {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        notify_shutdown: broadcast::Sender<()>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         match self {
-            SourcesConfig::Cassandra(c) => c.get_source(chain, topics, notify_shutdown, shutdown_complete_tx).await,
-            SourcesConfig::Mpsc(m) => m.get_source(chain, topics, notify_shutdown,  shutdown_complete_tx).await,
-            SourcesConfig::Redis(r) => r.get_source(chain, topics,  notify_shutdown, shutdown_complete_tx).await
+            SourcesConfig::Cassandra(c) => {
+                c.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
+                    .await
+            }
+            SourcesConfig::Mpsc(m) => {
+                m.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
+                    .await
+            }
+            SourcesConfig::Redis(r) => {
+                r.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
+                    .await
+            }
         }
     }
 }
@@ -79,9 +88,7 @@ pub trait SourcesFromConfig: Send {
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
-        notify_shutdown: broadcast::Sender<()>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>>;
-
-
 }

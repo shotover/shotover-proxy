@@ -14,7 +14,6 @@ sources:
           - clustering
 chain_config:
   main_chain:
-#    - Printer
     - CodecDestination:
         bypass_result_processing: true
         remote_address: "172.18.0.2:9042"

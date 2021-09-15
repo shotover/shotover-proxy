@@ -20,7 +20,7 @@ Shotover requires the following in order to build:
 
 On ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-dev pkg-config`
 
-While not required for building shotover, installing `docker` will allow you to run shotover's integration tests and also build
+While not required for building shotover, installing `docker` and `docker-compose` will allow you to run shotover's integration tests and also build
 the static libc version of shotover.
 
 Some tests will require `libpcap-dev` to be installed as well (reading pcap files for protocol tests).

@@ -1,9 +1,9 @@
 mod helpers;
 
+use helpers::ShotoverManager;
 use redis::{Commands, Connection, RedisResult};
 use std::{thread, time};
 use tracing::info;
-use helpers::run_shotover_with_topology;
 
 const LUA1: &str = r###"
 return {KEYS[1],ARGV[1],ARGV[2]}
@@ -58,8 +58,7 @@ async fn run_register_flow_pipelined<BK, BCK, BKU>(
     build_c_key: BCK,
     build_key_user: BKU,
     channel: &str,
-)
-where
+) where
     BK: Fn() -> String,
     BCK: Fn() -> String,
     BKU: Fn() -> String,
@@ -199,7 +198,8 @@ async fn test_simple_pipeline_workflow() {
 // #[tokio::test(threaded_scheduler)]
 #[allow(dead_code)]
 async fn run_all() {
-    let _running = run_shotover_with_topology("examples/redis-multi/topology.yaml");
+    let _manager = ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
+
     thread::sleep(time::Duration::from_secs(2));
     test_simple_pipeline_workflow().await;
     test_presence_fresh_join_pipeline_workflow().await;

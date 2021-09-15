@@ -1,23 +1,27 @@
+use std::env;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
-use metrics_runtime::Receiver;
-use tokio::runtime::{self, Runtime};
+use metrics_exporter_prometheus::PrometheusBuilder;
+use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
-use tracing_appender::non_blocking::{WorkerGuard, NonBlocking};
+use tracing::{debug, error, info};
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_subscriber::filter::Directive;
+use tracing_subscriber::fmt::format::{DefaultFields, Format};
 use tracing_subscriber::fmt::Layer;
-use tracing_subscriber::fmt::format::{Format, DefaultFields};
 use tracing_subscriber::layer::Layered;
 use tracing_subscriber::reload::Handle;
 use tracing_subscriber::{EnvFilter, Registry};
 
+use crate::admin::httpserver::LogFilterHttpExporter;
 use crate::config::topology::Topology;
 use crate::config::Config;
 use crate::transforms::Transforms;
 use crate::transforms::Wrapper;
-use crate::admin::httpserver::LogFilterHttpExporter;
 
 #[derive(Clap, Clone)]
 #[clap(version = crate_version!(), author = "Instaclustr")]
@@ -41,13 +45,14 @@ impl Default for ConfigOpts {
             topology_file: "config/topology.yaml".into(),
             config_file: "config/config.yaml".into(),
             core_threads: 4,
-            stack_size: 2097152
+            stack_size: 2097152,
         }
     }
 }
 
 pub struct Runner {
-    runtime: Runtime,
+    runtime: Option<Runtime>,
+    runtime_handle: RuntimeHandle,
     topology: Topology,
     config: Config,
     tracing: TracingState,
@@ -58,58 +63,137 @@ impl Runner {
         let config = Config::from_file(params.config_file.clone())?;
         let topology = Topology::from_file(params.topology_file.clone())?;
 
-        let runtime = runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("RPProxy-Thread")
-            .thread_stack_size(params.stack_size)
-            .worker_threads(params.core_threads)
-            .build()
-            .unwrap();
+        let tracing = TracingState::new(config.main_log_level.as_str())?;
 
-        let tracing = TracingState::new(config.main_log_level.as_str());
+        let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);
 
-        Ok(Runner { runtime, topology, config, tracing })
+        Ok(Runner {
+            runtime,
+            runtime_handle,
+            topology,
+            config,
+            tracing,
+        })
     }
 
     pub fn with_observability_interface(self) -> Result<Self> {
-        let receiver = Receiver::builder().build().expect("failed to create receiver");
-        let socket: SocketAddr = self.config.observability_interface.parse()?;
-        let exporter = LogFilterHttpExporter::new(receiver.controller(), socket, self.tracing.handle.clone());
+        let recorder = PrometheusBuilder::new().build();
+        let handle = recorder.handle();
+        metrics::set_boxed_recorder(Box::new(recorder))?;
 
-        receiver.install();
-        self.runtime.spawn(exporter.async_run());
+        let socket: SocketAddr = self.config.observability_interface.parse()?;
+        let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
+
+        self.runtime_handle.spawn(exporter.async_run());
 
         Ok(self)
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {
-        let handle = self.runtime.spawn(run(self.topology, self.config));
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
+
+        let join_handle =
+            self.runtime_handle
+                .spawn(run(self.topology, self.config, trigger_shutdown_rx));
 
         RunnerSpawned {
+            runtime_handle: self.runtime_handle,
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
-            handle,
+            trigger_shutdown_tx,
+            join_handle,
         }
     }
 
     pub fn run_block(self) -> Result<()> {
-        self.runtime.block_on(run(self.topology, self.config))
+        let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
+
+        self.runtime_handle.spawn(async move {
+            let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+            let mut terminate = signal(SignalKind::terminate()).unwrap();
+
+            tokio::select! {
+                _ = interrupt.recv() => {
+                    debug!("received SIGINT");
+                },
+                _ = terminate.recv() => {
+                    debug!("received SIGTERM");
+                },
+            };
+
+            trigger_shutdown_tx.send(true).unwrap();
+        });
+
+        self.runtime_handle
+            .block_on(run(self.topology, self.config, trigger_shutdown_rx))
+    }
+
+    /// Get handle for an existing runtime or create one
+    fn get_runtime(stack_size: usize, core_threads: usize) -> (RuntimeHandle, Option<Runtime>) {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // Using block_in_place to trigger a panic in case the runtime is set up in single-threaded mode.
+            // Shotover does not function correctly in single threaded mode (currently hangs)
+            // and block_in_place gives an error message explaining to setup the runtime in multi-threaded mode.
+            // This does not protect us when calling Runtime::enter() or when no runtime is set up at all.
+            tokio::task::block_in_place(|| {});
+
+            (handle, None)
+        } else {
+            let runtime = runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("Shotover-Proxy-Thread")
+                .thread_stack_size(stack_size)
+                .worker_threads(core_threads)
+                .build()
+                .unwrap();
+
+            (runtime.handle().clone(), Some(runtime))
+        }
     }
 }
+
+type TracingStateHandle =
+    Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>;
 
 struct TracingState {
     /// Once this is dropped tracing logs are ignored
     guard: WorkerGuard,
-    handle: Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>,
+    handle: TracingStateHandle,
+}
+
+/// Returns a new `EnvFilter` by parsing each directive string, or an error if any directive is invalid.
+/// The parsing is robust to formatting, but will reject the first invalid directive (e.g. bad log level).
+fn try_parse_log_directives(directives: &[Option<&str>]) -> Result<EnvFilter> {
+    let directives: Vec<Directive> = directives
+        .iter()
+        .flat_map(Option::as_deref)
+        .flat_map(|s| s.split(','))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().map_err(|e| anyhow!("{}: {}", e, s)))
+        .collect::<Result<_>>()?;
+
+    let filter = directives
+        .into_iter()
+        .fold(EnvFilter::default(), |filter, directive| {
+            filter.add_directive(directive)
+        });
+
+    Ok(filter)
 }
 
 impl TracingState {
-    fn new(log_level: &str) -> Self {
+    fn new(log_level: &str) -> Result<Self> {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
 
         let builder = tracing_subscriber::fmt()
             .with_writer(non_blocking)
-            .with_env_filter(log_level)
+            .with_env_filter({
+                // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.
+                // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
+                let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
+                try_parse_log_directives(&[Some(log_level), overrides.as_deref()])?
+            })
             .with_filter_reloading();
         let handle = builder.reload_handle();
 
@@ -117,18 +201,23 @@ impl TracingState {
         // Currently the implementation of try_init will only fail when it is called multiple times.
         builder.try_init().ok();
 
-        TracingState { guard, handle }
+        Ok(TracingState { guard, handle })
     }
 }
 
-
 pub struct RunnerSpawned {
-    pub runtime: Runtime,
-    pub handle: JoinHandle<Result<()>>,
+    pub runtime: Option<Runtime>,
+    pub runtime_handle: RuntimeHandle,
+    pub join_handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
+    pub trigger_shutdown_tx: watch::Sender<bool>,
 }
 
-pub async fn run(topology: Topology, config: Config) -> Result<()> {
+pub async fn run(
+    topology: Topology,
+    config: Config,
+    trigger_shutdown_tx: watch::Receiver<bool>,
+) -> Result<()> {
     info!("Starting Shotover {}", crate_version!());
     info!(configuration = ?config);
     info!(topology = ?topology);
@@ -143,14 +232,37 @@ pub async fn run(topology: Topology, config: Config) -> Result<()> {
         std::mem::size_of::<Wrapper<'_>>()
     );
 
-    match topology.run_chains().await {
+    match topology.run_chains(trigger_shutdown_tx).await {
         Ok((_, mut shutdown_complete_rx)) => {
-            let _ = shutdown_complete_rx.recv().await;
-            info!("Goodbye!");
+            shutdown_complete_rx.recv().await;
+            info!("Shotover was shutdown cleanly.");
             Ok(())
         }
         Err(error) => {
-            Err(anyhow!("Failed to run chains: {}", error))
+            error!("{:?}", error);
+            Err(anyhow!(
+                "Shotover failed to initialize, the fatal error was logged."
+            ))
         }
+    }
+}
+
+#[test]
+fn test_try_parse_log_directives() {
+    assert_eq!(
+        try_parse_log_directives(&[
+            Some("info,short=warn,error"),
+            None,
+            Some("debug"),
+            Some("alongname=trace")
+        ])
+        .unwrap()
+        .to_string(),
+        // Ordered by descending specificity.
+        "alongname=trace,short=warn,debug"
+    );
+    match try_parse_log_directives(&[Some("good=info,bad=blah,warn")]) {
+        Ok(_) => panic!(),
+        Err(e) => assert_eq!(e.to_string(), "invalid filter directive: bad=blah"),
     }
 }

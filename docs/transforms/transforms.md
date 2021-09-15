@@ -37,7 +37,7 @@ Note: this will just pass the query to the remote node. No cluster discovery or 
 ### KafkaDestination
 *State: Alpha*
 
-This transform will take a query and push it to.
+This transform will take a query and push it to a given Kafka topic.
 
 * `topic` - A String containing the name of the kafka topic. E.g. `topic: "my_kafka_topic"`
 * `keys` - A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver. See

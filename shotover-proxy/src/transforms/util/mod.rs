@@ -1,3 +1,6 @@
+use std::fmt;
+use std::io;
+
 use crate::error::ChainResponse;
 use crate::message::Message;
 
@@ -12,3 +15,12 @@ pub struct Request {
 }
 
 pub type Response = (Message, ChainResponse);
+
+#[derive(thiserror::Error, Debug)]
+pub enum ConnectionError<E: fmt::Debug + fmt::Display> {
+    #[error("io error: {0}")]
+    IO(io::Error),
+
+    #[error("authenticator error: {0}")]
+    Authenticator(E),
+}

@@ -1,4 +1,4 @@
-name: Rust
+name: Testing
 
 on:
   push:
@@ -41,8 +41,10 @@ jobs:
       run: |
         curl -L "$LINK/$SCCACHE_VERSION/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl.tar.gz" | tar xz
         echo "$PWD/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl/" >> $GITHUB_PATH
-    - name: Install libpacap
-      run: sudo apt-get install -y libpcap-dev
+    - name: Install ubuntu packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libpcap-dev
     - name: Start sccache
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -57,11 +59,13 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: mkdir -p test_tmp && aws s3 sync s3://shotover-test-captures ./test_tmp
+    - name: Check `cargo fmt` was run
+      run: cargo fmt --all -- --check
+    - name: Build
+      run: cargo build --all-targets
     - name: Run tests
       run: cargo test -- --include-ignored
       timeout-minutes: 30
-#    - name: Build
-#      run: cargo build
     - name: Cleanup docker
       run: ./shotover-proxy/tests/scripts/teardown.sh
       if: ${{ always() }}

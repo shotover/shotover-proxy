@@ -9,7 +9,6 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
-use mlua::UserData;
 use redis_protocol::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -181,12 +180,6 @@ impl Messages {
     }
 }
 
-impl UserData for Messages {}
-
-impl UserData for QueryMessage {}
-impl UserData for QueryResponse {}
-impl UserData for RawMessage {}
-
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessage {
     pub original: RawFrame,
@@ -207,20 +200,18 @@ pub enum ASTHolder {
 impl ASTHolder {
     pub fn get_command(&self) -> String {
         match self {
-            ASTHolder::SQL(statement) => {
-                match statement {
-                    Statement::Query(_) => "SELECT",
-                    Statement::Insert { .. } => "INSERT",
-                    Statement::Update { .. } => "UPDATE",
-                    Statement::Delete { .. } => "DELETE",
-                    Statement::CreateView { .. } => "CREATE VIEW",
-                    Statement::CreateTable { .. } => "CREATE TABLE",
-                    Statement::AlterTable { .. } => "ALTER TABLE",
-                    Statement::Drop { .. } => "DROP",
-                    _ => "UNKNOWN",
-                }
-                .to_string()
+            ASTHolder::SQL(statement) => match statement {
+                Statement::Query(_) => "SELECT",
+                Statement::Insert { .. } => "INSERT",
+                Statement::Update { .. } => "UPDATE",
+                Statement::Delete { .. } => "DELETE",
+                Statement::CreateView { .. } => "CREATE VIEW",
+                Statement::CreateTable { .. } => "CREATE TABLE",
+                Statement::AlterTable { .. } => "ALTER TABLE",
+                Statement::Drop { .. } => "DROP",
+                _ => "UNKNOWN",
             }
+            .to_string(),
             ASTHolder::Commands(commands) => {
                 if let Value::List(coms) = commands {
                     if let Some(Value::Bytes(b)) = coms.get(0) {
@@ -440,9 +431,9 @@ impl From<&Frame> for Value {
     }
 }
 
-impl Into<Frame> for Value {
-    fn into(self) -> Frame {
-        match self {
+impl From<Value> for Frame {
+    fn from(value: Value) -> Frame {
+        match value {
             Value::NULL => Frame::Null,
             Value::None => unimplemented!(),
             Value::Bytes(b) => Frame::BulkString(b),
@@ -486,8 +477,9 @@ impl Value {
                 ColType::Double => Value::Float(decode_double(actual_bytes).unwrap()),
                 ColType::Float => Value::Float(decode_float(actual_bytes).unwrap() as f64),
                 ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Timestamp =>
-                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap())),
+                ColType::Timestamp => {
+                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap()))
+                }
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
                 ColType::Varint => Value::Integer(decode_varint(actual_bytes).unwrap()),
@@ -546,9 +538,9 @@ impl Value {
     }
 }
 
-impl Into<cassandra_proto::types::value::Bytes> for Value {
-    fn into(self) -> cassandra_proto::types::value::Bytes {
-        match self {
+impl From<Value> for cassandra_proto::types::value::Bytes {
+    fn from(value: Value) -> cassandra_proto::types::value::Bytes {
+        match value {
             Value::NULL => (-1).into(),
             Value::None => cassandra_proto::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_proto::types::value::Bytes::new(b.to_vec()),

@@ -62,7 +62,7 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
                     .iter()
                     .map(|v| {
                         if let Value::Bytes(b) = v {
-                            unsafe { format!("'{}'", String::from_utf8_unchecked(b.to_vec())) }
+                            format!("'{}'", String::from_utf8_lossy(b.as_ref()))
                         } else {
                             // TODO this might not be right... but we should only be dealing with bytes
                             format!("{:?}", v)

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Sender as OneSender;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::watch;
 use tracing::info;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -98,21 +98,23 @@ impl Topology {
         for (key, value) in self.chain_config.clone() {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, &topics).await?,
+                build_chain_from_config(key, &value, topics).await?,
             );
         }
         Ok(temp)
     }
 
     #[allow(clippy::type_complexity)]
-    pub async fn run_chains(&self) -> Result<(Vec<Sources>, Receiver<()>)> {
+    pub async fn run_chains(
+        &self,
+        trigger_shutdown_rx: watch::Receiver<bool>,
+    ) -> Result<(Vec<Sources>, Receiver<()>)> {
         let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let (notify_shutdown, _) = broadcast::channel(1);
-        let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel(1);
+        let (shutdown_complete_tx, shutdown_complete_rx) = channel(1);
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
@@ -125,7 +127,7 @@ impl Topology {
                             .get_source(
                                 chain,
                                 &mut topics,
-                                notify_shutdown.clone(),
+                                trigger_shutdown_rx.clone(),
                                 shutdown_complete_tx.clone(),
                             )
                             .await?,

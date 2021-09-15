@@ -1,12 +1,15 @@
 use crate::message::Messages;
+use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::Result;
 use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
@@ -15,15 +18,15 @@ use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace, warn};
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecReadHalf for T {}
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
-// TODO: Replace with trait_alias (RFC#1733).
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait Codec: CodecReadHalf + CodecWriteHalf {}
 impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
@@ -61,24 +64,16 @@ pub struct TcpCodecListener<C: Codec> {
     /// The initial `shutdown` trigger is provided by the `run` caller. The
     /// server is responsible for gracefully shutting down active connections.
     /// When a connection task is spawned, it is passed a broadcast receiver
-    /// handle. When a graceful shutdown is initiated, a `()` value is sent via
-    /// the broadcast::Sender. Each active connection receives it, reaches a
+    /// handle. When a graceful shutdown is initiated, a `true` value is sent via
+    /// the watch::Sender. Each active connection receives it, reaches a
     /// safe terminal state, and completes the task.
-    pub notify_shutdown: broadcast::Sender<()>,
+    pub trigger_shutdown_rx: watch::Receiver<bool>,
 
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
-    ///
-    /// Tokio channels are closed once all `Sender` handles go out of scope.
-    /// When a channel is closed, the receiver receives `None`. This is
-    /// leveraged to detect all connection handlers completing. When a
-    /// connection handler is initialized, it is assigned a clone of
-    /// `shutdown_complete_tx`. When the listener shuts down, it drops the
-    /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
-    /// complete, all clones of the `Sender` are also dropped. This results in
-    /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
-    /// is safe to exit the server process.
     pub shutdown_complete_tx: mpsc::Sender<()>,
+
+    pub tls: Option<TlsAcceptor>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -111,8 +106,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // "forget" the permit, which drops the permit value **without**
             // incrementing the semaphore's permits. Then, in the handler task
             // we manually add a new permit when processing completes.
-            // self.limit_connections.acquire().await.forget();
-
             if self.hard_connection_limit {
                 match self.limit_connections.try_acquire() {
                     Ok(p) => {
@@ -144,7 +137,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
-            gauge!("shotover_available_connections", self.limit_connections.available_permits() as i64 ,"source" => self.source_name.clone());
+            gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64,"source" => self.source_name.clone());
 
             let peer = socket
                 .peer_addr()
@@ -170,7 +163,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             let mut handler = Handler {
                 // Get a handle to the shared database. Internally, this is an
                 // `Arc`, so a clone only increments the ref count.
-                // chain: self.chain.clone(),
                 chain: self.chain.clone(),
                 client_details: peer,
                 conn_details: conn_string,
@@ -187,13 +179,14 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 limit_connections: self.limit_connections.clone(),
 
                 // Receive shutdown notifications.
-                shutdown: Shutdown::new(self.notify_shutdown.subscribe()),
+                shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
                 // Notifies the receiver half once all clones are
                 // dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
+
+                tls: self.tls.clone(),
             };
-            // let chain = self.chain.clone();
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
@@ -279,8 +272,47 @@ pub struct Handler<C: Codec> {
     /// which point the connection is terminated.
     shutdown: Shutdown,
 
-    /// Not used directly. Instead, when `Handler` is dropped...?
     _shutdown_complete: mpsc::Sender<()>,
+
+    tls: Option<TlsAcceptor>,
+}
+
+fn spawn_read_write_tasks<
+    C: Codec + 'static,
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+>(
+    codec: C,
+    rx: R,
+    tx: W,
+    in_tx: UnboundedSender<Messages>,
+    out_rx: UnboundedReceiver<Messages>,
+) {
+    let mut reader = FramedRead::new(rx, codec.clone());
+    let writer = FramedWrite::new(tx, codec);
+
+    tokio::spawn(async move {
+        while let Some(message) = reader.next().await {
+            match message {
+                Ok(message) => {
+                    if let Err(error) = in_tx.send(message) {
+                        warn!("failed to send message: {}", error);
+                        return;
+                    }
+                }
+                Err(error) => {
+                    warn!("failed to decode message: {}", error);
+                    return;
+                }
+            }
+        }
+    });
+
+    tokio::spawn(async move {
+        let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+        let r = rx_stream.forward(writer).await;
+        debug!("Stream ended {:?}", r);
+    });
 }
 
 impl<C: Codec + 'static> Handler<C> {
@@ -300,61 +332,41 @@ impl<C: Codec + 'static> Handler<C> {
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
-        let mut idle_time: u64 = 1;
+        let mut idle_time_seconds: u64 = 1;
 
-        let (in_tx, mut in_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Messages>();
+        let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Messages>();
+        let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
-        let (rx, tx) = stream.into_split();
-
-        let mut reader = FramedRead::new(rx, self.codec.clone());
-        let writer = FramedWrite::new(tx, self.codec.clone());
-
-        tokio::spawn(async move {
-            while let Some(maybe_message) = reader.next().await {
-                match maybe_message {
-                    Ok(resp_messages) => {
-                        let _ = in_tx.send(resp_messages);
-                    }
-                    Err(e) => {
-                        warn!("Frame error - {:?}", e);
-                        break;
-                    }
-                };
-            }
-        });
-
-        tokio::spawn(async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| Ok(x));
-            let r = rx_stream.forward(writer).await;
-            debug!("Stream ended {:?}", r);
-        });
+        if let Some(tls) = &self.tls {
+            let tls_stream = tls.accept(stream).await?;
+            let (rx, tx) = tokio::io::split(tls_stream);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+        } else {
+            let (rx, tx) = stream.into_split();
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+        };
 
         while !self.shutdown.is_shutdown() {
-            // While reading a request frame, also listen for the shutdown
-            // signal
-
+            // While reading a request frame, also listen for the shutdown signal
             trace!("Waiting for message");
             let frame = tokio::select! {
-                res = timeout(Duration::from_secs(idle_time) , in_rx.recv()) => {
+                res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
-                            idle_time = 1;
+                            idle_time_seconds = 1;
                             match maybe_message {
                                 Some(m) => m,
                                 None => return Ok(())
                             }
                         },
                         Err(_) => {
-                            match idle_time {
-                                0..=10 => trace!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
-                                11..=35 => trace!("Connection Idle for more than {} seconds {}", idle_time, self.conn_details),
-                                _ => {
-                                    debug!("Dropping Connection Idle for more than {} seconds {}", idle_time, self.conn_details);
-                                    return Ok(())
-                                }
+                            if idle_time_seconds < 35 {
+                                trace!("Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                            } else {
+                                debug!("Dropping. Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                                return Ok(());
                             }
-                            idle_time *= 2;
+                            idle_time_seconds *= 2;
                             continue
                         }
                     }
@@ -389,16 +401,6 @@ impl<C: Codec + 'static> Handler<C> {
                     return Ok(());
                 }
             }
-
-            // match frame {
-            //     Ok(message) => {
-            //
-            //     }
-            //     Err(e) => {
-            //         trace!("Error handling message in TcpStream source: {:?}", e);
-            //         return Ok(());
-            //     }
-            // }
         }
 
         Ok(())
@@ -436,12 +438,12 @@ pub struct Shutdown {
     shutdown: bool,
 
     /// The receive half of the channel used to listen for shutdown.
-    notify: broadcast::Receiver<()>,
+    notify: watch::Receiver<bool>,
 }
 
 impl Shutdown {
     /// Create a new `Shutdown` backed by the given `broadcast::Receiver`.
-    pub(crate) fn new(notify: broadcast::Receiver<()>) -> Shutdown {
+    pub(crate) fn new(notify: watch::Receiver<bool>) -> Shutdown {
         Shutdown {
             shutdown: false,
             notify,
@@ -461,8 +463,11 @@ impl Shutdown {
             return;
         }
 
-        // Cannot receive a "lag error" as only one value is ever sent.
-        let _ = self.notify.recv().await;
+        // check we didn't receive a shutdown message before the receiver was created
+        if !*self.notify.borrow() {
+            // Await the shutdown messsage
+            self.notify.changed().await.unwrap();
+        }
 
         // Remember that the signal has been received.
         self.shutdown = true;

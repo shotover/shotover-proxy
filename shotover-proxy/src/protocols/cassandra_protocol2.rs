@@ -562,50 +562,47 @@ impl CassandraCodec2 {
 
         match frame.opcode {
             Opcode::Query => {
-                if let Ok(body) = frame.get_body() {
-                    if let ResponseBody::Query(brq) = body {
-                        let parsed_string = CassandraCodec2::parse_query_string(
-                            brq.query.clone().into_plain(),
-                            &self.pk_col_map,
-                        );
-                        if parsed_string.ast.is_none() {
-                            // TODO: Currently this will probably catch schema changes that don't match
-                            // what the SQL parser expects
-                            return Messages::new_single_bypass(RawFrame::Cassandra(frame));
-                        }
-                        return Messages::new_single_query(
-                            QueryMessage {
-                                query_string: brq.query.into_plain(),
-                                namespace: parsed_string.namespace.unwrap(),
-                                primary_key: parsed_string.primary_key,
-                                query_values: parsed_string.colmap,
-                                projection: parsed_string.projection,
-                                query_type: QueryType::Read,
-                                ast: parsed_string.ast.map(ASTHolder::SQL),
-                            },
-                            false,
-                            RawFrame::Cassandra(frame),
-                        );
+                if let Ok(ResponseBody::Query(body)) = frame.get_body() {
+                    let parsed_string = CassandraCodec2::parse_query_string(
+                        body.query.clone().into_plain(),
+                        &self.pk_col_map,
+                    );
+                    if parsed_string.ast.is_none() {
+                        // TODO: Currently this will probably catch schema changes that don't match
+                        // what the SQL parser expects
+                        return Messages::new_single_bypass(RawFrame::Cassandra(frame));
                     }
+                    return Messages::new_single_query(
+                        QueryMessage {
+                            query_string: body.query.into_plain(),
+                            namespace: parsed_string.namespace.unwrap(),
+                            primary_key: parsed_string.primary_key,
+                            query_values: parsed_string.colmap,
+                            projection: parsed_string.projection,
+                            query_type: QueryType::Read,
+                            ast: parsed_string.ast.map(ASTHolder::SQL),
+                        },
+                        false,
+                        RawFrame::Cassandra(frame),
+                    );
                 }
                 Messages::new_single_bypass(RawFrame::Cassandra(frame))
             }
             Opcode::Result => CassandraCodec2::build_response_message(frame, None),
             Opcode::Error => {
-                if let Ok(body) = frame.get_body() {
-                    if let ResponseBody::Error(e) = body {
-                        return Messages::new_single_response(
-                            QueryResponse {
-                                matching_query: None,
-                                result: None,
-                                error: Some(Value::Strings(e.message.as_plain())),
-                                response_meta: None,
-                            },
-                            false,
-                            RawFrame::Cassandra(frame),
-                        );
-                    }
+                if let Ok(ResponseBody::Error(body)) = frame.get_body() {
+                    return Messages::new_single_response(
+                        QueryResponse {
+                            matching_query: None,
+                            result: None,
+                            error: Some(Value::Strings(body.message.as_plain())),
+                            response_meta: None,
+                        },
+                        false,
+                        RawFrame::Cassandra(frame),
+                    );
                 }
+
                 Messages::new_single_bypass(RawFrame::Cassandra(frame))
             }
             _ => Messages::new_single_bypass(RawFrame::Cassandra(frame)),
@@ -843,7 +840,7 @@ mod cassandra_protocol_tests {
                         ast.to_string().replace(char::is_whitespace, ""),
                     );
                 }
-                details => panic!("Unexpected details: {:?}", details)
+                details => panic!("Unexpected details: {:?}", details),
             }
         }
     }
