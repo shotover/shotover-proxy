@@ -782,6 +782,54 @@ fn test_cluster_auth_redis() {
         redis::cmd("GET").arg("foo").query(&mut connection),
         Ok(expected_foo.to_string())
     );
+
+    // Switch back to default superuser to setup for the auth mixing test.
+    redis::cmd("AUTH").arg("shotover").execute(&mut connection);
+
+    // To reproduce the auth mixing issue caused by using PoolConnections:
+    //
+    // 1. Insert the PoolConnections transform before the RedisCluster transform.
+    // 2. Set the parallelism parameter to be fewer than the iteration count below.
+    // 3. Expect this test to fail at the NOAUTH step at `parallism + 1` iterations.
+
+    for i in 1..=100 {
+        let user = format!("user-{}", i);
+
+        redis::cmd("ACL")
+            .arg(&[
+                "SETUSER",
+                &user,
+                "+@read",
+                "+cluster|slots",
+                "on",
+                &format!(">{}", user),
+                &format!("~{}", user),
+            ])
+            .execute(&mut connection);
+
+        let mut new_connection = shotover_manager.redis_connection(6379);
+
+        assert!(redis::cmd("GET")
+            .arg("without authenticating")
+            .query::<()>(&mut new_connection)
+            .unwrap_err()
+            .to_string()
+            .starts_with("NOAUTH"));
+
+        redis::cmd("AUTH")
+            .arg(&user)
+            .arg(&user)
+            .execute(&mut new_connection);
+
+        redis::cmd("GET").arg(&user).execute(&mut new_connection);
+
+        assert!(redis::cmd("GET")
+            .arg("foo")
+            .query::<()>(&mut new_connection)
+            .unwrap_err()
+            .to_string()
+            .starts_with("NOPERM"));
+    }
 }
 
 #[test]

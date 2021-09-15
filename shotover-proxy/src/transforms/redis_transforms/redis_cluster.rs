@@ -240,7 +240,7 @@ impl RedisCluster {
                 Err(err)
             }
             Err(err) => {
-                debug!("failed to connect to all hosts: {:?}", err);
+                warn!("failed to connect to all hosts: {:?}", err);
                 Err(err)
             }
         }
@@ -265,7 +265,8 @@ impl RedisCluster {
                     channels.insert(node.to_string(), connections);
                 }
                 Err(e) => {
-                    warn!("failed to connect to {}: {}", node, e);
+                    // Intentional debug! Some errors should be silently passed through.
+                    debug!("failed to connect to {}: {}", node, e);
                     errors.push(e.into());
                 }
             }
