@@ -6,7 +6,7 @@ use test_helpers::docker_compose::DockerCompose;
 #[serial]
 async fn test_metrics() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-
+    _compose.wait_for("Ready to accept connections").unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
 
