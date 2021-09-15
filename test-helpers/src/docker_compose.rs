@@ -5,17 +5,19 @@ use std::process::Command;
 use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
+use tracing::debug;
+use tracing::error;
 use tracing::info;
 
-/// Runs a command and returns the output as a string.
-///
-/// Both stderr and stdout are returned in the result.
-///
-/// # Arguments
-/// * `command` - The system command to run
-/// * `args` - An array of command line arguments for the command
-///
 fn run_command(command: &str, args: &[&str]) -> Result<String> {
+    /// Runs a command and returns the output as a string.
+    ///
+    /// Both stderr and stdout are returned in the result.
+    ///
+    /// # Arguments
+    /// * `command` - The system command to run
+    /// * `args` - An array of command line arguments for the command
+    ///
     info!("executing {}", command);
     let data = Exec::cmd(command)
         .args(args)
@@ -64,17 +66,11 @@ impl DockerCompose {
 
         DockerCompose::clean_up(file_path).unwrap();
 
-        info!("bringing up docker compose {}", file_path);
-        println!("bringing up docker compose {}", file_path);
+        let mut result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
+        info!("Stopping {}: {}", file_path, result);
 
-        info!(
-            "{}",
-            run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap()
-        );
-        println!(
-            "docker-compose result: {}",
-            run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap()
-        );
+        result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
+        println!( "Starting {}: {}" file_path, result );
 
         DockerCompose {
             file_path: file_path.to_string(),
@@ -93,7 +89,6 @@ impl DockerCompose {
     ///
     pub fn wait_for(&self, log_text: &str) -> Result<()> {
         info!("wait_for: '{}'", log_text);
-        println!("wait_for: '{}'", log_text);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::SystemTime::now();
@@ -102,8 +97,7 @@ impl DockerCompose {
             match sys_time.elapsed() {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > 60 {
-                        info!("{}", result);
-                        println!("{}", result);
+                        debug!("{}", result);
                         return Err(anyhow!("wait_for: Timer expired"));
                     }
                 }
@@ -112,12 +106,10 @@ impl DockerCompose {
                     info!("Clock aberration: {:?}", e);
                 }
             }
-            info!("wait_for: looping");
-            println!("wait_for: {}", result);
+            debug!("wait_for: looping");
             result = run_command("docker-compose", &args).unwrap();
         }
         info!("wait_for: found '{}'", log_text);
-        println!("wait_for: found '{}'", log_text);
         Ok(())
     }
 
@@ -134,7 +126,6 @@ impl DockerCompose {
     ///
     pub fn wait_for_n(&self, log_text: &str, count: usize) -> Result<()> {
         info!("wait_for_n: '{}' {}", log_text, count);
-        println!("wait_for_n: '{}' {}", log_text, count);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::SystemTime::now();
@@ -143,8 +134,7 @@ impl DockerCompose {
             match sys_time.elapsed() {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > 60 {
-                        info!("{}", result);
-                        println!("{}", result);
+                        debug!("{}", result);
                         return Err(anyhow!("wait_for: Timer expired"));
                     }
                 }
@@ -153,12 +143,10 @@ impl DockerCompose {
                     info!("Clock aberration: {:?}", e);
                 }
             }
-            info!("wait_for_n: looping");
-            println!("wait_for_n: {}", result);
+            debug!("wait_for_n: looping");
             result = run_command("docker-compose", &args).unwrap();
         }
         info!("wait_for_n: found '{}' {} times", log_text, count);
-        println!("wait_for_n: found '{}' {} times", log_text, count);
         Ok(())
     }
 
@@ -184,6 +172,10 @@ impl Drop for DockerCompose {
             if let Err(err) = DockerCompose::clean_up(&self.file_path) {
                 println!(
                     "ERROR: docker compose failed to bring down while already panicking: {:?}",
+                    err
+                );
+                error!(
+                    "docker compose failed to bring down while already panicking: {:?}",
                     err
                 );
             }
