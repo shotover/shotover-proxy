@@ -26,7 +26,7 @@ fn redis_active_bench(c: &mut Criterion) {
 
 fn redis_cluster_bench(c: &mut Criterion) {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
-    _compose.wait_for("Cluster correctly created").unwrap();
+    _compose.wait_for_n("Cluster state changed", 6).unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
 
