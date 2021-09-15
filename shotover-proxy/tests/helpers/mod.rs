@@ -1,9 +1,12 @@
 use anyhow::Result;
+use nix::sys::signal::Signal;
+use nix::unistd::Pid;
 use redis::{Client, Connection};
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use shotover_proxy::tls::{TlsConfig, TlsConnector};
 use std::net::TcpStream;
 use std::pin::Pin;
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
@@ -15,6 +18,15 @@ pub struct ShotoverManager {
     pub runtime_handle: RuntimeHandle,
     pub join_handle: Option<JoinHandle<Result<()>>>,
     pub trigger_shutdown_tx: watch::Sender<bool>,
+}
+
+fn wait_for_socket_to_open(port: u16) {
+    let mut tries = 0;
+    while TcpStream::connect(("127.0.0.1", port)).is_err() {
+        thread::sleep(Duration::from_millis(100));
+        assert!(tries < 50, "Ran out of retries to connect to the socket");
+        tries += 1;
+    }
 }
 
 impl ShotoverManager {
@@ -42,19 +54,10 @@ impl ShotoverManager {
         }
     }
 
-    fn wait_for_socket_to_open(port: u16) {
-        let mut tries = 0;
-        while TcpStream::connect(("127.0.0.1", port)).is_err() {
-            thread::sleep(Duration::from_millis(100));
-            assert!(tries < 50, "Ran out of retries to connect to the socket");
-            tries += 1;
-        }
-    }
-
     #[allow(unused)]
     // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
     pub fn redis_connection(&self, port: u16) -> Connection {
-        ShotoverManager::wait_for_socket_to_open(port);
+        wait_for_socket_to_open(port);
         Client::open(("127.0.0.1", port))
             .unwrap()
             .get_connection()
@@ -66,7 +69,7 @@ impl ShotoverManager {
         use redis::aio::AsyncStream;
         use tokio::net::TcpStream;
 
-        ShotoverManager::wait_for_socket_to_open(port);
+        wait_for_socket_to_open(port);
 
         let stream = Box::pin(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
         let connection_info = Default::default();
@@ -87,7 +90,7 @@ impl ShotoverManager {
         use redis::aio::AsyncStream;
         use tokio::net::TcpStream;
 
-        ShotoverManager::wait_for_socket_to_open(port);
+        wait_for_socket_to_open(port);
 
         let tcp_stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let connector = TlsConnector::new(config).unwrap();
@@ -120,5 +123,46 @@ impl Drop for ShotoverManager {
                 .unwrap()
                 .unwrap();
         }
+    }
+}
+
+pub struct ShotoverProcess {
+    pub child: Child,
+}
+
+impl ShotoverProcess {
+    #[allow(unused)]
+    pub fn new(topology_path: &str) -> ShotoverProcess {
+        let all_args = ["run", "--", "-t", topology_path];
+        let child = Command::new(env!("CARGO"))
+            .env("RUST_LOG", "debug,shotover_proxy=debug")
+            .args(all_args)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        wait_for_socket_to_open(9001); // Wait for observability metrics port to open
+
+        ShotoverProcess { child }
+    }
+
+    #[allow(unused)]
+    fn pid(&self) -> Pid {
+        Pid::from_raw(self.child.id() as i32)
+    }
+
+    #[allow(unused)]
+    pub fn signal(&self, signal: Signal) {
+        nix::sys::signal::kill(self.pid(), signal).unwrap();
+    }
+
+    #[allow(unused)]
+    pub fn wait(self) -> (Option<i32>, String, String) {
+        let output = self.child.wait_with_output().unwrap();
+
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+
+        (output.status.code(), stdout, stderr)
     }
 }

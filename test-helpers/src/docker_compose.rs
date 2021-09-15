@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Result};
+use std::io::ErrorKind;
+use std::process::Command;
 use regex::Regex;
 use std::thread;
 use std::time;
@@ -50,6 +52,13 @@ impl DockerCompose {
     /// * `file_path` - The path to the docker-compose yaml file.
     ///
     pub fn new(file_path: &str) -> Self {
+        if let Err(ErrorKind::NotFound) = Command::new("docker-compose")
+            .output()
+            .map_err(|e| e.kind())
+        {
+            panic!("Could not find docker-compose. Have you installed it?");
+        }
+
         DockerCompose::clean_up(file_path).unwrap();
 
         info!("bringing up docker compose {}", file_path);
