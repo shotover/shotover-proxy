@@ -70,7 +70,7 @@ impl DockerCompose {
         info!("Stopping {}: {}", file_path, result);
 
         result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
-        info!( "Starting {}: {}", file_path, result );
+        info!("Starting {}: {}", file_path, result);
 
         DockerCompose {
             file_path: file_path.to_string(),
