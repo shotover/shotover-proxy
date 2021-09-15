@@ -9,15 +9,15 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 
+/// Runs a command and returns the output as a string.
+///
+/// Both stderr and stdout are returned in the result.
+///
+/// # Arguments
+/// * `command` - The system command to run
+/// * `args` - An array of command line arguments for the command
+///
 fn run_command(command: &str, args: &[&str]) -> Result<String> {
-    /// Runs a command and returns the output as a string.
-    ///
-    /// Both stderr and stdout are returned in the result.
-    ///
-    /// # Arguments
-    /// * `command` - The system command to run
-    /// * `args` - An array of command line arguments for the command
-    ///
     info!("executing {}", command);
     let data = Exec::cmd(command)
         .args(args)
@@ -70,7 +70,7 @@ impl DockerCompose {
         info!("Stopping {}: {}", file_path, result);
 
         result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
-        println!( "Starting {}: {}" file_path, result );
+        info!( "Starting {}: {}", file_path, result );
 
         DockerCompose {
             file_path: file_path.to_string(),
