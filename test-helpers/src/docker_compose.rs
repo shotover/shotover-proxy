@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
+use regex::Regex;
 use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
 use tracing::info;
-use regex::Regex;
 
 /// Runs a command and returns the output as a string.
 ///
@@ -14,7 +14,7 @@ use regex::Regex;
 /// * `args` - An array of command line arguments for the command
 ///
 fn run_command(command: &str, args: &[&str]) -> Result<String> {
-    info!("executing {}",command);
+    info!("executing {}", command);
     let data = Exec::cmd(command)
         .args(args)
         .stdout(Redirection::Pipe)
@@ -55,8 +55,14 @@ impl DockerCompose {
         info!("bringing up docker compose {}", file_path);
         println!("bringing up docker compose {}", file_path);
 
-        info!("{}", run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap());
-        println!("docker-compose result: {}", run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap());
+        info!(
+            "{}",
+            run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap()
+        );
+        println!(
+            "docker-compose result: {}",
+            run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap()
+        );
 
         DockerCompose {
             file_path: file_path.to_string(),
@@ -71,20 +77,20 @@ impl DockerCompose {
     /// `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
     ///
-    pub fn wait_for(&self, log_text : &str) -> Result<()> {
-        info!("wait_for: '{}'", log_text );
-        println!("wait_for: '{}'", log_text );
+    pub fn wait_for(&self, log_text: &str) -> Result<()> {
+        info!("wait_for: '{}'", log_text);
+        println!("wait_for: '{}'", log_text);
         let args = ["-f", &self.file_path, "logs"];
-        let re = Regex::new( log_text ).unwrap();
+        let re = Regex::new(log_text).unwrap();
         let sys_time = time::SystemTime::now();
-        let mut result = run_command( "docker-compose", &args ).unwrap();
-        while ! re.is_match(&result) {
+        let mut result = run_command("docker-compose", &args).unwrap();
+        while !re.is_match(&result) {
             match sys_time.elapsed() {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > 60 {
-                        info!( "{}", result );
-                        println!( "{}", result );
-                        return Err(anyhow!("wait_for: Timer expired" ));
+                        info!("{}", result);
+                        println!("{}", result);
+                        return Err(anyhow!("wait_for: Timer expired"));
                     }
                 }
                 Err(e) => {
@@ -92,12 +98,12 @@ impl DockerCompose {
                     info!("Clock aberration: {:?}", e);
                 }
             }
-            info!( "wait_for: looping" );
-            println!( "wait_for: {}", result );
-            result = run_command( "docker-compose", &args ).unwrap();
+            info!("wait_for: looping");
+            println!("wait_for: {}", result);
+            result = run_command("docker-compose", &args).unwrap();
         }
-        info!( "wait_for: found '{}'", log_text );
-        println!( "wait_for: found '{}'", log_text );
+        info!("wait_for: found '{}'", log_text);
+        println!("wait_for: found '{}'", log_text);
         Ok(())
     }
 
