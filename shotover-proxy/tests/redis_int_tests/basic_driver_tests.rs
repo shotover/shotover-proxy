@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use rand::{thread_rng, Rng};
+use rand_distr::Alphanumeric;
 use redis::{Commands, Connection, ErrorKind, RedisError, Value};
 use serial_test::serial;
 use tracing::{info, trace};
@@ -706,37 +708,52 @@ fn test_cluster_auth_redis() {
         ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
 
+    // Command should fail on unauthenticated connection.
+    assert!(redis::cmd("GET")
+        .arg("without authenticating")
+        .query::<()>(&mut connection)
+        .unwrap_err()
+        .to_string()
+        .starts_with("NOAUTH"));
+
+    // Authenticating with incorrect password should fail.
+    assert!(redis::cmd("AUTH")
+        .arg("with a bad password")
+        .query::<()>(&mut connection)
+        .unwrap_err()
+        .to_string()
+        .starts_with("WRONGPASS"));
+
+    // Switch to default superuser.
     redis::cmd("AUTH").arg("shotover").execute(&mut connection);
 
+    // Set random value to be checked later.
+    let expected_foo: String = thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(30)
+        .map(char::from)
+        .collect();
     redis::cmd("SET")
-        .arg("{x}key1")
-        .arg(b"foo")
+        .arg("foo")
+        .arg(&expected_foo)
         .execute(&mut connection);
-    redis::cmd("SET")
-        .arg(&["{x}key2", "bar"])
-        .execute(&mut connection);
-
-    assert_eq!(
-        redis::cmd("MGET")
-            .arg(&["{x}key1", "{x}key2"])
-            .query(&mut connection),
-        Ok(("foo".to_string(), b"bar".to_vec()))
-    );
 
     // Read-only user with no other permissions should not be able to auth.
     redis::cmd("ACL")
         .arg(&["SETUSER", "brokenuser", "+@read", "on", ">password"])
         .execute(&mut connection);
-    match redis::cmd("AUTH")
-        .arg("brokenuser")
-        .arg("password")
-        .query::<String>(&mut connection)
-    {
-        Ok(_) => panic!("expected NOPERM error for AUTH"),
-        Err(e) => assert_eq!(e.code(), Some("NOPERM")),
-    }
+    assert_eq!(
+        redis::cmd("AUTH")
+            .arg("brokenuser")
+            .arg("password")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("NOPERM")
+    );
 
     // Read-only user with CLUSTER SLOTS permission should be able to auth, but cannot perform writes.
+    // We then use this user to read back the original value that should not have been overwritten.
     redis::cmd("ACL")
         .arg(&[
             "SETUSER",
@@ -745,58 +762,26 @@ fn test_cluster_auth_redis() {
             "+cluster|slots",
             "on",
             ">password",
+            "allkeys",
         ])
         .execute(&mut connection);
     redis::cmd("AUTH")
         .arg("testuser")
         .arg("password")
         .execute(&mut connection);
-    match redis::cmd("SET")
-        .arg("{x}key2")
-        .arg("fail")
-        .query::<String>(&mut connection)
-    {
-        Ok(_) => panic!("expected NOPERM error for SET"),
-        Err(e) => assert_eq!(e.code(), Some("NOPERM")),
-    }
-
-    // Switch back to the superuser.
-    redis::cmd("AUTH").arg("shotover").execute(&mut connection);
-    redis::cmd("SET")
-        .arg("{x}key3")
-        .arg(b"food")
-        .execute(&mut connection);
-
     assert_eq!(
-        redis::cmd("GET").arg("{x}key3").query(&mut connection),
-        Ok("food".to_string())
+        redis::cmd("SET")
+            .arg("foo")
+            .arg("fail")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("NOPERM")
     );
-
-    // Double check the previous write-attempt (with read-only user) did not go through.
     assert_eq!(
-        redis::cmd("GET").arg("{x}key2").query(&mut connection),
-        Ok("bar".to_string())
+        redis::cmd("GET").arg("foo").query(&mut connection),
+        Ok(expected_foo.to_string())
     );
-
-    let bad_password_result: Result<String, RedisError> = redis::cmd("AUTH")
-        .arg("with a bad password")
-        .query(&mut shotover_manager.redis_connection(6379));
-
-    if let Err(error) = bad_password_result {
-        assert!(error.to_string().starts_with("WRONGPASS"))
-    } else {
-        panic!("expected WRONGPASS error");
-    }
-
-    let no_auth_result: Result<String, RedisError> = redis::cmd("GET")
-        .arg("without authenticating")
-        .query(&mut shotover_manager.redis_connection(6379));
-
-    if let Err(error) = no_auth_result {
-        assert!(error.to_string().starts_with("NOAUTH"))
-    } else {
-        panic!("expected NOAUTH error")
-    }
 }
 
 #[test]
