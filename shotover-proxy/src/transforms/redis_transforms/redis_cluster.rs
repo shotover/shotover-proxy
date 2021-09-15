@@ -184,25 +184,32 @@ impl RedisCluster {
         token: &Option<UsernamePasswordToken>,
     ) -> Result<SlotMap, TransformError> {
         debug!("fetching slot map");
-        let mut errors = Vec::new();
 
-        for address in self.latest_contact_points() {
-            match self
-                .connection_pool
-                .new_unpooled_connection(&address, token)
-                .await
-            {
-                Ok(sender) => match get_topology_from_node(&sender).await {
-                    Ok(slots) => {
+        let addresses = self.latest_contact_points();
+
+        let mut errors = Vec::new();
+        let mut results = FuturesUnordered::new();
+
+        for address in &addresses {
+            results.push(
+                self.connection_pool
+                    .new_unpooled_connection(address, token)
+                    .map_err(move |err| {
+                        trace!("error fetching slot map from {}: {}", address, err);
+                        TransformError::from(err)
+                    })
+                    .and_then(get_topology_from_node)
+                    .map_ok(move |slots| {
                         trace!("fetched slot map from {}: {:?}", address, slots);
-                        return Ok(slots);
-                    }
-                    Err(e) => {
-                        trace!("error fetching slot map from {}: {}", address, e);
-                        errors.push(e)
-                    }
-                },
-                Err(e) => errors.push(e.into()),
+                        slots
+                    }),
+            );
+        }
+
+        while let Some(result) = results.next().await {
+            match result {
+                Ok(slots) => return Ok(slots),
+                Err(err) => errors.push(err),
             }
         }
 
@@ -218,26 +225,23 @@ impl RedisCluster {
         match self.build_connections_inner(&token).await {
             Ok((slots, channels)) => {
                 debug!("connected to cluster: {:?}", channels.keys());
-
                 self.token = token;
                 self.slots = slots;
                 self.channels = channels;
 
                 self.connection_error = None;
                 self.rebuild_connections = false;
-
                 Ok(())
             }
-            Err(error) => {
-                if let TransformError::Upstream(RedisError::NotAuthenticated) = error {
-                    // Assume retry is pointless if authentication is required.
-                    self.connection_error = Some("NOAUTH Authentication required (cached)");
-                    self.rebuild_connections = false;
-                } else {
-                    debug!("failed to connect to all hosts: {:?}", error);
-                }
-
-                Err(error)
+            Err(err @ TransformError::Upstream(RedisError::NotAuthenticated)) => {
+                // Assume retry is pointless if authentication is required.
+                self.connection_error = Some("NOAUTH Authentication required (cached)");
+                self.rebuild_connections = false;
+                Err(err)
+            }
+            Err(err) => {
+                debug!("failed to connect to all hosts: {:?}", err);
+                Err(err)
             }
         }
     }
@@ -635,10 +639,10 @@ fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
 }
 
 async fn get_topology_from_node(
-    sender: &UnboundedSender<Request>,
+    sender: UnboundedSender<Request>,
 ) -> Result<SlotMap, TransformError> {
     let return_chan_rx = send_frame_request(
-        sender,
+        &sender,
         Frame::Array(vec![
             Frame::BulkString(Bytes::from("CLUSTER")),
             Frame::BulkString(Bytes::from("SLOTS")),
