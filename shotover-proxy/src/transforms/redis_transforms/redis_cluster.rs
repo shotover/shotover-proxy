@@ -399,18 +399,20 @@ impl RedisCluster {
             .iter()
             .skip(1)
             .rev()
-            .flat_map(|f| match f {
-                Frame::BulkString(s) => Some(s),
-                _ => None,
+            .map(|f| match f {
+                Frame::BulkString(s) => Ok(s),
+                _ => bail!("syntax error: expected bulk string"),
             })
-            // TODO: Remove UTF-8 restriction or send error to client?
-            .map(|b| String::from_utf8(b.to_vec()).expect("not utf8"));
+            .map(|b| {
+                String::from_utf8(b?.to_vec()).map_err(|_| anyhow!("syntax error: expected utf-8"))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter();
 
         let password = match args.next() {
             Some(password) => password,
             None => {
-                debug!("password not supplied");
-                send_error_response(one_tx, "ERR syntax error").ok();
+                send_error_response(one_tx, "ERR syntax error: expected password").ok();
                 return Ok(Box::pin(one_rx));
             }
         };
