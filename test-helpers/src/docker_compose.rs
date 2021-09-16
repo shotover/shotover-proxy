@@ -87,13 +87,6 @@ impl DockerCompose {
     /// # Panics
     /// * If `log_text` is not found within 60 seconds.
     ///
-    /// # Example
-    ///
-    /// ```
-    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-    ///         .wait_for("Ready to accept connections");
-    /// ```
-    ///
     pub fn wait_for(self, log_text: &str) -> Self {
         self.wait_for_n(log_text, 1)
     }
@@ -109,13 +102,6 @@ impl DockerCompose {
     ///
     /// # Panics
     /// * If `count` occurances of `log_text` is not found in the log within 60 seconds.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-    ///         .wait_for("Ready to accept connections");
-    /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
         info!("wait_for_n: '{}' {}", log_text, count);
