@@ -793,6 +793,8 @@ fn test_cluster_auth_redis() {
     // Create users with only access to their own key, and test their permissions using new connections.
     for i in 1..=100 {
         let user = format!("user-{}", i);
+        let pass = format!("pass-{}", i);
+        let key = format!("key-{}", i);
 
         redis::cmd("ACL")
             .arg(&[
@@ -801,8 +803,8 @@ fn test_cluster_auth_redis() {
                 "+@read",
                 "+cluster|slots",
                 "on",
-                &format!(">{}", user),
-                &format!("~{}", user),
+                &format!(">{}", pass),
+                &format!("~{}", key),
             ])
             .execute(&mut connection);
 
@@ -819,10 +821,10 @@ fn test_cluster_auth_redis() {
 
         redis::cmd("AUTH")
             .arg(&user)
-            .arg(&user)
+            .arg(&pass)
             .execute(&mut new_connection);
 
-        redis::cmd("GET").arg(&user).execute(&mut new_connection);
+        redis::cmd("GET").arg(&key).execute(&mut new_connection);
 
         assert_eq!(
             redis::cmd("GET")
