@@ -222,6 +222,7 @@ impl RedisCluster {
         token: Option<UsernamePasswordToken>,
     ) -> Result<(), TransformError> {
         debug!("building connections");
+
         match self.build_connections_inner(&token).await {
             Ok((slots, channels)) => {
                 debug!("connected to cluster: {:?}", channels.keys());
@@ -394,8 +395,6 @@ impl RedisCluster {
     }
 
     async fn on_auth(&mut self, command: &[Frame]) -> Result<ResponseFuture> {
-        let (one_tx, one_rx) = immediate_responder();
-
         let mut args = command
             .iter()
             .skip(1)
@@ -408,13 +407,9 @@ impl RedisCluster {
             .collect::<Result<Vec<_>>>()?
             .into_iter();
 
-        let password = match args.next() {
-            Some(password) => password,
-            None => {
-                send_error_response(one_tx, "ERR syntax error: expected password").ok();
-                return Ok(Box::pin(one_rx));
-            }
-        };
+        let password = args
+            .next()
+            .ok_or_else(|| anyhow!("syntax error: expected password"))?;
 
         let username = args.next();
 
@@ -423,6 +418,8 @@ impl RedisCluster {
         }
 
         let token = UsernamePasswordToken { username, password };
+
+        let (one_tx, one_rx) = immediate_responder();
 
         match self.build_connections(Some(token)).await {
             Ok(()) => {
@@ -438,7 +435,7 @@ impl RedisCluster {
                 send_error_response(one_tx, e.to_string().as_str())?;
             }
             Err(e) => {
-                send_error_response(one_tx, &format!("ERR authentication failed: {}", e))?;
+                bail!("authentication failed: {}", e);
             }
         }
 
