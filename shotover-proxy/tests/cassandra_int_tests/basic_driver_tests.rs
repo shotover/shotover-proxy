@@ -1,5 +1,5 @@
 use crate::cassandra_int_tests::CassandraTestContext;
-use crate::helpers::run_shotover_with_topology;
+use crate::helpers::ShotoverManager;
 use test_helpers::docker_compose::DockerCompose;
 
 use anyhow::Result;
@@ -25,7 +25,7 @@ fn test_basic_connection() -> Result<()> {
         "examples/cassandra-cluster/topology3.yaml",
     ]
     .iter()
-    .map(|s| run_shotover_with_topology(*s))
+    .map(|s| ShotoverManager::from_topology_file(*s))
     .collect();
 
     test_create_keyspace();
