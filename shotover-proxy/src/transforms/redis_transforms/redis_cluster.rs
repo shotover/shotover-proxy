@@ -407,8 +407,7 @@ impl RedisCluster {
 
         let password = args
             .next()
-            .transpose()?
-            .ok_or_else(|| anyhow!("syntax error: expected password"))?;
+            .ok_or_else(|| anyhow!("syntax error: expected password"))??;
 
         let username = args.next().transpose()?;
 
