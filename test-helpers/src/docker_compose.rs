@@ -84,7 +84,7 @@ impl DockerCompose {
     /// * `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
     ///
-    pub fn wait_for(&self, log_text: &str) -> Result<()> {
+    pub fn wait_for(self, log_text: &str) -> Self {
         self.wait_for_n(log_text, 1)
     }
 
@@ -99,7 +99,7 @@ impl DockerCompose {
     /// output.
     /// * `count` - The number of times the regular expression should be found.
     ///
-    pub fn wait_for_n(&self, log_text: &str, count: usize) -> Result<()> {
+    pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
         info!("wait_for_n: '{}' {}", log_text, count);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
@@ -110,7 +110,7 @@ impl DockerCompose {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > 60 {
                         debug!("{}", result);
-                        return Err(anyhow!("wait_for: Timer expired"));
+                        panic!("wait_for: Timer expired");
                     }
                 }
                 Err(e) => {
@@ -122,7 +122,7 @@ impl DockerCompose {
             result = run_command("docker-compose", &args).unwrap();
         }
         info!("wait_for_n: found '{}' {} times", log_text, count);
-        Ok(())
+        self
     }
 
     /// Cleans up the docker-compose by shutting down the running system and removing the images.
