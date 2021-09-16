@@ -78,11 +78,20 @@ impl DockerCompose {
     ///
     /// Uses `regex.is_match()` to locate the match.
     ///
-    /// If `log_text` does not appear in 60 seconds an `Err` is created.
+    /// This is shorthand for `wait_for_n( log_text, 1 )`
     ///
     /// # Arguments
     /// * `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
+    ///
+    /// # Panics
+    /// * If `log_text` is not found within 60 seconds.
+    ///
+    /// # Example
+    /// ```
+    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    ///         .wait_for("Ready to accept connections");
+    /// ```
     ///
     pub fn wait_for(self, log_text: &str) -> Self {
         self.wait_for_n(log_text, 1)
@@ -90,14 +99,21 @@ impl DockerCompose {
 
     /// Waits for a string to appear in the docker-compose log output `count` times.
     ///
-    /// If `log_text` does not appear in 60 seconds an `Err` is created.
-    ///
     /// Counts the number of items returned by `regex.find_iter`.
     ///
     /// # Arguments
     /// * `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
     /// * `count` - The number of times the regular expression should be found.
+    ///
+    /// # Panics
+    /// * If `count` occurances of `log_text` is not found in the log within 60 seconds.
+    ///
+    /// # Example
+    /// ```
+    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    ///         .wait_for("Ready to accept connections");
+    /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
         info!("wait_for_n: '{}' {}", log_text, count);
