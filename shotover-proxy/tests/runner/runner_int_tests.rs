@@ -1,7 +1,9 @@
+use rusty_fork::rusty_fork_test;
 use serial_test::serial;
 use std::any::Any;
+use tokio::runtime;
 
-use crate::helpers::ShotoverManager;
+use crate::helpers::{ShotoverManager, ShotoverProcess};
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -16,13 +18,21 @@ async fn test_runtime_use_existing() {
     assert!(shotover_manager.runtime.is_none());
 }
 
-#[tokio::test(flavor = "current_thread")]
-#[ntest::timeout(10000)]
-async fn test_shotover_panics_in_single_thread_runtime() {
-    let result = std::panic::catch_unwind(|| {
-        ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
-    });
-    assert!(result.is_err());
+rusty_fork_test! {
+    #![rusty_fork(timeout_ms = 10000)]
+    #[test]
+    #[serial]
+    fn test_shotover_panics_in_single_thread_runtime() {
+        let runtime = runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let result = std::panic::catch_unwind(|| {
+                ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
+            });
+            assert!(result.is_err());
+        });
+    }
 }
 
 #[test]
@@ -38,4 +48,26 @@ fn test_runtime_create() {
 #[serial]
 fn test_early_shutdown_cassandra_source() {
     ShotoverManager::from_topology_file("examples/null-cassandra/topology.yaml");
+}
+
+#[test]
+#[serial]
+fn test_shotover_responds_sigterm() {
+    let shotover_process = ShotoverProcess::new("examples/null-redis/topology.yaml");
+    shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
+
+    let (code, stdout, _) = shotover_process.wait();
+    assert_eq!(code, Some(0));
+    assert!(stdout.contains("received SIGTERM"));
+}
+
+#[test]
+#[serial]
+fn test_shotover_responds_sigint() {
+    let shotover_process = ShotoverProcess::new("examples/null-redis/topology.yaml");
+    shotover_process.signal(nix::sys::signal::Signal::SIGINT);
+
+    let (code, stdout, _) = shotover_process.wait();
+    assert_eq!(code, Some(0));
+    assert!(stdout.contains("received SIGINT"));
 }

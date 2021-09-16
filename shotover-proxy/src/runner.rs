@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use clap::{crate_version, Clap};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
-use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
@@ -109,7 +109,18 @@ impl Runner {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
         self.runtime_handle.spawn(async move {
-            signal::ctrl_c().await.unwrap();
+            let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+            let mut terminate = signal(SignalKind::terminate()).unwrap();
+
+            tokio::select! {
+                _ = interrupt.recv() => {
+                    debug!("received SIGINT");
+                },
+                _ = terminate.recv() => {
+                    debug!("received SIGTERM");
+                },
+            };
+
             trigger_shutdown_tx.send(true).unwrap();
         });
 
@@ -123,6 +134,7 @@ impl Runner {
             // Using block_in_place to trigger a panic in case the runtime is set up in single-threaded mode.
             // Shotover does not function correctly in single threaded mode (currently hangs)
             // and block_in_place gives an error message explaining to setup the runtime in multi-threaded mode.
+            // This does not protect us when calling Runtime::enter() or when no runtime is set up at all.
             tokio::task::block_in_place(|| {});
 
             (handle, None)
