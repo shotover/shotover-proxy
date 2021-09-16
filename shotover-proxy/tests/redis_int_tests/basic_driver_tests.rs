@@ -709,20 +709,24 @@ fn test_cluster_auth_redis() {
     let mut connection = shotover_manager.redis_connection(6379);
 
     // Command should fail on unauthenticated connection.
-    assert!(redis::cmd("GET")
-        .arg("without authenticating")
-        .query::<()>(&mut connection)
-        .unwrap_err()
-        .to_string()
-        .starts_with("NOAUTH"));
+    assert_eq!(
+        redis::cmd("GET")
+            .arg("without authenticating")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("NOAUTH")
+    );
 
     // Authenticating with incorrect password should fail.
-    assert!(redis::cmd("AUTH")
-        .arg("with a bad password")
-        .query::<()>(&mut connection)
-        .unwrap_err()
-        .to_string()
-        .starts_with("WRONGPASS"));
+    assert_eq!(
+        redis::cmd("AUTH")
+            .arg("with a bad password")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("WRONGPASS")
+    );
 
     // Switch to default superuser.
     redis::cmd("AUTH").arg("shotover").execute(&mut connection);
@@ -780,18 +784,13 @@ fn test_cluster_auth_redis() {
     );
     assert_eq!(
         redis::cmd("GET").arg("foo").query(&mut connection),
-        Ok(expected_foo.to_string())
+        Ok(expected_foo)
     );
 
-    // Switch back to default superuser to setup for the auth mixing test.
+    // Switch back to default superuser to setup for the auth isolation test.
     redis::cmd("AUTH").arg("shotover").execute(&mut connection);
 
-    // To reproduce the auth mixing issue caused by using PoolConnections:
-    //
-    // 1. Insert the PoolConnections transform before the RedisCluster transform.
-    // 2. Set the parallelism parameter to be fewer than the iteration count below.
-    // 3. Expect this test to fail at the NOAUTH step at `parallism + 1` iterations.
-
+    // Create users with only access to their own key, and test their permissions using new connections.
     for i in 1..=100 {
         let user = format!("user-{}", i);
 
@@ -809,12 +808,14 @@ fn test_cluster_auth_redis() {
 
         let mut new_connection = shotover_manager.redis_connection(6379);
 
-        assert!(redis::cmd("GET")
-            .arg("without authenticating")
-            .query::<()>(&mut new_connection)
-            .unwrap_err()
-            .to_string()
-            .starts_with("NOAUTH"));
+        assert_eq!(
+            redis::cmd("GET")
+                .arg("without authenticating")
+                .query::<()>(&mut new_connection)
+                .unwrap_err()
+                .code(),
+            Some("NOAUTH")
+        );
 
         redis::cmd("AUTH")
             .arg(&user)
@@ -823,12 +824,14 @@ fn test_cluster_auth_redis() {
 
         redis::cmd("GET").arg(&user).execute(&mut new_connection);
 
-        assert!(redis::cmd("GET")
-            .arg("foo")
-            .query::<()>(&mut new_connection)
-            .unwrap_err()
-            .to_string()
-            .starts_with("NOPERM"));
+        assert_eq!(
+            redis::cmd("GET")
+                .arg("foo")
+                .query::<()>(&mut new_connection)
+                .unwrap_err()
+                .code(),
+            Some("NOPERM")
+        );
     }
 }
 
