@@ -60,7 +60,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             connection_count: self.connection_count.unwrap_or(1),
             connection_pool,
             connection_error: None,
-            rebuild_connections: true,
+            rebuild_connections: false,
             token: None,
         };
 
