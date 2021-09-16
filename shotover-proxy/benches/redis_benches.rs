@@ -7,7 +7,9 @@ use helpers::ShotoverManager;
 
 fn redis_active_bench(c: &mut Criterion) {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
-    _compose.wait_for_n("Ready to accept connections", 3 ).unwrap();
+    _compose
+        .wait_for_n("Ready to accept connections", 3)
+        .unwrap();
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
 
