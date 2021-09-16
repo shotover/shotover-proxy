@@ -78,19 +78,26 @@ impl DockerCompose {
     ///
     /// Uses `regex.is_match()` to locate the match.
     ///
-    /// If `log_text` does not appear in 60 seconds an `Err` is created.
+    /// This is shorthand for `wait_for_n( log_text, 1 )`
     ///
     /// # Arguments
     /// * `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
     ///
-    pub fn wait_for(&self, log_text: &str) -> Result<()> {
-        self.wait_for_n( log_text, 1 )
+    /// # Panics
+    /// * If `log_text` is not found within 60 seconds.
+    ///
+    /// # Example
+    /// ```
+    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    ///         .wait_for("Ready to accept connections");
+    /// ```
+    ///
+    pub fn wait_for(self, log_text: &str) -> Self {
+        self.wait_for_n(log_text, 1)
     }
 
     /// Waits for a string to appear in the docker-compose log output `count` times.
-    ///
-    /// If `log_text` does not appear in 60 seconds an `Err` is created.
     ///
     /// Counts the number of items returned by `regex.find_iter`.
     ///
@@ -99,7 +106,16 @@ impl DockerCompose {
     /// output.
     /// * `count` - The number of times the regular expression should be found.
     ///
-    pub fn wait_for_n(&self, log_text: &str, count: usize) -> Result<()> {
+    /// # Panics
+    /// * If `count` occurances of `log_text` is not found in the log within 60 seconds.
+    ///
+    /// # Example
+    /// ```
+    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    ///         .wait_for("Ready to accept connections");
+    /// ```
+    ///
+    pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
         info!("wait_for_n: '{}' {}", log_text, count);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
@@ -110,7 +126,7 @@ impl DockerCompose {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > 60 {
                         debug!("{}", result);
-                        return Err(anyhow!("wait_for: Timer expired"));
+                        panic!("wait_for: Timer expired");
                     }
                 }
                 Err(e) => {
@@ -122,7 +138,7 @@ impl DockerCompose {
             result = run_command("docker-compose", &args).unwrap();
         }
         info!("wait_for_n: found '{}' {} times", log_text, count);
-        Ok(())
+        self
     }
 
     /// Cleans up the docker-compose by shutting down the running system and removing the images.

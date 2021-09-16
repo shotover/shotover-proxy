@@ -5,8 +5,8 @@ use test_helpers::docker_compose::DockerCompose;
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_metrics() {
-    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
-    _compose.wait_for("Ready to accept connections").unwrap();
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+        .wait_for("Ready to accept connections");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
 
