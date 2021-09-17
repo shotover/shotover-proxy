@@ -9,4 +9,6 @@ edition = "2018"
 tracing = "0.1.15"
 subprocess = "0.2.7"
 anyhow = "1.0.42"
+
+[dev-dependencies]
 regex = "1"
