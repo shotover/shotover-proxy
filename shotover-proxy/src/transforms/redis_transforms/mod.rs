@@ -4,6 +4,7 @@ use crate::transforms::util::ConnectionError;
 
 pub mod redis_cache;
 pub mod redis_cluster;
+pub mod redis_cluster_slot_rewrite;
 pub mod redis_codec_destination;
 pub mod timestamp_tagging;
 
