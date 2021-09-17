@@ -76,8 +76,6 @@ impl DockerCompose {
 
     /// Waits for a string to appear in the docker-compose log output.
     ///
-    /// Uses `regex.is_match()` to locate the match.
-    ///
     /// This is shorthand for `wait_for_n( log_text, 1 )`
     ///
     /// # Arguments
@@ -107,20 +105,12 @@ impl DockerCompose {
         info!("wait_for_n: '{}' {}", log_text, count);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
-        let sys_time = time::SystemTime::now();
+        let sys_time = time::Instant::now();
         let mut result = run_command("docker-compose", &args).unwrap();
         while re.find_iter(&result).count() < count {
-            match sys_time.elapsed() {
-                Ok(elapsed) => {
-                    if elapsed.as_secs() > 60 {
-                        debug!("{}", result);
-                        panic!("wait_for: Timer expired");
-                    }
-                }
-                Err(e) => {
-                    // an error occurred!
-                    info!("Clock aberration: {:?}", e);
-                }
+            if sys_time.elapsed().as_secs() > 60 {
+                debug!("{}", result);
+                panic!("wait_for: Timer expired");
             }
             debug!("wait_for_n: looping");
             result = run_command("docker-compose", &args).unwrap();
@@ -149,12 +139,10 @@ impl Drop for DockerCompose {
     fn drop(&mut self) {
         if std::thread::panicking() {
             if let Err(err) = DockerCompose::clean_up(&self.file_path) {
+                // We need to use println! here instead of error! because error! does not
+                // get output when panicking
                 println!(
                     "ERROR: docker compose failed to bring down while already panicking: {:?}",
-                    err
-                );
-                error!(
-                    "docker compose failed to bring down while already panicking: {:?}",
                     err
                 );
             }
