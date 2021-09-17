@@ -2,7 +2,7 @@ use crate::message::Messages;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
@@ -110,8 +110,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 match self.limit_connections.try_acquire() {
                     Ok(p) => {
                         if self.listener.is_none() {
-                            self.listener =
-                                Some(TcpListener::bind(self.listen_addr.clone()).await.unwrap());
+                            self.listener = Some(self.create_listener().await?);
                         }
                         p.forget();
                     }
@@ -127,8 +126,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             } else {
                 self.limit_connections.acquire().await?.forget();
                 if self.listener.is_none() {
-                    self.listener =
-                        Some(TcpListener::bind(self.listen_addr.clone()).await.unwrap());
+                    self.listener = Some(self.create_listener().await?);
                 }
             }
 
@@ -197,6 +195,12 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 }
             });
         }
+    }
+
+    async fn create_listener(&self) -> Result<TcpListener> {
+        TcpListener::bind(&self.listen_addr)
+            .await
+            .map_err(|e| anyhow!("{} address={}", e, self.listen_addr))
     }
 
     /// Accept an inbound connection.

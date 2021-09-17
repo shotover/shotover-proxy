@@ -87,7 +87,7 @@ impl RedisSource {
                 tokio::select! {
                     res = listener.run() => {
                         if let Err(err) = res {
-                            error!(cause = %err, "failed to accept");
+                            error!(cause = %err, "failed to accept connection");
                         }
                     }
                     _ =  trigger_shutdown_rx.changed() => {
