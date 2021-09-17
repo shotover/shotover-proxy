@@ -12,6 +12,7 @@ use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio_io_timeout::TimeoutStream;
 
 pub struct ShotoverManager {
     pub runtime: Option<Runtime>,
@@ -58,10 +59,12 @@ impl ShotoverManager {
     // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
     pub fn redis_connection(&self, port: u16) -> Connection {
         wait_for_socket_to_open(port);
-        Client::open(("127.0.0.1", port))
+        let connection = Client::open(("127.0.0.1", port))
             .unwrap()
             .get_connection()
-            .unwrap()
+            .unwrap();
+        connection.set_read_timeout(Some(Duration::from_secs(10)));
+        connection
     }
 
     #[allow(unused)]
@@ -72,10 +75,13 @@ impl ShotoverManager {
         wait_for_socket_to_open(port);
 
         let stream = Box::pin(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
+        let mut stream_with_timeout = TimeoutStream::new(stream);
+        stream_with_timeout.set_read_timeout(Some(Duration::from_secs(10)));
+
         let connection_info = Default::default();
         redis::aio::Connection::new(
             &connection_info,
-            stream as Pin<Box<dyn AsyncStream + Send + Sync>>,
+            Box::pin(stream_with_timeout) as Pin<Box<dyn AsyncStream + Send + Sync>>,
         )
         .await
         .unwrap()
