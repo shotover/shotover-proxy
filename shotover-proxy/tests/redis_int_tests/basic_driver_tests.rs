@@ -601,7 +601,7 @@ fn test_cluster_script(connection: &mut Connection) {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_pass_through() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
     let shotover_manager =
@@ -612,7 +612,7 @@ fn test_pass_through() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial(redis)]
+#[serial]
 async fn test_tls() {
     let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml");
     let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
@@ -649,7 +649,7 @@ async fn test_tls() {
 }
 
 // #[test]
-// #[serial(redis)]
+// #[serial]
 #[allow(dead_code)]
 fn test_pass_through_one() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
@@ -661,7 +661,7 @@ fn test_pass_through_one() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_active_active_redis() {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
     let shotover_manager =
@@ -672,7 +672,7 @@ fn test_active_active_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_active_one_active_redis() {
     let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
     let shotover_manager =
@@ -687,7 +687,7 @@ fn test_active_one_active_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_pass_redis_cluster_one() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
     let shotover_manager =
@@ -700,7 +700,7 @@ fn test_pass_redis_cluster_one() {
 
 // TODO Re-enable Redis Auth support
 // #[test]
-// #[serial(redis)]
+// #[serial]
 fn _test_cluster_auth_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml");
     let shotover_manager =
@@ -756,7 +756,7 @@ fn _test_cluster_auth_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_cluster_all_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
     let shotover_manager =
@@ -767,7 +767,7 @@ fn test_cluster_all_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_cluster_all_script_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
     let shotover_manager =
@@ -780,7 +780,7 @@ fn test_cluster_all_script_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_cluster_all_pipeline_safe_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
     let shotover_manager =
