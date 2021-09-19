@@ -603,9 +603,10 @@ fn test_cluster_script(connection: &mut Connection) {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_pass_through() {
-    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+        .wait_for("Ready to accept connections");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -614,9 +615,10 @@ fn test_pass_through() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial(redis)]
+#[serial]
 async fn test_tls() {
-    let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
+        .wait_for("Ready to accept connections");
     let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
 
     let tls_config = TlsConfig {
@@ -651,10 +653,11 @@ async fn test_tls() {
 }
 
 // #[test]
-// #[serial(redis)]
+// #[serial]
 #[allow(dead_code)]
 fn test_pass_through_one() {
-    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+        .wait_for("Cluster correctly created");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -663,9 +666,10 @@ fn test_pass_through_one() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_active_active_redis() {
-    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
+        .wait_for("Ready to accept connections");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -674,9 +678,10 @@ fn test_active_active_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_active_one_active_redis() {
-    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
+        .wait_for("Ready to accept connections");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -689,9 +694,10 @@ fn test_active_one_active_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_pass_redis_cluster_one() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -701,9 +707,10 @@ fn test_pass_redis_cluster_one() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_cluster_auth_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml")
+        .wait_for("Cluster correctly created");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
@@ -838,20 +845,23 @@ fn test_cluster_auth_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_cluster_all_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
+
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
     let mut connection = shotover_manager.redis_connection(6379);
     run_all_cluster_safe(&mut connection);
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_cluster_all_script_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
     // panic!("Loooks like we are getting some out of order issues with pipelined request");
@@ -862,9 +872,10 @@ fn test_cluster_all_script_redis() {
 }
 
 #[test]
-#[serial(redis)]
+#[serial]
 fn test_cluster_all_pipeline_safe_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
