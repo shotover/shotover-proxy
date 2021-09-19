@@ -38,7 +38,6 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
-    pub strict_close_mode: Option<bool>,
     connection_count: Option<usize>,
 }
 
