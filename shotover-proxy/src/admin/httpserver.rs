@@ -3,6 +3,7 @@ use hyper::{
     Method, Request, StatusCode, {Body, Response, Server},
 };
 
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::convert::Infallible;
@@ -59,7 +60,13 @@ where
 
     /// Starts an HTTP server on the `address` the exporter was originally configured with,
     /// responding to any request with the output of the configured observer.
-    pub async fn async_run(self) -> hyper::Result<()> {
+    pub async fn async_run(self) {
+        if let Err(err) = self.async_run_inner().await {
+            error!("Metrics HTTP server failed: {}", err);
+        }
+    }
+
+    async fn async_run_inner(self) -> Result<()> {
         let controller = Arc::new(self.recorder_handle);
         let handle = Arc::new(self.handle);
 
@@ -104,6 +111,11 @@ where
             }
         });
 
-        Server::bind(&self.address).serve(make_svc).await
+        let address = self.address.clone();
+        Server::try_bind(&address)
+            .map_err(|e| anyhow!("Failed to bind to {}: {}", address, e))?
+            .serve(make_svc)
+            .await
+            .map_err(|e| anyhow!(e))
     }
 }
