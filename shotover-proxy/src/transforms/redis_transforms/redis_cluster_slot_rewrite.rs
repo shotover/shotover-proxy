@@ -35,6 +35,7 @@ pub struct RedisClusterSlotRewrite {
 #[async_trait]
 impl Transform for RedisClusterSlotRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        // Find the indices of cluster slot messages
         let cluster_slots_indices = message_wrapper
             .message
             .messages
@@ -46,6 +47,7 @@ impl Transform for RedisClusterSlotRewrite {
 
         let mut response = message_wrapper.call_next_transform().await?;
 
+        // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {
             response.messages[i].original =
                 rewrite_port(&response.messages[i].original, self.new_port)?;
@@ -66,6 +68,7 @@ impl Transform for RedisClusterSlotRewrite {
     }
 }
 
+/// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
 fn rewrite_port(frame: &RawFrame, new_port: u16) -> Result<RawFrame> {
     let mut new_frame = frame.clone();
     if let RawFrame::Redis(Frame::Array(ref mut array)) = new_frame {
@@ -101,6 +104,7 @@ fn rewrite_port(frame: &RawFrame, new_port: u16) -> Result<RawFrame> {
     Ok(new_frame)
 }
 
+/// Determines if the supplied Redis Frame is a response to a `CLUSTER SLOTS` command
 fn is_cluster_slots(frame: &RawFrame) -> bool {
     let args = if let RawFrame::Redis(Frame::Array(array)) = frame {
         array

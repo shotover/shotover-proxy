@@ -43,7 +43,7 @@ impl<S> LogFilterHttpExporter<S>
 where
     S: tracing::Subscriber + 'static,
 {
-    /// Creates a new [`HttpExporter`] that listens on the given `address`.
+    /// Creates a new [`LogFilterHttpExporter`] that listens on the given `address`.
     ///
     /// Observers expose their output by being converted into strings.
     pub fn new(

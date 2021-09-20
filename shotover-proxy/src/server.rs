@@ -328,7 +328,7 @@ impl<C: Codec + 'static> Handler<C> {
     /// Currently, pipelining is not implemented. Pipelining is the ability to
     /// process more than one request concurrently per connection without
     /// interleaving frames. See for more details:
-    /// https://redis.io/topics/pipelining
+    /// <https://redis.io/topics/pipelining>
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
