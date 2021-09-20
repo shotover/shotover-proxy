@@ -68,6 +68,7 @@ pktparse = {version = "0.7.0", features = ["serde"]}
 dns-parser = "0.8"
 tls-parser = "0.10.0"
 threadpool = "1.0"
+tokio-io-timeout = "1.1.1"
 num_cpus = "1.0"
 serial_test = "0.5.1"
 test-helpers = { path = "../test-helpers" }
