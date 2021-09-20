@@ -25,7 +25,7 @@ fn run_command(command: &str, args: &[&str]) -> Result<String> {
         .capture()?;
 
     if data.exit_status.success() {
-        Ok(data.stdout_str().to_string())
+        Ok(data.stdout_str())
     } else {
         Err(anyhow!(
             "command {} {:?} exited with {:?} and output:\n{}",

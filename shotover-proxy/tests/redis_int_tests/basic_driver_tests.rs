@@ -1,15 +1,17 @@
 #![allow(clippy::let_unit_value)]
 
-use crate::helpers::ShotoverManager;
-use shotover_proxy::tls::TlsConfig;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use rand::{thread_rng, Rng};
+use rand_distr::Alphanumeric;
+use redis::{Commands, Connection, ErrorKind, RedisError, Value};
+use serial_test::serial;
+use tracing::{info, trace};
+
+use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
 
-use redis::Connection;
-use redis::{Commands, ErrorKind, RedisError, Value};
-use serial_test::serial;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use tracing::{info, trace};
+use crate::helpers::ShotoverManager;
 
 fn test_args(connection: &mut Connection) {
     redis::cmd("SET")
@@ -704,62 +706,142 @@ fn test_pass_redis_cluster_one() {
     test_pipeline_error(&mut connection); //TODO: script does not seem to be loading in the server?
 }
 
-// TODO Re-enable Redis Auth support
-// #[test]
-// #[serial]
-fn _test_cluster_auth_redis() {
+#[test]
+#[serial]
+fn test_cluster_auth_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml")
         .wait_for("Cluster correctly created");
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
 
-    redis::cmd("SET")
-        .arg("{x}key1")
-        .arg(b"foo")
-        .execute(&mut connection);
-    redis::cmd("SET")
-        .arg(&["{x}key2", "bar"])
-        .execute(&mut connection);
-
+    // Command should fail on unauthenticated connection.
     assert_eq!(
-        redis::cmd("MGET")
-            .arg(&["{x}key1", "{x}key2"])
-            .query(&mut connection),
-        Ok(("foo".to_string(), b"bar".to_vec()))
+        redis::cmd("GET")
+            .arg("without authenticating")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("NOAUTH")
     );
 
-    // create a user, auth as them, try to set a key but should fail as they have no access
+    // Authenticating with incorrect password should fail.
+    assert_eq!(
+        redis::cmd("AUTH")
+            .arg("with a bad password")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("WRONGPASS")
+    );
+
+    // Switch to default superuser.
+    redis::cmd("AUTH").arg("shotover").execute(&mut connection);
+
+    // Set random value to be checked later.
+    let expected_foo: String = thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(30)
+        .map(char::from)
+        .collect();
+    redis::cmd("SET")
+        .arg("foo")
+        .arg(&expected_foo)
+        .execute(&mut connection);
+
+    // Read-only user with no other permissions should not be able to auth.
     redis::cmd("ACL")
-        .arg(&["SETUSER", "testuser", "+@read", "on", ">password"])
+        .arg(&["SETUSER", "brokenuser", "+@read", "on", ">password"])
+        .execute(&mut connection);
+    assert_eq!(
+        redis::cmd("AUTH")
+            .arg("brokenuser")
+            .arg("password")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("NOPERM")
+    );
+
+    // Read-only user with CLUSTER SLOTS permission should be able to auth, but cannot perform writes.
+    // We then use this user to read back the original value that should not have been overwritten.
+    redis::cmd("ACL")
+        .arg(&[
+            "SETUSER",
+            "testuser",
+            "+@read",
+            "+cluster|slots",
+            "on",
+            ">password",
+            "allkeys",
+        ])
         .execute(&mut connection);
     redis::cmd("AUTH")
         .arg("testuser")
         .arg("password")
         .execute(&mut connection);
-    if let Ok(_s) = redis::cmd("SET")
-        .arg("{x}key2")
-        .arg("fail")
-        .query::<String>(&mut connection)
-    {
-        panic!("This should fail!")
-    }
-    // assert_eq!(
-    //     redis::cmd("GET").arg("{x}key2").query(&mut connection),
-    //     Ok("bar".to_string())
-    // );
-
-    // set auth context back to default user using non acl style auth command
-    redis::cmd("AUTH").arg("shotover").execute(&mut connection);
-    redis::cmd("SET")
-        .arg("{x}key3")
-        .arg(b"food")
-        .execute(&mut connection);
-
     assert_eq!(
-        redis::cmd("GET").arg("{x}key3").query(&mut connection),
-        Ok("food".to_string())
+        redis::cmd("SET")
+            .arg("foo")
+            .arg("fail")
+            .query::<()>(&mut connection)
+            .unwrap_err()
+            .code(),
+        Some("NOPERM")
     );
+    assert_eq!(
+        redis::cmd("GET").arg("foo").query(&mut connection),
+        Ok(expected_foo)
+    );
+
+    // Switch back to default superuser to setup for the auth isolation test.
+    redis::cmd("AUTH").arg("shotover").execute(&mut connection);
+
+    // Create users with only access to their own key, and test their permissions using new connections.
+    for i in 1..=100 {
+        let user = format!("user-{}", i);
+        let pass = format!("pass-{}", i);
+        let key = format!("key-{}", i);
+
+        redis::cmd("ACL")
+            .arg(&[
+                "SETUSER",
+                &user,
+                "+@read",
+                "+cluster|slots",
+                "on",
+                &format!(">{}", pass),
+                &format!("~{}", key),
+            ])
+            .execute(&mut connection);
+
+        let mut new_connection = shotover_manager.redis_connection(6379);
+
+        assert_eq!(
+            redis::cmd("GET")
+                .arg("without authenticating")
+                .query::<()>(&mut new_connection)
+                .unwrap_err()
+                .code(),
+            Some("NOAUTH")
+        );
+
+        redis::cmd("AUTH")
+            .arg(&user)
+            .arg(&pass)
+            .execute(&mut new_connection);
+
+        redis::cmd("GET").arg(&key).execute(&mut new_connection);
+
+        assert_eq!(
+            redis::cmd("GET")
+                .arg("foo")
+                .query::<()>(&mut new_connection)
+                .unwrap_err()
+                .code(),
+            Some("NOPERM")
+        );
+    }
 }
 
 #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "shotover-proxy"
-version = "0.0.21"
+version = "0.0.23"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2018"
 

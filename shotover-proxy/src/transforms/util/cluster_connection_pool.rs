@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -10,6 +11,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, trace, warn};
@@ -164,8 +166,9 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         address: &str,
         token: &Option<T>,
     ) -> Result<Connection, ConnectionError<A::Error>> {
-        let stream = TcpStream::connect(address)
+        let stream = timeout(Duration::from_secs(3), TcpStream::connect(address))
             .await
+            .map_err(|e| ConnectionError::IO(e.into()))?
             .map_err(ConnectionError::IO)?;
 
         let mut connection = spawn_from_stream(&self.codec, stream);
@@ -269,6 +272,7 @@ async fn rx_process<C: CodecReadHalf>(
             }
         }
     }
+
     Ok(())
 }
 

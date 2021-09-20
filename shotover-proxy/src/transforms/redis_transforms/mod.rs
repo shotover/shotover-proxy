@@ -1,6 +1,5 @@
 use std::io;
 
-use crate::transforms::util::cluster_connection_pool::NoopError;
 use crate::transforms::util::ConnectionError;
 
 pub mod redis_cache;
@@ -66,15 +65,6 @@ impl From<ConnectionError<TransformError>> for TransformError {
         match error {
             ConnectionError::IO(e) => TransformError::IO(e),
             ConnectionError::Authenticator(e) => e,
-        }
-    }
-}
-
-impl From<ConnectionError<NoopError>> for TransformError {
-    fn from(error: ConnectionError<NoopError>) -> Self {
-        match error {
-            ConnectionError::IO(e) => TransformError::IO(e),
-            ConnectionError::Authenticator(_) => unimplemented!(),
         }
     }
 }
