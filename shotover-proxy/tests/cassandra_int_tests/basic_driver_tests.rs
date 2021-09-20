@@ -5,6 +5,7 @@ use test_helpers::docker_compose::DockerCompose;
 use anyhow::Result;
 use cassandra_cpp::*;
 use tracing::info;
+use std::{thread, time};
 
 fn test_create_keyspace() {
     info!("test_args");
@@ -18,6 +19,7 @@ fn test_create_keyspace() {
 #[test]
 fn test_basic_connection() -> Result<()> {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
+    thread::sleep(time::Duration::from_secs(10));
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
