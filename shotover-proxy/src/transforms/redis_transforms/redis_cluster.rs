@@ -443,12 +443,12 @@ impl RedisCluster {
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct SlotMap {
-    masters: BTreeMap<u16, String>,
-    replicas: BTreeMap<u16, String>,
+    pub masters: BTreeMap<u16, String>,
+    pub replicas: BTreeMap<u16, String>,
 
     // Hide redundant information.
     #[derivative(Debug = "ignore")]
-    nodes: HashSet<String>,
+    pub nodes: HashSet<String>,
 }
 
 impl SlotMap {
@@ -601,7 +601,7 @@ fn build_slot_to_server(
     Ok(())
 }
 
-fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
+pub fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
     let mut master_entries: Vec<(String, u16, u16)> = vec![];
     let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
