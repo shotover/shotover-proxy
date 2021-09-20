@@ -139,10 +139,17 @@ pub struct ShotoverProcess {
 impl ShotoverProcess {
     #[allow(unused)]
     pub fn new(topology_path: &str) -> ShotoverProcess {
-        let all_args = ["run", "--", "-t", topology_path];
+        // TODO: this will be nicer when --profile is stabilized
+        //let all_args = ["run", "--profile", env!("PROFILE"), "--", "-t", topology_path];
+
+        let all_args = if env!("PROFILE") == "release" {
+            vec!["run", "--release", "--", "-t", topology_path]
+        } else {
+            vec!["run", "--", "-t", topology_path]
+        };
         let child = Command::new(env!("CARGO"))
             .env("RUST_LOG", "debug,shotover_proxy=debug")
-            .args(all_args)
+            .args(&all_args)
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();

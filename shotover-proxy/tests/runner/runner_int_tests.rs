@@ -39,7 +39,12 @@ fn test_shotover_responds_sigterm() {
 
     let (code, stdout, _) = shotover_process.wait();
     assert_eq!(code, Some(0));
-    assert!(stdout.contains("received SIGTERM"));
+    if !stdout.contains("received SIGTERM") {
+        panic!(
+            "stdout does not contain 'received SIGTERM'. Instead was: {}",
+            stdout
+        );
+    }
 }
 
 #[test]
@@ -50,5 +55,10 @@ fn test_shotover_responds_sigint() {
 
     let (code, stdout, _) = shotover_process.wait();
     assert_eq!(code, Some(0));
-    assert!(stdout.contains("received SIGINT"));
+    if !stdout.contains("received SIGINT") {
+        panic!(
+            "stdout does not contain 'received SIGINT'. Instead was: {}",
+            stdout
+        );
+    }
 }
