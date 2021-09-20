@@ -652,6 +652,59 @@ async fn test_tls() {
     );
 }
 
+}
+    };
+        panic!("cluster slots returned the wrong result");
+    } else {
+        });
+                    (2..=3, redis::Value::Bulk(val)) => {
+                        assert_eq!(val[1], redis::Value::Int(port.into()));
+                    }
+                    (_, _) => {}
+                });
+            }
+
+fn check_cluster_slots_ports(value: redis::Value, port: u16) {
+    if let redis::Value::Bulk(bulks) = value {
+        bulks.iter().for_each(|bulk| {
+            if let redis::Value::Bulk(b) = bulk {
+                b.iter().enumerate().for_each(|(i, val)| match (i, val) {
+
+}
+    check_cluster_slots_ports(res, 6379);
+
+        .unwrap();
+        .await
+        .query_async(&mut connection)
+        .arg("SLOTS")
+    let res: redis::Value = redis::cmd("CLUSTER")
+    let mut connection = shotover_manager.async_redis_connection(6379).await;
+
+        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
+    let shotover_manager =
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml");
+async fn test_rewrite_cluster_slots_no_rewrite() {
+#[serial]
+#[tokio::test(flavor = "multi_thread")]
+
+}
+    check_cluster_slots_ports(res, 2004);
+
+        .unwrap();
+        .await
+        .query_async(&mut connection)
+        .arg("SLOTS")
+    let res: redis::Value = redis::cmd("CLUSTER")
+    let _compose = DockerCompose::new("examples/redis-cluster-rewrite/docker-compose.yml");
+        ShotoverManager::from_topology_file("examples/redis-cluster-rewrite/topology.yaml");
+
+    let mut connection = shotover_manager.async_redis_connection(6379).await;
+
+    let shotover_manager =
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_rewrite_cluster_slots() {
 #[test]
 #[serial]
 fn test_active_active_redis() {
