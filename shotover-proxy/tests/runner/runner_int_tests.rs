@@ -1,7 +1,5 @@
-use rusty_fork::rusty_fork_test;
 use serial_test::serial;
 use std::any::Any;
-use tokio::runtime;
 
 use crate::helpers::{ShotoverManager, ShotoverProcess};
 
@@ -16,23 +14,6 @@ async fn test_runtime_use_existing() {
 
     // Assert that shotover did not create a runtime for itself
     assert!(shotover_manager.runtime.is_none());
-}
-
-rusty_fork_test! {
-    #![rusty_fork(timeout_ms = 10000)]
-    #[test]
-    #[serial]
-    fn test_shotover_panics_in_single_thread_runtime() {
-        let runtime = runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            let result = std::panic::catch_unwind(|| {
-                ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
-            });
-            assert!(result.is_err());
-        });
-    }
 }
 
 #[test]
