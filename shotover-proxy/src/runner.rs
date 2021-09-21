@@ -114,10 +114,10 @@ impl Runner {
 
             tokio::select! {
                 _ = interrupt.recv() => {
-                    debug!("received SIGINT");
+                    info!("received SIGINT");
                 },
                 _ = terminate.recv() => {
-                    debug!("received SIGTERM");
+                    info!("received SIGTERM");
                 },
             };
 
