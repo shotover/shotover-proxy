@@ -679,22 +679,6 @@ fn test_active_active_redis() {
 
 #[test]
 #[serial]
-fn test_active_one_active_redis() {
-    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
-    let mut connection = shotover_manager.redis_connection(6379);
-
-    // test_args();
-    test_cluster_basics(&mut connection);
-
-    // test_pipeline();
-    test_getset(&mut connection);
-}
-
-#[test]
-#[serial]
 fn test_pass_redis_cluster_one() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
@@ -986,8 +970,8 @@ fn run_all_active_safe(connection: &mut Connection) {
     // test_optionals();
     // test_scanning(); // TODO scanning doesnt work
     // test_filtered_scanning();
-    test_pipeline(connection); // NGET Issues
-    test_empty_pipeline(connection);
+    // test_pipeline(connection); // NGET Issues
+    // test_empty_pipeline(connection);
     // TODO: Pipeline transactions currently don't work (though it tries very hard)
     // Current each cmd in a pipeline is treated as a single request, which means on a cluster
     // basis they end up getting routed to different masters. This results in very occasionally will
