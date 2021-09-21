@@ -668,7 +668,7 @@ fn test_active_active_redis() {
 #[serial]
 fn test_cluster_auth_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml")
-        .wait_for("Cluster correctly created");
+        .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
