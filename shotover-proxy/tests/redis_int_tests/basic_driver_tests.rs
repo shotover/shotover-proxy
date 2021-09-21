@@ -652,19 +652,6 @@ async fn test_tls() {
     );
 }
 
-// #[test]
-// #[serial]
-#[allow(dead_code)]
-fn test_pass_through_one() {
-    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-        .wait_for("Cluster correctly created");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
-    let mut connection = shotover_manager.redis_connection(6379);
-
-    test_real_transaction(&mut connection);
-}
-
 #[test]
 #[serial]
 fn test_active_active_redis() {
@@ -675,19 +662,6 @@ fn test_active_active_redis() {
     let mut connection = shotover_manager.redis_connection(6379);
 
     run_all_active_safe(&mut connection);
-}
-
-#[test]
-#[serial]
-fn test_pass_redis_cluster_one() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
-    let mut connection = shotover_manager.redis_connection(6379);
-
-    // test_args()test_args;
-    test_pipeline_error(&mut connection); //TODO: script does not seem to be loading in the server?
 }
 
 #[test]
@@ -830,40 +804,21 @@ fn test_cluster_auth_redis() {
 
 #[test]
 #[serial]
-fn test_cluster_all_redis() {
+fn test_cluster_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
 
-    // panic!("Loooks like we are getting some out of order issues with pipelined request");
-    let mut connection = shotover_manager.redis_connection(6379);
-    run_all_cluster_safe(&mut connection);
-}
-
-#[test]
-#[serial]
-fn test_cluster_all_script_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
-    // panic!("Loooks like we are getting some out of order issues with pipelined request");
-    let mut connection = shotover_manager.redis_connection(6379);
-    for _i in 0..1999 {
-        test_script(&mut connection);
-    }
-}
-
-#[test]
-#[serial]
-fn test_cluster_all_pipeline_safe_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
     let mut connection = shotover_manager.redis_connection(6379);
     let connection = &mut connection;
+
+    test_pipeline_error(connection); //TODO: script does not seem to be loading in the server?
+    run_all_cluster_safe(connection);
+
+    for _i in 0..1999 {
+        test_script(connection);
+    }
 
     test_cluster_script(connection);
     test_script(connection);
@@ -921,39 +876,6 @@ fn test_cluster_all_pipeline_safe_redis() {
             assert_eq!(i, result);
         }
     }
-
-    test_cluster_basics(connection);
-    test_cluster_eval(connection);
-    test_cluster_script(connection); //TODO: script does not seem to be loading in the server?
-    test_getset(connection);
-    test_incr(connection);
-    // test_info();
-    // test_hash_ops();
-    test_set_ops(connection);
-    test_scan(connection);
-    // test_optionals();
-    test_pipeline_error(connection);
-    test_scanning(connection);
-    test_filtered_scanning(connection);
-    test_pipeline(connection); // NGET Issues
-    test_empty_pipeline(connection);
-    // TODO: Pipeline transactions currently don't work (though it tries very hard)
-    // Current each cmd in a pipeline is treated as a single request, which means on a cluster
-    // basis they end up getting routed to different masters. This results in very occasionally will
-    // the transaction resolve (the exec and the multi both go to the right server).
-    // test_pipeline_transaction();
-    test_pipeline_reuse_query(connection);
-    test_pipeline_reuse_query_clear(connection);
-    // test_real_transaction();
-    // test_real_transaction_highlevel();
-    test_script(connection);
-    test_tuple_args(connection);
-    // test_nice_api();
-    // test_auto_m_versions();
-    test_nice_hash_api(connection);
-    test_nice_list_api(connection);
-    test_tuple_decoding_regression(connection);
-    test_bit_operations(connection);
 }
 
 fn run_all_active_safe(connection: &mut Connection) {
