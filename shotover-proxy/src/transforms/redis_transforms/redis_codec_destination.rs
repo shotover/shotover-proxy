@@ -54,34 +54,23 @@ impl RedisCodecDestination {
 #[async_trait]
 impl Transform for RedisCodecDestination {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        match self.outbound {
-            None => {
-                let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
-                // TODO: Make this configurable
-                let mut outbound_framed_codec =
-                    Framed::new(outbound_stream, RedisCodec::new(true, 1));
-                let _ = outbound_framed_codec.send(message_wrapper.message).await;
-                if let Some(o) = outbound_framed_codec.next().fuse().await {
-                    if let Ok(_resp) = &o {
-                        self.outbound.replace(outbound_framed_codec);
-                        return o;
-                    }
-                }
-                self.outbound.replace(outbound_framed_codec);
-            }
-            Some(ref mut outbound_framed_codec) => {
-                let _ = outbound_framed_codec.send(message_wrapper.message).await;
-
-                let result = outbound_framed_codec
-                    .next()
-                    .fuse()
-                    .await
-                    .ok_or_else(|| anyhow!("couldnt get frame"))?;
-
-                return result;
-            }
+        if self.outbound.is_none() {
+            let outbound_stream = TcpStream::connect(self.address.clone()).await.unwrap();
+            // TODO: Make this configurable
+            self.outbound = Some(Framed::new(outbound_stream, RedisCodec::new(true, 1)));
         }
-        ChainResponse::Err(anyhow!("Something went wrong sending frame to Redis"))
+
+        // self.outbound is gauranteed to be Some by the previous block
+        let outbound_framed_codec = self.outbound.as_mut().unwrap();
+        outbound_framed_codec
+            .send(message_wrapper.message)
+            .await
+            .ok();
+
+        match outbound_framed_codec.next().fuse().await {
+            Some(a) => a,
+            None => Err(anyhow!("couldnt get frame")),
+        }
     }
 
     fn get_name(&self) -> &'static str {
