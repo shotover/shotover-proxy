@@ -47,9 +47,8 @@ impl Transform for RedisClusterSlotRewrite {
 
         // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {
-            response.messages[i].original =
-                rewrite_port(&response.messages[i].original, self.new_port)
-                    .context("failed to rewrite CLUSTER SLOTS port")?;
+            rewrite_port(&mut response.messages[i].original, self.new_port)
+                .context("failed to rewrite CLUSTER SLOTS port")?;
         }
 
         Ok(response)
@@ -61,9 +60,8 @@ impl Transform for RedisClusterSlotRewrite {
 }
 
 /// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
-fn rewrite_port(frame: &RawFrame, new_port: u16) -> Result<RawFrame> {
-    let mut new_frame = frame.clone();
-    if let RawFrame::Redis(Frame::Array(ref mut array)) = new_frame {
+fn rewrite_port(frame: &mut RawFrame, new_port: u16) -> Result<()> {
+    if let RawFrame::Redis(Frame::Array(ref mut array)) = frame {
         for elem in array.iter_mut() {
             if let Frame::Array(slot) = elem {
                 slot.iter_mut()
@@ -83,7 +81,7 @@ fn rewrite_port(frame: &RawFrame, new_port: u16) -> Result<RawFrame> {
         }
     };
 
-    Ok(new_frame)
+    Ok(())
 }
 
 /// Determines if the supplied Redis Frame is a response to a `CLUSTER SLOTS` command
@@ -142,7 +140,7 @@ mod test {
     fn test_rewrite_port() {
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
         let mut codec = RedisCodec::new(true, 3);
-        let raw_frame = codec
+        let mut raw_frame = codec
             .decode(&mut slots_pcap.into())
             .unwrap()
             .unwrap()
@@ -151,7 +149,7 @@ mod test {
             .unwrap()
             .original;
 
-        let raw_frame = rewrite_port(&raw_frame, 2004).unwrap();
+        rewrite_port(&mut raw_frame, 2004).unwrap();
 
         let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame.clone() {
             frames
