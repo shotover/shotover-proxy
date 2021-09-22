@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use hyper::body::Bytes;
 pub use redis_protocol::prelude::Frame;
 use serde::{Deserialize, Serialize};
 
@@ -109,6 +108,7 @@ mod test {
         protocols::redis_codec::RedisCodec,
         transforms::redis_transforms::redis_cluster::parse_slots,
     };
+    use hyper::body::Bytes;
     use tokio_util::codec::Decoder;
 
     #[test]

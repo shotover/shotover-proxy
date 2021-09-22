@@ -28,7 +28,7 @@ chain_config:
         topic_name: testtopic
     - RedisCache:
         config_values: "redis://127.0.0.1/"
-    - CodecDestination:
+    - CassandraCodecDestination:
         remote_address: "127.0.0.1:9043"
   async_chain:
     - KafkaDestination:

@@ -2,7 +2,7 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::cassandra::cassandra_codec_destination::CodecConfiguration;
+use crate::transforms::cassandra::cassandra_codec_destination::CassandraCodecConfiguration;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::TeeConfig;
@@ -203,10 +203,11 @@ impl Topology {
 
         let server_addr = "127.0.0.1:9042".to_string();
 
-        let codec_config = TransformsConfig::CodecDestination(CodecConfiguration {
-            address: server_addr,
-            bypass_result_processing: false,
-        });
+        let codec_config =
+            TransformsConfig::CassandraCodecDestination(CassandraCodecConfiguration {
+                address: server_addr,
+                bypass_result_processing: false,
+            });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
         cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);
@@ -280,7 +281,7 @@ chain_config:
              config_values:
                bootstrap.servers: "127.0.0.1:9092"
                message.timeout.ms: "5000"
-    - CodecDestination:
+    - CassandraCodecDestination:
         bypass_result_processing: false
         remote_address: "127.0.0.1:9042"    
 named_topics:

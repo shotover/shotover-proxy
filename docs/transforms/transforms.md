@@ -3,7 +3,7 @@
 ## TODO this doc needs updating
 Currently shotover proxy supports the following transforms:
 
-* CodecDestination
+* CassandraCodecDestination
 * KafkaDestination
 * RedisCodecDestination
 * RedisCluster
@@ -22,7 +22,7 @@ Currently shotover proxy supports the following transforms:
 The following transforms will all return a response, any transform after them in the chain won't ever
 get a request.
 
-### CodecDestination
+### CassandraCodecDestination
 *State: Alpha*
 
 This transform will take a query, serialise it into a CQL4 compatible format and send to the Cassandra compatible
@@ -106,13 +106,13 @@ it's route_map).
 ```yaml
 route_map:
   main_cluster:
-  - CodecDestination:
+  - CassandraCodecDestination:
       remote_address: "127.0.0.1:9043"
   customer1_cluster:
-  - CodecDestination:
+  - CassandraCodecDestination:
       remote_address: "127.1.0.2:9043"
   customer2_cluster:
-  - CodecDestination:
+  - CassandraCodecDestination:
       remote_address: "127.2.0.3:9043"
 ```
 * `route_script` - A ScriptConfigurator object that expects a `script_type`, `function_name` and `script_definition`.The route script can 
@@ -144,13 +144,13 @@ it's route_map).
 ```yaml
 route_map:
   main_cluster:
-  - CodecDestination:
+  - CassandraCodecDestination:
       remote_address: "127.0.0.1:9043"
   customer1_cluster:
-  - CodecDestination:
+  - CassandraCodecDestination:
       remote_address: "127.1.0.2:9043"
   customer2_cluster:
-  - CodecDestination:
+  - CassandraCodecDestination:
       remote_address: "127.2.0.3:9043"
 ```
 * `route_script` - A ScriptConfigurator object that expects a `script_type`, `function_name` and `script_definition`.The route script can 
@@ -225,13 +225,13 @@ simply return the largest response if no timestamp information is available.
 ```yaml
 route_map:
   cluster1:
-    - CodecDestination:
+    - CassandraCodecDestination:
        remote_address: "127.0.0.1:9043"
   cluster2:
-   - CodecDestination:
+   - CassandraCodecDestination:
        remote_address: "127.1.0.2:9043"
   cluster3:
-   - CodecDestination:
+   - CassandraCodecDestination:
        remote_address: "127.2.0.3:9043"
 ```
 * `write_consistency` - The number of chains to wait for a "write" response on.
@@ -248,35 +248,3 @@ and returned to up-chain transforms looking like a normal redis response.
 This is mainly used in conjunction with the `TuneableConsistency` to enable a Cassandra style consistency model within Redis.
 
 No configuration is required for this transform.
- 
-### Lua
-*State: Alpha*
-
-This transform executes a user defined lua function passing in the query/message. Within the global user environment you 
-have access to the following:
-
-* A function `call_next_transform` that calls the down-chain transforms and returns a response.
-* CoRoutine std lib
-* Table std lib
-* IO std lib
-* OS std lib
-* String std lib
-* Bit std lib
-* Math std lib
-* Package std lib
-
-When configuring the Lua Transform, you will provide the following:
-
-* `function_def` - The Lua script. The example script will change the namespace for the query 
-(e.g. keyspace/table in cassandra or database/table in MySQL). E.g. 
-```lua
-qm.namespace = {"another_keyspace", "another_table"}
-return call_next_transform(qm)
-```
-* `function_name` - The lua function to call, this can be blank and the lua script will just be run. The `QueryMessage` will be available as 
- a global. E.g. `function_name: ""` or `function_name: "my_function"`
- 
-Note: Currently the Lua transform stores a new Lua VM on a per transform basis, so no state is shared between connections or other transforms,
-in the future, a Lua VM will likely be created on a per connection basis. The Lua transform will also likely be migrated over to using 
-ScriptHolders which will manage the script definition and Lua VM interaction. This will be likely released as a seperate transform and 
-also support WASM defined modules. 
