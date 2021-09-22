@@ -187,12 +187,7 @@ impl Transform for TunableConsistency {
 
         // info!("{:?}\n{:?}", message_wrapper, results);
 
-        if results.len()
-            < *required_successes
-                .iter()
-                .max()
-                .unwrap_or(&self.write_consistency) as usize
-        {
+        if results.len() < max_required_successes as usize {
             let collated_response = required_successes
                 .iter()
                 .map(|_| {
