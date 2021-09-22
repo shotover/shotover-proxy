@@ -128,7 +128,7 @@ down-chain to a terminating transform `RedisDestination` which sends to the quer
 linux program.
 * `main_chain` - Also consists of a MPSCTee that will copy queries to the same topic as the `redis_chain` before sending the
 query onto caching layer that will try to resolve the query from a redis cache before ending up finally sending the query to
-the destination Cassandra cluster via a `CodecDestination`
+the destination Cassandra cluster via a `CassandraCodecDestination`
 * `KafkaDestination` - A single transform chain that will serialise and forward any queries to a given Kafka topic.
 
 

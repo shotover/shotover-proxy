@@ -281,7 +281,7 @@ chain_config:
              config_values:
                bootstrap.servers: "127.0.0.1:9092"
                message.timeout.ms: "5000"
-    - CodecDestination:
+    - CassandraCodecDestination:
         bypass_result_processing: false
         remote_address: "127.0.0.1:9042"    
 named_topics:
