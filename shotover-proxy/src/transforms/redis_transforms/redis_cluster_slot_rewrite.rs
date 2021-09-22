@@ -48,7 +48,8 @@ impl Transform for RedisClusterSlotRewrite {
         // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {
             response.messages[i].original =
-                rewrite_port(&response.messages[i].original, self.new_port)?;
+                rewrite_port(&response.messages[i].original, self.new_port)
+                    .context("failed to rewrite CLUSTER SLOTS port")?;
         }
 
         Ok(response)
