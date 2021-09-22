@@ -59,13 +59,6 @@ impl Transform for RedisClusterSlotRewrite {
     fn get_name(&self) -> &'static str {
         self.name
     }
-
-    async fn prep_transform_chain(
-        &mut self,
-        _t: &mut crate::transforms::chain::TransformChain,
-    ) -> Result<()> {
-        Ok(())
-    }
 }
 
 /// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
@@ -110,23 +103,16 @@ fn is_cluster_slots(frame: &RawFrame) -> bool {
         array
             .iter()
             .map(|f| match f {
-                Frame::BulkString(b) => String::from_utf8(b.to_vec())
-                    .map(|s| s.to_uppercase())
-                    .context("expected utf-8"),
-                _ => bail!("expected bulk string"),
+                Frame::BulkString(b) => Some(b.to_ascii_uppercase()),
+                _ => None,
             })
-            .collect::<Result<Vec<_>>>()
+            .take_while(Option::is_some)
+            .map(Option::unwrap)
     } else {
         return false;
     };
 
-    let args = if let Ok(args) = args {
-        args
-    } else {
-        return false;
-    };
-
-    args == vec!["CLUSTER", "SLOTS"]
+    args.eq([b"CLUSTER", b"SLOTS" as &[u8]])
 }
 
 #[cfg(test)]
