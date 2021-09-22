@@ -68,24 +68,14 @@ fn rewrite_port(frame: &RawFrame, new_port: u16) -> Result<RawFrame> {
             if let Frame::Array(slot) = elem {
                 slot.iter_mut()
                     .enumerate()
-                    .map(|(index, frame): (usize, &mut Frame)| match (index, frame) {
-                        (0..=1, _frame) => Ok(()),
-                        (_, Frame::Array(master)) => {
-                            if let Frame::BulkString(ip) = &master[0] {
-                                if ip == &Bytes::from("") {
-                                    return Ok(()); // IP is unknown
-                                }
-                            } else {
-                                bail!("unexpected type for ip")
-                            };
-
-                            if let Frame::Integer(_) = master[1] {
-                                master[1] = Frame::Integer(new_port.into());
-                                Ok(())
-                            } else {
-                                bail!("unexpected type for port")
+                    .map(|(index, frame)| match (index, frame) {
+                        (0..=1, _) => Ok(()),
+                        (_, Frame::Array(target)) => Ok(match target.as_mut_slice() {
+                            [Frame::BulkString(_ip), Frame::Integer(port), ..] => {
+                                *port = new_port.into();
                             }
-                        }
+                            _ => bail!("expected host-port in slot map"),
+                        }),
                         _ => bail!("unexpected value in slot map"),
                     })
                     .collect::<Result<Vec<_>>>()?;
