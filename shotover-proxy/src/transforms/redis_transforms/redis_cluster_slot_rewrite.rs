@@ -19,7 +19,6 @@ impl TransformsFromConfig for RedisClusterSlotRewriteConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisClusterSlotRewrite(
             RedisClusterSlotRewrite {
-                name: "RedisClusterSlotRewrite",
                 new_port: self.new_port,
             },
         ))
@@ -28,7 +27,6 @@ impl TransformsFromConfig for RedisClusterSlotRewriteConfig {
 
 #[derive(Clone)]
 pub struct RedisClusterSlotRewrite {
-    name: &'static str,
     new_port: u16,
 }
 
@@ -57,7 +55,7 @@ impl Transform for RedisClusterSlotRewrite {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "RedisClusterSlotRewrite"
     }
 }
 
