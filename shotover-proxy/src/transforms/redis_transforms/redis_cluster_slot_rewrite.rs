@@ -84,7 +84,7 @@ fn rewrite_port(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     Ok(())
 }
 
-/// Determines if the supplied Redis Frame is a response to a `CLUSTER SLOTS` command
+/// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
 fn is_cluster_slots(frame: &RawFrame) -> bool {
     let args = if let RawFrame::Redis(Frame::Array(array)) = frame {
         array
