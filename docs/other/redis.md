@@ -4,7 +4,7 @@
 
 For redis cluster mode support, shotover performs the following throughput:
 
-```bash
+```console
 Set - redis proxy:                      146,690.95/s
 Get - redis proxy:                      153,558.64/s
 Average CPU (325%)

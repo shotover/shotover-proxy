@@ -12,7 +12,7 @@ exercise for the reader. To configure shotover, modify the included `config.yml`
 
 To get more information about command line parameters you can pass to shotover:
 
-```bash
+```console
 ./shotover-proxy --help
 ```
 

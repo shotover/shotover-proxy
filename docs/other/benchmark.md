@@ -12,7 +12,7 @@ Running shotover-proxy - 4 threads, cassandra source and cassandra-destination c
 
 - `./tools/bin/cassandra-stress write no-warmup -mode native cql3 connectionsPerHost=8 -rate threads=8 -node 127.0.0.1 -port native=9043`
 
-```bash
+```console
 Connected to cluster: Test Cluster, max pending requests per connection 128, max connections per host 8
 Datatacenter: datacenter1; Host: /127.0.0.1; Rack: rack1
 Created keyspaces. Sleeping 1s for propagation.
@@ -135,7 +135,7 @@ Total operation time      : 00:01:31
 
 Running direct - `./tools/bin/cassandra-stress write no-warmup -mode native cql3 connectionsPerHost=8 -rate threads=8 -node 127.0.0.1 -port native=9043`
 
-```bash
+```console
 Running WRITE with 8 threads until stderr of mean < 0.02
 type       total ops,    op/s,    pk/s,   row/s,    mean,     med,     .95,     .99,    .999,     max,   time,   stderr, errors,  gc: #,  max ms,  sum ms,  sdv ms,      mb
 total,          3373,    3373,    3373,    3373,     1.6,     1.2,     2.9,     8.6,    31.0,   143.8,    1.0,  0.00000,      0,      0,       0,       0,       0,       0
@@ -227,7 +227,7 @@ END
 
 16 thread - shotover-proxy - with release optimisations
 
-```bash
+```console
 Running WRITE with 8 threads until stderr of mean < 0.02
 type       total ops,    op/s,    pk/s,   row/s,    mean,     med,     .95,     .99,    .999,     max,   time,   stderr, errors,  gc: #,  max ms,  sum ms,  sdv ms,      mb
 total,          2375,    2375,    2375,    2375,     2.1,     1.8,     3.7,     5.3,    14.8,    15.3,    1.0,  0.00000,      0,      0,       0,       0,       0,       0

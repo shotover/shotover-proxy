@@ -49,13 +49,13 @@ Modify an existing `config.yml` or create a new one and place the above example 
 
 We can now start `shotover-proxy`, by running the following:
 
-```bash
+```console
 ./shotover-proxy --config-file redis-shotover.yml
 ```
 
 If shotover can successfully contact your redis cluster, you should see the following:
 
-```bash
+```console
 user@demo$ ./shotover-proxy --config-file redis-shotover.yml 
 Aug 17 12:11:42.867  INFO shotover_proxy: Loading configuration
 Aug 17 12:11:42.867  INFO shotover_proxy: Starting loaded topology
@@ -74,13 +74,13 @@ Note: Currently `shotover-proxy` cannot daemonize itself. So you may wish to use
 
 With shotover proxy now up and running, we can test out our client application. Let's start it up!
 
-```bash
+```console
 redis-benchmark -t set,get
 ```
 
 And hooray we get the following:
 
-```bash
+```console
 ====== SET ======
   100000 requests completed in 1.41 seconds
   50 parallel clients
