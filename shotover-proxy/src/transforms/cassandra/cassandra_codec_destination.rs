@@ -38,7 +38,6 @@ impl TransformsFromConfig for CassandraCodecConfiguration {
 
 #[derive(Debug)]
 pub struct CassandraCodecDestination {
-    name: &'static str,
     address: String,
     outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec2>>,
     cassandra_ks: HashMap<String, Vec<String>>,
@@ -56,7 +55,6 @@ impl CassandraCodecDestination {
         CassandraCodecDestination {
             address,
             outbound: None,
-            name: "CassandraCodecDestination",
             cassandra_ks: HashMap::new(),
             bypass,
         }
@@ -159,6 +157,6 @@ impl Transform for CassandraCodecDestination {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "CassandraCodecDestination"
     }
 }

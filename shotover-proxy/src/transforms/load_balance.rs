@@ -23,7 +23,6 @@ impl TransformsFromConfig for ConnectionBalanceAndPoolConfig {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
-            name: "PoolConnections",
             active_connection: None,
             parallelism: self.parallelism,
             other_connections: Arc::new(Mutex::new(Vec::with_capacity(self.parallelism))),
@@ -34,7 +33,6 @@ impl TransformsFromConfig for ConnectionBalanceAndPoolConfig {
 
 #[derive(Debug)]
 pub struct ConnectionBalanceAndPool {
-    pub name: &'static str,
     pub active_connection: Option<BufferedChain>,
     pub parallelism: usize,
     pub other_connections: Arc<Mutex<Vec<BufferedChain>>>,
@@ -44,7 +42,6 @@ pub struct ConnectionBalanceAndPool {
 impl Clone for ConnectionBalanceAndPool {
     fn clone(&self) -> Self {
         ConnectionBalanceAndPool {
-            name: self.name,
             active_connection: None,
             parallelism: self.parallelism,
             other_connections: self.other_connections.clone(),
@@ -84,7 +81,7 @@ impl Transform for ConnectionBalanceAndPool {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "PoolConnections"
     }
 }
 
@@ -101,7 +98,6 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     pub async fn test_balance() -> Result<()> {
         let transform = Transforms::PoolConnections(ConnectionBalanceAndPool {
-            name: "",
             active_connection: None,
             parallelism: 3,
             other_connections: Arc::new(Default::default()),

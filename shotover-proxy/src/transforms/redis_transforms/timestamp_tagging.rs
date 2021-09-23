@@ -13,33 +13,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
 
 #[derive(Clone)]
-pub struct RedisTimestampTagger {
-    name: &'static str,
-}
+pub struct RedisTimestampTagger {}
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisTimestampTaggerConfig {}
 
-impl Default for RedisTimestampTagger {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl RedisTimestampTagger {
     pub fn new() -> Self {
-        RedisTimestampTagger {
-            name: "RedisTimestampTagger",
-        }
+        RedisTimestampTagger {}
     }
 }
 
 #[async_trait]
 impl TransformsFromConfig for RedisTimestampTaggerConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger {
-            name: "RedisTimeStampTagger",
-        }))
+        Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger {}))
     }
 }
 
@@ -191,6 +179,6 @@ impl Transform for RedisTimestampTagger {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "RedisTimeStampTagger"
     }
 }

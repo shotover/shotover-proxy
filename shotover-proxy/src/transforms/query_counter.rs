@@ -11,7 +11,6 @@ use sqlparser::ast::Statement;
 
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
-    name: &'static str,
     counter_name: String,
 }
 
@@ -68,7 +67,7 @@ impl Transform for QueryCounter {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "QueryCounter"
     }
 }
 
@@ -76,7 +75,6 @@ impl Transform for QueryCounter {
 impl TransformsFromConfig for QueryCounterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::QueryCounter(QueryCounter {
-            name: "QueryCounter",
             counter_name: self.name.clone(),
         }))
     }

@@ -30,7 +30,6 @@ impl TransformsFromConfig for RedisCodecConfiguration {
 
 #[derive(Debug)]
 pub struct RedisCodecDestination {
-    name: &'static str,
     address: String,
     outbound: Option<Framed<TcpStream, RedisCodec>>,
 }
@@ -46,7 +45,6 @@ impl RedisCodecDestination {
         RedisCodecDestination {
             address,
             outbound: None,
-            name: "CodecDestination",
         }
     }
 }
@@ -74,7 +72,7 @@ impl Transform for RedisCodecDestination {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "RedisCodecDestination"
     }
 }
 
