@@ -21,7 +21,6 @@ use crate::transforms::{
 
 #[derive(Clone)]
 pub struct TunableConsistency {
-    name: &'static str,
     route_map: Vec<BufferedChain>,
     write_consistency: i32,
     read_consistency: i32,
@@ -51,7 +50,6 @@ impl TransformsFromConfig for TunableConsistencyConfig {
         }
 
         Ok(Transforms::TunableConsistency(TunableConsistency {
-            name: "TunableConsistency",
             route_map,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
@@ -231,7 +229,7 @@ impl Transform for TunableConsistency {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "TunableConsistency"
     }
 }
 
@@ -322,7 +320,6 @@ mod scatter_transform_tests {
         );
 
         let mut tuneable_success_consistency = Transforms::TunableConsistency(TunableConsistency {
-            name: "TunableConsistency",
             route_map: build_chains(two_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
@@ -354,7 +351,6 @@ mod scatter_transform_tests {
         );
 
         let mut tuneable_fail_consistency = Transforms::TunableConsistency(TunableConsistency {
-            name: "TunableConsistency",
             route_map: build_chains(one_of_three).await,
             write_consistency: 2,
             read_consistency: 2,

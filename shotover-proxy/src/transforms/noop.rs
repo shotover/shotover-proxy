@@ -3,13 +3,11 @@ use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
-pub struct NoOp {
-    name: &'static str,
-}
+pub struct NoOp {}
 
 impl NoOp {
     pub fn new() -> NoOp {
-        NoOp { name: "NoOp" }
+        NoOp {}
     }
 }
 
@@ -26,6 +24,6 @@ impl Transform for NoOp {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "NoOp"
     }
 }

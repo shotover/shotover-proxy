@@ -18,7 +18,6 @@ use tokio_stream::StreamExt;
 
 #[derive(Debug, Clone)]
 pub struct ParallelMap {
-    name: &'static str,
     chains: Vec<TransformChain>,
     ordered: bool,
 }
@@ -76,7 +75,6 @@ impl TransformsFromConfig for ParallelMapConfig {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
-            name: "SequentialMap",
             chains: std::iter::repeat(chain)
                 .take(self.parallelism as usize)
                 .collect_vec(),
@@ -118,6 +116,6 @@ impl Transform for ParallelMap {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "SequentialMap"
     }
 }

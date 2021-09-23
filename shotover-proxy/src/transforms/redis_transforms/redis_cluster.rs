@@ -50,7 +50,6 @@ impl TransformsFromConfig for RedisClusterConfig {
             ConnectionPool::new_with_auth(RedisCodec::new(true, 3), authenticator);
 
         let mut cluster = RedisCluster {
-            name: "RedisCluster",
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
             load_scores: HashMap::new(),
@@ -82,7 +81,6 @@ impl TransformsFromConfig for RedisClusterConfig {
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
 pub struct RedisCluster {
-    name: &'static str,
     pub slots: SlotMap,
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
@@ -837,7 +835,7 @@ impl Transform for RedisCluster {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "RedisCluster"
     }
 }
 

@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
-    name: &'static str,
     filter: QueryType,
 }
 
@@ -21,7 +20,6 @@ pub struct QueryTypeFilterConfig {
 impl TransformsFromConfig for QueryTypeFilterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::QueryTypeFilter(QueryTypeFilter {
-            name: "QueryType Filter",
             filter: self.filter.clone(),
         }))
     }
@@ -41,7 +39,7 @@ impl Transform for QueryTypeFilter {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "QueryType Filter"
     }
 }
 
@@ -57,7 +55,6 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter() -> Result<()> {
         let mut coalesce = QueryTypeFilter {
-            name: "QueryTypeFilter",
             filter: QueryType::Read,
         };
 

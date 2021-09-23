@@ -10,7 +10,6 @@ use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct Coalesce {
-    name: &'static str,
     max_behavior: CoalesceBehavior,
     buffer: Messages,
     last_write: Instant,
@@ -38,7 +37,6 @@ impl TransformsFromConfig for CoalesceConfig {
             _ => None,
         };
         Ok(Transforms::Coalesce(Coalesce {
-            name: "Coalesce",
             max_behavior: self.max_behavior.clone(),
             buffer: Messages {
                 messages: if let Some(c) = hint {
@@ -89,7 +87,7 @@ impl Transform for Coalesce {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "Coalesce"
     }
 }
 
@@ -106,7 +104,6 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_count() -> Result<()> {
         let mut coalesce = Coalesce {
-            name: "test",
             max_behavior: CoalesceBehavior::COUNT(100),
             buffer: Messages::new_with_size_hint(100),
             last_write: Instant::now(),
@@ -157,7 +154,6 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait() -> Result<()> {
         let mut coalesce = Coalesce {
-            name: "wait",
             max_behavior: CoalesceBehavior::WAIT_MS(100),
             buffer: Messages::new_with_size_hint(100),
             last_write: Instant::now(),
@@ -206,7 +202,6 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait_or_count() -> Result<()> {
         let mut coalesce = Coalesce {
-            name: "wait",
             max_behavior: CoalesceBehavior::COUNT_OR_WAIT(100, 100),
             buffer: Messages::new_with_size_hint(100),
             last_write: Instant::now(),

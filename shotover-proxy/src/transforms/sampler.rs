@@ -8,7 +8,6 @@ use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct Sampler {
-    name: &'static str,
     numerator: u32,
     denominator: u32,
     sample_chain: TransformChain,
@@ -23,7 +22,6 @@ impl Default for Sampler {
 impl Sampler {
     pub fn new() -> Sampler {
         Sampler {
-            name: "Sampler",
             numerator: 1,
             denominator: 100,
             sample_chain: TransformChain::new_no_shared_state(vec![], "dummy".to_string()),
@@ -52,6 +50,6 @@ impl Transform for Sampler {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "Sampler"
     }
 }
