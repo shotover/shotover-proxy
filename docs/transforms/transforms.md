@@ -1,13 +1,10 @@
 # Transforms
 
-## TODO this doc needs updating
-
 Currently shotover proxy supports the following transforms:
 
 * CassandraCodecDestination
 * KafkaDestination
 * RedisCodecDestination
-* RedisClusterSlotRewrite
 * RedisCluster
 * MPSCForwarder
 * MPSCTee
@@ -18,6 +15,7 @@ Currently shotover proxy supports the following transforms:
 * Protect
 * TuneableConsistency
 * RedisTimeStampTagger
+* RedisClusterSlotRewrite
 
 ## Terminating Transforms
 
@@ -35,6 +33,7 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
 ### KafkaDestination
+
 *State: Alpha*
 
 This transform will take a query and push it to a given Kafka topic.
@@ -44,6 +43,7 @@ This transform will take a query and push it to a given Kafka topic.
  [here for details](https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html) E.g `bootstrap.servers: "127.0.0.1:9092"`.
  
 ### RedisCodecDestination
+
 *State: Alpha*
 
 This transform will take a query, serialise it into a RESP2 compatible format and send to the Redis compatible database at the defined address.
@@ -232,3 +232,11 @@ A transform that wraps each redis command in a lua script that also fetches the 
 This is mainly used in conjunction with the `TuneableConsistency` to enable a Cassandra style consistency model within Redis.
 
 No configuration is required for this transform.
+
+### RedisClusterSlotRewrite
+
+*State: Alpha*
+
+This transform should be used with the RedisCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
+
+* `new_port`- Value to write over the ports returned by `CLUSTER SLOTS`
