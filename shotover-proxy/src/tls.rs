@@ -4,6 +4,7 @@ use openssl::ssl::{SslAcceptor, SslConnector, SslFiletype, SslMethod};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_openssl::SslStream;
 use tracing::warn;
@@ -80,3 +81,11 @@ impl TlsConnector {
         Ok(ssl_stream)
     }
 }
+
+/// A trait object can only consist of one trait + special language traits like Send/Sync etc
+/// So we need to use this trait when creating trait objects that need both AsyncRead and AsyncWrite
+pub trait AsyncStream: AsyncRead + AsyncWrite {}
+
+/// We need to tell rust that these types implement AsyncStream even though they already implement AsyncRead and AsyncWrite
+impl AsyncStream for tokio_openssl::SslStream<TcpStream> {}
+impl AsyncStream for TcpStream {}

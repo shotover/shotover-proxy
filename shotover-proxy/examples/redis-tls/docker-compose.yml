@@ -1,6 +1,10 @@
 version: "3.3"
 services:
   redis-one:
-    image: library/redis:5.0.9
+    image: library/redis:6.2.5
     ports:
       - "1111:6379"
+    volumes:
+    - ./redis.conf:/usr/local/etc/redis/redis.conf
+    - ./tls_keys:/usr/local/etc/redis/tls_keys
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
