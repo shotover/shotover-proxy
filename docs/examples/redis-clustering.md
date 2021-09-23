@@ -1,9 +1,9 @@
 # Redis Clustering
-The following guide shows you how to configure shotover-proxy to support transparently proxying redis-cluster _unaware_ clients
-to a [Redis cluster](https://redis.io/topics/cluster-spec).
 
+The following guide shows you how to configure shotover-proxy to support transparently proxying redis-cluster _unaware_ clients to a [Redis cluster](https://redis.io/topics/cluster-spec).
 
 ## Overview
+
 In this example, we will be connecting to a redis cluster that has the following topology:
 
 * redis://192.168.0.1/
@@ -13,11 +13,11 @@ In this example, we will be connecting to a redis cluster that has the following
 * redis://192.168.0.5/
 * redis://192.168.0.6/
 
-Shotover will listen on the loopback adapter (localhost) and act as a sidecar for our application that speaks redis. In this example
-we will use `redis-benchmark` as our redis-cluster unaware client application. 
+Shotover will listen on the loopback adapter (localhost) and act as a sidecar for our application that speaks redis. In this example we will use `redis-benchmark` as our redis-cluster unaware client application.
 
 ## Configuration
-First we will modify our config.yml file to have a single Redis source. This will: 
+
+First we will modify our config.yml file to have a single Redis source. This will:
 
 * define how shotover listens for incoming connections from our client application (`redis-benchmark`).
 * configure shotover to connect to the redis cluster via our defined contact points
@@ -43,20 +43,19 @@ source_to_chain_mapping:
   redis_prod: redis_chain
 ```
 
-Modify an existing `config.yml` or create a new one and place the above example as the files contents. Remember to change 
-the `first_contact_points` to IPs and ports that matches your redis-cluster. In this example we will save our config as 
-`redis-shotover.yml`.
+Modify an existing `config.yml` or create a new one and place the above example as the files contents. Remember to change the `first_contact_points` to IPs and ports that matches your redis-cluster. In this example we will save our config as `redis-shotover.yml`.
 
 ## Starting
+
 We can now start `shotover-proxy`, by running the following:
 
-```
+```bash
 ./shotover-proxy --config-file redis-shotover.yml
 ```
 
 If shotover can successfully contact your redis cluster, you should see the following:
 
-```
+```bash
 user@demo$ ./shotover-proxy --config-file redis-shotover.yml 
 Aug 17 12:11:42.867  INFO shotover_proxy: Loading configuration
 Aug 17 12:11:42.867  INFO shotover_proxy: Starting loaded topology
@@ -67,21 +66,21 @@ Aug 17 12:11:42.878  INFO shotover_proxy::config::topology: Loaded sources [["re
 Aug 17 12:11:42.878  INFO shotover_proxy::server: accepting inbound connections
 ```
 
-Currently the RedisCluster transform, needs to be able to connect to the redis cluster when it starts up. If it cannot, shotover
-proxy will exit with a panic, indicating it couldn't connect to the contact points. 
+Currently the RedisCluster transform, needs to be able to connect to the redis cluster when it starts up. If it cannot, shotover proxy will exit with a panic, indicating it couldn't connect to the contact points. 
 
-Note: Currently `shotover-proxy` cannot daemonize itself. So you may wish to use a service supervisor to do this for you or you
-can simply run this in a different terminal session in development/testing scenarios :)
+Note: Currently `shotover-proxy` cannot daemonize itself. So you may wish to use a service supervisor to do this for you or you can simply run this in a different terminal session in development/testing scenarios :)
 
 ## Testing
+
 With shotover proxy now up and running, we can test out our client application. Let's start it up!
-```
+
+```bash
 redis-benchmark -t set,get
 ```
 
 And hooray we get the following:
 
-```
+```bash
 ====== SET ======
   100000 requests completed in 1.41 seconds
   50 parallel clients
