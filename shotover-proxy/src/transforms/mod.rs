@@ -74,6 +74,7 @@ pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
     RedisSinkSingle(RedisSinkSingle),
     KafkaSink(KafkaSink),
+    CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),
     Tee(Tee),
     Null(Null),
@@ -103,8 +104,8 @@ impl Debug for Transforms {
 impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
-            Transforms::KafkaSink(k) => k.transform(message_wrapper).await,
+            Transforms::CassandraCodecDestination(c) => c.transform(message_wrapper).await,
+            Transforms::KafkaDestination(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
@@ -133,9 +134,9 @@ impl Transforms {
 
     async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         match self {
-            Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
-            Transforms::KafkaSink(a) => a.prep_transform_chain(t).await,
+            Transforms::CassandraCodecDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisCodecDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::KafkaDestination(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
