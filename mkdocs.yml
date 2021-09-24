@@ -1,18 +1,16 @@
 site_name: Shotover Proxy
 nav:
   - Home: index.md
-  - 'User Guide':
-      - 'Introduction': 'user-guide/introduction.md'
-      - 'Getting Started': 'user-guide/getting-started.md'
-      - 'Concepts': 'user-guide/concepts.md'
-      - 'Configuration': 'user-guide/configuration.md'
-      - 'Functions': 'user-guide/functions.md'
-  - 'Transforms': 'transforms/transforms.md'
-  - 'Developer' :
-      - 'Shotover' : 'developer/shotover-development.md'
-      - 'Transform' : 'developer/transform-development.md'
-  - 'Examples':
-      - 'Redis': 'examples/redis-clustering.md'
+  - "User Guide":
+      - "Introduction": "user-guide/introduction.md"
+      - "Getting Started": "user-guide/getting-started.md"
+      - "Concepts": "user-guide/concepts.md"
+      - "Configuration": "user-guide/configuration.md"
+  - "Transforms": "transforms/transforms.md"
+  - "Developer":
+      - "Shotover": "developer/shotover-development.md"
+  - "Examples":
+      - "Redis": "examples/redis-clustering.md"
 
 markdown_extensions:
   - toc:
@@ -20,7 +18,6 @@ markdown_extensions:
 
 theme:
   name: material
-
 #theme:
 #  name: readthedocs
 #  highlightjs: true
