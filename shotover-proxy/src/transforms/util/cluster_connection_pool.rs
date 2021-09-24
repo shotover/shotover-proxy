@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use derivative::Derivative;
 use futures::StreamExt;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
@@ -18,6 +18,7 @@ use tracing::{debug, trace, warn};
 
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
+use crate::tls::{TlsConfig, TlsConnector};
 use crate::transforms::util::ConnectionError;
 use crate::transforms::util::Request;
 use crate::{message::Messages, server::Codec};
@@ -60,21 +61,25 @@ pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
 
     #[derivative(Debug = "ignore")]
     authenticator: A,
+
+    #[derivative(Debug = "ignore")]
+    tls: Option<TlsConnector>,
 }
 
 impl<C: Codec + 'static> ConnectionPool<C, NoopAuthenticator, ()> {
-    pub fn new(codec: C) -> Self {
-        ConnectionPool::new_with_auth(codec, NoopAuthenticator {})
+    pub fn new(codec: C, tls: Option<TlsConfig>) -> Result<Self> {
+        ConnectionPool::new_with_auth(codec, NoopAuthenticator {}, tls)
     }
 }
 
 impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
-    pub fn new_with_auth(codec: C, authenticator: A) -> Self {
-        Self {
+    pub fn new_with_auth(codec: C, authenticator: A, tls: Option<TlsConfig>) -> Result<Self> {
+        Ok(Self {
             lanes: Arc::new(Mutex::new(HashMap::new())),
+            tls: tls.clone().map(TlsConnector::new).transpose()?,
             codec,
             authenticator,
-        }
+        })
     }
 
     /// Try and grab an existing connection, if it's closed (e.g. the listener on the other side
@@ -171,7 +176,17 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
             .map_err(|e| ConnectionError::IO(e.into()))?
             .map_err(ConnectionError::IO)?;
 
-        let mut connection = spawn_from_stream(&self.codec, stream);
+        let mut connection = if let Some(tls) = &self.tls {
+            let tls_stream = tls
+                .connect(stream)
+                .await
+                .map_err(|e| ConnectionError::TLS(e))?;
+            let (rx, tx) = tokio::io::split(tls_stream);
+            spawn_read_write_tasks(&self.codec, rx, tx)
+        } else {
+            let (rx, tx) = stream.into_split();
+            spawn_read_write_tasks(&self.codec, rx, tx)
+        };
 
         if let Some(token) = token {
             self.authenticator
@@ -184,11 +199,15 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     }
 }
 
-pub fn spawn_from_stream<C: Codec + 'static>(
+pub fn spawn_read_write_tasks<
+    C: Codec + 'static,
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+>(
     codec: &C,
-    stream: TcpStream,
-) -> UnboundedSender<Request> {
-    let (read, write) = stream.into_split();
+    stream_rx: R,
+    stream_tx: W,
+) -> Connection {
     let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
     let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
     let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
@@ -197,7 +216,7 @@ pub fn spawn_from_stream<C: Codec + 'static>(
 
     tokio::spawn(async move {
         tokio::select! {
-            result = tx_process(write, out_rx, return_tx, codec_clone) => if let Err(e) = result {
+            result = tx_process(stream_tx, out_rx, return_tx, codec_clone) => if let Err(e) = result {
                 trace!("connection write-closed with error: {:?}", e);
             } else {
                 trace!("connection write-closed gracefully");
@@ -211,7 +230,7 @@ pub fn spawn_from_stream<C: Codec + 'static>(
     let codec_clone = codec.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = rx_process(read, return_rx, codec_clone).await {
+        if let Err(e) = rx_process(stream_rx, return_rx, codec_clone).await {
             trace!("connection read-closed with error: {:?}", e);
         } else {
             trace!("connection read-closed gracefully");
@@ -224,8 +243,8 @@ pub fn spawn_from_stream<C: Codec + 'static>(
     out_tx
 }
 
-async fn tx_process<C: CodecWriteHalf>(
-    write: OwnedWriteHalf,
+async fn tx_process<C: CodecWriteHalf, W: AsyncWrite + Unpin + Send + 'static>(
+    write: W,
     out_rx: UnboundedReceiver<Request>,
     return_tx: UnboundedSender<Request>,
     codec: C,
@@ -241,8 +260,8 @@ async fn tx_process<C: CodecWriteHalf>(
     rx_stream.forward(in_w).await
 }
 
-async fn rx_process<C: CodecReadHalf>(
-    read: OwnedReadHalf,
+async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
+    read: R,
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,
 ) -> Result<()> {
@@ -286,8 +305,8 @@ mod test {
     use tokio::net::TcpStream;
     use tokio::time::timeout;
 
+    use super::spawn_read_write_tasks;
     use crate::protocols::redis_codec::RedisCodec;
-    use crate::transforms::util::cluster_connection_pool::spawn_from_stream;
 
     #[tokio::test]
     async fn test_remote_shutdown() {
@@ -311,8 +330,9 @@ mod test {
         });
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let (rx, tx) = stream.into_split();
         let codec = RedisCodec::new(true, 3);
-        let sender = spawn_from_stream(&codec, stream);
+        let sender = spawn_read_write_tasks(&codec, rx, tx);
 
         assert!(remote.await.unwrap());
 
@@ -350,10 +370,11 @@ mod test {
         });
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let (rx, tx) = stream.into_split();
         let codec = RedisCodec::new(true, 3);
 
         // Drop sender immediately.
-        let _ = spawn_from_stream(&codec, stream);
+        std::mem::drop(spawn_read_write_tasks(&codec, rx, tx));
 
         assert!(
             // NOTE: Typically within 1-10ms.
