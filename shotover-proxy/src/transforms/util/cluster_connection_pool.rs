@@ -76,7 +76,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     pub fn new_with_auth(codec: C, authenticator: A, tls: Option<TlsConfig>) -> Result<Self> {
         Ok(Self {
             lanes: Arc::new(Mutex::new(HashMap::new())),
-            tls: tls.clone().map(TlsConnector::new).transpose()?,
+            tls: tls.map(TlsConnector::new).transpose()?,
             codec,
             authenticator,
         })
@@ -177,10 +177,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
             .map_err(ConnectionError::IO)?;
 
         let mut connection = if let Some(tls) = &self.tls {
-            let tls_stream = tls
-                .connect(stream)
-                .await
-                .map_err(|e| ConnectionError::TLS(e))?;
+            let tls_stream = tls.connect(stream).await.map_err(ConnectionError::TLS)?;
             let (rx, tx) = tokio::io::split(tls_stream);
             spawn_read_write_tasks(&self.codec, rx, tx)
         } else {

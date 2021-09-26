@@ -8,7 +8,7 @@ services:
       - redis-cluster_data-0:/bitnami/redis/data
       - ../redis-tls/tls_keys:/usr/local/etc/redis/tls_keys
 
-    environment:
+    environment: &node_environment
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_TLS_PORT=6379'
@@ -24,14 +24,7 @@ services:
     volumes:
       - redis-cluster_data-1:/bitnami/redis/data
       - ./../redis-tls/tls_keys:/usr/local/etc/redis/tls_keys
-    environment:
-      - 'ALLOW_EMPTY_PASSWORD=yes'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
-      - 'REDIS_TLS_PORT=6379'
-      - 'REDIS_TLS_ENABLED=true'
-      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/tls_keys/redis.crt'
-      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/tls_keys/redis.key'
-      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/tls_keys/ca.crt'
+    environment: *node_environment
 
   redis-node-2:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
@@ -40,14 +33,7 @@ services:
     volumes:
       - redis-cluster_data-2:/bitnami/redis/data
       - ./../redis-tls/tls_keys:/usr/local/etc/redis/tls_keys
-    environment:
-      - 'ALLOW_EMPTY_PASSWORD=yes'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
-      - 'REDIS_TLS_PORT=6379'
-      - 'REDIS_TLS_ENABLED=true'
-      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/tls_keys/redis.crt'
-      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/tls_keys/redis.key'
-      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/tls_keys/ca.crt'
+    environment: *node_environment
 
   redis-node-3:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
@@ -56,14 +42,7 @@ services:
     volumes:
       - redis-cluster_data-3:/bitnami/redis/data
       - ./../redis-tls/tls_keys:/usr/local/etc/redis/tls_keys
-    environment:
-      - 'ALLOW_EMPTY_PASSWORD=yes'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
-      - 'REDIS_TLS_PORT=6379'
-      - 'REDIS_TLS_ENABLED=true'
-      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/tls_keys/redis.crt'
-      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/tls_keys/redis.key'
-      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/tls_keys/ca.crt'
+    environment: *node_environment
 
   redis-node-4:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
@@ -72,14 +51,7 @@ services:
     volumes:
       - redis-cluster_data-4:/bitnami/redis/data
       - ./../redis-tls/tls_keys:/usr/local/etc/redis/tls_keys
-    environment:
-      - 'ALLOW_EMPTY_PASSWORD=yes'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
-      - 'REDIS_TLS_PORT=6379'
-      - 'REDIS_TLS_ENABLED=true'
-      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/tls_keys/redis.crt'
-      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/tls_keys/redis.key'
-      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/tls_keys/ca.crt'
+    environment: *node_environment
 
   redis-node-5:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
@@ -88,14 +60,7 @@ services:
     volumes:
       - redis-cluster_data-5:/bitnami/redis/data
       - ./../redis-tls/tls_keys:/usr/local/etc/redis/tls_keys
-    environment:
-      - 'ALLOW_EMPTY_PASSWORD=yes'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
-      - 'REDIS_TLS_PORT=6379'
-      - 'REDIS_TLS_ENABLED=true'
-      - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/tls_keys/redis.crt'
-      - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/tls_keys/redis.key'
-      - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/tls_keys/ca.crt'
+    environment: *node_environment
 
   redis-cluster-init:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
@@ -109,15 +74,15 @@ services:
     volumes:
       - ./../redis-tls/tls_keys:/usr/local/etc/redis/tls_keys
     environment:
-      - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_CLUSTER_REPLICAS=1'
+      - 'REDIS_CLUSTER_CREATOR=yes'
+      - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_TLS_PORT=6379'
       - 'REDIS_TLS_ENABLED=true'
       - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/tls_keys/redis.crt'
       - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/tls_keys/redis.key'
       - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/tls_keys/ca.crt'
-      - 'REDIS_CLUSTER_CREATOR=yes'
 
 volumes:
   redis-cluster_data-0:
