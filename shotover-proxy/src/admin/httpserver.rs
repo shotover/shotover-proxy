@@ -111,7 +111,7 @@ where
             }
         });
 
-        let address = self.address.clone();
+        let address = self.address;
         Server::try_bind(&address)
             .map_err(|e| anyhow!("Failed to bind to {}: {}", address, e))?
             .serve(make_svc)

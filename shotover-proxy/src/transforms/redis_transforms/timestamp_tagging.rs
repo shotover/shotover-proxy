@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct RedisTimestampTagger {}
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
