@@ -1,0 +1,30 @@
+version: "3.3"
+services:
+  cassandra-one:
+    image: library/cassandra:4.0.0
+    ports:
+      - "9043:9042"
+    healthcheck:
+      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    environment: &environment
+      CASSANDRA_SEEDS: "cassandra-one,cassandra-two"
+      CASSANDRA_CLUSTER_NAME: SolarSystem
+      CASSANDRA_DC: Mars
+      CASSANDRA_RACK: West
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      CASSANDRA_NUM_TOKENS: 128
+  cassandra-two:
+    image: library/cassandra:4.0.0
+    ports:
+      - "9044:9042"
+    healthcheck:
+      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    environment: *environment
+    depends_on:
+      - cassandra-one

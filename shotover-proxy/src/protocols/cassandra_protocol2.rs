@@ -608,10 +608,6 @@ impl CassandraCodec2 {
     }
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
-        // while src.remaining() != 0 {
-        //
-        // }
-
         trace!("Parsing C* frame");
         let v = parser::parse_frame(src, &self.compressor, &self.current_head);
         match v {
