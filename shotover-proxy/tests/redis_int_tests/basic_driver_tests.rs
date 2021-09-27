@@ -614,6 +614,31 @@ fn test_pass_through() {
     run_all(&mut connection);
 }
 
+#[test]
+#[serial]
+fn test_cluster_tls() {
+    let _compose = DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-tls/topology.yaml");
+
+    let mut connection = shotover_manager.redis_connection(6379);
+    let connection = &mut connection;
+
+    test_pipeline_error(connection);
+    run_all_cluster_safe(connection);
+
+    for _i in 0..1999 {
+        test_script(connection);
+    }
+
+    test_cluster_script(connection);
+    test_script(connection);
+    test_cluster_script(connection);
+
+    // TODO: use all test cases in test_cluster_redis
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_tls() {

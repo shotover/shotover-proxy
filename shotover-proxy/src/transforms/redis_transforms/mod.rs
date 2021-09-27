@@ -45,6 +45,9 @@ pub enum TransformError {
     #[error("io error: {0}")]
     IO(io::Error),
 
+    #[error("TLS error: {0}")]
+    TLS(anyhow::Error),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -65,6 +68,7 @@ impl From<ConnectionError<TransformError>> for TransformError {
     fn from(error: ConnectionError<TransformError>) -> Self {
         match error {
             ConnectionError::IO(e) => TransformError::IO(e),
+            ConnectionError::TLS(e) => TransformError::TLS(e),
             ConnectionError::Authenticator(e) => e,
         }
     }

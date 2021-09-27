@@ -23,6 +23,7 @@ use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::RawFrame;
+use crate::tls::TlsConfig;
 use crate::transforms::redis_transforms::RedisError;
 use crate::transforms::redis_transforms::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
@@ -38,6 +39,7 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
+    pub tls: Option<TlsConfig>,
     connection_count: Option<usize>,
 }
 
@@ -46,8 +48,11 @@ impl TransformsFromConfig for RedisClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         let authenticator = RedisAuthenticator {};
 
-        let connection_pool =
-            ConnectionPool::new_with_auth(RedisCodec::new(true, 3), authenticator);
+        let connection_pool = ConnectionPool::new_with_auth(
+            RedisCodec::new(true, 3),
+            authenticator,
+            self.tls.clone(),
+        )?;
 
         let mut cluster = RedisCluster {
             slots: SlotMap::new(),
