@@ -397,21 +397,17 @@ impl RedisCluster {
     }
 
     async fn on_auth(&mut self, command: &[Frame]) -> Result<ResponseFuture> {
-        let mut args = command
-            .iter()
-            .skip(1)
-            .rev()
-            .map(|f| match f {
-                Frame::BulkString(s) => Ok(s),
-                _ => bail!("syntax error: expected bulk string"),
-            })
-            .map(|b| String::from_utf8(b?.to_vec()).context("syntax error: expected utf-8"));
+        let mut args = command.iter().skip(1).rev().map(|f| match f {
+            Frame::BulkString(s) => Ok(s),
+            _ => bail!("syntax error: expected bulk string"),
+        });
 
         let password = args
             .next()
-            .ok_or_else(|| anyhow!("syntax error: expected password"))??;
+            .ok_or_else(|| anyhow!("syntax error: expected password"))??
+            .clone();
 
-        let username = args.next().transpose()?;
+        let username = args.next().transpose()?.cloned();
 
         if args.next().is_some() {
             bail!("syntax error: too many args")
@@ -847,11 +843,11 @@ impl Transform for RedisCluster {
 #[derive(Clone, PartialEq, Eq, Hash, Derivative)]
 #[derivative(Debug)]
 pub struct UsernamePasswordToken {
-    pub username: Option<String>,
+    pub username: Option<Bytes>,
 
     // Reduce risk of logging passwords.
     #[derivative(Debug = "ignore")]
-    pub password: String,
+    pub password: Bytes,
 }
 
 #[derive(Clone)]
