@@ -15,9 +15,10 @@ sources:
 chain_config:
   main_chain:
     - CassandraPeersRewrite:
-        emulate_single_node: true
+        new_port: 9041
+        emulate_single_node: false
     - CassandraCodecDestination:
-        bypass_result_processing: true
+        bypass_result_processing: false
         remote_address: "172.18.0.2:9042"
 source_to_chain_mapping:
   cassandra_prod: main_chain

@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct CassandraPeersRewriteConfig {
     pub emulate_single_node: bool,
+    #[serde(rename = "new_port")]
+    pub port: Option<u32>,
 }
 
 #[async_trait]
@@ -27,6 +29,7 @@ impl TransformsFromConfig for CassandraPeersRewriteConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
             emulate_single_node: self.emulate_single_node,
+            port: self.port,
         }))
     }
 }
@@ -34,6 +37,7 @@ impl TransformsFromConfig for CassandraPeersRewriteConfig {
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
     emulate_single_node: bool,
+    port: Option<u32>,
 }
 
 #[async_trait]
@@ -59,6 +63,10 @@ impl Transform for CassandraPeersRewrite {
         let mut response = message_wrapper.call_next_transform().await?;
 
         for i in system_peers {
+            if let Some(new_port) = self.port {
+                rewrite_port(&mut response.messages[i].original, new_port);
+            }
+
             if self.emulate_single_node {
                 emulate_single_node(&mut response.messages[i].original);
             }
@@ -75,25 +83,61 @@ impl Transform for CassandraPeersRewrite {
 fn emulate_single_node(original: &mut RawFrame) {
     if let RawFrame::Cassandra(ref mut frame) = original {
         if let Ok(ResponseBody::Result(ResResultBody::Rows(rows))) = frame.get_body() {
-            let new_body = BodyResResultRows {
+            let body = BodyResResultRows {
                 metadata: rows.metadata,
                 rows_count: 0_i32,
                 rows_content: Vec::<Vec<CBytes>>::new(),
             };
-            let mut body = vec![0, 0, 0, 2];
-            body.extend_from_slice(&new_body.into_cbytes());
 
             *original = RawFrame::Cassandra(Frame {
                 version: Version::Response,
                 flags: frame.flags.clone(),
                 opcode: Opcode::Result,
                 stream: frame.stream,
-                body,
+                body: body.into_cbytes(),
                 tracing_id: frame.tracing_id,
                 warnings: Vec::new(),
             });
         } else {
             panic!("Expected ResResultBody::Rows");
+        }
+    } else {
+        panic!("Expected RawFrame::Cassandra");
+    }
+}
+
+fn rewrite_port(original: &mut RawFrame, new_port: u32) {
+    if let RawFrame::Cassandra(ref mut frame) = original {
+        if let Ok(ResponseBody::Result(ResResultBody::Rows(results))) = frame.get_body() {
+            let port_column_index = results
+                .metadata
+                .col_specs
+                .iter()
+                .position(|col| col.name.as_str() == "native_port");
+
+            if let Some(i) = port_column_index {
+                let mut new_results = results.rows_content.clone();
+
+                for row in new_results.iter_mut() {
+                    row[i] = CBytes::new(new_port.to_be_bytes().into());
+                }
+
+                let body = BodyResResultRows {
+                    metadata: results.metadata,
+                    rows_count: new_results.len() as i32,
+                    rows_content: new_results,
+                };
+
+                *original = RawFrame::Cassandra(Frame {
+                    version: Version::Response,
+                    flags: frame.flags.clone(),
+                    opcode: Opcode::Result,
+                    stream: frame.stream,
+                    tracing_id: frame.tracing_id,
+                    warnings: Vec::new(),
+                    body: body.into_cbytes(),
+                });
+            }
         }
     } else {
         panic!("Expected RawFrame::Cassandra");
@@ -212,37 +256,7 @@ mod test {
 
     #[test]
     fn test_emulate_single_node() {}
+
+    #[test]
+    fn test_rewrite_port() {}
 }
-
-// fn rewrite_ip_address(original: &mut RawFrame) -> RawFrame {
-//     if let RawFrame::Cassandra(ref mut frame) = original {
-//         //tracing::info!("{:?}", frame);
-//         frame.body =
-//             if let Ok(ResponseBody::Result(ResResultBody::Rows(ref mut rows))) = frame.get_body() {
-//                 tracing::info!("{:?}", rows);
-//                 for row in rows.rows_content.iter_mut() {
-//                     for cell in row.iter_mut() {
-//                         *cell = cassandra_proto::types::CBytes::new(
-//                             std::net::Ipv4Addr::new(127, 0, 0, 1).octets().to_vec(),
-//                         )
-//                     }
-//                 }
-//                 //tracing::info!("{:?}", rows);
-//                 rows.into_cbytes()
-//             } else {
-//                 panic!("");
-//             };
-
-//         //tracing::info!("{:?}", rows);
-
-//         //frame.body = rows.into_cbytes();
-
-//         //tracing::info!("{:?}", rows.into_cbytes());
-
-//         //tracing::info!("{:?}", frame);
-
-//         return RawFrame::Cassandra(frame.clone());
-//     } else {
-//         panic!("FUG!");
-//     }
-// }
