@@ -63,19 +63,18 @@ fn rewrite_port(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     if let RawFrame::Redis(Frame::Array(ref mut array)) = frame {
         for elem in array.iter_mut() {
             if let Frame::Array(slot) = elem {
-                slot.iter_mut()
-                    .enumerate()
-                    .map(|(index, frame)| match (index, frame) {
-                        (0..=1, _) => Ok(()),
-                        (_, Frame::Array(target)) => Ok(match target.as_mut_slice() {
+                for (index, mut frame) in slot.iter_mut().enumerate() {
+                    match (index, &mut frame) {
+                        (0..=1, _) => {}
+                        (_, Frame::Array(target)) => match target.as_mut_slice() {
                             [Frame::BulkString(_ip), Frame::Integer(port), ..] => {
                                 *port = new_port.into();
                             }
-                            _ => bail!("expected host-port in slot map"),
-                        }),
-                        _ => bail!("unexpected value in slot map"),
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+                            _ => bail!("expected host-port in slot map but was: {}", frame),
+                        },
+                        _ => bail!("unexpected value in slot map: {}", frame),
+                    }
+                }
             };
         }
     };
