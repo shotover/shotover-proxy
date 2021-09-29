@@ -866,10 +866,10 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
 
         // Support non-ACL / username-less.
         if let Some(username) = &token.username {
-            auth_args.push(Frame::BulkString(Bytes::from(username.clone())));
+            auth_args.push(Frame::BulkString(username.clone()));
         }
 
-        auth_args.push(Frame::BulkString(Bytes::from(token.password.clone())));
+        auth_args.push(Frame::BulkString(token.password.clone()));
 
         let return_rx = send_frame_request(sender, Frame::Array(auth_args))?;
 
