@@ -195,7 +195,7 @@ checksum = "3a4f925191b4367301851c6d99b09890311d74b0d43f274c0b34c86d308a3663"
 [[package]]
 name = "cassandra-proto"
 version = "0.1.2"
-source = "git+https://github.com/benbromhead/cassandra-proto?branch=move-to-bytes#c4972adff6f0a242e7cd8eae34356629c6d4ed3e"
+source = "git+https://github.com/shotover/cassandra-proto?branch=move-to-bytes#c4972adff6f0a242e7cd8eae34356629c6d4ed3e"
 dependencies = [
  "byteorder",
  "bytes",
@@ -223,7 +223,7 @@ dependencies = [
 [[package]]
 name = "cbytes_macro_derive"
 version = "0.1.0"
-source = "git+https://github.com/benbromhead/cassandra-proto?branch=move-to-bytes#c4972adff6f0a242e7cd8eae34356629c6d4ed3e"
+source = "git+https://github.com/shotover/cassandra-proto?branch=move-to-bytes#c4972adff6f0a242e7cd8eae34356629c6d4ed3e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2039,7 +2039,7 @@ dependencies = [
 [[package]]
 name = "redis-protocol"
 version = "1.0.0"
-source = "git+https://github.com/benbromhead/redis-protocol.rs?branch=remove-parser#39f5775b14a2075cb04a295786c5f46c12bc01cd"
+source = "git+https://github.com/shotover/redis-protocol.rs?branch=remove-parser#39f5775b14a2075cb04a295786c5f46c12bc01cd"
 dependencies = [
  "anyhow",
  "atoi",
