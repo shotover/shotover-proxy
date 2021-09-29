@@ -9,7 +9,8 @@ use hyper::body::Bytes;
 use metrics::counter;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
-use redis_protocol::types::Frame;
+use redis_protocol::resp2::types::Frame;
+use redis_protocol::types::Redirection;
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
@@ -797,35 +798,34 @@ impl Transform for RedisCluster {
             let mut response = response?;
             assert_eq!(response.messages.len(), 1);
             let response_m = response.messages.remove(0);
-            match response_m.original {
-                RawFrame::Redis(Frame::Moved { slot, host, port }) => {
-                    debug!("Got MOVE frame {} {} {}", slot, host, port);
+            match &response_m.original {
+                RawFrame::Redis(frame) => {
+                    match frame.to_redirection() {
+                        Some(Redirection::Moved { slot, server }) => {
+                            debug!("Got MOVE {} {}", slot, server);
 
-                    // The destination of a MOVE should always be a master.
-                    self.slots
-                        .masters
-                        .insert(slot, format!("{}:{}", &host, &port));
+                            // The destination of a MOVE should always be a master.
+                            self.slots.masters.insert(slot, server.clone());
 
-                    self.rebuild_connections = true;
+                            self.rebuild_connections = true;
 
-                    let one_rx = self
-                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
-                        .await?;
+                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
 
-                    responses.prepend(Box::pin(
-                        one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
-                    ));
-                }
-                RawFrame::Redis(Frame::Ask { slot, host, port }) => {
-                    debug!("Got ASK frame {} {} {}", slot, host, port);
+                            responses.prepend(Box::pin(
+                                one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
+                            ));
+                        }
+                        Some(Redirection::Ask { slot, server }) => {
+                            debug!("Got ASK {} {}", slot, server);
 
-                    let one_rx = self
-                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
-                        .await?;
+                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
 
-                    responses.prepend(Box::pin(
-                        one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
-                    ));
+                            responses.prepend(Box::pin(
+                                one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
+                            ));
+                        }
+                        None => response_buffer.push(response_m),
+                    }
                 }
                 _ => response_buffer.push(response_m),
             }

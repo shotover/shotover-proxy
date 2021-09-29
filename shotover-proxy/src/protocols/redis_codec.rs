@@ -5,7 +5,7 @@ use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
-use redis_protocol::prelude::*;
+use redis_protocol::resp2::prelude::*;
 use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
@@ -572,12 +572,6 @@ impl RedisCodec {
                 Frame::SimpleString(s) => self.handle_redis_string(s, frame),
                 Frame::BulkString(bs) => self.handle_redis_bulkstring(bs, frame),
                 Frame::Array(frames) => self.handle_redis_array(frames, frame)?,
-                Frame::Moved { slot, host, port } => {
-                    self.handle_redis_string(format!("MOVED {} {}:{}", slot, host, port), frame)
-                }
-                Frame::Ask { slot, host, port } => {
-                    self.handle_redis_string(format!("ASK {} {}:{}", slot, host, port), frame)
-                }
                 Frame::Integer(i) => self.handle_redis_integer(i, frame),
                 Frame::Error(s) => self.handle_redis_error(s, frame),
                 Frame::Null => {
@@ -616,16 +610,16 @@ impl RedisCodec {
         while src.remaining() != 0 {
             trace!("remaining {}", src.remaining());
 
-            match decode_bytes(&*src).map_err(|e| {
+            match decode(&*src).map_err(|e| {
                 info!("Error decoding redis frame {:?}", e);
                 anyhow!("Error decoding redis frame {}", e)
             })? {
-                (Some(frame), size) => {
+                Some((frame, size)) => {
                     trace!("Got frame {:?} of {}", frame, size);
                     src.advance(size);
                     self.current_frames.push(frame);
                 }
-                (None, _) => {
+                None => {
                     if src.remaining() == 0 {
                         break;
                     } else {
@@ -651,7 +645,7 @@ impl RedisCodec {
     }
 
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
-        encode(dst, &item)
+        encode_bytes(dst, &item)
             .map(|_| ())
             .map_err(|e| anyhow!("Uh - oh {} - {:#?}", e, item))
     }
