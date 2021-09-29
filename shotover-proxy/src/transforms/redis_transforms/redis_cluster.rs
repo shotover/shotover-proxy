@@ -10,7 +10,7 @@ use metrics::counter;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
 use redis_protocol::types::Frame;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
@@ -36,7 +36,7 @@ const SLOT_SIZE: usize = 16384;
 
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
     pub tls: Option<TlsConfig>,

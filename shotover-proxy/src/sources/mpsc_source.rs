@@ -9,7 +9,7 @@ use crate::transforms::coalesce::CoalesceBehavior;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Instant;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use tracing::info;
 use tracing::warn;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct AsyncMpscConfig {
     pub topic_name: String,
     pub coalesce_behavior: Option<CoalesceBehavior>,

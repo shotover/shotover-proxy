@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::message::{Message, Messages, QueryResponse};
@@ -20,7 +20,7 @@ use anyhow::{anyhow, Result};
 use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct CassandraCodecConfiguration {
     #[serde(rename = "remote_address")]
     pub address: String,

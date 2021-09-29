@@ -11,7 +11,7 @@ use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::task::{Context, Poll};
 use futures::Stream;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
 use tokio_stream::StreamExt;
@@ -61,7 +61,7 @@ where
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ParallelMapConfig {
     pub name: String,
     pub parallelism: u32,

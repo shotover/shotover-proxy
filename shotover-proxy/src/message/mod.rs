@@ -18,7 +18,7 @@ use std::net::IpAddr;
 
 // TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
 // Should move the message type to just be bulk..
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Messages {
     pub messages: Vec<Message>,
 }
@@ -42,14 +42,14 @@ impl IntoIterator for Messages {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Message {
     pub details: MessageDetails,
     pub modified: bool,
     pub original: RawFrame,
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum MessageDetails {
     Bypass(Box<MessageDetails>),
     Query(QueryMessage),
@@ -180,7 +180,7 @@ impl Messages {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct RawMessage {
     pub original: RawFrame,
 }
@@ -228,7 +228,7 @@ impl ASTHolder {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct QueryMessage {
     pub query_string: String,
     pub namespace: Vec<String>,
@@ -236,7 +236,6 @@ pub struct QueryMessage {
     pub query_values: Option<HashMap<String, Value>>,
     pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
-    #[serde(skip)]
     pub ast: Option<ASTHolder>,
 }
 
@@ -284,7 +283,7 @@ impl QueryMessage {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct QueryResponse {
     pub matching_query: Option<QueryMessage>,
     pub result: Option<Value>,
@@ -362,7 +361,7 @@ impl QueryResponse {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Deserialize)]
 pub enum QueryType {
     Read,
     Write,

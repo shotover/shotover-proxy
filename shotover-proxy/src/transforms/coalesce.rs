@@ -5,7 +5,7 @@ use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -16,14 +16,14 @@ pub struct Coalesce {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum CoalesceBehavior {
     COUNT(usize),
     WAIT_MS(u128),
     COUNT_OR_WAIT(usize, u128),
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct CoalesceConfig {
     pub max_behavior: CoalesceBehavior,
 }

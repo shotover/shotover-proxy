@@ -4,14 +4,14 @@ use crate::message::{MessageDetails, QueryType};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
     filter: QueryType,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct QueryTypeFilterConfig {
     pub filter: QueryType,
 }

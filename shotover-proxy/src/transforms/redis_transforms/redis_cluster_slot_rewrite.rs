@@ -1,14 +1,14 @@
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 pub use redis_protocol::prelude::Frame;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RedisClusterSlotRewriteConfig {
     pub new_port: u16,
 }

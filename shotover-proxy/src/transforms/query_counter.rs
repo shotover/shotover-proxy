@@ -6,7 +6,7 @@ use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::counter;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlparser::ast::Statement;
 
 #[derive(Debug, Clone)]
@@ -14,7 +14,7 @@ pub struct QueryCounter {
     counter_name: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct QueryCounterConfig {
     pub name: String,
 }

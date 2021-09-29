@@ -5,7 +5,7 @@ use std::pin::Pin;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::Future;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -171,7 +171,7 @@ impl Transforms {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
     CassandraCodecDestination(CassandraCodecConfiguration),
     RedisDestination(RedisCodecConfiguration),

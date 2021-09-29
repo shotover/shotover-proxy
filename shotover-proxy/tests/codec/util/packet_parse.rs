@@ -9,11 +9,11 @@ use pktparse::*;
 use std::string::ToString;
 use tls_parser::TlsMessage;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 pub struct PacketParse {}
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize)]
 pub enum PacketHeader {
     Tls(TlsType),
     Dns(DnsPacket),
@@ -25,7 +25,7 @@ pub enum PacketHeader {
     Arp(ArpPacket),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ParsedPacket {
     pub len: u32,
     pub timestamp: String,
@@ -44,7 +44,7 @@ impl ParsedPacket {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize)]
 pub enum TlsType {
     Handshake,
     ChangeCipherSpec,
@@ -54,7 +54,7 @@ pub enum TlsType {
     EncryptedData,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize)]
 pub struct DnsPacket {
     questions: Vec<String>,
     answers: Vec<String>,
