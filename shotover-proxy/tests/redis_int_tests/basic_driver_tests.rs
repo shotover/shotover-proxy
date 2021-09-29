@@ -1,5 +1,3 @@
-#![allow(clippy::let_unit_value)]
-
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rand::{thread_rng, Rng};
@@ -79,7 +77,7 @@ async fn test_info(connection: &mut Connection) {
     let info: redis::InfoDict = redis::cmd("INFO").query_async(connection).await.unwrap();
     assert_eq!(
         info.find(&"role"),
-        Some(&redis::Value::Status("master".to_string()))
+        Some(&Value::Status("master".to_string()))
     );
     assert_eq!(info.get("role"), Some("master".to_string()));
     assert_eq!(info.get("loading"), Some(false));
@@ -730,145 +728,12 @@ async fn test_cluster_script(connection: &mut Connection) {
     assert_eq!(rv, Ok(("1".to_string(), "2".to_string())));
 }
 
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_pass_through() {
-    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-
-    run_all(&mut connection).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_tls() {
-    let _compose = DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-tls/topology.yaml");
-
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let connection = &mut connection;
-
-    test_pipeline_error(connection).await;
-    run_all_cluster_safe(connection).await;
-
-    for _i in 0..1999 {
-        test_script(connection).await;
-    }
-
-    test_cluster_script(connection).await;
-    test_script(connection).await;
-    test_cluster_script(connection).await;
-
-    // TODO: use all test cases in test_cluster_redis
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_tls() {
-    let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-    let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
-
-    let tls_config = TlsConfig {
-        certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt".into(),
-        certificate_path: "examples/redis-tls/tls_keys/redis.crt".into(),
-        private_key_path: "examples/redis-tls/tls_keys/redis.key".into(),
-    };
-
-    let mut connection = shotover_manager
-        .redis_connection_async_tls(6379, tls_config)
-        .await;
-
-    run_all(&mut connection).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_rewrite_cluster_slots() {
-    let _compose = DockerCompose::new("examples/redis-cluster-rewrite/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-rewrite/topology.yaml");
-
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-
-    let res: redis::Value = redis::cmd("CLUSTER")
-        .arg("SLOTS")
-        .query_async(&mut connection)
-        .await
-        .unwrap();
-
-    check_cluster_slots_ports(res, 2004);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_rewrite_cluster_slots_no_rewrite() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
-
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let res: redis::Value = redis::cmd("CLUSTER")
-        .arg("SLOTS")
-        .query_async(&mut connection)
-        .await
-        .unwrap();
-
-    check_cluster_slots_ports(res, 6379);
-}
-
-fn check_cluster_slots_ports(value: redis::Value, port: u16) {
-    if let redis::Value::Bulk(bulks) = value {
-        bulks.iter().for_each(|bulk| {
-            if let redis::Value::Bulk(b) = bulk {
-                b.iter().enumerate().for_each(|(i, val)| match (i, val) {
-                    (2..=3, redis::Value::Bulk(val)) => {
-                        assert_eq!(val[1], redis::Value::Int(port.into()));
-                    }
-                    (_, _) => {}
-                });
-            }
-        })
-    } else {
-        panic!("CLUSTER SLOTS returned wrong value");
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_active_active_redis() {
-    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-
-    run_all_active_safe(&mut connection).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_auth_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-
+async fn test_auth(connection: &mut Connection) {
     // Command should fail on unauthenticated connection.
     assert_eq!(
         redis::cmd("GET")
             .arg("without authenticating")
-            .query_async::<_, String>(&mut connection)
+            .query_async::<_, String>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -879,7 +744,7 @@ async fn test_cluster_auth_redis() {
     assert_eq!(
         redis::cmd("AUTH")
             .arg("with a bad password")
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<_, ()>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -889,7 +754,7 @@ async fn test_cluster_auth_redis() {
     // Switch to default superuser.
     redis::cmd("AUTH")
         .arg("shotover")
-        .query_async::<_, ()>(&mut connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
 
@@ -902,21 +767,21 @@ async fn test_cluster_auth_redis() {
     redis::cmd("SET")
         .arg("foo")
         .arg(&expected_foo)
-        .query_async::<_, ()>(&mut connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
 
     // Read-only user with no other permissions should not be able to auth.
     redis::cmd("ACL")
         .arg(&["SETUSER", "brokenuser", "+@read", "on", ">password"])
-        .query_async::<_, ()>(&mut connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
     assert_eq!(
         redis::cmd("AUTH")
             .arg("brokenuser")
             .arg("password")
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<_, ()>(connection)
             .await
             .unwrap_err()
             .code(),
@@ -935,40 +800,39 @@ async fn test_cluster_auth_redis() {
             ">password",
             "allkeys",
         ])
-        .query_async::<_, ()>(&mut connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
     redis::cmd("AUTH")
         .arg("testuser")
         .arg("password")
-        .query_async::<_, ()>(&mut connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
     assert_eq!(
         redis::cmd("SET")
             .arg("foo")
             .arg("fail")
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<_, ()>(connection)
             .await
             .unwrap_err()
             .code(),
         Some("NOPERM")
     );
     assert_eq!(
-        redis::cmd("GET")
-            .arg("foo")
-            .query_async(&mut connection)
-            .await,
+        redis::cmd("GET").arg("foo").query_async(connection).await,
         Ok(expected_foo)
     );
 
     // Switch back to default superuser to setup for the auth isolation test.
     redis::cmd("AUTH")
         .arg("shotover")
-        .query_async::<_, ()>(&mut connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
+}
 
+async fn test_auth_acl(shotover_manager: &ShotoverManager, connection: &mut Connection) {
     // Create users with only access to their own key, and test their permissions using new connections.
     for i in 1..=100 {
         let user = format!("user-{}", i);
@@ -985,7 +849,7 @@ async fn test_cluster_auth_redis() {
                 &format!(">{}", pass),
                 &format!("~{}", key),
             ])
-            .query_async::<_, ()>(&mut connection)
+            .query_async::<_, ()>(connection)
             .await
             .unwrap();
 
@@ -1026,28 +890,36 @@ async fn test_cluster_auth_redis() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
+async fn test_cluster_slots_reports_slot(connection: &mut Connection, port: u16) {
+    let res: Value = redis::cmd("CLUSTER")
+        .arg("SLOTS")
+        .query_async(connection)
+        .await
+        .unwrap();
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let connection = &mut connection;
-
-    test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
-    run_all_cluster_safe(connection).await;
-
-    for _i in 0..1999 {
-        test_script(connection).await;
+    let mut assertion_run = false;
+    if let Value::Bulk(bulks) = &res {
+        for bulk in bulks {
+            if let Value::Bulk(b) = bulk {
+                for tuple in b.iter().enumerate() {
+                    if let (2..=3, Value::Bulk(val)) = tuple {
+                        assert_eq!(val[1], Value::Int(port.into()));
+                        assertion_run = true;
+                    }
+                }
+            }
+        }
     }
 
-    test_cluster_script(connection).await;
-    test_script(connection).await;
-    test_cluster_script(connection).await;
+    if !assertion_run {
+        panic!(
+            "CLUSTER SLOTS result did not contain a port, result was: {:?}",
+            res
+        );
+    }
+}
 
+async fn test_cluster_pipe(connection: &mut Connection) {
     //do this a few times to be sure we are not hitting a single master
     info!("key string formating");
     for i in 0..2000 {
@@ -1103,6 +975,107 @@ async fn test_cluster_redis() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_pass_through() {
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+        .wait_for("Ready to accept connections");
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+    run_all(&mut connection).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cluster_tls() {
+    let _compose = DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-tls/topology.yaml");
+
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+    run_all_cluster_safe(&mut connection).await;
+    test_cluster_slots_reports_slot(&mut connection, 6379).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_tls() {
+    let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
+        .wait_for("Ready to accept connections");
+    let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
+
+    let tls_config = TlsConfig {
+        certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt".into(),
+        certificate_path: "examples/redis-tls/tls_keys/redis.crt".into(),
+        private_key_path: "examples/redis-tls/tls_keys/redis.key".into(),
+    };
+
+    let mut connection = shotover_manager
+        .redis_connection_async_tls(6379, tls_config)
+        .await;
+
+    run_all(&mut connection).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_rewrite_cluster_slots() {
+    let _compose = DockerCompose::new("examples/redis-cluster-rewrite/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-rewrite/topology.yaml");
+
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+    run_all_cluster_safe(&mut connection).await;
+    test_cluster_slots_reports_slot(&mut connection, 2004).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_active_active_redis() {
+    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
+        .wait_for("Ready to accept connections");
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+    run_all_active_safe(&mut connection).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cluster_auth_redis() {
+    let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+    test_auth(&mut connection).await;
+    test_auth_acl(&shotover_manager, &mut connection).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cluster_redis() {
+    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 6);
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
+
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let connection = &mut connection;
+
+    run_all_cluster_safe(connection).await;
+    test_cluster_slots_reports_slot(connection, 6379).await;
+}
+
 async fn run_all_active_safe(connection: &mut Connection) {
     test_cluster_basics(connection).await;
     test_cluster_eval(connection).await;
@@ -1139,6 +1112,12 @@ async fn run_all_active_safe(connection: &mut Connection) {
 }
 
 async fn run_all_cluster_safe(connection: &mut Connection) {
+    test_cluster_pipe(connection).await;
+    test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
+    for _i in 0..1999 {
+        test_script(connection).await;
+    }
+
     test_cluster_basics(connection).await;
     test_cluster_eval(connection).await;
     test_cluster_script(connection).await; //TODO: script does not seem to be loading in the server?
