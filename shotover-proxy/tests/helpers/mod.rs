@@ -1,10 +1,10 @@
 use anyhow::Result;
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
-use redis::{Client, Connection};
+use redis::aio::AsyncStream;
+use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use shotover_proxy::tls::{TlsConfig, TlsConnector};
-use std::net::TcpStream;
 use std::pin::Pin;
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -23,7 +23,7 @@ pub struct ShotoverManager {
 
 fn wait_for_socket_to_open(port: u16) {
     let mut tries = 0;
-    while TcpStream::connect(("127.0.0.1", port)).is_err() {
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
         thread::sleep(Duration::from_millis(100));
         assert!(tries < 50, "Ran out of retries to connect to the socket");
         tries += 1;
@@ -55,10 +55,11 @@ impl ShotoverManager {
         }
     }
 
-    #[allow(unused)]
     // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
-    pub fn redis_connection(&self, port: u16) -> Connection {
+    #[allow(unused)]
+    pub fn redis_connection(&self, port: u16) -> redis::Connection {
         wait_for_socket_to_open(port);
+
         let connection = Client::open(("127.0.0.1", port))
             .unwrap()
             .get_connection()
@@ -68,13 +69,14 @@ impl ShotoverManager {
     }
 
     #[allow(unused)]
-    pub async fn async_redis_connection(&self, port: u16) -> redis::aio::Connection {
-        use redis::aio::AsyncStream;
-        use tokio::net::TcpStream;
-
+    pub async fn redis_connection_async(&self, port: u16) -> redis::aio::Connection {
         wait_for_socket_to_open(port);
 
-        let stream = Box::pin(TcpStream::connect(("127.0.0.1", port)).await.unwrap());
+        let stream = Box::pin(
+            tokio::net::TcpStream::connect(("127.0.0.1", port))
+                .await
+                .unwrap(),
+        );
         let mut stream_with_timeout = TimeoutStream::new(stream);
         stream_with_timeout.set_read_timeout(Some(Duration::from_secs(10)));
 
@@ -88,17 +90,16 @@ impl ShotoverManager {
     }
 
     #[allow(unused)]
-    pub async fn async_tls_redis_connection(
+    pub async fn redis_connection_async_tls(
         &self,
         port: u16,
         config: TlsConfig,
     ) -> redis::aio::Connection {
-        use redis::aio::AsyncStream;
-        use tokio::net::TcpStream;
-
         wait_for_socket_to_open(port);
 
-        let tcp_stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let tcp_stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
         let connector = TlsConnector::new(config).unwrap();
         let tls_stream = connector.connect(tcp_stream).await.unwrap();
 
