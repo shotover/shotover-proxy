@@ -823,16 +823,16 @@ async fn test_auth(connection: &mut Connection) {
         redis::cmd("GET").arg("foo").query_async(connection).await,
         Ok(expected_foo)
     );
+}
 
-    // Switch back to default superuser to setup for the auth isolation test.
+async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mut Connection) {
+    // ensure we are authenticated as the default superuser to setup for the auth isolation test.
     redis::cmd("AUTH")
         .arg("shotover")
         .query_async::<_, ()>(connection)
         .await
         .unwrap();
-}
 
-async fn test_auth_acl(shotover_manager: &ShotoverManager, connection: &mut Connection) {
     // Create users with only access to their own key, and test their permissions using new connections.
     for i in 1..=100 {
         let user = format!("user-{}", i);
@@ -1058,7 +1058,7 @@ async fn test_cluster_auth_redis() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     test_auth(&mut connection).await;
-    test_auth_acl(&shotover_manager, &mut connection).await;
+    test_auth_isolation(&shotover_manager, &mut connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
