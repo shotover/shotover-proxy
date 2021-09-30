@@ -314,8 +314,9 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(async move {
         let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-        let r = rx_stream.forward(writer).await;
-        debug!("Stream ended {:?}", r);
+        if let Err(err) = rx_stream.forward(writer).await {
+            error!("Stream ended with error {:?}", err);
+        }
     });
 }
 
