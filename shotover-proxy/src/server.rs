@@ -398,7 +398,6 @@ impl<C: Codec + 'static> Handler<C> {
             {
                 Ok(modified_message) => {
                     out_tx.send(modified_message)?;
-                    // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
                     error!("chain processing error - {}", e);

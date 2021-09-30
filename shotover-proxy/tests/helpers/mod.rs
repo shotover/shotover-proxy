@@ -111,6 +111,14 @@ impl ShotoverManager {
         .await
         .unwrap()
     }
+
+    fn shutdown_shotover(&mut self) -> Result<()> {
+        self.trigger_shutdown_tx.send(true)?;
+        let _enter_guard = self.runtime_handle.enter();
+        Ok(futures::executor::block_on(
+            self.join_handle.take().unwrap(),
+        )??)
+    }
 }
 
 impl Drop for ShotoverManager {
@@ -118,17 +126,14 @@ impl Drop for ShotoverManager {
         // Must clear the recorder before skipping a shutdown on panic; if one test panics and the recorder is not cleared,
         // the following tests will panic because they will try to set another recorder
         metrics::clear_recorder();
-        if std::thread::panicking() {
-            // If already panicking do nothing in order to avoid a double panic.
-            // We only shutdown shotover to test the shutdown process not because we need to clean up any resources.
-            // So skipping shutdown on panic is fine.
-        } else {
-            self.trigger_shutdown_tx.send(true).unwrap();
 
-            let _enter_guard = self.runtime_handle.enter();
-            futures::executor::block_on(self.join_handle.take().unwrap())
-                .unwrap()
-                .unwrap();
+        if std::thread::panicking() {
+            // If already panicking do not panic while attempting to shutdown shotover in order to avoid a double panic.
+            if let Err(err) = self.shutdown_shotover() {
+                println!("Failed to shutdown shotover: {}", err)
+            }
+        } else {
+            self.shutdown_shotover().unwrap();
         }
     }
 }
