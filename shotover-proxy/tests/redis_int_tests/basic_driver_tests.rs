@@ -1003,7 +1003,7 @@ async fn test_cluster_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_tls() {
+async fn test_source_tls_and_destination_tls() {
     let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
         .wait_for("Ready to accept connections");
     let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
@@ -1015,7 +1015,7 @@ async fn test_tls() {
     };
 
     let mut connection = shotover_manager
-        .redis_connection_async_tls(6379, tls_config)
+        .redis_connection_async_tls(6380, tls_config)
         .await;
 
     run_all(&mut connection).await;
