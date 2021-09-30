@@ -10,7 +10,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use metrics::counter;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::trace;
 
 /*
@@ -27,7 +27,7 @@ pub struct Buffer {
     pub timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct BufferConfig {
     pub async_mode: bool,
     pub chain: Vec<TransformsConfig>,
@@ -109,14 +109,14 @@ pub struct Tee {
     pub timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum ConsistencyBehavior {
     IGNORE,
     FAIL,
     LOG { fail_chain: Vec<TransformsConfig> },
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehavior>,
     pub timeout_micros: Option<u64>,

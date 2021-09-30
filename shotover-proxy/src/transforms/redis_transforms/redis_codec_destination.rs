@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::pin::Pin;
 use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
@@ -15,7 +15,7 @@ use crate::protocols::redis_codec::RedisCodec;
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RedisCodecConfiguration {
     #[serde(rename = "remote_address")]
     pub address: String,

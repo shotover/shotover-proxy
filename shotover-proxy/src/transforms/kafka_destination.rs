@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -19,7 +19,7 @@ pub struct KafkaDestination {
     pub topic: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct KafkaConfig {
     #[serde(rename = "config_values")]
     pub keys: HashMap<String, String>,

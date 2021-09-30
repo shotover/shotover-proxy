@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 use tokio_openssl::SslStream;
 use tracing::warn;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TlsConfig {
     /// Path to the certificate authority in PEM format
     pub certificate_authority_path: String,

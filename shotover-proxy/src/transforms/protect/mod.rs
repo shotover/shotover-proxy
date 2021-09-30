@@ -41,7 +41,7 @@ pub struct KeyMaterial {
     pub plaintext: Key,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize)]
 pub struct ProtectConfig {
     pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
     pub key_manager: KeyManagerConfig,
@@ -51,7 +51,7 @@ pub struct ProtectConfig {
 // https://doc.libsodium.org/secret-key_cryptography/secretbox
 // This all relies on crypto_secretbox_easy which takes care of
 // all padding, copying and timing issues associated with crypto
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub enum Protected {
     Plaintext(Value),
     Ciphertext {

@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio_stream::StreamExt;
 use tracing::{debug, trace, warn};
 
@@ -28,7 +28,7 @@ pub struct TunableConsistency {
     count: u32,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct TunableConsistencyConfig {
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub write_consistency: i32,

@@ -4,7 +4,7 @@ use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
 use crate::sources::redis_source::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
@@ -50,7 +50,7 @@ impl Sources {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum SourcesConfig {
     Cassandra(CassandraConfig),
     Mpsc(AsyncMpscConfig),

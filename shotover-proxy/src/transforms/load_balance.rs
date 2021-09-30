@@ -6,11 +6,11 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ConnectionBalanceAndPoolConfig {
     pub name: String,
     pub parallelism: usize,

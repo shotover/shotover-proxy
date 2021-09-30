@@ -7,12 +7,11 @@ pub use redis_protocol::prelude::Frame as RedisFrame;
 use anyhow::Result;
 use bytes::Bytes;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
 
-#[derive(Eq, PartialEq, Debug, Clone, Hash, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum RawFrame {
     Cassandra(CassandraFrame),
     Redis(RedisFrame),
