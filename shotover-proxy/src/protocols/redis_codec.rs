@@ -130,6 +130,10 @@ impl RedisCodec {
         Ok(frame)
     }
 
+    pub fn fixup_error( & err : Err ) -> (Optional<Messages>, Optional<Messages>, Optional(Err)) {
+        (None, None, Some(err))
+    }
+
     pub fn new(decode_as_response: bool, batch_hint: usize) -> RedisCodec {
         RedisCodec {
             decode_as_response,

@@ -3,6 +3,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::consistency::Consistency;
+use cassandra_proto::frame::frame_error::{CDRSError,AdditionalErrorInfo,SimpleError};
 use cassandra_proto::frame::frame_result::{
     BodyResResultRows, ColSpec, ColType, ColTypeOption, ResResultBody, RowsMetadata,
 };
@@ -609,21 +610,19 @@ impl CassandraCodec2 {
         }
     }
 
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>, CDRSError> {
         // while src.remaining() != 0 {
         //
         // }
 
         trace!("Parsing C* frame");
         let v = parser::parse_frame(src, &self.compressor, &self.current_head);
-        match v {
-            Ok((r, h)) => {
-                self.current_head = h;
-                Ok(r)
-            }
-            // Note these should be parse errors, not actual protocol errors
-            Err(e) => Err(anyhow!(e)),
+        v.map( |r,h|  {
+            self.current_head = h;
+            Ok(r)
         }
+        );
+
     }
 
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
@@ -637,7 +636,7 @@ impl CassandraCodec2 {
 
 impl Decoder for CassandraCodec2 {
     type Item = Messages;
-    type Error = anyhow::Error;
+    type Error = CDRSError;
 
     fn decode(
         &mut self,
@@ -664,6 +663,11 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
 }
 
 impl CassandraCodec2 {
+
+    fn fixup_err( & err : Err ) -> (Option<Messages>, Option<Messages>, Option<Err>) {
+
+    }
+
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
@@ -692,7 +696,7 @@ impl CassandraCodec2 {
 }
 
 impl Encoder<Messages> for CassandraCodec2 {
-    type Error = anyhow::Error;
+    type Error = CDRSError;
 
     fn encode(
         &mut self,

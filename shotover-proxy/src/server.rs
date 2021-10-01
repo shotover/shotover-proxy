@@ -27,7 +27,23 @@ pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Sen
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf {}
+pub trait Codec: CodecReadHalf + CodecWriteHalf {
+    /// An method to fix up an error.
+    ///
+    /// Codecs that do not have additional error handling should return `(None, None, Optionl<Err>)`
+    ///
+    /// Returns a tuple comprising:
+    ///  * `in_msg` An optional message to send back to the source of the original message.
+    ///  * `out_msg` An optional message to send down chain in the direction the original message was
+    /// flowing.
+    ///  * `an_err` An optional error.  May be the same or a different error.  The Error will be
+    /// processed normally.
+    ///
+    /// # Arguments
+    /// `err` - The original error.
+    ///
+    fn fixup_err( & err : Err ) -> (Option<Messages>, Option<Messages>, Option<Err>);
+}
 impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
@@ -397,7 +413,16 @@ impl<C: Codec + 'static> Handler<C> {
                     // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
-                    error!("chain processing error - {}", e);
+                    (out_msg,in_msg,an_err) = self.codec.fixup_err( e );
+                    if out_msg {
+                        out_tx.send(out_msg)?;
+                    }
+                    if in_msg {
+                        in_tx.send( in_msg )
+                    }
+                    if an_err {
+                        error!("chain processing error - {}", an_err);
+                    }
                     return Ok(());
                 }
             }

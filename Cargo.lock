@@ -202,6 +202,12 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "bytes"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
+
+[[package]]
+name = "bytes"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4872d67bab6358e59559027aa3b9157c53d9358c51423c17554809a8858e0f8"
@@ -263,10 +269,10 @@ checksum = "eadde404d13254d8592f8aaa946a1fb7a2769c137df56ed29a3be5996973a156"
 [[package]]
 name = "cassandra-proto"
 version = "0.1.2"
-source = "git+https://github.com/benbromhead/cassandra-proto?branch=move-to-bytes#c4972adff6f0a242e7cd8eae34356629c6d4ed3e"
+source = "git+https://github.com/Claude-at-Instaclustr/cassandra-proto?branch=OPTION_fix#32fece4079094210340cb248c41f662497a16eae"
 dependencies = [
  "byteorder",
- "bytes",
+ "bytes 0.5.6",
  "cbytes_macro_derive",
  "log",
  "num_enum 0.4.3",
@@ -291,7 +297,7 @@ dependencies = [
 [[package]]
 name = "cbytes_macro_derive"
 version = "0.1.0"
-source = "git+https://github.com/benbromhead/cassandra-proto?branch=move-to-bytes#c4972adff6f0a242e7cd8eae34356629c6d4ed3e"
+source = "git+https://github.com/Claude-at-Instaclustr/cassandra-proto?branch=OPTION_fix#32fece4079094210340cb248c41f662497a16eae"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -387,7 +393,7 @@ version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a909e4d93292cd8e9c42e189f61681eff9d67b6541f96b8a1a737f23737bd001"
 dependencies = [
- "bytes",
+ "bytes 1.1.0",
  "futures-core",
  "memchr",
  "pin-project-lite",
@@ -999,7 +1005,7 @@ version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7f3675cfef6a30c8031cf9e6493ebdc3bb3272a3fea3923c4210d1830e6a472"
 dependencies = [
- "bytes",
+ "bytes 1.1.0",
  "fnv",
  "futures-core",
  "futures-sink",
@@ -1098,7 +1104,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "527e8c9ac747e28542699a951517aa9a6945af506cd1f2e1b53a576c17b6cc11"
 dependencies = [
- "bytes",
+ "bytes 1.1.0",
  "fnv",
  "itoa",
 ]
@@ -1109,7 +1115,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "399c583b2979440c60be0821a6199eca73bc3c8dcd9d070d75ac726e2c6186e5"
 dependencies = [
- "bytes",
+ "bytes 1.1.0",
  "http",
  "pin-project-lite",
 ]
@@ -1141,7 +1147,7 @@ version = "0.14.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13f67199e765030fa08fe0bd581af683f0d5bc04ea09c2b1102012c5fb90e7fd"
 dependencies = [
- "bytes",
+ "bytes 1.1.0",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -1165,7 +1171,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
 dependencies = [
- "bytes",
+ "bytes 1.1.0",
  "hyper",
  "native-tls",
  "tokio",
@@ -2211,7 +2217,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "202c5bf92cad3d57605c366e644a7fbf305a83f19754fc66678c6265dcc9b8b4"
 dependencies = [
  "async-trait",
- "bytes",
+ "bytes 1.1.0",
  "combine",
  "crc16 0.4.0",
  "dtoa",
@@ -2233,7 +2239,7 @@ source = "git+https://github.com/benbromhead/redis-protocol.rs?branch=remove-par
 dependencies = [
  "anyhow",
  "atoi",
- "bytes",
+ "bytes 1.1.0",
  "cookie-factory",
  "crc16 0.3.4",
  "log",
@@ -2302,7 +2308,7 @@ checksum = "5b4f000e8934c1b4f70adde180056812e7ea6b1a247952db8ee98c94cd3116cc"
 dependencies = [
  "async-trait",
  "base64",
- "bytes",
+ "bytes 1.1.0",
  "crc32fast",
  "futures",
  "http",
@@ -2344,7 +2350,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7892cd2cca7644d33bd6fafdb2236efd3659162fd7b73ca68d3877f0528399c"
 dependencies = [
  "async-trait",
- "bytes",
+ "bytes 1.1.0",
  "futures",
  "rusoto_core",
  "serde",
@@ -2358,7 +2364,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6264e93384b90a747758bcc82079711eacf2e755c3a8b5091687b5349d870bcc"
 dependencies = [
  "base64",
- "bytes",
+ "bytes 1.1.0",
  "chrono",
  "digest",
  "futures",
@@ -2596,7 +2602,7 @@ dependencies = [
  "async-trait",
  "bincode",
  "byteorder",
- "bytes",
+ "bytes 1.1.0",
  "cached",
  "cassandra-cpp",
  "cassandra-proto",
@@ -2931,7 +2937,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4efe6fc2395938c8155973d7be49fe8d03a843726e285e100a8a383cc0154ce"
 dependencies = [
  "autocfg",
- "bytes",
+ "bytes 1.1.0",
  "libc",
  "memchr",
  "mio",
@@ -2994,7 +3000,7 @@ version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d3725d3efa29485e87311c5b699de63cde14b00ed4d256b8318aa30ca452cd"
 dependencies = [
- "bytes",
+ "bytes 1.1.0",
  "futures-core",
  "futures-io",
  "futures-sink",
@@ -3168,6 +3174,10 @@ name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "getrandom 0.2.3",
+ "serde",
+]
 
 [[package]]
 name = "vcpkg"
