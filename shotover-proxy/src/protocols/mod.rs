@@ -168,233 +168,235 @@ fn handle_redis_array(
         // Behaviour cribbed from:
         // https://redis.io/commands and
         // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
-        if let Some(RedisFrame::BulkString(v)) = commands.pop() {
-            let comm = String::from_utf8_lossy(v.as_ref())
-                .to_string()
-                .to_uppercase();
-            match comm.as_str() {
-                "APPEND" => {
+        if let Some(RedisFrame::BulkString(command)) = commands.pop() {
+            let command_upper_case: Vec<u8> = command
+                .as_ref()
+                .iter()
+                .map(|c| c.to_ascii_uppercase())
+                .collect();
+            match command_upper_case.as_slice() {
+                b"APPEND" => {
                     get_key_values(values, keys, commands)?;
                 } // append a value to a key
-                "BITCOUNT" => {
+                b"BITCOUNT" => {
                     query_type = QueryType::Read;
                     get_key_values(values, keys, commands)?;
                 } // count set bits in a string
-                "SET" => {
+                b"SET" => {
                     get_key_values(values, keys, commands)?;
                 } // set value in key
-                "SETNX" => {
+                b"SETNX" => {
                     get_key_values(values, keys, commands)?;
                 } // set if not exist value in key
-                "SETRANGE" => {
+                b"SETRANGE" => {
                     get_key_values(values, keys, commands)?;
                 } // overwrite part of a string at key starting at the specified offset
-                "STRLEN" => {
+                b"STRLEN" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get the length of the value stored in a key
-                "MSET" => {
+                b"MSET" => {
                     get_key_values(values, keys, commands)?;
                 } // set multiple keys to multiple values
-                "MSETNX" => {
+                b"MSETNX" => {
                     get_key_values(values, keys, commands)?;
                 } // set multiple keys to multiple values, only if none of the keys exist
-                "GET" => {
+                b"GET" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get value in key
-                "GETRANGE" => {
+                b"GETRANGE" => {
                     query_type = QueryType::Read;
                     get_key_values(values, keys, commands)?;
                 } // get a substring value of a key and return its old value
-                "MGET" => {
+                b"MGET" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get the values of all the given keys
-                "INCR" => {
+                b"INCR" => {
                     get_keys(values, keys, commands)?;
                 } // increment value in key
-                "INCRBY" => {
+                b"INCRBY" => {
                     get_key_values(values, keys, commands)?;
                 } // increment the integer value of a key by the given amount
-                "INCRBYFLOAT" => {
+                b"INCRBYFLOAT" => {
                     get_key_values(values, keys, commands)?;
                 } // increment the float value of a key by the given amount
-                "DECR" => {
+                b"DECR" => {
                     get_keys(values, keys, commands)?;
                 } // decrement the integer value of key by one
-                "DECRBY" => {
+                b"DECRBY" => {
                     get_key_values(values, keys, commands)?;
                 } // decrement the integer value of a key by the given number
-                "DEL" => {
+                b"DEL" => {
                     get_keys(values, keys, commands)?;
                 } // delete key
-                "EXPIRE" => {
+                b"EXPIRE" => {
                     get_key_values(values, keys, commands)?;
                 } // key will be deleted in 120 seconds
-                "TTL" => {
+                b"TTL" => {
                     get_keys(values, keys, commands)?;
                 } // returns the number of seconds until a key is deleted
-                "RPUSH" => {
+                b"RPUSH" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // put the new value at the end of the list
-                "RPUSHX" => {
+                b"RPUSHX" => {
                     get_key_values(values, keys, commands)?;
                 } // append a value to a list, only if the exists
-                "LPUSH" => {
+                b"LPUSH" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // put the new value at the start of the list
-                "LRANGE" => {
+                b"LRANGE" => {
                     query_type = QueryType::Read;
                     get_key_multi_values(values, keys, commands)?;
                 } // give a subset of the list
-                "LINDEX" => {
+                b"LINDEX" => {
                     query_type = QueryType::Read;
                     get_key_multi_values(values, keys, commands)?;
                 } // get an element from a list by its index
-                "LINSERT" => {
+                b"LINSERT" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // insert an element before or after another element in a list
-                "LLEN" => {
+                b"LLEN" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // return the current length of the list
-                "LPOP" => {
+                b"LPOP" => {
                     get_keys(values, keys, commands)?;
                 } // remove the first element from the list and returns it
-                "LSET" => {
+                b"LSET" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // set the value of an element in a list by its index
-                "LTRIM" => {
+                b"LTRIM" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // trim a list to the specified range
-                "RPOP" => {
+                b"RPOP" => {
                     get_keys(values, keys, commands)?;
                 } // remove the last element from the list and returns it
-                "SADD" => {
+                b"SADD" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // add the given value to the set
-                "SCARD" => {
+                b"SCARD" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get the number of members in a set
-                "SREM" => {
+                b"SREM" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // remove the given value from the set
-                "SISMEMBER" => {
+                b"SISMEMBER" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // test if the given value is in the set.
-                "SMEMBERS" => {
+                b"SMEMBERS" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // return a list of all the members of this set
-                "SUNION" => {
+                b"SUNION" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // combine two or more sets and returns the list of all elements
-                "SINTER" => {
+                b"SINTER" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // intersect multiple sets
-                "SMOVE" => {
+                b"SMOVE" => {
                     query_type = QueryType::Write;
                     get_key_values(values, keys, commands)?;
                 } // move a member from one set to another
-                "SPOP" => {
+                b"SPOP" => {
                     query_type = QueryType::Write;
                     get_key_values(values, keys, commands)?;
                 } // remove and return one or multiple random members from a set
-                "ZADD" => {
+                b"ZADD" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // add one or more members to a sorted set, or update its score if it already exists
-                "ZCARD" => {
+                b"ZCARD" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get the number of members in a sorted set
-                "ZCOUNT" => {
+                b"ZCOUNT" => {
                     query_type = QueryType::Read;
                     get_key_multi_values(values, keys, commands)?;
                 } // count the members in a sorted set with scores within the given values
-                "ZINCRBY" => {
+                b"ZINCRBY" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // increment the score of a member in a sorted set
-                "ZRANGE" => {
+                b"ZRANGE" => {
                     query_type = QueryType::Read;
                     get_key_multi_values(values, keys, commands)?;
                 } // returns a subset of the sorted set
-                "ZRANK" => {
+                b"ZRANK" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // determine the index of a member in a sorted set
-                "ZREM" => {
+                b"ZREM" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // remove one or more members from a sorted set
-                "ZREMRANGEBYRANK" => {
+                b"ZREMRANGEBYRANK" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // remove all members in a sorted set within the given indexes
-                "ZREMRANGEBYSCORE" => {
+                b"ZREMRANGEBYSCORE" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // remove all members in a sorted set, by index, with scores ordered from high to low
-                "ZSCORE" => {
+                b"ZSCORE" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get the score associated with the given mmeber in a sorted set
-                "ZRANGEBYSCORE" => {
+                b"ZRANGEBYSCORE" => {
                     query_type = QueryType::Read;
                     get_key_multi_values(values, keys, commands)?;
                 } // return a range of members in a sorted set, by score
-                "HGET" => {
+                b"HGET" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get the value of a hash field
-                "HGETALL" => {
+                b"HGETALL" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get all the fields and values in a hash
-                "HSET" => {
+                b"HSET" => {
                     get_key_map(values, keys, commands)?;
                 } // set the string value of a hash field
-                "HSETNX" => {
+                b"HSETNX" => {
                     get_key_map(values, keys, commands)?;
                 } // set the string value of a hash field, only if the field does not exists
-                "HMSET" => {
+                b"HMSET" => {
                     get_key_map(values, keys, commands)?;
                 } // set multiple fields at once
-                "HINCRBY" => {
+                b"HINCRBY" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // increment value in hash by X
-                "HDEL" => {
+                b"HDEL" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // delete one or more hash fields
-                "HEXISTS" => {
+                b"HEXISTS" => {
                     query_type = QueryType::Read;
                     get_key_values(values, keys, commands)?;
                 } // determine if a hash field exists
-                "HKEYS" => {
+                b"HKEYS" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get all the fields in a hash
-                "HLEN" => {
+                b"HLEN" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get all the fields in a hash
-                "HSTRLEN" => {
+                b"HSTRLEN" => {
                     query_type = QueryType::Read;
                     get_key_values(values, keys, commands)?;
                 } // get the length of the value of a hash field
-                "HVALS" => {
+                b"HVALS" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // get all the values in a hash
-                "PFADD" => {
+                b"PFADD" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // add the specified elements to the specified HyperLogLog
-                "PFCOUNT" => {
+                b"PFCOUNT" => {
                     query_type = QueryType::Read;
                     get_keys(values, keys, commands)?;
                 } // return the approximated cardinality of the set(s) observed by the HyperLogLog at key's)
-                "PFMERGE" => {
+                b"PFMERGE" => {
                     get_key_multi_values(values, keys, commands)?;
                 } // merge N HyperLogLogs into a single one
                 _ => {}
