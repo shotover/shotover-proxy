@@ -34,6 +34,7 @@ use sqlparser::parser::Parser;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, Result};
+use crate::server::CodecErrorFixup;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec2 {
@@ -610,18 +611,19 @@ impl CassandraCodec2 {
         }
     }
 
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>, CDRSError> {
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>, anyhow::Error> {
         // while src.remaining() != 0 {
         //
         // }
 
         trace!("Parsing C* frame");
-        let v = parser::parse_frame(src, &self.compressor, &self.current_head);
-        v.map( |r,h|  {
+        let v = parser::parse_frame(src, &self.compressor, self.current_head);
+         v.map( |(r,h)|  {
             self.current_head = h;
-            Ok(r)
+            r
         }
-        );
+        ).map_err( |x| anyhow::Error::new(cassandra_proto::error::Error::from(x)))
+
 
     }
 
@@ -636,7 +638,7 @@ impl CassandraCodec2 {
 
 impl Decoder for CassandraCodec2 {
     type Item = Messages;
-    type Error = CDRSError;
+    type Error = anyhow::Error;
 
     fn decode(
         &mut self,
@@ -662,11 +664,13 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
     }
 }
 
-impl CassandraCodec2 {
-
-    fn fixup_err( & err : Err ) -> (Option<Messages>, Option<Messages>, Option<Err>) {
-
+impl CodecErrorFixup for CassandraCodec2
+{
+    fn fixup_err( &self, err : anyhow::Error ) -> (Option<Messages>, Option<Messages>, Option<anyhow::Error>) {
+        (None,None,Some(err))
     }
+}
+impl CassandraCodec2 {
 
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
         let frame = if !item.modified {
@@ -696,7 +700,7 @@ impl CassandraCodec2 {
 }
 
 impl Encoder<Messages> for CassandraCodec2 {
-    type Error = CDRSError;
+    type Error = anyhow::Error;
 
     fn encode(
         &mut self,

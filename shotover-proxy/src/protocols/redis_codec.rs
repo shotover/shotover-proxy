@@ -9,6 +9,7 @@ use redis_protocol::prelude::*;
 use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
+use crate::server::CodecErrorFixup;
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
@@ -111,6 +112,12 @@ fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
     }
 }
 
+impl CodecErrorFixup for RedisCodec {
+    fn fixup_err( &self, err : anyhow::Error ) -> (Option<Messages>, Option<Messages>, Option<anyhow::Error>) {
+        (None, None, Some(err))
+    }
+}
+
 impl RedisCodec {
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
         let frame = if !item.modified {
@@ -128,10 +135,6 @@ impl RedisCodec {
             }
         };
         Ok(frame)
-    }
-
-    pub fn fixup_error( & err : Err ) -> (Optional<Messages>, Optional<Messages>, Optional(Err)) {
-        (None, None, Some(err))
     }
 
     pub fn new(decode_as_response: bool, batch_hint: usize) -> RedisCodec {

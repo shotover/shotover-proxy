@@ -26,11 +26,10 @@ impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecRea
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf {
+pub trait CodecErrorFixup {
     /// An method to fix up an error.
     ///
-    /// Codecs that do not have additional error handling should return `(None, None, Optionl<Err>)`
+    /// Codecs that do not have additional error handling should return `(None, None, Optional<Err>)`
     ///
     /// Returns a tuple comprising:
     ///  * `in_msg` An optional message to send back to the source of the original message.
@@ -42,9 +41,15 @@ pub trait Codec: CodecReadHalf + CodecWriteHalf {
     /// # Arguments
     /// `err` - The original error.
     ///
-    fn fixup_err( & err : Err ) -> (Option<Messages>, Option<Messages>, Option<Err>);
+    fn fixup_err(
+        &self,
+        err: anyhow::Error,
+    ) -> (Option<Messages>, Option<Messages>, Option<anyhow::Error>);
 }
-impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
+
+// TODO: Replace with trait_alias (rust-lang/rust#41517).
+pub trait Codec: CodecReadHalf + CodecWriteHalf + CodecErrorFixup {}
+impl<T: CodecReadHalf + CodecWriteHalf + CodecErrorFixup> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
     /// Shared database handle.
@@ -413,15 +418,15 @@ impl<C: Codec + 'static> Handler<C> {
                     // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
-                    (out_msg,in_msg,an_err) = self.codec.fixup_err( e );
-                    if out_msg {
-                        out_tx.send(out_msg)?;
+                    let (out_msg, in_msg, an_err) = self.codec.fixup_err(e);
+                    if out_msg.is_some() {
+                        out_tx.send(out_msg.unwrap())?;
                     }
-                    if in_msg {
-                        in_tx.send( in_msg )
+                    if in_msg.is_some() {
+                        in_tx.send(in_msg.unwrap())?;
                     }
-                    if an_err {
-                        error!("chain processing error - {}", an_err);
+                    if an_err.is_some() {
+                        error!("chain processing error - {}", an_err.unwrap());
                     }
                     return Ok(());
                 }
@@ -490,7 +495,7 @@ impl Shutdown {
 
         // check we didn't receive a shutdown message before the receiver was created
         if !*self.notify.borrow() {
-            // Await the shutdown messsage
+            // Await the shutdown message
             self.notify.changed().await.unwrap();
         }
 
