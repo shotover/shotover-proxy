@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-pub use redis_protocol::prelude::Frame;
+use redis_protocol::resp2::prelude::Frame;
 use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
@@ -70,9 +70,9 @@ fn rewrite_port(frame: &mut RawFrame, new_port: u16) -> Result<()> {
                             [Frame::BulkString(_ip), Frame::Integer(port), ..] => {
                                 *port = new_port.into();
                             }
-                            _ => bail!("expected host-port in slot map but was: {}", frame),
+                            _ => bail!("expected host-port in slot map but was: {:?}", frame),
                         },
-                        _ => bail!("unexpected value in slot map: {}", frame),
+                        _ => bail!("unexpected value in slot map: {:?}", frame),
                     }
                 }
             };

@@ -9,7 +9,7 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
-use redis_protocol::types::Frame;
+use redis_protocol::resp2::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
@@ -401,12 +401,6 @@ impl From<Frame> for Value {
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Moved { slot, host, port } => {
-                Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
-            }
-            Frame::Ask { slot, host, port } => {
-                Value::Strings(format!("ASK {} {}:{}", slot, host, port))
-            }
             Frame::Null => Value::NULL,
         }
     }
@@ -419,12 +413,6 @@ impl From<&Frame> for Value {
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Moved { slot, host, port } => {
-                Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
-            }
-            Frame::Ask { slot, host, port } => {
-                Value::Strings(format!("ASK {} {}:{}", slot, host, port))
-            }
             Frame::Null => Value::NULL,
         }
     }

@@ -2,7 +2,7 @@ pub mod cassandra_protocol2;
 pub mod redis_codec;
 
 pub use cassandra_proto::frame::Frame as CassandraFrame;
-pub use redis_protocol::prelude::Frame as RedisFrame;
+pub use redis_protocol::resp2::prelude::Frame as RedisFrame;
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -513,13 +513,6 @@ pub fn process_redis_frame(frame: &RedisFrame, response: bool) -> Result<Message
         RedisFrame::SimpleString(s) => handle_redis_string(s, decode_as_request),
         RedisFrame::BulkString(bs) => handle_redis_bulkstring(bs, decode_as_request),
         RedisFrame::Array(frames) => handle_redis_array(frames, decode_as_request),
-        RedisFrame::Moved { slot, host, port } => handle_redis_string(
-            format!("MOVED {} {}:{}", slot, host, port),
-            decode_as_request,
-        ),
-        RedisFrame::Ask { slot, host, port } => {
-            handle_redis_string(format!("ASK {} {}:{}", slot, host, port), decode_as_request)
-        }
         RedisFrame::Integer(i) => handle_redis_integer(i, decode_as_request),
         RedisFrame::Error(s) => handle_redis_error(s, decode_as_request),
         RedisFrame::Null => {
