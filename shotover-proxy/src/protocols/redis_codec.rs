@@ -653,7 +653,7 @@ impl RedisCodec {
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
         encode(dst, &item)
             .map(|_| ())
-            .map_err(|e| anyhow!("Uh - oh {} - {:#?}", e, item))
+            .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
     }
 }
 
