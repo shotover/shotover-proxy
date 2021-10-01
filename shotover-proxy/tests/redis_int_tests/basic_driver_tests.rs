@@ -5,7 +5,7 @@ use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::{AsyncCommands, ErrorKind, RedisError, Value};
 use serial_test::serial;
-use tracing::{info, trace};
+use tracing::trace;
 
 use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
@@ -58,6 +58,18 @@ async fn test_getset(connection: &mut Connection) {
             Ok(b"foo".to_vec())
         );
     }
+
+    let every_byte: Vec<u8> = (0..=255).collect();
+    redis::cmd("SET")
+        .arg("bar")
+        .arg(&every_byte)
+        .query_async::<_, ()>(connection)
+        .await
+        .unwrap();
+    assert_eq!(
+        redis::cmd("GET").arg("bar").query_async(connection).await,
+        Ok(every_byte)
+    );
 }
 
 async fn test_incr(connection: &mut Connection) {
@@ -676,13 +688,11 @@ async fn test_cluster_basics(connection: &mut Connection) {
         .query_async::<_, ()>(connection)
         .await
         .unwrap();
-    info!("one");
     redis::cmd("SET")
         .arg(&["{x}key2", "bar"])
         .query_async::<_, ()>(connection)
         .await
         .unwrap();
-    info!("two");
 
     assert_eq!(
         redis::cmd("MGET")
@@ -921,7 +931,6 @@ async fn test_cluster_slots_reports_slot(connection: &mut Connection, port: u16)
 
 async fn test_cluster_pipe(connection: &mut Connection) {
     //do this a few times to be sure we are not hitting a single master
-    info!("key string formating");
     for i in 0..2000 {
         // make sure there are no overlaps etc
         let key1 = format!("key{}", i);
@@ -949,7 +958,6 @@ async fn test_cluster_pipe(connection: &mut Connection) {
         assert_eq!(k2, 43);
     }
 
-    info!("pipelining in cluster mode");
     for _ in 0..200 {
         let mut pipe = redis::pipe();
         for i in 0..1000 {

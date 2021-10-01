@@ -6,7 +6,7 @@ use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::Deserialize;
 use tokio_stream::StreamExt;
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -173,7 +173,7 @@ impl Transform for TunableConsistency {
                     results.push(messages);
                 }
                 Err(e) => {
-                    debug!("failed response {}", e);
+                    error!("failed response {}", e);
                 }
             }
             if results.len() >= max_required_successes as usize {
@@ -182,8 +182,6 @@ impl Transform for TunableConsistency {
         }
 
         drop(rec_fu);
-
-        // info!("{:?}\n{:?}", message_wrapper, results);
 
         if results.len() < max_required_successes as usize {
             let collated_response = required_successes

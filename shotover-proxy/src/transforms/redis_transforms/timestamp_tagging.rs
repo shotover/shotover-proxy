@@ -9,6 +9,7 @@ use bytes::Bytes;
 use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
 
@@ -50,10 +51,29 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
                     .iter()
                     .map(|v| {
                         if let Value::Bytes(b) = v {
-                            format!("'{}'", String::from_utf8_lossy(b.as_ref()))
+                            let mut literal = String::with_capacity(2 + b.len() * 4);
+                            literal.push('\'');
+                            for value in b {
+                                // Here we encode an arbitrary sequence of bytes into a lua string.
+                                // lua, unlike rust, is quite happy to store whatever in its strings as long as you give it the relevant escape sequence https://www.lua.org/pil/2.4.html
+                                //
+                                // We could just write every value as a \ddd escape sequence but its probably faster and definitely more readable to someone inspecting traffic to just use the actual value when we can
+                                if *value == b'\'' {
+                                    // despite being printable we cant include this without escaping it
+                                    literal.push_str("\\\'");
+                                } else if *value == b'\\' {
+                                    // despite being printable we cant include this without escaping it
+                                    literal.push_str("\\\\");
+                                } else if value.is_ascii_graphic() {
+                                    literal.push(*value as char);
+                                } else {
+                                    write!(literal, "\\{}", value).unwrap();
+                                }
+                            }
+                            literal.push('\'');
+                            literal
                         } else {
-                            // TODO this might not be right... but we should only be dealing with bytes
-                            format!("{:?}", v)
+                            todo!("this might not be right... but we should only be dealing with bytes")
                         }
                     })
                     .join(",");
@@ -74,8 +94,6 @@ fn wrap_command(qm: &QueryMessage) -> Result<Value> {
         }
     }
     Err(anyhow!("Could not build command from AST"))
-
-    // redis.call('set','foo','bar')"
 }
 
 fn try_tag_query_message(qm: &mut QueryMessage) -> bool {
