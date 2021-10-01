@@ -19,7 +19,8 @@ impl CassandraTestContext {
         cluster.set_contact_points(contact_points).unwrap();
         cluster.set_load_balance_round_robin();
         let mut session;
-        let query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
+        //let query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
+        let query = stmt!("SELECT release_version FROM system.local");
 
         let attempts = 30;
         let mut current_attempt = 0;
