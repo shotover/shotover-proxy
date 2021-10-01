@@ -61,7 +61,7 @@ impl ShotoverManager {
             ..ConfigOpts::default()
         };
         let spawn = Runner::new(opts)
-            .unwrap_or_else( |x| panic!( "{} occured processing {:?}", x,topology_path ))
+            .unwrap_or_else( |x| panic!( "{} occurred processing {:?}", x,topology_path ))
             .run_spawn();
 
         // If we allow the tracing_guard to be dropped then the following tests in the same file will not get tracing so we mem::forget it.
