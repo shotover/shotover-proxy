@@ -216,7 +216,7 @@ pub struct RunnerSpawned {
 pub async fn run(
     topology: Topology,
     config: Config,
-    trigger_shutdown_tx: watch::Receiver<bool>,
+    trigger_shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
     info!("Starting Shotover {}", crate_version!());
     info!(configuration = ?config);
@@ -232,7 +232,7 @@ pub async fn run(
         std::mem::size_of::<Wrapper<'_>>()
     );
 
-    match topology.run_chains(trigger_shutdown_tx).await {
+    match topology.run_chains(trigger_shutdown_rx).await {
         Ok((_, mut shutdown_complete_rx)) => {
             shutdown_complete_rx.recv().await;
             info!("Shotover was shutdown cleanly.");

@@ -100,13 +100,6 @@ impl CassandraSource {
                 }
             }
 
-            let TcpCodecListener {
-                shutdown_complete_tx,
-                ..
-            } = listener;
-
-            drop(shutdown_complete_tx);
-
             Ok(())
         });
 

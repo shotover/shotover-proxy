@@ -93,16 +93,8 @@ impl RedisSource {
                     _ =  trigger_shutdown_rx.changed() => {
                         info!("redis source shutting down")
                     }
-
                 }
             }
-
-            let TcpCodecListener {
-                shutdown_complete_tx,
-                ..
-            } = listener;
-
-            drop(shutdown_complete_tx);
 
             Ok(())
         });
