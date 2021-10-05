@@ -169,12 +169,7 @@ fn handle_redis_array(
         // https://redis.io/commands and
         // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
         if let Some(RedisFrame::BulkString(command)) = commands.pop() {
-            let command_upper_case: Vec<u8> = command
-                .as_ref()
-                .iter()
-                .map(|c| c.to_ascii_uppercase())
-                .collect();
-            match command_upper_case.as_slice() {
+            match command.to_ascii_uppercase().as_slice() {
                 b"APPEND" => {
                     get_key_values(values, keys, commands)?;
                 } // append a value to a key
