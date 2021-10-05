@@ -3,12 +3,13 @@ name = "shotover-proxy"
 version = "0.0.23"
 authors = ["Ben <ben@instaclustr.com>"]
 edition = "2018"
+license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 tokio = { version = "1.11.0", features = ["full", "macros"] }
-tokio-util = { version = "0.6.1", features = ["full"]}
+tokio-util = { version = "0.6.1", features = ["full"] }
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
 futures = "0.3.12"
@@ -20,7 +21,7 @@ clap = "=3.0.0-beta.4"
 clap_derive = "=3.0.0-beta.4"
 derivative = "2.1.1"
 itertools = "0.10.1"
-rand = { version = "0.8.4", features = ["small_rng", "std"]}
+rand = { version = "0.8.4" }
 rand_distr = "0.4.1"
 cached = "0.25.0"
 pin-project-lite = "0.2"
@@ -41,8 +42,8 @@ bincode = "1.3.1"
 #Observability
 metrics = "0.17.0"
 metrics-exporter-prometheus = "0.6.0"
-tracing = { version = "0.1.15", features = ["release_max_level_info"]}
-tracing-subscriber = { version = "0.2.11", features = ["env-filter"]}
+tracing = { version = "0.1.15", features = ["release_max_level_info"] }
+tracing-subscriber = { version = "0.2.11", features = ["env-filter"] }
 tracing-log = { version = "0.1.1", features = ["env_logger"] }
 tracing-appender = "0.1.1"
 hyper = { version = "0.14.2", features = ["server"] }
@@ -50,9 +51,9 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { git = "https://github.com/shotover/redis-protocol.rs", branch = "shotover_fork" }
-cassandra-proto = { git = "https://github.com/shotover/cassandra-proto", branch = "move-to-bytes", features = ["v4"]}
+cassandra-proto = { git = "https://github.com/shotover/cassandra-proto", branch = "move-to-bytes", features = ["v4"] }
 rdkafka = { version = "0.26", features = ["cmake-build"] }
-crc16 = { version = "0.4.0"}
+crc16 = { version = "0.4.0" }
 
 #Crypto
 sodiumoxide = "0.2.5"

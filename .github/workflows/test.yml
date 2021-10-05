@@ -16,9 +16,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: Testing release
+          - name: Release
             cargo_profile: --release
-          - name: Testing debug
+          - name: Debug
             cargo_profile:
     name: ${{ matrix.name }}
     runs-on: ubuntu-20.04
@@ -76,4 +76,8 @@ jobs:
       timeout-minutes: 30
     - name: Cleanup docker
       run: ./shotover-proxy/tests/scripts/teardown.sh
-      if: ${{ always() }}
+    - name: License Check
+      run: |
+        cargo install --locked cargo-deny
+        cargo deny check licenses
+      if: ${{ matrix.name == 'Debug' }}
