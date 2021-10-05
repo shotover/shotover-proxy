@@ -1,4 +1,4 @@
-# Shotover Development Guide
+# Contributing to Shotover
 
 This guide contains tips and tricks for working on shotover-proxy itself. See [transform-development](transform-development.md) for details on writing your own transforms.
 
@@ -36,7 +36,7 @@ To setup shotover for functional testing perform the following steps:
     * If you don't know what you want, we suggest starting with `examples/redis-passthrough`.
 2. Copy the `topology.yaml` file from that example to `config/topology.yaml`.
 3. Do one of the following:
-    * In the example directory you copied the `topology.yaml` from, run: `docker-compose -f docker-compose.yaml up -d`.
+    * In the example directory you copied the `topology.yaml` from, run: `docker-compose -f docker-compose.yaml up`.
     * Modify `config/topology.yaml` to point to a service you have setup and want to use.
 4. Run `cargo run`. Or `cargo run --release` to run with optimizations.
 5. Connect to shotover using the relevant client.
@@ -45,3 +45,12 @@ To setup shotover for functional testing perform the following steps:
 ## Run shotover tests
 
 Run `cargo test`, refer to the [cargo test documentation](https://doc.rust-lang.org/cargo/commands/cargo-test.html) for more information.
+
+## Submitting a PR
+
+Before submitting a PR you can run the following to ensure it will pass CI:
+
+* Run `cargo fmt`
+* Run `cargo clippy` - Ensure you havent introduced any warnings.
+* Run `cargo build --all-targets` - Ensure everything still builds and you havent introduced any warnings.
+* Run `cargo test` - All tests pass.

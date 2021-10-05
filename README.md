@@ -7,7 +7,7 @@ For full documentation please go to [https://docs.shotover.io/](https://docs.sho
 
 ## Building
 Shotover is supported on Linux and macOS.
-To build shotover from source please refer to [the shotover development guide](https://docs.shotover.io/developer/shotover-development/)
+To build shotover from source please refer to [the contributing documentation](https://docs.shotover.io/contributing)
 
 ## What is Shotover?
 Shotover-proxy is a high performance, configurable and extensible L7 data-layer proxy for controlling, managing and modifying the flow of database requests in transit. It can be used to solve many different operational and interoperability challenges by transparently intercepting and transforming queries. It is transparent in the sense that it can be plugged into your architecture without requiring application change.
