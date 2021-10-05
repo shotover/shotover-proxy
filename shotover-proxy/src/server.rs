@@ -32,8 +32,8 @@ pub trait CodecErrorFixup {
     /// Codecs that do not have additional error handling should return `(None, None, Optional<Err>)`
     ///
     /// Returns a tuple comprising:
-    ///  * `in_msg` An optional message to send back to the source of the original message.
-    ///  * `out_msg` An optional message to send down chain in the direction the original message was
+    ///  * `up_msg` An optional message to send back to the source of the original message.
+    ///  * `down_msg` An optional message to send down chain in the direction the original message was
     /// flowing.
     ///  * `an_err` An optional error.  May be the same or a different error.  The Error will be
     /// processed normally.
@@ -414,19 +414,41 @@ impl<C: Codec + 'static> Handler<C> {
                 .await
             {
                 Ok(modified_message) => {
+                    // send the result of the process up stream
                     out_tx.send(modified_message)?;
                     // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
-                    let (out_msg, in_msg, an_err) = self.codec.fixup_err(e);
-                    if out_msg.is_some() {
-                        out_tx.send(out_msg.unwrap())?;
-                    }
-                    if in_msg.is_some() {
-                        in_tx.send(in_msg.unwrap())?;
-                    }
+
+                    // there is an error so process it and retry
+                    let (up_msg, down_msg, an_err) = self.codec.fixup_err(e);
+                    // if there is an error,  log it
                     if an_err.is_some() {
                         error!("chain processing error - {}", an_err.unwrap());
+                    }
+                    // if there is a message for upstream send it
+                    if down_msg.is_some() {
+                        out_tx.send(down_msg.unwrap())?;
+                    }
+                    // if there is a message for downstream, send it into the transform chain.
+                    if up_msg.is_some() {
+                        // send out message down the pipe
+                        match self
+                            .chain
+                            .process_request(
+                                Wrapper::new_with_client_details(up_msg.unwrap(), self.client_details.clone()),
+                                self.client_details.clone(),
+                            )
+                            .await
+                        {
+                            Ok(modified_message) => {
+                                out_tx.send(modified_message)?;
+                                // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
+                            }
+                            Err(e) => {
+                                error!("chain processing error - {}", e);
+                            }
+                        }
                     }
                     return Ok(());
                 }

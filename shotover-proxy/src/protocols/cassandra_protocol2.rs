@@ -3,7 +3,6 @@ use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
 use cassandra_proto::consistency::Consistency;
-use cassandra_proto::frame::frame_error::{CDRSError,AdditionalErrorInfo,SimpleError};
 use cassandra_proto::frame::frame_result::{
     BodyResResultRows, ColSpec, ColType, ColTypeOption, ResResultBody, RowsMetadata,
 };
@@ -617,7 +616,7 @@ impl CassandraCodec2 {
         // }
 
         trace!("Parsing C* frame");
-        let v = parser::parse_frame(src, &self.compressor, self.current_head);
+        let v = parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
          v.map( |(r,h)|  {
             self.current_head = h;
             r
