@@ -509,11 +509,11 @@ impl RoutingInfo {
     #[inline(always)]
     pub fn for_command_frame(args: &[Frame]) -> Result<Option<RoutingInfo>> {
         let command_name = match args.get(0) {
-            Some(Frame::BulkString(command_name)) => command_name,
+            Some(Frame::BulkString(command_name)) => command_name.to_ascii_uppercase(),
             _ => bail!("syntax error: bad command name"),
         };
 
-        Ok(match command_name.as_ref() {
+        Ok(match command_name.as_slice() {
             b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" => Some(RoutingInfo::AllMasters),
             b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
             | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE" | b"TIME"
@@ -542,7 +542,7 @@ impl RoutingInfo {
             b"XREAD" | b"XREADGROUP" => args
                 .iter()
                 .position(|a| match a {
-                    Frame::BulkString(a) => a.as_ref() == b"STREAMS",
+                    Frame::BulkString(a) => a.to_ascii_uppercase() == b"STREAMS",
                     _ => false,
                 })
                 .and_then(|streams_position| {
