@@ -7,10 +7,9 @@ nav:
       - "Concepts": "user-guide/concepts.md"
       - "Configuration": "user-guide/configuration.md"
   - "Transforms": "transforms/transforms.md"
-  - "Developer":
-      - "Shotover": "developer/shotover-development.md"
   - "Examples":
       - "Redis": "examples/redis-clustering.md"
+  - "Contributing": "contributing.md"
 
 markdown_extensions:
   - toc:
