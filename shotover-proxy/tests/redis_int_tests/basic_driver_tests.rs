@@ -59,6 +59,7 @@ async fn test_getset(connection: &mut Connection) {
         );
     }
 
+    // ensure every possible byte is passed through unmodified
     let every_byte: Vec<u8> = (0..=255).collect();
     redis::cmd("SET")
         .arg("bar")
@@ -69,6 +70,18 @@ async fn test_getset(connection: &mut Connection) {
     assert_eq!(
         redis::cmd("GET").arg("bar").query_async(connection).await,
         Ok(every_byte)
+    );
+
+    // ensure non-uppercase commands are handled properly
+    redis::cmd("SeT")
+        .arg("bar")
+        .arg("foo")
+        .query_async::<_, ()>(connection)
+        .await
+        .unwrap();
+    assert_eq!(
+        redis::cmd("get").arg("bar").query_async(connection).await,
+        Ok(b"foo".to_vec())
     );
 }
 
