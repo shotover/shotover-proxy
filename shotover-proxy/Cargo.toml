@@ -50,7 +50,7 @@ hyper = { version = "0.14.2", features = ["server"] }
 halfbrown = "0.1.11"
 
 # Transform dependencies
-redis-protocol = { git = "https://github.com/shotover/redis-protocol.rs", branch = "shotover_fork" }
+redis-protocol = "3.0.1"
 cassandra-proto = { git = "https://github.com/shotover/cassandra-proto", branch = "move-to-bytes", features = ["v4"] }
 rdkafka = { version = "0.26", features = ["cmake-build"] }
 crc16 = { version = "0.4.0" }

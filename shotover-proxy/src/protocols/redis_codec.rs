@@ -419,11 +419,14 @@ fn handle_redis_string(string: String, decode_as_response: bool) -> Result<Messa
     }
 }
 
-fn handle_redis_bulkstring(bulkstring: Bytes, decode_as_response: bool) -> Result<MessageDetails> {
+fn handle_redis_bulkstring(
+    bulkstring: Vec<u8>,
+    decode_as_response: bool,
+) -> Result<MessageDetails> {
     if decode_as_response {
         Ok(MessageDetails::Response(QueryResponse {
             matching_query: None,
-            result: Some(Value::Bytes(bulkstring)),
+            result: Some(Value::Bytes(Bytes::from(bulkstring))),
             error: None,
             response_meta: None,
         }))

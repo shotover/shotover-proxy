@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt, TryFutureExt};
-use hyper::body::Bytes;
 use metrics::counter;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
@@ -644,8 +643,8 @@ async fn get_topology_from_node(
     let return_chan_rx = send_frame_request(
         &sender,
         Frame::Array(vec![
-            Frame::BulkString(Bytes::from("CLUSTER")),
-            Frame::BulkString(Bytes::from("SLOTS")),
+            Frame::BulkString(b"CLUSTER".to_vec()),
+            Frame::BulkString(b"SLOTS".to_vec()),
         ]),
     )?;
 
@@ -843,11 +842,11 @@ impl Transform for RedisCluster {
 #[derive(Clone, PartialEq, Eq, Hash, Derivative)]
 #[derivative(Debug)]
 pub struct UsernamePasswordToken {
-    pub username: Option<Bytes>,
+    pub username: Option<Vec<u8>>,
 
     // Reduce risk of logging passwords.
     #[derivative(Debug = "ignore")]
-    pub password: Bytes,
+    pub password: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -862,7 +861,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
         sender: &mut UnboundedSender<Request>,
         token: &UsernamePasswordToken,
     ) -> Result<(), TransformError> {
-        let mut auth_args = vec![Frame::BulkString(Bytes::from("AUTH"))];
+        let mut auth_args = vec![Frame::BulkString(b"AUTH".to_vec())];
 
         // Support non-ACL / username-less.
         if let Some(username) = &token.username {
