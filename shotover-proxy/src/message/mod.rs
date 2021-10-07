@@ -387,7 +387,7 @@ pub enum Value {
     Rows(Vec<Vec<Value>>),
     NamedRows(Vec<HashMap<String, Value>>),
     Document(HashMap<String, Value>),
-    FragmentedResponese(Vec<Value>),
+    FragmentedResponse(Vec<Value>),
 }
 
 impl From<Frame> for Value {
@@ -436,7 +436,7 @@ impl From<Value> for Frame {
             }
             Value::NamedRows(_) => unimplemented!(),
             Value::Document(_) => unimplemented!(),
-            Value::FragmentedResponese(l) => {
+            Value::FragmentedResponse(l) => {
                 Frame::Array(l.iter().cloned().map(|v| v.into()).collect())
             }
         }
@@ -541,7 +541,7 @@ impl From<Value> for cassandra_proto::types::value::Bytes {
             Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),
             Value::Document(d) => cassandra_proto::types::value::Bytes::from(d),
             Value::Inet(i) => i.into(),
-            Value::FragmentedResponese(l) => cassandra_proto::types::value::Bytes::from(l),
+            Value::FragmentedResponse(l) => cassandra_proto::types::value::Bytes::from(l),
         }
     }
 }

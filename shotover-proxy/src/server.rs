@@ -85,7 +85,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     /// # Errors
     ///
     /// Returns `Err` if accepting returns an error. This can happen for a
-    /// number reasons that resolve over time. For example, if the underlying
+    /// number of reasons that resolve over time. For example, if the underlying
     /// operating system has reached an internal limit for max number of
     /// sockets, accept will fail.
     ///
@@ -429,7 +429,7 @@ impl<C: Codec> Drop for Handler<C> {
 }
 /// Listens for the server shutdown signal.
 ///
-/// Shutdown is signalled using a `broadcast::Receiver`. Only a single value is
+/// Shutdown is signaled using a `broadcast::Receiver`. Only a single value is
 /// ever sent. Once a value has been sent via the broadcast channel, the server
 /// should shutdown.
 ///
