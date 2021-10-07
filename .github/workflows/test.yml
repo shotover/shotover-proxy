@@ -75,7 +75,7 @@ jobs:
       run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored
       timeout-minutes: 30
     - name: Cleanup docker
-      run: ./shotover-proxy/tests/scripts/teardown.sh
+      run: shotover-proxy/tests/scripts/teardown.sh
     - name: License Check
       run: |
         cargo install --locked cargo-deny
