@@ -46,7 +46,10 @@ impl IntoIterator for Messages {
 pub struct Message {
     pub details: MessageDetails,
     pub modified: bool,
+    /// The frame in the format defined by the protocol.
     pub original: RawFrame,
+    /// If protocol_error != 0 then the message is a protocol_error message that may
+    /// require special handling as described in `Handler<C>.handle_protocol_error()`
     pub protocol_error : i32,
 }
 
