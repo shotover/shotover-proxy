@@ -46,6 +46,55 @@ pub trait CodecErrorFixup {
         &self,
         message : Message,
     ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>);
+
+    ///
+    /// Process the messages.  Any messages with protocol errors are handled by calling the `codec.fixup_err`
+    /// method and processing the results.
+    /// The resulting Messages contains:
+    /// * Any original messages that do not have the protocol_error set.
+    /// * Any upstream messages produced by processing the protocol_error message.
+    ///
+    /// Messages that only produce errors for logging or down stream messages are removed from the
+    /// result.
+    ///
+    fn handle_protocol_error(codec: & CodecErrorFixup, messages: Messages, tx_out :&UnboundedSender<Messages>) -> Messages {
+        // this code creates a new Vec and uses an iterator with mapping and filtering to determine
+        // populate it from the original Messages.message Vec.  It may be more efficient to scan the
+        // original Vec and replace or delete individual Message in place.
+        let mut result = Vec::with_capacity(messages.messages.len());
+        messages.into_iter().map(|m| {
+            // if there is a protocol error handle it otherwise return the original message.
+            // One thorough the mapping if the message has a protocol_error is dropped.
+            if m.protocol_error != 0 {
+                let (up_msg, down_msg, an_err) = codec.fixup_err(m);
+                // if there is a message for upstream send it
+                if up_msg.is_some() {
+                    // send up stream messages now
+                    tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
+                }
+                if an_err.is_some() {
+                    error!("chain processing error - {}", an_err.unwrap());
+                }
+                match down_msg {
+                    // If there is a down stream message return it otherwise, create a
+                    // new message with a protocol_error so that we filter it out in the
+                    // next step.
+                    Some(x) => x,
+                    None => Message { // put a protocol error in (we will filter it out later)
+                        details: MessageDetails::Unknown,
+                        modified: true,
+                        original: RawFrame::None,
+                        protocol_error: 1,
+                    },
+                }
+            } else {
+                m.clone()
+            }
+        }).filter(|m| m.protocol_error == 0).for_each(|m| result.push(m));
+        Messages {
+            messages: result,
+        }
+    }
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
@@ -318,7 +367,7 @@ fn spawn_read_write_tasks<
         while let Some(message) = reader.next().await {
             match message {
                 Ok(message) => {
-                    let filtered_messages = codec.handle_protocol_error(messages, &out_tx);
+                    let filtered_messages = Codec::handle_protocol_error( &codec, messages, &out_tx);
                     if let Err(error) = in_tx.send(filtered_messages) {
                         warn!("failed to send message: {}", error);
                         return;
@@ -409,7 +458,7 @@ impl<C: Codec + 'static> Handler<C> {
 
             trace!("Received raw message {:?}", messages);
 
-            let filtered_messages = self.handle_protocol_error(messages, &out_tx);
+            let filtered_messages = Codec::handle_protocol_error(&self.codec,messages, &out_tx);
 
             match self
                 .chain
@@ -432,54 +481,6 @@ impl<C: Codec + 'static> Handler<C> {
         Ok(())
     }
 
-    ///
-    /// Process the messages.  Any messages with protocol errors are handled by calling the `codec.fixup_err`
-    /// method and processing the results.
-    /// The resulting Messages contains:
-    /// * Any original messages that do not have the protocol_error set.
-    /// * Any upstream messages produced by processing the protocol_error message.
-    ///
-    /// Messages that only produce errors for logging or down stream messages are removed from the
-    /// result.
-    ///
-    fn handle_protocol_error(&mut self, messages: Messages, tx_out :&UnboundedSender<Messages>) -> Messages {
-        // this code creates a new Vec and uses an iterator with mapping and filtering to determine
-        // populate it from the original Messages.message Vec.  It may be more efficient to scan the
-        // original Vec and replace or delete individual Message in place.
-        let mut result = Vec::with_capacity( messages.messages.len());
-        messages.into_iter().map( |m | {
-            // if there is a protocol error handle it otherwise return the original message.
-            // One thorough the mapping if the message has a protocol_error is dropped.
-            if m.protocol_error != 0 {
-                let (up_msg, down_msg, an_err) = self.codec.fixup_err(m);
-                // if there is a message for upstream send it
-                if up_msg.is_some() {
-                    // send up stream messages now
-                    tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
-                }
-                if an_err.is_some() {
-                    error!("chain processing error - {}", an_err.unwrap());
-                }
-                match down_msg {
-                    // If there is a down stream message return it otherwise, create a
-                    // new message with a protocol_error so that we filter it out in the
-                    // next step.
-                    Some(x) => x,
-                    None => Message { // put a protocol error in (we will filter it out later)
-                        details: MessageDetails::Unknown,
-                        modified: true,
-                        original : RawFrame::None,
-                        protocol_error : 1,
-                    },
-                }
-            } else {
-                m.clone()
-            }
-        }).filter( |m| m.protocol_error == 0 ).for_each( |m| result.push( m ));
-        Messages {
-            messages: result,
-        }
-    }
 }
 
 impl<C: Codec> Drop for Handler<C> {
