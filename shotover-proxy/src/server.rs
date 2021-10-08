@@ -309,6 +309,7 @@ fn spawn_read_write_tasks<
     tx: W,
     in_tx: UnboundedSender<Messages>,
     out_rx: UnboundedReceiver<Messages>,
+    out_tx: UnboundedSender<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
     let writer = FramedWrite::new(tx, codec);
@@ -317,7 +318,8 @@ fn spawn_read_write_tasks<
         while let Some(message) = reader.next().await {
             match message {
                 Ok(message) => {
-                    if let Err(error) = in_tx.send(message) {
+                    let filtered_messages = codec.handle_protocol_error(messages, &out_tx);
+                    if let Err(error) = in_tx.send(filtered_messages) {
                         warn!("failed to send message: {}", error);
                         return;
                     }
@@ -363,10 +365,10 @@ impl<C: Codec + 'static> Handler<C> {
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx);
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx);
         };
 
         while !self.shutdown.is_shutdown() {
