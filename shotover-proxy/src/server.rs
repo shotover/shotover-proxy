@@ -73,11 +73,11 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
             // if there is a message for upstream send it
             if up_msg.is_some() {
                 // send up stream messages now
-                info!( "proccess-{:?} Return message: {:?}", thread::current().id(), &up_msg );
+                info!( "proccess-{:?} Return message: {:?}", thread::current().name(), &up_msg );
                 tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
             }
             if an_err.is_some() {
-                error!("process-{:?} (protocol error) chain processing error - {}", thread::current().id(), an_err.unwrap());
+                error!("{:?} (protocol error) chain processing error - {}", thread::current().name(), an_err.unwrap());
             }
             match down_msg {
                 // If there is a down stream message return it otherwise, create a
@@ -167,7 +167,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
-        info!("process-{:?} accepting inbound connections", thread::current().id());
+        info!("{:?} accepting inbound connections", thread::current().name());
 
         loop {
             // Wait for a permit to become available
@@ -210,7 +210,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // The `accept` method internally attempts to recover errors, so an
             // error here is non-recoverable.
             let socket = self.accept().await?;
-            info!("process-{:?} got socket", thread::current().id());
+            info!("{:?} got socket", thread::current().name());
             gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64,"source" => self.source_name.clone());
 
             let peer = socket
@@ -225,7 +225,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
             // Create the necessary per-connection handler state.
             info!(
-                "process-{:?} New connection from {}", thread::current().id(),
+                "{:?} New connection from {}", thread::current().name(),
                 socket
                     .peer_addr()
                     .map(|p| format!("{}", p))
@@ -267,7 +267,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             tokio::spawn(async move {
                 // Process the connection. If an error is encountered, log it.
                 if let Err(err) = handler.run(socket).await {
-                    error!(cause = ?err, "process-{:?} connection error", thread::current().id());
+                    error!(cause = ?err, "{:?} connection error", thread::current().name());
                 }
             });
         }
@@ -372,12 +372,12 @@ fn spawn_read_write_tasks<
                 Ok(message) => {
                     let filtered_messages = handle_protocol_error( &codec, message, &out_tx);
                     if let Err(error) = in_tx.send(filtered_messages) {
-                        warn!("process-{:?} failed to send message: {}", thread::current().id(), error);
+                        warn!("{:?} failed to send message: {}", thread::current().name(), error);
                         return;
                     }
                 }
                 Err(error) => {
-                    warn!("process-{:?} failed to decode message: {}", thread::current().id(), error);
+                    warn!("{:?} failed to decode message: {}", thread::current().name(), error);
                     return;
                 }
             }
@@ -387,7 +387,7 @@ fn spawn_read_write_tasks<
     tokio::spawn(async move {
         let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
         let r = rx_stream.forward(writer).await;
-        debug!("process-{:?} Stream ended {:?}", thread::current().id(), r);
+        debug!("{:?} Stream ended {:?}", thread::current().name(), r);
     });
 }
 
@@ -407,7 +407,7 @@ impl<C: Codec + 'static> Handler<C> {
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
-        info!( "process-{:?} Handler run() started", thread::current().id());
+        info!( "{:?} Handler run() started", thread::current().name());
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         let mut idle_time_seconds: u64 = 1;
@@ -426,7 +426,7 @@ impl<C: Codec + 'static> Handler<C> {
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
-            info!("process-{:?} Waiting for message", thread::current().id());
+            info!("{:?} Waiting for message", thread::current().name());
             let messages: Messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
@@ -439,11 +439,11 @@ impl<C: Codec + 'static> Handler<C> {
                         },
                         Err(_) => {
                             if idle_time_seconds < 35 {
-                                trace!("process-{:?} Connection Idle for more than {} seconds {}", thread::current().id(),
+                                trace!("{:?} Connection Idle for more than {} seconds {}", thread::current().name(),
                                     idle_time_seconds, self.conn_details);
                             } else {
-                                debug!("process-{:?} Dropping. Connection Idle for more than {} seconds {}",
-                                    thread::current().id(), idle_time_seconds, self.conn_details);
+                                debug!("{:?} Dropping. Connection Idle for more than {} seconds {}",
+                                    thread::current().name(), idle_time_seconds, self.conn_details);
                                 return Ok(());
                             }
                             idle_time_seconds *= 2;
@@ -462,7 +462,7 @@ impl<C: Codec + 'static> Handler<C> {
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            info!("process-{:?} Received raw message {:?}", thread::current().id(), messages);
+            info!("{:?} Received raw message {:?}", thread::current().name(), messages);
 
             let filtered_messages = handle_protocol_error(&self.codec,messages, &out_tx);
 
@@ -480,7 +480,7 @@ impl<C: Codec + 'static> Handler<C> {
                     // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
-                    error!("process-{:?} chain processing error - {}", thread::current().id(), e);
+                    error!("{:?} chain processing error - {}", thread::current().name(), e);
                 }
             }
         }
