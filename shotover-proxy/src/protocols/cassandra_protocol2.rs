@@ -35,6 +35,7 @@ use std::ops::{Deref, DerefMut};
 use anyhow::{anyhow, Result};
 use crate::server::CodecErrorFixup;
 use cassandra_proto::frame::frame_error::CDRSError;
+use std::process;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec2 {
@@ -616,7 +617,7 @@ impl CassandraCodec2 {
         //
         // }
 
-        trace!("Parsing C* frame");
+        trace!("process-{:?} Parsing C* frame", process::id());
         let v: Result<(Option<Frame>, Option<FrameHeader>), CDRSError> = parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
          v.map( |(r,h)|  {
             self.current_head = h;
@@ -628,7 +629,7 @@ impl CassandraCodec2 {
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
         let buffer = item.into_cbytes();
         if buffer.is_empty() {
-            info!("trying to send 0 length frame");
+            info!("process-{:?} trying to send 0 length frame", process::id());
         }
         dst.put(buffer.as_slice());
     }
@@ -642,15 +643,15 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        info!("Decoding {:?}", src.to_vec() );
+        info!("process-{:?} Decoding {:?}", process::id(), src.to_vec() );
         match self.decode_raw(src) {
             Ok(Some(frame)) => {
-                info!( "Decoded {:?}", &frame );
+                info!( "process-{:?} Decoded {:?}", process::id(), &frame );
                 Ok(Some(self.process_cassandra_frame(frame)))
             },
             Ok(None) => Ok(None),
             Err(e) => {
-                info!( "CDRSError {:?}", &e );
+                info!( "process-{:?} CDRSError {:?}", process::id(), &e );
                 let error_frame = Frame {
                     version: Version::Response,
                     flags: vec![],
@@ -665,7 +666,7 @@ impl Decoder for CassandraCodec2 {
                                                RawFrame::Cassandra(error_frame ));
 
                 message.protocol_error = 0x10000 | e.error_code;
-                info!( "CDRSError returning {:?}", &message );
+                info!( "process-{:?} CDRSError returning {:?}", process::id(), &message );
                 Ok(Some(Messages { messages: vec![message], }))
             }
         }
@@ -690,7 +691,7 @@ impl CodecErrorFixup for CassandraCodec2
 impl CassandraCodec2 {
 
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
-        info!( "Encoding message {:?}", &item );
+        info!( "process-{:?} Encoding message {:?}", process::id(), &item );
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -714,7 +715,7 @@ impl CassandraCodec2 {
         // if frame.body.len() == 0 {
         //     info!("encoding zero length body");
         // }
-        info!( "Encoded message as {:?}",  &frame );
+        info!( "process-{:?} Encoded message as {:?}", process::id(),  &frame );
         Ok(frame)
     }
 }
@@ -728,14 +729,14 @@ impl Encoder<Messages> for CassandraCodec2 {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
-            info!( "Encoding {:?}", &m );
+            info!( "process-{:?} Encoding {:?}", process::id(), &m );
             match self.encode_message(m) {
                 Ok(frame) => {
                     self.encode_raw(frame, dst);
-                    info!( "Encoded frame as {:?}", dst);
+                    info!( "process-{:?} Encoded frame as {:?}", process::id(), dst);
                 },
                 Err(e) => {
-                    warn!("Couldn't encode frame {:?}", e);
+                    warn!("process-{:?} Couldn't encode frame {:?}", process::id(), e);
                 }
             };
         }
