@@ -59,7 +59,7 @@ pub trait CodecErrorFixup {
 /// Messages that only produce errors for logging or down stream messages are removed from the
 /// result.
 ///
-fn handle_protocol_error(codec: &CodecErrorFixup, messages: Messages, tx_out :&UnboundedSender<Messages>) -> Messages {
+fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out :&UnboundedSender<Messages>) -> Messages {
     // this code creates a new Vec and uses an iterator with mapping and filtering to determine
     // populate it from the original Messages.message Vec.  It may be more efficient to scan the
     // original Vec and replace or delete individual Message in place.
@@ -209,7 +209,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // The `accept` method internally attempts to recover errors, so an
             // error here is non-recoverable.
             let socket = self.accept().await?;
-
+            info!("got socekt");
             gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64,"source" => self.source_name.clone());
 
             let peer = socket
@@ -406,6 +406,7 @@ impl<C: Codec + 'static> Handler<C> {
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
+        info!( "Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         let mut idle_time_seconds: u64 = 1;
@@ -424,7 +425,7 @@ impl<C: Codec + 'static> Handler<C> {
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
-            trace!("Waiting for message");
+            info!("Waiting for message");
             let messages: Messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
@@ -458,7 +459,7 @@ impl<C: Codec + 'static> Handler<C> {
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            trace!("Received raw message {:?}", messages);
+            info!("Received raw message {:?}", messages);
 
             let filtered_messages = handle_protocol_error(&self.codec,messages, &out_tx);
 

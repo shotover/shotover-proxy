@@ -642,6 +642,7 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
+        info!("Decoding {:?}", src );
         match self.decode_raw(src) {
             Ok(Some(frame)) => {
                 info!( "Decoded {:?}", &frame );
@@ -664,9 +665,7 @@ impl Decoder for CassandraCodec2 {
                                                RawFrame::Cassandra(error_frame ));
 
                 message.protocol_error = 0x10000 | e.error_code;
-                return Ok(Some(Messages {
-                    messages: vec![message],
-                }));
+                Ok(Some(Messages { messages: vec![message], }))
             }
         }
     }
