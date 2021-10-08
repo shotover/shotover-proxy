@@ -72,10 +72,11 @@ fn handle_protocol_error(codec: &CodecErrorFixup, messages: Messages, tx_out :&U
             // if there is a message for upstream send it
             if up_msg.is_some() {
                 // send up stream messages now
+                info!( "Return message: {:?}", &up_msg );
                 tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
             }
             if an_err.is_some() {
-                error!("chain processing error - {}", an_err.unwrap());
+                error!("(protocol error) chain processing error - {}", an_err.unwrap());
             }
             match down_msg {
                 // If there is a down stream message return it otherwise, create a

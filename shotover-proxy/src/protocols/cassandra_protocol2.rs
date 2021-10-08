@@ -643,9 +643,13 @@ impl Decoder for CassandraCodec2 {
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
         match self.decode_raw(src) {
-            Ok(Some(frame)) => Ok(Some(self.process_cassandra_frame(frame))),
+            Ok(Some(frame)) => {
+                info!( "Decoded {:?}", &frame );
+                Ok(Some(self.process_cassandra_frame(frame)))
+            },
             Ok(None) => Ok(None),
             Err(e) => {
+                info!( "CDRSError {:?}", &e );
                 let error_frame = Frame {
                     version: Version::Response,
                     flags: vec![],
@@ -686,6 +690,7 @@ impl CodecErrorFixup for CassandraCodec2
 impl CassandraCodec2 {
 
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
+        info!( "Encoding message {:?}", &item );
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -709,6 +714,7 @@ impl CassandraCodec2 {
         // if frame.body.len() == 0 {
         //     info!("encoding zero length body");
         // }
+        info!( "Encoded message as {:?}",  &frame );
         Ok(frame)
     }
 }
