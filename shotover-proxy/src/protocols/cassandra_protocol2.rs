@@ -728,8 +728,12 @@ impl Encoder<Messages> for CassandraCodec2 {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
+            info!( "Encoding {:?}", &m );
             match self.encode_message(m) {
-                Ok(frame) => self.encode_raw(frame, dst),
+                Ok(frame) => {
+                    self.encode_raw(frame, dst);
+                    info!( "Encoded frame as {:?}", dst);
+                },
                 Err(e) => {
                     warn!("Couldn't encode frame {:?}", e);
                 }
