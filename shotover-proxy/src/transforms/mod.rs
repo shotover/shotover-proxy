@@ -272,6 +272,9 @@ tokio::task_local! {
 
 impl<'a> Wrapper<'a> {
     pub async fn call_next_transform(mut self) -> ChainResponse {
+        if self.transforms.is_empty() {
+            panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a Destination transform to send the messages somewhere.");
+        }
         let transform = self.transforms.remove(0);
 
         let transform_name = transform.get_name();
@@ -287,10 +290,6 @@ impl<'a> Wrapper<'a> {
         }
         histogram!("shotover_transform_latency", start.elapsed(),  "transform" => transform_name);
         result
-    }
-
-    pub fn swap_message(&mut self, mut m: Messages) {
-        std::mem::swap(&mut self.message, &mut m);
     }
 
     pub fn new(m: Messages) -> Self {
