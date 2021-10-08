@@ -47,6 +47,7 @@ pub struct Message {
     pub details: MessageDetails,
     pub modified: bool,
     pub original: RawFrame,
+    pub protocol_error : i32,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +64,7 @@ impl Message {
             details,
             modified,
             original,
+            protocol_error : 0,
         }
     }
 
@@ -93,6 +95,7 @@ impl Message {
             details,
             modified,
             original: RawFrame::None,
+            protocol_error:0,
         }
     }
 
@@ -104,6 +107,7 @@ impl Message {
                 details: MessageDetails::Bypass(Box::new(self.details)),
                 modified: false,
                 original: self.original,
+                protocol_error : self.protocol_error,
             }
         }
     }

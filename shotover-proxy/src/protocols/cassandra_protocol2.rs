@@ -34,6 +34,7 @@ use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, Result};
 use crate::server::CodecErrorFixup;
+use cassandra_proto::frame::frame_error::CDRSError;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec2 {
@@ -610,20 +611,18 @@ impl CassandraCodec2 {
         }
     }
 
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>, anyhow::Error> {
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>, CDRSError> {
         // while src.remaining() != 0 {
         //
         // }
 
         trace!("Parsing C* frame");
-        let v = parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
+        let v: Result<(Option<Frame>, Option<FrameHeader>), CDRSError> = parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
          v.map( |(r,h)|  {
             self.current_head = h;
             r
         }
-        ).map_err( |x| anyhow::Error::new(cassandra_proto::error::Error::from(x)))
-
-
+        )
     }
 
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
@@ -647,8 +646,23 @@ impl Decoder for CassandraCodec2 {
             Ok(Some(frame)) => Ok(Some(self.process_cassandra_frame(frame))),
             Ok(None) => Ok(None),
             Err(e) => {
-                warn!("decode raw error {:?}", e);
-                Err(e)
+                let error_frame = Frame {
+                    version: Version::Response,
+                    flags: vec![],
+                    opcode: Opcode::Error,
+                    stream: 0,
+                    body: vec![ e.error_code.into_cbytes(), e.message.into_cbytes(), e.additional_info.into_cbytes()].concat(),
+                    tracing_id: None,
+                    warnings: vec![],
+
+                };
+                let mut message = Message::new(MessageDetails::Unknown, false,
+                                               RawFrame::Cassandra(error_frame ));
+
+                message.protocol_error = 0x10000 | e.error_code;
+                return Ok(Some(Messages {
+                    messages: vec![message],
+                }));
             }
         }
     }
@@ -665,8 +679,8 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
 
 impl CodecErrorFixup for CassandraCodec2
 {
-    fn fixup_err( &self, err : anyhow::Error ) -> (Option<Messages>, Option<Messages>, Option<anyhow::Error>) {
-        (None,None,Some(err))
+    fn fixup_err( &self, message: Message ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
+        (Some(message), None, None)
     }
 }
 impl CassandraCodec2 {
@@ -680,6 +694,7 @@ impl CassandraCodec2 {
                     details: *message,
                     modified: item.modified,
                     original: item.original,
+                    protocol_error: item.protocol_error,
                 })?,
                 MessageDetails::Query(qm) => {
                     CassandraCodec2::build_cassandra_query_frame(qm, Consistency::LocalQuorum)

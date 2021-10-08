@@ -1,4 +1,4 @@
-use crate::message::Messages;
+use crate::message::{Messages, Message, MessageDetails};
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
@@ -17,6 +17,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace, warn};
+use crate::protocols::RawFrame;
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
@@ -43,8 +44,8 @@ pub trait CodecErrorFixup {
     ///
     fn fixup_err(
         &self,
-        err: anyhow::Error,
-    ) -> (Option<Messages>, Option<Messages>, Option<anyhow::Error>);
+        message : Message,
+    ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>);
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
@@ -337,6 +338,7 @@ fn spawn_read_write_tasks<
 }
 
 impl<C: Codec + 'static> Handler<C> {
+
     /// Process a single connection.
     ///
     /// Request frames are read from the socket and processed. Responses are
@@ -370,7 +372,7 @@ impl<C: Codec + 'static> Handler<C> {
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
             trace!("Waiting for message");
-            let frame = tokio::select! {
+            let messages: Messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
@@ -391,7 +393,6 @@ impl<C: Codec + 'static> Handler<C> {
                             continue
                         }
                     }
-
                 },
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
@@ -404,11 +405,14 @@ impl<C: Codec + 'static> Handler<C> {
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            trace!("Received raw message {:?}", frame);
+            trace!("Received raw message {:?}", messages);
+
+            let filtered_messages = self.handle_protocol_error(messages, &out_tx);
+
             match self
                 .chain
                 .process_request(
-                    Wrapper::new_with_client_details(frame, self.client_details.clone()),
+                    Wrapper::new_with_client_details(filtered_messages, self.client_details.clone()),
                     self.client_details.clone(),
                 )
                 .await
@@ -419,43 +423,60 @@ impl<C: Codec + 'static> Handler<C> {
                     // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
-
-                    // there is an error so process it and retry
-                    let (up_msg, down_msg, an_err) = self.codec.fixup_err(e);
-                    // if there is an error,  log it
-                    if an_err.is_some() {
-                        error!("chain processing error - {}", an_err.unwrap());
-                    }
-                    // if there is a message for upstream send it
-                    if down_msg.is_some() {
-                        out_tx.send(down_msg.unwrap())?;
-                    }
-                    // if there is a message for downstream, send it into the transform chain.
-                    if up_msg.is_some() {
-                        // send out message down the pipe
-                        match self
-                            .chain
-                            .process_request(
-                                Wrapper::new_with_client_details(up_msg.unwrap(), self.client_details.clone()),
-                                self.client_details.clone(),
-                            )
-                            .await
-                        {
-                            Ok(modified_message) => {
-                                out_tx.send(modified_message)?;
-                                // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
-                            }
-                            Err(e) => {
-                                error!("chain processing error - {}", e);
-                            }
-                        }
-                    }
-                    return Ok(());
+                    error!("chain processing error - {}", e);
                 }
             }
         }
-
         Ok(())
+    }
+
+    ///
+    /// Process the messages.  Any messages with protocol errors are handled by calling the `codec.fixup_err`
+    /// method and processing the results.
+    /// The resulting Messages contains:
+    /// * Any original messages that do not have the protocol_error set.
+    /// * Any upstream messages produced by processing the protocol_error message.
+    ///
+    /// Messages that only produce errors for logging or down stream messages are removed from the
+    /// result.
+    ///
+    fn handle_protocol_error(&mut self, messages: Messages, tx_out :&UnboundedSender<Messages>) -> Messages {
+        // this code creates a new Vec and uses an iterator with mapping and filtering to determine
+        // populate it from the original Messages.message Vec.  It may be more efficient to scan the
+        // original Vec and replace or delete individual Message in place.
+        let mut result = Vec::with_capacity( messages.messages.len());
+        messages.into_iter().map( |m | {
+            // if there is a protocol error handle it otherwise return the original message.
+            // One thorough the mapping if the message has a protocol_error is dropped.
+            if m.protocol_error != 0 {
+                let (up_msg, down_msg, an_err) = self.codec.fixup_err(m);
+                // if there is a message for upstream send it
+                if up_msg.is_some() {
+                    // send up stream messages now
+                    tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
+                }
+                if an_err.is_some() {
+                    error!("chain processing error - {}", an_err.unwrap());
+                }
+                match down_msg {
+                    // If there is a down stream message return it otherwise, create a
+                    // new message with a protocol_error so that we filter it out in the
+                    // next step.
+                    Some(x) => x,
+                    None => Message { // put a protocol error in (we will filter it out later)
+                        details: MessageDetails::Unknown,
+                        modified: true,
+                        original : RawFrame::None,
+                        protocol_error : 1,
+                    },
+                }
+            } else {
+                m.clone()
+            }
+        }).filter( |m| m.protocol_error == 0 ).for_each( |m| result.push( m ));
+        Messages {
+            messages: result,
+        }
     }
 }
 

@@ -113,8 +113,8 @@ fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
 }
 
 impl CodecErrorFixup for RedisCodec {
-    fn fixup_err( &self, err : anyhow::Error ) -> (Option<Messages>, Option<Messages>, Option<anyhow::Error>) {
-        (None, None, Some(err))
+    fn fixup_err( &self, _message : Message ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
+        (None, None, Some( anyhow!("Redis should not have a protocol error")))
     }
 }
 
@@ -128,6 +128,7 @@ impl RedisCodec {
                     details: *message,
                     modified: item.modified,
                     original: item.original,
+                    protocol_error: item.protocol_error,
                 })?,
                 MessageDetails::Query(qm) => RedisCodec::build_redis_query_frame(qm),
                 MessageDetails::Response(qr) => RedisCodec::build_redis_response_frame(qr),
@@ -573,6 +574,7 @@ impl RedisCodec {
                 details: MessageDetails::Unknown,
                 modified: false,
                 original: RawFrame::Redis(frame),
+                protocol_error: 0,
             })
         } else {
             Ok(match frame.clone() {
