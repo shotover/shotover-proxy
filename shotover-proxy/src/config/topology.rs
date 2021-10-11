@@ -2,20 +2,20 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::cassandra::cassandra_codec_destination::CodecConfiguration;
+use crate::transforms::cassandra::cassandra_codec_destination::CassandraCodecConfiguration;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::kafka_destination::KafkaConfig;
 use crate::transforms::mpsc::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::watch;
 use tracing::info;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Topology {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
@@ -23,7 +23,7 @@ pub struct Topology {
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct TopologyConfig {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
@@ -203,10 +203,11 @@ impl Topology {
 
         let server_addr = "127.0.0.1:9042".to_string();
 
-        let codec_config = TransformsConfig::CodecDestination(CodecConfiguration {
-            address: server_addr,
-            bypass_result_processing: false,
-        });
+        let codec_config =
+            TransformsConfig::CassandraCodecDestination(CassandraCodecConfiguration {
+                address: server_addr,
+                bypass_result_processing: false,
+            });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
         cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);
@@ -249,56 +250,5 @@ impl Topology {
             named_topics,
             source_to_chain_mapping,
         }
-    }
-}
-
-#[cfg(test)]
-mod topology_tests {
-    use crate::config::topology::Topology;
-
-    const TEST_STRING: &str = r###"---
-sources:
-  cassandra_prod:
-    Cassandra:
-      bypass_query_processing: false
-      listen_addr: "127.0.0.1:9043"
-      cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
-chain_config:
-  main_chain:
-    - MPSCTee:
-        topic_name: test_topic
-        chain:
-          - KafkaDestination:
-             topic: "test_topic"
-             config_values:
-               bootstrap.servers: "127.0.0.1:9092"
-               message.timeout.ms: "5000"
-    - CodecDestination:
-        bypass_result_processing: false
-        remote_address: "127.0.0.1:9042"    
-named_topics:
-  test_topic: 1
-source_to_chain_mapping:
-  cassandra_prod: main_chain"###;
-
-    #[test]
-    fn new_test() {
-        let topology = Topology::get_demo_config();
-        println!("{:?}", topology.named_topics);
-        let topology2 = Topology::new_from_yaml(String::from(TEST_STRING));
-        println!("{:?}", topology2.named_topics);
-        assert_eq!(topology2, topology);
-    }
-
-    #[test]
-    fn test_config_parse_format() {
-        Topology::new_from_yaml(String::from(TEST_STRING));
     }
 }

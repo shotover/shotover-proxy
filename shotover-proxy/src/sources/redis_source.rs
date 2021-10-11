@@ -6,14 +6,14 @@ use crate::tls::{TlsAcceptor, TlsConfig};
 use crate::transforms::chain::TransformChain;
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RedisConfig {
     pub listen_addr: String,
     pub batch_size_hint: u64,
@@ -87,22 +87,14 @@ impl RedisSource {
                 tokio::select! {
                     res = listener.run() => {
                         if let Err(err) = res {
-                            error!(cause = %err, "failed to accept");
+                            error!(cause = %err, "failed to accept connection");
                         }
                     }
                     _ =  trigger_shutdown_rx.changed() => {
                         info!("redis source shutting down")
                     }
-
                 }
             }
-
-            let TcpCodecListener {
-                shutdown_complete_tx,
-                ..
-            } = listener;
-
-            drop(shutdown_complete_tx);
 
             Ok(())
         });

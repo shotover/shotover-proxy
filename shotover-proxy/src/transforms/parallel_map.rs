@@ -11,14 +11,13 @@ use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::task::{Context, Poll};
 use futures::Stream;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
 use tokio_stream::StreamExt;
 
 #[derive(Debug, Clone)]
 pub struct ParallelMap {
-    name: &'static str,
     chains: Vec<TransformChain>,
     ordered: bool,
 }
@@ -62,7 +61,7 @@ where
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ParallelMapConfig {
     pub name: String,
     pub parallelism: u32,
@@ -76,7 +75,6 @@ impl TransformsFromConfig for ParallelMapConfig {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
-            name: "SequentialMap",
             chains: std::iter::repeat(chain)
                 .take(self.parallelism as usize)
                 .collect_vec(),
@@ -118,6 +116,6 @@ impl Transform for ParallelMap {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "SequentialMap"
     }
 }

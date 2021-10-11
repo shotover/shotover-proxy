@@ -9,7 +9,7 @@ use cassandra_proto::types::data_serialization_types::{
 use cassandra_proto::types::CBytes;
 use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
 use chrono::{DateTime, TimeZone, Utc};
-use redis_protocol::types::Frame;
+use redis_protocol::resp2::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ use std::net::IpAddr;
 
 // TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
 // Should move the message type to just be bulk..
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Messages {
     pub messages: Vec<Message>,
 }
@@ -42,7 +42,7 @@ impl IntoIterator for Messages {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Message {
     pub details: MessageDetails,
     pub modified: bool,
@@ -53,7 +53,7 @@ pub struct Message {
     pub protocol_error : i32,
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum MessageDetails {
     Bypass(Box<MessageDetails>),
     Query(QueryMessage),
@@ -187,7 +187,7 @@ impl Messages {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct RawMessage {
     pub original: RawFrame,
 }
@@ -235,7 +235,7 @@ impl ASTHolder {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct QueryMessage {
     pub query_string: String,
     pub namespace: Vec<String>,
@@ -243,7 +243,6 @@ pub struct QueryMessage {
     pub query_values: Option<HashMap<String, Value>>,
     pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
-    #[serde(skip)]
     pub ast: Option<ASTHolder>,
 }
 
@@ -291,7 +290,7 @@ impl QueryMessage {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct QueryResponse {
     pub matching_query: Option<QueryMessage>,
     pub result: Option<Value>,
@@ -369,7 +368,7 @@ impl QueryResponse {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Deserialize)]
 pub enum QueryType {
     Read,
     Write,
@@ -395,7 +394,7 @@ pub enum Value {
     Rows(Vec<Vec<Value>>),
     NamedRows(Vec<HashMap<String, Value>>),
     Document(HashMap<String, Value>),
-    FragmentedResponese(Vec<Value>),
+    FragmentedResponse(Vec<Value>),
 }
 
 impl From<Frame> for Value {
@@ -409,12 +408,6 @@ impl From<Frame> for Value {
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Moved { slot, host, port } => {
-                Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
-            }
-            Frame::Ask { slot, host, port } => {
-                Value::Strings(format!("ASK {} {}:{}", slot, host, port))
-            }
             Frame::Null => Value::NULL,
         }
     }
@@ -427,12 +420,6 @@ impl From<&Frame> for Value {
             Frame::Integer(i) => Value::Integer(i),
             Frame::BulkString(b) => Value::Bytes(b),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Moved { slot, host, port } => {
-                Value::Strings(format!("MOVED {} {}:{}", slot, host, port))
-            }
-            Frame::Ask { slot, host, port } => {
-                Value::Strings(format!("ASK {} {}:{}", slot, host, port))
-            }
             Frame::Null => Value::NULL,
         }
     }
@@ -456,7 +443,7 @@ impl From<Value> for Frame {
             }
             Value::NamedRows(_) => unimplemented!(),
             Value::Document(_) => unimplemented!(),
-            Value::FragmentedResponese(l) => {
+            Value::FragmentedResponse(l) => {
                 Frame::Array(l.iter().cloned().map(|v| v.into()).collect())
             }
         }
@@ -561,7 +548,7 @@ impl From<Value> for cassandra_proto::types::value::Bytes {
             Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),
             Value::Document(d) => cassandra_proto::types::value::Bytes::from(d),
             Value::Inet(i) => i.into(),
-            Value::FragmentedResponese(l) => cassandra_proto::types::value::Bytes::from(l),
+            Value::FragmentedResponse(l) => cassandra_proto::types::value::Bytes::from(l),
         }
     }
 }

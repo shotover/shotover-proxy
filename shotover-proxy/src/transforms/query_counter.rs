@@ -6,16 +6,15 @@ use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::counter;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlparser::ast::Statement;
 
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
-    name: &'static str,
     counter_name: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct QueryCounterConfig {
     pub name: String,
 }
@@ -68,7 +67,7 @@ impl Transform for QueryCounter {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "QueryCounter"
     }
 }
 
@@ -76,7 +75,6 @@ impl Transform for QueryCounter {
 impl TransformsFromConfig for QueryCounterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::QueryCounter(QueryCounter {
-            name: "QueryCounter",
             counter_name: self.name.clone(),
         }))
     }

@@ -13,6 +13,14 @@ env:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        include:
+          - name: Release
+            cargo_profile: --release
+          - name: Debug
+            cargo_profile:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
@@ -62,10 +70,14 @@ jobs:
     - name: Check `cargo fmt` was run
       run: cargo fmt --all -- --check
     - name: Build
-      run: cargo build --all-targets
+      run: cargo build ${{ matrix.cargo_profile }} --all-targets
     - name: Run tests
-      run: cargo test -- --include-ignored
+      run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored
       timeout-minutes: 30
     - name: Cleanup docker
       run: ./shotover-proxy/tests/scripts/teardown.sh
-      if: ${{ always() }}
+    - name: License Check
+      run: |
+        cargo install --locked cargo-deny
+        cargo deny check licenses
+      if: ${{ matrix.name == 'Debug' }}

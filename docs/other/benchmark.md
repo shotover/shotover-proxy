@@ -1,21 +1,18 @@
-## Benchmarking
+# Benchmarking
 
-### TODO THESE ARE OUT OF DATE
+## TODO THESE ARE OUT OF DATE
+
 _Might be worth generating these from the CI bench runs??_
 
-Currently shotover-proxy carries a 27% overhead on pure throughput in bypass mode (no query enrichment).
-Not surprising as we are still copying a lot of bytes around and its quite hard to just pass a shared buffer around.
-shotover-proxy is a message based proxy, so we still process the C* frame and do stuff with it (e.g. create native rust types
-from the underlying byte stream).
+Currently shotover-proxy carries a 27% overhead on pure throughput in bypass mode (no query enrichment). Not surprising as we are still copying a lot of bytes around and its quite hard to just pass a shared buffer around. shotover-proxy is a message based proxy, so we still process the C* frame and do stuff with it (e.g. create native rust types from the underlying byte stream).
 
-The plan to improve (reduce) the amount of copying that occurs, is to introduce a "branded" lifetime that spans the entire
-request and response lifespan. The constructed underlying message will just be pointers into the buffer rather than copied values.
-Only when we need to consume, modify or explicitly copy the bytes will we then do so. 
+The plan to improve (reduce) the amount of copying that occurs, is to introduce a "branded" lifetime that spans the entire request and response lifespan. The constructed underlying message will just be pointers into the buffer rather than copied values. Only when we need to consume, modify or explicitly copy the bytes will we then do so.
 
 Running shotover-proxy - 4 threads, cassandra source and cassandra-destination codec - debug build
+
 - `./tools/bin/cassandra-stress write no-warmup -mode native cql3 connectionsPerHost=8 -rate threads=8 -node 127.0.0.1 -port native=9043`
 
-```
+```console
 Connected to cluster: Test Cluster, max pending requests per connection 128, max connections per host 8
 Datatacenter: datacenter1; Host: /127.0.0.1; Rack: rack1
 Created keyspaces. Sleeping 1s for propagation.
@@ -138,7 +135,7 @@ Total operation time      : 00:01:31
 
 Running direct - `./tools/bin/cassandra-stress write no-warmup -mode native cql3 connectionsPerHost=8 -rate threads=8 -node 127.0.0.1 -port native=9043`
 
-```
+```console
 Running WRITE with 8 threads until stderr of mean < 0.02
 type       total ops,    op/s,    pk/s,   row/s,    mean,     med,     .95,     .99,    .999,     max,   time,   stderr, errors,  gc: #,  max ms,  sum ms,  sdv ms,      mb
 total,          3373,    3373,    3373,    3373,     1.6,     1.2,     2.9,     8.6,    31.0,   143.8,    1.0,  0.00000,      0,      0,       0,       0,       0,       0
@@ -228,9 +225,9 @@ Total operation time      : 00:01:02
 END
 ```
 
-
 16 thread - shotover-proxy - with release optimisations
-```
+
+```console
 Running WRITE with 8 threads until stderr of mean < 0.02
 type       total ops,    op/s,    pk/s,   row/s,    mean,     med,     .95,     .99,    .999,     max,   time,   stderr, errors,  gc: #,  max ms,  sum ms,  sdv ms,      mb
 total,          2375,    2375,    2375,    2375,     2.1,     1.8,     3.7,     5.3,    14.8,    15.3,    1.0,  0.00000,      0,      0,       0,       0,       0,       0

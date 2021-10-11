@@ -1,10 +1,8 @@
-use core::fmt;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -23,13 +21,13 @@ use std::borrow::Borrow;
 const TRUE: [u8; 1] = [0x1];
 const FALSE: [u8; 1] = [0x0];
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RedisConfig {
     pub caching_schema: HashMap<String, PrimaryKey>,
     pub chain: Vec<TransformsConfig>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct PrimaryKey {
     partition_key: Vec<String>,
     range_key: Vec<String>,
@@ -49,7 +47,6 @@ impl PrimaryKey {
 impl TransformsFromConfig for RedisConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisCache(SimpleRedisCache {
-            name: "SimpleRedisCache",
             cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, topics)
                 .await?,
             caching_schema: self.caching_schema.clone(),
@@ -59,19 +56,8 @@ impl TransformsFromConfig for RedisConfig {
 
 #[derive(Clone)]
 pub struct SimpleRedisCache {
-    name: &'static str,
     cache_chain: TransformChain,
     caching_schema: HashMap<String, PrimaryKey>,
-}
-
-impl Debug for SimpleRedisCache {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Name: {}, conversions: {:?}",
-            self.name, self.caching_schema
-        )
-    }
 }
 
 impl SimpleRedisCache {
@@ -381,7 +367,7 @@ impl Transform for SimpleRedisCache {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "SimpleRedisCache"
     }
 }
 

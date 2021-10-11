@@ -4,15 +4,14 @@ use crate::message::{MessageDetails, QueryType};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
-    name: &'static str,
     filter: QueryType,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct QueryTypeFilterConfig {
     pub filter: QueryType,
 }
@@ -21,7 +20,6 @@ pub struct QueryTypeFilterConfig {
 impl TransformsFromConfig for QueryTypeFilterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::QueryTypeFilter(QueryTypeFilter {
-            name: "QueryType Filter",
             filter: self.filter.clone(),
         }))
     }
@@ -41,7 +39,7 @@ impl Transform for QueryTypeFilter {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "QueryType Filter"
     }
 }
 
@@ -57,7 +55,6 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_filter() -> Result<()> {
         let mut coalesce = QueryTypeFilter {
-            name: "QueryTypeFilter",
             filter: QueryType::Read,
         };
 

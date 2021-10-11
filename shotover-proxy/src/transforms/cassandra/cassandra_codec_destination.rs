@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::message::{Message, Messages, QueryResponse};
@@ -20,52 +20,48 @@ use anyhow::{anyhow, Result};
 use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
-pub struct CodecConfiguration {
+#[derive(Deserialize, Debug, Clone)]
+pub struct CassandraCodecConfiguration {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub bypass_result_processing: bool,
 }
 
 #[async_trait]
-impl TransformsFromConfig for CodecConfiguration {
+impl TransformsFromConfig for CassandraCodecConfiguration {
     async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::CodecDestination(CodecDestination::new(
-            self.address.clone(),
-            self.bypass_result_processing,
-        )))
+        Ok(Transforms::CassandraCodecDestination(
+            CassandraCodecDestination::new(self.address.clone(), self.bypass_result_processing),
+        ))
     }
 }
 
 #[derive(Debug)]
-pub struct CodecDestination {
-    name: &'static str,
+pub struct CassandraCodecDestination {
     address: String,
-    // outbound: Arc<Mutex<Option<Framed<TcpStream, CassandraCodec2>>>>,
     outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec2>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
 }
 
-impl Clone for CodecDestination {
+impl Clone for CassandraCodecDestination {
     fn clone(&self) -> Self {
-        CodecDestination::new(self.address.clone(), self.bypass)
+        CassandraCodecDestination::new(self.address.clone(), self.bypass)
     }
 }
 
-impl CodecDestination {
-    pub fn new(address: String, bypass: bool) -> CodecDestination {
-        CodecDestination {
+impl CassandraCodecDestination {
+    pub fn new(address: String, bypass: bool) -> CassandraCodecDestination {
+        CassandraCodecDestination {
             address,
             outbound: None,
-            name: "CodecDestination",
             cassandra_ks: HashMap::new(),
             bypass,
         }
     }
 }
 
-impl CodecDestination {
+impl CassandraCodecDestination {
     async fn send_message(&mut self, messages: Messages) -> ChainResponse {
         loop {
             match self.outbound {
@@ -155,13 +151,12 @@ impl CodecDestination {
 }
 
 #[async_trait]
-impl Transform for CodecDestination {
-    // #[instrument]
+impl Transform for CassandraCodecDestination {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         self.send_message(message_wrapper.message).await
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "CassandraCodecDestination"
     }
 }

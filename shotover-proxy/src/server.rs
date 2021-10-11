@@ -2,7 +2,7 @@ use crate::message::{Messages, Message, MessageDetails};
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use metrics::gauge;
 use std::sync::Arc;
@@ -168,7 +168,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     /// # Errors
     ///
     /// Returns `Err` if accepting returns an error. This can happen for a
-    /// number reasons that resolve over time. For example, if the underlying
+    /// number of reasons that resolve over time. For example, if the underlying
     /// operating system has reached an internal limit for max number of
     /// sockets, accept will fail.
     ///
@@ -193,8 +193,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 match self.limit_connections.try_acquire() {
                     Ok(p) => {
                         if self.listener.is_none() {
-                            self.listener =
-                                Some(TcpListener::bind(self.listen_addr.clone()).await.unwrap());
+                            self.listener = Some(self.create_listener().await?);
                         }
                         p.forget();
                     }
@@ -210,8 +209,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             } else {
                 self.limit_connections.acquire().await?.forget();
                 if self.listener.is_none() {
-                    self.listener =
-                        Some(TcpListener::bind(self.listen_addr.clone()).await.unwrap());
+                    self.listener = Some(self.create_listener().await?);
                 }
             }
 
@@ -280,6 +278,12 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 }
             });
         }
+    }
+
+    async fn create_listener(&self) -> Result<TcpListener> {
+        TcpListener::bind(&self.listen_addr)
+            .await
+            .map_err(|e| anyhow!("{} address={}", e, self.listen_addr))
     }
 
     /// Accept an inbound connection.
@@ -396,8 +400,10 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(async move {
         let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-        let r = rx_stream.forward(writer).await;
-        debug!("{:?} Stream ended {:?}", thread::current().id(), r);
+        if let Err(err) = rx_stream.forward(writer).await {
+            error!("{:?} Stream ended with error {:?}", thread::current().id(), err);
+        }
+
     });
 }
 
@@ -411,7 +417,7 @@ impl<C: Codec + 'static> Handler<C> {
     /// Currently, pipelining is not implemented. Pipelining is the ability to
     /// process more than one request concurrently per connection without
     /// interleaving frames. See for more details:
-    /// https://redis.io/topics/pipelining
+    /// <https://redis.io/topics/pipelining>
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
@@ -489,7 +495,6 @@ impl<C: Codec + 'static> Handler<C> {
                 Ok(modified_message) => {
                     // send the result of the process up stream
                     out_tx.send(modified_message)?;
-                    // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
                     error!("{:?} process_request chain processing error - {}", thread::current().id(), e);
@@ -519,7 +524,7 @@ impl<C: Codec> Drop for Handler<C> {
 }
 /// Listens for the server shutdown signal.
 ///
-/// Shutdown is signalled using a `broadcast::Receiver`. Only a single value is
+/// Shutdown is signaled using a `broadcast::Receiver`. Only a single value is
 /// ever sent. Once a value has been sent via the broadcast channel, the server
 /// should shutdown.
 ///

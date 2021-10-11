@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use cached::proc_macro::cached;
 use rusoto_kms::KmsClient;
 use rusoto_signature::Region;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -22,7 +22,7 @@ pub enum KeyManager {
     Local(LocalKeyManagement),
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum KeyManagerConfig {
     AWSKms {
         region: String,

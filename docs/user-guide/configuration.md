@@ -1,56 +1,46 @@
 # Configuration
+
 Shotover proxy accepts a two seperate YAML based configuration files. A configuration file specified by `--config-file` 
 and a topology file specified by `--topology-file`
 
 ## configuration.yaml
 
-The configuration file is used to change general behavior 
-of shotover. Currently it supports two values:
+The configuration file is used to change general behavior of shotover. Currently it supports two values:
+
 * main_log_level
 * observability_interface
 
 ### main_log_level
-This is a single string that you can use to configure logging with shotover. It supports [env_filter](https://docs.rs/env_logger/0.7.1/env_logger/)
-style configuration and filtering syntax. Log levels and filters can be dynamically changed while shotover-proxy is still
-running.
 
-This can be done by a POST HTTP request to the `/filter` endpoint (configured located at the observability interface) with the 
-env_filter string set as the POST data. For example:
+This is a single string that you can use to configure logging with shotover. It supports [env_filter](https://docs.rs/env_logger/0.7.1/env_logger/) style configuration and filtering syntax. Log levels and filters can be dynamically changed while shotover-proxy is still running.
+
+This can be done by a POST HTTP request to the `/filter` endpoint (configured located at the observability interface) with the env_filter string set as the POST data. For example:
 
 ```shell
 curl -X PUT -d 'info,shotover_proxy=info' http://127.0.0.1:9001/filter
 ```
 
 ### observability_interface
-Defines the interface and port for shotovers observability interface. This interface will serve Prometheus metrics from 
-`/metrics` and allow you to configure log levels and filters at `/filter`.
-Configured as a string following the Rust SocketAddr parsing rules in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses. 
+
+Defines the interface and port for shotover's observability interface. This interface will serve Prometheus metrics from `/metrics` and allow you to configure log levels and filters at `/filter`. Configured as a string following the Rust SocketAddr parsing rules in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses.
 
 ## topology.yaml
 
-The topology file is currently the primary method for defining how shotover behaves. Within the topology file you can configure
-sources, transforms and transform chains. 
+The topology file is currently the primary method for defining how shotover behaves. Within the topology file you can configure sources, transforms and transform chains.
 
 The below documentation shows you what each section does and runs through an entire example of a shotover configuration file.
 
 ### `sources` (Sources)
+
 The sources top level resource is a map of named sources, to their definitions.
 
-The sources section of the configuration file allow you to specify a source or origin for requests. 
-You can have multiple sources and even multiple sources of the same type. Each is named to allow you to 
-easily reference it.
+The sources section of the configuration file allow you to specify a source or origin for requests. You can have multiple sources and even multiple sources of the same type. Each is named to allow you to easily reference it.
 
-A source will generally represent a database protocol and will accept connections and queries from
-a compatible driver. For example the Redis source will accept connections from any Redis (RESP2)
-driver (e.g. [redis-py](https://github.com/andymccurdy/redis-py)).
+A source will generally represent a database protocol and will accept connections and queries from a compatible driver. For example the Redis source will accept connections from any Redis (RESP2) driver (e.g. [redis-py](https://github.com/andymccurdy/redis-py)).
 
-There is a special source type, called a mpsc_chan source (named after the rust multi-producer, single
-consumer channel that backs its implementation). This source will only listener to configured topic name
-and the associated topic and will then pass the received messages from the channel on it's mapped
-transform chain.
+There is a special source type, called a mpsc_chan source (named after the rust multi-producer, single consumer channel that backs its implementation). This source will only listener to configured topic name and the associated topic and will then pass the received messages from the channel on it's mapped transform chain.
 
-There are many `Transforms` that will push a message to a given topic in different ways, enabling complex
-asynchronous topologies to be created. 
+There are many `Transforms` that will push a message to a given topic in different ways, enabling complex asynchronous topologies to be created.
 
 ```yaml
 ---
@@ -87,20 +77,17 @@ sources:
 ```
 
 ### `chain_config` (Chain Configuration)
+
 The `chain_config` top level resource is a map of named chains, to their definitions.
 
-The chain_config section of the configuration file allows you to name and define a transform chain. A transform chain
-is represented as an array of transforms and their respective configuration. The order in which a transform chain, is the order
-in which a query will traverse it. So the first transform in the chain, will get the request from source first, and pass it
-to the second transform in the chain. 
+The chain_config section of the configuration file allows you to name and define a transform chain. A transform chain is represented as an array of transforms and their respective configuration. The order in which a transform chain, is the order in which a query will traverse it. So the first transform in the chain, will get the request from source first, and pass it to the second transform in the chain.
 
-As each transform chain is synchronous, with each transform being able to call the next transform in its chain, the response from the
-upstream database or generated by a transform down the chain will be passed back up the chain, allowing each transform to handle the response.
+As each transform chain is synchronous, with each transform being able to call the next transform in its chain, the response from the upstream database or generated by a transform down the chain will be passed back up the chain, allowing each transform to handle the response.
 
-The last transform in a chain should be a "terminating" transform. That is, one that passes the query on to the upstream database
- (e.g. `CassandraCodecDestination`) or one that returns a Response on its own ( e.g. `EchoDestination`).
+The last transform in a chain should be a "terminating" transform. That is, one that passes the query on to the upstream database (e.g. `CassandraCodecDestination`) or one that returns a Response on its own ( e.g. `EchoDestination`).
 
 For example
+
 ```yaml
 chain_config:
   example_chain:
@@ -108,7 +95,7 @@ chain_config:
     - Two
     - Three
     - TerminatingTransform
-``` 
+```
 
 A query from a client will go:
 
@@ -118,19 +105,13 @@ The response (returned to the chain by the `TerminatingTransform`) will follow t
 
 * `TerminatingTransform` -> `Three` -> `Two` -> `One` -> `Source`
 
-Under the hood, each transform is able to call it's down-chain transform and wait on its response.
-Each Transform has its own set of configuration values, options and behavior. See [Transforms](../transforms/transforms.md) for details.
+Under the hood, each transform is able to call it's down-chain transform and wait on its response. Each Transform has its own set of configuration values, options and behavior. See [Transforms](../transforms/transforms.md) for details.
 
 The following example `chain_config` has three chains:
 
-* `redis_chain` - Consists of a MPSCTee, a transform that will copy the query to the named topic and *also* pass the query
-down-chain to a terminating transform `RedisDestination` which sends to the query to a Redis server. Very similar to the `tee`
-linux program.
-* `main_chain` - Also consists of a MPSCTee that will copy queries to the same topic as the `redis_chain` before sending the
-query onto caching layer that will try to resolve the query from a redis cache before ending up finally sending the query to
-the destination Cassandra cluster via a `CodecDestination`
+* `redis_chain` - Consists of a MPSCTee, a transform that will copy the query to the named topic and *also* pass the query down-chain to a terminating transform `RedisDestination` which sends to the query to a Redis server. Very similar to the `tee` linux program.
+* `main_chain` - Also consists of a MPSCTee that will copy queries to the same topic as the `redis_chain` before sending the query onto caching layer that will try to resolve the query from a redis cache before ending up finally sending the query to the destination Cassandra cluster via a `CassandraCodecDestination`
 * `KafkaDestination` - A single transform chain that will serialise and forward any queries to a given Kafka topic.
-
 
 ```yaml
 # This example will replicate all commands to the DR datacenter on a best effort basis
@@ -167,9 +148,8 @@ chain_config:
 ```
 
 ### `named_topics` Named Topics
-The `named_topics` top level resource is a list of topics. Each topic is backed by a Rust multi-producer, single consumer
-channel. Some transforms will use these global list of topics to pass messages outside of the normal chain flow. No transforms
-currently leverage this capability to any large degree. 
+
+The `named_topics` top level resource is a list of topics. Each topic is backed by a Rust multi-producer, single consumer channel. Some transforms will use these global list of topics to pass messages outside of the normal chain flow. No transforms currently leverage this capability to any large degree.
 
 The value provided is an usize which defines the size of the channel, default 5.
 
@@ -181,8 +161,8 @@ named_topics:
 ```
 
 ### `source_to_chain_mapping` Chain Mapping
-The `source_to_chain_mapping` top level resource is a map of source names to chain name. This is the binding that will
-link a defined source to chain and allow messages/queries generated by a source to traverse a given chain.
+
+The `source_to_chain_mapping` top level resource is a map of source names to chain name. This is the binding that will link a defined source to chain and allow messages/queries generated by a source to traverse a given chain.
 
 The below snippet would complete our entire example:
 
@@ -193,8 +173,7 @@ source_to_chain_mapping:
 
 This mapping would effectively create a solution that:
 
-* All redis requests are first batched and then sent to a remote redis cluster in another region. This happens asynchronously and if the remote
-  redis cluster is unavailable it will not block operations to the current cluster. 
+* All redis requests are first batched and then sent to a remote redis cluster in another region. This happens asynchronously and if the remote redis cluster is unavailable it will not block operations to the current cluster.
 * Subsequently, all redis actions get identified based on command type, counted and provided as a set of metrics.
 * The redis request is then transform into a cluster aware request and routed to the correct node
 

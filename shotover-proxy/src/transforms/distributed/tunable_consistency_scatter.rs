@@ -4,9 +4,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio_stream::StreamExt;
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -21,7 +21,6 @@ use crate::transforms::{
 
 #[derive(Clone)]
 pub struct TunableConsistency {
-    name: &'static str,
     route_map: Vec<BufferedChain>,
     write_consistency: i32,
     read_consistency: i32,
@@ -29,7 +28,7 @@ pub struct TunableConsistency {
     count: u32,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct TunableConsistencyConfig {
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub write_consistency: i32,
@@ -39,11 +38,11 @@ pub struct TunableConsistencyConfig {
 #[async_trait]
 impl TransformsFromConfig for TunableConsistencyConfig {
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let mut temp: Vec<BufferedChain> = Vec::with_capacity(self.route_map.len());
+        let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
         for (key, value) in self.route_map.clone() {
-            temp.push(
+            route_map.push(
                 build_chain_from_config(key, &value, topics)
                     .await?
                     .into_buffered_chain(10),
@@ -51,8 +50,7 @@ impl TransformsFromConfig for TunableConsistencyConfig {
         }
 
         Ok(Transforms::TunableConsistency(TunableConsistency {
-            name: "TunableConsistency",
-            route_map: temp,
+            route_map,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
             timeout: 1000, //todo this timeout needs to be longer for the initial connection...
@@ -134,26 +132,16 @@ impl Transform for TunableConsistency {
             .map(|m| {
                 m.generate_message_details(false);
 
-                if let MessageDetails::Query(QueryMessage {
-                    query_string: _,
-                    namespace: _,
-                    primary_key: _,
-                    query_values: _,
-                    projection: _,
-                    query_type,
-                    ast: _,
-                }) = &m.details
-                {
-                    match query_type {
-                        QueryType::Read => self.read_consistency,
-                        _ => self.write_consistency,
+                match &m.details {
+                    MessageDetails::Query(QueryMessage {
+                        query_type: QueryType::Read,
+                        ..
+                    }) => self.read_consistency,
+                    MessageDetails::Query(QueryMessage { .. }) => self.write_consistency,
+                    _ if matches!(m.original.get_query_type(), QueryType::Read) => {
+                        self.read_consistency
                     }
-                } else if std::mem::discriminant(&m.original.get_query_type())
-                    == std::mem::discriminant(&QueryType::Read)
-                {
-                    self.read_consistency
-                } else {
-                    self.write_consistency
+                    _ => self.write_consistency,
                 }
             })
             .collect_vec();
@@ -163,7 +151,7 @@ impl Transform for TunableConsistency {
             .unwrap_or(&self.write_consistency);
 
         // Bias towards the write_consistency value for everything else
-        let mut rec_fu: FuturesUnordered<_> = FuturesUnordered::new();
+        let mut rec_fu = FuturesUnordered::new();
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
         for chain in self.route_map.iter_mut() {
@@ -174,7 +162,7 @@ impl Transform for TunableConsistency {
             ));
         }
 
-        let mut results: Vec<Messages> = Vec::new();
+        let mut results = Vec::new();
         while let Some(res) = rec_fu.next().await {
             match res {
                 Ok(mut messages) => {
@@ -185,7 +173,7 @@ impl Transform for TunableConsistency {
                     results.push(messages);
                 }
                 Err(e) => {
-                    debug!("failed response {}", e);
+                    error!("failed response {}", e);
                 }
             }
             if results.len() >= max_required_successes as usize {
@@ -195,15 +183,8 @@ impl Transform for TunableConsistency {
 
         drop(rec_fu);
 
-        // info!("{:?}\n{:?}", message_wrapper, results);
-
-        if results.len()
-            < *required_successes
-                .iter()
-                .max()
-                .unwrap_or(&self.write_consistency) as usize
-        {
-            let collated_response: Vec<Message> = required_successes
+        if results.len() < max_required_successes as usize {
+            let collated_response = required_successes
                 .iter()
                 .map(|_| {
                     Message::new_response(
@@ -246,82 +227,58 @@ impl Transform for TunableConsistency {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "TunableConsistency"
     }
 }
 
 #[cfg(test)]
 mod scatter_transform_tests {
-    use anyhow::anyhow;
-
     use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
-
-    use anyhow::Result;
 
     use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::RawFrame;
     use crate::transforms::{Transforms, Wrapper};
     use std::collections::HashMap;
 
-    fn check_ok_responses(
-        mut message: Messages,
-        expected_ok: &Value,
-        _expected_count: usize,
-    ) -> Result<()> {
+    fn check_ok_responses(mut message: Messages, expected_ok: &Value, _expected_count: usize) {
         let test_message_details = message.messages.pop().unwrap().details;
-        println!("{:?}", test_message_details);
         if let MessageDetails::Response(QueryResponse {
-            matching_query: _,
-            result: Some(r),
-            error: _,
-            response_meta: _,
+            result: Some(r), ..
         }) = test_message_details
         {
             assert_eq!(expected_ok, &r);
-            Ok(())
         } else {
-            Err(anyhow!("Couldn't destructure message"))
+            panic!("Couldn't destructure message");
         }
     }
 
-    fn check_err_responses(
-        mut message: Messages,
-        expected_err: &Value,
-        _expected_count: usize,
-    ) -> Result<()> {
+    fn check_err_responses(mut message: Messages, expected_err: &Value, _expected_count: usize) {
         if let MessageDetails::Response(QueryResponse {
-            matching_query: _,
-            result: _,
-            error: Some(err),
-            response_meta: _,
+            error: Some(err), ..
         }) = message.messages.pop().unwrap().details
         {
             assert_eq!(expected_err, &err);
-            Ok(())
         } else {
-            Err(anyhow!("Couldn't destructure message"))
+            panic!("Couldn't destructure message");
         }
     }
 
     async fn build_chains(route_map: HashMap<String, TransformChain>) -> Vec<BufferedChain> {
-        let mut temp: Vec<BufferedChain> = Vec::with_capacity(route_map.len());
-
-        for (_key, value) in route_map.clone() {
-            temp.push(value.into_buffered_chain(10));
-        }
-        temp
+        route_map
+            .into_values()
+            .map(|x| x.into_buffered_chain(10))
+            .collect()
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_scatter_success() -> Result<()> {
+    async fn test_scatter_success() {
         let response = Messages::new_single_response(
             QueryResponse::just_result(Value::Strings("OK".to_string())),
             true,
             RawFrame::None,
         );
-        let _dummy_chain = TransformChain::new(vec![], "dummy".to_string());
 
         let wrapper = Wrapper::new(Messages::new_single_query(
             QueryMessage {
@@ -361,7 +318,6 @@ mod scatter_transform_tests {
         );
 
         let mut tuneable_success_consistency = Transforms::TunableConsistency(TunableConsistency {
-            name: "TunableConsistency",
             route_map: build_chains(two_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
@@ -373,11 +329,10 @@ mod scatter_transform_tests {
 
         let test = tuneable_success_consistency
             .transform(wrapper.clone())
-            .await;
+            .await
+            .unwrap();
 
-        println!("{:?}", test);
-
-        check_ok_responses(test?, &expected_ok, 2)?;
+        check_ok_responses(test, &expected_ok, 2);
 
         let mut one_of_three = HashMap::new();
         one_of_three.insert(
@@ -394,7 +349,6 @@ mod scatter_transform_tests {
         );
 
         let mut tuneable_fail_consistency = Transforms::TunableConsistency(TunableConsistency {
-            name: "TunableConsistency",
             route_map: build_chains(one_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
@@ -402,12 +356,13 @@ mod scatter_transform_tests {
             count: 0,
         });
 
-        let response_fail = tuneable_fail_consistency.transform(wrapper.clone()).await?;
+        let response_fail = tuneable_fail_consistency
+            .transform(wrapper.clone())
+            .await
+            .unwrap();
 
         let expected_err = Value::Strings("Not enough responses".to_string());
 
-        check_err_responses(response_fail, &expected_err, 1)?;
-
-        Ok(())
+        check_err_responses(response_fail, &expected_err, 1);
     }
 }

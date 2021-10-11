@@ -9,8 +9,9 @@ use hyper::body::Bytes;
 use metrics::counter;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
-use redis_protocol::types::Frame;
-use serde::{Deserialize, Serialize};
+use redis_protocol::resp2::types::Frame;
+use redis_protocol::types::Redirection;
+use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
@@ -23,8 +24,10 @@ use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::redis_codec::RedisCodec;
 use crate::protocols::RawFrame;
-use crate::transforms::redis_transforms::{RedisError, TransformError};
-use crate::transforms::util::cluster_connection_pool::{ConnectionPool, NoopAuthenticator};
+use crate::tls::TlsConfig;
+use crate::transforms::redis_transforms::RedisError;
+use crate::transforms::redis_transforms::TransformError;
+use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::ResponseFuture;
 use crate::transforms::CONTEXT_CHAIN_NAME;
@@ -34,33 +37,43 @@ const SLOT_SIZE: usize = 16384;
 
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RedisClusterConfig {
     pub first_contact_points: Vec<String>,
-    pub strict_close_mode: Option<bool>,
+    pub tls: Option<TlsConfig>,
     connection_count: Option<usize>,
 }
 
 #[async_trait]
 impl TransformsFromConfig for RedisClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        let connection_pool = ConnectionPool::new(RedisCodec::new(true, 3));
+        let authenticator = RedisAuthenticator {};
+
+        let connection_pool = ConnectionPool::new_with_auth(
+            RedisCodec::new(true, 3),
+            authenticator,
+            self.tls.clone(),
+        )?;
 
         let mut cluster = RedisCluster {
-            name: "RedisCluster",
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
             load_scores: HashMap::new(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            first_contact_points: self.first_contact_points.clone(),
             connection_count: self.connection_count.unwrap_or(1),
             connection_pool,
-            rebuild_slots: true,
-            first_contact_points: self.first_contact_points.clone(),
+            connection_error: None,
+            rebuild_connections: false,
+            token: None,
         };
 
-        match cluster.rebuild_connections().await {
+        match cluster.build_connections(None).await {
             Ok(()) => {
-                info!("connected to upstream cluster");
+                info!("connected to upstream");
+            }
+            Err(TransformError::Upstream(RedisError::NotAuthenticated)) => {
+                info!("upstream requires auth");
             }
             Err(e) => {
                 bail!("failed to connect to upstream: {}", e);
@@ -74,15 +87,16 @@ impl TransformsFromConfig for RedisClusterConfig {
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
 pub struct RedisCluster {
-    name: &'static str,
     pub slots: SlotMap,
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
     connection_count: usize,
-    connection_pool: ConnectionPool<RedisCodec, NoopAuthenticator, ()>,
-    rebuild_slots: bool,
+    connection_pool: ConnectionPool<RedisCodec, RedisAuthenticator, UsernamePasswordToken>,
+    connection_error: Option<&'static str>,
+    rebuild_connections: bool,
     first_contact_points: Vec<String>,
+    token: Option<UsernamePasswordToken>,
 }
 
 impl RedisCluster {
@@ -93,12 +107,22 @@ impl RedisCluster {
             _ => bail!("syntax error: bad command"),
         };
 
-        let channels = self.get_channels(command).await?;
+        let channels = match self.get_channels(command).await? {
+            ChannelResult::Channels(channels) => channels,
+            ChannelResult::Other(Command::AUTH) => {
+                return self.on_auth(command).await;
+            }
+        };
 
         Ok(match channels.len() {
             0 => {
                 let (one_tx, one_rx) = immediate_responder();
-                short_circuit(one_tx);
+                match self.connection_error {
+                    Some(message) => {
+                        send_error_response(one_tx, message).ok();
+                    }
+                    None => short_circuit(one_tx),
+                };
                 Box::pin(one_rx)
             }
             1 => {
@@ -159,28 +183,37 @@ impl RedisCluster {
         }
     }
 
-    async fn rebuild_slot_map(&mut self) -> Result<(), TransformError> {
-        debug!("rebuilding slot map");
-        let mut errors = Vec::new();
+    async fn fetch_slot_map(
+        &mut self,
+        token: &Option<UsernamePasswordToken>,
+    ) -> Result<SlotMap, TransformError> {
+        debug!("fetching slot map");
 
-        for address in self.latest_contact_points() {
-            match self
-                .connection_pool
-                .new_unpooled_connection(&address, &None)
-                .await
-            {
-                Ok(sender) => match get_topology_from_node(&sender).await {
-                    Ok(slots) => {
-                        trace!("successfully mapped cluster: {:?}", slots);
-                        self.slots = slots;
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        trace!("failed to get slot map from: {}, error: {}", address, e);
-                        errors.push(e)
-                    }
-                },
-                Err(e) => errors.push(e.into()),
+        let addresses = self.latest_contact_points();
+
+        let mut errors = Vec::new();
+        let mut results = FuturesUnordered::new();
+
+        for address in &addresses {
+            results.push(
+                self.connection_pool
+                    .new_unpooled_connection(address, token)
+                    .map_err(move |err| {
+                        trace!("error fetching slot map from {}: {}", address, err);
+                        TransformError::from(err)
+                    })
+                    .and_then(get_topology_from_node)
+                    .map_ok(move |slots| {
+                        trace!("fetched slot map from {}: {:?}", address, slots);
+                        slots
+                    }),
+            );
+        }
+
+        while let Some(result) = results.next().await {
+            match result {
+                Ok(slots) => return Ok(slots),
+                Err(err) => errors.push(err),
             }
         }
 
@@ -188,56 +221,67 @@ impl RedisCluster {
         Err(TransformError::choose_upstream_or_first(errors).unwrap())
     }
 
-    async fn rebuild_connections(&mut self) -> Result<(), TransformError> {
-        self.rebuild_slot_map().await?;
+    async fn build_connections(
+        &mut self,
+        token: Option<UsernamePasswordToken>,
+    ) -> Result<(), TransformError> {
+        debug!("building connections");
+
+        match self.build_connections_inner(&token).await {
+            Ok((slots, channels)) => {
+                debug!("connected to cluster: {:?}", channels.keys());
+                self.token = token;
+                self.slots = slots;
+                self.channels = channels;
+
+                self.connection_error = None;
+                self.rebuild_connections = false;
+                Ok(())
+            }
+            Err(err @ TransformError::Upstream(RedisError::NotAuthenticated)) => {
+                // Assume retry is pointless if authentication is required.
+                self.connection_error = Some("NOAUTH Authentication required (cached)");
+                self.rebuild_connections = false;
+                Err(err)
+            }
+            Err(err) => {
+                warn!("failed to build connections: {}", err);
+                Err(err)
+            }
+        }
+    }
+
+    async fn build_connections_inner(
+        &mut self,
+        token: &Option<UsernamePasswordToken>,
+    ) -> Result<(SlotMap, ChannelMap), TransformError> {
+        // NOTE: Fetch slot map uses unpooled connections to check token validity before reusing pooled connections.
+        let slots = self.fetch_slot_map(token).await?;
 
         let mut channels = ChannelMap::new();
         let mut errors = Vec::new();
-
-        // TODO: Eliminate code duplication for master and follower.
-
-        debug!("building master connections");
-        for node in self.slots.masters.values() {
+        for node in slots.masters.values().chain(slots.replicas.values()) {
             match self
                 .connection_pool
-                .get_connections(node, &None, self.connection_count)
+                .get_connections(node, token, self.connection_count)
                 .await
             {
                 Ok(connections) => {
                     channels.insert(node.to_string(), connections);
                 }
                 Err(e) => {
-                    info!("Could not create connection to {} - {}", node, e);
-                    errors.push(e.into());
-                }
-            }
-        }
-
-        debug!("building replica connections");
-        for node in self.slots.replicas.values() {
-            match self
-                .connection_pool
-                .get_connections(node, &None, self.connection_count)
-                .await
-            {
-                Ok(connections) => {
-                    channels.insert(node.to_string(), connections);
-                }
-                Err(e) => {
-                    info!("Could not create connection to {} - {}", node, e);
+                    // Intentional debug! Some errors should be silently passed through.
+                    debug!("failed to connect to {}: {}", node, e);
                     errors.push(e.into());
                 }
             }
         }
 
         if channels.is_empty() && !errors.is_empty() {
-            debug!("total failure trying to rebuild connections");
-            return Err(TransformError::choose_upstream_or_first(errors).unwrap());
+            Err(TransformError::choose_upstream_or_first(errors).unwrap())
+        } else {
+            Ok((slots, channels))
         }
-
-        debug!("Connected to cluster: {:?}", channels.keys());
-        self.channels = channels;
-        Ok(())
     }
 
     #[inline]
@@ -286,7 +330,7 @@ impl RedisCluster {
             match timeout(
                 Duration::from_millis(40),
                 self.connection_pool
-                    .get_connections(host, &None, self.connection_count),
+                    .get_connections(host, &self.token, self.connection_count),
             )
             .await
             {
@@ -297,13 +341,13 @@ impl RedisCluster {
                 }
                 Ok(Err(e)) => {
                     debug!("failed to connect to {}: {}", host, e);
-                    self.rebuild_slots = true;
+                    self.rebuild_connections = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
                 Err(_) => {
                     debug!("timed out connecting to {}", host);
-                    self.rebuild_slots = true;
+                    self.rebuild_connections = true;
                     short_circuit(one_tx);
                     return Ok(one_rx);
                 }
@@ -316,47 +360,96 @@ impl RedisCluster {
             message_id: None,
         }) {
             if let Some(error_return) = e.0.return_chan {
-                self.rebuild_slots = true;
+                self.rebuild_connections = true;
                 short_circuit(error_return);
             }
             self.channels.remove(host);
         }
+
         Ok(one_rx)
     }
 
     #[inline(always)]
-    async fn get_channels(&mut self, command: &[Frame]) -> Result<Vec<String>> {
+    async fn get_channels(&mut self, command: &[Frame]) -> Result<ChannelResult> {
         Ok(match RoutingInfo::for_command_frame(command)? {
-            Some(RoutingInfo::Slot(slot)) => {
+            Some(RoutingInfo::Slot(slot)) => ChannelResult::Channels(
                 if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
                     vec![lookup.clone()]
                 } else {
                     vec![]
-                }
+                },
+            ),
+            Some(RoutingInfo::AllNodes) => {
+                ChannelResult::Channels(self.slots.nodes.iter().cloned().collect())
             }
-            Some(RoutingInfo::AllNodes) => self.slots.nodes.iter().cloned().collect(),
-            Some(RoutingInfo::AllMasters) => self.slots.masters.values().cloned().collect(),
-            Some(RoutingInfo::Random) => self
-                .slots
-                .masters
-                .values()
-                .next()
-                .map(|key| vec![key.clone()])
-                .unwrap_or_default(),
-            None => vec![],
+            Some(RoutingInfo::AllMasters) => {
+                ChannelResult::Channels(self.slots.masters.values().cloned().collect())
+            }
+            Some(RoutingInfo::Random) => ChannelResult::Channels(
+                self.slots
+                    .masters
+                    .values()
+                    .next()
+                    .map(|key| vec![key.clone()])
+                    .unwrap_or_default(),
+            ),
+            Some(RoutingInfo::Other(name)) => ChannelResult::Other(name),
+            None => ChannelResult::Channels(vec![]),
         })
+    }
+
+    async fn on_auth(&mut self, command: &[Frame]) -> Result<ResponseFuture> {
+        let mut args = command.iter().skip(1).rev().map(|f| match f {
+            Frame::BulkString(s) => Ok(s),
+            _ => bail!("syntax error: expected bulk string"),
+        });
+
+        let password = args
+            .next()
+            .ok_or_else(|| anyhow!("syntax error: expected password"))??
+            .clone();
+
+        let username = args.next().transpose()?.cloned();
+
+        if args.next().is_some() {
+            bail!("syntax error: too many args")
+        }
+
+        let token = UsernamePasswordToken { username, password };
+
+        let (one_tx, one_rx) = immediate_responder();
+
+        match self.build_connections(Some(token)).await {
+            Ok(()) => {
+                send_simple_response(one_tx, "OK")?;
+            }
+            Err(TransformError::Upstream(RedisError::BadCredentials)) => {
+                send_error_response(one_tx, "WRONGPASS invalid username-password")?;
+            }
+            Err(TransformError::Upstream(RedisError::NotAuthorized)) => {
+                send_error_response(one_tx, "NOPERM upstream user lacks required permission")?;
+            }
+            Err(TransformError::Upstream(e)) => {
+                send_error_response(one_tx, e.to_string().as_str())?;
+            }
+            Err(e) => {
+                bail!("authentication failed: {}", e);
+            }
+        }
+
+        Ok(Box::pin(one_rx))
     }
 }
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct SlotMap {
-    masters: BTreeMap<u16, String>,
-    replicas: BTreeMap<u16, String>,
+    pub masters: BTreeMap<u16, String>,
+    pub replicas: BTreeMap<u16, String>,
 
     // Hide redundant information.
     #[derivative(Debug = "ignore")]
-    nodes: HashSet<String>,
+    pub nodes: HashSet<String>,
 }
 
 impl SlotMap {
@@ -400,21 +493,32 @@ pub enum RoutingInfo {
     AllMasters,
     Random,
     Slot(u16),
+    Other(Command),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Command {
+    AUTH,
+}
+
+enum ChannelResult {
+    Channels(Vec<String>),
+    Other(Command),
 }
 
 impl RoutingInfo {
     #[inline(always)]
     pub fn for_command_frame(args: &[Frame]) -> Result<Option<RoutingInfo>> {
         let command_name = match args.get(0) {
-            Some(Frame::BulkString(command_name)) => command_name,
+            Some(Frame::BulkString(command_name)) => command_name.to_ascii_uppercase(),
             _ => bail!("syntax error: bad command name"),
         };
 
-        Ok(match command_name.as_ref() {
-            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" | b"ACL" => Some(RoutingInfo::AllMasters),
+        Ok(match command_name.as_slice() {
+            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" => Some(RoutingInfo::AllMasters),
             b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
             | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE" | b"TIME"
-            | b"KEYS" | b"AUTH" => Some(RoutingInfo::AllNodes),
+            | b"KEYS" | b"ACL" => Some(RoutingInfo::AllNodes),
             b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
             | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
             b"EVALSHA" | b"EVAL" => {
@@ -439,13 +543,14 @@ impl RoutingInfo {
             b"XREAD" | b"XREADGROUP" => args
                 .iter()
                 .position(|a| match a {
-                    Frame::BulkString(a) => a.as_ref() == b"STREAMS",
+                    Frame::BulkString(a) => a.to_ascii_uppercase() == b"STREAMS",
                     _ => false,
                 })
                 .and_then(|streams_position| {
                     args.get(streams_position + 1)
                         .and_then(RoutingInfo::for_key)
                 }),
+            b"AUTH" => Some(RoutingInfo::Other(Command::AUTH)),
             _ => match args.get(1) {
                 Some(key) => RoutingInfo::for_key(key),
                 None => Some(RoutingInfo::Random),
@@ -497,7 +602,7 @@ fn build_slot_to_server(
     Ok(())
 }
 
-fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
+pub fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
     let mut master_entries: Vec<(String, u16, u16)> = vec![];
     let mut replica_entries: Vec<(String, u16, u16)> = vec![];
 
@@ -535,10 +640,10 @@ fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
 }
 
 async fn get_topology_from_node(
-    sender: &UnboundedSender<Request>,
+    sender: UnboundedSender<Request>,
 ) -> Result<SlotMap, TransformError> {
     let return_chan_rx = send_frame_request(
-        sender,
+        &sender,
         Frame::Array(vec![
             Frame::BulkString(Bytes::from("CLUSTER")),
             Frame::BulkString(Bytes::from("SLOTS")),
@@ -578,6 +683,12 @@ fn short_circuit(one_tx: oneshot::Sender<Response>) {
     if let Err(e) = send_error_response(one_tx, "ERR Could not route request") {
         trace!("short circuiting - couldn't send error - {:?}", e);
     }
+}
+
+#[inline(always)]
+fn send_simple_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
+    send_frame_response(one_tx, Frame::SimpleString(message.to_string()))
+        .map_err(|_| anyhow!("failed to send simple: {}", message))
 }
 
 #[inline(always)]
@@ -654,9 +765,8 @@ fn immediate_responder() -> (
 #[async_trait]
 impl Transform for RedisCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        if self.rebuild_slots {
-            self.rebuild_slot_map().await?;
-            self.rebuild_slots = false;
+        if self.rebuild_connections {
+            self.build_connections(self.token.clone()).await.ok();
         }
 
         let mut responses = FuturesOrdered::new();
@@ -690,34 +800,34 @@ impl Transform for RedisCluster {
             let mut response = response?;
             assert_eq!(response.messages.len(), 1);
             let response_m = response.messages.remove(0);
-            match response_m.original {
-                RawFrame::Redis(Frame::Moved { slot, host, port }) => {
-                    debug!("Got MOVE frame {} {} {}", slot, host, port);
+            match &response_m.original {
+                RawFrame::Redis(frame) => {
+                    match frame.to_redirection() {
+                        Some(Redirection::Moved { slot, server }) => {
+                            debug!("Got MOVE {} {}", slot, server);
 
-                    self.slots
-                        .masters
-                        .insert(slot, format!("{}:{}", &host, &port));
+                            // The destination of a MOVE should always be a master.
+                            self.slots.masters.insert(slot, server.clone());
 
-                    self.rebuild_slots = true;
+                            self.rebuild_connections = true;
 
-                    let one_rx = self
-                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
-                        .await?;
+                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
 
-                    responses.prepend(Box::pin(
-                        one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
-                    ));
-                }
-                RawFrame::Redis(Frame::Ask { slot, host, port }) => {
-                    debug!("Got ASK frame {} {} {}", slot, host, port);
+                            responses.prepend(Box::pin(
+                                one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
+                            ));
+                        }
+                        Some(Redirection::Ask { slot, server }) => {
+                            debug!("Got ASK {} {}", slot, server);
 
-                    let one_rx = self
-                        .choose_and_send(&format!("{}:{}", host, port), original.clone())
-                        .await?;
+                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
 
-                    responses.prepend(Box::pin(
-                        one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
-                    ));
+                            responses.prepend(Box::pin(
+                                one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
+                            ));
+                        }
+                        None => response_buffer.push(response_m),
+                    }
                 }
                 _ => response_buffer.push(response_m),
             }
@@ -728,10 +838,60 @@ impl Transform for RedisCluster {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "RedisCluster"
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Derivative)]
+#[derivative(Debug)]
+pub struct UsernamePasswordToken {
+    pub username: Option<Bytes>,
+
+    // Reduce risk of logging passwords.
+    #[derivative(Debug = "ignore")]
+    pub password: Bytes,
+}
+
+#[derive(Clone)]
+struct RedisAuthenticator {}
+
+#[async_trait]
+impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
+    type Error = TransformError;
+
+    async fn authenticate(
+        &self,
+        sender: &mut UnboundedSender<Request>,
+        token: &UsernamePasswordToken,
+    ) -> Result<(), TransformError> {
+        let mut auth_args = vec![Frame::BulkString(Bytes::from("AUTH"))];
+
+        // Support non-ACL / username-less.
+        if let Some(username) = &token.username {
+            auth_args.push(Frame::BulkString(username.clone()));
+        }
+
+        auth_args.push(Frame::BulkString(token.password.clone()));
+
+        let return_rx = send_frame_request(sender, Frame::Array(auth_args))?;
+
+        match receive_frame_response(return_rx).await? {
+            Frame::SimpleString(s) if s == "OK" => {
+                trace!("authenticated upstream as user: {:?}", token.username);
+                Ok(())
+            }
+            Frame::SimpleString(s) => Err(TransformError::Protocol(format!(
+                "expected OK but got: {}",
+                s
+            ))),
+            Frame::Error(e) => Err(TransformError::Upstream(RedisError::from_message(&e))),
+            f => Err(TransformError::Protocol(format!(
+                "unexpected response type: {:?}",
+                f
+            ))),
+        }
+    }
+}
 #[cfg(test)]
 mod test {
     use super::*;

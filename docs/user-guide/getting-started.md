@@ -10,14 +10,14 @@ exercise for the reader. To configure shotover, modify the included `config.yml`
 4. **Run** - To start shotover-proxy, start with the following command: ```./shotover-proxy``` 
 5. **Alternate Run** - to start shotover-proxy with a specific configuration file, start with the following command:```./shotover-proxy --config-file config.yml```
 
-
 To get more information about command line parameters you can pass to shotover:
 
-```
+```console
 ./shotover-proxy --help
 ```
 
 ## Deployment scenarios
+
 For in depth guides to common deployment scenarios see the following examples:
 
 * [Redis clustering](../examples/redis-clustering.md)

@@ -6,7 +6,6 @@ use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
 use tracing::debug;
-use tracing::error;
 use tracing::info;
 
 /// Runs a command and returns the output as a string.
@@ -26,7 +25,7 @@ fn run_command(command: &str, args: &[&str]) -> Result<String> {
         .capture()?;
 
     if data.exit_status.success() {
-        Ok(data.stdout_str().to_string())
+        Ok(data.stdout_str())
     } else {
         Err(anyhow!(
             "command {} {:?} exited with {:?} and output:\n{}",
@@ -75,8 +74,6 @@ impl DockerCompose {
     }
 
     /// Waits for a string to appear in the docker-compose log output.
-    ///
-    /// Uses `regex.is_match()` to locate the match.
     ///
     /// This is shorthand for `wait_for_n( log_text, 1 )`
     ///
@@ -183,6 +180,8 @@ impl Drop for DockerCompose {
     fn drop(&mut self) {
         if std::thread::panicking() {
             if let Err(err) = DockerCompose::clean_up(&self.file_path) {
+                // We need to use println! here instead of error! because error! does not
+                // get output when panicking
                 println!(
                     "ERROR: docker compose failed to bring down while already panicking: {:?}",
                     err

@@ -6,7 +6,6 @@ use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct Printer {
-    name: &'static str,
     counter: i32,
 }
 
@@ -18,10 +17,7 @@ impl Default for Printer {
 
 impl Printer {
     pub fn new() -> Printer {
-        Printer {
-            name: "Printer",
-            counter: 0,
-        }
+        Printer { counter: 0 }
     }
 }
 
@@ -36,6 +32,6 @@ impl Transform for Printer {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "Printer"
     }
 }

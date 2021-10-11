@@ -7,7 +7,6 @@ use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct Null {
-    name: &'static str,
     with_request: bool,
 }
 
@@ -19,15 +18,11 @@ impl Default for Null {
 
 impl Null {
     pub fn new() -> Null {
-        Null {
-            name: "Null",
-            with_request: true,
-        }
+        Null { with_request: true }
     }
 
     pub fn new_without_request() -> Null {
         Null {
-            name: "Null",
             with_request: false,
         }
     }
@@ -64,6 +59,6 @@ impl Transform for Null {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "Null"
     }
 }

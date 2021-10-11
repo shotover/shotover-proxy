@@ -10,7 +10,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use metrics::counter;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::trace;
 
 /*
@@ -20,7 +20,6 @@ It's the thing that owns tx and rx handles :D
 
 #[derive(Debug)]
 pub struct Buffer {
-    pub name: &'static str,
     pub tx: BufferedChain,
     pub async_mode: bool,
     pub buffer_size: usize,
@@ -28,7 +27,7 @@ pub struct Buffer {
     pub timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct BufferConfig {
     pub async_mode: bool,
     pub chain: Vec<TransformsConfig>,
@@ -40,7 +39,6 @@ impl Clone for Buffer {
     fn clone(&self) -> Self {
         let chain = self.chain_to_clone.clone();
         Buffer {
-            name: <&str>::clone(&self.name),
             tx: chain.into_buffered_chain(self.buffer_size),
             async_mode: false,
             buffer_size: self.buffer_size,
@@ -56,7 +54,6 @@ impl TransformsFromConfig for BufferConfig {
         let chain = build_chain_from_config("forward".to_string(), &self.chain, topics).await?;
         let buffer = self.buffer_size.unwrap_or(5);
         Ok(Transforms::MPSCForwarder(Buffer {
-            name: "forward",
             tx: chain.clone().into_buffered_chain(buffer),
             async_mode: self.async_mode,
             buffer_size: buffer,
@@ -79,7 +76,7 @@ impl Transform for Buffer {
             match buffer_result {
                 Ok(_) => {}
                 Err(e) => {
-                    counter!("tee_dropped_messages", 1, "chain" => self.name);
+                    counter!("tee_dropped_messages", 1, "chain" => self.get_name());
                     trace!("MPSC error {}", e);
                 }
             }
@@ -98,13 +95,12 @@ impl Transform for Buffer {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "forward"
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Tee {
-    pub name: &'static str,
     pub tx: BufferedChain,
     pub fail_chain: Option<BufferedChain>,
     pub buffer_size: usize,
@@ -113,14 +109,14 @@ pub struct Tee {
     pub timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum ConsistencyBehavior {
     IGNORE,
     FAIL,
     LOG { fail_chain: Vec<TransformsConfig> },
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehavior>,
     pub timeout_micros: Option<u64>,
@@ -144,7 +140,6 @@ impl TransformsFromConfig for TeeConfig {
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
         Ok(Transforms::MPSCTee(Tee {
-            name: "tee",
             tx: tee_chain.clone().into_buffered_chain(buffer_size),
             fail_chain,
             buffer_size,
@@ -172,7 +167,7 @@ impl Transform for Tee {
                 match tee_result {
                     Ok(_) => {}
                     Err(e) => {
-                        counter!("tee_dropped_messages", 1, "chain" => self.name);
+                        counter!("tee_dropped_messages", 1, "chain" => self.get_name());
                         trace!("MPSC error {}", e);
                     }
                 }
@@ -231,6 +226,6 @@ impl Transform for Tee {
     }
 
     fn get_name(&self) -> &'static str {
-        self.name
+        "tee"
     }
 }

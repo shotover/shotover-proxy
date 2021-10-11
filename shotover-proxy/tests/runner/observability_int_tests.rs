@@ -10,17 +10,21 @@ async fn test_metrics() {
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
 
-    let mut connection = shotover_manager.redis_connection(6379);
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     redis::cmd("SET")
         .arg("the_key")
         .arg(42)
-        .execute(&mut connection);
+        .query_async::<_, ()>(&mut connection)
+        .await
+        .unwrap();
 
     redis::cmd("SET")
         .arg("the_key")
         .arg(43)
-        .execute(&mut connection);
+        .query_async::<_, ()>(&mut connection)
+        .await
+        .unwrap();
 
     let client = hyper::Client::new();
     let uri = "http://localhost:9001/metrics".parse().unwrap();

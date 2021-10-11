@@ -1,3 +1,4 @@
+use anyhow::Error;
 use std::fmt;
 use std::io;
 
@@ -20,6 +21,9 @@ pub type Response = (Message, ChainResponse);
 pub enum ConnectionError<E: fmt::Debug + fmt::Display> {
     #[error("io error: {0}")]
     IO(io::Error),
+
+    #[error("TLS error: {0}")]
+    TLS(Error),
 
     #[error("authenticator error: {0}")]
     Authenticator(E),
