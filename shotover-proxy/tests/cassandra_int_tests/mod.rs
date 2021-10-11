@@ -21,7 +21,7 @@ impl CassandraTestContext {
 
         let mut cluster = Cluster::default();
         cluster.set_contact_points(contact_points).unwrap();
-        cluster.set_port(port);
+        cluster.set_port(port).ok();
         cluster.set_load_balance_round_robin();
         let mut session;
         //let query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
