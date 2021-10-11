@@ -74,7 +74,7 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
             // if there is a message for upstream send it
             if up_msg.is_some() {
                 // send up stream messages now
-                info!( "{:?} Return message: {:?}", thread::current().id(), &up_msg );
+                debug!( "{:?} Return message: {:?}", thread::current().id(), &up_msg );
                 tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
             }
             if an_err.is_some() {
@@ -85,10 +85,10 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
                 // new message with a protocol_error so that we filter it out in the
                 // next step.
                 Some(x) => {
-                    info!( "{:?} returning down message: {:?}", thread::current().id(), &x );
+                    debug!( "{:?} returning down message: {:?}", thread::current().id(), &x );
                     x},
                 None => {
-                    info!( "{:?} replacing down message with error for filter.", thread::current().id() );
+                    debug!( "{:?} replacing down message with error for filter.", thread::current().id() );
                     Message { // put a protocol error in (we will filter it out later)
                         details: MessageDetails::Unknown,
                         modified: true,
@@ -98,11 +98,11 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
                 },
             }
         } else {
-            info!( "{:?} cloning message: {:?}", thread::current().id(), &m );
+            debug!( "{:?} cloning message: {:?}", thread::current().id(), &m );
             m.clone()
         }
     }).filter(|m| m.protocol_error == 0).for_each(|m| result.push(m));
-    info!( "{:?} handle_protocol_error returning: {:?}", thread::current().id(), &result );
+    debug!( "{:?} handle_protocol_error returning: {:?}", thread::current().id(), &result );
 
     Messages {
         messages: result,
@@ -219,7 +219,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // The `accept` method internally attempts to recover errors, so an
             // error here is non-recoverable.
             let socket = self.accept().await?;
-            info!("{:?} got socket", thread::current().id());
+            debug!("{:?} got socket", thread::current().id());
             gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64,"source" => self.source_name.clone());
 
             let peer = socket
@@ -233,7 +233,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 .unwrap_or_else(|_| "Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
-            info!(
+            debug!(
                 "{:?} New connection from {}", thread::current().id(),
                 socket
                     .peer_addr()
@@ -380,7 +380,7 @@ fn spawn_read_write_tasks<
             match message {
                 Ok(message) => {
                     let filtered_messages = handle_protocol_error( &codec, message, &out_tx);
-                    info!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
+                    debug!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
                     if let Err(error) = in_tx.send(filtered_messages) {
                         warn!("{:?} failed to send message: {}", thread::current().id(), error);
                         return;
@@ -436,7 +436,7 @@ impl<C: Codec + 'static> Handler<C> {
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
-            info!("{:?} Waiting for message", thread::current().id());
+            debug!("{:?} Waiting for message", thread::current().id());
             let messages: Messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
@@ -472,11 +472,11 @@ impl<C: Codec + 'static> Handler<C> {
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            info!("{:?} Received raw message {:?}", thread::current().id(), messages);
+            debug!("{:?} Received raw message {:?}", thread::current().id(), messages);
 
             let filtered_messages = handle_protocol_error(&self.codec,messages, &out_tx);
-            info!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
-            info!( "{:?} client details: {:?}", thread::current().id(), &self.client_details) ;
+            debug!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
+            debug!( "{:?} client details: {:?}", thread::current().id(), &self.client_details) ;
 
             match self
                 .chain

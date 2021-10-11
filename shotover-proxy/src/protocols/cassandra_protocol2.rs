@@ -16,7 +16,7 @@ use tokio_util::codec::{Decoder, Encoder};
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::str::FromStr;
-use tracing::{info, trace, warn};
+use tracing::{info, trace, debug, warn};
 
 use crate::message::{Messages, QueryType};
 use crate::protocols::RawFrame;
@@ -643,15 +643,15 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        info!("{:?} Decoding {:?}", thread::current().id(), src.to_vec() );
+        debug!("{:?} Decoding {:?}", thread::current().id(), src.to_vec() );
         match self.decode_raw(src) {
             Ok(Some(frame)) => {
-                info!( "{:?} Decoded {:?}", thread::current().id(), &frame );
+                debug!( "{:?} Decoded {:?}", thread::current().id(), &frame );
                 Ok(Some(self.process_cassandra_frame(frame)))
             },
             Ok(None) => Ok(None),
             Err(e) => {
-                info!( "{:?} CDRSError {:?}", thread::current().id(), &e );
+                debug!( "{:?} CDRSError {:?}", thread::current().id(), &e );
                 let error_frame = Frame {
                     version: Version::Response,
                     flags: vec![],
@@ -691,7 +691,7 @@ impl CodecErrorFixup for CassandraCodec2
 impl CassandraCodec2 {
 
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
-        info!( "{:?} encode_message  {:?}", thread::current().id(), &item );
+        debug!( "{:?} encode_message  {:?}", thread::current().id(), &item );
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -715,7 +715,7 @@ impl CassandraCodec2 {
         // if frame.body.len() == 0 {
         //     info!("encoding zero length body");
         // }
-        info!( "{:?} Encoded message as {:?}", thread::current().id(),  &frame );
+        debug!( "{:?} Encoded message as {:?}", thread::current().id(),  &frame );
         Ok(frame)
     }
 }
@@ -729,11 +729,11 @@ impl Encoder<Messages> for CassandraCodec2 {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
-            info!( "{:?} Encoding {:?}", thread::current().id(), &m );
+            debug!( "{:?} Encoding {:?}", thread::current().id(), &m );
             match self.encode_message(m) {
                 Ok(frame) => {
                     self.encode_raw(frame, dst);
-                    info!( "{:?} Encoded frame as {:?}", thread::current().id(), dst);
+                    debug!( "{:?} Encoded frame as {:?}", thread::current().id(), dst);
                 },
                 Err(e) => {
                     warn!("{:?} Couldn't encode frame {:?}", thread::current().id(), e);
