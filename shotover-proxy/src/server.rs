@@ -1,4 +1,4 @@
-use crate::message::Messages;
+use crate::message::{Messages, Message, MessageDetails};
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
@@ -17,6 +17,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace, warn};
+use crate::protocols::RawFrame;
+use std::thread;
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
@@ -26,9 +28,90 @@ impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecRea
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
+pub trait CodecErrorFixup {
+    /// An method to fix up an error.
+    ///
+    /// Codecs that do not have additional error handling should return `(None, None, Optional<Err>)`
+    ///
+    /// Returns a tuple comprising:
+    ///  * `up_msg` An optional message to send back to the source of the original message.
+    ///  * `down_msg` An optional message to send down chain in the direction the original message was
+    /// flowing.
+    ///  * `an_err` An optional error.  May be the same or a different error.  The Error will be
+    /// processed normally.
+    ///
+    /// # Arguments
+    /// `err` - The original error.
+    ///
+    fn fixup_err(
+        &self,
+        message : Message,
+    ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>);
+
+}
+
+///
+/// Process the messages.  Any messages with protocol errors are handled by calling the `codec.fixup_err`
+/// method and processing the results.
+/// The resulting Messages contains:
+/// * Any original messages that do not have the protocol_error set.
+/// * Any upstream messages produced by processing the protocol_error message.
+///
+/// Messages that only produce errors for logging or down stream messages are removed from the
+/// result.
+///
+fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out :&UnboundedSender<Messages>) -> Messages {
+    // this code creates a new Vec and uses an iterator with mapping and filtering to determine
+    // populate it from the original Messages.message Vec.  It may be more efficient to scan the
+    // original Vec and replace or delete individual Message in place.
+    let mut result = Vec::with_capacity(messages.messages.len());
+    messages.into_iter().map(|m| {
+        // if there is a protocol error handle it otherwise return the original message.
+        // One thorough the mapping if the message has a protocol_error is dropped.
+        if m.protocol_error != 0 {
+            info!( "{:?} processing protocol error: {:?}", thread::current().id(), &m );
+            let (up_msg, down_msg, an_err) = codec.fixup_err(m);
+            // if there is a message for upstream send it
+            if up_msg.is_some() {
+                // send up stream messages now
+                debug!( "{:?} Return message: {:?}", thread::current().id(), &up_msg );
+                tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
+            }
+            if an_err.is_some() {
+                error!("{:?} (protocol error) chain processing error - {}", thread::current().id(), an_err.unwrap());
+            }
+            match down_msg {
+                // If there is a down stream message return it otherwise, create a
+                // new message with a protocol_error so that we filter it out in the
+                // next step.
+                Some(x) => {
+                    debug!( "{:?} returning down message: {:?}", thread::current().id(), &x );
+                    x},
+                None => {
+                    debug!( "{:?} replacing down message with error for filter.", thread::current().id() );
+                    Message { // put a protocol error in (we will filter it out later)
+                        details: MessageDetails::Unknown,
+                        modified: true,
+                        original: RawFrame::None,
+                        protocol_error: 1,
+                    }
+                },
+            }
+        } else {
+            debug!( "{:?} cloning message: {:?}", thread::current().id(), &m );
+            m.clone()
+        }
+    }).filter(|m| m.protocol_error == 0).for_each(|m| result.push(m));
+    debug!( "{:?} handle_protocol_error returning: {:?}", thread::current().id(), &result );
+
+    Messages {
+        messages: result,
+    }
+}
+
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf {}
-impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
+pub trait Codec: CodecReadHalf + CodecWriteHalf + CodecErrorFixup {}
+impl<T: CodecReadHalf + CodecWriteHalf + CodecErrorFixup> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
     /// Shared database handle.
@@ -93,7 +176,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
-        info!("accepting inbound connections");
+        info!("{:?} accepting inbound connections", thread::current().id());
 
         loop {
             // Wait for a permit to become available
@@ -134,7 +217,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // The `accept` method internally attempts to recover errors, so an
             // error here is non-recoverable.
             let socket = self.accept().await?;
-
+            debug!("{:?} got socket", thread::current().id());
             gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64,"source" => self.source_name.clone());
 
             let peer = socket
@@ -148,8 +231,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 .unwrap_or_else(|_| "Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
-            info!(
-                "New connection from {}",
+            debug!(
+                "{:?} New connection from {}", thread::current().id(),
                 socket
                     .peer_addr()
                     .map(|p| format!("{}", p))
@@ -191,7 +274,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             tokio::spawn(async move {
                 // Process the connection. If an error is encountered, log it.
                 if let Err(err) = handler.run(socket).await {
-                    error!(cause = ?err, "connection error");
+                    error!(cause = ?err, "{:?} connection error", thread::current().id());
                 }
             });
         }
@@ -291,21 +374,24 @@ fn spawn_read_write_tasks<
     tx: W,
     in_tx: UnboundedSender<Messages>,
     out_rx: UnboundedReceiver<Messages>,
+    out_tx: UnboundedSender<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
-    let writer = FramedWrite::new(tx, codec);
+    let writer = FramedWrite::new(tx, codec.clone());
 
     tokio::spawn(async move {
         while let Some(message) = reader.next().await {
             match message {
                 Ok(message) => {
-                    if let Err(error) = in_tx.send(message) {
-                        warn!("failed to send message: {}", error);
+                    let filtered_messages = handle_protocol_error( &codec, message, &out_tx);
+                    debug!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
+                    if let Err(error) = in_tx.send(filtered_messages) {
+                        warn!("{:?} failed to send message: {}", thread::current().id(), error);
                         return;
                     }
                 }
                 Err(error) => {
-                    warn!("failed to decode message: {}", error);
+                    warn!("{:?} failed to decode message: {}", thread::current().id(), error);
                     return;
                 }
             }
@@ -315,12 +401,14 @@ fn spawn_read_write_tasks<
     tokio::spawn(async move {
         let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
         if let Err(err) = rx_stream.forward(writer).await {
-            error!("Stream ended with error {:?}", err);
+            error!("{:?} Stream ended with error {:?}", thread::current().id(), err);
         }
+
     });
 }
 
 impl<C: Codec + 'static> Handler<C> {
+
     /// Process a single connection.
     ///
     /// Request frames are read from the socket and processed. Responses are
@@ -335,6 +423,7 @@ impl<C: Codec + 'static> Handler<C> {
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
+        info!( "{:?} Handler run() started", thread::current().id());
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         let mut idle_time_seconds: u64 = 1;
@@ -345,16 +434,16 @@ impl<C: Codec + 'static> Handler<C> {
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         };
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
-            trace!("Waiting for message");
-            let frame = tokio::select! {
+            debug!("{:?} Waiting for message", thread::current().id());
+            let messages: Messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
@@ -366,16 +455,17 @@ impl<C: Codec + 'static> Handler<C> {
                         },
                         Err(_) => {
                             if idle_time_seconds < 35 {
-                                trace!("Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                                trace!("{:?} Connection Idle for more than {} seconds {}", thread::current().id(),
+                                    idle_time_seconds, self.conn_details);
                             } else {
-                                debug!("Dropping. Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                                debug!("{:?} Dropping. Connection Idle for more than {} seconds {}",
+                                    thread::current().id(), idle_time_seconds, self.conn_details);
                                 return Ok(());
                             }
                             idle_time_seconds *= 2;
                             continue
                         }
                     }
-
                 },
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
@@ -388,27 +478,32 @@ impl<C: Codec + 'static> Handler<C> {
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            trace!("Received raw message {:?}", frame);
+            debug!("{:?} Received raw message {:?}", thread::current().id(), messages);
+
+            let filtered_messages = handle_protocol_error(&self.codec,messages, &out_tx);
+            debug!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
+            debug!( "{:?} client details: {:?}", thread::current().id(), &self.client_details) ;
+
             match self
                 .chain
                 .process_request(
-                    Wrapper::new_with_client_details(frame, self.client_details.clone()),
+                    Wrapper::new_with_client_details(filtered_messages, self.client_details.clone()),
                     self.client_details.clone(),
                 )
                 .await
             {
                 Ok(modified_message) => {
+                    // send the result of the process up stream
                     out_tx.send(modified_message)?;
                 }
                 Err(e) => {
-                    error!("chain processing error - {}", e);
-                    return Ok(());
+                    error!("{:?} process_request chain processing error - {}", thread::current().id(), e);
                 }
             }
         }
-
         Ok(())
     }
+
 }
 
 impl<C: Codec> Drop for Handler<C> {
@@ -469,7 +564,7 @@ impl Shutdown {
 
         // check we didn't receive a shutdown message before the receiver was created
         if !*self.notify.borrow() {
-            // Await the shutdown messsage
+            // Await the shutdown message
             self.notify.changed().await.unwrap();
         }
 

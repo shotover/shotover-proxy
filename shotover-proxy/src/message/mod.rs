@@ -46,7 +46,11 @@ impl IntoIterator for Messages {
 pub struct Message {
     pub details: MessageDetails,
     pub modified: bool,
+    /// The frame in the format defined by the protocol.
     pub original: RawFrame,
+    /// If protocol_error != 0 then the message is a protocol_error message that may
+    /// require special handling as described in `Handler<C>.handle_protocol_error()`
+    pub protocol_error : i32,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -63,6 +67,7 @@ impl Message {
             details,
             modified,
             original,
+            protocol_error : 0,
         }
     }
 
@@ -93,6 +98,7 @@ impl Message {
             details,
             modified,
             original: RawFrame::None,
+            protocol_error:0,
         }
     }
 
@@ -104,6 +110,7 @@ impl Message {
                 details: MessageDetails::Bypass(Box::new(self.details)),
                 modified: false,
                 original: self.original,
+                protocol_error : self.protocol_error,
             }
         }
     }

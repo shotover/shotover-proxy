@@ -9,6 +9,7 @@ fn redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
     group.throughput(criterion::Throughput::Elements(1));
 
+
     {
         let mut state = None;
         group.bench_function("active", move |b| {
@@ -65,6 +66,7 @@ fn redis(c: &mut Criterion) {
             })
         });
     }
+
 
     {
         let mut state = None;

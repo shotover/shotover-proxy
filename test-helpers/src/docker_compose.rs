@@ -84,6 +84,12 @@ impl DockerCompose {
     /// # Panics
     /// * If `log_text` is not found within 60 seconds.
     ///
+    /// # Example
+    /// ```
+    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    ///         .wait_for("Ready to accept connections");
+    /// ```
+    ///
     pub fn wait_for(self, log_text: &str) -> Self {
         self.wait_for_n(log_text, 1)
     }
@@ -98,17 +104,54 @@ impl DockerCompose {
     /// * `count` - The number of times the regular expression should be found.
     ///
     /// # Panics
-    /// * If `count` occurrences of `log_text` is not found in the log within 60 seconds.
+    /// * If `count` occurances of `log_text` is not found in the log within 60 seconds.
+    ///
+    /// # Example
+    /// ```
+    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    ///         .wait_for("Ready to accept connections", 3);
+    /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
-        info!("wait_for_n: '{}' {}", log_text, count);
+    self.wait_for_n_t(log_text, count, 60)
+    }
+
+    /// Waits for a string to appear in the docker-compose log output `count` times within `time` seconds.
+    ///
+    /// Counts the number of items returned by `regex.find_iter`.
+    ///
+    /// # Arguments
+    /// * `log_text` - A regular expression defining the text to find in the docker-container log
+    /// output.
+    /// * `count` - The number of times the regular expression should be found.
+    /// * `time` - The number of seconds to wait for the count to be found.
+    ///
+    /// # Panics
+    /// * If `count` occurances of `log_text` is not found in the log within `time` seconds.
+    ///
+    /// # Example
+    /// ```
+    /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    ///         .wait_for("Ready to accept connections", 3, 65);
+    /// ```
+    pub fn wait_for_n_t(self, log_text: &str, count: usize, time :u64 ) -> Self {
+        info!("wait_for_n_t: '{}' {} {}", log_text, count, time);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
-        let sys_time = time::Instant::now();
+        let sys_time = time::SystemTime::now();
         let mut result = run_command("docker-compose", &args).unwrap();
         while re.find_iter(&result).count() < count {
-            if sys_time.elapsed().as_secs() > 30 {
-                panic!("wait_for_n timer expired. Log output: {}", result);
+            match sys_time.elapsed() {
+                Ok(elapsed) => {
+                    if elapsed.as_secs() > time {
+                        debug!("{}", result);
+                        panic!("wait_for: Timer expired");
+                    }
+                }
+                Err(e) => {
+                    // an error occurred!
+                    info!("Clock aberration: {:?}", e);
+                }
             }
             debug!("wait_for_n: looping");
             result = run_command("docker-compose", &args).unwrap();
@@ -141,6 +184,10 @@ impl Drop for DockerCompose {
                 // get output when panicking
                 println!(
                     "ERROR: docker compose failed to bring down while already panicking: {:?}",
+                    err
+                );
+                error!(
+                    "docker compose failed to bring down while already panicking: {:?}",
                     err
                 );
             }

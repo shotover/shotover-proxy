@@ -51,7 +51,7 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { git = "https://github.com/shotover/redis-protocol.rs", branch = "shotover_fork" }
-cassandra-proto = { git = "https://github.com/shotover/cassandra-proto", branch = "move-to-bytes", features = ["v4"] }
+cassandra-proto = { git = "https://github.com/Claude-at-Instaclustr/cassandra-proto", branch = "OPTION_fix", features = ["v4"]}
 rdkafka = { version = "0.26", features = ["cmake-build"] }
 crc16 = { version = "0.4.0" }
 
@@ -71,6 +71,7 @@ threadpool = "1.0"
 tokio-io-timeout = "1.1.1"
 num_cpus = "1.0"
 serial_test = "0.5.1"
+cassandra-cpp = "0.17.0"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
 nix = "0.22.1"
