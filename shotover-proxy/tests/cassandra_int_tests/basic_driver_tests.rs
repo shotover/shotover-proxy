@@ -18,8 +18,8 @@ fn test_create_keyspace() {
 
 #[test]
 fn test_basic_connection() -> Result<()> {
-    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
-    thread::sleep(time::Duration::from_secs(10));
+    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
+        .wait_for_n( "Startup complete", 3 );;
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
@@ -37,8 +37,8 @@ fn test_basic_connection() -> Result<()> {
 
 #[test]
 fn test_create_keyspace_direct() {
-    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
-    thread::sleep(time::Duration::from_secs(10));
+    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
+        .wait_for_n( "Startup complete", 3 );;
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
