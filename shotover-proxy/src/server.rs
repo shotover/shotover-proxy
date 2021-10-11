@@ -69,12 +69,12 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
         // if there is a protocol error handle it otherwise return the original message.
         // One thorough the mapping if the message has a protocol_error is dropped.
         if m.protocol_error != 0 {
-            info!( "proccess-{:?} processing protocol error: {:?}", thread::current().id(), &m );
+            info!( "{:?} processing protocol error: {:?}", thread::current().id(), &m );
             let (up_msg, down_msg, an_err) = codec.fixup_err(m);
             // if there is a message for upstream send it
             if up_msg.is_some() {
                 // send up stream messages now
-                info!( "proccess-{:?} Return message: {:?}", thread::current().id(), &up_msg );
+                info!( "{:?} Return message: {:?}", thread::current().id(), &up_msg );
                 tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
             }
             if an_err.is_some() {
@@ -85,10 +85,10 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
                 // new message with a protocol_error so that we filter it out in the
                 // next step.
                 Some(x) => {
-                    info!( "proccess-{:?} returning down message: {:?}", thread::current().id(), &x );
+                    info!( "{:?} returning down message: {:?}", thread::current().id(), &x );
                     x},
                 None => {
-                    info!( "proccess-{:?} replacing down message with error for filter.", thread::current().id() );
+                    info!( "{:?} replacing down message with error for filter.", thread::current().id() );
                     Message { // put a protocol error in (we will filter it out later)
                         details: MessageDetails::Unknown,
                         modified: true,
@@ -98,11 +98,11 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
                 },
             }
         } else {
-            info!( "proccess-{:?} cloning message: {:?}", thread::current().id(), &m );
+            info!( "{:?} cloning message: {:?}", thread::current().id(), &m );
             m.clone()
         }
     }).filter(|m| m.protocol_error == 0).for_each(|m| result.push(m));
-    info!( "proccess-{:?} handle_protocol_error returning: {:?}", thread::current().id(), &result );
+    info!( "{:?} handle_protocol_error returning: {:?}", thread::current().id(), &result );
 
     Messages {
         messages: result,
@@ -476,6 +476,7 @@ impl<C: Codec + 'static> Handler<C> {
 
             let filtered_messages = handle_protocol_error(&self.codec,messages, &out_tx);
             info!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
+            info!( "{:?} client details: {:?}", thread::current().id(), &self.client_details) ;
 
             match self
                 .chain
@@ -491,7 +492,7 @@ impl<C: Codec + 'static> Handler<C> {
                     // let _ = self.chain.lua_runtime.gc_collect(); // TODO is this a good idea??
                 }
                 Err(e) => {
-                    error!("{:?} chain processing error - {}", thread::current().id(), e);
+                    error!("{:?} process_request chain processing error - {}", thread::current().id(), e);
                 }
             }
         }
