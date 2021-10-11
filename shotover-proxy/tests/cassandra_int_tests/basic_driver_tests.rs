@@ -35,7 +35,7 @@ fn test_basic_connection() -> Result<()> {
     Ok(())
 }
 
-#[test]:wq
+#[test]
 fn test_create_keyspace_direct() {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
     thread::sleep(time::Duration::from_secs(10));
@@ -53,6 +53,6 @@ fn test_create_keyspace_direct() {
     let query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
-    let ctx = CassandraTestContext::new_with_points( "127.0.0.1:9043");
+    let ctx = CassandraTestContext::new_with_points_and_port( "127.0.0.1" ,9043);
     ctx.session.execute(&query).wait().unwrap();
 }
