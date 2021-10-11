@@ -102,6 +102,8 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
             m.clone()
         }
     }).filter(|m| m.protocol_error == 0).for_each(|m| result.push(m));
+    info!( "proccess-{:?} handle_protocol_error returning: {:?}", thread::current().id(), &result );
+
     Messages {
         messages: result,
     }
@@ -378,6 +380,7 @@ fn spawn_read_write_tasks<
             match message {
                 Ok(message) => {
                     let filtered_messages = handle_protocol_error( &codec, message, &out_tx);
+                    info!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
                     if let Err(error) = in_tx.send(filtered_messages) {
                         warn!("{:?} failed to send message: {}", thread::current().id(), error);
                         return;
@@ -472,6 +475,7 @@ impl<C: Codec + 'static> Handler<C> {
             info!("{:?} Received raw message {:?}", thread::current().id(), messages);
 
             let filtered_messages = handle_protocol_error(&self.codec,messages, &out_tx);
+            info!( "{:?} filtered_messages: {:?}", thread::current().id(), filtered_messages) ;
 
             match self
                 .chain

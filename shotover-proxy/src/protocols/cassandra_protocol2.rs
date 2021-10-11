@@ -900,7 +900,7 @@ mod cassandra_protocol_tests {
             vec!["pk".to_string(), "clustering".to_string()],
         );
 
-        let mut codec = CassandraCodec2::new(pk_map, false);
+        let codec = CassandraCodec2::new(pk_map, false);
         let messages = codec.process_cassandra_frame(frame);
         assert_eq!( 1, messages.messages.len());
         for message in messages {
