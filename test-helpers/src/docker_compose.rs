@@ -116,7 +116,7 @@ impl DockerCompose {
     /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
-    self.wait_for_n_t(log_text, 1, 60)
+    self.wait_for_n_t(log_text, count, 60)
     }
 
     /// Waits for a string to appear in the docker-compose log output `count` times within `time` seconds.
