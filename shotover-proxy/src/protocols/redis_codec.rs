@@ -559,12 +559,14 @@ impl RedisCodec {
                         details: process_redis_frame(&frame, self.decode_as_response)?,
                         modified: false,
                         original: RawFrame::Redis(frame),
+                        protocol_error : 0,
                     })
                 } else {
                     Ok(Message {
                         details: MessageDetails::Unknown,
                         modified: false,
                         original: RawFrame::Redis(frame),
+                        protocol_error : 0,
                     })
                 }
             })

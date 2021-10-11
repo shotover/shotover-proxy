@@ -5,8 +5,7 @@ use std::process::Command;
 use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
-use tracing::debug;
-use tracing::info;
+use tracing::{debug, info, error};
 
 /// Runs a command and returns the output as a string.
 ///
@@ -156,7 +155,7 @@ impl DockerCompose {
             debug!("wait_for_n: looping");
             result = run_command("docker-compose", &args).unwrap();
         }
-        info!("wait_for_n_t: found '{}' {} times in {} seconds", log_text, count, sys_time.elapsed() );
+        info!("wait_for_n_t: found '{}' {} times in {:?} seconds", log_text, count, sys_time.elapsed() );
         self
     }
 
