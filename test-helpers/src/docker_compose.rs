@@ -148,7 +148,7 @@ impl DockerCompose {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > time {
                         debug!("{}", result);
-                        panic!("wait_for: Timer expired");
+                        panic!("wait_for: {} second timer expired. Found {}  instances of '{}' in the log", time, re.find_iter(&result).count(), log_text);
                     }
                 }
                 Err(e) => {
@@ -159,7 +159,7 @@ impl DockerCompose {
             debug!("wait_for_n: looping");
             result = run_command("docker-compose", &args).unwrap();
         }
-        info!("wait_for_n: found '{}' {} times", log_text, count);
+        info!("wait_for_n_t: found '{}' {} times in {} seconds", log_text, count, sys_time.elapsed() );
         self
     }
 
