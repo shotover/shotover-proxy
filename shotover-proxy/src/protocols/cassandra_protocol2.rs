@@ -691,7 +691,7 @@ impl CodecErrorFixup for CassandraCodec2
 impl CassandraCodec2 {
 
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
-        info!( "{:?} Encoding message {:?}", thread::current().id(), &item );
+        info!( "{:?} encode_message  {:?}", thread::current().id(), &item );
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -752,6 +752,9 @@ mod cassandra_protocol_tests {
     use hex_literal::hex;
     use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
+    use cassandra_proto::frame::{Frame, Opcode,Version};
+
+    use crate::protocols::RawFrame::Cassandra;
 
     const STARTUP_BYTES: [u8; 31] =
         hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
@@ -874,6 +877,49 @@ mod cassandra_protocol_tests {
                     );
                 }
                 details => panic!("Unexpected details: {:?}", details),
+            }
+        }
+    }
+
+    #[test]
+    fn test_process_cassandra_frame() {
+        // Frame { version: Request, flags: [], opcode: Options, stream: 0, body: [], tracing_id: None, warnings: [] }
+        let frame =  Frame {
+            version: Version::Request,
+            flags: vec![],
+            opcode: Opcode::Options,
+            stream: 0,
+            body: vec![],
+            tracing_id: None,
+            warnings: vec![],
+        };
+        let mut pk_map = HashMap::new();
+        pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
+        pk_map.insert(
+            "test.clustering".to_string(),
+            vec!["pk".to_string(), "clustering".to_string()],
+        );
+
+        let mut codec = CassandraCodec2::new(pk_map, false);
+        let messages = codec.process_cassandra_frame(frame);
+        assert_eq!( 1, messages.messages.len());
+        for message in messages {
+            match message.details {
+                MessageDetails::Unknown => {},
+                details => panic!("Unexpected details: {:?}", details),
+            };
+            assert!( ! message.modified );
+            match message.original {
+                Cassandra(cframe) => {
+                    assert_eq!(Version::Request, cframe.version);
+                    assert_eq!(0, cframe.flags.len());
+                    assert_eq!(Opcode::Options, cframe.opcode);
+                    assert_eq!(0, cframe.stream);
+                    assert_eq!(0, cframe.body.len());
+                    assert_eq!(None, cframe.tracing_id);
+                    assert_eq!(0, cframe.warnings.len());
+                }
+                original => panic!("Unexpected original: {:?}", original),
             }
         }
     }

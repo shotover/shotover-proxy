@@ -69,6 +69,7 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
         // if there is a protocol error handle it otherwise return the original message.
         // One thorough the mapping if the message has a protocol_error is dropped.
         if m.protocol_error != 0 {
+            info!( "proccess-{:?} processing protocol error: {:?}", thread::current().id(), &m );
             let (up_msg, down_msg, an_err) = codec.fixup_err(m);
             // if there is a message for upstream send it
             if up_msg.is_some() {
@@ -83,15 +84,21 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
                 // If there is a down stream message return it otherwise, create a
                 // new message with a protocol_error so that we filter it out in the
                 // next step.
-                Some(x) => x,
-                None => Message { // put a protocol error in (we will filter it out later)
-                    details: MessageDetails::Unknown,
-                    modified: true,
-                    original: RawFrame::None,
-                    protocol_error: 1,
+                Some(x) => {
+                    info!( "proccess-{:?} returning down message: {:?}", thread::current().id(), &x );
+                    x},
+                None => {
+                    info!( "proccess-{:?} replacing down message with error for filter.", thread::current().id() );
+                    Message { // put a protocol error in (we will filter it out later)
+                        details: MessageDetails::Unknown,
+                        modified: true,
+                        original: RawFrame::None,
+                        protocol_error: 1,
+                    }
                 },
             }
         } else {
+            info!( "proccess-{:?} cloning message: {:?}", thread::current().id(), &m );
             m.clone()
         }
     }).filter(|m| m.protocol_error == 0).for_each(|m| result.push(m));
