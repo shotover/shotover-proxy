@@ -7,31 +7,31 @@ assignees: ''
 
 ---
 
-**Describe the bug**
+## Describe the bug
 A clear and concise description of what the bug is.
 
-**To Reproduce**
+## To Reproduce
 Steps to reproduce the behavior:
 1.
 2. 
 ...
 
-**Configuration**
+## Configuration
 
-***Topology***
+### Topology
 ```
 // Your topology.yaml file
 ```
 
-If you have any configuration for setting up services such as`docker-compose` that the `topology.yaml` depends on then please include that as well.
+Please include any configuration for setting up services such as `docker-compose` that the `topology.yaml` depends on.
 
-**Expected behaviour**
+## Expected behaviour
 A clear and concise description of what you expected to happen.
 
-**Systems and Version:**
+## Systems and Version:
  - OS
  - Shotover Version
  - Version of 3rd party software e.g. Cassandra, Redis
 
-**Additional context**
+## Additional context
 Add any other context about the problem here.
