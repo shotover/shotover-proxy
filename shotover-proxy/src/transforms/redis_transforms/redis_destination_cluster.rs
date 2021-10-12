@@ -37,14 +37,14 @@ const SLOT_SIZE: usize = 16384;
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct RedisClusterConfig {
+pub struct RedisDestinationClusterConfig {
     pub first_contact_points: Vec<String>,
     pub tls: Option<TlsConfig>,
     connection_count: Option<usize>,
 }
 
 #[async_trait]
-impl TransformsFromConfig for RedisClusterConfig {
+impl TransformsFromConfig for RedisDestinationClusterConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         let authenticator = RedisAuthenticator {};
 
@@ -54,7 +54,7 @@ impl TransformsFromConfig for RedisClusterConfig {
             self.tls.clone(),
         )?;
 
-        let mut cluster = RedisCluster {
+        let mut cluster = RedisDestinationCluster {
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
             load_scores: HashMap::new(),
@@ -79,13 +79,13 @@ impl TransformsFromConfig for RedisClusterConfig {
             }
         }
 
-        Ok(Transforms::RedisCluster(cluster))
+        Ok(Transforms::RedisDestinationCluster(cluster))
     }
 }
 
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-pub struct RedisCluster {
+pub struct RedisDestinationCluster {
     pub slots: SlotMap,
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
@@ -98,7 +98,7 @@ pub struct RedisCluster {
     token: Option<UsernamePasswordToken>,
 }
 
-impl RedisCluster {
+impl RedisDestinationCluster {
     #[inline]
     async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
         let command = match message.original {
@@ -760,7 +760,7 @@ fn immediate_responder() -> (
 }
 
 #[async_trait]
-impl Transform for RedisCluster {
+impl Transform for RedisDestinationCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
             self.build_connections(self.token.clone()).await.ok();
@@ -835,7 +835,7 @@ impl Transform for RedisCluster {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisCluster"
+        "RedisDestinationCluster"
     }
 }
 

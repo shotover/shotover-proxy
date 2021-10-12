@@ -16,37 +16,37 @@ use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct RedisCodecConfiguration {
+pub struct RedisDestinationSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub tls: Option<TlsConfig>,
 }
 
 #[async_trait]
-impl TransformsFromConfig for RedisCodecConfiguration {
+impl TransformsFromConfig for RedisDestinationSingleConfig {
     async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
-        Ok(Transforms::RedisCodecDestination(
-            RedisCodecDestination::new(self.address.clone(), tls),
+        Ok(Transforms::RedisDestinationSingle(
+            RedisDestinationSingle::new(self.address.clone(), tls),
         ))
     }
 }
 
-pub struct RedisCodecDestination {
+pub struct RedisDestinationSingle {
     address: String,
     tls: Option<TlsConnector>,
     outbound: Option<Framed<Pin<Box<dyn AsyncStream + Send + Sync>>, RedisCodec>>,
 }
 
-impl Clone for RedisCodecDestination {
+impl Clone for RedisDestinationSingle {
     fn clone(&self) -> Self {
-        RedisCodecDestination::new(self.address.clone(), self.tls.clone())
+        RedisDestinationSingle::new(self.address.clone(), self.tls.clone())
     }
 }
 
-impl RedisCodecDestination {
-    pub fn new(address: String, tls: Option<TlsConnector>) -> RedisCodecDestination {
-        RedisCodecDestination {
+impl RedisDestinationSingle {
+    pub fn new(address: String, tls: Option<TlsConnector>) -> RedisDestinationSingle {
+        RedisDestinationSingle {
             address,
             tls,
             outbound: None,
@@ -55,7 +55,7 @@ impl RedisCodecDestination {
 }
 
 #[async_trait]
-impl Transform for RedisCodecDestination {
+impl Transform for RedisDestinationSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.outbound.is_none() {
             let tcp_stream = TcpStream::connect(self.address.clone()).await.unwrap();
@@ -82,7 +82,7 @@ impl Transform for RedisCodecDestination {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisCodecDestination"
+        "RedisDestinationSingle"
     }
 }
 
