@@ -303,7 +303,7 @@ mod test {
     use tokio::time::timeout;
 
     use super::spawn_read_write_tasks;
-    use crate::protocols::redis_codec::RedisCodec;
+    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 
     #[tokio::test]
     async fn test_remote_shutdown() {
@@ -328,7 +328,7 @@ mod test {
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let (rx, tx) = stream.into_split();
-        let codec = RedisCodec::new(true, 3);
+        let codec = RedisCodec::new(DecodeType::Response, 3);
         let sender = spawn_read_write_tasks(&codec, rx, tx);
 
         assert!(remote.await.unwrap());
@@ -368,7 +368,7 @@ mod test {
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let (rx, tx) = stream.into_split();
-        let codec = RedisCodec::new(true, 3);
+        let codec = RedisCodec::new(DecodeType::Response, 3);
 
         // Drop sender immediately.
         std::mem::drop(spawn_read_write_tasks(&codec, rx, tx));

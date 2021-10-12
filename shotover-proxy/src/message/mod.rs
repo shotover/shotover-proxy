@@ -66,9 +66,15 @@ impl Message {
         }
     }
 
-    pub fn generate_message_details(&mut self, response: bool) {
+    pub fn generate_message_details_response(&mut self) {
         if let MessageDetails::Unknown = self.details {
-            self.details = self.original.build_message(response).unwrap()
+            self.details = self.original.build_message_response().unwrap()
+        }
+    }
+
+    pub fn generate_message_details_query(&mut self) {
+        if let MessageDetails::Unknown = self.details {
+            self.details = self.original.build_message_query().unwrap() // TODO: this will panic on non utf8 data
         }
     }
 

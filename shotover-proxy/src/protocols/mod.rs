@@ -16,10 +16,22 @@ pub enum RawFrame {
 }
 
 impl RawFrame {
-    pub fn build_message(&self, response: bool) -> Result<MessageDetails> {
+    pub fn build_message_response(&self) -> Result<MessageDetails> {
         match self {
             RawFrame::Cassandra(_c) => Ok(MessageDetails::Unknown),
-            RawFrame::Redis(frame) => redis_codec::process_redis_frame(frame, response),
+            RawFrame::Redis(frame) => {
+                redis_codec::process_redis_frame_response(frame).map(MessageDetails::Response)
+            }
+            RawFrame::None => Ok(MessageDetails::Unknown),
+        }
+    }
+
+    pub fn build_message_query(&self) -> Result<MessageDetails> {
+        match self {
+            RawFrame::Cassandra(_c) => Ok(MessageDetails::Unknown),
+            RawFrame::Redis(frame) => {
+                redis_codec::process_redis_frame_query(frame).map(MessageDetails::Query)
+            }
             RawFrame::None => Ok(MessageDetails::Unknown),
         }
     }
