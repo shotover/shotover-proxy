@@ -21,7 +21,7 @@ chain_config:
   redis_chain:
     - MPSCTee:
         topic_name: testtopic
-    - RedisDestination:
+    - RedisDestinationSingle:
         remote_address: "127.0.0.1:6378"
   main_chain:
     - MPSCTee:

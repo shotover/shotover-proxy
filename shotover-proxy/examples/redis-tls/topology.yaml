@@ -14,7 +14,7 @@ sources:
         private_key_path: "examples/redis-tls/tls_keys/redis.key"
 chain_config:
   redis_chain_tls:
-    - RedisDestination:
+    - RedisDestinationSingle:
         remote_address: "127.0.0.1:1111"
         tls:
           certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt"

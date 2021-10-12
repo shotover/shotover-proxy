@@ -42,7 +42,7 @@ This transform will take a query and push it to a given Kafka topic.
 * `keys` - A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver. See
  [here for details](https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html) E.g `bootstrap.servers: "127.0.0.1:9092"`.
 
-### RedisCodecDestination
+### RedisDestinationSingle
 
 *State: Alpha*
 
