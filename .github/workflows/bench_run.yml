@@ -1,0 +1,41 @@
+name: Benchmark Run
+
+on:
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ./cache
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install ubuntu packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gnuplot libpcap-dev
+    - name: Install latest stable
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: stable
+          override: true
+    - name: Run benchmarks
+      run: shotover-proxy/tests/scripts/bench_against_master.sh ${{ github.event.number }}
+    - name: Upload comment artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: comment_info
+        path: comment_info/
+    - name: Cleanup docker
+      run: shotover-proxy/tests/scripts/teardown.sh
