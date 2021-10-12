@@ -38,6 +38,9 @@ jobs:
             var matchArtifact = artifacts.data.artifacts.filter((artifact) => {
               return artifact.name == "comment_info"
             })[0];
+            if (!matchArtifact) {
+              throw 'comment_info artifact was not produced by the previous workflow';
+            }
             var download = await github.actions.downloadArtifact({
                owner: context.repo.owner,
                repo: context.repo.repo,
@@ -53,7 +56,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             var fs = require('fs');
-            if (fs.exists('./issue_number.txt')) {
+            if (fs.existsSync('./issue_number.txt')) {
               var issue_number = Number(fs.readFileSync('./issue_number.txt'));
               var message = fs.readFileSync('./message.txt');
               await github.issues.createComment({
