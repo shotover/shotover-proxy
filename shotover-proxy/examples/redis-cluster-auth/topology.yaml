@@ -6,7 +6,7 @@ sources:
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
-    - RedisCluster:
+    - RedisDestinationCluster:
         first_contact_points:
           [
             "127.0.0.1:2230",

@@ -105,7 +105,7 @@ mod test {
     use super::*;
     use crate::{
         protocols::redis_codec::RedisCodec,
-        transforms::redis_transforms::redis_cluster::parse_slots,
+        transforms::redis_transforms::redis_destination_cluster::parse_slots,
     };
     use tokio_util::codec::Decoder;
 

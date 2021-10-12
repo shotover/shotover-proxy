@@ -35,7 +35,7 @@ sources:
       batch_size_hint: 100
 chain_config:
   redis_chain:
-    - RedisCluster:
+    - RedisDestinationCluster:
         first_contact_points: ["redis://192.168.0.1/", "redis://192.168.0.2/"]
 named_topics:
   testtopic: 5
