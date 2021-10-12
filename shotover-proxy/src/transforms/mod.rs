@@ -10,8 +10,8 @@ use serde::Deserialize;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages};
-use crate::transforms::cassandra::cassandra_codec_destination::{
-    CassandraCodecConfiguration, CassandraCodecDestination,
+use crate::transforms::cassandra::cassandra_destination_single::{
+    CassandraDestinationSingle, CassandraDestinationSingleConfig,
 };
 use metrics::{counter, histogram};
 
@@ -67,7 +67,7 @@ pub mod util;
 
 #[derive(Clone)]
 pub enum Transforms {
-    CassandraCodecDestination(CassandraCodecDestination),
+    CassandraDestinationSingle(CassandraDestinationSingle),
     RedisDestinationSingle(RedisDestinationSingle),
     KafkaDestination(KafkaDestination),
     RedisCache(SimpleRedisCache),
@@ -99,7 +99,7 @@ impl Debug for Transforms {
 impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CassandraCodecDestination(c) => c.transform(message_wrapper).await,
+            Transforms::CassandraDestinationSingle(c) => c.transform(message_wrapper).await,
             Transforms::KafkaDestination(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::MPSCTee(m) => m.transform(message_wrapper).await,
@@ -124,7 +124,7 @@ impl Transforms {
 
     fn get_name(&self) -> &'static str {
         match self {
-            Transforms::CassandraCodecDestination(c) => c.get_name(),
+            Transforms::CassandraDestinationSingle(c) => c.get_name(),
             Transforms::KafkaDestination(k) => k.get_name(),
             Transforms::RedisCache(r) => r.get_name(),
             Transforms::MPSCTee(m) => m.get_name(),
@@ -149,7 +149,7 @@ impl Transforms {
 
     async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         match self {
-            Transforms::CassandraCodecDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::CassandraDestinationSingle(a) => a.prep_transform_chain(t).await,
             Transforms::RedisDestinationSingle(a) => a.prep_transform_chain(t).await,
             Transforms::KafkaDestination(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
@@ -175,7 +175,7 @@ impl Transforms {
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
-    CassandraCodecDestination(CassandraCodecConfiguration),
+    CassandraDestinationSingle(CassandraDestinationSingleConfig),
     RedisDestinationSingle(RedisDestinationSingleConfig),
     KafkaDestination(KafkaConfig),
     RedisCache(RedisConfig),
@@ -197,7 +197,7 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms> {
         match self {
-            TransformsConfig::CassandraCodecDestination(c) => c.get_source(topics).await,
+            TransformsConfig::CassandraDestinationSingle(c) => c.get_source(topics).await,
             TransformsConfig::KafkaDestination(k) => k.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::MPSCTee(t) => t.get_source(topics).await,

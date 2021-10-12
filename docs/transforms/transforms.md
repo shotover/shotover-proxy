@@ -2,7 +2,7 @@
 
 Currently shotover proxy supports the following transforms:
 
-* CassandraCodecDestination
+* CassandraDestinationSingle
 * KafkaDestination
 * RedisCodecDestination
 * RedisCluster
