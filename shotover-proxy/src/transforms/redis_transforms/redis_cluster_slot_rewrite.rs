@@ -107,29 +107,28 @@ mod test {
         protocols::redis_codec::RedisCodec,
         transforms::redis_transforms::redis_cluster::parse_slots,
     };
-    use hyper::body::Bytes;
     use tokio_util::codec::Decoder;
 
     #[test]
     fn test_is_cluster_slots() {
         let combos = [
-            ("cluster", "slots"),
-            ("CLUSTER", "SLOTS"),
-            ("cluster", "SLOTS"),
-            ("CLUSTER", "slots"),
+            (b"cluster", b"slots"),
+            (b"CLUSTER", b"SLOTS"),
+            (b"cluster", b"SLOTS"),
+            (b"CLUSTER", b"slots"),
         ];
 
         for combo in combos {
             let frame = RawFrame::Redis(Frame::Array(vec![
-                Frame::BulkString(Bytes::from(combo.0)),
-                Frame::BulkString(Bytes::from(combo.1)),
+                Frame::BulkString(combo.0.to_vec()),
+                Frame::BulkString(combo.1.to_vec()),
             ]));
             assert!(is_cluster_slots(&frame));
         }
 
         let frame = RawFrame::Redis(Frame::Array(vec![
-            Frame::BulkString(Bytes::from("GET")),
-            Frame::BulkString(Bytes::from("key1")),
+            Frame::BulkString(b"GET".to_vec()),
+            Frame::BulkString(b"key1".to_vec()),
         ]));
 
         assert!(!is_cluster_slots(&frame));
