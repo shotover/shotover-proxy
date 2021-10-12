@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
 use shotover_proxy::message::{Messages, QueryMessage, QueryType};
@@ -57,9 +56,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
         let wrapper = Wrapper::new(Messages::new_single_bypass(RawFrame::Redis(Frame::Array(
             vec![
-                Frame::BulkString(Bytes::from(b"SET".to_vec())),
-                Frame::BulkString(Bytes::from(b"foo".to_vec())),
-                Frame::BulkString(Bytes::from(b"bar".to_vec())),
+                Frame::BulkString(b"SET".to_vec()),
+                Frame::BulkString(b"foo".to_vec()),
+                Frame::BulkString(b"bar".to_vec()),
             ],
         ))));
 
