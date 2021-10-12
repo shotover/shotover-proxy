@@ -34,7 +34,7 @@ use crate::transforms::redis_transforms::redis_cluster::{RedisCluster, RedisClus
 use crate::transforms::redis_transforms::redis_cluster_slot_rewrite::{
     RedisClusterSlotRewrite, RedisClusterSlotRewriteConfig,
 };
-use crate::transforms::redis_transforms::redis_codec_destination::{
+use crate::transforms::redis_transforms::redis_destination_single::{
     RedisDestinationSingle, RedisDestinationSingleConfig,
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
