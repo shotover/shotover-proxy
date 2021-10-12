@@ -19,7 +19,7 @@ impl RawFrame {
     pub fn build_message(&self, response: bool) -> Result<MessageDetails> {
         match self {
             RawFrame::Cassandra(_c) => Ok(MessageDetails::Unknown),
-            RawFrame::Redis(r) => redis_codec::process_redis_frame(r, response),
+            RawFrame::Redis(frame) => redis_codec::process_redis_frame(frame, response),
             RawFrame::None => Ok(MessageDetails::Unknown),
         }
     }
@@ -28,7 +28,7 @@ impl RawFrame {
     pub fn get_query_type(&self) -> QueryType {
         match self {
             RawFrame::Cassandra(_) => QueryType::ReadWrite,
-            RawFrame::Redis(r) => redis_codec::redis_query_type(r),
+            RawFrame::Redis(frame) => redis_codec::redis_query_type(frame),
             RawFrame::None => QueryType::ReadWrite,
         }
     }

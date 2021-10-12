@@ -537,13 +537,14 @@ impl RedisCodec {
         }
     }
 
-    pub fn get_batch_hint(&self) -> usize {
+    #[allow(unused)]
+    fn get_batch_hint(&self) -> usize {
         self.batch_hint
     }
 
     pub fn process_redis_bulk(&self, frames: Vec<Frame>) -> Result<Messages> {
         trace!("processing bulk response {:?}", frames);
-        let result: Result<Messages> = frames
+        frames
             .into_iter()
             .map(|frame| {
                 if self.enable_metadata {
@@ -560,27 +561,27 @@ impl RedisCodec {
                     })
                 }
             })
-            .collect();
-        result
+            .collect()
     }
 
-    pub fn build_redis_response_frame(resp: QueryResponse) -> Frame {
-        if let Some(result) = &resp.result {
-            return result.clone().into();
+    fn build_redis_response_frame(resp: QueryResponse) -> Frame {
+        if let Some(result) = resp.result {
+            return result.into();
         }
-        if let Some(Value::Strings(s)) = &resp.error {
-            return Frame::Error(s.clone());
+        if let Some(Value::Strings(s)) = resp.error {
+            return Frame::Error(s);
         }
 
         debug!("{:?}", resp);
         Frame::SimpleString("OK".to_string())
     }
 
-    pub fn build_redis_query_frame(query: QueryMessage) -> Frame {
-        if let Some(ASTHolder::Commands(Value::List(ast))) = &query.ast {
-            Frame::Array(ast.iter().cloned().map(|v| v.into()).collect())
-        } else {
-            Frame::SimpleString(query.query_string)
+    fn build_redis_query_frame(query: QueryMessage) -> Frame {
+        match query.ast {
+            Some(ASTHolder::Commands(Value::List(ast))) => {
+                Frame::Array(ast.into_iter().map(|v| v.into()).collect())
+            }
+            _ => Frame::SimpleString(query.query_string),
         }
     }
 
@@ -612,14 +613,11 @@ impl RedisCodec {
             self.current_frames,
             src.remaining()
         );
-        let mut return_buf: Vec<Frame> = vec![];
-        std::mem::swap(&mut self.current_frames, &mut return_buf);
 
-        if return_buf.is_empty() {
+        if self.current_frames.is_empty() {
             Ok(None)
         } else {
-            trace!("Batch size {:?}", return_buf.len());
-            Ok(Some(return_buf))
+            Ok(Some(std::mem::take(&mut self.current_frames)))
         }
     }
 
