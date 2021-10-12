@@ -41,7 +41,7 @@ This transform will take a query and push it to a given Kafka topic.
 * `topic` - A String containing the name of the kafka topic. E.g. `topic: "my_kafka_topic"`
 * `keys` - A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver. See
  [here for details](https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html) E.g `bootstrap.servers: "127.0.0.1:9092"`.
- 
+
 ### RedisCodecDestination
 
 *State: Alpha*
@@ -64,6 +64,12 @@ Unlike other redis-cluster drivers, this Transform does support pipelining. It d
 
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
+#### Differences to real Redis
+
+On an existing authenticated connection, a failed auth attempt will not "unauthenticate" the user. This behaviour matches Redis 6 but is different to Redis 5.
+
+#### Completeness
+
 _Note: Currently Redis-cluster does not support the following functionality:_
 
 * _Redis Transactions_
@@ -73,7 +79,7 @@ _Note: Currently Redis-cluster does not support the following functionality:_
 
 #### State: Beta*
 
-This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel succesfully. 
+This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel succesfully.
 
 * `topic_name` - A string with the topic name to push queries/messages into. E.g. `topic_name: testtopic`
 
@@ -183,7 +189,7 @@ This transform will attempt to cache values for a given primary key in a redis h
 
 This transform will encrypt specific fields before passing them down-chain, it will also decrypt those same fields from a response. The transform will create a data encryption key on an user defined basis (e.g. per primary key, per value, per table etc).
 
-The data encryption key is encrypted by a key encryption key and persisted alongside the encrypted value (alongside other needed cryptographic material). This transform provides the basis for in-application cryptography with unified key management between datastores. The encrypted value is serialised using bincode and should then be written to a blob or bytes field by a down-chain transform. 
+The data encryption key is encrypted by a key encryption key and persisted alongside the encrypted value (alongside other needed cryptographic material). This transform provides the basis for in-application cryptography with unified key management between datastores. The encrypted value is serialised using bincode and should then be written to a blob or bytes field by a down-chain transform.
 
 Fields are protected using a NaCL secretbox (xsalsa20-poly1305). Modification of the field is also detected and raised as an error. DEK protection is dependent on the key manager being used.
 
@@ -192,7 +198,7 @@ Fields are protected using a NaCL secretbox (xsalsa20-poly1305). Modification of
 
 Currently the Protect transform supports AWS KMS and or using a local Key Encryption Key on disk. See [key management](keys.md)
 
-Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly. 
+Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly.
 
 ### TuneableConsistency
 
