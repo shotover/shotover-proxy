@@ -4,8 +4,8 @@ Currently shotover proxy supports the following transforms:
 
 * CassandraDestinationSingle
 * KafkaDestination
-* RedisCodecDestination
-* RedisCluster
+* RedisDestinationSingle
+* RedisDestinationCluster
 * MPSCForwarder
 * MPSCTee
 * Route
@@ -21,7 +21,7 @@ Currently shotover proxy supports the following transforms:
 
 The following transforms will all return a response, any transform after them in the chain won't ever get a request.
 
-### CassandraCodecDestination
+### CassandraDestinationSingle
 
 *State: Alpha*
 
@@ -52,7 +52,7 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-### RedisCluster
+### RedisDestinationCluster
 
 *State: Beta*
 
@@ -109,13 +109,13 @@ If the transform cannot find a route in its route_map, it will default to callin
 ```yaml
 route_map:
   main_cluster:
-  - CassandraCodecDestination:
+  - CassandraDestinationSingle:
       remote_address: "127.0.0.1:9043"
   customer1_cluster:
-  - CassandraCodecDestination:
+  - CassandraDestinationSingle:
       remote_address: "127.1.0.2:9043"
   customer2_cluster:
-  - CassandraCodecDestination:
+  - CassandraDestinationSingle:
       remote_address: "127.2.0.3:9043"
 ```
 
@@ -145,13 +145,13 @@ If the transform cannot find a route in its route_map, it will default to callin
 ```yaml
 route_map:
   main_cluster:
-  - CassandraCodecDestination:
+  - CassandraDestinationSingle:
       remote_address: "127.0.0.1:9043"
   customer1_cluster:
-  - CassandraCodecDestination:
+  - CassandraDestinationSingle:
       remote_address: "127.1.0.2:9043"
   customer2_cluster:
-  - CassandraCodecDestination:
+  - CassandraDestinationSingle:
       remote_address: "127.2.0.3:9043"
 ```
 
@@ -216,13 +216,13 @@ Upon receiving the configured number of responses, the transform will attempt to
 ```yaml
 route_map:
   cluster1:
-    - CassandraCodecDestination:
+    - CassandraDestinationSingle:
        remote_address: "127.0.0.1:9043"
   cluster2:
-   - CassandraCodecDestination:
+   - CassandraDestinationSingle:
        remote_address: "127.1.0.2:9043"
   cluster3:
-   - CassandraCodecDestination:
+   - CassandraDestinationSingle:
        remote_address: "127.2.0.3:9043"
 ```
 
@@ -243,6 +243,6 @@ No configuration is required for this transform.
 
 *State: Alpha*
 
-This transform should be used with the RedisCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
+This transform should be used with the RedisDestinationCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
 
 * `new_port`- Value to write over the ports returned by `CLUSTER SLOTS`

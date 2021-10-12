@@ -157,6 +157,6 @@ impl Transform for CassandraDestinationSingle {
     }
 
     fn get_name(&self) -> &'static str {
-        "CassandraCodecDestination"
+        "CassandraDestinationSingle"
     }
 }

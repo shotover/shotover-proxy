@@ -66,7 +66,7 @@ Aug 17 12:11:42.878  INFO shotover_proxy::config::topology: Loaded sources [["re
 Aug 17 12:11:42.878  INFO shotover_proxy::server: accepting inbound connections
 ```
 
-Currently the RedisCluster transform, needs to be able to connect to the redis cluster when it starts up. If it cannot, shotover proxy will exit with a panic, indicating it couldn't connect to the contact points. 
+Currently the RedisDestinationCluster transform, needs to be able to connect to the redis cluster when it starts up. If it cannot, shotover proxy will exit with a panic, indicating it couldn't connect to the contact points. 
 
 Note: Currently `shotover-proxy` cannot daemonize itself. So you may wish to use a service supervisor to do this for you or you can simply run this in a different terminal session in development/testing scenarios :)
 
