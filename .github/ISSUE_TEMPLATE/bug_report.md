@@ -16,10 +16,14 @@ Steps to reproduce the behavior:
 2. 
 ...
 
-**Topology**
+**Configuration**
+
+***Topology***
 ```
 // Your topology.yaml file
 ```
+
+If you have any configuration for setting up services such as`docker-compose` that the `topology.yaml` depends on then please include that as well.
 
 **Expected behaviour**
 A clear and concise description of what you expected to happen.
