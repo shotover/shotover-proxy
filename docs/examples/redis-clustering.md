@@ -21,7 +21,7 @@ First we will modify our config.yml file to have a single Redis source. This wil
 
 * define how shotover listens for incoming connections from our client application (`redis-benchmark`).
 * configure shotover to connect to the redis cluster via our defined contact points
-* connect our redis source to our redis cluster destination (transform).
+* connect our redis source to our redis cluster sink (transform).
 
 The below configuration will do the trick.
 

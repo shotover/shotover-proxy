@@ -1,1 +1,1 @@
-pub mod cassandra_destination_single;
+pub mod cassandra_sink_single;

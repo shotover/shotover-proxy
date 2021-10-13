@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages};
-use crate::transforms::cassandra::cassandra_destination_single::{
+use crate::transforms::cassandra::cassandra_sink_single::{
     CassandraSinkSingle, CassandraSinkSingleConfig,
 };
 use metrics::{counter, histogram};
@@ -21,7 +21,7 @@ use crate::transforms::distributed::tunable_consistency_scatter::{
     TunableConsistency, TunableConsistencyConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::kafka_destination::{KafkaConfig, KafkaSink};
+use crate::transforms::kafka_sink::{KafkaConfig, KafkaSink};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
 use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
@@ -33,10 +33,10 @@ use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisC
 use crate::transforms::redis_transforms::redis_cluster_slot_rewrite::{
     RedisClusterSlotRewrite, RedisClusterSlotRewriteConfig,
 };
-use crate::transforms::redis_transforms::redis_destination_cluster::{
+use crate::transforms::redis_transforms::redis_sink_cluster::{
     RedisSinkCluster, RedisSinkClusterConfig,
 };
-use crate::transforms::redis_transforms::redis_destination_single::{
+use crate::transforms::redis_transforms::redis_sink_single::{
     RedisSinkSingle, RedisSinkSingleConfig,
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
@@ -49,7 +49,7 @@ pub mod chain;
 pub mod coalesce;
 pub mod distributed;
 pub mod filter;
-pub mod kafka_destination;
+pub mod kafka_sink;
 pub mod load_balance;
 pub mod mpsc;
 pub mod noop;
@@ -275,7 +275,7 @@ tokio::task_local! {
 impl<'a> Wrapper<'a> {
     pub async fn call_next_transform(mut self) -> ChainResponse {
         if self.transforms.is_empty() {
-            panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a Destination transform to send the messages somewhere.");
+            panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a terminating sink transform to send the messages somewhere.");
         }
         let transform = self.transforms.remove(0);
 

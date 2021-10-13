@@ -36,7 +36,7 @@ Shotover prioritises the following principals in the order listed:
 4. Extensibility
 5. Performance
 
-Shotover provides a set of predefined transforms that can modify, route and control queries from any number of sources to a similar number of destinations. As the user you can construct chains of these transforms to achieve the behaviour required. Each transform is configurable and functionality can generally be extended by Lua or WASM scripts. Each chain can then be attached to a "source" that speaks the native protocol of you chosen database. The transform chain will process each request with access to a unified/simplified representation of a generic query, the original raw query and optionally (for SQL like protocols) a parsed AST representing the query.
+Shotover provides a set of predefined transforms that can modify, route and control queries from any number of sources to a similar number of sinks. As the user you can construct chains of these transforms to achieve the behaviour required. Each transform is configurable and functionality can generally be extended by Lua or WASM scripts. Each chain can then be attached to a "source" that speaks the native protocol of you chosen database. The transform chain will process each request with access to a unified/simplified representation of a generic query, the original raw query and optionally (for SQL like protocols) a parsed AST representing the query.
 
 You can also implement your own transforms and sources using Lua, WASM (Python, C, Ruby, Javascript, etc) or natively with Rust. For concrete examples of what you can achieve with shotover-proxy, see the following examples:
 
