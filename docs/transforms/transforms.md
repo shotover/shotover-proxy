@@ -2,14 +2,12 @@
 
 Currently shotover proxy supports the following transforms:
 
-* CassandraDestinationSingle
-* KafkaDestination
-* RedisDestinationSingle
-* RedisDestinationCluster
+* CassandraSinkSingle
+* KafkaSink
+* RedisSinkSingle
+* RedisSinkCluster
 * MPSCForwarder
 * MPSCTee
-* Route
-* Scatter
 * Printer
 * RedisCache
 * Protect
@@ -21,7 +19,7 @@ Currently shotover proxy supports the following transforms:
 
 The following transforms will all return a response, any transform after them in the chain won't ever get a request.
 
-### CassandraDestinationSingle
+### CassandraSinkSingle
 
 *State: Alpha*
 
@@ -32,7 +30,7 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-### KafkaDestination
+### KafkaSink
 
 *State: Alpha*
 
@@ -42,7 +40,7 @@ This transform will take a query and push it to a given Kafka topic.
 * `keys` - A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver. See
  [here for details](https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html) E.g `bootstrap.servers: "127.0.0.1:9092"`.
 
-### RedisDestinationSingle
+### RedisSinkSingle
 
 *State: Alpha*
 
@@ -52,7 +50,7 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-### RedisDestinationCluster
+### RedisSinkCluster
 
 *State: Beta*
 
@@ -94,80 +92,6 @@ These Transforms will all perform some action on the query/message, before calli
 This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the downstream transform.
 
 * `topic_name` - A string with the topic name to push queries/messages into. E.g. `topic_name: testtopic`
-
-### Route
-
-*State: Alpha*
-
-This transform will route a query to one of the sub-TransformChains defined in its configuration based on the route chosen by a user defined Lua script. Once the transform has looked up the right chain, it will then call it and wait for its response.
-
-If the transform cannot find a route in its route_map, it will default to calling the next chain in it's own TransformChain (not it's route_map).
-
-* `route_map` - A map of named chains. The name will be the lookup key in which the Route transform expects from the lua script.
- E.g.
-
-```yaml
-route_map:
-  main_cluster:
-  - CassandraDestinationSingle:
-      remote_address: "127.0.0.1:9043"
-  customer1_cluster:
-  - CassandraDestinationSingle:
-      remote_address: "127.1.0.2:9043"
-  customer2_cluster:
-  - CassandraDestinationSingle:
-      remote_address: "127.2.0.3:9043"
-```
-
-* `route_script` - A ScriptConfigurator object that expects a `script_type`, `function_name` and `script_definition`.The route script can either by a Lua script or a WASM function. See [user defined functions](../user-guide/functions.md) for more details. The function expects a`QueryMessage` (the request/query) and a `Vec<String>` (a list of possible routes) and needs to return a string containing the name of the chosen sub-chain. E.g.
-
-```yaml
-route_script:
-  script_type: "lua"
-  function_name: "route"
-  script_definition: "
-function route(queryMessage, routes)
-   return 'main_cluster'
-end
-"
-```
-
-### Scatter
-
-*State: Alpha*
-
-This transform will route a query to one or more of the sub-TransformChains defined in its configuration based on the route chosen by a user defined Lua script. Once the transform has looked up the right chains, it will then call each chain with a copy of the request/message and wait for each response. The transform will then collate each responses values and return it as a FragmentedResponse (a list of responses) to the up-chain transform.
-
-If the transform cannot find a route in its route_map, it will default to calling the next chain in it's own TransformChain (not it's route_map).
-
-* `route_map` - A map of named chains. The name will be the lookup key in which the Route transform expects from the lua script. E.g.
-  
-```yaml
-route_map:
-  main_cluster:
-  - CassandraDestinationSingle:
-      remote_address: "127.0.0.1:9043"
-  customer1_cluster:
-  - CassandraDestinationSingle:
-      remote_address: "127.1.0.2:9043"
-  customer2_cluster:
-  - CassandraDestinationSingle:
-      remote_address: "127.2.0.3:9043"
-```
-
-* `route_script` - A ScriptConfigurator object that expects a `script_type`, `function_name` and `script_definition`.The route script can either by a Lua script or a WASM function. See [user defined functions](../user-guide/functions.md) for more details. The function expects a`QueryMessage` (the request/query) and a `Vec<String>` (a list of possible routes) and needs to return array of strings (the chain names) to use. 
-E.g.
-
-```yaml
-route_script:
-  script_type: "lua"
-  function_name: "route"
-  script_definition: "
-function route(queryMessage)
-   return {'main_cluster', 'customer1_cluster'}
-end
-"
-```
 
 ### Printer
 
@@ -216,13 +140,13 @@ Upon receiving the configured number of responses, the transform will attempt to
 ```yaml
 route_map:
   cluster1:
-    - CassandraDestinationSingle:
+    - CassandraSinkSingle:
        remote_address: "127.0.0.1:9043"
   cluster2:
-   - CassandraDestinationSingle:
+   - CassandraSinkSingle:
        remote_address: "127.1.0.2:9043"
   cluster3:
-   - CassandraDestinationSingle:
+   - CassandraSinkSingle:
        remote_address: "127.2.0.3:9043"
 ```
 
@@ -243,6 +167,6 @@ No configuration is required for this transform.
 
 *State: Alpha*
 
-This transform should be used with the RedisDestinationCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
+This transform should be used with the RedisSinkCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
 
 * `new_port`- Value to write over the ports returned by `CLUSTER SLOTS`

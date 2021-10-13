@@ -14,7 +14,7 @@ use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Clone)]
-pub struct KafkaDestination {
+pub struct KafkaSink {
     producer: FutureProducer,
     pub topic: String,
 }
@@ -29,29 +29,27 @@ pub struct KafkaConfig {
 #[async_trait]
 impl TransformsFromConfig for KafkaConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::KafkaDestination(
-            KafkaDestination::new_from_config(&self.keys, self.topic.clone()),
-        ))
+        Ok(Transforms::KafkaSink(KafkaSink::new_from_config(
+            &self.keys,
+            self.topic.clone(),
+        )))
     }
 }
 
-impl KafkaDestination {
-    pub fn new_from_config(
-        config_map: &HashMap<String, String>,
-        topic: String,
-    ) -> KafkaDestination {
+impl KafkaSink {
+    pub fn new_from_config(config_map: &HashMap<String, String>, topic: String) -> KafkaSink {
         let mut config = ClientConfig::new();
         for (k, v) in config_map.iter() {
             config.set(k.as_str(), v.as_str());
         }
-        KafkaDestination {
+        KafkaSink {
             producer: config.create().expect("Producer creation error"),
             topic,
         }
     }
 
-    pub fn new() -> KafkaDestination {
-        KafkaDestination {
+    pub fn new() -> KafkaSink {
+        KafkaSink {
             producer: ClientConfig::new()
                 .set("bootstrap.servers", "127.0.0.1:9092")
                 .set("message.timeout.ms", "5000")
@@ -62,14 +60,14 @@ impl KafkaDestination {
     }
 }
 
-impl Default for KafkaDestination {
+impl Default for KafkaSink {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl Transform for KafkaDestination {
+impl Transform for KafkaSink {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut responses: Vec<Message> = vec![];
         for message in message_wrapper.message.messages {

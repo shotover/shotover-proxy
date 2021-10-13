@@ -21,38 +21,39 @@ use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct CassandraDestinationSingleConfig {
+pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub bypass_result_processing: bool,
 }
 
 #[async_trait]
-impl TransformsFromConfig for CassandraDestinationSingleConfig {
+impl TransformsFromConfig for CassandraSinkSingleConfig {
     async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::CassandraDestinationSingle(
-            CassandraDestinationSingle::new(self.address.clone(), self.bypass_result_processing),
-        ))
+        Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
+            self.address.clone(),
+            self.bypass_result_processing,
+        )))
     }
 }
 
 #[derive(Debug)]
-pub struct CassandraDestinationSingle {
+pub struct CassandraSinkSingle {
     address: String,
     outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec2>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
 }
 
-impl Clone for CassandraDestinationSingle {
+impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
-        CassandraDestinationSingle::new(self.address.clone(), self.bypass)
+        CassandraSinkSingle::new(self.address.clone(), self.bypass)
     }
 }
 
-impl CassandraDestinationSingle {
-    pub fn new(address: String, bypass: bool) -> CassandraDestinationSingle {
-        CassandraDestinationSingle {
+impl CassandraSinkSingle {
+    pub fn new(address: String, bypass: bool) -> CassandraSinkSingle {
+        CassandraSinkSingle {
             address,
             outbound: None,
             cassandra_ks: HashMap::new(),
@@ -61,7 +62,7 @@ impl CassandraDestinationSingle {
     }
 }
 
-impl CassandraDestinationSingle {
+impl CassandraSinkSingle {
     async fn send_message(&mut self, messages: Messages) -> ChainResponse {
         loop {
             match self.outbound {
@@ -151,12 +152,12 @@ impl CassandraDestinationSingle {
 }
 
 #[async_trait]
-impl Transform for CassandraDestinationSingle {
+impl Transform for CassandraSinkSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         self.send_message(message_wrapper.message).await
     }
 
     fn get_name(&self) -> &'static str {
-        "CassandraDestinationSingle"
+        "CassandraSinkSingle"
     }
 }

@@ -2,9 +2,9 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::cassandra::cassandra_destination_single::CassandraDestinationSingleConfig;
+use crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingleConfig;
 use crate::transforms::chain::TransformChain;
-use crate::transforms::kafka_destination::KafkaConfig;
+use crate::transforms::kafka_sink::KafkaConfig;
 use crate::transforms::mpsc::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
@@ -188,7 +188,7 @@ impl Topology {
     }
 
     pub fn get_demo_config() -> Topology {
-        let kafka_transform_config_obj = TransformsConfig::KafkaDestination(KafkaConfig {
+        let kafka_transform_config_obj = TransformsConfig::KafkaSink(KafkaConfig {
             keys: [
                 ("bootstrap.servers", "127.0.0.1:9092"),
                 ("message.timeout.ms", "5000"),
@@ -203,11 +203,10 @@ impl Topology {
 
         let server_addr = "127.0.0.1:9042".to_string();
 
-        let codec_config =
-            TransformsConfig::CassandraDestinationSingle(CassandraDestinationSingleConfig {
-                address: server_addr,
-                bypass_result_processing: false,
-            });
+        let codec_config = TransformsConfig::CassandraSinkSingle(CassandraSinkSingleConfig {
+            address: server_addr,
+            bypass_result_processing: false,
+        });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
         cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);

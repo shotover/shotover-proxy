@@ -14,7 +14,7 @@ sources:
           - clustering
 chain_config:
   main_chain:
-    - CassandraDestinationSingle:
+    - CassandraSinkSingle:
         bypass_result_processing: true
         remote_address: "172.18.0.2:9042"
 named_topics:
