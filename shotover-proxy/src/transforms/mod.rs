@@ -11,7 +11,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages};
 use crate::transforms::cassandra::cassandra_destination_single::{
-    CassandraDestinationSingle, CassandraDestinationSingleConfig,
+    CassandraSinkSingle, CassandraSinkSingleConfig,
 };
 use metrics::{counter, histogram};
 
@@ -21,7 +21,7 @@ use crate::transforms::distributed::tunable_consistency_scatter::{
     TunableConsistency, TunableConsistencyConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::kafka_destination::{KafkaConfig, KafkaDestination};
+use crate::transforms::kafka_destination::{KafkaConfig, KafkaSink};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
 use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
@@ -34,10 +34,10 @@ use crate::transforms::redis_transforms::redis_cluster_slot_rewrite::{
     RedisClusterSlotRewrite, RedisClusterSlotRewriteConfig,
 };
 use crate::transforms::redis_transforms::redis_destination_cluster::{
-    RedisDestinationCluster, RedisDestinationClusterConfig,
+    RedisSinkCluster, RedisSinkClusterConfig,
 };
 use crate::transforms::redis_transforms::redis_destination_single::{
-    RedisDestinationSingle, RedisDestinationSingleConfig,
+    RedisSinkSingle, RedisSinkSingleConfig,
 };
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
@@ -67,9 +67,9 @@ pub mod util;
 
 #[derive(Clone)]
 pub enum Transforms {
-    CassandraDestinationSingle(CassandraDestinationSingle),
-    RedisDestinationSingle(RedisDestinationSingle),
-    KafkaDestination(KafkaDestination),
+    CassandraSinkSingle(CassandraSinkSingle),
+    RedisSinkSingle(RedisSinkSingle),
+    KafkaSink(KafkaSink),
     RedisCache(SimpleRedisCache),
     MPSCTee(Tee),
     MPSCForwarder(Buffer),
@@ -77,7 +77,7 @@ pub enum Transforms {
     Protect(Protect),
     TunableConsistency(TunableConsistency),
     RedisTimeStampTagger(RedisTimestampTagger),
-    RedisDestinationCluster(RedisDestinationCluster),
+    RedisSinkCluster(RedisSinkCluster),
     RedisClusterSlotRewrite(RedisClusterSlotRewrite),
     // The below variants are mainly for testing
     RepeatMessage(Box<ReturnerTransform>),
@@ -99,8 +99,8 @@ impl Debug for Transforms {
 impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CassandraDestinationSingle(c) => c.transform(message_wrapper).await,
-            Transforms::KafkaDestination(k) => k.transform(message_wrapper).await,
+            Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
+            Transforms::KafkaSink(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::MPSCTee(m) => m.transform(message_wrapper).await,
             Transforms::MPSCForwarder(m) => m.transform(message_wrapper).await,
@@ -110,10 +110,10 @@ impl Transforms {
             Transforms::RepeatMessage(p) => p.transform(message_wrapper).await,
             Transforms::RandomDelay(p) => p.transform(message_wrapper).await,
             Transforms::TunableConsistency(tc) => tc.transform(message_wrapper).await,
-            Transforms::RedisDestinationSingle(r) => r.transform(message_wrapper).await,
+            Transforms::RedisSinkSingle(r) => r.transform(message_wrapper).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(message_wrapper).await,
             Transforms::RedisClusterSlotRewrite(r) => r.transform(message_wrapper).await,
-            Transforms::RedisDestinationCluster(r) => r.transform(message_wrapper).await,
+            Transforms::RedisSinkCluster(r) => r.transform(message_wrapper).await,
             Transforms::ParallelMap(s) => s.transform(message_wrapper).await,
             Transforms::PoolConnections(s) => s.transform(message_wrapper).await,
             Transforms::Coalesce(s) => s.transform(message_wrapper).await,
@@ -124,8 +124,8 @@ impl Transforms {
 
     fn get_name(&self) -> &'static str {
         match self {
-            Transforms::CassandraDestinationSingle(c) => c.get_name(),
-            Transforms::KafkaDestination(k) => k.get_name(),
+            Transforms::CassandraSinkSingle(c) => c.get_name(),
+            Transforms::KafkaSink(k) => k.get_name(),
             Transforms::RedisCache(r) => r.get_name(),
             Transforms::MPSCTee(m) => m.get_name(),
             Transforms::MPSCForwarder(m) => m.get_name(),
@@ -135,10 +135,10 @@ impl Transforms {
             Transforms::TunableConsistency(t) => t.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
             Transforms::RandomDelay(p) => p.get_name(),
-            Transforms::RedisDestinationSingle(r) => r.get_name(),
+            Transforms::RedisSinkSingle(r) => r.get_name(),
             Transforms::RedisClusterSlotRewrite(r) => r.get_name(),
             Transforms::RedisTimeStampTagger(r) => r.get_name(),
-            Transforms::RedisDestinationCluster(r) => r.get_name(),
+            Transforms::RedisSinkCluster(r) => r.get_name(),
             Transforms::ParallelMap(s) => s.get_name(),
             Transforms::PoolConnections(s) => s.get_name(),
             Transforms::Coalesce(s) => s.get_name(),
@@ -149,9 +149,9 @@ impl Transforms {
 
     async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         match self {
-            Transforms::CassandraDestinationSingle(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisDestinationSingle(a) => a.prep_transform_chain(t).await,
-            Transforms::KafkaDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
+            Transforms::KafkaSink(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::MPSCTee(a) => a.prep_transform_chain(t).await,
             Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
@@ -162,7 +162,7 @@ impl Transforms {
             Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
             Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisDestinationCluster(r) => r.prep_transform_chain(t).await,
+            Transforms::RedisSinkCluster(r) => r.prep_transform_chain(t).await,
             Transforms::RedisClusterSlotRewrite(r) => r.prep_transform_chain(t).await,
             Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
             Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
@@ -175,14 +175,14 @@ impl Transforms {
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
-    CassandraDestinationSingle(CassandraDestinationSingleConfig),
-    RedisDestinationSingle(RedisDestinationSingleConfig),
-    KafkaDestination(KafkaConfig),
+    CassandraSinkSingle(CassandraSinkSingleConfig),
+    RedisSinkSingle(RedisSinkSingleConfig),
+    KafkaSink(KafkaConfig),
     RedisCache(RedisConfig),
     MPSCTee(TeeConfig),
     MPSCForwarder(BufferConfig),
     ConsistentScatter(TunableConsistencyConfig),
-    RedisDestinationCluster(RedisDestinationClusterConfig),
+    RedisSinkCluster(RedisSinkClusterConfig),
     RedisClusterSlotRewrite(RedisClusterSlotRewriteConfig),
     RedisTimestampTagger,
     Printer,
@@ -197,12 +197,12 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms> {
         match self {
-            TransformsConfig::CassandraDestinationSingle(c) => c.get_source(topics).await,
-            TransformsConfig::KafkaDestination(k) => k.get_source(topics).await,
+            TransformsConfig::CassandraSinkSingle(c) => c.get_source(topics).await,
+            TransformsConfig::KafkaSink(k) => k.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::MPSCTee(t) => t.get_source(topics).await,
             TransformsConfig::MPSCForwarder(f) => f.get_source(topics).await,
-            TransformsConfig::RedisDestinationSingle(r) => r.get_source(topics).await,
+            TransformsConfig::RedisSinkSingle(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
@@ -210,7 +210,7 @@ impl TransformsConfig {
             TransformsConfig::RedisClusterSlotRewrite(r) => r.get_source(topics).await,
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
             TransformsConfig::Null => Ok(Transforms::Null(Null::new())),
-            TransformsConfig::RedisDestinationCluster(r) => r.get_source(topics).await,
+            TransformsConfig::RedisSinkCluster(r) => r.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
             TransformsConfig::Coalesce(s) => s.get_source(topics).await,

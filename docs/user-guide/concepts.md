@@ -15,7 +15,7 @@ With these two in place, shotover can generally wire-in any transform chain to y
 
 ## Transform
 
-Transforms a where the bulk of shotover does its work. A transform is a struct that implements the `Transform` trait. The trait
+Transforms are where the bulk of shotover does its work. A transform is a struct that implements the `Transform` trait. The trait
 has one function where you implement the majority of your logic (transfrom), however it also includes a setup and naming method:
 
 ```rust
@@ -70,9 +70,3 @@ When a transform is first created, or cloned for a new connection. It gets acces
 A special source type called an MPSC source gets access to receiver side of the channel. This source can have a transform chain attached to it like any other source. This allows for complex routing and asynchronous passing of messages between transform chains in a topology. See [the cassandra and kafka example](/examples/cass-redis-kafka) as an example.
 
 Generally if you want to build blocking behaviour in your chain, you will use transforms that have child transform chains. For non-blocking behaviour (e.g. copying a query to a kafka queue while sending it the upstream service) use topic based transforms.
-
-## Scripts
-
-Some transforms let you specify a script that gets called by the transform to define its internal behaviour. Currently shotover supports Lua (5.3) with std libs enabled and WebAssembly (WASI ABI). For Lua scripts, you can define the script itself and the entry function to call within the yaml file itself. For WebAssembly you can define the location of your compiled wasm file and the entry point to call. Each transform will document the function signature you need to implement.
-
-Script support is currently rudimentary, but fairly performant. A no-op transform in rust generally takes up a few NS of cpu time, a no-op Lua script adds about 50NS to the critical path.

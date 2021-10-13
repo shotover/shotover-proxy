@@ -12,15 +12,15 @@ chain_config:
         route_map:
           one:
             - RedisTimestampTagger
-            - RedisDestinationSingle:
+            - RedisSinkSingle:
                 remote_address: "127.0.0.1:3331"
           two:
             - RedisTimestampTagger
-            - RedisDestinationSingle:
+            - RedisSinkSingle:
                 remote_address: "127.0.0.1:3332"
           three:
             - RedisTimestampTagger
-            - RedisDestinationSingle:
+            - RedisSinkSingle:
                 remote_address: "127.0.0.1:3333"
 named_topics:
   testtopic: 5
