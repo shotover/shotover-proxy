@@ -232,12 +232,12 @@ impl TransformsConfig {
 
     pub fn is_valid(&self, position: usize) -> Result<(), anyhow::Error> {
         match self {
-            TransformsConfig::CassandraDestinationSingle(c) => c.is_valid(position),
-            TransformsConfig::KafkaDestination(k) => k.is_valid(position),
+            TransformsConfig::CassandraSinkSingle(c) => c.is_valid(position),
+            TransformsConfig::KafkaSink(k) => k.is_valid(position),
             TransformsConfig::RedisCache(r) => r.is_valid(position),
             TransformsConfig::MPSCTee(t) => t.is_valid(position),
             TransformsConfig::MPSCForwarder(f) => f.is_valid(position),
-            TransformsConfig::RedisDestinationSingle(r) => r.is_valid(position),
+            TransformsConfig::RedisSinkSingle(r) => r.is_valid(position),
             TransformsConfig::ConsistentScatter(c) => c.is_valid(position),
             TransformsConfig::RedisTimestampTagger => {
                 if position == 0 {
@@ -261,7 +261,7 @@ impl TransformsConfig {
                     Ok(())
                 }
             }
-            TransformsConfig::RedisDestinationCluster(r) => r.is_valid(position),
+            TransformsConfig::RedisSinkCluster(r) => r.is_valid(position),
             TransformsConfig::ParallelMap(s) => s.is_valid(position),
             TransformsConfig::PoolConnections(s) => s.is_valid(position),
             TransformsConfig::Coalesce(s) => s.is_valid(position),

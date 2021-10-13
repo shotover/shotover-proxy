@@ -40,7 +40,7 @@ impl CassandraSinkSingleConfig {
     }
 
     fn get_name(&self) -> &'static str {
-        "CassandraDestinationSingle"
+        "CassandraSinkSingle"
     }
 }
 

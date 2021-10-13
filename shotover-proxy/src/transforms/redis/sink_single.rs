@@ -36,7 +36,7 @@ impl RedisSinkSingleConfig {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisDestinationSingle"
+        "RedisSinkSingle"
     }
 }
 

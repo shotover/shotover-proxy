@@ -86,7 +86,7 @@ impl RedisSinkClusterConfig {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisDestinationCluster"
+        "RedisSinkCluster"
     }
 }
 
