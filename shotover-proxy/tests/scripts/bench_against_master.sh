@@ -23,12 +23,13 @@ git checkout $ORIGINAL_REF
 cargo bench --bench redis_benches -- --baseline master --noplot | tee benches_log.txt -a
 cargo bench --bench chain_benches -- --baseline master --noplot | tee benches_log.txt -a
 
+# grep returns non zero exit code when it doesnt find anything so we need to disable pipefail
+set +o pipefail
 COUNT=`grep -o "Performance has regressed." benches_log.txt | wc -l`
+set -o pipefail
+
 mkdir -p comment_info
 if [ "$COUNT" != "0" ]; then
   echo "$COUNT benchmarks reported regressed performance. Please check the benchmark workflow logs for details: $LOG_PAGE" > comment_info/message.txt
   echo "$GITHUB_EVENT_NUMBER" > ./comment_info/issue_number.txt
 fi
-
-# Need to manually exit with 0 otherwise we get the return value of the if statement which can be 1 or 0 depending on if it executes the branch or not.
-exit 0
