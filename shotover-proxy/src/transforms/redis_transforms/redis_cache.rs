@@ -339,7 +339,7 @@ impl Transform for SimpleRedisCache {
                     warnings: _,
                 }) = &m.original
                 {
-                    m.generate_message_details(false);
+                    m.generate_message_details_query();
                     if let MessageDetails::Query(qm) = &m.details {
                         if qm.query_type == QueryType::Write {
                             updates += 1;
@@ -376,7 +376,7 @@ mod test {
     use crate::message::{ASTHolder, MessageDetails, Value};
     use crate::message::{Messages, Value as ShotoverValue};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
-    use crate::protocols::redis_codec::RedisCodec;
+    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
     use bytes::BytesMut;
     use itertools::Itertools;
@@ -392,12 +392,12 @@ mod test {
     }
 
     fn build_redis_query_frame(query: &str) -> ASTHolder {
-        let mut codec = RedisCodec::new(false, 0);
+        let mut codec = RedisCodec::new(DecodeType::Query, 0);
 
         let mut final_command_bytes: BytesMut = build_redis_string(query).as_str().into();
         let mut frame: Messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
         for message in &mut frame.messages {
-            message.generate_message_details(false);
+            message.generate_message_details_query();
         }
 
         match frame.messages.remove(0).details {

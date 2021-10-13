@@ -130,7 +130,7 @@ impl Transform for TunableConsistency {
             .messages
             .iter_mut()
             .map(|m| {
-                m.generate_message_details(false);
+                m.generate_message_details_query();
 
                 match &m.details {
                     MessageDetails::Query(QueryMessage {
@@ -168,7 +168,7 @@ impl Transform for TunableConsistency {
                 Ok(mut messages) => {
                     debug!("{:#?}", messages);
                     for message in &mut messages.messages {
-                        message.generate_message_details(true);
+                        message.generate_message_details_response();
                     }
                     results.push(messages);
                 }

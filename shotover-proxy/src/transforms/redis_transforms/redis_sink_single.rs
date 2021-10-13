@@ -11,7 +11,7 @@ use tokio_util::codec::Framed;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::protocols::redis_codec::RedisCodec;
+use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
@@ -66,7 +66,10 @@ impl Transform for RedisSinkSingle {
             } else {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             };
-            self.outbound = Some(Framed::new(generic_stream, RedisCodec::new(true, 1)));
+            self.outbound = Some(Framed::new(
+                generic_stream,
+                RedisCodec::new(DecodeType::Response, 1),
+            ));
         }
 
         // self.outbound is gauranteed to be Some by the previous block

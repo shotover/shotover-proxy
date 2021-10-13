@@ -1,5 +1,5 @@
 use crate::config::topology::TopicHolder;
-use crate::protocols::redis_codec::RedisCodec;
+use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::tls::{TlsAcceptor, TlsConfig};
@@ -74,7 +74,7 @@ impl RedisSource {
             listener: None,
             listen_addr: listen_addr.clone(),
             hard_connection_limit: hard_connection_limit.unwrap_or(false),
-            codec: RedisCodec::new(false, batch_hint as usize),
+            codec: RedisCodec::new(DecodeType::Query, batch_hint as usize),
             limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx: trigger_shutdown_rx.clone(),
             shutdown_complete_tx,
