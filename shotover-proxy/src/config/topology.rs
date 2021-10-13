@@ -104,6 +104,23 @@ impl Topology {
         Ok(temp)
     }
 
+    pub fn validate_chains(&self) {
+        let mut results = HashMap::<String, anyhow::Error>::new();
+        for (key, chain) in self.chain_config.clone() {
+            let len = chain.len();
+            for (i, transform) in chain.iter().enumerate() {
+                let result = transform.is_valid(i % len);
+                match result {
+                    Ok(_) => {}
+                    Err(e) => {
+                        results.insert(key.clone(), e);
+                    }
+                }
+            }
+        }
+        println!("{:?}", results);
+    }
+
     #[allow(clippy::type_complexity)]
     pub async fn run_chains(
         &self,

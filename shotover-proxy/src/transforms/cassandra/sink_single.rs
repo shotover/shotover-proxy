@@ -34,6 +34,14 @@ impl CassandraSinkSingleConfig {
             self.result_processing,
         )))
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn get_name(&self) -> &'static str {
+        "CassandraDestinationSingle"
+    }
 }
 
 #[derive(Debug)]

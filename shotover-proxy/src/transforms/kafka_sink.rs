@@ -33,6 +33,14 @@ impl KafkaSinkConfig {
             self.topic.clone(),
         )))
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn get_name(&self) -> &'static str {
+        "Kafka"
+    }
 }
 
 impl KafkaSink {

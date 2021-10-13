@@ -28,6 +28,10 @@ impl ConnectionBalanceAndPoolConfig {
             chain_to_clone: chain,
         }))
     }
+
+    fn get_name(&self) -> &'static str {
+        "PoolConnections"
+    }
 }
 
 #[derive(Debug)]

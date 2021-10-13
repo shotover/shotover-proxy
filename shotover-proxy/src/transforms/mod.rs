@@ -229,6 +229,60 @@ impl TransformsConfig {
             TransformsConfig::QueryCounter(s) => s.get_source(topics).await,
         }
     }
+
+    pub fn is_valid(&self, position: usize) -> Result<(), anyhow::Error> {
+        match self {
+            TransformsConfig::CassandraDestinationSingle(c) => c.is_valid(position),
+            TransformsConfig::KafkaDestination(k) => k.is_valid(position),
+            TransformsConfig::RedisCache(r) => r.is_valid(position),
+            TransformsConfig::MPSCTee(t) => t.is_valid(position),
+            TransformsConfig::MPSCForwarder(f) => f.is_valid(position),
+            TransformsConfig::RedisDestinationSingle(r) => r.is_valid(position),
+            TransformsConfig::ConsistentScatter(c) => c.is_valid(position),
+            TransformsConfig::RedisTimestampTagger => {
+                if position == 0 {
+                    return Err(create_err("RedisTimestampTagger", position));
+                } else {
+                    Ok(())
+                }
+            }
+            TransformsConfig::RedisClusterSlotRewrite(r) => r.is_valid(position),
+            TransformsConfig::Printer => {
+                if position == 0 {
+                    return Err(create_err("Printer", position));
+                } else {
+                    Ok(())
+                }
+            }
+            TransformsConfig::Null => {
+                if position != 0 {
+                    return Err(create_err("Null", position));
+                } else {
+                    Ok(())
+                }
+            }
+            TransformsConfig::RedisDestinationCluster(r) => r.is_valid(position),
+            TransformsConfig::ParallelMap(s) => s.is_valid(position),
+            TransformsConfig::PoolConnections(s) => s.is_valid(position),
+            TransformsConfig::Coalesce(s) => s.is_valid(position),
+            TransformsConfig::QueryTypeFilter(s) => s.is_valid(position),
+            TransformsConfig::QueryCounter(s) => s.is_valid(position),
+        }
+    }
+}
+
+fn create_err(name: &'static str, position: usize) -> anyhow::Error {
+    if position == 0 {
+        anyhow::anyhow!(format!(
+            "Terminating transform {:?} is not last in chain",
+            name
+        ))
+    } else {
+        anyhow::anyhow!(format!(
+            "Non-terminating transform {:?} is last in chain",
+            name
+        ))
+    }
 }
 
 pub async fn build_chain_from_config(

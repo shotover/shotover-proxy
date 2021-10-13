@@ -80,6 +80,14 @@ impl RedisSinkClusterConfig {
 
         Ok(Transforms::RedisSinkCluster(cluster))
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisDestinationCluster"
+    }
 }
 
 #[derive(Derivative, Clone)]

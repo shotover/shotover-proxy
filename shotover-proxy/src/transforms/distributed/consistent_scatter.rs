@@ -53,6 +53,14 @@ impl ConsistentScatterConfig {
             count: 0,
         }))
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn get_name(&self) -> &'static str {
+        "TunableConsistency"
+    }
 }
 
 fn get_timestamp(frag: &QueryResponse) -> i64 {

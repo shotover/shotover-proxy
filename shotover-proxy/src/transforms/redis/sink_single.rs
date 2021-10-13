@@ -30,6 +30,14 @@ impl RedisSinkSingleConfig {
             tls,
         )))
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisDestinationSingle"
+    }
 }
 
 pub struct RedisSinkSingle {

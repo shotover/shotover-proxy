@@ -63,6 +63,8 @@ impl Runner {
         let config = Config::from_file(params.config_file)?;
         let topology = Topology::from_file(params.topology_file)?;
 
+        topology.validate_chains();
+
         let tracing = TracingState::new(config.main_log_level.as_str())?;
 
         let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);

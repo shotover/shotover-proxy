@@ -48,6 +48,10 @@ impl RedisConfig {
             caching_schema: self.caching_schema.clone(),
         }))
     }
+
+    fn get_name(&self) -> &'static str {
+        "SimpleRedisCache"
+    }
 }
 
 #[derive(Clone)]

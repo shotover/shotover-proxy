@@ -80,6 +80,10 @@ impl ParallelMapConfig {
             ordered: self.ordered_results,
         }))
     }
+
+    fn get_name(&self) -> &'static str {
+        "SequentialMap"
+    }
 }
 
 #[async_trait]

@@ -54,6 +54,14 @@ impl ForwarderConfig {
             timeout: self.timeout_micros,
         }))
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn get_name(&self) -> &'static str {
+        "forward"
+    }
 }
 
 #[async_trait]
@@ -143,6 +151,10 @@ impl TeeConfig {
             behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
             timeout: self.timeout_micros,
         }))
+    }
+
+    fn get_name(&self) -> &'static str {
+        "tee"
     }
 }
 
