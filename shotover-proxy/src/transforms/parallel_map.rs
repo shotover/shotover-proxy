@@ -84,6 +84,10 @@ impl ParallelMapConfig {
     fn get_name(&self) -> &'static str {
         "SequentialMap"
     }
+
+    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
+        todo!();
+    }
 }
 
 #[async_trait]

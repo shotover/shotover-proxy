@@ -61,6 +61,10 @@ impl ConsistentScatterConfig {
     fn get_name(&self) -> &'static str {
         "TunableConsistency"
     }
+
+    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
+        todo!();
+    }
 }
 
 fn get_timestamp(frag: &QueryResponse) -> i64 {

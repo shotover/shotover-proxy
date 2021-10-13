@@ -32,6 +32,10 @@ impl ConnectionBalanceAndPoolConfig {
     fn get_name(&self) -> &'static str {
         "PoolConnections"
     }
+
+    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
+        todo!();
+    }
 }
 
 #[derive(Debug)]

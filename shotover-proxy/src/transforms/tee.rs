@@ -62,6 +62,10 @@ impl ForwarderConfig {
     fn get_name(&self) -> &'static str {
         "forward"
     }
+
+    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
+        todo!();
+    }
 }
 
 #[async_trait]
@@ -151,6 +155,10 @@ impl TeeConfig {
             behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
             timeout: self.timeout_micros,
         }))
+    }
+
+    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
+        todo!();
     }
 
     fn get_name(&self) -> &'static str {
