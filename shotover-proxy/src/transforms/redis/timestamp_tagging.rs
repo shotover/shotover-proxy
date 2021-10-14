@@ -29,10 +29,6 @@ impl RedisTimestampTaggerConfig {
     pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger {}))
     }
-
-    fn get_name(&self) -> &'static str {
-        "RedisTimeStampTagger"
-    }
 }
 
 // The way we try and get a "liveness" timestamp from redis, is to use

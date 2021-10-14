@@ -28,14 +28,6 @@ impl ConnectionBalanceAndPoolConfig {
             chain_to_clone: chain,
         }))
     }
-
-    fn get_name(&self) -> &'static str {
-        "PoolConnections"
-    }
-
-    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
-        todo!();
-    }
 }
 
 #[derive(Debug)]
@@ -85,6 +77,10 @@ impl Transform for ConnectionBalanceAndPool {
         } else {
             unreachable!()
         }
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
     }
 
     fn get_name(&self) -> &'static str {

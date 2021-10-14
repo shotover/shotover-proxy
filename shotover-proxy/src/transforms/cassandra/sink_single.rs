@@ -34,14 +34,6 @@ impl CassandraSinkSingleConfig {
             self.result_processing,
         )))
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
-
-    fn get_name(&self) -> &'static str {
-        "CassandraSinkSingle"
-    }
 }
 
 #[derive(Debug)]
@@ -164,5 +156,9 @@ impl Transform for CassandraSinkSingle {
 
     fn get_name(&self) -> &'static str {
         "CassandraSinkSingle"
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
     }
 }

@@ -48,14 +48,6 @@ impl RedisConfig {
             caching_schema: self.caching_schema.clone(),
         }))
     }
-
-    fn get_name(&self) -> &'static str {
-        "SimpleRedisCache"
-    }
-
-    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
-        todo!();
-    }
 }
 
 #[derive(Clone)]
@@ -328,6 +320,26 @@ fn build_redis_ast_from_sql(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
+    fn validate(&self, position: usize) -> Vec<String> {
+        let mut errors = Vec::new();
+        if position == 0 && !self.is_terminating() {
+            errors.push(format!(
+                "Non-terminating transform {:?} is last in chain",
+                self.get_name()
+            ));
+        };
+
+        errors.extend(
+            self.cache_chain
+                .validate()
+                .iter()
+                .map(|x| format!("  {}", x))
+                .collect::<Vec<String>>(),
+        );
+
+        errors
+    }
+
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut updates = 0_i32;
         {

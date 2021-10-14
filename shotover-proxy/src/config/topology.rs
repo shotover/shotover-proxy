@@ -104,23 +104,6 @@ impl Topology {
         Ok(temp)
     }
 
-    pub fn validate_chains(&self) {
-        let mut results = HashMap::<String, anyhow::Error>::new();
-        for (key, chain) in self.chain_config.clone() {
-            let len = chain.len();
-            for (i, transform) in chain.iter().enumerate() {
-                let result = transform.is_valid(i % len);
-                match result {
-                    Ok(_) => {}
-                    Err(e) => {
-                        results.insert(key.clone(), e);
-                    }
-                }
-            }
-        }
-        println!("{:?}", results);
-    }
-
     #[allow(clippy::type_complexity)]
     pub async fn run_chains(
         &self,
@@ -135,6 +118,24 @@ impl Topology {
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
+
+        let mut err_string = String::new();
+        for (_, chain) in chains.iter() {
+            let errs = chain
+                .validate()
+                .iter()
+                .map(|x| format!("{}\n", x))
+                .collect::<String>();
+            if !errs.is_empty() {
+                err_string.push('\n');
+            }
+        }
+
+        if !err_string.is_empty() {
+            eprintln!("\nTopology errors:");
+            eprintln!("{}", err_string);
+            panic!("Topology is not valid");
+        }
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {

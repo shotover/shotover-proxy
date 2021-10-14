@@ -44,10 +44,6 @@ impl CoalesceConfig {
             last_write: Instant::now(),
         }))
     }
-
-    fn get_name(&self) -> &'static str {
-        "Coalesce"
-    }
 }
 
 #[async_trait]

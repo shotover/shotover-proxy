@@ -33,14 +33,6 @@ impl KafkaSinkConfig {
             self.topic.clone(),
         )))
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
-
-    fn get_name(&self) -> &'static str {
-        "Kafka"
-    }
 }
 
 impl KafkaSink {
@@ -75,6 +67,10 @@ impl Default for KafkaSink {
 
 #[async_trait]
 impl Transform for KafkaSink {
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut responses = vec![];
         for message in message_wrapper.messages {

@@ -176,6 +176,29 @@ impl Transforms {
             Transforms::QueryCounter(s) => s.prep_transform_chain(t).await,
         }
     }
+
+    fn validate(&self, position: usize) -> Vec<String> {
+        match self {
+            Transforms::CassandraSinkSingle(c) => c.validate(position),
+            Transforms::KafkaSink(k) => k.validate(position),
+            Transforms::RedisCache(r) => r.validate(position),
+            Transforms::MPSCTee(t) => t.validate(position),
+            Transforms::MPSCForwarder(f) => f.validate(position),
+            Transforms::RedisSinkSingle(r) => r.validate(position),
+            Transforms::TunableConsistency(c) => c.validate(position),
+            Transforms::RedisTimeStampTagger(r) => r.validate(position),
+            Transforms::RedisClusterSlotRewrite(r) => r.validate(position),
+            Transforms::Printer(p) => p.validate(position),
+            Transforms::Null(n) => n.validate(position),
+            Transforms::RedisSinkCluster(r) => r.validate(position),
+            Transforms::ParallelMap(s) => s.validate(position),
+            Transforms::PoolConnections(s) => s.validate(position),
+            Transforms::Coalesce(s) => s.validate(position),
+            Transforms::QueryTypeFilter(s) => s.validate(position),
+            Transforms::QueryCounter(s) => s.validate(position),
+            _ => vec![],
+        }
+    }
 }
 
 /// The TransformsConfig enum is responsible for TransformConfig registration and enum dispatch
@@ -228,60 +251,6 @@ impl TransformsConfig {
             TransformsConfig::QueryTypeFilter(s) => s.get_source(topics).await,
             TransformsConfig::QueryCounter(s) => s.get_source(topics).await,
         }
-    }
-
-    pub fn is_valid(&self, position: usize) -> Result<(), anyhow::Error> {
-        match self {
-            TransformsConfig::CassandraSinkSingle(c) => c.is_valid(position),
-            TransformsConfig::KafkaSink(k) => k.is_valid(position),
-            TransformsConfig::RedisCache(r) => r.is_valid(position),
-            TransformsConfig::MPSCTee(t) => t.is_valid(position),
-            TransformsConfig::MPSCForwarder(f) => f.is_valid(position),
-            TransformsConfig::RedisSinkSingle(r) => r.is_valid(position),
-            TransformsConfig::ConsistentScatter(c) => c.is_valid(position),
-            TransformsConfig::RedisTimestampTagger => {
-                if position == 0 {
-                    return Err(create_err("RedisTimestampTagger", position));
-                } else {
-                    Ok(())
-                }
-            }
-            TransformsConfig::RedisClusterSlotRewrite(r) => r.is_valid(position),
-            TransformsConfig::Printer => {
-                if position == 0 {
-                    return Err(create_err("Printer", position));
-                } else {
-                    Ok(())
-                }
-            }
-            TransformsConfig::Null => {
-                if position != 0 {
-                    return Err(create_err("Null", position));
-                } else {
-                    Ok(())
-                }
-            }
-            TransformsConfig::RedisSinkCluster(r) => r.is_valid(position),
-            TransformsConfig::ParallelMap(s) => s.is_valid(position),
-            TransformsConfig::PoolConnections(s) => s.is_valid(position),
-            TransformsConfig::Coalesce(s) => s.is_valid(position),
-            TransformsConfig::QueryTypeFilter(s) => s.is_valid(position),
-            TransformsConfig::QueryCounter(s) => s.is_valid(position),
-        }
-    }
-}
-
-fn create_err(name: &'static str, position: usize) -> anyhow::Error {
-    if position == 0 {
-        anyhow::anyhow!(format!(
-            "Terminating transform {:?} is not last in chain",
-            name
-        ))
-    } else {
-        anyhow::anyhow!(format!(
-            "Non-terminating transform {:?} is last in chain",
-            name
-        ))
     }
 }
 
@@ -528,6 +497,28 @@ pub trait Transform: Send {
     /// easier to resolve (e.g. you can start Shotover before the upstream database).
     async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
         Ok(())
+    }
+
+    fn is_terminating(&self) -> bool {
+        false
+    }
+
+    fn validate(&self, position: usize) -> Vec<String> {
+        let mut errors = Vec::new();
+        if position == 0 && !self.is_terminating() {
+            errors.push(format!(
+                "Non-terminating transform {:?} is last in chain",
+                self.get_name()
+            ));
+        }
+
+        if position != 0 && self.is_terminating() {
+            errors.push(format!(
+                "Terminating transform {:?} is not last in chain",
+                self.get_name()
+            ));
+        }
+        errors
     }
 }
 

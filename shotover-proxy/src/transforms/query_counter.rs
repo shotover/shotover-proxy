@@ -77,8 +77,4 @@ impl QueryCounterConfig {
             counter_name: self.name.clone(),
         }))
     }
-
-    fn get_name(&self) -> &'static str {
-        "QueryCounter"
-    }
 }

@@ -80,14 +80,6 @@ impl RedisSinkClusterConfig {
 
         Ok(Transforms::RedisSinkCluster(cluster))
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
-
-    fn get_name(&self) -> &'static str {
-        "RedisSinkCluster"
-    }
 }
 
 #[derive(Derivative, Clone)]
@@ -768,6 +760,10 @@ fn immediate_responder() -> (
 
 #[async_trait]
 impl Transform for RedisSinkCluster {
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
             self.build_connections(self.token.clone()).await.ok();

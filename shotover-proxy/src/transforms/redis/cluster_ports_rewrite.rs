@@ -21,10 +21,6 @@ impl RedisClusterPortsRewriteConfig {
             },
         ))
     }
-
-    fn get_name(&self) -> &'static str {
-        "RedisClusterSlotRewrite"
-    }
 }
 
 #[derive(Clone)]

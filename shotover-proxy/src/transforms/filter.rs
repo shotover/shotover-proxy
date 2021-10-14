@@ -22,10 +22,6 @@ impl QueryTypeFilterConfig {
             filter: self.filter.clone(),
         }))
     }
-
-    fn get_name(&self) -> &'static str {
-        "QueryType Filter"
-    }
 }
 
 #[async_trait]

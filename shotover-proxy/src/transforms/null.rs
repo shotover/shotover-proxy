@@ -9,6 +9,10 @@ pub struct Null {}
 
 #[async_trait]
 impl Transform for Null {
+        true
+    fn is_terminating(&self) -> bool {
+    }
+
     async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
         Ok(vec![Message::new(
             MessageDetails::Response(QueryResponse::empty()),

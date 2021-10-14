@@ -30,6 +30,7 @@ pub struct TransformChain {
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
+    pub original_chain: TransformChain,
     send_handle: Sender<ChannelMessage>,
     #[cfg(test)]
     pub count: std::sync::Arc<tokio::sync::Mutex<usize>>,
@@ -112,9 +113,9 @@ impl TransformChain {
         let count_clone = count.clone();
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
-        let _jh = tokio::spawn(async move {
-            let mut chain = self;
 
+        let mut chain = self.clone();
+        let _jh = tokio::spawn(async move {
             while let Some(ChannelMessage {
                 return_chan,
                 messages,
@@ -156,6 +157,7 @@ impl TransformChain {
             send_handle: tx,
             #[cfg(test)]
             count: count_clone,
+            original_chain: self.clone(),
         }
     }
 
@@ -172,6 +174,33 @@ impl TransformChain {
             name,
             chain: transform_list,
         }
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        let len = self.chain.len();
+
+        let r = self
+            .chain
+            .iter()
+            .enumerate()
+            .map(|(i, transform)| {
+                transform
+                    .validate((i + 1) % len)
+                    .iter()
+                    .map(|x| format!("  {}", x))
+                    .collect::<Vec<String>>()
+            })
+            .into_iter()
+            .flatten()
+            .collect::<Vec<String>>();
+
+        let mut errors = vec![];
+        if !r.is_empty() {
+            errors.push(format!("{}:", self.name.clone()));
+            errors.extend(r);
+        }
+
+        errors
     }
 
     pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {

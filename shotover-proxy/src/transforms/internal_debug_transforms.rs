@@ -26,6 +26,10 @@ impl Transform for DebugReturnerTransform {
     fn get_name(&self) -> &'static str {
         "returner"
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone)]

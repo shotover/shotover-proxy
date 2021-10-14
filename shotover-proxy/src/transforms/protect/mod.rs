@@ -155,10 +155,6 @@ impl ProtectConfig {
             key_id: "XXXXXXX".to_string(),
         }))
     }
-
-    fn get_name(&self) -> &'static str {
-        "protect"
-    }
 }
 
 #[async_trait]

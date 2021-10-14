@@ -80,14 +80,6 @@ impl ParallelMapConfig {
             ordered: self.ordered_results,
         }))
     }
-
-    fn get_name(&self) -> &'static str {
-        "SequentialMap"
-    }
-
-    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
-        todo!();
-    }
 }
 
 #[async_trait]
@@ -121,5 +113,34 @@ impl Transform for ParallelMap {
 
     fn get_name(&self) -> &'static str {
         "SequentialMap"
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn validate(&self, position: usize) -> Vec<String> {
+        let mut errors = Vec::new();
+        if position != 0 && self.is_terminating() {
+            errors.push(format!(
+                "Terminating transform {:?} is not last in chain",
+                self.get_name()
+            ));
+        };
+
+        errors.extend(
+            self.chains
+                .iter()
+                .map(|chain| {
+                    chain
+                        .validate()
+                        .iter()
+                        .map(|x| format!("  {}", x))
+                        .collect()
+                })
+                .collect::<Vec<String>>(),
+        );
+
+        errors
     }
 }
