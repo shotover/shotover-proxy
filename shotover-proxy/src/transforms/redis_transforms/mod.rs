@@ -3,7 +3,7 @@ use std::io;
 use crate::transforms::util::ConnectionError;
 
 pub mod redis_cache;
-pub mod redis_cluster_slot_rewrite;
+pub mod redis_cluster_ports_rewrite;
 pub mod redis_sink_cluster;
 pub mod redis_sink_single;
 pub mod timestamp_tagging;

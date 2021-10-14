@@ -9,15 +9,15 @@ use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct RedisClusterSlotRewriteConfig {
+pub struct RedisClusterPortsRewriteConfig {
     pub new_port: u16,
 }
 
 #[async_trait]
-impl TransformsFromConfig for RedisClusterSlotRewriteConfig {
+impl TransformsFromConfig for RedisClusterPortsRewriteConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisClusterSlotRewrite(
-            RedisClusterSlotRewrite {
+        Ok(Transforms::RedisClusterPortsRewrite(
+            RedisClusterPortsRewrite {
                 new_port: self.new_port,
             },
         ))
@@ -25,12 +25,12 @@ impl TransformsFromConfig for RedisClusterSlotRewriteConfig {
 }
 
 #[derive(Clone)]
-pub struct RedisClusterSlotRewrite {
+pub struct RedisClusterPortsRewrite {
     new_port: u16,
 }
 
 #[async_trait]
-impl Transform for RedisClusterSlotRewrite {
+impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of cluster slot messages
         let cluster_slots_indices = message_wrapper
@@ -54,7 +54,7 @@ impl Transform for RedisClusterSlotRewrite {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisClusterSlotRewrite"
+        "RedisClusterPortsRewrite"
     }
 }
 

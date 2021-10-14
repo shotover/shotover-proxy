@@ -30,8 +30,8 @@ use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
 use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
 use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
-use crate::transforms::redis_transforms::redis_cluster_slot_rewrite::{
-    RedisClusterSlotRewrite, RedisClusterSlotRewriteConfig,
+use crate::transforms::redis_transforms::redis_cluster_ports_rewrite::{
+    RedisClusterPortsRewrite, RedisClusterPortsRewriteConfig,
 };
 use crate::transforms::redis_transforms::redis_sink_cluster::{
     RedisSinkCluster, RedisSinkClusterConfig,
@@ -78,7 +78,7 @@ pub enum Transforms {
     TunableConsistency(TunableConsistency),
     RedisTimeStampTagger(RedisTimestampTagger),
     RedisSinkCluster(RedisSinkCluster),
-    RedisClusterSlotRewrite(RedisClusterSlotRewrite),
+    RedisClusterPortsRewrite(RedisClusterPortsRewrite),
     // The below variants are mainly for testing
     RepeatMessage(Box<ReturnerTransform>),
     RandomDelay(RandomDelayTransform),
@@ -112,7 +112,7 @@ impl Transforms {
             Transforms::TunableConsistency(tc) => tc.transform(message_wrapper).await,
             Transforms::RedisSinkSingle(r) => r.transform(message_wrapper).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(message_wrapper).await,
-            Transforms::RedisClusterSlotRewrite(r) => r.transform(message_wrapper).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.transform(message_wrapper).await,
             Transforms::RedisSinkCluster(r) => r.transform(message_wrapper).await,
             Transforms::ParallelMap(s) => s.transform(message_wrapper).await,
             Transforms::PoolConnections(s) => s.transform(message_wrapper).await,
@@ -136,7 +136,7 @@ impl Transforms {
             Transforms::RepeatMessage(p) => p.get_name(),
             Transforms::RandomDelay(p) => p.get_name(),
             Transforms::RedisSinkSingle(r) => r.get_name(),
-            Transforms::RedisClusterSlotRewrite(r) => r.get_name(),
+            Transforms::RedisClusterPortsRewrite(r) => r.get_name(),
             Transforms::RedisTimeStampTagger(r) => r.get_name(),
             Transforms::RedisSinkCluster(r) => r.get_name(),
             Transforms::ParallelMap(s) => s.get_name(),
@@ -163,7 +163,7 @@ impl Transforms {
             Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
             Transforms::RedisSinkCluster(r) => r.prep_transform_chain(t).await,
-            Transforms::RedisClusterSlotRewrite(r) => r.prep_transform_chain(t).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.prep_transform_chain(t).await,
             Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
             Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
             Transforms::Coalesce(s) => s.prep_transform_chain(t).await,
@@ -183,7 +183,7 @@ pub enum TransformsConfig {
     MPSCForwarder(BufferConfig),
     ConsistentScatter(TunableConsistencyConfig),
     RedisSinkCluster(RedisSinkClusterConfig),
-    RedisClusterSlotRewrite(RedisClusterSlotRewriteConfig),
+    RedisClusterPortsRewrite(RedisClusterPortsRewriteConfig),
     RedisTimestampTagger,
     Printer,
     Null,
@@ -207,7 +207,7 @@ impl TransformsConfig {
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
             }
-            TransformsConfig::RedisClusterSlotRewrite(r) => r.get_source(topics).await,
+            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source(topics).await,
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
             TransformsConfig::Null => Ok(Transforms::Null(Null::new())),
             TransformsConfig::RedisSinkCluster(r) => r.get_source(topics).await,

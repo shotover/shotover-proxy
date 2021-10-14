@@ -13,7 +13,7 @@ Currently shotover proxy supports the following transforms:
 * Protect
 * TuneableConsistency
 * RedisTimeStampTagger
-* RedisClusterSlotRewrite
+* RedisClusterPortsRewrite
 
 ## Terminating Transforms
 
@@ -163,7 +163,7 @@ This is mainly used in conjunction with the `TuneableConsistency` to enable a Ca
 
 No configuration is required for this transform.
 
-### RedisClusterSlotRewrite
+### RedisClusterPortsRewrite
 
 *State: Alpha*
 
