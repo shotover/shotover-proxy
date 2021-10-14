@@ -1,3 +1,9 @@
+---
+sources:
+  redis_prod:
+    Redis:
+      batch_size_hint: 1
+      listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
     - Null
@@ -5,3 +11,4 @@ chain_config:
 named_topics:
   testtopic: 5
 source_to_chain_mapping:
+  redis_prod: redis_chain

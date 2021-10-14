@@ -127,6 +127,7 @@ impl Topology {
                 .map(|x| format!("{}\n", x))
                 .collect::<String>();
             if !errs.is_empty() {
+                err_string.push_str(&errs);
                 err_string.push('\n');
             }
         }
