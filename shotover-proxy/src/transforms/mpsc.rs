@@ -212,7 +212,7 @@ impl Transform for Tee {
                 let tee_response = tee_result?;
                 let chain_response = chain_result?;
 
-                if chain_response.eq(&tee_response) {
+                if !chain_response.eq(&tee_response) {
                     if let Some(topic) = &mut self.fail_chain {
                         topic
                             .process_request(failed_message, "tee".to_string(), None)
