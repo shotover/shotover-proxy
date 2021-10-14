@@ -1,0 +1,8 @@
+chain_config:
+  redis_chain:
+    - Null
+    - Printer
+    - Null
+named_topics:
+  testtopic: 5
+source_to_chain_mapping:

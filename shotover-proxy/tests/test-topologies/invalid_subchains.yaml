@@ -1,0 +1,29 @@
+chain_config:
+  redis_chain:
+    - Null
+  other_chain:
+    - Printer
+    - ConsistentScatter:
+        read_consistency: 1
+        write_consistency: 1
+        route_map:
+          chain_1:
+            - Null
+            - Printer
+          chain_2:
+            - Null
+            - Null
+          chain_3:
+            - ConsistentScatter:
+                read_consistency: 1
+                write_consistency: 1
+                route_map:
+                  sub_chain_1:
+                    - Null
+                  sub_chain_2:
+                    - Null
+                    - Null
+
+named_topics:
+  testtopic: 5
+source_to_chain_mapping:
