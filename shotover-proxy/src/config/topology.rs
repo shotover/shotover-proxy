@@ -121,11 +121,8 @@ impl Topology {
 
         let mut err_string = String::new();
         for (_, chain) in chains.iter() {
-            let errs = chain
-                .validate()
-                .iter()
-                .map(|x| format!("{}\n", x))
-                .collect::<String>();
+            let errs = chain.validate().join("\n");
+
             if !errs.is_empty() {
                 err_string.push_str(&errs);
                 err_string.push('\n');
