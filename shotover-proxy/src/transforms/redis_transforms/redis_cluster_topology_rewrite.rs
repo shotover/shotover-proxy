@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use redis_protocol::resp2::prelude::Frame;
 use serde::Deserialize;
@@ -33,23 +33,23 @@ pub struct RedisClusterTopologyRewrite {
 impl Transform for RedisClusterTopologyRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of cluster slot messages
-        let cluster_slots_indices = message_wrapper
-            .message
-            .messages
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| is_cluster_slots(&m.original))
-            .map(|(i, _)| i)
-            .collect::<Vec<_>>();
+        let mut cluster_slots_indices = Vec::new();
+        let mut cluster_nodes_indices = Vec::new();
 
-        let cluster_nodes_indices = message_wrapper
+        message_wrapper
             .message
             .messages
             .iter()
             .enumerate()
-            .filter(|(_, m)| is_cluster_nodes(&m.original))
-            .map(|(i, _)| i)
-            .collect::<Vec<_>>();
+            .for_each(|(i, m)| {
+                if is_cluster_slots(&m.original) {
+                    cluster_slots_indices.push(i);
+                }
+
+                if is_cluster_nodes(&m.original) {
+                    cluster_nodes_indices.push(i);
+                }
+            });
 
         let mut response = message_wrapper.call_next_transform().await?;
 
@@ -111,7 +111,7 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
         let mut reader = csv::ReaderBuilder::new()
             .delimiter(b' ')
             .has_headers(false)
-            .flexible(true)
+            .flexible(true) // flexible because the last fields is an arbitrary number of tokens
             .delimiter(b' ')
             .from_reader(read_cursor);
 
@@ -121,18 +121,25 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
             .from_writer(write_cursor);
 
         for result in reader.records() {
-            let record = result.unwrap();
-            for (i, field) in record.iter().enumerate() {
-                if i == 1 {
-                    let re = regex::Regex::new(r":[^:@]+@").unwrap();
-                    let ip = &record[1];
-                    let new_ip = re.replace(ip, format!(":{}@", new_port.to_string()));
-                    writer.write_field(&*new_ip).unwrap();
-                } else {
-                    writer.write_field(field).unwrap();
-                }
-            }
-            writer.write_record(None::<&[u8]>).unwrap();
+            let record = result?;
+            let mut record_iter = record.into_iter();
+
+            // Write the id field
+            let id = record_iter
+                .next()
+                .ok_or(anyhow!("CLUSTER NODES response missing id field"))?;
+            writer.write_field(id)?;
+
+            // Modify and rewrite the port field
+            let re = regex::Regex::new(r":[^:@]+@").unwrap(); // match (inclusive) the everything between ":${PORT}@"
+            let ip = record_iter
+                .next()
+                .ok_or(anyhow!("CLUSTER NODES response missing address field"))?;
+            let new_ip = re.replace(ip, format!(":{}@", new_port.to_string()));
+            writer.write_field(&*new_ip).unwrap();
+
+            // Write the last of the record
+            writer.write_record(record_iter)?;
         }
 
         writer.flush().unwrap();
@@ -144,7 +151,7 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
-/// Or one that returns the same response as `CLUSTER NODES`
+/// or `CLUSTER_REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &RawFrame) -> bool {
     let args = if let RawFrame::Redis(Frame::Array(array)) = frame {
         array
@@ -306,6 +313,7 @@ c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:6379@16379 myself,master - 0
 f9553ea7fc23905476efec1f949b4b3e41a44103 :0@0 slave,noaddr c852007a1c3b726534e6866456c1f2002fc442d9 1634273478445 1634273478445 3 disconnected
 ";
 
+        // bulk_string with port numbers replaced
         let expected_string: &[u8] = b"b5657714579550445f271ff65e47f3d39a36806c :1234@0 slave,noaddr 95566d2da3382ea88f549ab5766db9a6f4fbc44b 1634273478445 1634273478445 1 disconnected
 95566d2da3382ea88f549ab5766db9a6f4fbc44b :1234@0 master,noaddr - 1634273478445 1634273478445 1 disconnected 0-5460
 c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:1234@16379 myself,master - 0 1634273501000 3 connected 10923-16383
