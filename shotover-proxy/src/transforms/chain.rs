@@ -179,7 +179,7 @@ impl TransformChain {
     pub fn validate(&self) -> Vec<String> {
         let len = self.chain.len();
 
-        let r = self
+        let mut r = self
             .chain
             .iter()
             .enumerate()
@@ -194,13 +194,11 @@ impl TransformChain {
             .flatten()
             .collect::<Vec<String>>();
 
-        let mut errors = vec![];
         if !r.is_empty() {
-            errors.push(format!("{}:", self.name.clone()));
-            errors.extend(r);
+            r.insert(0, format!("{}:", self.name.clone()));
         }
 
-        errors
+        r
     }
 
     pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
