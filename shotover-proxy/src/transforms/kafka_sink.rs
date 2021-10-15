@@ -70,7 +70,7 @@ impl Default for KafkaSink {
 impl Transform for KafkaSink {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut responses: Vec<Message> = vec![];
-        for message in message_wrapper.message.messages {
+        for message in message_wrapper.messages.messages {
             match message.details {
                 MessageDetails::Bypass(_) => {}
                 MessageDetails::Query(qm) => {

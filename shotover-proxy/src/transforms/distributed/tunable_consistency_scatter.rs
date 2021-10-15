@@ -126,7 +126,7 @@ impl TunableConsistency {}
 impl Transform for TunableConsistency {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let required_successes = message_wrapper
-            .message
+            .messages
             .messages
             .iter_mut()
             .map(|m| {

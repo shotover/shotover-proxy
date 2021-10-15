@@ -28,7 +28,7 @@ impl TransformsFromConfig for QueryTypeFilterConfig {
 #[async_trait]
 impl Transform for QueryTypeFilter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        message_wrapper.message.messages.retain(|m| {
+        message_wrapper.messages.messages.retain(|m| {
             if let MessageDetails::Query(qm) = &m.details {
                 qm.query_type != self.filter
             } else {

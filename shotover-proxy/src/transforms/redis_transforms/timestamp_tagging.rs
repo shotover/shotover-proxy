@@ -162,7 +162,7 @@ impl Transform for RedisTimestampTagger {
         let mut tagged_success: bool = true;
         let mut exec_block: bool = false;
 
-        for message in message_wrapper.message.messages.iter_mut() {
+        for message in message_wrapper.messages.messages.iter_mut() {
             message.generate_message_details_query();
             if let MessageDetails::Query(ref mut qm) = message.details {
                 if let Some(a) = &qm.ast {

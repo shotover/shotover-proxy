@@ -34,7 +34,7 @@ impl Transform for Null {
         if self.with_request {
             return ChainResponse::Ok(Messages {
                 messages: message_wrapper
-                    .message
+                    .messages
                     .messages
                     .into_iter()
                     .filter_map(|m| {

@@ -34,7 +34,7 @@ impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of cluster slot messages
         let cluster_slots_indices = message_wrapper
-            .message
+            .messages
             .messages
             .iter()
             .enumerate()

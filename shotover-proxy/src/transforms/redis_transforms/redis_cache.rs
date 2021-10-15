@@ -328,7 +328,7 @@ impl Transform for SimpleRedisCache {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut updates = 0_i32;
         {
-            for m in &mut message_wrapper.message.messages {
+            for m in &mut message_wrapper.messages.messages {
                 if let RawFrame::Cassandra(Frame {
                     version: _,
                     flags: _,
@@ -351,7 +351,7 @@ impl Transform for SimpleRedisCache {
 
         if updates == 0 {
             match self
-                .get_or_update_from_cache(message_wrapper.message.clone())
+                .get_or_update_from_cache(message_wrapper.messages.clone())
                 .await
             {
                 Ok(cr) => Ok(cr),
@@ -359,7 +359,7 @@ impl Transform for SimpleRedisCache {
             }
         } else {
             let (_cache_res, upstream) = tokio::join!(
-                self.get_or_update_from_cache(message_wrapper.message.clone()),
+                self.get_or_update_from_cache(message_wrapper.messages.clone()),
                 message_wrapper.call_next_transform()
             );
             upstream

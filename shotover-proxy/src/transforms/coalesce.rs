@@ -55,7 +55,7 @@ impl Transform for Coalesce {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         self.buffer
             .messages
-            .append(&mut message_wrapper.message.messages);
+            .append(&mut message_wrapper.messages.messages);
 
         if match self.max_behavior {
             CoalesceBehavior::COUNT(c) => self.buffer.messages.len() >= c,
@@ -74,7 +74,7 @@ impl Transform for Coalesce {
             }
             std::mem::swap(
                 &mut self.buffer.messages,
-                &mut message_wrapper.message.messages,
+                &mut message_wrapper.messages.messages,
             );
             message_wrapper.call_next_transform().await
         } else {

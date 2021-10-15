@@ -117,7 +117,7 @@ impl AsyncMpsc {
                             }
                             std::mem::swap(&mut buffer, &mut messages.messages);
                             let w: Wrapper = Wrapper::new(messages);
-                            info!("Flushing {} commands", w.message.messages.len());
+                            info!("Flushing {} commands", w.messages.messages.len());
 
                             if let Err(e) =
                                 main_chain.process_request(w, "AsyncMpsc".to_string()).await

@@ -67,7 +67,7 @@ impl TransformsFromConfig for BufferConfig {
 impl Transform for Buffer {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.async_mode {
-            let expected_responses = message_wrapper.message.messages.len();
+            let expected_responses = message_wrapper.messages.messages.len();
             let buffer_result = self
                 .tx
                 .process_request_no_return(message_wrapper, "Buffer".to_string(), self.timeout)

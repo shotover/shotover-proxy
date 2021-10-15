@@ -154,7 +154,7 @@ impl CassandraSinkSingle {
 #[async_trait]
 impl Transform for CassandraSinkSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        self.send_message(message_wrapper.message).await
+        self.send_message(message_wrapper.messages).await
     }
 
     fn get_name(&self) -> &'static str {
