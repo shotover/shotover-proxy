@@ -58,7 +58,7 @@ jobs:
             var fs = require('fs');
             if (fs.existsSync('./issue_number.txt')) {
               var issue_number = Number(fs.readFileSync('./issue_number.txt'));
-              var message = fs.readFileSync('./message.txt');
+              var message = fs.readFileSync('./message.txt', 'utf8');
               await github.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
