@@ -46,7 +46,10 @@ impl Transform for RedisClusterTopologyRewrite {
 
         // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {
-            rewrite_port(&mut response.messages[i].original, self.new_port)
+            rewrite_port_slot(&mut response.messages[i].original, self.new_port)
+                .context("failed to rewrite CLUSTER SLOTS port")?;
+        }
+
                 .context("failed to rewrite CLUSTER SLOTS port")?;
         }
 
@@ -59,7 +62,7 @@ impl Transform for RedisClusterTopologyRewrite {
 }
 
 /// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
-fn rewrite_port(frame: &mut RawFrame, new_port: u16) -> Result<()> {
+fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     if let RawFrame::Redis(Frame::Array(ref mut array)) = frame {
         for elem in array.iter_mut() {
             if let Frame::Array(slot) = elem {
@@ -80,6 +83,28 @@ fn rewrite_port(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     };
 
     Ok(())
+}
+
+
+
+/// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
+/// Or one that returns the same response as `CLUSTER NODES`
+fn is_cluster_nodes(frame: &RawFrame) -> bool {
+    let args = if let RawFrame::Redis(Frame::Array(array)) = frame {
+        array
+            .iter()
+            .map(|f| match f {
+                Frame::BulkString(b) => Some(b.to_ascii_uppercase()),
+                _ => None,
+            })
+            .take_while(Option::is_some)
+            .map(Option::unwrap)
+            .collect::<Vec<Vec<u8>>>()
+    } else {
+        return false;
+    };
+
+    args == [b"CLUSTER", b"NODES" as &[u8]] || args == [b"CLUSTER", b"REPLICAS" as &[u8]]
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
@@ -133,6 +158,37 @@ mod test {
     }
 
     #[test]
+    fn test_is_cluster_nodes() {
+        let combos = [
+            //nodes
+            (b"cluster", b"nodes" as &[u8]),
+            (b"CLUSTER", b"NODES" as &[u8]),
+            (b"cluster", b"NODES" as &[u8]),
+            (b"CLUSTER", b"nodes" as &[u8]),
+            // replicas
+            (b"cluster", b"replicas" as &[u8]),
+            (b"CLUSTER", b"REPLICAS" as &[u8]),
+            (b"cluster", b"replicas" as &[u8]),
+            (b"CLUSTER", b"replicas" as &[u8]),
+        ];
+
+        for combo in combos {
+            let frame = RawFrame::Redis(Frame::Array(vec![
+                Frame::BulkString(combo.0.to_vec()),
+                Frame::BulkString(combo.1.to_vec()),
+            ]));
+            assert!(is_cluster_nodes(&frame));
+        }
+
+        let frame = RawFrame::Redis(Frame::Array(vec![
+            Frame::BulkString(b"GET".to_vec()),
+            Frame::BulkString(b"key1".to_vec()),
+        ]));
+
+        assert!(!is_cluster_nodes(&frame));
+    }
+
+    #[test]
     fn test_rewrite_port() {
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
         let mut codec = RedisCodec::new(DecodeType::Response, 3);
@@ -145,7 +201,7 @@ mod test {
             .unwrap()
             .original;
 
-        rewrite_port(&mut raw_frame, 2004).unwrap();
+        rewrite_port_slot(&mut raw_frame, 2004).unwrap();
 
         let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame.clone() {
             frames
