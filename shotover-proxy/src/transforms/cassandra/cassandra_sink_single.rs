@@ -4,7 +4,7 @@ use serde::Deserialize;
 use crate::config::topology::TopicHolder;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use std::collections::HashMap;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
@@ -27,9 +27,8 @@ pub struct CassandraSinkSingleConfig {
     pub bypass_result_processing: bool,
 }
 
-#[async_trait]
-impl TransformsFromConfig for CassandraSinkSingleConfig {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+impl CassandraSinkSingleConfig {
+    pub async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
             self.bypass_result_processing,

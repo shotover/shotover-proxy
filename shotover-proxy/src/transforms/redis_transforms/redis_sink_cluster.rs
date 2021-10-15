@@ -30,7 +30,7 @@ use crate::transforms::util::cluster_connection_pool::{Authenticator, Connection
 use crate::transforms::util::{Request, Response};
 use crate::transforms::ResponseFuture;
 use crate::transforms::CONTEXT_CHAIN_NAME;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 const SLOT_SIZE: usize = 16384;
 
@@ -43,9 +43,8 @@ pub struct RedisSinkClusterConfig {
     connection_count: Option<usize>,
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisSinkClusterConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl RedisSinkClusterConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         let authenticator = RedisAuthenticator {};
 
         let connection_pool = ConnectionPool::new_with_auth(

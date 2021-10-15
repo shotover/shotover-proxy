@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -28,9 +28,8 @@ pub struct CoalesceConfig {
     pub max_behavior: CoalesceBehavior,
 }
 
-#[async_trait]
-impl TransformsFromConfig for CoalesceConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl CoalesceConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         let hint = match self.max_behavior {
             CoalesceBehavior::COUNT(c) => Some(c),
             CoalesceBehavior::COUNT_OR_WAIT(c, _) => Some(c),

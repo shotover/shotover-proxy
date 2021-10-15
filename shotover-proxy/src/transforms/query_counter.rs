@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Value::List;
 use crate::message::{ASTHolder, MessageDetails, QueryMessage};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::counter;
@@ -71,9 +71,8 @@ impl Transform for QueryCounter {
     }
 }
 
-#[async_trait]
-impl TransformsFromConfig for QueryCounterConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl QueryCounterConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::QueryCounter(QueryCounter {
             counter_name: self.name.clone(),
         }))

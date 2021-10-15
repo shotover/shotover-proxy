@@ -17,7 +17,7 @@ use crate::message::Value;
 use crate::message::Value::Rows;
 use crate::message::{MessageDetails, QueryMessage, QueryResponse, QueryType};
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 mod aws_kms;
 mod key_management;
@@ -146,9 +146,8 @@ impl Protected {
     }
 }
 
-#[async_trait]
-impl TransformsFromConfig for ProtectConfig {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+impl ProtectConfig {
+    pub async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::Protect(Protect {
             name: "protect",
             keyspace_table_columns: self.keyspace_table_columns.clone(),
@@ -281,7 +280,7 @@ mod protect_transform_tests {
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;
     use crate::transforms::test_transforms::ReturnerTransform;
-    use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+    use crate::transforms::{Transform, Transforms, Wrapper};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {

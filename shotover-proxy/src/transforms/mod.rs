@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
 
 use anyhow::Result;
+use async_recursion::async_recursion;
 use async_trait::async_trait;
 use futures::Future;
 use serde::Deserialize;
@@ -207,6 +208,8 @@ pub enum TransformsConfig {
 }
 
 impl TransformsConfig {
+    #[async_recursion]
+    /// Return a new instance of the transform that the config is specifying.
     pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source(topics).await,
@@ -243,18 +246,6 @@ pub async fn build_chain_from_config(
         transforms.push(tc.get_transforms(topics).await?)
     }
     Ok(TransformChain::new(transforms, name))
-}
-
-/// This trait should be implemented by a struct that represents a Transforms configuration values.
-/// It's required if you wish to configure your transform through a topology file. Once implemented, you
-/// will also need to add the configuration struct as a element of the enum [`crate::transforms::TransformsConfig`]
-/// to register it.
-#[async_trait]
-pub trait TransformsFromConfig: Send {
-    /// This function will process the configuration struct which will be created by deserializing the
-    /// topology.yaml file. From the configuration struct you should be able to create your
-    /// [`crate::transforms::Transform`] wrapped in its [`crate::transforms::Transforms`] enum.
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms>;
 }
 
 #[derive(Debug, Clone)]
@@ -380,14 +371,14 @@ struct ResponseData {
 /// however it also includes a setup and naming method.
 ///
 /// Transforms are cloned on a per TCP connection basis from a copy of the struct originally created
-/// by the call to [TransformsFromConfig::get_source] from your corresponding config struct that implements [TransformsFromConfig].
+/// by the call to [TransformsConfig::get_transforms].
 /// This means that each member of your struct that implements this trait can be considered private for
 /// each TCP connection or connected client. If you wish to share data between all copies of your struct
 /// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that.
 ///
 /// Changing the clone behavior of this struct can also control this behavior.
 ///
-/// Once you have created your [`Transform`] and corresponding [`TransformsFromConfig`], you will need to create
+/// Once you have created your [`Transform`], you will need to create
 /// new enum variants in [Transforms] and [TransformsConfig] to make them configurable in Shotover.
 /// Shotover uses a concept called enum dispatch to provide dynamic configuration of transform chains
 /// with minimal impact on performance.

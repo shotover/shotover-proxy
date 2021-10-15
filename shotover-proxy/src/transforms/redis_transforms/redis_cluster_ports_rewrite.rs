@@ -6,18 +6,19 @@ use serde::Deserialize;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisClusterPortsRewriteConfig {
     pub new_port: u16,
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisClusterPortsRewriteConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl RedisClusterPortsRewriteConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisClusterPortsRewrite(
-            RedisClusterPortsRewrite::new(self.new_port),
+            RedisClusterPortsRewrite {
+                new_port: self.new_port,
+            },
         ))
     }
 }

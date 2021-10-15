@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -25,9 +25,8 @@ impl RedisTimestampTagger {
     }
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisTimestampTaggerConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl RedisTimestampTaggerConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger {}))
     }
 }

@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{MessageDetails, QueryType};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -16,9 +16,8 @@ pub struct QueryTypeFilterConfig {
     pub filter: QueryType,
 }
 
-#[async_trait]
-impl TransformsFromConfig for QueryTypeFilterConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl QueryTypeFilterConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::QueryTypeFilter(QueryTypeFilter {
             filter: self.filter.clone(),
         }))
