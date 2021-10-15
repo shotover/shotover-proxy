@@ -913,7 +913,7 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
     }
 }
 
-async fn test_cluster_slots_reports_slot(connection: &mut Connection, port: u16) {
+async fn test_cluster_topology_rewrite_slots(connection: &mut Connection, port: u16) {
     let res: Value = redis::cmd("CLUSTER")
         .arg("SLOTS")
         .query_async(connection)
@@ -940,6 +940,40 @@ async fn test_cluster_slots_reports_slot(connection: &mut Connection, port: u16)
             res
         );
     }
+}
+
+async fn test_cluster_topology_rewrite_nodes(res: Value, new_port: u16) -> String {
+    let mut id = String::new();
+    if let Value::Data(data) = &res {
+        let read_cursor = std::io::Cursor::new(data);
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(b' ')
+            .has_headers(false)
+            .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+            .delimiter(b' ')
+            .from_reader(read_cursor);
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            if id.is_empty() {
+                let is_master = record
+                    .get(2)
+                    .unwrap()
+                    .split(",")
+                    .collect::<Vec<&str>>()
+                    .contains(&"master");
+
+                if is_master {
+                    id = record.get(0).unwrap().to_string();
+                }
+            }
+
+            let port: Vec<&str> = record.get(1).unwrap().split(":").collect();
+            assert_eq!(port[1], format!("{}@16379", new_port.to_string()));
+        }
+    }
+    id
 }
 
 async fn test_cluster_pipe(connection: &mut Connection) {
@@ -1019,7 +1053,7 @@ async fn test_cluster_tls() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_slots_reports_slot(&mut connection, 6379).await;
+    test_cluster_topology_rewrite_slots(&mut connection, 6379).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1045,7 +1079,7 @@ async fn test_source_tls_and_single_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_topology_rewrite() {
-    let _compose = DockerCompose::new("examples/redis-cluster-topologyrewrite/docker-compose.yml")
+    let _compose = DockerCompose::new("examples/redis-cluster-topology-rewrite/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
 
     let shotover_manager = ShotoverManager::from_topology_file(
@@ -1055,7 +1089,23 @@ async fn test_cluster_topology_rewrite() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_slots_reports_slot(&mut connection, 2004).await;
+    test_cluster_topology_rewrite_slots(&mut connection, 2004).await;
+
+    let res: Value = redis::cmd("CLUSTER")
+        .arg("NODES")
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    // Get an id to use for cluster replicas test
+    let id = test_cluster_topology_rewrite_nodes(res, 2004).await;
+
+    let res: Value = redis::cmd("CLUSTER")
+        .arg("REPLICAS")
+        .arg(id)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    test_cluster_topology_rewrite_nodes(res, 2004).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1095,7 +1145,7 @@ async fn test_cluster_redis() {
     let connection = &mut connection;
 
     run_all_cluster_safe(connection).await;
-    test_cluster_slots_reports_slot(connection, 6379).await;
+    test_cluster_topology_rewrite_slots(connection, 6379).await;
 }
 
 async fn run_all_active_safe(connection: &mut Connection) {
