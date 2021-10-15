@@ -42,6 +42,15 @@ impl Transform for RedisClusterTopologyRewrite {
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
+        let cluster_nodes_indices = message_wrapper
+            .message
+            .messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| is_cluster_nodes(&m.original))
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
         let mut response = message_wrapper.call_next_transform().await?;
 
         // Rewrite the ports in the cluster slots responses
@@ -50,6 +59,10 @@ impl Transform for RedisClusterTopologyRewrite {
                 .context("failed to rewrite CLUSTER SLOTS port")?;
         }
 
+        // Rewrite the ports in the cluster nodes responses
+        for i in cluster_nodes_indices {
+            //tracing::info!("{:?}", response.messages[i].details);
+            rewrite_port_node(&mut response.messages[i].original, self.new_port)
                 .context("failed to rewrite CLUSTER SLOTS port")?;
         }
 
@@ -80,12 +93,55 @@ fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
                 }
             };
         }
-    };
+    } else {
+        tracing::warn!("ClusterTopologyRewrite intercepted an incorrect message");
+    }
 
     Ok(())
 }
 
+/// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
+fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
+    if let RawFrame::Redis(Frame::BulkString(ref mut buf)) = frame {
+        let read_cursor = std::io::Cursor::new(buf.clone());
 
+        buf.clear();
+        let write_cursor = std::io::Cursor::new(buf);
+
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(b' ')
+            .has_headers(false)
+            .flexible(true)
+            .delimiter(b' ')
+            .from_reader(read_cursor);
+
+        let mut writer = csv::WriterBuilder::new()
+            .delimiter(b' ')
+            .flexible(true)
+            .from_writer(write_cursor);
+
+        for result in reader.records() {
+            let record = result.unwrap();
+            for (i, field) in record.iter().enumerate() {
+                if i == 1 {
+                    let re = regex::Regex::new(r":[^:@]+@").unwrap();
+                    let ip = &record[1];
+                    let new_ip = re.replace(ip, format!(":{}@", new_port.to_string()));
+                    writer.write_field(&*new_ip).unwrap();
+                } else {
+                    writer.write_field(field).unwrap();
+                }
+            }
+            writer.write_record(None::<&[u8]>).unwrap();
+        }
+
+        writer.flush().unwrap();
+    } else {
+        tracing::warn!("RedisClusterTopologyRewrite intercepted an incorrect message");
+    }
+
+    Ok(())
+}
 
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
 /// Or one that returns the same response as `CLUSTER NODES`
@@ -189,7 +245,7 @@ mod test {
     }
 
     #[test]
-    fn test_rewrite_port() {
+    fn test_rewrite_port_slots() {
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
         let mut codec = RedisCodec::new(DecodeType::Response, 3);
         let mut raw_frame = codec
@@ -238,5 +294,37 @@ mod test {
         assert_eq!(slots.nodes, nodes);
         assert_eq!(slots.masters.into_iter().collect::<Vec<_>>(), masters);
         assert_eq!(slots.replicas.into_iter().collect::<Vec<_>>(), replicas);
+    }
+
+    #[test]
+    fn test_rewrite_port_nodes() {
+        let bulk_string: &[u8] = b"b5657714579550445f271ff65e47f3d39a36806c :0@0 slave,noaddr 95566d2da3382ea88f549ab5766db9a6f4fbc44b 1634273478445 1634273478445 1 disconnected
+95566d2da3382ea88f549ab5766db9a6f4fbc44b :0@0 master,noaddr - 1634273478445 1634273478445 1 disconnected 0-5460
+c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:6379@16379 myself,master - 0 1634273501000 3 connected 10923-16383
+847c2efa4f5dcbca969f30a903ee54c5deb285f6 172.31.0.5:6379@16379 slave 2ee0e46acaec3fcb09fdff3ced0c267ffa2b78d3 0 1634273501428 2 connected
+2ee0e46acaec3fcb09fdff3ced0c267ffa2b78d3 :0@0 master,noaddr - 1634273478446 1634273478446 2 disconnected 5461-10922
+f9553ea7fc23905476efec1f949b4b3e41a44103 :0@0 slave,noaddr c852007a1c3b726534e6866456c1f2002fc442d9 1634273478445 1634273478445 3 disconnected
+";
+
+        let expected_string: &[u8] = b"b5657714579550445f271ff65e47f3d39a36806c :1234@0 slave,noaddr 95566d2da3382ea88f549ab5766db9a6f4fbc44b 1634273478445 1634273478445 1 disconnected
+95566d2da3382ea88f549ab5766db9a6f4fbc44b :1234@0 master,noaddr - 1634273478445 1634273478445 1 disconnected 0-5460
+c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:1234@16379 myself,master - 0 1634273501000 3 connected 10923-16383
+847c2efa4f5dcbca969f30a903ee54c5deb285f6 172.31.0.5:1234@16379 slave 2ee0e46acaec3fcb09fdff3ced0c267ffa2b78d3 0 1634273501428 2 connected
+2ee0e46acaec3fcb09fdff3ced0c267ffa2b78d3 :1234@0 master,noaddr - 1634273478446 1634273478446 2 disconnected 5461-10922
+f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534e6866456c1f2002fc442d9 1634273478445 1634273478445 3 disconnected
+";
+
+        let mut raw_frame = RawFrame::Redis(Frame::BulkString(bulk_string.to_vec()));
+        rewrite_port_node(&mut raw_frame, 1234).unwrap();
+
+        let rewritten = if let RawFrame::Redis(Frame::BulkString(string)) = raw_frame.clone() {
+            string
+        } else {
+            panic!("bad input: {:?}", raw_frame)
+        };
+
+        println!("{}", String::from_utf8_lossy(&rewritten));
+
+        assert_eq!(rewritten, expected_string);
     }
 }
