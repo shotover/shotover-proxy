@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Messages, QueryResponse};
+use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 use anyhow::Result;
@@ -38,12 +38,10 @@ impl TransformsFromConfig for CoalesceConfig {
         };
         Ok(Transforms::Coalesce(Coalesce {
             max_behavior: self.max_behavior.clone(),
-            buffer: Messages {
-                messages: if let Some(c) = hint {
-                    Vec::with_capacity(c)
-                } else {
-                    Vec::new()
-                },
+            buffer: if let Some(c) = hint {
+                Vec::with_capacity(c)
+            } else {
+                Vec::new()
             },
             last_write: Instant::now(),
         }))
@@ -53,15 +51,13 @@ impl TransformsFromConfig for CoalesceConfig {
 #[async_trait]
 impl Transform for Coalesce {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        self.buffer
-            .messages
-            .append(&mut message_wrapper.messages.messages);
+        self.buffer.append(&mut message_wrapper.messages);
 
         if match self.max_behavior {
-            CoalesceBehavior::COUNT(c) => self.buffer.messages.len() >= c,
+            CoalesceBehavior::COUNT(c) => self.buffer.len() >= c,
             CoalesceBehavior::WAIT_MS(w) => self.last_write.elapsed().as_millis() >= w,
             CoalesceBehavior::COUNT_OR_WAIT(c, w) => {
-                self.last_write.elapsed().as_millis() >= w || self.buffer.messages.len() >= c
+                self.last_write.elapsed().as_millis() >= w || self.buffer.len() >= c
             }
         } {
             //this could be done in the if statement above, but for the moment lets keep the
@@ -72,17 +68,14 @@ impl Transform for Coalesce {
                 }
                 _ => {}
             }
-            std::mem::swap(
-                &mut self.buffer.messages,
-                &mut message_wrapper.messages.messages,
-            );
+            std::mem::swap(&mut self.buffer, &mut message_wrapper.messages);
             message_wrapper.call_next_transform().await
         } else {
-            ChainResponse::Ok(Messages::new_single_response(
-                QueryResponse::empty(),
+            Ok(vec![Message::new(
+                MessageDetails::Response(QueryResponse::empty()),
                 true,
                 RawFrame::None,
-            ))
+            )])
         }
     }
 
@@ -93,7 +86,7 @@ impl Transform for Coalesce {
 
 #[cfg(test)]
 mod test {
-    use crate::message::{Message, Messages, QueryMessage};
+    use crate::message::{Message, QueryMessage};
     use crate::protocols::RawFrame;
     use crate::transforms::coalesce::{Coalesce, CoalesceBehavior};
     use crate::transforms::null::Null;
@@ -105,7 +98,7 @@ mod test {
     async fn test_count() -> Result<()> {
         let mut coalesce = Coalesce {
             max_behavior: CoalesceBehavior::COUNT(100),
-            buffer: Messages::new_with_size_hint(100),
+            buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
 
@@ -115,38 +108,25 @@ mod test {
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(
-            coalesce.transform(message_wrapper).await?.messages.len(),
-            100
-        );
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 100);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         Ok(())
     }
@@ -155,7 +135,7 @@ mod test {
     async fn test_wait() -> Result<()> {
         let mut coalesce = Coalesce {
             max_behavior: CoalesceBehavior::WAIT_MS(100),
-            buffer: Messages::new_with_size_hint(100),
+            buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
 
@@ -165,36 +145,25 @@ mod test {
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(
-            coalesce.transform(message_wrapper).await?.messages.len(),
-            75
-        );
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 75);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         Ok(())
     }
@@ -203,7 +172,7 @@ mod test {
     async fn test_wait_or_count() -> Result<()> {
         let mut coalesce = Coalesce {
             max_behavior: CoalesceBehavior::COUNT_OR_WAIT(100, 100),
-            buffer: Messages::new_with_size_hint(100),
+            buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
 
@@ -213,63 +182,41 @@ mod test {
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(
-            coalesce.transform(message_wrapper).await?.messages.len(),
-            75
-        );
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 75);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(
-            coalesce.transform(message_wrapper).await?.messages.len(),
-            100
-        );
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 100);
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages);
         message_wrapper.transforms = vec![&mut null];
-        assert_eq!(coalesce.transform(message_wrapper).await?.messages.len(), 1);
+        assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         Ok(())
     }

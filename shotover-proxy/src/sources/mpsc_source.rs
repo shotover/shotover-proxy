@@ -98,7 +98,7 @@ impl AsyncMpsc {
 
                 match return_chan {
                     None => {
-                        buffer.append(&mut messages.messages);
+                        buffer.append(&mut messages);
                         if match max_behavior {
                             CoalesceBehavior::COUNT(c) => buffer.len() >= c,
                             CoalesceBehavior::WAIT_MS(w) => last_write.elapsed().as_millis() >= w,
@@ -115,9 +115,9 @@ impl AsyncMpsc {
                                 }
                                 _ => {}
                             }
-                            std::mem::swap(&mut buffer, &mut messages.messages);
+                            std::mem::swap(&mut buffer, &mut messages);
                             let w: Wrapper = Wrapper::new(messages);
-                            info!("Flushing {} commands", w.messages.messages.len());
+                            info!("Flushing {} commands", w.messages.len());
 
                             if let Err(e) =
                                 main_chain.process_request(w, "AsyncMpsc".to_string()).await

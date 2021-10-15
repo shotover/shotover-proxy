@@ -28,7 +28,7 @@ impl TransformsFromConfig for QueryTypeFilterConfig {
 #[async_trait]
 impl Transform for QueryTypeFilter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        message_wrapper.messages.messages.retain(|m| {
+        message_wrapper.messages.retain(|m| {
             if let MessageDetails::Query(qm) = &m.details {
                 qm.query_type != self.filter
             } else {
@@ -45,7 +45,7 @@ impl Transform for QueryTypeFilter {
 
 #[cfg(test)]
 mod test {
-    use crate::message::{Message, MessageDetails, Messages, QueryMessage, QueryType};
+    use crate::message::{Message, MessageDetails, QueryMessage, QueryType};
     use crate::protocols::RawFrame;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::null::Null;
@@ -84,13 +84,11 @@ mod test {
             })
             .collect();
 
-        let mut message_wrapper = Wrapper::new(Messages {
-            messages: messages.clone(),
-        });
+        let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.transforms = vec![&mut null];
         let result = coalesce.transform(message_wrapper).await?;
-        assert_eq!(result.messages.len(), 13);
-        let any = result.messages.iter().find(|m| {
+        assert_eq!(result.len(), 13);
+        let any = result.iter().find(|m| {
             if let MessageDetails::Response(qr) = &m.details {
                 if let Some(qm) = &qr.matching_query {
                     return qm.query_type == QueryType::Read;

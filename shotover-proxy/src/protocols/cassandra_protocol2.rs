@@ -1,4 +1,3 @@
-use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, Value};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
@@ -18,7 +17,9 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::{info, trace, warn};
 
-use crate::message::{Messages, QueryType};
+use crate::message::{
+    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+};
 use crate::protocols::RawFrame;
 use cassandra_proto::frame::frame_response::ResponseBody;
 use chrono::DateTime;
@@ -540,7 +541,7 @@ impl CassandraCodec2 {
             _ => {}
         }
 
-        Messages::new_single_response(
+        vec![Message::new_response(
             QueryResponse {
                 matching_query,
                 result,
@@ -549,15 +550,12 @@ impl CassandraCodec2 {
             },
             false,
             RawFrame::Cassandra(frame),
-        )
+        )]
     }
 
     pub fn process_cassandra_frame(&self, frame: Frame) -> Messages {
         if self.bypass {
-            // if frame.body.len() == 0 {
-            //     info!("detected zero length body");
-            // }
-            return Messages::new_single_bypass(RawFrame::Cassandra(frame));
+            return vec![Message::new_raw(RawFrame::Cassandra(frame))];
         }
 
         match frame.opcode {
@@ -570,10 +568,10 @@ impl CassandraCodec2 {
                     if parsed_string.ast.is_none() {
                         // TODO: Currently this will probably catch schema changes that don't match
                         // what the SQL parser expects
-                        return Messages::new_single_bypass(RawFrame::Cassandra(frame));
+                        return vec![Message::new_raw(RawFrame::Cassandra(frame))];
                     }
-                    return Messages::new_single_query(
-                        QueryMessage {
+                    return vec![Message::new(
+                        MessageDetails::Query(QueryMessage {
                             query_string: body.query.into_plain(),
                             namespace: parsed_string.namespace.unwrap(),
                             primary_key: parsed_string.primary_key,
@@ -581,17 +579,17 @@ impl CassandraCodec2 {
                             projection: parsed_string.projection,
                             query_type: QueryType::Read,
                             ast: parsed_string.ast.map(ASTHolder::SQL),
-                        },
+                        }),
                         false,
                         RawFrame::Cassandra(frame),
-                    );
+                    )];
                 }
-                Messages::new_single_bypass(RawFrame::Cassandra(frame))
+                vec![Message::new_raw(RawFrame::Cassandra(frame))]
             }
             Opcode::Result => CassandraCodec2::build_response_message(frame, None),
             Opcode::Error => {
                 if let Ok(ResponseBody::Error(body)) = frame.get_body() {
-                    return Messages::new_single_response(
+                    return vec![Message::new_response(
                         QueryResponse {
                             matching_query: None,
                             result: None,
@@ -600,12 +598,12 @@ impl CassandraCodec2 {
                         },
                         false,
                         RawFrame::Cassandra(frame),
-                    );
+                    )];
                 }
 
-                Messages::new_single_bypass(RawFrame::Cassandra(frame))
+                vec![Message::new_raw(RawFrame::Cassandra(frame))]
             }
-            _ => Messages::new_single_bypass(RawFrame::Cassandra(frame)),
+            _ => vec![Message::new_raw(RawFrame::Cassandra(frame))],
         }
     }
 
@@ -684,9 +682,6 @@ impl CassandraCodec2 {
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
             }
         };
-        // if frame.body.len() == 0 {
-        //     info!("encoding zero length body");
-        // }
         Ok(frame)
     }
 }

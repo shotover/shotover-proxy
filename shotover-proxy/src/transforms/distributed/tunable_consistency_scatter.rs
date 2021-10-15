@@ -3,16 +3,13 @@ use std::collections::HashMap;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
-use itertools::Itertools;
 use serde::Deserialize;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{
-    Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
-};
+use crate::message::{Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
@@ -125,8 +122,7 @@ impl TunableConsistency {}
 #[async_trait]
 impl Transform for TunableConsistency {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let required_successes = message_wrapper
-            .messages
+        let required_successes: Vec<_> = message_wrapper
             .messages
             .iter_mut()
             .map(|m| {
@@ -144,7 +140,7 @@ impl Transform for TunableConsistency {
                     _ => self.write_consistency,
                 }
             })
-            .collect_vec();
+            .collect();
         let max_required_successes = *required_successes
             .iter()
             .max()
@@ -167,7 +163,7 @@ impl Transform for TunableConsistency {
             match res {
                 Ok(mut messages) => {
                     debug!("{:#?}", messages);
-                    for message in &mut messages.messages {
+                    for message in &mut messages {
                         message.generate_message_details_response();
                     }
                     results.push(messages);
@@ -184,7 +180,7 @@ impl Transform for TunableConsistency {
         drop(rec_fu);
 
         if results.len() < max_required_successes as usize {
-            let collated_response = required_successes
+            let collated_response: Vec<_> = required_successes
                 .iter()
                 .map(|_| {
                     Message::new_response(
@@ -195,18 +191,16 @@ impl Transform for TunableConsistency {
                         RawFrame::None,
                     )
                 })
-                .collect_vec();
+                .collect();
 
-            Ok(Messages {
-                messages: collated_response,
-            })
+            Ok(collated_response)
         } else {
             let mut collated_response: Vec<Message> = required_successes
                 .into_iter()
                 .filter_map(|_required_successes| {
                     let mut collated_results = vec![];
                     for res in &mut results {
-                        if let Some(m) = res.messages.pop() {
+                        if let Some(m) = res.pop() {
                             if let MessageDetails::Response(qm) = &m.details {
                                 collated_results.push(qm.clone());
                             }
@@ -215,14 +209,12 @@ impl Transform for TunableConsistency {
                     resolve_fragments(&mut collated_results)
                         .map(|qr| Message::new_response(qr, true, RawFrame::None))
                 })
-                .collect_vec();
+                .collect();
 
             // We do this as we are pop'ing from the end of the results in the filter_map above
             collated_response.reverse();
 
-            Ok(Messages {
-                messages: collated_response,
-            })
+            Ok(collated_response)
         }
     }
 
@@ -237,13 +229,15 @@ mod scatter_transform_tests {
     use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
     use crate::transforms::test_transforms::ReturnerTransform;
 
-    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{
+        Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    };
     use crate::protocols::RawFrame;
     use crate::transforms::{Transforms, Wrapper};
     use std::collections::HashMap;
 
-    fn check_ok_responses(mut message: Messages, expected_ok: &Value, _expected_count: usize) {
-        let test_message_details = message.messages.pop().unwrap().details;
+    fn check_ok_responses(mut messages: Messages, expected_ok: &Value, _expected_count: usize) {
+        let test_message_details = messages.pop().unwrap().details;
         if let MessageDetails::Response(QueryResponse {
             result: Some(r), ..
         }) = test_message_details
@@ -254,10 +248,10 @@ mod scatter_transform_tests {
         }
     }
 
-    fn check_err_responses(mut message: Messages, expected_err: &Value, _expected_count: usize) {
+    fn check_err_responses(mut messages: Messages, expected_err: &Value, _expected_count: usize) {
         if let MessageDetails::Response(QueryResponse {
             error: Some(err), ..
-        }) = message.messages.pop().unwrap().details
+        }) = messages.pop().unwrap().details
         {
             assert_eq!(expected_err, &err);
         } else {
@@ -274,14 +268,14 @@ mod scatter_transform_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_scatter_success() {
-        let response = Messages::new_single_response(
-            QueryResponse::just_result(Value::Strings("OK".to_string())),
+        let response = vec![Message::new(
+            MessageDetails::Response(QueryResponse::just_result(Value::Strings("OK".to_string()))),
             true,
             RawFrame::None,
-        );
+        )];
 
-        let wrapper = Wrapper::new(Messages::new_single_query(
-            QueryMessage {
+        let wrapper = Wrapper::new(vec![Message::new(
+            MessageDetails::Query(QueryMessage {
                 query_string: "".to_string(),
                 namespace: vec![String::from("keyspace"), String::from("old")],
                 primary_key: Default::default(),
@@ -289,10 +283,10 @@ mod scatter_transform_tests {
                 projection: None,
                 query_type: QueryType::Read,
                 ast: None,
-            },
+            }),
             true,
             RawFrame::None,
-        ));
+        )]);
 
         let ok_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {
             message: response.clone(),

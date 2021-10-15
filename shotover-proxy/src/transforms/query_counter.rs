@@ -22,7 +22,7 @@ pub struct QueryCounterConfig {
 #[async_trait]
 impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        for m in &message_wrapper.messages.messages {
+        for m in &message_wrapper.messages {
             if let MessageDetails::Query(QueryMessage {
                 query_string: _query_string,
                 namespace: _namespace,

@@ -62,7 +62,7 @@ pub struct SimpleRedisCache {
 
 impl SimpleRedisCache {
     async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
-        for message in &mut messages.messages {
+        for message in &mut messages {
             match &mut message.details {
                 MessageDetails::Query(ref mut qm) => {
                     let table_lookup = qm.namespace.join(".");
@@ -328,7 +328,7 @@ impl Transform for SimpleRedisCache {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut updates = 0_i32;
         {
-            for m in &mut message_wrapper.messages.messages {
+            for m in &mut message_wrapper.messages {
                 if let RawFrame::Cassandra(Frame {
                     version: _,
                     flags: _,
@@ -373,8 +373,8 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
+    use crate::message::Value as ShotoverValue;
     use crate::message::{ASTHolder, MessageDetails, Value};
-    use crate::message::{Messages, Value as ShotoverValue};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
@@ -395,12 +395,12 @@ mod test {
         let mut codec = RedisCodec::new(DecodeType::Query, 0);
 
         let mut final_command_bytes: BytesMut = build_redis_string(query).as_str().into();
-        let mut frame: Messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
-        for message in &mut frame.messages {
+        let mut messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
+        for message in &mut messages {
             message.generate_message_details_query();
         }
 
-        match frame.messages.remove(0).details {
+        match messages.remove(0).details {
             MessageDetails::Query(qm) => qm.ast.unwrap(),
             details => panic!(
                 "Exepected message details to be a query but was: {:?}",

@@ -143,14 +143,14 @@ impl RedisSinkCluster {
                     let response = responses
                         .fold(vec![], |mut acc, response| async move {
                             match response {
-                                Ok((_, Ok(mut messages))) => acc.push(
-                                    messages.messages.pop().map_or(Frame::Null, |message| {
+                                Ok((_, Ok(mut messages))) => {
+                                    acc.push(messages.pop().map_or(Frame::Null, |message| {
                                         match message.original {
                                             RawFrame::Redis(frame) => frame,
                                             _ => unreachable!(),
                                         }
-                                    }),
-                                ),
+                                    }))
+                                }
                                 Ok((_, Err(e))) => acc.push(Frame::Error(e.to_string())),
                                 Err(e) => acc.push(Frame::Error(e.to_string())),
                             }
@@ -160,11 +160,11 @@ impl RedisSinkCluster {
 
                     Ok((
                         message,
-                        ChainResponse::Ok(Messages::new_from_message(Message {
+                        ChainResponse::Ok(vec![Message {
                             details: MessageDetails::Unknown,
                             modified: false,
                             original: RawFrame::Redis(Frame::Array(response)),
-                        })),
+                        }]),
                     ))
                 })
             }
@@ -727,7 +727,7 @@ async fn receive_frame_response(
     let (_, result) = receiver.await?;
 
     // Exactly one Redis response is guaranteed by the codec on success.
-    let message = result?.messages.pop().unwrap().original;
+    let message = result?.pop().unwrap().original;
 
     match message {
         RawFrame::Redis(frame) => Ok(frame),
@@ -739,11 +739,11 @@ async fn receive_frame_response(
 fn send_frame_response(one_tx: oneshot::Sender<Response>, frame: Frame) -> Result<(), Response> {
     one_tx.send((
         Message::new_bypass(RawFrame::None),
-        Ok(Messages::new_single_response(
-            QueryResponse::empty(),
+        Ok(vec![Message::new(
+            MessageDetails::Response(QueryResponse::empty()),
             false,
             RawFrame::Redis(frame),
-        )),
+        )]),
     ))
 }
 
@@ -787,16 +787,16 @@ impl Transform for RedisSinkCluster {
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 Ok((
                     Message::new_bypass(RawFrame::None),
-                    Ok(Messages::new_single_response(
-                        QueryResponse::empty(),
+                    Ok(vec![Message::new(
+                        MessageDetails::Response(QueryResponse::empty()),
                         false,
                         RawFrame::Redis(Frame::Error("ERR Could not route request".to_string())),
-                    )),
+                    )]),
                 ))
             })?;
             let mut response = response?;
-            assert_eq!(response.messages.len(), 1);
-            let response_m = response.messages.remove(0);
+            assert_eq!(response.len(), 1);
+            let response_m = response.remove(0);
             match &response_m.original {
                 RawFrame::Redis(frame) => {
                     match frame.to_redirection() {
@@ -829,9 +829,7 @@ impl Transform for RedisSinkCluster {
                 _ => response_buffer.push(response_m),
             }
         }
-        Ok(Messages {
-            messages: response_buffer,
-        })
+        Ok(response_buffer)
     }
 
     fn get_name(&self) -> &'static str {
@@ -905,7 +903,6 @@ mod test {
             .decode(&mut slots_pcap.into())
             .unwrap()
             .unwrap()
-            .messages
             .pop()
             .unwrap()
             .original;

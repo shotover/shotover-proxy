@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
-use shotover_proxy::message::{Messages, QueryMessage, QueryType};
+use shotover_proxy::message::{Message, QueryMessage, QueryType};
 use shotover_proxy::protocols::RawFrame;
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::null::Null;
@@ -18,7 +18,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![Transforms::Null(Null::new_without_request())],
             "bench".to_string(),
         );
-        let wrapper = Wrapper::new(Messages::new_single_query(
+        let wrapper = Wrapper::new(vec![Message::new_query(
             QueryMessage {
                 query_string: "".to_string(),
                 namespace: vec![],
@@ -30,7 +30,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
             true,
             RawFrame::None,
-        ));
+        )]);
 
         group.bench_function("null", |b| {
             b.to_async(&rt).iter_batched(
@@ -54,13 +54,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             ],
             "bench".to_string(),
         );
-        let wrapper = Wrapper::new(Messages::new_single_bypass(RawFrame::Redis(Frame::Array(
-            vec![
-                Frame::BulkString(b"SET".to_vec()),
-                Frame::BulkString(b"foo".to_vec()),
-                Frame::BulkString(b"bar".to_vec()),
-            ],
-        ))));
+        let wrapper = Wrapper::new(vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
+            Frame::BulkString(b"SET".to_vec()),
+            Frame::BulkString(b"foo".to_vec()),
+            Frame::BulkString(b"bar".to_vec()),
+        ])))]);
 
         group.bench_function("redis_timestamp_tagger", |b| {
             b.to_async(&rt).iter_batched(

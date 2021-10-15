@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages, QueryResponse, Value};
+use crate::message::{Message, MessageDetails, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
@@ -8,7 +8,6 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use itertools::Itertools;
 use metrics::counter;
 use serde::Deserialize;
 use tracing::trace;
@@ -67,7 +66,7 @@ impl TransformsFromConfig for BufferConfig {
 impl Transform for Buffer {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.async_mode {
-            let expected_responses = message_wrapper.messages.messages.len();
+            let expected_responses = message_wrapper.messages.len();
             let buffer_result = self
                 .tx
                 .process_request_no_return(message_wrapper, "Buffer".to_string(), self.timeout)
@@ -81,12 +80,16 @@ impl Transform for Buffer {
                 }
             }
 
-            ChainResponse::Ok(Messages {
-                messages: (0..expected_responses)
-                    .into_iter()
-                    .map(|_| Message::new_response(QueryResponse::empty(), true, RawFrame::None))
-                    .collect_vec(),
-            })
+            Ok((0..expected_responses)
+                .into_iter()
+                .map(|_| {
+                    Message::new(
+                        MessageDetails::Response(QueryResponse::empty()),
+                        true,
+                        RawFrame::None,
+                    )
+                })
+                .collect())
         } else {
             self.tx
                 .process_request(message_wrapper, "Buffer".to_string(), self.timeout)
@@ -186,14 +189,14 @@ impl Transform for Tee {
                 let chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
-                    Ok(Messages::new_single_response(
-                        QueryResponse::empty_with_error(Some(Value::Strings(
+                    Ok(vec!(Message::new(
+                        MessageDetails::Response(QueryResponse::empty_with_error(Some(Value::Strings(
                             "Shotover could not write to both topics via Tee - Behavior is to fail"
                                 .to_string(),
-                        ))),
+                        )))),
                         true,
                         RawFrame::None,
-                    ))
+                    )))
                 } else {
                     Ok(chain_response)
                 }
