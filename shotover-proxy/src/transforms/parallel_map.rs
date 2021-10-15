@@ -119,28 +119,16 @@ impl Transform for ParallelMap {
         true
     }
 
-    fn validate(&self, position: usize) -> Vec<String> {
-        let mut errors = Vec::new();
-        if position != 0 && self.is_terminating() {
-            errors.push(format!(
-                "Terminating transform {:?} is not last in chain",
-                self.get_name()
-            ));
-        };
-
-        errors.extend(
-            self.chains
-                .iter()
-                .map(|chain| {
-                    chain
-                        .validate()
-                        .iter()
-                        .map(|x| format!("  {}", x))
-                        .collect()
-                })
-                .collect::<Vec<String>>(),
-        );
-
-        errors
+    fn validate(&self) -> Vec<String> {
+        self.chains
+            .iter()
+            .map(|chain| {
+                chain
+                    .validate()
+                    .iter()
+                    .map(|x| format!("  {}", x))
+                    .collect()
+            })
+            .collect::<Vec<String>>()
     }
 }

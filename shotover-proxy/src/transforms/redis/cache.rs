@@ -320,24 +320,12 @@ fn build_redis_ast_from_sql(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    fn validate(&self, position: usize) -> Vec<String> {
-        let mut errors = Vec::new();
-        if position == 0 && !self.is_terminating() {
-            errors.push(format!(
-                "Non-terminating transform {:?} is last in chain",
-                self.get_name()
-            ));
-        };
-
-        errors.extend(
-            self.cache_chain
-                .validate()
-                .iter()
-                .map(|x| format!("  {}", x))
-                .collect::<Vec<String>>(),
-        );
-
-        errors
+    fn validate(&self) -> Vec<String> {
+        self.cache_chain
+            .validate()
+            .iter()
+            .map(|x| format!("  {}", x))
+            .collect::<Vec<String>>()
     }
 
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {

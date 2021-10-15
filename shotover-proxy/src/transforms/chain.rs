@@ -184,11 +184,30 @@ impl TransformChain {
             .iter()
             .enumerate()
             .map(|(i, transform)| {
-                transform
-                    .validate((i + 1) % len)
-                    .iter()
-                    .map(|x| format!("  {}", x))
-                    .collect::<Vec<String>>()
+                let position = (i + 1) % len;
+                let mut errors = vec![];
+
+                if position == 0 && !transform.is_terminating() {
+                    errors.push(format!(
+                        "   Non-terminating transform {:?} is last in chain",
+                        transform.get_name()
+                    ));
+                } else if position != 0 && transform.is_terminating() {
+                    errors.push(format!(
+                        "   Terminating transform {:?} is not last in chain",
+                        transform.get_name()
+                    ));
+                }
+
+                errors.extend(
+                    transform
+                        .validate()
+                        .iter()
+                        .map(|x| format!("  {}", x))
+                        .collect::<Vec<String>>(),
+                );
+
+                errors
             })
             .into_iter()
             .flatten()

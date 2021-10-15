@@ -177,26 +177,49 @@ impl Transforms {
         }
     }
 
-    fn validate(&self, position: usize) -> Vec<String> {
+    fn validate(&self) -> Vec<String> {
         match self {
-            Transforms::CassandraSinkSingle(c) => c.validate(position),
-            Transforms::KafkaSink(k) => k.validate(position),
-            Transforms::RedisCache(r) => r.validate(position),
-            Transforms::MPSCTee(t) => t.validate(position),
-            Transforms::MPSCForwarder(f) => f.validate(position),
-            Transforms::RedisSinkSingle(r) => r.validate(position),
-            Transforms::TunableConsistency(c) => c.validate(position),
-            Transforms::RedisTimeStampTagger(r) => r.validate(position),
-            Transforms::RedisClusterSlotRewrite(r) => r.validate(position),
-            Transforms::Printer(p) => p.validate(position),
-            Transforms::Null(n) => n.validate(position),
-            Transforms::RedisSinkCluster(r) => r.validate(position),
-            Transforms::ParallelMap(s) => s.validate(position),
-            Transforms::PoolConnections(s) => s.validate(position),
-            Transforms::Coalesce(s) => s.validate(position),
-            Transforms::QueryTypeFilter(s) => s.validate(position),
-            Transforms::QueryCounter(s) => s.validate(position),
+            Transforms::CassandraSinkSingle(c) => c.validate(),
+            Transforms::KafkaSink(k) => k.validate(),
+            Transforms::RedisCache(r) => r.validate(),
+            Transforms::MPSCTee(t) => t.validate(),
+            Transforms::MPSCForwarder(f) => f.validate(),
+            Transforms::RedisSinkSingle(r) => r.validate(),
+            Transforms::TunableConsistency(c) => c.validate(),
+            Transforms::RedisTimeStampTagger(r) => r.validate(),
+            Transforms::RedisClusterSlotRewrite(r) => r.validate(),
+            Transforms::Printer(p) => p.validate(),
+            Transforms::Null(n) => n.validate(),
+            Transforms::RedisSinkCluster(r) => r.validate(),
+            Transforms::ParallelMap(s) => s.validate(),
+            Transforms::PoolConnections(s) => s.validate(),
+            Transforms::Coalesce(s) => s.validate(),
+            Transforms::QueryTypeFilter(s) => s.validate(),
+            Transforms::QueryCounter(s) => s.validate(),
             _ => vec![],
+        }
+    }
+
+    fn is_terminating(&self) -> bool {
+        match self {
+            Transforms::CassandraSinkSingle(c) => c.is_terminating(),
+            Transforms::KafkaSink(k) => k.is_terminating(),
+            Transforms::RedisCache(r) => r.is_terminating(),
+            Transforms::MPSCTee(t) => t.is_terminating(),
+            Transforms::MPSCForwarder(f) => f.is_terminating(),
+            Transforms::RedisSinkSingle(r) => r.is_terminating(),
+            Transforms::TunableConsistency(c) => c.is_terminating(),
+            Transforms::RedisTimeStampTagger(r) => r.is_terminating(),
+            Transforms::RedisClusterSlotRewrite(r) => r.is_terminating(),
+            Transforms::Printer(p) => p.is_terminating(),
+            Transforms::Null(n) => n.is_terminating(),
+            Transforms::RedisSinkCluster(r) => r.is_terminating(),
+            Transforms::ParallelMap(s) => s.is_terminating(),
+            Transforms::PoolConnections(s) => s.is_terminating(),
+            Transforms::Coalesce(s) => s.is_terminating(),
+            Transforms::QueryTypeFilter(s) => s.is_terminating(),
+            Transforms::QueryCounter(s) => s.is_terminating(),
+            _ => false,
         }
     }
 }
@@ -503,22 +526,8 @@ pub trait Transform: Send {
         false
     }
 
-    fn validate(&self, position: usize) -> Vec<String> {
-        let mut errors = Vec::new();
-        if position == 0 && !self.is_terminating() {
-            errors.push(format!(
-                "Non-terminating transform {:?} is last in chain",
-                self.get_name()
-            ));
-        }
-
-        if position != 0 && self.is_terminating() {
-            errors.push(format!(
-                "Terminating transform {:?} is not last in chain",
-                self.get_name()
-            ));
-        }
-        errors
+    fn validate(&self) -> Vec<String> {
+        vec![]
     }
 }
 
