@@ -11,7 +11,10 @@ use serde::Deserialize;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages};
-use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
+use crate::transforms::cassandra::{
+    peers_rewrite::{CassandraPeersRewrite, CassandraPeersRewriteConfig},
+    sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig},
+};
 use metrics::{counter, histogram};
 
 use crate::transforms::chain::TransformChain;
@@ -101,8 +104,9 @@ impl Debug for Transforms {
 impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CassandraCodecDestination(c) => c.transform(message_wrapper).await,
-            Transforms::KafkaDestination(k) => k.transform(message_wrapper).await,
+            Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
+            Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
+            Transforms::KafkaSink(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
@@ -126,8 +130,9 @@ impl Transforms {
 
     fn get_name(&self) -> &'static str {
         match self {
-            Transforms::CassandraCodecDestination(c) => c.get_name(),
-            Transforms::KafkaDestination(k) => k.get_name(),
+            Transforms::CassandraSinkSingle(c) => c.get_name(),
+            Transforms::CassandraPeersRewrite(c) => c.get_name(),
+            Transforms::KafkaSink(k) => k.get_name(),
             Transforms::RedisCache(r) => r.get_name(),
             Transforms::Tee(m) => m.get_name(),
             Transforms::DebugPrinter(p) => p.get_name(),
@@ -151,9 +156,10 @@ impl Transforms {
 
     async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         match self {
-            Transforms::CassandraCodecDestination(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisCodecDestination(a) => a.prep_transform_chain(t).await,
-            Transforms::KafkaDestination(a) => a.prep_transform_chain(t).await,
+            Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
+            Transforms::CassandraPeersRewrite(c) => c.prep_transform_chain(t).await,
+            Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
+            Transforms::KafkaSink(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
@@ -177,6 +183,7 @@ impl Transforms {
     fn validate(&self) -> Vec<String> {
         match self {
             Transforms::CassandraSinkSingle(c) => c.validate(),
+            Transforms::CassandraPeersRewrite(c) => c.validate(),
             Transforms::KafkaSink(k) => k.validate(),
             Transforms::RedisCache(r) => r.validate(),
             Transforms::Tee(t) => t.validate(),
@@ -202,6 +209,7 @@ impl Transforms {
     fn is_terminating(&self) -> bool {
         match self {
             Transforms::CassandraSinkSingle(c) => c.is_terminating(),
+            Transforms::CassandraPeersRewrite(c) => c.is_terminating(),
             Transforms::KafkaSink(k) => k.is_terminating(),
             Transforms::RedisCache(r) => r.is_terminating(),
             Transforms::Tee(t) => t.is_terminating(),
@@ -232,6 +240,7 @@ pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
     KafkaSink(KafkaSinkConfig),
+    CassandraPeersRewrite(CassandraPeersRewriteConfig),
     RedisCache(RedisConfig),
     Tee(TeeConfig),
     ConsistentScatter(ConsistentScatterConfig),
@@ -253,8 +262,9 @@ impl TransformsConfig {
     /// Return a new instance of the transform that the config is specifying.
     pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms> {
         match self {
-            TransformsConfig::CassandraCodecDestination(c) => c.get_source(topics).await,
-            TransformsConfig::KafkaDestination(k) => k.get_source(topics).await,
+            TransformsConfig::CassandraSinkSingle(c) => c.get_source(topics).await,
+            TransformsConfig::CassandraPeersRewrite(c) => c.get_source(topics).await,
+            TransformsConfig::KafkaSink(k) => k.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,
             TransformsConfig::RedisSinkSingle(r) => r.get_source(topics).await,
