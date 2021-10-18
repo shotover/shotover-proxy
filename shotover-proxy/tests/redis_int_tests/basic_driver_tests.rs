@@ -970,7 +970,7 @@ async fn test_cluster_ports_rewrite_nodes(res: Value, new_port: u16) -> String {
             }
 
             let port: Vec<&str> = record.get(1).unwrap().split(":").collect();
-            assert_eq!(port[1], format!("{}@16379", new_port.to_string()));
+            assert_eq!(port[1], format!("{}@16379", new_port));
         }
     }
     id

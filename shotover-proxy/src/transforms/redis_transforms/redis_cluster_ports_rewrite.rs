@@ -37,23 +37,19 @@ impl RedisClusterPortsRewrite {
 impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of cluster slot messages
-        let mut cluster_slots_indices = Vec::new();
-        let mut cluster_nodes_indices = Vec::new();
 
-        message_wrapper
-            .message
-            .messages
-            .iter()
-            .enumerate()
-            .for_each(|(i, m)| {
-                if is_cluster_slots(&m.original) {
-                    cluster_slots_indices.push(i);
-                }
+        let mut cluster_slots_indices = vec![];
+        let mut cluster_nodes_indices = vec![];
 
-                if is_cluster_nodes(&m.original) {
-                    cluster_nodes_indices.push(i);
-                }
-            });
+        for (i, message) in message_wrapper.messages.iter().enumerate() {
+            if is_cluster_slots(&message.original) {
+                cluster_slots_indices.push(i);
+            }
+
+            if is_cluster_nodes(&message.original) {
+                cluster_nodes_indices.push(i);
+            }
+        }
 
         let mut response = message_wrapper.call_next_transform().await?;
 
@@ -97,14 +93,13 @@ fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
                 }
             };
         }
+        Ok(())
     } else {
-        tracing::warn!("ClusterTopologyRewrite intercepted an incorrect message");
+        bail!("ClusterTopologyRewrite intercepted an incorrect message")
     }
-
-    Ok(())
 }
 
-/// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
+/// Rewrites the ports of a response to a CLUSTER NODES message to `new_port`
 fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     if let RawFrame::Redis(Frame::BulkString(ref mut buf)) = frame {
         let read_cursor = std::io::Cursor::new(buf.clone());
@@ -116,7 +111,6 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
             .delimiter(b' ')
             .has_headers(false)
             .flexible(true) // flexible because the last fields is an arbitrary number of tokens
-            .delimiter(b' ')
             .from_reader(read_cursor);
 
         let mut writer = csv::WriterBuilder::new()
@@ -147,15 +141,15 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
         }
 
         writer.flush().unwrap();
-    } else {
-        tracing::warn!("RedisClusterTopologyRewrite intercepted an incorrect message");
-    }
 
-    Ok(())
+        Ok(())
+    } else {
+        bail!("RedisClusterTopologyRewrite intercepted an incorrect message");
+    }
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
-/// or `CLUSTER_REPLICAS` which returns the same response as `CLUSTER NODES`
+/// or `CLUSTER REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &RawFrame) -> bool {
     let args = if let RawFrame::Redis(Frame::Array(array)) = frame {
         array
@@ -308,7 +302,7 @@ mod test {
 
     #[test]
     fn test_rewrite_port_nodes() {
-        let bulk_string: &[u8] = b"b5657714579550445f271ff65e47f3d39a36806c :0@0 slave,noaddr 95566d2da3382ea88f549ab5766db9a6f4fbc44b 1634273478445 1634273478445 1 disconnected
+        let bulk_string = b"b5657714579550445f271ff65e47f3d39a36806c :0@0 slave,noaddr 95566d2da3382ea88f549ab5766db9a6f4fbc44b 1634273478445 1634273478445 1 disconnected
 95566d2da3382ea88f549ab5766db9a6f4fbc44b :0@0 master,noaddr - 1634273478445 1634273478445 1 disconnected 0-5460
 c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:6379@16379 myself,master - 0 1634273501000 3 connected 10923-16383
 847c2efa4f5dcbca969f30a903ee54c5deb285f6 172.31.0.5:6379@16379 slave 2ee0e46acaec3fcb09fdff3ced0c267ffa2b78d3 0 1634273501428 2 connected
@@ -317,7 +311,7 @@ f9553ea7fc23905476efec1f949b4b3e41a44103 :0@0 slave,noaddr c852007a1c3b726534e68
 ";
 
         // bulk_string with port numbers replaced
-        let expected_string: &[u8] = b"b5657714579550445f271ff65e47f3d39a36806c :1234@0 slave,noaddr 95566d2da3382ea88f549ab5766db9a6f4fbc44b 1634273478445 1634273478445 1 disconnected
+        let expected_string = b"b5657714579550445f271ff65e47f3d39a36806c :1234@0 slave,noaddr 95566d2da3382ea88f549ab5766db9a6f4fbc44b 1634273478445 1634273478445 1 disconnected
 95566d2da3382ea88f549ab5766db9a6f4fbc44b :1234@0 master,noaddr - 1634273478445 1634273478445 1 disconnected 0-5460
 c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:1234@16379 myself,master - 0 1634273501000 3 connected 10923-16383
 847c2efa4f5dcbca969f30a903ee54c5deb285f6 172.31.0.5:1234@16379 slave 2ee0e46acaec3fcb09fdff3ced0c267ffa2b78d3 0 1634273501428 2 connected
