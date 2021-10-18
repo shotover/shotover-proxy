@@ -2,7 +2,7 @@ use crate::{
     config::topology::TopicHolder,
     error::ChainResponse,
     message::MessageDetails,
-    transforms::{Transform, Transforms, TransformsFromConfig, Wrapper},
+    transforms::{Transform, Transforms, Wrapper},
 };
 use crate::{message::QueryType, protocols::RawFrame};
 use anyhow::Result;
@@ -24,9 +24,8 @@ pub struct CassandraPeersRewriteConfig {
     pub port: Option<u32>,
 }
 
-#[async_trait]
-impl TransformsFromConfig for CassandraPeersRewriteConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl CassandraPeersRewriteConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
             emulate_single_node: self.emulate_single_node,
             port: self.port,
@@ -52,7 +51,6 @@ impl Transform for CassandraPeersRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of queries to system.peers & system.peers_v2
         let system_peers = message_wrapper
-            .message
             .messages
             .iter()
             .enumerate()
@@ -64,19 +62,15 @@ impl Transform for CassandraPeersRewrite {
 
         for i in system_peers {
             if let Some(new_port) = self.port {
-                rewrite_port(&mut response.messages[i].original, new_port);
+                rewrite_port(&mut response[i].original, new_port);
             }
 
             if self.emulate_single_node {
-                emulate_single_node(&mut response.messages[i].original);
+                emulate_single_node(&mut response[i].original);
             }
         }
 
         Ok(response)
-    }
-
-    fn get_name(&self) -> &'static str {
-        "CassandraPeersRewrite"
     }
 }
 
@@ -210,9 +204,7 @@ mod test {
 
         message_details.namespace = vec!["system".to_string(), "peers_v2".to_string()];
         message_details.query_type = QueryType::Read;
-        assert!(!is_system_peers(&MessageDetails::Query(
-            message_details.clone()
-        )));
+        assert!(!is_system_peers(&MessageDetails::Query(message_details)));
     }
 
     #[test]
@@ -249,9 +241,7 @@ mod test {
         )));
 
         message_details.query_type = QueryType::SchemaChange;
-        assert!(!is_system_peers_v2(&MessageDetails::Query(
-            message_details.clone()
-        )));
+        assert!(!is_system_peers_v2(&MessageDetails::Query(message_details)));
     }
 
     #[test]
