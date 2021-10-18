@@ -913,7 +913,7 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
     }
 }
 
-async fn test_cluster_topology_rewrite_slots(connection: &mut Connection, port: u16) {
+async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16) {
     let res: Value = redis::cmd("CLUSTER")
         .arg("SLOTS")
         .query_async(connection)
@@ -942,7 +942,7 @@ async fn test_cluster_topology_rewrite_slots(connection: &mut Connection, port: 
     }
 }
 
-async fn test_cluster_topology_rewrite_nodes(res: Value, new_port: u16) -> String {
+async fn test_cluster_ports_rewrite_nodes(res: Value, new_port: u16) -> String {
     let mut id = String::new();
     if let Value::Data(data) = &res {
         let read_cursor = std::io::Cursor::new(data);
@@ -1053,7 +1053,7 @@ async fn test_cluster_tls() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_topology_rewrite_slots(&mut connection, 6379).await;
+    test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1078,18 +1078,17 @@ async fn test_source_tls_and_single_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cluster_topology_rewrite() {
-    let _compose = DockerCompose::new("examples/redis-cluster-topology-rewrite/docker-compose.yml")
+async fn test_cluster_ports_rewrite() {
+    let _compose = DockerCompose::new("examples/redis-cluster-ports-rewrite/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
 
-    let shotover_manager = ShotoverManager::from_topology_file(
-        "examples/redis-cluster-topology-rewrite/topology.yaml",
-    );
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-ports-rewrite/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_topology_rewrite_slots(&mut connection, 2004).await;
+    test_cluster_ports_rewrite_slots(&mut connection, 2004).await;
 
     let res: Value = redis::cmd("CLUSTER")
         .arg("NODES")
@@ -1097,7 +1096,7 @@ async fn test_cluster_topology_rewrite() {
         .await
         .unwrap();
     // Get an id to use for cluster replicas test
-    let id = test_cluster_topology_rewrite_nodes(res, 2004).await;
+    let id = test_cluster_ports_rewrite_nodes(res, 2004).await;
 
     let res: Value = redis::cmd("CLUSTER")
         .arg("REPLICAS")
@@ -1105,7 +1104,7 @@ async fn test_cluster_topology_rewrite() {
         .query_async(&mut connection)
         .await
         .unwrap();
-    test_cluster_topology_rewrite_nodes(res, 2004).await;
+    test_cluster_ports_rewrite_nodes(res, 2004).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1145,7 +1144,7 @@ async fn test_cluster_redis() {
     let connection = &mut connection;
 
     run_all_cluster_safe(connection).await;
-    test_cluster_topology_rewrite_slots(connection, 6379).await;
+    test_cluster_ports_rewrite_slots(connection, 6379).await;
 }
 
 async fn run_all_active_safe(connection: &mut Connection) {
