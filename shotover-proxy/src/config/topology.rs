@@ -119,20 +119,18 @@ impl Topology {
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
 
-        let mut err_string = String::new();
+        let mut chain_errors = String::new();
         for (_, chain) in chains.iter() {
             let errs = chain.validate().join("\n");
 
             if !errs.is_empty() {
-                err_string.push_str(&errs);
-                err_string.push('\n');
+                chain_errors.push_str(&errs);
+                chain_errors.push('\n');
             }
         }
 
-        if !err_string.is_empty() {
-            eprintln!("\nTopology errors:");
-            eprintln!("{}", err_string);
-            panic!("Topology is not valid");
+        if !chain_errors.is_empty() {
+            return Err(anyhow!(format!("Toplogy errors\n{}", chain_errors)));
         }
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
