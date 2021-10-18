@@ -2,7 +2,6 @@ use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::{ChannelMessage, TopicHolder};
-use crate::message::Message;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::coalesce::CoalesceBehavior;
@@ -72,7 +71,7 @@ impl AsyncMpsc {
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
         let mut main_chain = chain;
-        let mut buffer: Vec<Message> = Vec::new();
+        let mut buffer = Vec::new();
 
         let jh = Handle::current().spawn(async move {
             // This will go out of scope once we exit the loop below, indicating we are done and shutdown

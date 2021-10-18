@@ -60,7 +60,7 @@ mod test {
 
         let mut null = Transforms::Null(Null::new());
 
-        let messages: Vec<Message> = (0..26)
+        let messages: Vec<_> = (0..26)
             .map(|i| {
                 let qt = if i % 2 == 0 {
                     QueryType::Read

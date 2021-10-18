@@ -104,7 +104,7 @@ mod test {
 
         let mut null = Transforms::Null(Null::new());
 
-        let messages: Vec<Message> = (0..25)
+        let messages: Vec<_> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
@@ -141,7 +141,7 @@ mod test {
 
         let mut null = Transforms::Null(Null::new());
 
-        let messages: Vec<Message> = (0..25)
+        let messages: Vec<_> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
@@ -178,7 +178,7 @@ mod test {
 
         let mut null = Transforms::Null(Null::new());
 
-        let messages: Vec<Message> = (0..25)
+        let messages: Vec<_> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 

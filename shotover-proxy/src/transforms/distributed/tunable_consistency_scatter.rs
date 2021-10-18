@@ -179,8 +179,8 @@ impl Transform for TunableConsistency {
 
         drop(rec_fu);
 
-        if results.len() < max_required_successes as usize {
-            let collated_response: Vec<_> = required_successes
+        Ok(if results.len() < max_required_successes as usize {
+            required_successes
                 .iter()
                 .map(|_| {
                     Message::new_response(
@@ -191,11 +191,9 @@ impl Transform for TunableConsistency {
                         RawFrame::None,
                     )
                 })
-                .collect();
-
-            Ok(collated_response)
+                .collect()
         } else {
-            let mut collated_response: Vec<Message> = required_successes
+            required_successes
                 .into_iter()
                 .filter_map(|_required_successes| {
                     let mut collated_results = vec![];
@@ -209,13 +207,10 @@ impl Transform for TunableConsistency {
                     resolve_fragments(&mut collated_results)
                         .map(|qr| Message::new_response(qr, true, RawFrame::None))
                 })
-                .collect();
-
-            // We do this as we are pop'ing from the end of the results in the filter_map above
-            collated_response.reverse();
-
-            Ok(collated_response)
-        }
+                // We do this as we are pop'ing from the end of the results in the filter_map above
+                .rev()
+                .collect()
+        })
     }
 
     fn get_name(&self) -> &'static str {

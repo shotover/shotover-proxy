@@ -69,7 +69,7 @@ impl Default for KafkaSink {
 #[async_trait]
 impl Transform for KafkaSink {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut responses: Vec<Message> = vec![];
+        let mut responses = vec![];
         for message in message_wrapper.messages {
             match message.details {
                 MessageDetails::Bypass(_) => {}
