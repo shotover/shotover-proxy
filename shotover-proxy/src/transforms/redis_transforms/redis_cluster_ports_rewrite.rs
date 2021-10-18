@@ -34,7 +34,6 @@ impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of cluster slot messages
         let cluster_slots_indices = message_wrapper
-            .message
             .messages
             .iter()
             .enumerate()
@@ -46,7 +45,7 @@ impl Transform for RedisClusterPortsRewrite {
 
         // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {
-            rewrite_port(&mut response.messages[i].original, self.new_port)
+            rewrite_port(&mut response[i].original, self.new_port)
                 .context("failed to rewrite CLUSTER SLOTS port")?;
         }
 
@@ -140,7 +139,6 @@ mod test {
             .decode(&mut slots_pcap.into())
             .unwrap()
             .unwrap()
-            .messages
             .pop()
             .unwrap()
             .original;

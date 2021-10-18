@@ -16,12 +16,11 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, trace, warn};
 
+use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::tls::{TlsConfig, TlsConnector};
-use crate::transforms::util::ConnectionError;
-use crate::transforms::util::Request;
-use crate::{message::Messages, server::Codec};
+use crate::transforms::util::{ConnectionError, Request};
 
 pub type Connection = UnboundedSender<Request>;
 pub type Lane = HashMap<String, Vec<Connection>>;
@@ -248,9 +247,7 @@ async fn tx_process<C: CodecWriteHalf, W: AsyncWrite + Unpin + Send + 'static>(
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec.clone());
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
-        let ret = Ok(Messages {
-            messages: vec![x.messages.clone()],
-        });
+        let ret = Ok(vec![x.messages.clone()]);
         return_tx.send(x)?;
         ret
     });
@@ -275,7 +272,7 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
                     }) = return_rx.recv().await
                     {
                         // If the receiver hangs up, just silently ignore
-                        let _ = ret.send((messages, Ok(Messages { messages: vec![m] })));
+                        let _ = ret.send((messages, Ok(vec![m])));
                     }
                 }
             }

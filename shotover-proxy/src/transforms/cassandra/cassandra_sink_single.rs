@@ -82,7 +82,7 @@ impl CassandraSinkSingle {
                         .connections
                         .get_mut(0)
                         .expect("No connections found");
-                    let expected_size = messages.messages.len();
+                    let expected_size = messages.len();
                     let results: Result<FuturesOrdered<Receiver<(Message, ChainResponse)>>> =
                         messages
                             .into_iter()
@@ -115,7 +115,7 @@ impl CassandraSinkSingle {
                         match timeout(Duration::from_secs(5), results.next()).await {
                             Ok(Some(prelim)) => {
                                 match prelim? {
-                                    (_, Ok(mut resp)) => responses.append(&mut resp.messages),
+                                    (_, Ok(mut resp)) => responses.append(&mut resp),
                                     (m, Err(err)) => {
                                         responses.push(Message::new_response(
                                             QueryResponse::empty_with_error(Some(
@@ -142,9 +142,7 @@ impl CassandraSinkSingle {
                         }
                     }
 
-                    return Ok(Messages {
-                        messages: responses,
-                    });
+                    return Ok(responses);
                 }
             }
         }
@@ -154,7 +152,7 @@ impl CassandraSinkSingle {
 #[async_trait]
 impl Transform for CassandraSinkSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        self.send_message(message_wrapper.message).await
+        self.send_message(message_wrapper.messages).await
     }
 
     fn get_name(&self) -> &'static str {

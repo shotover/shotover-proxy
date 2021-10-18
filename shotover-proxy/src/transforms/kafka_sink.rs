@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryResponse};
+use crate::message::{Message, MessageDetails, QueryResponse};
 use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
 
@@ -69,8 +69,8 @@ impl Default for KafkaSink {
 #[async_trait]
 impl Transform for KafkaSink {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut responses: Vec<Message> = vec![];
-        for message in message_wrapper.message.messages {
+        let mut responses = vec![];
+        for message in message_wrapper.messages {
             match message.details {
                 MessageDetails::Bypass(_) => {}
                 MessageDetails::Query(qm) => {
@@ -96,9 +96,7 @@ impl Transform for KafkaSink {
                 RawFrame::None,
             ))
         }
-        ChainResponse::Ok(Messages {
-            messages: responses,
-        })
+        Ok(responses)
     }
 
     fn get_name(&self) -> &'static str {

@@ -244,8 +244,7 @@ struct QueryData {
 
 #[derive(Debug)]
 pub struct Wrapper<'a> {
-    pub message: Messages,
-    // pub next_transform: usize,
+    pub messages: Messages,
     transforms: Vec<&'a mut Transforms>,
     pub client_details: String,
     chain_name: String,
@@ -254,7 +253,7 @@ pub struct Wrapper<'a> {
 impl<'a> Clone for Wrapper<'a> {
     fn clone(&self) -> Self {
         Wrapper {
-            message: self.message.clone(),
+            messages: self.messages.clone(),
             transforms: vec![],
             client_details: self.client_details.clone(),
             chain_name: self.chain_name.clone(),
@@ -264,7 +263,7 @@ impl<'a> Clone for Wrapper<'a> {
 
 impl<'a> Display for Wrapper<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!("{:#?}", self.message))
+        f.write_fmt(format_args!("{:#?}", self.messages))
     }
 }
 
@@ -296,7 +295,7 @@ impl<'a> Wrapper<'a> {
 
     pub fn new(m: Messages) -> Self {
         Wrapper {
-            message: m,
+            messages: m,
             transforms: vec![],
             client_details: "".to_string(),
             chain_name: "".to_string(),
@@ -305,7 +304,7 @@ impl<'a> Wrapper<'a> {
 
     pub fn new_with_chain_name(m: Messages, chain_name: String) -> Self {
         Wrapper {
-            message: m,
+            messages: m,
             transforms: vec![],
             client_details: "".to_string(),
             chain_name,
@@ -314,7 +313,7 @@ impl<'a> Wrapper<'a> {
 
     pub fn new_with_client_details(m: Messages, client_details: String) -> Self {
         Wrapper {
-            message: m,
+            messages: m,
             transforms: vec![],
             client_details,
             chain_name: "".to_string(),
@@ -323,7 +322,7 @@ impl<'a> Wrapper<'a> {
 
     pub fn new_with_next_transform(m: Messages, _next_transform: usize) -> Self {
         Wrapper {
-            message: m,
+            messages: m,
             transforms: vec![],
             client_details: "".to_string(),
             chain_name: "".to_string(),

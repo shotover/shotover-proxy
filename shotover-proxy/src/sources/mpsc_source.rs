@@ -2,7 +2,6 @@ use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::{ChannelMessage, TopicHolder};
-use crate::message::Message;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::coalesce::CoalesceBehavior;
@@ -72,7 +71,7 @@ impl AsyncMpsc {
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
         let mut main_chain = chain;
-        let mut buffer: Vec<Message> = Vec::new();
+        let mut buffer = Vec::new();
 
         let jh = Handle::current().spawn(async move {
             // This will go out of scope once we exit the loop below, indicating we are done and shutdown
@@ -98,7 +97,7 @@ impl AsyncMpsc {
 
                 match return_chan {
                     None => {
-                        buffer.append(&mut messages.messages);
+                        buffer.append(&mut messages);
                         if match max_behavior {
                             CoalesceBehavior::COUNT(c) => buffer.len() >= c,
                             CoalesceBehavior::WAIT_MS(w) => last_write.elapsed().as_millis() >= w,
@@ -115,9 +114,9 @@ impl AsyncMpsc {
                                 }
                                 _ => {}
                             }
-                            std::mem::swap(&mut buffer, &mut messages.messages);
+                            std::mem::swap(&mut buffer, &mut messages);
                             let w: Wrapper = Wrapper::new(messages);
-                            info!("Flushing {} commands", w.message.messages.len());
+                            info!("Flushing {} commands", w.messages.len());
 
                             if let Err(e) =
                                 main_chain.process_request(w, "AsyncMpsc".to_string()).await

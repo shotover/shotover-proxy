@@ -58,14 +58,14 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(ChannelMessage::new(wrapper.message, one_tx))
+                    .send(ChannelMessage::new(wrapper.messages, one_tx))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        ChannelMessage::new(wrapper.message, one_tx),
+                        ChannelMessage::new(wrapper.messages, one_tx),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -85,14 +85,14 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(ChannelMessage::new_with_no_return(wrapper.message))
+                    .send(ChannelMessage::new_with_no_return(wrapper.messages))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        ChannelMessage::new_with_no_return(wrapper.message),
+                        ChannelMessage::new_with_no_return(wrapper.messages),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))

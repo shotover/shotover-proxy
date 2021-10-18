@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
@@ -86,33 +86,30 @@ impl TransformsFromConfig for ParallelMapConfig {
 #[async_trait]
 impl Transform for ParallelMap {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut results: Vec<Message> = Vec::with_capacity(message_wrapper.message.messages.len());
-        let mut message_iter = message_wrapper.message.messages.into_iter();
+        let mut results = Vec::with_capacity(message_wrapper.messages.len());
+        let mut message_iter = message_wrapper.messages.into_iter();
         while message_iter.len() != 0 {
             let mut future = UOFutures::new(self.ordered);
             for chain in self.chains.iter_mut() {
                 if let Some(message) = message_iter.next() {
-                    future.push(chain.process_request(
-                        Wrapper::new(Messages {
-                            messages: vec![message],
-                        }),
-                        "Parallel".to_string(),
-                    ));
+                    future.push(
+                        chain.process_request(Wrapper::new(vec![message]), "Parallel".to_string()),
+                    );
                 }
             }
             // We do this gnarly functional chain to unwrap each individual result and pop an error on the first one
             // then flatten it into one giant response.
-            let mut temp: Vec<Message> = future
-                .collect::<Vec<_>>()
-                .await
-                .into_iter()
-                .collect::<anyhow::Result<Vec<Messages>>>()
-                .into_iter()
-                .flat_map(|ms| ms.into_iter().flat_map(|m| m.messages))
-                .collect();
-            results.append(&mut temp);
+            results.extend(
+                future
+                    .collect::<Vec<_>>()
+                    .await
+                    .into_iter()
+                    .collect::<anyhow::Result<Vec<Messages>>>()
+                    .into_iter()
+                    .flat_map(|ms| ms.into_iter().flatten()),
+            );
         }
-        Ok(Messages { messages: results })
+        Ok(results)
     }
 
     fn get_name(&self) -> &'static str {

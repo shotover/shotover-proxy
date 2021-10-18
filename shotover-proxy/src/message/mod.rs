@@ -13,34 +13,9 @@ use redis_protocol::resp2::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
-use std::iter::FromIterator;
 use std::net::IpAddr;
 
-// TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
-// Should move the message type to just be bulk..
-#[derive(PartialEq, Debug, Clone)]
-pub struct Messages {
-    pub messages: Vec<Message>,
-}
-
-impl FromIterator<Message> for Messages {
-    fn from_iter<T: IntoIterator<Item = Message>>(iter: T) -> Self {
-        let mut messages = Messages::new();
-        for i in iter {
-            messages.messages.push(i);
-        }
-        messages
-    }
-}
-
-impl IntoIterator for Messages {
-    type Item = Message;
-    type IntoIter = std::vec::IntoIter<Message>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.messages.into_iter()
-    }
-}
+pub type Messages = Vec<Message>;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Message {
@@ -94,6 +69,10 @@ impl Message {
         )
     }
 
+    pub fn new_raw(raw_frame: RawFrame) -> Self {
+        Self::new(MessageDetails::Unknown, false, raw_frame)
+    }
+
     pub fn new_no_original(details: MessageDetails, modified: bool) -> Self {
         Message {
             details,
@@ -111,77 +90,6 @@ impl Message {
                 modified: false,
                 original: self.original,
             }
-        }
-    }
-}
-
-impl Default for Messages {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Messages {
-    pub fn new() -> Self {
-        Messages { messages: vec![] }
-    }
-
-    pub fn new_with_size_hint(capacity: usize) -> Self {
-        Messages {
-            messages: Vec::with_capacity(capacity),
-        }
-    }
-
-    pub fn new_from_message(message: Message) -> Self {
-        Messages {
-            messages: vec![message],
-        }
-    }
-
-    pub fn get_raw_original(self) -> Vec<RawFrame> {
-        self.messages.into_iter().map(|m| m.original).collect()
-    }
-
-    pub fn new_single_query(qm: QueryMessage, modified: bool, original: RawFrame) -> Self {
-        Messages {
-            messages: vec![Message::new(MessageDetails::Query(qm), modified, original)],
-        }
-    }
-
-    pub fn new_single_bypass(raw_frame: RawFrame) -> Self {
-        Messages {
-            messages: vec![Message::new(MessageDetails::Unknown, false, raw_frame)],
-        }
-    }
-
-    pub fn new_single_bypass_response(raw_frame: RawFrame, modified: bool) -> Self {
-        Messages {
-            messages: vec![Message::new(
-                MessageDetails::Response(QueryResponse::empty()),
-                modified,
-                raw_frame,
-            )],
-        }
-        .into_bypass()
-    }
-
-    pub fn new_single_response(qr: QueryResponse, modified: bool, original: RawFrame) -> Self {
-        Messages {
-            messages: vec![Message::new(
-                MessageDetails::Response(qr),
-                modified,
-                original,
-            )],
-        }
-    }
-
-    pub fn into_bypass(self) -> Self {
-        Messages {
-            messages: self
-                .messages
-                .into_iter()
-                .map(Message::into_bypass)
-                .collect(),
         }
     }
 }

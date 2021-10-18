@@ -1,9 +1,8 @@
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryResponse};
+use crate::message::{Message, MessageDetails, QueryResponse};
 use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
-use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct Null {
@@ -32,9 +31,8 @@ impl Null {
 impl Transform for Null {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.with_request {
-            return ChainResponse::Ok(Messages {
-                messages: message_wrapper
-                    .message
+            return ChainResponse::Ok(
+                message_wrapper
                     .messages
                     .into_iter()
                     .filter_map(|m| {
@@ -48,14 +46,14 @@ impl Transform for Null {
                             None
                         }
                     })
-                    .collect_vec(),
-            });
+                    .collect(),
+            );
         }
-        ChainResponse::Ok(Messages::new_single_response(
-            QueryResponse::empty(),
+        Ok(vec![Message::new(
+            MessageDetails::Response(QueryResponse::empty()),
             true,
             RawFrame::None,
-        ))
+        )])
     }
 
     fn get_name(&self) -> &'static str {

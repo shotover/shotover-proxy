@@ -24,7 +24,7 @@ impl Printer {
 #[async_trait]
 impl Transform for Printer {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        info!("Request content: {:?}", message_wrapper.message);
+        info!("Request content: {:?}", message_wrapper.messages);
         self.counter += 1;
         let response = message_wrapper.call_next_transform().await;
         info!("Response content: {:?}", response);
