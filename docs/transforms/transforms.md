@@ -1,27 +1,51 @@
 # Transforms
 
-Currently shotover proxy supports the following transforms:
+## Concepts
 
-* CassandraSinkSingle
-* KafkaSink
-* RedisSinkSingle
-* RedisSinkCluster
-* MPSCForwarder
-* MPSCTee
-* Printer
-* RedisCache
-* Protect
-* TuneableConsistency
-* RedisTimeStampTagger
-* RedisClusterPortsRewrite
+### Sink
 
-## Terminating Transforms
+Sink transforms send data out of shotover to some other service.
+This is the opposite of shotover's sources, although sources are not transforms.
 
-The following transforms will all return a response, any transform after them in the chain won't ever get a request.
+### Terminating
 
-### CassandraSinkSingle
+Every transform chain must have exactly one terminating transform and it must be the final transform of the chain.
+This means that terminating transforms cannot pass messages onto another transform in the same chain.
+However some terminating transforms define their own subchain to allow further processing of messages.
 
-*State: Alpha*
+### Debug
+
+Debug transforms can be temporarily used to test how your shotover configuration performs.
+Dont forget to remove them when you are finished.
+
+### Implementation Status
+
+TODO: We should define what alpha/beta/stable actually mean, is it about API stability? battletestedness?
+
+| Transform                                           | Terminating | Implementation Status |
+|-----------------------------------------------------|-------------|-----------------------|
+|[CassandraSinkSingle](#cassandrasinksingle)          |✅           |Alpha                  |
+|[Coalesce](#coalesce)                                |❌           |Alpha                  |
+|[DebugPrinter](#debugprinter)                        |❌           |Alpha                  |
+|[DebugRandomDelay](#debugrandomdelay)                |❌           |Alpha                  |
+|[DebugRepeatMessage](#debugrepeatmessage)            |✅           |Alpha                  |
+|[KafkaSink](#kafkasink)                              |✅           |Alpha                  |
+|[MPSCForwarder](#mpscforwarder)                      |✅           |Beta                   |
+|[MPSCTee](#mpsctee)                                  |✅           |Beta                   |
+|[Null](#null)                                        |✅           |Beta                   |
+|[ParallelMap](#parallelmap)                          |✅           |Alpha                  |
+|[PoolConnections](#poolconnections)                  |✅           |Alpha                  |
+|[Protect](#protect)                                  |❌           |Beta                   |
+|[QueryCounter](#querycounter)                        |❌           |Alpha                  |
+|[QueryTypeFilter](#querytypefilter)                  |❌           |Alpha                  |
+|[RedisCache](#rediscache)                            |❌           |Alpha                  |
+|[RedisClusterPortsRewrite](#redisclusterportsrewrite)|❌           |Alpha                  |
+|[RedisSinkCluster](#redissinkcluster)                |✅           |Beta                   |
+|[RedisSinkSingle](#redissinksingle)                  |✅           |Beta                   |
+|[RedisTimeStampTagger](#redistimestamptagger)        |❌           |Alpha                  |
+|[TuneableConsistency](#tuneableconsistency)          |✅           |Alpha                  |
+
+## CassandraSinkSingle
 
 This transform will take a query, serialise it into a CQL4 compatible format and send to the Cassandra compatible database at the defined address.
 
@@ -30,9 +54,7 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-### KafkaSink
-
-*State: Alpha*
+## KafkaSink
 
 This transform will take a query and push it to a given Kafka topic.
 
@@ -40,9 +62,7 @@ This transform will take a query and push it to a given Kafka topic.
 * `keys` - A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver. See
  [here for details](https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html) E.g `bootstrap.servers: "127.0.0.1:9092"`.
 
-### RedisSinkSingle
-
-*State: Alpha*
+## RedisSinkSingle
 
 This transform will take a query, serialise it into a RESP2 compatible format and send to the Redis compatible database at the defined address.
 
@@ -50,9 +70,7 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-### RedisSinkCluster
-
-*State: Beta*
+## RedisSinkCluster
 
 This transform is a full featured redis driver that will connect to a redis-cluster and handle all discovery, sharding and routing operations.
 
@@ -62,54 +80,40 @@ Unlike other redis-cluster drivers, this Transform does support pipelining. It d
 
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
-#### Differences to real Redis
+### Differences to real Redis
 
 On an existing authenticated connection, a failed auth attempt will not "unauthenticate" the user. This behaviour matches Redis 6 but is different to Redis 5.
 
-#### Completeness
+### Completeness
 
 _Note: Currently Redis-cluster does not support the following functionality:_
 
 * _Redis Transactions_
 * _Scan based operations e.g. SSCAN_
 
-### MPSCForwarder
-
-#### State: Beta*
+## MPSCForwarder
 
 This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel succesfully.
 
 * `topic_name` - A string with the topic name to push queries/messages into. E.g. `topic_name: testtopic`
 
-## Standard Transforms
-
-These Transforms will all perform some action on the query/message, before calling the down-chain transform. Optionally they may also perform some action on the response returned by the transform down-chain.
-
-### MPSCTee
-
-*State: Beta*
+## MPSCTee
 
 This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the downstream transform.
 
 * `topic_name` - A string with the topic name to push queries/messages into. E.g. `topic_name: testtopic`
 
-### Printer
-
-*State: Beta*
+## DebugPrinter
 
 This transform will log the query/message at an info level, then call the down-chain transform.
 
-### RedisCache
-
-*State: Alpha*
+## RedisCache
 
 This transform will attempt to cache values for a given primary key in a redis hash set. It is a primarily implemented as a write through cache. It currently expects an SQL based AST to figure out what to cache (e.g. CQL, PGSQL) and updates to the cache and the backing datastore are performed sequentially. 
 
 * `config_values` - A string with the redis connection url. E.g. `config_values: "redis://127.0.0.1/"`
 
-### Protect
-
-*State: Beta*
+## Protect
 
 This transform will encrypt specific fields before passing them down-chain, it will also decrypt those same fields from a response. The transform will create a data encryption key on an user defined basis (e.g. per primary key, per value, per table etc).
 
@@ -124,9 +128,7 @@ Currently the Protect transform supports AWS KMS and or using a local Key Encryp
 
 Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly.
 
-### TuneableConsistency
-
-*State: Alpha*
+## TuneableConsistency
 
 This transform implements a distributed eventual consistent mechanism between the set of defined sub-chains. This transform will wait for a user configurable number of chains to return an OK response before returning the value up-chain. This follows a similar model as used by Cassandra for its consistency model. Strong consistency can be achieved when W + R > RF. In this case RF is always the number of chains in the route_map. 
 
@@ -153,9 +155,7 @@ route_map:
 * `write_consistency` - The number of chains to wait for a "write" response on.
 * `read_consistency` - The number of chains to wait for a "read" response on.
 
-### RedisTimeStampTagger
-
-*State: Alpha*
+## RedisTimeStampTagger
 
 A transform that wraps each redis command in a lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a responses timestamp. The response from the lua operation is unwrapped and returned to up-chain transforms looking like a normal redis response.
 
@@ -164,8 +164,6 @@ This is mainly used in conjunction with the `TuneableConsistency` to enable a Ca
 No configuration is required for this transform.
 
 ### RedisClusterPortsRewrite
-
-*State: Alpha*
 
 This transform should be used with the RedisSinkCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
 
