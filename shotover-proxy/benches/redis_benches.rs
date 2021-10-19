@@ -105,6 +105,24 @@ fn redis(c: &mut Criterion) {
             })
         });
     }
+
+    {
+        let mut state = None;
+        group.bench_function("port_rewrite", move |b| {
+            b.iter(|| {
+                let state = state.get_or_insert_with(|| {
+                    let compose =
+                        DockerCompose::new("example/redis-cluster-rewrite/docker-compose.yml")
+                            .wait_for_n("Cluster state changed", 6);
+                    let shotover_manager = ShotoverManager::from_topology_file(
+                        "examples/redis-cluster-rewrite/topology.yaml",
+                    );
+                    BenchResources::new(shotover_manager, compose)
+                });
+                redis::cmd("SET").arg("foo").execute(&mut state.connection);
+            });
+        });
+    }
 }
 
 criterion_group!(benches, redis);
