@@ -6,6 +6,7 @@ use shotover_proxy::message::{Message, QueryMessage, QueryType};
 use shotover_proxy::protocols::RawFrame;
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::null::Null;
+use shotover_proxy::transforms::redis_transforms::redis_cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
 use shotover_proxy::transforms::{Transforms, Wrapper};
 
@@ -61,6 +62,34 @@ fn criterion_benchmark(c: &mut Criterion) {
         ])))]);
 
         group.bench_function("redis_timestamp_tagger", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput {
+                    chain: chain.clone(),
+                    wrapper: wrapper.clone(),
+                    client_details: "".into(),
+                },
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
+    {
+        use redis_protocol::resp2::prelude::*;
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "bench".to_string(),
+        );
+        let wrapper = Wrapper::new(vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
+            Frame::BulkString(b"SET".to_vec()),
+            Frame::BulkString(b"foo".to_vec()),
+            Frame::BulkString(b"bar".to_vec()),
+        ])))]);
+
+        group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.clone(),
