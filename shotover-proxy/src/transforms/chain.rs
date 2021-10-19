@@ -177,35 +177,28 @@ impl TransformChain {
     }
 
     pub fn validate(&self) -> Vec<String> {
-        let len = self.chain.len();
+        let len = self.chain.len() - 1;
 
         let mut errors = self
             .chain
             .iter()
             .enumerate()
             .map(|(i, transform)| {
-                let position = (i + 1) % len;
                 let mut errors = vec![];
 
-                if position == 0 && !transform.is_terminating() {
+                if i == len && !transform.is_terminating() {
                     errors.push(format!(
                         "  Non-terminating transform {:?} is last in chain",
                         transform.get_name()
                     ));
-                } else if position != 0 && transform.is_terminating() {
+                } else if i != len && transform.is_terminating() {
                     errors.push(format!(
                         "  Terminating transform {:?} is not last in chain",
                         transform.get_name()
                     ));
                 }
 
-                errors.extend(
-                    transform
-                        .validate()
-                        .iter()
-                        .map(|x| format!("  {}", x))
-                        .collect::<Vec<String>>(),
-                );
+                errors.extend(transform.validate().iter().map(|x| format!("  {}", x)));
 
                 errors
             })
