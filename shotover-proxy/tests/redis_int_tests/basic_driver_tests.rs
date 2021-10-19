@@ -942,38 +942,102 @@ async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16
     }
 }
 
-async fn test_cluster_ports_rewrite_nodes(res: Value, new_port: u16) -> String {
-    let mut id = String::new();
+async fn get_master_id(connection: &mut Connection) -> String {
+    let res: Value = redis::cmd("CLUSTER")
+        .arg("NODES")
+        .query_async(connection)
+        .await
+        .unwrap();
+
     if let Value::Data(data) = &res {
         let read_cursor = std::io::Cursor::new(data);
         let mut reader = csv::ReaderBuilder::new()
             .delimiter(b' ')
             .has_headers(false)
             .flexible(true) // flexible because the last fields is an arbitrary number of tokens
-            .delimiter(b' ')
             .from_reader(read_cursor);
 
         for result in reader.records() {
             let record = result.unwrap();
 
-            if id.is_empty() {
-                let is_master = record
-                    .get(2)
-                    .unwrap()
-                    .split(",")
-                    .collect::<Vec<&str>>()
-                    .contains(&"master");
+            let is_master = record
+                .get(2)
+                .unwrap()
+                .split(",")
+                .collect::<Vec<&str>>()
+                .contains(&"master");
 
-                if is_master {
-                    id = record.get(0).unwrap().to_string();
-                }
+            if is_master {
+                return record.get(0).unwrap().to_string();
             }
-
-            let port: Vec<&str> = record.get(1).unwrap().split(":").collect();
-            assert_eq!(port[1], format!("{}@16379", new_port));
         }
     }
-    id
+
+    panic!("Could not find master node in cluster");
+}
+
+async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
+    let mut res = redis::cmd("CLUSTER")
+        .arg("NODES")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert_cluster_ports_rewrite_nodes(res, new_port);
+
+    // Get an id to use for cluster replicas test
+    let id = get_master_id(connection).await;
+
+    res = redis::cmd("CLUSTER")
+        .arg("REPLICAS")
+        .arg(id)
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert_cluster_ports_rewrite_nodes(res, new_port);
+}
+
+fn get_data_from_redis_res(res: Value) -> Vec<u8> {
+    if let Value::Bulk(data) = &res {
+        for item in data.iter() {
+            if let Value::Data(item) = item {
+                return item.to_vec();
+            }
+        }
+    }
+
+    if let Value::Data(data) = &res {
+        return data.to_vec();
+    }
+
+    panic!("Invalid response from Redis");
+}
+
+fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
+    let mut assertion_run = false;
+
+    let data = get_data_from_redis_res(res);
+
+    println!("assert_data: {:?}", String::from_utf8_lossy(&data));
+
+    let read_cursor = std::io::Cursor::new(data);
+
+    let mut reader = csv::ReaderBuilder::new()
+        .delimiter(b' ')
+        .has_headers(false)
+        .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+        .from_reader(read_cursor);
+
+    for result in reader.records() {
+        let record = result.unwrap();
+
+        let port: Vec<&str> = record.get(1).unwrap().split(":").collect();
+        assert_eq!(port[1], format!("{}@16379", new_port));
+        assertion_run = true;
+    }
+
+    assert!(assertion_run);
 }
 
 async fn test_cluster_pipe(connection: &mut Connection) {
@@ -1088,23 +1152,10 @@ async fn test_cluster_ports_rewrite() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
+
     test_cluster_ports_rewrite_slots(&mut connection, 2004).await;
 
-    let res: Value = redis::cmd("CLUSTER")
-        .arg("NODES")
-        .query_async(&mut connection)
-        .await
-        .unwrap();
-    // Get an id to use for cluster replicas test
-    let id = test_cluster_ports_rewrite_nodes(res, 2004).await;
-
-    let res: Value = redis::cmd("CLUSTER")
-        .arg("REPLICAS")
-        .arg(id)
-        .query_async(&mut connection)
-        .await
-        .unwrap();
-    test_cluster_ports_rewrite_nodes(res, 2004).await;
+    test_cluster_ports_rewrite_nodes(&mut connection, 2004).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

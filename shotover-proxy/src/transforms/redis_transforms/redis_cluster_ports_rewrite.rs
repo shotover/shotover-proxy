@@ -37,7 +37,6 @@ impl RedisClusterPortsRewrite {
 impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of cluster slot messages
-
         let mut cluster_slots_indices = vec![];
         let mut cluster_nodes_indices = vec![];
 
@@ -61,8 +60,8 @@ impl Transform for RedisClusterPortsRewrite {
 
         // Rewrite the ports in the cluster nodes responses
         for i in cluster_nodes_indices {
-            //tracing::info!("{:?}", response.messages[i].details);
-            rewrite_port_node(&mut response.messages[i].original, self.new_port)
+            println!("{:?}", i);
+            rewrite_port_node(&mut response[i].original, self.new_port)
                 .context("failed to rewrite CLUSTER NODES port")?;
         }
 
@@ -99,53 +98,76 @@ fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     }
 }
 
+/// Get a mutable reference to the CSV string inside a response to CLUSTER NODES or REPLICAS
+fn get_buffer(frame: &mut RawFrame) -> Result<&mut Vec<u8>> {
+    // CLUSTER NODES
+    if let RawFrame::Redis(Frame::BulkString(ref mut buf)) = frame {
+        return Ok(buf);
+    }
+
+    // CLUSTER REPLICAS
+    if let RawFrame::Redis(Frame::Array(array)) = frame {
+        for item in array.iter_mut() {
+            if let Frame::BulkString(ref mut buf) = item {
+                return Ok(buf);
+            }
+        }
+    }
+
+    bail!("RedisClusterTopologyRewrite intercepted an incorrect message");
+}
+
 /// Rewrites the ports of a response to a CLUSTER NODES message to `new_port`
 fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
-    if let RawFrame::Redis(Frame::BulkString(ref mut buf)) = frame {
-        let read_cursor = std::io::Cursor::new(buf.clone());
+    let buf = get_buffer(frame)?;
 
-        buf.clear();
-        let write_cursor = std::io::Cursor::new(buf);
+    let read_cursor = std::io::Cursor::new(buf.clone());
 
-        let mut reader = csv::ReaderBuilder::new()
-            .delimiter(b' ')
-            .has_headers(false)
-            .flexible(true) // flexible because the last fields is an arbitrary number of tokens
-            .from_reader(read_cursor);
+    buf.clear();
+    let write_cursor = std::io::Cursor::new(buf);
 
-        let mut writer = csv::WriterBuilder::new()
-            .delimiter(b' ')
-            .flexible(true)
-            .from_writer(write_cursor);
+    let mut reader = csv::ReaderBuilder::new()
+        .delimiter(b' ')
+        .has_headers(false)
+        .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+        .from_reader(read_cursor);
 
-        for result in reader.records() {
-            let record = result?;
-            let mut record_iter = record.into_iter();
+    let mut writer = csv::WriterBuilder::new()
+        .delimiter(b' ')
+        .flexible(true)
+        .from_writer(write_cursor);
 
-            // Write the id field
-            let id = record_iter
-                .next()
-                .ok_or(anyhow!("CLUSTER NODES response missing id field"))?;
-            writer.write_field(id)?;
+    for result in reader.records() {
+        let record = result?;
+        let mut record_iter = record.into_iter();
 
-            // Modify and rewrite the port field
-            let re = regex::Regex::new(r":[^:@]+@").unwrap(); // match (inclusive) the everything between ":${PORT}@"
-            let ip = record_iter
-                .next()
-                .ok_or(anyhow!("CLUSTER NODES response missing address field"))?;
-            let new_ip = re.replace(ip, format!(":{}@", new_port.to_string()));
-            writer.write_field(&*new_ip).unwrap();
+        // Write the id field
+        let id = record_iter
+            .next()
+            .ok_or(anyhow!("CLUSTER NODES response missing id field"))?;
+        writer.write_field(id)?;
 
-            // Write the last of the record
-            writer.write_record(record_iter)?;
-        }
+        // Modify and rewrite the port field
+        let ip = record_iter
+            .next()
+            .ok_or(anyhow!("CLUSTER NODES response missing address field"))?;
 
-        writer.flush().unwrap();
+        let split = ip
+            .clone()
+            .split(|c| c == ':' || c == '@')
+            .collect::<Vec<&str>>();
 
-        Ok(())
-    } else {
-        bail!("RedisClusterTopologyRewrite intercepted an incorrect message");
+        let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
+
+        writer.write_field(&*new_ip).unwrap();
+
+        // Write the last of the record
+        writer.write_record(record_iter)?;
     }
+
+    writer.flush().unwrap();
+
+    Ok(())
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
@@ -165,7 +187,13 @@ fn is_cluster_nodes(frame: &RawFrame) -> bool {
         return false;
     };
 
-    args == [b"CLUSTER", b"NODES" as &[u8]] || args == [b"CLUSTER", b"REPLICAS" as &[u8]]
+    if args[0] == b"CLUSTER" {
+        if args[1] == b"REPLICAS" || args[1] == b"NODES" {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
@@ -327,8 +355,6 @@ f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534
         } else {
             panic!("bad input: {:?}", raw_frame)
         };
-
-        println!("{}", String::from_utf8_lossy(&rewritten));
 
         assert_eq!(rewritten, expected_string);
     }

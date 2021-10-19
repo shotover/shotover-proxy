@@ -2452,7 +2452,6 @@ dependencies = [
  "rdkafka",
  "redis",
  "redis-protocol",
- "regex",
  "rusoto_kms",
  "rusoto_signature",
  "serde",
