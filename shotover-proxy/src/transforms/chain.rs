@@ -157,7 +157,7 @@ impl TransformChain {
             send_handle: tx,
             #[cfg(test)]
             count: count_clone,
-            original_chain: self.clone(),
+            original_chain: self,
         }
     }
 
@@ -179,7 +179,7 @@ impl TransformChain {
     pub fn validate(&self) -> Vec<String> {
         let len = self.chain.len();
 
-        let mut r = self
+        let mut errors = self
             .chain
             .iter()
             .enumerate()
@@ -189,12 +189,12 @@ impl TransformChain {
 
                 if position == 0 && !transform.is_terminating() {
                     errors.push(format!(
-                        "   Non-terminating transform {:?} is last in chain",
+                        "  Non-terminating transform {:?} is last in chain",
                         transform.get_name()
                     ));
                 } else if position != 0 && transform.is_terminating() {
                     errors.push(format!(
-                        "   Terminating transform {:?} is not last in chain",
+                        "  Terminating transform {:?} is not last in chain",
                         transform.get_name()
                     ));
                 }
@@ -209,15 +209,14 @@ impl TransformChain {
 
                 errors
             })
-            .into_iter()
             .flatten()
             .collect::<Vec<String>>();
 
-        if !r.is_empty() {
-            r.insert(0, format!("{}:", self.name.clone()));
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.name));
         }
 
-        r
+        errors
     }
 
     pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {

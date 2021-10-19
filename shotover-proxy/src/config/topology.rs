@@ -120,7 +120,7 @@ impl Topology {
         info!("Loaded chains {:?}", chains.keys());
 
         let mut chain_errors = String::new();
-        for (_, chain) in chains.iter() {
+        for chain in chains.values() {
             let errs = chain.validate().join("\n");
 
             if !errs.is_empty() {
@@ -130,7 +130,7 @@ impl Topology {
         }
 
         if !chain_errors.is_empty() {
-            return Err(anyhow!(format!("Toplogy errors\n{}", chain_errors)));
+            return Err(anyhow!(format!("Topology errors\n{}", chain_errors)));
         }
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
