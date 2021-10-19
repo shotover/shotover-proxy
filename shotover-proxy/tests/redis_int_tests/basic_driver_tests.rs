@@ -1019,8 +1019,6 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
 
     let data = get_data_from_redis_res(res);
 
-    println!("assert_data: {:?}", String::from_utf8_lossy(&data));
-
     let read_cursor = std::io::Cursor::new(data);
 
     let mut reader = csv::ReaderBuilder::new()
@@ -1196,6 +1194,7 @@ async fn test_cluster_redis() {
 
     run_all_cluster_safe(connection).await;
     test_cluster_ports_rewrite_slots(connection, 6379).await;
+    test_cluster_ports_rewrite_nodes(connection, 6379).await;
 }
 
 async fn run_all_active_safe(connection: &mut Connection) {

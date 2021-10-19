@@ -54,13 +54,12 @@ impl Transform for RedisClusterPortsRewrite {
 
         // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {
-            rewrite_port_slot(&mut response.messages[i].original, self.new_port)
+            rewrite_port_slot(&mut response[i].original, self.new_port)
                 .context("failed to rewrite CLUSTER SLOTS port")?;
         }
 
         // Rewrite the ports in the cluster nodes responses
         for i in cluster_nodes_indices {
-            println!("{:?}", i);
             rewrite_port_node(&mut response[i].original, self.new_port)
                 .context("failed to rewrite CLUSTER NODES port")?;
         }
@@ -187,13 +186,7 @@ fn is_cluster_nodes(frame: &RawFrame) -> bool {
         return false;
     };
 
-    if args[0] == b"CLUSTER" {
-        if args[1] == b"REPLICAS" || args[1] == b"NODES" {
-            return true;
-        }
-    }
-
-    false
+    args[0] == b"CLUSTER" && (args[1] == b"REPLICAS" || args[1] == b"NODES")
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
