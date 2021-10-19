@@ -17,9 +17,7 @@ pub struct RedisClusterPortsRewriteConfig {
 impl TransformsFromConfig for RedisClusterPortsRewriteConfig {
     async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisClusterPortsRewrite(
-            RedisClusterPortsRewrite {
-                new_port: self.new_port,
-            },
+            RedisClusterPortsRewrite::new(self.new_port),
         ))
     }
 }
@@ -27,6 +25,12 @@ impl TransformsFromConfig for RedisClusterPortsRewriteConfig {
 #[derive(Clone)]
 pub struct RedisClusterPortsRewrite {
     new_port: u16,
+}
+
+impl RedisClusterPortsRewrite {
+    pub fn new(new_port: u16) -> Self {
+        RedisClusterPortsRewrite { new_port }
+    }
 }
 
 #[async_trait]
