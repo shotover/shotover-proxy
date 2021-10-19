@@ -65,6 +65,9 @@ pub mod util;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
 
+/// The Transforms enum is responsible for Transform registration and enum dispatch
+/// in the transform chain. This is largely a performance optimisation by using enum dispatch rather
+/// than using dynamic trait objects.
 #[derive(Clone)]
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
@@ -173,6 +176,8 @@ impl Transforms {
     }
 }
 
+/// The TransformsConfig enum is responsible for TransformConfig registration and enum dispatch
+/// in the transform chain. Allows you to register your config struct for the config file.
 #[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
@@ -232,8 +237,15 @@ pub async fn build_chain_from_config(
     Ok(TransformChain::new(transforms, name))
 }
 
+/// This trait should be implemented by a struct that represents a Transforms configuration values.
+/// It's required if you wish to configure your transform through a topology file. Once implemented, you
+/// will also need to add the configuration struct as a element of the enum [`crate::transforms::TransformsConfig`]
+/// to register it.
 #[async_trait]
 pub trait TransformsFromConfig: Send {
+    /// This function will process the configuration struct which will be created by deserializing the
+    /// topology.yaml file. From the configuration struct you should be able to create your
+    /// [`crate::transforms::Transform`] wrapped in its [`crate::transforms::Transforms`] enum.
     async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms>;
 }
 
@@ -242,6 +254,9 @@ struct QueryData {
     query: String,
 }
 
+/// The wrapper struct is passed into each transform and contains a list of mutable references to the
+/// remaining transforms that will process the messages attached to this Wrapper.
+/// Most [`Transform`] authors will only be interested in `message`.
 #[derive(Debug)]
 pub struct Wrapper<'a> {
     pub messages: Messages,
@@ -250,6 +265,9 @@ pub struct Wrapper<'a> {
     chain_name: String,
 }
 
+/// Wrapper will not (cannot) bring the current list of transforms that it needs to traverse with it
+/// This is purely to make it convenient to clone all the data within Wrapper rather than it's transform
+/// state.
 impl<'a> Clone for Wrapper<'a> {
     fn clone(&self) -> Self {
         Wrapper {
@@ -272,6 +290,14 @@ tokio::task_local! {
 }
 
 impl<'a> Wrapper<'a> {
+    /// This function will take a mutable reference to the next transform out of the Wrapper structs
+    /// vector of transform references. It then sets up the chain name and transform name in the local
+    /// thread scope for structured logging.
+    ///
+    /// It then calls the next [Transform], recording the number of successes and failures in a metrics counter. It also measures
+    /// the execution time of the [Transform::transform] function as a metrics latency histogram.
+    ///
+    /// The result of calling the next transform is then provided as a response.
     pub async fn call_next_transform(mut self) -> ChainResponse {
         if self.transforms.is_empty() {
             panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a terminating sink transform to send the messages somewhere.");
@@ -339,12 +365,119 @@ struct ResponseData {
     response: Messages,
 }
 
+/// This trait is the primary extension point for shotover-proxy.
+/// A transform is a struct that implements the Transform trait and enables you to modify and observe database
+/// queries or frames.
+/// The trait has one function where you implement the majority of your logic [Transform::transform],
+/// however it also includes a setup and naming method.
+///
+/// Transforms are cloned on a per tcp connection basis from a copy of the struct originally created
+/// by the call to [TransformsFromConfig::get_source] from your corresponding config struct that implements [TransformsFromConfig].
+/// This means that each member of your struct that implements this trait can be considered private for
+/// each tcp connection or connected client. If you wish to share data between all copies of your struct
+/// then wrapping a member in an `Arc<Mutex<_>>` will achieve that.
+///
+/// Changing the clone behavior of this struct can also control this behavior.
+///
+/// Once you have created your Transform and corresponding TransformFromConfig, you will need to create
+/// new enum variants in [Transforms] and [TransformsConfig] to make them configurable in shotover.
+/// Shotover uses a concept called enum dispatch to provide dynamic configuration of transform chains
+/// with minimal impact on performance.
+///
+/// Implementing this trait is usually done using `#[async_trait]` macros.
+///
 #[async_trait]
 pub trait Transform: Send {
+    /// This function should be implemented by your transform. The wrapper object contains the queries/
+    /// frames in a Vector of Messages. Some protocols support multiple queries before a response is expected
+    /// for example pipelined redis queries or batched cassandra queries.
+    ///
+    /// Shotover expects the same number of messages in wrapper.messages to be returned as was passed
+    /// into via the function parameter message_wrapper. For in order protocols (such as redis) you will
+    /// also need to ensure the order of responses matches the order of the queries.
+    ///
+    /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform
+    /// can also modify the response from `message_wrapper.call_next_transform()` if it needs
+    /// to. As long as your return the same number of messages as you received, you won't break behavior
+    /// from other transforms.
+    ///
+    /// ## Invariants
+    /// Your transform function at a minimum needs to
+    /// * _Non-terminating_ - If your transform does not send the message to an external system or generate its own response to the query,
+    /// it will need to call and return the response from `message_wrapper.call_next_transform()`. This ensures that your
+    /// transform will call any subsequent downstream transforms without needing to know about what they
+    /// do. This type of transform is called an Intermediate transform.
+    /// * _Terminating_ - Your transform can also choose not to call `message_wrapper.call_next_transform()` if it sends the
+    /// messages to an external system or generates its own response to the query e.g.
+    /// [`crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingle`]. This type of transform
+    /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
+    /// * _Message count_ - Your transform should return the same number of responses as messages it receives. Transforms that
+    /// don't do this explicitly for each call, should return the same number of responses as messages it receives over the lifetime
+    /// of the transform chain. A good example of this is the [`crate::transforms::coalesce::Coalesce`] transform. The
+    /// [`crate::transforms::sampler::Sampler`] transform is also another example of this, with a slightly different twist.
+    /// The number of responses will be the sames as the number of messages, as the sampled messages are sent to a subchain rather than
+    /// changing the behavior of the main chain.
+    ///
+    /// ## Naming
+    /// Transforms also have different naming conventions.
+    /// * Transforms that interact with an external system are called Sinks.
+    /// * Transforms that don't call subsequent chains via `message_wrapper.call_next_transform()` are called terminating transforms.
+    /// * Transforms that do call subsquent chains via `message_wrapper.call_next_transform()` are non-terminating transforms.
+    ///
+    /// You can have have a transforms that is both non-terminating and a sink (see [`crate::transforms::kafka_sink::KafkaSink`]
+    ///
+    /// A basic transform that logs query data and counts the number requests it sees could be defined like so:
+    /// ```
+    /// use shotover_proxy::transforms::{Transform, Wrapper};
+    /// use async_trait::async_trait;
+    /// use tracing::info;
+    /// use shotover_proxy::error::ChainResponse;
+    ///
+    /// #[derive(Debug, Clone)]
+    /// pub struct Printer {
+    ///     counter: i32,
+    /// }
+    ///
+    /// impl Default for Printer {
+    ///     fn default() -> Self {
+    ///         Self::new()
+    ///     }
+    /// }
+    ///
+    /// impl Printer {
+    ///     pub fn new() -> Printer {
+    ///         Printer { counter: 0 }
+    ///     }
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl Transform for Printer {
+    ///     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    ///         self.counter += 1;
+    ///         info!("{} Request content: {:?}", self.counter, message_wrapper.message);
+    ///         let response = message_wrapper.call_next_transform().await;
+    ///         info!("Response content: {:?}", response);
+    ///         response
+    ///     }
+    ///
+    ///     fn get_name(&self) -> &'static str {
+    ///         "Printer"
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// In this example `counter` will contain the count of the number of messages seen for this connection.
+    /// Wrapping it in an Arc<Mutex<_>> would make it a global count of all messages seen by this transform.
+    ///
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
+    /// This function provides an access method for getting the name of the transform.
     fn get_name(&self) -> &'static str;
 
+    /// This function provides a hook into chain setup that allows you to perform any chain setup
+    /// needed before receiving traffic. It is generally recommended to do any setup on the first query
+    /// as this makes shotover lazy startup and shotover / upstream database startup ordering challenges
+    /// easier to resolve (e.g. you can start shotover before the upstream database).
     async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
         Ok(())
     }
