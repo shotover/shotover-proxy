@@ -454,7 +454,7 @@ pub trait Transform: Send {
     /// impl Transform for Printer {
     ///     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
     ///         self.counter += 1;
-    ///         info!("{} Request content: {:?}", self.counter, message_wrapper.message);
+    ///         info!("{} Request content: {:?}", self.counter, message_wrapper.messages);
     ///         let response = message_wrapper.call_next_transform().await;
     ///         info!("Response content: {:?}", response);
     ///         response
