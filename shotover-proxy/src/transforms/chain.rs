@@ -180,7 +180,7 @@ impl TransformChain {
         if self.chain.len() == 0 {
             return vec![
                 format!("{}:", self.name),
-                "Chain cannot be empty".to_string(),
+                "  Chain cannot be empty".to_string(),
             ];
         }
 
@@ -254,7 +254,7 @@ mod chain_tests {
         let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
         assert_eq!(
             chain.validate(),
-            vec!["test-chain:", "Chain cannot be empty"]
+            vec!["test-chain:", "  Chain cannot be empty"]
         );
     }
 

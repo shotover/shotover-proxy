@@ -265,3 +265,143 @@ impl Topology {
         }
     }
 }
+
+#[cfg(test)]
+mod topology_tests {
+    use tokio::sync::{mpsc, watch};
+
+    use crate::{
+        sources::{redis_source::RedisConfig, Sources, SourcesConfig},
+        transforms::TransformsConfig,
+    };
+    use std::collections::HashMap;
+
+    use super::{Topology, TopologyConfig};
+
+    fn create_test_topology(chain: Vec<TransformsConfig>) -> Topology {
+        let mut chain_config = HashMap::new();
+        chain_config.insert("redis_chain".to_string(), chain);
+
+        let redis_source = SourcesConfig::Redis(RedisConfig {
+            listen_addr: "127.0.0.1".to_string(),
+            batch_size_hint: 100,
+            connection_limit: None,
+            hard_connection_limit: None,
+            tls: None,
+        });
+
+        let mut sources = HashMap::new();
+        sources.insert("redis_prod".to_string(), redis_source);
+
+        let config = TopologyConfig {
+            sources,
+            chain_config,
+            named_topics: None,
+            source_to_chain_mapping: HashMap::new(),
+        };
+
+        Topology::topology_from_config(config)
+    }
+
+    fn assert_error(result: anyhow::Result<(Vec<Sources>, mpsc::Receiver<()>)>, expected: String) {
+        match result {
+            Ok(_) => panic!("Expected an error"),
+            Err(e) => {
+                assert_eq!(e.to_string(), expected)
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_empty_chain() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  Chain cannot be empty\n".to_string();
+
+        let topology = create_test_topology(vec![]);
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_chain() {
+        let topology =
+            create_test_topology(vec![TransformsConfig::Printer, TransformsConfig::Null]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_in_middle() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  Terminating transform \"Null\" is not last in chain\n".to_string();
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+            TransformsConfig::Null,
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_non_terminating_at_end() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  Non-terminating transform \"Printer\" is last in chain\n".to_string();
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  Terminating transform \"Null\" is not last in chain\n  Non-terminating transform \"Printer\" is last in chain\n".to_string();
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+            TransformsConfig::Printer,
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+
+        assert_error(result, expected);
+    }
+
+    // #[tokio::test]
+    // async fn test_validate_chain_valid_subchain() {
+    //     todo!();
+    // }
+
+    // #[tokio::test]
+    // async fn test_validate_chain_subchain_terminating_in_middle() {
+    //     todo!();
+    // }
+
+    // #[tokio::test]
+    // async fn test_validate_chain_subchain_non_terminating_at_end() {
+    //     todo!();
+    // }
+
+    // #[tokio::test]
+    // async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
+    //     todo!();
+    // }
+}

@@ -160,7 +160,7 @@ mod parallel_map_tests {
 
         assert_eq!(
             transform.validate(),
-            vec!["  test-chain-2:", "  Chain cannot be empty"]
+            vec!["  test-chain-2:", "    Chain cannot be empty"]
         );
     }
 
