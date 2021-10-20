@@ -1,11 +1,11 @@
 //! The data layer proxy.
 //!
-//! Below are the main areas that you should be looking at to extend and work with shotover.
+//! Below are the main areas that you should be looking at to extend and work with Shotover.
 //!
 //! Creating a transform is largely just implementing the [`transforms::Transform`] trait and registering it with
 //! the [`transforms::Transforms`] enum.
 //!
-//! To allow your [`transforms::Transform`] to be configurable in shotover config files you will need to create
+//! To allow your [`transforms::Transform`] to be configurable in Shotover config files you will need to create
 //! a serializable config struct that implements the [`transforms::TransformsFromConfig`] trait and register it in
 //! the [`transforms::TransformsConfig`] enum (note plural Transform**s**).
 //!

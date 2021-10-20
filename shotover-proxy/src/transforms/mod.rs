@@ -254,9 +254,9 @@ struct QueryData {
     query: String,
 }
 
-/// The wrapper struct is passed into each transform and contains a list of mutable references to the
-/// remaining transforms that will process the messages attached to this Wrapper.
-/// Most [`Transform`] authors will only be interested in `message`.
+/// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
+/// remaining transforms that will process the messages attached to this [`Wrapper`].
+/// Most [`Transform`] authors will only be interested in [`Wrapper.messages`].
 #[derive(Debug)]
 pub struct Wrapper<'a> {
     pub messages: Messages,
@@ -265,7 +265,7 @@ pub struct Wrapper<'a> {
     chain_name: String,
 }
 
-/// Wrapper will not (cannot) bring the current list of transforms that it needs to traverse with it
+/// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
 /// This is purely to make it convenient to clone all the data within Wrapper rather than it's transform
 /// state.
 impl<'a> Clone for Wrapper<'a> {
@@ -290,7 +290,7 @@ tokio::task_local! {
 }
 
 impl<'a> Wrapper<'a> {
-    /// This function will take a mutable reference to the next transform out of the Wrapper structs
+    /// This function will take a mutable reference to the next transform out of the [`Wrapper`] structs
     /// vector of transform references. It then sets up the chain name and transform name in the local
     /// thread scope for structured logging.
     ///
@@ -365,8 +365,8 @@ struct ResponseData {
     response: Messages,
 }
 
-/// This trait is the primary extension point for shotover-proxy.
-/// A transform is a struct that implements the Transform trait and enables you to modify and observe database
+/// This trait is the primary extension point for Shotover-proxy.
+/// A [`Transform`] is a struct that implements the Transform trait and enables you to modify and observe database
 /// queries or frames.
 /// The trait has one method where you implement the majority of your logic [Transform::transform],
 /// however it also includes a setup and naming method.
@@ -379,8 +379,8 @@ struct ResponseData {
 ///
 /// Changing the clone behavior of this struct can also control this behavior.
 ///
-/// Once you have created your Transform and corresponding TransformFromConfig, you will need to create
-/// new enum variants in [Transforms] and [TransformsConfig] to make them configurable in shotover.
+/// Once you have created your [`Transform`] and corresponding [`TransformsFromConfig`], you will need to create
+/// new enum variants in [Transforms] and [TransformsConfig] to make them configurable in Shotover.
 /// Shotover uses a concept called enum dispatch to provide dynamic configuration of transform chains
 /// with minimal impact on performance.
 ///
@@ -388,17 +388,17 @@ struct ResponseData {
 ///
 #[async_trait]
 pub trait Transform: Send {
-    /// This function should be implemented by your transform. The wrapper object contains the queries/
+    /// This method should be implemented by your transform. The wrapper object contains the queries/
     /// frames in a [`Vec<Message>`](crate::message::Message). Some protocols support multiple queries before a response is expected
-    /// for example pipelined redis queries or batched cassandra queries.
+    /// for example pipelined Redis queries or batched Cassandra queries.
     ///
     /// Shotover expects the same number of messages in [`wrapper.messages`](crate::transforms::Wrapper) to be returned as was passed
-    /// into the method via the parameter message_wrapper. For in order protocols (such as redis) you will
+    /// into the method via the parameter message_wrapper. For in order protocols (such as Redis) you will
     /// also need to ensure the order of responses matches the order of the queries.
     ///
     /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform
     /// can also modify the response from `message_wrapper.call_next_transform()` if it needs
-    /// to. As long as your return the same number of messages as you received, you won't break behavior
+    /// to. As long as you return the same number of messages as you received, you won't break behavior
     /// from other transforms.
     ///
     /// ## Invariants
@@ -471,13 +471,13 @@ pub trait Transform: Send {
     ///
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
-    /// This function provides an access method for getting the name of the transform.
+    /// This method provides an access method for getting the name of the transform.
     fn get_name(&self) -> &'static str;
 
-    /// This function provides a hook into chain setup that allows you to perform any chain setup
+    /// This method provides a hook into chain setup that allows you to perform any chain setup
     /// needed before receiving traffic. It is generally recommended to do any setup on the first query
-    /// as this makes shotover lazy startup and Shotover / upstream database startup ordering challenges
-    /// easier to resolve (e.g. you can start shotover before the upstream database).
+    /// as this makes Shotover lazy startup and Shotover / upstream database startup ordering challenges
+    /// easier to resolve (e.g. you can start Shotover before the upstream database).
     async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
         Ok(())
     }
