@@ -89,7 +89,7 @@ mod test {
     use crate::message::{Message, QueryMessage};
     use crate::protocols::RawFrame;
     use crate::transforms::coalesce::{Coalesce, CoalesceBehavior};
-    use crate::transforms::null::Null;
+    use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Transforms, Wrapper};
     use anyhow::Result;
     use std::time::{Duration, Instant};
@@ -102,30 +102,30 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut loopback = Transforms::Loopback(Loopback::default());
 
         let messages: Vec<_> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 100);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         Ok(())
@@ -139,30 +139,30 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut loopback = Transforms::Loopback(Loopback::default());
 
         let messages: Vec<_> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 75);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         Ok(())
@@ -176,46 +176,46 @@ mod test {
             last_write: Instant::now(),
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut loopback = Transforms::Loopback(Loopback::default());
 
         let messages: Vec<_> = (0..25)
             .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(10_u64)).await;
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(100_u64)).await;
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 75);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 100);
 
         let mut message_wrapper = Wrapper::new(messages);
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         assert_eq!(coalesce.transform(message_wrapper).await?.len(), 1);
 
         Ok(())

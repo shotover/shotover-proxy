@@ -33,6 +33,7 @@ TODO: We should define what alpha/beta/stable actually mean, is it about API sta
 |[MPSCForwarder](#mpscforwarder)                      |✅           |Beta                   |
 |[MPSCTee](#mpsctee)                                  |✅           |Beta                   |
 |[Null](#null)                                        |✅           |Beta                   |
+|[Loopback](#loopback)                                |✅           |Beta                   |
 |[ParallelMap](#parallelmap)                          |✅           |Alpha                  |
 |[PoolConnections](#poolconnections)                  |✅           |Alpha                  |
 |[Protect](#protect)                                  |❌           |Beta                   |
