@@ -127,8 +127,172 @@ impl Transform for ParallelMap {
                     .validate()
                     .iter()
                     .map(|x| format!("  {}", x))
-                    .collect()
+                    .collect::<Vec<String>>()
             })
+            .flatten()
             .collect::<Vec<String>>()
+    }
+}
+
+#[cfg(test)]
+mod parallel_map_tests {
+    use crate::transforms::{
+        chain::TransformChain, null::Null, parallel_map::ParallelMap, printer::Printer, Transform,
+        Transforms,
+    };
+
+    #[tokio::test]
+    async fn test_validate_chain_empty_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(vec![], "test-chain-2".to_string());
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec!["  test-chain-2:", "  Chain cannot be empty"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(transform.validate(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_in_middle() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "  test-chain-1:",
+                "    Terminating transform \"Null\" is not last in chain",
+                "  test-chain-2:",
+                "    Terminating transform \"Null\" is not last in chain",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_non_terminating_at_end() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "  test-chain-1:",
+                "    Non-terminating transform \"Printer\" is last in chain",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "  test-chain-1:",
+                "    Terminating transform \"Null\" is not last in chain",
+                "    Terminating transform \"Null\" is not last in chain",
+                "    Non-terminating transform \"Printer\" is last in chain",
+            ]
+        );
     }
 }

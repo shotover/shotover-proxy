@@ -177,6 +177,13 @@ impl TransformChain {
     }
 
     pub fn validate(&self) -> Vec<String> {
+        if self.chain.len() == 0 {
+            return vec![
+                format!("{}:", self.name),
+                "Chain cannot be empty".to_string(),
+            ];
+        }
+
         let len = self.chain.len() - 1;
 
         let mut errors = self
@@ -232,5 +239,97 @@ impl TransformChain {
         }
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
+    }
+}
+
+#[cfg(test)]
+mod chain_tests {
+    use crate::transforms::chain::TransformChain;
+    use crate::transforms::null::Null;
+    use crate::transforms::printer::Printer;
+    use crate::transforms::Transforms;
+
+    #[tokio::test]
+    async fn test_validate_chain_empty_chain() {
+        let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
+        assert_eq!(
+            chain.validate(),
+            vec!["test-chain:", "Chain cannot be empty"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_chain() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain".to_string(),
+        );
+        assert_eq!(chain.validate(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_in_middle() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+            ],
+            "test-chain".to_string(),
+        );
+        assert_eq!(
+            chain.validate(),
+            vec![
+                "test-chain:",
+                "  Terminating transform \"Null\" is not last in chain",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_non_terminating_at_end() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Printer(Printer::new()),
+            ],
+            "test-chain".to_string(),
+        );
+        assert_eq!(
+            chain.validate(),
+            vec![
+                "test-chain:",
+                "  Non-terminating transform \"Printer\" is last in chain",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+                Transforms::Printer(Printer::new()),
+                Transforms::Null(Null::new_without_request()),
+                Transforms::Printer(Printer::new()),
+            ],
+            "test-chain".to_string(),
+        );
+        assert_eq!(
+            chain.validate(),
+            vec![
+                "test-chain:",
+                "  Terminating transform \"Null\" is not last in chain",
+                "  Terminating transform \"Null\" is not last in chain",
+                "  Non-terminating transform \"Printer\" is last in chain",
+            ]
+        );
     }
 }
