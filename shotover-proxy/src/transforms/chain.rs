@@ -19,7 +19,7 @@ type InnerChain = Vec<Transforms>;
 
 /// A transform chain is a ordered list of transforms that a message will pass through.
 /// Transform chains can be of arbitary complexity and a transform can even have its own set of child transform chains.
-/// Transform chains are defined by the user in shotovers configuration file and are linked to sources.
+/// Transform chains are defined by the user in Shotover's configuration file and are linked to sources.
 ///
 /// The transform chain is a vector of mutable references to the enum [Transforms] (which is an enum dispatch wrapper around the various transform types).
 #[derive(Debug)]

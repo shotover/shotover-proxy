@@ -65,7 +65,7 @@ pub mod util;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
 
-/// The Transforms enum is responsible for Transform registration and enum dispatch
+/// The [`crate::transforms::Transforms`] enum is responsible for [`crate::transforms::Transform`] registration and enum dispatch
 /// in the transform chain. This is largely a performance optimisation by using enum dispatch rather
 /// than using dynamic trait objects.
 #[derive(Clone)]
@@ -368,13 +368,13 @@ struct ResponseData {
 /// This trait is the primary extension point for shotover-proxy.
 /// A transform is a struct that implements the Transform trait and enables you to modify and observe database
 /// queries or frames.
-/// The trait has one function where you implement the majority of your logic [Transform::transform],
+/// The trait has one method where you implement the majority of your logic [Transform::transform],
 /// however it also includes a setup and naming method.
 ///
-/// Transforms are cloned on a per tcp connection basis from a copy of the struct originally created
+/// Transforms are cloned on a per TCP connection basis from a copy of the struct originally created
 /// by the call to [TransformsFromConfig::get_source] from your corresponding config struct that implements [TransformsFromConfig].
 /// This means that each member of your struct that implements this trait can be considered private for
-/// each tcp connection or connected client. If you wish to share data between all copies of your struct
+/// each TCP connection or connected client. If you wish to share data between all copies of your struct
 /// then wrapping a member in an `Arc<Mutex<_>>` will achieve that.
 ///
 /// Changing the clone behavior of this struct can also control this behavior.
@@ -389,11 +389,11 @@ struct ResponseData {
 #[async_trait]
 pub trait Transform: Send {
     /// This function should be implemented by your transform. The wrapper object contains the queries/
-    /// frames in a Vector of Messages. Some protocols support multiple queries before a response is expected
+    /// frames in a [`Vec<Message>`](crate::message::Message). Some protocols support multiple queries before a response is expected
     /// for example pipelined redis queries or batched cassandra queries.
     ///
     /// Shotover expects the same number of messages in wrapper.messages to be returned as was passed
-    /// into via the function parameter message_wrapper. For in order protocols (such as redis) you will
+    /// into the method via the parameter message_wrapper. For in order protocols (such as redis) you will
     /// also need to ensure the order of responses matches the order of the queries.
     ///
     /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform
@@ -402,11 +402,11 @@ pub trait Transform: Send {
     /// from other transforms.
     ///
     /// ## Invariants
-    /// Your transform function at a minimum needs to
+    /// Your transform method at a minimum needs to
     /// * _Non-terminating_ - If your transform does not send the message to an external system or generate its own response to the query,
     /// it will need to call and return the response from `message_wrapper.call_next_transform()`. This ensures that your
     /// transform will call any subsequent downstream transforms without needing to know about what they
-    /// do. This type of transform is called an Intermediate transform.
+    /// do. This type of transform is called an non-terminating transform.
     /// * _Terminating_ - Your transform can also choose not to call `message_wrapper.call_next_transform()` if it sends the
     /// messages to an external system or generates its own response to the query e.g.
     /// [`crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingle`]. This type of transform
@@ -467,7 +467,7 @@ pub trait Transform: Send {
     /// ```
     ///
     /// In this example `counter` will contain the count of the number of messages seen for this connection.
-    /// Wrapping it in an Arc<Mutex<_>> would make it a global count of all messages seen by this transform.
+    /// Wrapping it in an [Arc<Mutex<_>>] would make it a global count of all messages seen by this transform.
     ///
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
@@ -476,7 +476,7 @@ pub trait Transform: Send {
 
     /// This function provides a hook into chain setup that allows you to perform any chain setup
     /// needed before receiving traffic. It is generally recommended to do any setup on the first query
-    /// as this makes shotover lazy startup and shotover / upstream database startup ordering challenges
+    /// as this makes shotover lazy startup and Shotover / upstream database startup ordering challenges
     /// easier to resolve (e.g. you can start shotover before the upstream database).
     async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
         Ok(())
