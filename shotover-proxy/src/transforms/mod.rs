@@ -375,7 +375,7 @@ struct ResponseData {
 /// by the call to [TransformsFromConfig::get_source] from your corresponding config struct that implements [TransformsFromConfig].
 /// This means that each member of your struct that implements this trait can be considered private for
 /// each TCP connection or connected client. If you wish to share data between all copies of your struct
-/// then wrapping a member in an `Arc<Mutex<_>>` will achieve that.
+/// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that.
 ///
 /// Changing the clone behavior of this struct can also control this behavior.
 ///
@@ -392,7 +392,7 @@ pub trait Transform: Send {
     /// frames in a [`Vec<Message>`](crate::message::Message). Some protocols support multiple queries before a response is expected
     /// for example pipelined redis queries or batched cassandra queries.
     ///
-    /// Shotover expects the same number of messages in wrapper.messages to be returned as was passed
+    /// Shotover expects the same number of messages in [`wrapper.messages`](crate::transforms::Wrapper) to be returned as was passed
     /// into the method via the parameter message_wrapper. For in order protocols (such as redis) you will
     /// also need to ensure the order of responses matches the order of the queries.
     ///
@@ -424,7 +424,7 @@ pub trait Transform: Send {
     /// * Transforms that don't call subsequent chains via `message_wrapper.call_next_transform()` are called terminating transforms.
     /// * Transforms that do call subsquent chains via `message_wrapper.call_next_transform()` are non-terminating transforms.
     ///
-    /// You can have have a transforms that is both non-terminating and a sink (see [`crate::transforms::kafka_sink::KafkaSink`]
+    /// You can have have a transforms that is both non-terminating and a sink (see [`crate::transforms::kafka_sink::KafkaSink`]).
     ///
     /// A basic transform that logs query data and counts the number requests it sees could be defined like so:
     /// ```
@@ -467,7 +467,7 @@ pub trait Transform: Send {
     /// ```
     ///
     /// In this example `counter` will contain the count of the number of messages seen for this connection.
-    /// Wrapping it in an [Arc<Mutex<_>>] would make it a global count of all messages seen by this transform.
+    /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     ///
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
