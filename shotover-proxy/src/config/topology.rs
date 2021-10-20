@@ -272,7 +272,11 @@ mod topology_tests {
 
     use crate::{
         sources::{redis_source::RedisConfig, Sources, SourcesConfig},
-        transforms::TransformsConfig,
+        transforms::{
+            distributed::tunable_consistency_scatter::TunableConsistencyConfig,
+            parallel_map::ParallelMapConfig,
+            redis_transforms::redis_cache::RedisConfig as RedisCacheConfig, TransformsConfig,
+        },
     };
     use std::collections::HashMap;
 
@@ -307,6 +311,7 @@ mod topology_tests {
         match result {
             Ok(_) => panic!("Expected an error"),
             Err(e) => {
+                println!("{}", e.to_string());
                 assert_eq!(e.to_string(), expected)
             }
         }
@@ -385,23 +390,244 @@ mod topology_tests {
         assert_error(result, expected);
     }
 
-    // #[tokio::test]
-    // async fn test_validate_chain_valid_subchain() {
-    //     todo!();
-    // }
+    #[tokio::test]
+    async fn test_validate_chain_valid_subchain_tunable_consistency() {
+        let subchain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+        ];
 
-    // #[tokio::test]
-    // async fn test_validate_chain_subchain_terminating_in_middle() {
-    //     todo!();
-    // }
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
 
-    // #[tokio::test]
-    // async fn test_validate_chain_subchain_non_terminating_at_end() {
-    //     todo!();
-    // }
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ]);
 
-    // #[tokio::test]
-    // async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
-    //     todo!();
-    // }
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_invalid_subchain_tunable_consistency() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+
+        let subchain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_subchain_redis_cache() {
+        let chain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+        ];
+
+        let caching_schema = HashMap::new();
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::RedisCache(RedisCacheConfig {
+                chain,
+                caching_schema,
+            }),
+            TransformsConfig::Null,
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_invalid_subchain_redis_cache() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  SimpleRedisCache:\n    cache_chain:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+
+        let chain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+        ];
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::RedisCache(RedisCacheConfig {
+                chain,
+                caching_schema: HashMap::new(),
+            }),
+            TransformsConfig::Null,
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_subchain_parallel_map() {
+        let chain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+        ];
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::ParallelMap(ParallelMapConfig {
+                name: "test-parallel-map".to_string(),
+                parallelism: 1,
+                chain,
+                ordered_results: false,
+            }),
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_invalid_subchain_parallel_map() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  SequentialMap:\n    test-parallel-map:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+
+        let chain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+        ];
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::ParallelMap(ParallelMapConfig {
+                name: "test-parallel-map".to_string(),
+                parallelism: 1,
+                chain,
+                ordered_results: false,
+            }),
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_subchain_terminating_in_middle() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+
+        let subchain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_subchain_non_terminating_at_end() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Non-terminating transform \"Printer\" is last in chain\n".to_string();
+
+        let subchain = vec![TransformsConfig::Printer, TransformsConfig::Printer];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+        assert_error(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
+        let expected: String =
+            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Terminating transform \"Null\" is not last in chain\n      Non-terminating transform \"Printer\" is last in chain\n".to_string();
+
+        let subchain = vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Null,
+            TransformsConfig::Printer,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let topology = create_test_topology(vec![
+            TransformsConfig::Printer,
+            TransformsConfig::Printer,
+            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ]);
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+        let result = topology.run_chains(trigger_shutdown_rx).await;
+        assert_error(result, expected);
+    }
 }

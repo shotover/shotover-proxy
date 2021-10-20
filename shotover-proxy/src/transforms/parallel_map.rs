@@ -120,7 +120,8 @@ impl Transform for ParallelMap {
     }
 
     fn validate(&self) -> Vec<String> {
-        self.chains
+        let mut errors = self
+            .chains
             .iter()
             .map(|chain| {
                 chain
@@ -130,7 +131,13 @@ impl Transform for ParallelMap {
                     .collect::<Vec<String>>()
             })
             .flatten()
-            .collect::<Vec<String>>()
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
     }
 }
 
@@ -160,7 +167,11 @@ mod parallel_map_tests {
 
         assert_eq!(
             transform.validate(),
-            vec!["  test-chain-2:", "    Chain cannot be empty"]
+            vec![
+                "SequentialMap:",
+                "  test-chain-2:",
+                "    Chain cannot be empty"
+            ]
         );
     }
 
@@ -220,6 +231,7 @@ mod parallel_map_tests {
         assert_eq!(
             transform.validate(),
             vec![
+                "SequentialMap:",
                 "  test-chain-1:",
                 "    Terminating transform \"Null\" is not last in chain",
                 "  test-chain-2:",
@@ -253,6 +265,7 @@ mod parallel_map_tests {
         assert_eq!(
             transform.validate(),
             vec![
+                "SequentialMap:",
                 "  test-chain-1:",
                 "    Non-terminating transform \"Printer\" is last in chain",
             ]
@@ -288,6 +301,7 @@ mod parallel_map_tests {
         assert_eq!(
             transform.validate(),
             vec![
+                "SequentialMap:",
                 "  test-chain-1:",
                 "    Terminating transform \"Null\" is not last in chain",
                 "    Terminating transform \"Null\" is not last in chain",
