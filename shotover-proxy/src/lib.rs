@@ -7,7 +7,7 @@
 //!
 //! To allow your [`transforms::Transform`] to be configurable in shotover config files you will need to create
 //! a serializable config struct that implements the [`transforms::TransformsFromConfig`] trait and register it in
-//! the [`transforms::TransformsConfig`] enum (note plural Transform_s_).
+//! the [`transforms::TransformsConfig`] enum (note plural Transform**s**).
 //!
 //! ## Messages
 //! * [`message::Message`], the main struct that carries database queries/frames around in Shotover.
