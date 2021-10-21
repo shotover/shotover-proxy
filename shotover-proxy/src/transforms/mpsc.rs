@@ -154,7 +154,6 @@ impl TeeConfig {
 #[async_trait]
 impl Transform for Tee {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        // let m = message_wrapper.message.clone();
         match self.behavior {
             ConsistencyBehavior::IGNORE => {
                 let (tee_result, chain_result) = tokio::join!(

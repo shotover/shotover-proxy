@@ -245,7 +245,7 @@ async fn tx_process<C: CodecWriteHalf, W: AsyncWrite + Unpin + Send + 'static>(
     return_tx: UnboundedSender<Request>,
     codec: C,
 ) -> Result<()> {
-    let in_w = FramedWrite::new(write, codec.clone());
+    let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
         let ret = Ok(vec![x.messages.clone()]);
         return_tx.send(x)?;
@@ -259,7 +259,7 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,
 ) -> Result<()> {
-    let mut in_r = FramedRead::new(read, codec.clone());
+    let mut in_r = FramedRead::new(read, codec);
 
     while let Some(maybe_req) = in_r.next().await {
         match maybe_req {

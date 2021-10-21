@@ -22,16 +22,10 @@ type InnerChain = Vec<Transforms>;
 /// Transform chains are defined by the user in Shotover's configuration file and are linked to sources.
 ///
 /// The transform chain is a vector of mutable references to the enum [Transforms] (which is an enum dispatch wrapper around the various transform types).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransformChain {
     name: String,
     pub chain: InnerChain,
-}
-
-impl Clone for TransformChain {
-    fn clone(&self) -> Self {
-        TransformChain::new(self.chain.clone(), self.name.clone())
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -126,8 +120,6 @@ impl TransformChain {
                 messages,
             }) = rx.recv().await
             {
-                let name = chain.name.clone();
-
                 #[cfg(test)]
                 {
                     let mut count = count.lock().await;
@@ -137,13 +129,12 @@ impl TransformChain {
                 let chain_response = chain
                     .process_request(
                         Wrapper::new_with_chain_name(messages, chain.name.clone()),
-                        name,
+                        chain.name.clone(),
                     )
                     .await;
 
                 if let Err(e) = &chain_response {
-                    warn!("Internal error in buffered chain: {:?} - resetting", e);
-                    chain = chain.clone();
+                    warn!("Internal error in buffered chain: {:?}", e);
                 };
 
                 match return_chan {

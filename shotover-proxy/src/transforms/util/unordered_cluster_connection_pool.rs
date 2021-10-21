@@ -95,7 +95,6 @@ async fn tx_process<C: CodecWriteHalf>(
     return_tx: UnboundedSender<Request>,
     codec: C,
 ) -> Result<()> {
-    let codec = codec.clone();
     let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
         let ret = Ok(vec![x.messages.clone()]);
@@ -111,7 +110,6 @@ async fn rx_process<C: CodecReadHalf>(
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,
 ) -> Result<()> {
-    let codec = codec.clone();
     let mut in_r = FramedRead::new(read, codec);
     let mut return_channel_map: HashMap<u16, (tokio::sync::oneshot::Sender<Response>, Message)> =
         HashMap::new();

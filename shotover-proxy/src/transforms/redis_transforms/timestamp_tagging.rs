@@ -127,12 +127,10 @@ fn unwrap_response(qr: &mut QueryResponse) {
             let mut hm: HashMap<String, Value> = HashMap::new();
             hm.insert("timestamp".to_string(), Value::List(timestamps));
 
-            let mut timestamps_holder = Some(Value::Document(hm));
-            let mut results_holder = Some(Value::List(results));
-            std::mem::swap(&mut qr.response_meta, &mut timestamps_holder);
-            std::mem::swap(&mut qr.result, &mut results_holder);
+            qr.response_meta = Some(Value::Document(hm));
+            qr.result = Some(Value::List(results));
         } else if values.len() == 2 {
-            let mut timestamp = values.pop().map(|v| {
+            qr.response_meta = values.pop().map(|v| {
                 let mut hm: HashMap<String, Value> = HashMap::new();
                 if let Value::Integer(i) = v {
                     let start = SystemTime::now();
@@ -148,9 +146,7 @@ fn unwrap_response(qr: &mut QueryResponse) {
                 }
                 Value::Document(hm)
             });
-            let mut actual = values.pop();
-            std::mem::swap(&mut qr.response_meta, &mut timestamp);
-            std::mem::swap(&mut qr.result, &mut actual);
+            qr.result = values.pop();
         }
     }
 }

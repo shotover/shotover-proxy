@@ -75,7 +75,7 @@ impl AsyncMpsc {
 
         let jh = Handle::current().spawn(async move {
             // This will go out of scope once we exit the loop below, indicating we are done and shutdown
-            let _notifier = shutdown_complete.clone();
+            let _notifier = shutdown_complete;
             let mut last_write: Instant = Instant::now();
             while !shutdown.is_shutdown() {
                 let channel_message = tokio::select! {

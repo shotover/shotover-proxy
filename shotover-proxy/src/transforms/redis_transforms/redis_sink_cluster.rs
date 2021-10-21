@@ -621,7 +621,7 @@ pub fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
                             build_slot_to_server(replica, &mut replica_entries, start, end)
                                 .context("failed to decode replica slots")?;
                         }
-                        _ => bail!("unexpected value in slot map",),
+                        _ => bail!("unexpected value in slot map"),
                     }
                 }
             }
@@ -807,7 +807,7 @@ impl Transform for RedisSinkCluster {
 
                             self.rebuild_connections = true;
 
-                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
+                            let one_rx = self.choose_and_send(&server, original).await?;
 
                             responses.prepend(Box::pin(
                                 one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
@@ -816,7 +816,7 @@ impl Transform for RedisSinkCluster {
                         Some(Redirection::Ask { slot, server }) => {
                             debug!("Got ASK {} {}", slot, server);
 
-                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
+                            let one_rx = self.choose_and_send(&server, original).await?;
 
                             responses.prepend(Box::pin(
                                 one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
@@ -906,7 +906,7 @@ mod test {
             .unwrap()
             .original;
 
-        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame.clone() {
+        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame {
             frames
         } else {
             panic!("bad input: {:?}", raw_frame)

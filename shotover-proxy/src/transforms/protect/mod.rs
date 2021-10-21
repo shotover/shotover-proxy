@@ -121,7 +121,7 @@ impl Protected {
                     cipher,
                     nonce,
                     enc_dek: sym_key.ciphertext_blob.to_vec(),
-                    kek_id: sym_key.key_id.clone(),
+                    kek_id: sym_key.key_id,
                 })
             }
             Protected::Ciphertext { .. } => Ok(self),
@@ -362,7 +362,7 @@ mod protect_transform_tests {
                 }) = &mut m.pop().unwrap().details
                 {
                     let encrypted_val = query_values.remove("col1").unwrap();
-                    assert_ne!(encrypted_val.clone(), Value::Strings(secret_data.clone()));
+                    assert_ne!(encrypted_val, Value::Strings(secret_data.clone()));
 
                     // Let's make sure the plain text is not in the encrypted value when actually formated the same way!!!!!!!
                     let encrypted_payload = format!("encrypted: {:?}", encrypted_val.clone());
@@ -422,7 +422,7 @@ mod protect_transform_tests {
                             TransformChain::new(ret_transforms, String::from("test_chain"));
 
                         let mut new_wrapper = Wrapper::new(vec![Message::new(
-                            MessageDetails::Query(qm.clone()),
+                            MessageDetails::Query(qm),
                             true,
                             RawFrame::None,
                         )]);
@@ -438,7 +438,7 @@ mod protect_transform_tests {
                         }) = result.unwrap().pop().unwrap().details
                         {
                             if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
-                                assert_eq!(s.clone(), secret_data);
+                                assert_eq!(s, &secret_data);
                                 return Ok(());
                             }
                         }

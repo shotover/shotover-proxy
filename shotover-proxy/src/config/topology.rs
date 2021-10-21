@@ -95,10 +95,10 @@ impl Topology {
 
     async fn build_chains(&self, topics: &TopicHolder) -> Result<HashMap<String, TransformChain>> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
-        for (key, value) in self.chain_config.clone() {
+        for (key, value) in &self.chain_config {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key, &value, topics).await?,
+                build_chain_from_config(key.clone(), value, topics).await?,
             );
         }
         Ok(temp)
@@ -137,7 +137,7 @@ impl Topology {
                     the source to chain mapping definition [{:?}] in list of configured chains [{:?}].",
                                                         chain_name.as_str(),
                                                         &self.source_to_chain_mapping.values().cloned().collect::<Vec<_>>(),
-                                                        chains.keys().cloned().collect::<Vec<_>>()));
+                                                        chains.into_keys().collect::<Vec<_>>()));
                 }
             } else {
                 return Err(anyhow!("Could not find the [{}] source from \

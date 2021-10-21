@@ -31,7 +31,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 
 use anyhow::{anyhow, Result};
 
@@ -146,7 +146,7 @@ impl CassandraCodec2 {
                                         Value::NULL => (-1_i32).into_cbytes(),
                                         Value::Bytes(x) => x.to_vec(),
                                         Value::Strings(x) => {
-                                            Vec::from(x.clone().as_bytes())
+                                            Vec::from(x.as_bytes())
                                             // CString::new(x.clone()).into_cbytes()
                                         }
                                         Value::Integer(x) => {
@@ -184,7 +184,7 @@ impl CassandraCodec2 {
 
                     return Frame {
                         version: Version::Response,
-                        flags: query_frame.flags.clone(),
+                        flags: query_frame.flags,
                         opcode: Opcode::Result,
                         stream: query_frame.stream,
                         body: response.into_cbytes(),
@@ -307,7 +307,7 @@ impl CassandraCodec2 {
             for value in &v.0 {
                 for ex in value {
                     if let Expr::Value(v) = ex {
-                        cumulator.push(CassandraCodec2::expr_to_string(v).clone());
+                        cumulator.push(CassandraCodec2::expr_to_string(v));
                     }
                 }
             }
@@ -377,7 +377,7 @@ impl CassandraCodec2 {
                                 let _ = std::mem::replace(
                                     name,
                                     ObjectName {
-                                        0: namespace.deref().clone(),
+                                        0: namespace.clone(),
                                     },
                                 );
                             }

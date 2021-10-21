@@ -344,15 +344,11 @@ impl From<Value> for Frame {
             Value::Boolean(b) => Frame::Integer(i64::from(b)),
             Value::Timestamp(t) => Frame::SimpleString(t.to_rfc2822()),
             Value::Inet(i) => Frame::SimpleString(i.to_string()),
-            Value::List(l) => Frame::Array(l.iter().cloned().map(|v| v.into()).collect()),
-            Value::Rows(r) => {
-                Frame::Array(r.iter().cloned().map(|v| Value::List(v).into()).collect())
-            }
+            Value::List(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
+            Value::Rows(r) => Frame::Array(r.into_iter().map(|v| Value::List(v).into()).collect()),
             Value::NamedRows(_) => unimplemented!(),
             Value::Document(_) => unimplemented!(),
-            Value::FragmentedResponse(l) => {
-                Frame::Array(l.iter().cloned().map(|v| v.into()).collect())
-            }
+            Value::FragmentedResponse(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
         }
     }
 }

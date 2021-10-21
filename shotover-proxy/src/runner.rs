@@ -60,8 +60,8 @@ pub struct Runner {
 
 impl Runner {
     pub fn new(params: ConfigOpts) -> Result<Self> {
-        let config = Config::from_file(params.config_file.clone())?;
-        let topology = Topology::from_file(params.topology_file.clone())?;
+        let config = Config::from_file(params.config_file)?;
+        let topology = Topology::from_file(params.topology_file)?;
 
         let tracing = TracingState::new(config.main_log_level.as_str())?;
 
