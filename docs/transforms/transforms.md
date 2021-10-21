@@ -164,8 +164,8 @@ This is mainly used in conjunction with the `TuneableConsistency` to enable a Ca
 
 No configuration is required for this transform.
 
-### RedisClusterSlotRewrite
+### RedisClusterPortsRewrite
 
-This transform should be used with the RedisSinkCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
+This transform should be used with the RedisSinkCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` or `CLUSTER NODES` with a user supplied value (typically the port that Shotover is listening on so  cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
 
-* `new_port`- Value to write over the ports returned by `CLUSTER SLOTS`
+* `new_port`- Value to write over the ports returned by `CLUSTER SLOTS` and `CLUSTER NODES`.

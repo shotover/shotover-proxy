@@ -37,15 +37,12 @@ impl RedisClusterPortsRewrite {
 impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Optimization for when messages are not cluster messages (e.g. SET key, or GET key)
-        let mut has_cluster_messages = false;
-        for message in message_wrapper.messages.iter() {
-            if is_cluster_message(&message.original) {
-                has_cluster_messages = true;
-            }
-        }
-        if !has_cluster_messages {
-            let response = message_wrapper.call_next_transform().await?;
-            return Ok(response);
+        if message_wrapper
+            .messages
+            .iter()
+            .all(|m| !is_cluster_message(&m.original))
+        {
+            return message_wrapper.call_next_transform().await;
         }
 
         // Find the indices of cluster slot messages
