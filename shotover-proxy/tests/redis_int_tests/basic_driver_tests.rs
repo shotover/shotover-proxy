@@ -936,7 +936,7 @@ async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16
 
     assert!(matches!(r1, Value::Okay));
     assert_cluster_ports_rewrite_slots(r2, port);
-    assert!(r3 == Value::Data(b"42".to_vec()));
+    assert_eq!(r3, Value::Data(b"42".to_vec()));
 }
 
 fn assert_cluster_ports_rewrite_slots(res: Value, new_port: u16) {
@@ -979,15 +979,13 @@ async fn get_master_id(connection: &mut Connection) -> String {
         for result in reader.records() {
             let record = result.unwrap();
 
-            let is_master = record
-                .get(2)
-                .unwrap()
+            let is_master = record[2]
                 .split(",")
                 .collect::<Vec<&str>>()
                 .contains(&"master");
 
             if is_master {
-                return record.get(0).unwrap().to_string();
+                return record[0].to_string();
             }
         }
     }
@@ -1030,29 +1028,23 @@ async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port:
 
     assert!(matches!(r1, Value::Okay));
     assert_cluster_ports_rewrite_nodes(r2, new_port);
-    assert!(r3 == Value::Data(b"42".to_vec()));
-}
-
-fn get_data_from_redis_res(res: Value) -> Vec<u8> {
-    if let Value::Bulk(data) = &res {
-        for item in data.iter() {
-            if let Value::Data(item) = item {
-                return item.to_vec();
-            }
-        }
-    }
-
-    if let Value::Data(data) = &res {
-        return data.to_vec();
-    }
-
-    panic!("Invalid response from Redis");
+    assert_eq!(r3, Value::Data(b"42".to_vec()));
 }
 
 fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     let mut assertion_run = false;
 
-    let data = get_data_from_redis_res(res);
+    let data = if let Value::Bulk(data) = &res {
+        if let Value::Data(item) = &data[0] {
+            item.to_vec()
+        } else {
+            panic!("Invalid response from Redis")
+        }
+    } else if let Value::Data(data) = &res {
+        data.to_vec()
+    } else {
+        panic!("Invalid response from Redis");
+    };
 
     let read_cursor = std::io::Cursor::new(data);
 
@@ -1065,7 +1057,7 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     for result in reader.records() {
         let record = result.unwrap();
 
-        let port: Vec<&str> = record.get(1).unwrap().split(":").collect();
+        let port: Vec<&str> = record[1].split(":").collect();
         assert_eq!(port[1], format!("{}@16379", new_port));
         assertion_run = true;
     }
