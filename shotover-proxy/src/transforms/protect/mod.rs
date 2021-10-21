@@ -277,7 +277,7 @@ mod protect_transform_tests {
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;
     use crate::transforms::chain::TransformChain;
-    use crate::transforms::null::Null;
+    use crate::transforms::loopback::Loopback;
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;
     use crate::transforms::test_transforms::ReturnerTransform;
@@ -337,7 +337,7 @@ mod protect_transform_tests {
             ast: None,
         }), true, RawFrame::None)));
 
-        let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
+        let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
         let mut chain = TransformChain::new(transforms, String::from("test_chain"));
 
@@ -515,7 +515,7 @@ mod protect_transform_tests {
             ast: None,
         }), true, RawFrame::None)));
 
-        let transforms: Vec<Transforms> = vec![Transforms::Null(Null::new())];
+        let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
         let mut chain = TransformChain::new(transforms, String::from("test_chain"));
 

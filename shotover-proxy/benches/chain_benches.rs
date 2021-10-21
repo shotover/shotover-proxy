@@ -16,7 +16,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let chain = TransformChain::new_no_shared_state(
-            vec![Transforms::Null(Null::new_without_request())],
+            vec![Transforms::Null(Null::default())],
             "bench".to_string(),
         );
         let wrapper = Wrapper::new(vec![Message::new_query(
@@ -51,7 +51,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "bench".to_string(),
         );
@@ -79,7 +79,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "bench".to_string(),
         );

@@ -23,6 +23,7 @@ use crate::transforms::distributed::tunable_consistency_scatter::{
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 use crate::transforms::kafka_sink::{KafkaConfig, KafkaSink};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
+use crate::transforms::loopback::Loopback;
 use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
@@ -51,6 +52,7 @@ pub mod distributed;
 pub mod filter;
 pub mod kafka_sink;
 pub mod load_balance;
+pub mod loopback;
 pub mod mpsc;
 pub mod noop;
 pub mod null;
@@ -77,6 +79,7 @@ pub enum Transforms {
     MPSCTee(Tee),
     MPSCForwarder(Buffer),
     Null(Null),
+    Loopback(Loopback),
     Protect(Protect),
     TunableConsistency(TunableConsistency),
     RedisTimeStampTagger(RedisTimestampTagger),
@@ -109,6 +112,7 @@ impl Transforms {
             Transforms::MPSCForwarder(m) => m.transform(message_wrapper).await,
             Transforms::Printer(p) => p.transform(message_wrapper).await,
             Transforms::Null(n) => n.transform(message_wrapper).await,
+            Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
             Transforms::RepeatMessage(p) => p.transform(message_wrapper).await,
             Transforms::RandomDelay(p) => p.transform(message_wrapper).await,
@@ -134,6 +138,7 @@ impl Transforms {
             Transforms::MPSCForwarder(m) => m.get_name(),
             Transforms::Printer(p) => p.get_name(),
             Transforms::Null(n) => n.get_name(),
+            Transforms::Loopback(n) => n.get_name(),
             Transforms::Protect(p) => p.get_name(),
             Transforms::TunableConsistency(t) => t.get_name(),
             Transforms::RepeatMessage(p) => p.get_name(),
@@ -160,6 +165,7 @@ impl Transforms {
             Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
             Transforms::Printer(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
+            Transforms::Loopback(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
             Transforms::TunableConsistency(a) => a.prep_transform_chain(t).await,
             Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
@@ -192,6 +198,7 @@ pub enum TransformsConfig {
     RedisTimestampTagger,
     Printer,
     Null,
+    Loopback,
     ParallelMap(ParallelMapConfig),
     PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
@@ -214,7 +221,8 @@ impl TransformsConfig {
             }
             TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source(topics).await,
             TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
-            TransformsConfig::Null => Ok(Transforms::Null(Null::new())),
+            TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
+            TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
             TransformsConfig::RedisSinkCluster(r) => r.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             TransformsConfig::PoolConnections(s) => s.get_source(topics).await,

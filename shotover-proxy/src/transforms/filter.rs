@@ -48,7 +48,7 @@ mod test {
     use crate::message::{Message, MessageDetails, QueryMessage, QueryType};
     use crate::protocols::RawFrame;
     use crate::transforms::filter::QueryTypeFilter;
-    use crate::transforms::null::Null;
+    use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Transforms, Wrapper};
     use anyhow::Result;
 
@@ -58,7 +58,7 @@ mod test {
             filter: QueryType::Read,
         };
 
-        let mut null = Transforms::Null(Null::new());
+        let mut loopback = Transforms::Loopback(Loopback::default());
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
@@ -85,7 +85,7 @@ mod test {
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
-        message_wrapper.transforms = vec![&mut null];
+        message_wrapper.transforms = vec![&mut loopback];
         let result = coalesce.transform(message_wrapper).await?;
         assert_eq!(result.len(), 13);
         let any = result.iter().find(|m| {
