@@ -39,7 +39,7 @@ impl TunableConsistencyConfig {
 
         for (key, value) in &self.route_map {
             route_map.push(
-                build_chain_from_config(key.clone(), &value, topics)
+                build_chain_from_config(key.clone(), value, topics)
                     .await?
                     .into_buffered_chain(10),
             );
