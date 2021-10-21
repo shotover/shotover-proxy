@@ -154,7 +154,7 @@ mod parallel_map_tests {
             vec![
                 Transforms::Printer(Printer::new()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
@@ -181,7 +181,7 @@ mod parallel_map_tests {
             vec![
                 Transforms::Printer(Printer::new()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
@@ -189,7 +189,7 @@ mod parallel_map_tests {
             vec![
                 Transforms::Printer(Printer::new()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
         );
@@ -207,18 +207,18 @@ mod parallel_map_tests {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
         let chain_2 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
         );
@@ -252,7 +252,7 @@ mod parallel_map_tests {
         let chain_2 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
         );
@@ -277,9 +277,9 @@ mod parallel_map_tests {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
                 Transforms::Printer(Printer::new()),
                 Transforms::Printer(Printer::new()),
             ],
@@ -288,7 +288,7 @@ mod parallel_map_tests {
         let chain_2 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
         );

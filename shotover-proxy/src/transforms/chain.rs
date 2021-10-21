@@ -264,7 +264,7 @@ mod chain_tests {
             vec![
                 Transforms::Printer(Printer::new()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain".to_string(),
         );
@@ -276,9 +276,9 @@ mod chain_tests {
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
             ],
             "test-chain".to_string(),
         );
@@ -315,9 +315,9 @@ mod chain_tests {
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
                 Transforms::Printer(Printer::new()),
-                Transforms::Null(Null::new_without_request()),
+                Transforms::Null(Null::default()),
                 Transforms::Printer(Printer::new()),
             ],
             "test-chain".to_string(),
