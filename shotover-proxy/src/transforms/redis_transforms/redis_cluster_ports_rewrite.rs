@@ -36,6 +36,15 @@ impl RedisClusterPortsRewrite {
 #[async_trait]
 impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        for message in message_wrapper.messages.iter() {
+            if is_cluster_message(&message.original) {
+                break;
+            }
+
+            let response = message_wrapper.call_next_transform().await?;
+            return Ok(response);
+        }
+
         // Find the indices of cluster slot messages
         let mut cluster_slots_indices = vec![];
         let mut cluster_nodes_indices = vec![];
@@ -167,6 +176,18 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     writer.flush().unwrap();
 
     Ok(())
+}
+
+fn is_cluster_message(frame: &RawFrame) -> bool {
+    if let RawFrame::Redis(Frame::Array(array)) = frame {
+        match &array[0] {
+            Frame::BulkString(b) => {
+                return b.to_ascii_uppercase() == b"CLUSTER";
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
