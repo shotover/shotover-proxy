@@ -233,9 +233,9 @@ mod parallel_map_tests {
             vec![
                 "SequentialMap:",
                 "  test-chain-1:",
-                "    Terminating transform \"Null\" is not last in chain",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
                 "  test-chain-2:",
-                "    Terminating transform \"Null\" is not last in chain",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
             ]
         );
     }
@@ -267,7 +267,7 @@ mod parallel_map_tests {
             vec![
                 "SequentialMap:",
                 "  test-chain-1:",
-                "    Non-terminating transform \"Printer\" is last in chain",
+                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
             ]
         );
     }
@@ -303,9 +303,9 @@ mod parallel_map_tests {
             vec![
                 "SequentialMap:",
                 "  test-chain-1:",
-                "    Terminating transform \"Null\" is not last in chain",
-                "    Terminating transform \"Null\" is not last in chain",
-                "    Non-terminating transform \"Printer\" is last in chain",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
             ]
         );
     }

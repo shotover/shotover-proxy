@@ -311,7 +311,6 @@ mod topology_tests {
         match result {
             Ok(_) => panic!("Expected an error"),
             Err(e) => {
-                println!("{}", e.to_string());
                 assert_eq!(e.to_string(), expected)
             }
         }
@@ -345,7 +344,7 @@ redis_chain:
     async fn test_validate_chain_terminating_in_middle() {
         let expected: String = r#"Topology errors
 redis_chain:
-  Terminating transform "Null" is not last in chain
+  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#
         .to_string();
 
@@ -365,7 +364,7 @@ redis_chain:
     async fn test_validate_chain_non_terminating_at_end() {
         let expected: String = r#"Topology errors
 redis_chain:
-  Non-terminating transform "Printer" is last in chain
+  Non-terminating transform "Printer" is last in chain. Last transform must be terminating.
 "#
         .to_string();
 
@@ -385,8 +384,8 @@ redis_chain:
     async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
         let expected: String = r#"Topology errors
 redis_chain:
-  Terminating transform "Null" is not last in chain
-  Non-terminating transform "Printer" is last in chain
+  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Non-terminating transform "Printer" is last in chain. Last transform must be terminating.
 "#
         .to_string();
 
@@ -434,7 +433,7 @@ redis_chain:
 redis_chain:
   TunableConsistency:
     subchain-1:
-      Terminating transform "Null" is not last in chain
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#
         .to_string();
 
@@ -493,7 +492,7 @@ redis_chain:
 redis_chain:
   SimpleRedisCache:
     cache_chain:
-      Terminating transform "Null" is not last in chain
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#
         .to_string();
 
@@ -548,7 +547,7 @@ redis_chain:
 redis_chain:
   SequentialMap:
     test-parallel-map:
-      Terminating transform "Null" is not last in chain
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#
         .to_string();
 
@@ -581,7 +580,7 @@ redis_chain:
 redis_chain:
   TunableConsistency:
     subchain-1:
-      Terminating transform "Null" is not last in chain
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#
         .to_string();
 
@@ -616,7 +615,7 @@ redis_chain:
 redis_chain:
   TunableConsistency:
     subchain-1:
-      Non-terminating transform "Printer" is last in chain
+      Non-terminating transform "Printer" is last in chain. Last transform must be terminating.
 "#
         .to_string();
 
@@ -646,8 +645,8 @@ redis_chain:
 redis_chain:
   TunableConsistency:
     subchain-1:
-      Terminating transform "Null" is not last in chain
-      Non-terminating transform "Printer" is last in chain
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Non-terminating transform "Printer" is last in chain. Last transform must be terminating.
 "#
         .to_string();
 

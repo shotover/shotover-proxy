@@ -195,12 +195,12 @@ impl TransformChain {
 
                 if i == last_index && !transform.is_terminating() {
                     errors.push(format!(
-                        "  Non-terminating transform {:?} is last in chain",
+                        "  Non-terminating transform {:?} is last in chain. Last transform must be terminating.",
                         transform.get_name()
                     ));
                 } else if i != last_index && transform.is_terminating() {
                     errors.push(format!(
-                        "  Terminating transform {:?} is not last in chain",
+                        "  Terminating transform {:?} is not last in chain. Terminating transform must be last in chain.",
                         transform.get_name()
                     ));
                 }
@@ -286,7 +286,7 @@ mod chain_tests {
             chain.validate(),
             vec![
                 "test-chain:",
-                "  Terminating transform \"Null\" is not last in chain",
+                "  Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
             ]
         );
     }
@@ -305,7 +305,7 @@ mod chain_tests {
             chain.validate(),
             vec![
                 "test-chain:",
-                "  Non-terminating transform \"Printer\" is last in chain",
+                "  Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
             ]
         );
     }
@@ -326,9 +326,9 @@ mod chain_tests {
             chain.validate(),
             vec![
                 "test-chain:",
-                "  Terminating transform \"Null\" is not last in chain",
-                "  Terminating transform \"Null\" is not last in chain",
-                "  Non-terminating transform \"Printer\" is last in chain",
+                "  Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "  Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "  Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
             ]
         );
     }
