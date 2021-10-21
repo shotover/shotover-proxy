@@ -184,7 +184,7 @@ impl TransformChain {
             ];
         }
 
-        let len = self.chain.len() - 1;
+        let last_index = self.chain.len() - 1;
 
         let mut errors = self
             .chain
@@ -193,12 +193,12 @@ impl TransformChain {
             .map(|(i, transform)| {
                 let mut errors = vec![];
 
-                if i == len && !transform.is_terminating() {
+                if i == last_index && !transform.is_terminating() {
                     errors.push(format!(
                         "  Non-terminating transform {:?} is last in chain",
                         transform.get_name()
                     ));
-                } else if i != len && transform.is_terminating() {
+                } else if i != last_index && transform.is_terminating() {
                     errors.push(format!(
                         "  Terminating transform {:?} is not last in chain",
                         transform.get_name()

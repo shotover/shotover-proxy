@@ -319,8 +319,11 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_empty_chain() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  Chain cannot be empty\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  Chain cannot be empty
+"#
+        .to_string();
 
         let topology = create_test_topology(vec![]);
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
@@ -340,8 +343,11 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_terminating_in_middle() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  Terminating transform \"Null\" is not last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  Terminating transform "Null" is not last in chain
+"#
+        .to_string();
 
         let topology = create_test_topology(vec![
             TransformsConfig::Printer,
@@ -357,8 +363,11 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_non_terminating_at_end() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  Non-terminating transform \"Printer\" is last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  Non-terminating transform "Printer" is last in chain
+"#
+        .to_string();
 
         let topology = create_test_topology(vec![
             TransformsConfig::Printer,
@@ -374,8 +383,12 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  Terminating transform \"Null\" is not last in chain\n  Non-terminating transform \"Printer\" is last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  Terminating transform "Null" is not last in chain
+  Non-terminating transform "Printer" is last in chain
+"#
+        .to_string();
 
         let topology = create_test_topology(vec![
             TransformsConfig::Printer,
@@ -417,8 +430,13 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_invalid_subchain_tunable_consistency() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  TunableConsistency:
+    subchain-1:
+      Terminating transform "Null" is not last in chain
+"#
+        .to_string();
 
         let subchain = vec![
             TransformsConfig::Printer,
@@ -471,8 +489,13 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_invalid_subchain_redis_cache() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  SimpleRedisCache:\n    cache_chain:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  SimpleRedisCache:
+    cache_chain:
+      Terminating transform "Null" is not last in chain
+"#
+        .to_string();
 
         let chain = vec![
             TransformsConfig::Printer,
@@ -521,8 +544,13 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_invalid_subchain_parallel_map() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  SequentialMap:\n    test-parallel-map:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  SequentialMap:
+    test-parallel-map:
+      Terminating transform "Null" is not last in chain
+"#
+        .to_string();
 
         let chain = vec![
             TransformsConfig::Printer,
@@ -549,8 +577,13 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_subchain_terminating_in_middle() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Terminating transform \"Null\" is not last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  TunableConsistency:
+    subchain-1:
+      Terminating transform "Null" is not last in chain
+"#
+        .to_string();
 
         let subchain = vec![
             TransformsConfig::Printer,
@@ -579,8 +612,13 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_subchain_non_terminating_at_end() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Non-terminating transform \"Printer\" is last in chain\n".to_string();
+        let expected: String = r#"Topology errors
+redis_chain:
+  TunableConsistency:
+    subchain-1:
+      Non-terminating transform "Printer" is last in chain
+"#
+        .to_string();
 
         let subchain = vec![TransformsConfig::Printer, TransformsConfig::Printer];
 
@@ -604,8 +642,14 @@ mod topology_tests {
 
     #[tokio::test]
     async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
-        let expected: String =
-            "Topology errors\nredis_chain:\n  TunableConsistency:\n    subchain-1:\n      Terminating transform \"Null\" is not last in chain\n      Non-terminating transform \"Printer\" is last in chain\n".to_string();
+        let expected = r#"Topology errors
+redis_chain:
+  TunableConsistency:
+    subchain-1:
+      Terminating transform "Null" is not last in chain
+      Non-terminating transform "Printer" is last in chain
+"#
+        .to_string();
 
         let subchain = vec![
             TransformsConfig::Printer,
