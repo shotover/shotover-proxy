@@ -10,7 +10,7 @@ use crate::message::{ASTHolder, MessageDetails, Messages, QueryType, Value as Sh
 use crate::protocols::RawFrame;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use cassandra_proto::frame::{Frame, Opcode};
@@ -43,9 +43,8 @@ impl PrimaryKey {
     }
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl RedisConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisCache(SimpleRedisCache {
             cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, topics)
                 .await?,

@@ -6,8 +6,7 @@
 //! the [`transforms::Transforms`] enum.
 //!
 //! To allow your [`transforms::Transform`] to be configurable in Shotover config files you will need to create
-//! a serializable config struct that implements the [`transforms::TransformsFromConfig`] trait and register it in
-//! the [`transforms::TransformsConfig`] enum (note plural Transform**s**).
+//! a serializable config struct and register it in the [`transforms::TransformsConfig`] enum (note plural Transform**s**).
 //!
 //! ## Messages
 //! * [`message::Message`], the main struct that carries database queries/frames around in Shotover.
@@ -16,9 +15,8 @@
 //! ## Transform
 //! * [`transforms::Wrapper`], used to wrap messages as they traverse the [`transforms::Transform`] chain.
 //! * [`transforms::Transform`], the main extension trait for adding your own behaviour to Shotover.
-//! * [`transforms::TransformsFromConfig`], the main extension trait for configuring your own transform.
-//! * [`transforms::Transforms`], the enum to register with (add an invariant) for enabling your own transform.
-//! * [`transforms::TransformsConfig`], the enum to register with (add an invariant) for configuring your own transform.
+//! * [`transforms::Transforms`], the enum to register with (add a variant) for enabling your own transform.
+//! * [`transforms::TransformsConfig`], the enum to register with (add a variant) for configuring your own transform.
 
 mod admin;
 mod concurrency;

@@ -3,7 +3,7 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -69,9 +69,8 @@ pub struct ParallelMapConfig {
     pub ordered_results: bool,
 }
 
-#[async_trait]
-impl TransformsFromConfig for ParallelMapConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl ParallelMapConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
