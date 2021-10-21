@@ -920,20 +920,39 @@ async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16
         .await
         .unwrap();
 
+    assert_cluster_ports_rewrite_slots(res, port);
+
+    let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
+        .cmd("SET")
+        .arg("key1")
+        .arg(42)
+        .cmd("CLUSTER")
+        .arg("SLOTS")
+        .cmd("GET")
+        .arg("key1")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert!(matches!(r1, Value::Okay));
+    assert_cluster_ports_rewrite_slots(r2, port);
+    assert!(r3 == Value::Data(b"42".to_vec()));
+}
+
+fn assert_cluster_ports_rewrite_slots(res: Value, new_port: u16) {
     let mut assertion_run = false;
     if let Value::Bulk(bulks) = &res {
         for bulk in bulks {
             if let Value::Bulk(b) = bulk {
                 for tuple in b.iter().enumerate() {
                     if let (2..=3, Value::Bulk(val)) = tuple {
-                        assert_eq!(val[1], Value::Int(port.into()));
+                        assert_eq!(val[1], Value::Int(new_port.into()));
                         assertion_run = true;
                     }
                 }
             }
         }
     }
-
     if !assertion_run {
         panic!(
             "CLUSTER SLOTS result did not contain a port, result was: {:?}",
@@ -996,6 +1015,22 @@ async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port:
         .unwrap();
 
     assert_cluster_ports_rewrite_nodes(res, new_port);
+
+    let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
+        .cmd("SET")
+        .arg("key1")
+        .arg(42)
+        .cmd("CLUSTER")
+        .arg("NODES")
+        .cmd("GET")
+        .arg("key1")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert!(matches!(r1, Value::Okay));
+    assert_cluster_ports_rewrite_nodes(r2, new_port);
+    assert!(r3 == Value::Data(b"42".to_vec()));
 }
 
 fn get_data_from_redis_res(res: Value) -> Vec<u8> {
