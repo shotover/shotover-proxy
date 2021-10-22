@@ -8,7 +8,7 @@ sources:
       connection_limit: 3000000
 chain_config:
   redis_chain:
-    - MPSCTee:
+    - Tee:
         behavior: IGNORE
 #        timeout_micros: 1000
         buffer_size: 10000
@@ -18,7 +18,7 @@ chain_config:
           - Coalesce:
               max_behavior:
                 COUNT: 2000
-          - MPSCForwarder:
+          - Forwarder:
               buffer_size: 100
               async_mode: true
               timeout_micros: 10000

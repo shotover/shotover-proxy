@@ -12,11 +12,6 @@ use metrics::counter;
 use serde::Deserialize;
 use tracing::trace;
 
-/*
-AsyncMPSC Tees and Forwarders should only be created from the AsyncMpsc struct,
-It's the thing that owns tx and rx handles :D
- */
-
 #[derive(Debug)]
 pub struct Forwarder {
     pub tx: BufferedChain,

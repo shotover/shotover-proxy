@@ -89,13 +89,13 @@ _Note: Currently Redis-cluster does not support the following functionality:_
 * _Redis Transactions_
 * _Scan based operations e.g. SSCAN_
 
-## MPSCForwarder
+## Forwarder
 
 This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel succesfully.
 
 * `topic_name` - A string with the topic name to push queries/messages into. E.g. `topic_name: testtopic`
 
-## MPSCTee
+## Tee
 
 This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the downstream transform.
 

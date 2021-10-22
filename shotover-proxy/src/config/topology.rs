@@ -2,7 +2,7 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingleConfig;
+use crate::transforms::cassandra::sink_single::CassandraSinkSingleConfig;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::kafka_sink::KafkaSinkConfig;
 use crate::transforms::tee::TeeConfig;

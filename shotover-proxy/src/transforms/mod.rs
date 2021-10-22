@@ -11,9 +11,7 @@ use serde::Deserialize;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, Messages};
-use crate::transforms::cassandra::cassandra_sink_single::{
-    CassandraSinkSingle, CassandraSinkSingleConfig,
-};
+use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use metrics::{counter, histogram};
 
 use crate::transforms::chain::TransformChain;
@@ -33,13 +31,13 @@ use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
 use crate::transforms::protect::Protect;
 use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
-use crate::transforms::redis_transforms::cache::{RedisConfig, SimpleRedisCache};
-use crate::transforms::redis_transforms::cluster_ports_rewrite::{
+use crate::transforms::redis::cache::{RedisConfig, SimpleRedisCache};
+use crate::transforms::redis::cluster_ports_rewrite::{
     RedisClusterPortsRewrite, RedisClusterPortsRewriteConfig,
 };
-use crate::transforms::redis_transforms::sink_cluster::{RedisSinkCluster, RedisSinkClusterConfig};
-use crate::transforms::redis_transforms::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
-use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
+use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterConfig};
+use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
+use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::tee::{Forwarder, ForwarderConfig, Tee, TeeConfig};
 use core::fmt::Display;
 use tokio::time::Instant;
@@ -59,7 +57,7 @@ pub mod null;
 mod parallel_map;
 pub mod protect;
 pub mod query_counter;
-pub mod redis_transforms;
+pub mod redis;
 pub mod sampler;
 pub mod tee;
 pub mod util;
