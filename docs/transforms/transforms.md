@@ -27,15 +27,12 @@ TODO: We should define what alpha/beta/stable actually mean, is it about API sta
 |[CassandraSinkSingle](#cassandrasinksingle)          |✅           |Alpha                  |
 |[Coalesce](#coalesce)                                |❌           |Alpha                  |
 |[DebugPrinter](#debugprinter)                        |❌           |Alpha                  |
-|[DebugRandomDelay](#debugrandomdelay)                |❌           |Alpha                  |
-|[DebugRepeatMessage](#debugrepeatmessage)            |✅           |Alpha                  |
 |[KafkaSink](#kafkasink)                              |✅           |Alpha                  |
-|[MPSCForwarder](#mpscforwarder)                      |✅           |Beta                   |
-|[MPSCTee](#mpsctee)                                  |✅           |Beta                   |
+|[Forwarder](#forwarder)                              |✅           |Beta                   |
+|[Tee](#tee)                                          |✅           |Beta                   |
 |[Null](#null)                                        |✅           |Beta                   |
 |[Loopback](#loopback)                                |✅           |Beta                   |
 |[ParallelMap](#parallelmap)                          |✅           |Alpha                  |
-|[PoolConnections](#poolconnections)                  |✅           |Alpha                  |
 |[Protect](#protect)                                  |❌           |Beta                   |
 |[QueryCounter](#querycounter)                        |❌           |Alpha                  |
 |[QueryTypeFilter](#querytypefilter)                  |❌           |Alpha                  |

@@ -372,7 +372,7 @@ mod test {
     use crate::message::{ASTHolder, MessageDetails, Value};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
-    use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
+    use crate::transforms::redis_transforms::cache::{build_redis_ast_from_sql, PrimaryKey};
     use bytes::BytesMut;
     use itertools::Itertools;
     use std::collections::HashMap;

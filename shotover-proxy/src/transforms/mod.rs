@@ -18,52 +18,50 @@ use metrics::{counter, histogram};
 
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
-use crate::transforms::distributed::tunable_consistency_scatter::{
-    TunableConsistency, TunableConsistencyConfig,
+use crate::transforms::debug_printer::DebugPrinter;
+use crate::transforms::distributed::consistent_scatter::{
+    ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::kafka_sink::{KafkaConfig, KafkaSink};
-use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolConfig};
+use crate::transforms::internal_debug_transforms::{
+    DebugRandomDelayTransform, DebugReturnerTransform,
+};
+use crate::transforms::kafka_sink::{KafkaSink, KafkaSinkConfig};
+use crate::transforms::load_balance::ConnectionBalanceAndPool;
 use crate::transforms::loopback::Loopback;
-use crate::transforms::mpsc::{Buffer, BufferConfig, Tee, TeeConfig};
 use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
-use crate::transforms::printer::Printer;
 use crate::transforms::protect::Protect;
 use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
-use crate::transforms::redis_transforms::redis_cache::{RedisConfig, SimpleRedisCache};
-use crate::transforms::redis_transforms::redis_cluster_ports_rewrite::{
+use crate::transforms::redis_transforms::cache::{RedisConfig, SimpleRedisCache};
+use crate::transforms::redis_transforms::cluster_ports_rewrite::{
     RedisClusterPortsRewrite, RedisClusterPortsRewriteConfig,
 };
-use crate::transforms::redis_transforms::redis_sink_cluster::{
-    RedisSinkCluster, RedisSinkClusterConfig,
-};
-use crate::transforms::redis_transforms::redis_sink_single::{
-    RedisSinkSingle, RedisSinkSingleConfig,
-};
+use crate::transforms::redis_transforms::sink_cluster::{RedisSinkCluster, RedisSinkClusterConfig};
+use crate::transforms::redis_transforms::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
 use crate::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::test_transforms::{RandomDelayTransform, ReturnerTransform};
+use crate::transforms::tee::{Forwarder, ForwarderConfig, Tee, TeeConfig};
 use core::fmt::Display;
 use tokio::time::Instant;
 
 pub mod cassandra;
 pub mod chain;
 pub mod coalesce;
+pub mod debug_printer;
 pub mod distributed;
 pub mod filter;
+pub mod internal_debug_transforms;
 pub mod kafka_sink;
 pub mod load_balance;
 pub mod loopback;
-pub mod mpsc;
 pub mod noop;
 pub mod null;
 mod parallel_map;
-pub mod printer;
 pub mod protect;
 pub mod query_counter;
 pub mod redis_transforms;
 pub mod sampler;
-pub mod test_transforms;
+pub mod tee;
 pub mod util;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
@@ -77,19 +75,18 @@ pub enum Transforms {
     RedisSinkSingle(RedisSinkSingle),
     KafkaSink(KafkaSink),
     RedisCache(SimpleRedisCache),
-    MPSCTee(Tee),
-    MPSCForwarder(Buffer),
+    Tee(Tee),
+    Forwarder(Forwarder),
     Null(Null),
     Loopback(Loopback),
     Protect(Protect),
-    TunableConsistency(TunableConsistency),
+    ConsistentScatter(ConsistentScatter),
     RedisTimeStampTagger(RedisTimestampTagger),
     RedisSinkCluster(RedisSinkCluster),
     RedisClusterPortsRewrite(RedisClusterPortsRewrite),
-    // The below variants are mainly for testing
-    RepeatMessage(Box<ReturnerTransform>),
-    RandomDelay(RandomDelayTransform),
-    Printer(Printer),
+    DebugReturnerTransform(DebugReturnerTransform),
+    DebugRandomDelay(DebugRandomDelayTransform),
+    DebugPrinter(DebugPrinter),
     ParallelMap(ParallelMap),
     PoolConnections(ConnectionBalanceAndPool),
     Coalesce(Coalesce),
@@ -109,15 +106,15 @@ impl Transforms {
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::KafkaSink(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
-            Transforms::MPSCTee(m) => m.transform(message_wrapper).await,
-            Transforms::MPSCForwarder(m) => m.transform(message_wrapper).await,
-            Transforms::Printer(p) => p.transform(message_wrapper).await,
+            Transforms::Tee(m) => m.transform(message_wrapper).await,
+            Transforms::Forwarder(m) => m.transform(message_wrapper).await,
+            Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
             Transforms::Null(n) => n.transform(message_wrapper).await,
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
-            Transforms::RepeatMessage(p) => p.transform(message_wrapper).await,
-            Transforms::RandomDelay(p) => p.transform(message_wrapper).await,
-            Transforms::TunableConsistency(tc) => tc.transform(message_wrapper).await,
+            Transforms::DebugReturnerTransform(p) => p.transform(message_wrapper).await,
+            Transforms::DebugRandomDelay(p) => p.transform(message_wrapper).await,
+            Transforms::ConsistentScatter(tc) => tc.transform(message_wrapper).await,
             Transforms::RedisSinkSingle(r) => r.transform(message_wrapper).await,
             Transforms::RedisTimeStampTagger(r) => r.transform(message_wrapper).await,
             Transforms::RedisClusterPortsRewrite(r) => r.transform(message_wrapper).await,
@@ -135,15 +132,15 @@ impl Transforms {
             Transforms::CassandraSinkSingle(c) => c.get_name(),
             Transforms::KafkaSink(k) => k.get_name(),
             Transforms::RedisCache(r) => r.get_name(),
-            Transforms::MPSCTee(m) => m.get_name(),
-            Transforms::MPSCForwarder(m) => m.get_name(),
-            Transforms::Printer(p) => p.get_name(),
+            Transforms::Tee(m) => m.get_name(),
+            Transforms::Forwarder(m) => m.get_name(),
+            Transforms::DebugPrinter(p) => p.get_name(),
             Transforms::Null(n) => n.get_name(),
             Transforms::Loopback(n) => n.get_name(),
             Transforms::Protect(p) => p.get_name(),
-            Transforms::TunableConsistency(t) => t.get_name(),
-            Transforms::RepeatMessage(p) => p.get_name(),
-            Transforms::RandomDelay(p) => p.get_name(),
+            Transforms::ConsistentScatter(t) => t.get_name(),
+            Transforms::DebugReturnerTransform(p) => p.get_name(),
+            Transforms::DebugRandomDelay(p) => p.get_name(),
             Transforms::RedisSinkSingle(r) => r.get_name(),
             Transforms::RedisClusterPortsRewrite(r) => r.get_name(),
             Transforms::RedisTimeStampTagger(r) => r.get_name(),
@@ -162,15 +159,15 @@ impl Transforms {
             Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
             Transforms::KafkaSink(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
-            Transforms::MPSCTee(a) => a.prep_transform_chain(t).await,
-            Transforms::MPSCForwarder(a) => a.prep_transform_chain(t).await,
-            Transforms::Printer(a) => a.prep_transform_chain(t).await,
+            Transforms::Tee(a) => a.prep_transform_chain(t).await,
+            Transforms::Forwarder(a) => a.prep_transform_chain(t).await,
+            Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
             Transforms::Loopback(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
-            Transforms::TunableConsistency(a) => a.prep_transform_chain(t).await,
-            Transforms::RepeatMessage(a) => a.prep_transform_chain(t).await,
-            Transforms::RandomDelay(a) => a.prep_transform_chain(t).await,
+            Transforms::ConsistentScatter(a) => a.prep_transform_chain(t).await,
+            Transforms::DebugReturnerTransform(a) => a.prep_transform_chain(t).await,
+            Transforms::DebugRandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
             Transforms::RedisSinkCluster(r) => r.prep_transform_chain(t).await,
             Transforms::RedisClusterPortsRewrite(r) => r.prep_transform_chain(t).await,
@@ -189,19 +186,19 @@ impl Transforms {
 pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
-    KafkaSink(KafkaConfig),
+    KafkaSink(KafkaSinkConfig),
     RedisCache(RedisConfig),
-    MPSCTee(TeeConfig),
-    MPSCForwarder(BufferConfig),
-    ConsistentScatter(TunableConsistencyConfig),
+    Tee(TeeConfig),
+    Forwarder(ForwarderConfig),
+    ConsistentScatter(ConsistentScatterConfig),
     RedisSinkCluster(RedisSinkClusterConfig),
     RedisClusterPortsRewrite(RedisClusterPortsRewriteConfig),
     RedisTimestampTagger,
-    Printer,
+    DebugPrinter,
     Null,
     Loopback,
     ParallelMap(ParallelMapConfig),
-    PoolConnections(ConnectionBalanceAndPoolConfig),
+    //PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
     QueryTypeFilter(QueryTypeFilterConfig),
     QueryCounter(QueryCounterConfig),
@@ -215,20 +212,20 @@ impl TransformsConfig {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source(topics).await,
             TransformsConfig::KafkaSink(k) => k.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
-            TransformsConfig::MPSCTee(t) => t.get_source(topics).await,
-            TransformsConfig::MPSCForwarder(f) => f.get_source(topics).await,
+            TransformsConfig::Tee(t) => t.get_source(topics).await,
+            TransformsConfig::Forwarder(f) => f.get_source(topics).await,
             TransformsConfig::RedisSinkSingle(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
             }
             TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source(topics).await,
-            TransformsConfig::Printer => Ok(Transforms::Printer(Printer::new())),
+            TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
             TransformsConfig::RedisSinkCluster(r) => r.get_source(topics).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
-            TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
+            //TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
             TransformsConfig::Coalesce(s) => s.get_source(topics).await,
             TransformsConfig::QueryTypeFilter(s) => s.get_source(topics).await,
             TransformsConfig::QueryCounter(s) => s.get_source(topics).await,

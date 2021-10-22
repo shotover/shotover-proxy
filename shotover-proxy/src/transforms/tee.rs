@@ -18,7 +18,7 @@ It's the thing that owns tx and rx handles :D
  */
 
 #[derive(Debug)]
-pub struct Buffer {
+pub struct Forwarder {
     pub tx: BufferedChain,
     pub async_mode: bool,
     pub buffer_size: usize,
@@ -27,17 +27,17 @@ pub struct Buffer {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct BufferConfig {
+pub struct ForwarderConfig {
     pub async_mode: bool,
     pub chain: Vec<TransformsConfig>,
     pub buffer_size: Option<usize>,
     pub timeout_micros: Option<u64>,
 }
 
-impl Clone for Buffer {
+impl Clone for Forwarder {
     fn clone(&self) -> Self {
         let chain = self.chain_to_clone.clone();
-        Buffer {
+        Forwarder {
             tx: chain.into_buffered_chain(self.buffer_size),
             async_mode: false,
             buffer_size: self.buffer_size,
@@ -47,11 +47,11 @@ impl Clone for Buffer {
     }
 }
 
-impl BufferConfig {
+impl ForwarderConfig {
     pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config("forward".to_string(), &self.chain, topics).await?;
         let buffer = self.buffer_size.unwrap_or(5);
-        Ok(Transforms::MPSCForwarder(Buffer {
+        Ok(Transforms::Forwarder(Forwarder {
             tx: chain.clone().into_buffered_chain(buffer),
             async_mode: self.async_mode,
             buffer_size: buffer,
@@ -62,7 +62,7 @@ impl BufferConfig {
 }
 
 #[async_trait]
-impl Transform for Buffer {
+impl Transform for Forwarder {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.async_mode {
             let expected_responses = message_wrapper.messages.len();
@@ -140,7 +140,7 @@ impl TeeConfig {
         let tee_chain =
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
-        Ok(Transforms::MPSCTee(Tee {
+        Ok(Transforms::Tee(Tee {
             tx: tee_chain.clone().into_buffered_chain(buffer_size),
             fail_chain,
             buffer_size,
