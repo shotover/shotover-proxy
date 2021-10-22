@@ -282,7 +282,9 @@ mod topology_tests {
 
     use super::{Topology, TopologyConfig};
 
-    fn create_test_topology(chain: Vec<TransformsConfig>) -> Topology {
+    async fn create_test_topology(
+        chain: Vec<TransformsConfig>,
+    ) -> anyhow::Result<(Vec<Sources>, mpsc::Receiver<()>)> {
         let mut chain_config = HashMap::new();
         chain_config.insert("redis_chain".to_string(), chain);
 
@@ -304,16 +306,10 @@ mod topology_tests {
             source_to_chain_mapping: HashMap::new(),
         };
 
-        Topology::topology_from_config(config)
-    }
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
-    fn assert_error(result: anyhow::Result<(Vec<Sources>, mpsc::Receiver<()>)>, expected: String) {
-        match result {
-            Ok(_) => panic!("Expected an error"),
-            Err(e) => {
-                assert_eq!(e.to_string(), expected)
-            }
-        }
+        let topology = Topology::topology_from_config(config);
+        topology.run_chains(trigger_shutdown_rx).await
     }
 
     #[tokio::test]
@@ -324,20 +320,15 @@ redis_chain:
 "#
         .to_string();
 
-        let topology = create_test_topology(vec![]);
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-
-        assert_error(result, expected);
+        let error = create_test_topology(vec![]).await.unwrap_err().to_string();
+        assert_eq!(error, expected)
     }
 
     #[tokio::test]
     async fn test_validate_chain_valid_chain() {
-        let topology =
-            create_test_topology(vec![TransformsConfig::Printer, TransformsConfig::Null]);
-
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+        create_test_topology(vec![TransformsConfig::Printer, TransformsConfig::Null])
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -348,16 +339,16 @@ redis_chain:
 "#
         .to_string();
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Null,
             TransformsConfig::Null,
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -368,16 +359,16 @@ redis_chain:
 "#
         .to_string();
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::Printer,
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -389,17 +380,17 @@ redis_chain:
 "#
         .to_string();
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::Null,
             TransformsConfig::Printer,
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -413,7 +404,7 @@ redis_chain:
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
-        let topology = create_test_topology(vec![
+        create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
@@ -421,10 +412,9 @@ redis_chain:
                 write_consistency: 1,
                 read_consistency: 1,
             }),
-        ]);
-
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+        ])
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -447,7 +437,7 @@ redis_chain:
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
@@ -455,11 +445,12 @@ redis_chain:
                 write_consistency: 1,
                 read_consistency: 1,
             }),
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -472,7 +463,7 @@ redis_chain:
 
         let caching_schema = HashMap::new();
 
-        let topology = create_test_topology(vec![
+        create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::RedisCache(RedisCacheConfig {
@@ -480,10 +471,9 @@ redis_chain:
                 caching_schema,
             }),
             TransformsConfig::Null,
-        ]);
-
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+        ])
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -503,7 +493,7 @@ redis_chain:
             TransformsConfig::Null,
         ];
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::RedisCache(RedisCacheConfig {
@@ -511,11 +501,12 @@ redis_chain:
                 caching_schema: HashMap::new(),
             }),
             TransformsConfig::Null,
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -526,7 +517,7 @@ redis_chain:
             TransformsConfig::Null,
         ];
 
-        let topology = create_test_topology(vec![
+        create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::ParallelMap(ParallelMapConfig {
@@ -535,10 +526,9 @@ redis_chain:
                 chain,
                 ordered_results: false,
             }),
-        ]);
-
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        topology.run_chains(trigger_shutdown_rx).await.unwrap();
+        ])
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -558,7 +548,7 @@ redis_chain:
             TransformsConfig::Null,
         ];
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::ParallelMap(ParallelMapConfig {
@@ -567,11 +557,12 @@ redis_chain:
                 chain,
                 ordered_results: false,
             }),
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -594,7 +585,7 @@ redis_chain:
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
@@ -602,11 +593,12 @@ redis_chain:
                 write_consistency: 1,
                 read_consistency: 1,
             }),
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -624,7 +616,7 @@ redis_chain:
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
@@ -632,11 +624,12 @@ redis_chain:
                 write_consistency: 1,
                 read_consistency: 1,
             }),
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]
@@ -659,7 +652,7 @@ redis_chain:
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
-        let topology = create_test_topology(vec![
+        let error = create_test_topology(vec![
             TransformsConfig::Printer,
             TransformsConfig::Printer,
             TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
@@ -667,10 +660,11 @@ redis_chain:
                 write_consistency: 1,
                 read_consistency: 1,
             }),
-        ]);
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
 
-        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
-        let result = topology.run_chains(trigger_shutdown_rx).await;
-        assert_error(result, expected);
+        assert_eq!(error, expected);
     }
 }
