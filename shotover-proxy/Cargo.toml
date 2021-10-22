@@ -60,6 +60,7 @@ crc16 = { version = "0.4.0" }
 sodiumoxide = "0.2.5"
 rusoto_kms = "0.47.0"
 rusoto_signature = "0.47.0"
+csv = "1.1.6"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async_tokio", "html_reports"] }

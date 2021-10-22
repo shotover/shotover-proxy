@@ -913,33 +913,156 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
     }
 }
 
-async fn test_cluster_slots_reports_slot(connection: &mut Connection, port: u16) {
+async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16) {
     let res: Value = redis::cmd("CLUSTER")
         .arg("SLOTS")
         .query_async(connection)
         .await
         .unwrap();
 
+    assert_cluster_ports_rewrite_slots(res, port);
+
+    let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
+        .cmd("SET")
+        .arg("key1")
+        .arg(42)
+        .cmd("CLUSTER")
+        .arg("SLOTS")
+        .cmd("GET")
+        .arg("key1")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert!(matches!(r1, Value::Okay));
+    assert_cluster_ports_rewrite_slots(r2, port);
+    assert_eq!(r3, Value::Data(b"42".to_vec()));
+}
+
+fn assert_cluster_ports_rewrite_slots(res: Value, new_port: u16) {
     let mut assertion_run = false;
     if let Value::Bulk(bulks) = &res {
         for bulk in bulks {
             if let Value::Bulk(b) = bulk {
                 for tuple in b.iter().enumerate() {
                     if let (2..=3, Value::Bulk(val)) = tuple {
-                        assert_eq!(val[1], Value::Int(port.into()));
+                        assert_eq!(val[1], Value::Int(new_port.into()));
                         assertion_run = true;
                     }
                 }
             }
         }
     }
-
     if !assertion_run {
         panic!(
             "CLUSTER SLOTS result did not contain a port, result was: {:?}",
             res
         );
     }
+}
+
+async fn get_master_id(connection: &mut Connection) -> String {
+    let res: Value = redis::cmd("CLUSTER")
+        .arg("NODES")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    if let Value::Data(data) = &res {
+        let read_cursor = std::io::Cursor::new(data);
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(b' ')
+            .has_headers(false)
+            .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+            .from_reader(read_cursor);
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            let is_master = record[2]
+                .split(",")
+                .collect::<Vec<&str>>()
+                .contains(&"master");
+
+            if is_master {
+                return record[0].to_string();
+            }
+        }
+    }
+
+    panic!("Could not find master node in cluster");
+}
+
+async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
+    let mut res = redis::cmd("CLUSTER")
+        .arg("NODES")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert_cluster_ports_rewrite_nodes(res, new_port);
+
+    // Get an id to use for cluster replicas test
+    let id = get_master_id(connection).await;
+
+    res = redis::cmd("CLUSTER")
+        .arg("REPLICAS")
+        .arg(id)
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert_cluster_ports_rewrite_nodes(res, new_port);
+
+    let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
+        .cmd("SET")
+        .arg("key1")
+        .arg(42)
+        .cmd("CLUSTER")
+        .arg("NODES")
+        .cmd("GET")
+        .arg("key1")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert!(matches!(r1, Value::Okay));
+    assert_cluster_ports_rewrite_nodes(r2, new_port);
+    assert_eq!(r3, Value::Data(b"42".to_vec()));
+}
+
+fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
+    let mut assertion_run = false;
+
+    let data = if let Value::Bulk(data) = &res {
+        if let Value::Data(item) = &data[0] {
+            item.to_vec()
+        } else {
+            panic!("Invalid response from Redis")
+        }
+    } else if let Value::Data(data) = &res {
+        data.to_vec()
+    } else {
+        panic!("Invalid response from Redis");
+    };
+
+    let read_cursor = std::io::Cursor::new(data);
+
+    let mut reader = csv::ReaderBuilder::new()
+        .delimiter(b' ')
+        .has_headers(false)
+        .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+        .from_reader(read_cursor);
+
+    for result in reader.records() {
+        let record = result.unwrap();
+
+        let port: Vec<&str> = record[1].split(":").collect();
+        assert_eq!(port[1], format!("{}@16379", new_port));
+        assertion_run = true;
+    }
+
+    assert!(assertion_run);
 }
 
 async fn test_cluster_pipe(connection: &mut Connection) {
@@ -1019,7 +1142,7 @@ async fn test_cluster_tls() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_slots_reports_slot(&mut connection, 6379).await;
+    test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1044,17 +1167,20 @@ async fn test_source_tls_and_single_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_rewrite_cluster_slots() {
-    let _compose = DockerCompose::new("examples/redis-cluster-rewrite/docker-compose.yml")
+async fn test_cluster_ports_rewrite() {
+    let _compose = DockerCompose::new("examples/redis-cluster-ports-rewrite/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-rewrite/topology.yaml");
+        ShotoverManager::from_topology_file("examples/redis-cluster-ports-rewrite/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_slots_reports_slot(&mut connection, 2004).await;
+
+    test_cluster_ports_rewrite_slots(&mut connection, 2004).await;
+
+    test_cluster_ports_rewrite_nodes(&mut connection, 2004).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1094,7 +1220,8 @@ async fn test_cluster_redis() {
     let connection = &mut connection;
 
     run_all_cluster_safe(connection).await;
-    test_cluster_slots_reports_slot(connection, 6379).await;
+    test_cluster_ports_rewrite_slots(connection, 6379).await;
+    test_cluster_ports_rewrite_nodes(connection, 6379).await;
 }
 
 async fn run_all_active_safe(connection: &mut Connection) {
