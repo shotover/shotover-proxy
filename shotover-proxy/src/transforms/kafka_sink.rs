@@ -11,7 +11,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, QueryResponse};
 use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Clone)]
 pub struct KafkaSink {
@@ -26,9 +26,8 @@ pub struct KafkaConfig {
     pub topic: String,
 }
 
-#[async_trait]
-impl TransformsFromConfig for KafkaConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl KafkaConfig {
+    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::KafkaSink(KafkaSink::new_from_config(
             &self.keys,
             self.topic.clone(),

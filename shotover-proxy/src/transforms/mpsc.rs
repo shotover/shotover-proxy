@@ -4,7 +4,7 @@ use crate::message::{Message, MessageDetails, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -47,9 +47,8 @@ impl Clone for Buffer {
     }
 }
 
-#[async_trait]
-impl TransformsFromConfig for BufferConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl BufferConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config("forward".to_string(), &self.chain, topics).await?;
         let buffer = self.buffer_size.unwrap_or(5);
         Ok(Transforms::MPSCForwarder(Buffer {
@@ -126,9 +125,8 @@ pub struct TeeConfig {
     pub chain: Vec<TransformsConfig>,
     pub buffer_size: Option<usize>,
 }
-#[async_trait]
-impl TransformsFromConfig for TeeConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl TeeConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let fail_chain = if let Some(ConsistencyBehavior::LOG { fail_chain }) = &self.behavior {
             Some(

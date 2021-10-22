@@ -13,7 +13,7 @@ use crate::message::{Message, MessageDetails, QueryMessage, QueryResponse, Query
 use crate::protocols::RawFrame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 
 #[derive(Clone)]
@@ -32,9 +32,8 @@ pub struct TunableConsistencyConfig {
     pub read_consistency: i32,
 }
 
-#[async_trait]
-impl TransformsFromConfig for TunableConsistencyConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl TunableConsistencyConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 

@@ -13,7 +13,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisSinkSingleConfig {
@@ -22,9 +22,8 @@ pub struct RedisSinkSingleConfig {
     pub tls: Option<TlsConfig>,
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisSinkSingleConfig {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+impl RedisSinkSingleConfig {
+    pub async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Transforms::RedisSinkSingle(RedisSinkSingle::new(
             self.address.clone(),

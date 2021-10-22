@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -17,9 +17,8 @@ pub struct ConnectionBalanceAndPoolConfig {
     pub chain: Vec<TransformsConfig>,
 }
 
-#[async_trait]
-impl TransformsFromConfig for ConnectionBalanceAndPoolConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl ConnectionBalanceAndPoolConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
