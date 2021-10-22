@@ -231,6 +231,21 @@ mod test {
     use tokio_util::codec::Decoder;
 
     #[test]
+    fn test_is_cluster_message() {
+        let cluster_messages = [b"cluster", b"CLUSTER"];
+
+        for msg in cluster_messages {
+            let frame = RawFrame::Redis(Frame::Array(vec![Frame::BulkString(msg.to_vec())]));
+            assert!(is_cluster_message(&frame));
+        }
+
+        let frame = RawFrame::Redis(Frame::Array(vec![Frame::BulkString(
+            b"notcluster".to_vec(),
+        )]));
+        assert!(!is_cluster_message(&frame));
+    }
+
+    #[test]
     fn test_is_cluster_slots() {
         let combos = [
             (b"cluster", b"slots"),
