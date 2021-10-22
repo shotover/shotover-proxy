@@ -20,8 +20,7 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
     let write_codec = CassandraCodec2::new(pk_map.clone(), true);
     let stream = tokio_stream::iter(
         packet_stream
-            .iter()
-            .cloned()
+            .into_iter()
             .map(|b| Ok(b))
             .collect::<Vec<anyhow::Result<Bytes, std::io::Error>>>(),
     );
@@ -33,7 +32,7 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
         if let Ok(frame) = frame {
             let recv_buffer = BufWriter::new(Vec::new());
             let mut writer = FramedWrite::new(recv_buffer, write_codec.clone());
-            writer.send(frame.clone()).await.unwrap();
+            writer.send(frame).await.unwrap();
             let results = Bytes::from(writer.into_inner().into_inner());
             let orig_bytes = comparator_iter.next().expect("packet count mismatch");
             assert_eq!(orig_bytes, results);

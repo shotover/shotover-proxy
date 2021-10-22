@@ -37,9 +37,9 @@ impl TunableConsistencyConfig {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
-        for (key, value) in self.route_map.clone() {
+        for (key, value) in &self.route_map {
             route_map.push(
-                build_chain_from_config(key, &value, topics)
+                build_chain_from_config(key.clone(), value, topics)
                     .await?
                     .into_buffered_chain(10),
             );
@@ -198,8 +198,8 @@ impl Transform for TunableConsistency {
                     let mut collated_results = vec![];
                     for res in &mut results {
                         if let Some(m) = res.pop() {
-                            if let MessageDetails::Response(qm) = &m.details {
-                                collated_results.push(qm.clone());
+                            if let MessageDetails::Response(qm) = m.details {
+                                collated_results.push(qm);
                             }
                         }
                     }

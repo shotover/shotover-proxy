@@ -36,10 +36,7 @@ pub struct PrimaryKey {
 impl PrimaryKey {
     #[cfg(test)]
     fn get_compound_key(&self) -> Vec<String> {
-        let mut compound = Vec::new();
-        compound.extend(self.partition_key.clone());
-        compound.extend(self.range_key.clone());
-        compound
+        [self.partition_key.as_slice(), self.range_key.as_slice()].concat()
     }
 }
 
@@ -70,14 +67,14 @@ impl SimpleRedisCache {
                         .get(&table_lookup)
                         .ok_or_else(|| anyhow!("not a caching table"))?;
 
-                    let ast_ref = qm
+                    let ast = qm
                         .ast
                         .as_ref()
                         .ok_or_else(|| anyhow!("No AST to convert query to cache query"))?
                         .clone();
 
                     qm.ast.replace(build_redis_ast_from_sql(
-                        ast_ref,
+                        ast,
                         &qm.primary_key,
                         table,
                         &qm.query_values,
@@ -146,8 +143,7 @@ fn build_redis_commands(
         Expr::BinaryOp { left, op, right } => {
             // first check if this is a related to PK
             if let Expr::Identifier(i) = left.borrow() {
-                let id_string = i.to_string();
-                if pks.iter().any(|v| v == &id_string) {
+                if pks.iter().any(|v| v == i) {
                     //Ignore this as we build the pk constraint elsewhere
                     return Ok(());
                 }
@@ -166,7 +162,7 @@ fn build_redis_commands(
                         *last_byte += 1;
 
                         append_seperator(min);
-                        min.append(&mut minrv);
+                        min.extend(minrv.iter());
                     }
                 }
                 BinaryOperator::Lt => {
@@ -181,41 +177,41 @@ fn build_redis_commands(
                         *last_byte -= 1;
 
                         append_seperator(max);
-                        max.append(&mut maxrv);
+                        max.extend(maxrv.iter());
                     }
                 }
                 BinaryOperator::GtEq => {
                     if let Expr::Value(v) = right.borrow() {
                         let vh = ValueHelper(v.clone());
 
-                        let mut minrv = Vec::from(vh.as_bytes());
+                        let minrv = Vec::from(vh.as_bytes());
 
                         append_seperator(min);
-                        min.append(&mut minrv);
+                        min.extend(minrv.iter());
                     }
                 }
                 BinaryOperator::LtEq => {
                     if let Expr::Value(v) = right.borrow() {
                         let vh = ValueHelper(v.clone());
 
-                        let mut maxrv = Vec::from(vh.as_bytes());
+                        let maxrv = Vec::from(vh.as_bytes());
 
                         append_seperator(max);
-                        max.append(&mut maxrv);
+                        max.extend(maxrv.iter());
                     }
                 }
                 BinaryOperator::Eq => {
                     if let Expr::Value(v) = right.borrow() {
                         let vh = ValueHelper(v.clone());
 
-                        let mut minrv = Vec::from(vh.as_bytes());
-                        let mut maxrv = minrv.clone();
+                        let minrv = vh.as_bytes();
+                        let maxrv = minrv;
 
                         append_seperator(min);
-                        min.append(&mut minrv);
+                        min.extend(minrv.iter());
 
                         append_seperator(max);
-                        max.append(&mut maxrv);
+                        max.extend(maxrv.iter());
                     }
                 }
                 BinaryOperator::And => {

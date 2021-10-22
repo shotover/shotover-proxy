@@ -303,7 +303,7 @@ mod test {
 
         rewrite_port_slot(&mut raw_frame, 2004).unwrap();
 
-        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame.clone() {
+        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame {
             frames
         } else {
             panic!("bad input: {:?}", raw_frame)

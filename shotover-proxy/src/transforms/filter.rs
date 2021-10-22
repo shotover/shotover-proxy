@@ -83,7 +83,7 @@ mod test {
             })
             .collect();
 
-        let mut message_wrapper = Wrapper::new(messages.clone());
+        let mut message_wrapper = Wrapper::new(messages);
         message_wrapper.transforms = vec![&mut loopback];
         let result = coalesce.transform(message_wrapper).await?;
         assert_eq!(result.len(), 13);
