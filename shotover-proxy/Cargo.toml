@@ -23,7 +23,7 @@ derivative = "2.1.1"
 itertools = "0.10.1"
 rand = { version = "0.8.4" }
 rand_distr = "0.4.1"
-cached = "0.25.0"
+cached = "0.26.2"
 pin-project-lite = "0.2"
 tokio-openssl = "0.6.2"
 openssl = { version = "0.10.36", features = ["vendored"] }
@@ -52,7 +52,7 @@ halfbrown = "0.1.11"
 # Transform dependencies
 redis-protocol = "3.0.1"
 cassandra-proto = { git = "https://github.com/shotover/cassandra-proto", branch = "move-to-bytes", features = ["v4"] }
-rdkafka = { version = "0.26", features = ["cmake-build"] }
+rdkafka = { version = "0.27", features = ["cmake-build"] }
 crc16 = { version = "0.4.0" }
 
 #Crypto
@@ -73,7 +73,7 @@ num_cpus = "1.0"
 serial_test = "0.5.1"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
-nix = "0.22.1"
+nix = "0.23.0"
 
 [[bench]]
 name = "redis_benches"
