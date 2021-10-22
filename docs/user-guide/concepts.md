@@ -4,62 +4,21 @@ Shotover has a small number of core concepts or components that make up the bulk
 
 ## Source
 
-A source is the main component that listens for traffic from your application and decodes it into an internal object that all shotover transforms can understand. Under the hood it consists of an open socket and a thread that listens for messages and converts them via a Codec.
-
-If you want to implement your own source. You will generally need to build the following:
-
-* A Tokio codec that returns shotover `Messages` - See the [Cassandra codec](../../src/protocols/cassandra_protocol2.rs) as an example.
-* A configuration struct that can be deserialised from YAML and generate and run a TcpCodecListener configured with your Codec (The trait to implement is `SourcesFromConfig`). - See the [Cassandra source](../../src/sources/cassandra_source.rs) as an example
-
-With these two in place, shotover can generally wire-in any transform chain to your Source. To support passing messages to the upstream database (e.g. the database your application would normally talk to directly), you would implement a `Transform` that opens a connection upstream and uses your Tokio codec to convert shotover `Messages` to the correct protocol representation.
+A source is the main component that listens for traffic from your application and decodes it into an internal object that all shotover transforms can understand. The source will then send the message to a TransformChain for processing / routing. 
 
 ## Transform
 
-Transforms are where the bulk of shotover does its work. A transform is a struct that implements the `Transform` trait. The trait
-has one function where you implement the majority of your logic (transfrom), however it also includes a setup and naming method:
-
-```rust
-#[async_trait]
-pub trait Transform: Send {
- async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
-
- fn get_name(&self) -> &'static str;
-
- async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
-  Ok(())
- }
-}
-```
-
-* Wrapper (message_wrapper) contains the Query/Message you want to operate on.
-* The transform chain (t) is the ordered list of transforms operating on message.
-
-To call the downstream transform, simply call:
-
-```rust
-#[async_trait]
-impl Transform for NoOp {
- async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-  message_wrapper.call_next_transform().await
- }
-
- fn get_name(&self) -> &'static str {
-  self.name
- }
-}
-```
-
-This will return a ChainResponse which will include the upstream databases response. This means your transform can operate on both queries and responses. Once your transform is done handling the request and response, it will return passing control to the upstream transform.
+Transforms are where the bulk of shotover does its work. A transform is a single unit of operation that does "something" to the database request that's in flight. This may be logging it, modifying it, sending it to an external system or anything else you can think of. Transforms can either be terminating (pass messages on to subsequent transforms on the chain) or non-terminating (return a response without calling the rest of the chain). Transforms that send messages to external systems are called sinks. 
 
 ## TransformChain
 
-A transform chain is a ordered list of transforms that a message will pass through. Transform chains can be of arbitary complexity and a transform can even have its own set of child transform chains. Transform chains are defined by the user in shotovers configuration file and are linked to sources.
+A transform chain is a ordered list of transforms that a message will pass through. Messages are received from a source. Transform chains can be of arbitary complexity and a transform can even have its own set of child transform chains. Transform chains are defined by the user in shotovers configuration file and are linked to sources.
 
 The transform chain is a vector of mutable references to the enum Transforms (which is an enum dispatch wrapper around the various transform types).
 
 ## Topology
 
-A topology is the final constructed set of transforms, transform chains and sources in their final state, ready to receive messages.
+A topology is how you configure shotover. You define your sources, your Transforms in a TransformChain and then assign the chain to a source.
 
 # Other concepts
 
