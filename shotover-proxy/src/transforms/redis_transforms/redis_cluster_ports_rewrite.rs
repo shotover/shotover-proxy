@@ -165,13 +165,13 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
 
         let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
 
-        writer.write_field(&*new_ip).unwrap();
+        writer.write_field(&*new_ip)?;
 
         // Write the last of the record
         writer.write_record(record_iter)?;
     }
 
-    writer.flush().unwrap();
+    writer.flush()?;
 
     Ok(())
 }
