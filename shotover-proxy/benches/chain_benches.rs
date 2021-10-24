@@ -6,8 +6,8 @@ use shotover_proxy::message::{Message, QueryMessage, QueryType};
 use shotover_proxy::protocols::RawFrame;
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::null::Null;
-use shotover_proxy::transforms::redis_transforms::redis_cluster_ports_rewrite::RedisClusterPortsRewrite;
-use shotover_proxy::transforms::redis_transforms::timestamp_tagging::RedisTimestampTagger;
+use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
+use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use shotover_proxy::transforms::{Transforms, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {

@@ -27,15 +27,12 @@ TODO: We should define what alpha/beta/stable actually mean, is it about API sta
 |[CassandraSinkSingle](#cassandrasinksingle)          |✅           |Alpha                  |
 |[Coalesce](#coalesce)                                |❌           |Alpha                  |
 |[DebugPrinter](#debugprinter)                        |❌           |Alpha                  |
-|[DebugRandomDelay](#debugrandomdelay)                |❌           |Alpha                  |
-|[DebugRepeatMessage](#debugrepeatmessage)            |✅           |Alpha                  |
 |[KafkaSink](#kafkasink)                              |✅           |Alpha                  |
-|[MPSCForwarder](#mpscforwarder)                      |✅           |Beta                   |
-|[MPSCTee](#mpsctee)                                  |✅           |Beta                   |
+|[Forwarder](#forwarder)                              |✅           |Beta                   |
+|[Tee](#tee)                                          |✅           |Beta                   |
 |[Null](#null)                                        |✅           |Beta                   |
 |[Loopback](#loopback)                                |✅           |Beta                   |
 |[ParallelMap](#parallelmap)                          |✅           |Alpha                  |
-|[PoolConnections](#poolconnections)                  |✅           |Alpha                  |
 |[Protect](#protect)                                  |❌           |Beta                   |
 |[QueryCounter](#querycounter)                        |❌           |Alpha                  |
 |[QueryTypeFilter](#querytypefilter)                  |❌           |Alpha                  |
@@ -92,13 +89,13 @@ _Note: Currently Redis-cluster does not support the following functionality:_
 * _Redis Transactions_
 * _Scan based operations e.g. SSCAN_
 
-## MPSCForwarder
+## Forwarder
 
 This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel succesfully.
 
 * `topic_name` - A string with the topic name to push queries/messages into. E.g. `topic_name: testtopic`
 
-## MPSCTee
+## Tee
 
 This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the downstream transform.
 

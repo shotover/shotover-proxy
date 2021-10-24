@@ -88,8 +88,8 @@ impl Transform for ConnectionBalanceAndPool {
 mod test {
     use crate::message::Messages;
     use crate::transforms::chain::TransformChain;
+    use crate::transforms::internal_debug_transforms::DebugReturnerTransform;
     use crate::transforms::load_balance::ConnectionBalanceAndPool;
-    use crate::transforms::test_transforms::ReturnerTransform;
     use crate::transforms::{Transforms, Wrapper};
     use anyhow::Result;
     use std::sync::Arc;
@@ -101,10 +101,10 @@ mod test {
             parallelism: 3,
             other_connections: Arc::new(Default::default()),
             chain_to_clone: TransformChain::new(
-                vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
+                vec![Transforms::DebugReturnerTransform(DebugReturnerTransform {
                     message: Messages::new(),
                     ok: true,
-                }))],
+                })],
                 "child_test".to_string(),
             ),
         });

@@ -20,13 +20,13 @@ pub struct KafkaSink {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct KafkaConfig {
+pub struct KafkaSinkConfig {
     #[serde(rename = "config_values")]
     pub keys: HashMap<String, String>,
     pub topic: String,
 }
 
-impl KafkaConfig {
+impl KafkaSinkConfig {
     pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::KafkaSink(KafkaSink::new_from_config(
             &self.keys,

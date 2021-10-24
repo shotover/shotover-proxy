@@ -2,10 +2,10 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingleConfig;
+use crate::transforms::cassandra::sink_single::CassandraSinkSingleConfig;
 use crate::transforms::chain::TransformChain;
-use crate::transforms::kafka_sink::KafkaConfig;
-use crate::transforms::mpsc::TeeConfig;
+use crate::transforms::kafka_sink::KafkaSinkConfig;
+use crate::transforms::tee::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
@@ -188,7 +188,7 @@ impl Topology {
     }
 
     pub fn get_demo_config() -> Topology {
-        let kafka_transform_config_obj = TransformsConfig::KafkaSink(KafkaConfig {
+        let kafka_transform_config_obj = TransformsConfig::KafkaSink(KafkaSinkConfig {
             keys: [
                 ("bootstrap.servers", "127.0.0.1:9092"),
                 ("message.timeout.ms", "5000"),
@@ -224,7 +224,7 @@ impl Topology {
             hard_connection_limit: None,
         });
 
-        let tee_conf = TransformsConfig::MPSCTee(TeeConfig {
+        let tee_conf = TransformsConfig::Tee(TeeConfig {
             behavior: None,
             timeout_micros: None,
             chain: vec![kafka_transform_config_obj],

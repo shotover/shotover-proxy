@@ -109,8 +109,8 @@ Under the hood, each transform is able to call it's down-chain transform and wai
 
 The following example `chain_config` has three chains:
 
-* `redis_chain` - Consists of a MPSCTee, a transform that will copy the query to the named topic and *also* pass the query down-chain to a terminating transform `RedisSinkSingle` which sends to the query to a Redis server. Very similar to the `tee` linux program.
-* `main_chain` - Also consists of a MPSCTee that will copy queries to the same topic as the `redis_chain` before sending the query onto caching layer that will try to resolve the query from a redis cache before ending up finally sending the query to the destination Cassandra cluster via a `CassandraSinkSingle`
+* `redis_chain` - Consists of a Tee, a transform that will copy the query to the named topic and *also* pass the query down-chain to a terminating transform `RedisSinkSingle` which sends to the query to a Redis server. Very similar to the `tee` linux program.
+* `main_chain` - Also consists of a Tee that will copy queries to the same topic as the `redis_chain` before sending the query onto caching layer that will try to resolve the query from a redis cache before ending up finally sending the query to the destination Cassandra cluster via a `CassandraSinkSingle`
 * `KafkaSink` - A single transform chain that will serialise and forward any queries to a given Kafka topic.
 
 ```yaml
@@ -119,8 +119,8 @@ The following example `chain_config` has three chains:
 chain_config:
  # The name of the first chain  
   redis_chain:
-   # The first transform in the chain, this case, its the MPSCTee
-    - MPSCTee:
+   # The first transform in the chain, this case, its the Tee
+    - Tee:
         behavior: IGNORE
 #       The buffer of messages that Tee will accumulate before passing to the child, other values include a timeout
         buffer_size: 10000
@@ -131,7 +131,7 @@ chain_config:
           - Coalesce:
               max_behavior:
                 COUNT: 2000
-          - MPSCForwarder:
+          - Forwarder:
               buffer_size: 100
               async_mode: true
               timeout_micros: 10000

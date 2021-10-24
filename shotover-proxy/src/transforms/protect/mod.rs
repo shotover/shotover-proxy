@@ -276,10 +276,10 @@ mod protect_transform_tests {
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;
     use crate::transforms::chain::TransformChain;
+    use crate::transforms::internal_debug_transforms::DebugReturnerTransform;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;
-    use crate::transforms::test_transforms::ReturnerTransform;
     use crate::transforms::{Transform, Transforms, Wrapper};
 
     #[tokio::test(flavor = "multi_thread")]
@@ -409,14 +409,14 @@ mod protect_transform_tests {
                         };
 
                         let ret_transforms: Vec<Transforms> =
-                            vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
+                            vec![Transforms::DebugReturnerTransform(DebugReturnerTransform {
                                 message: vec![Message::new(
                                     MessageDetails::Response(returner_message.clone()),
                                     true,
                                     RawFrame::None,
                                 )],
                                 ok: true,
-                            }))];
+                            })];
 
                         let mut ret_chain =
                             TransformChain::new(ret_transforms, String::from("test_chain"));
@@ -588,14 +588,14 @@ mod protect_transform_tests {
                     };
 
                     let ret_transforms: Vec<Transforms> =
-                        vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
+                        vec![Transforms::DebugReturnerTransform(DebugReturnerTransform {
                             message: vec![Message::new(
                                 MessageDetails::Response(returner_message.clone()),
                                 true,
                                 RawFrame::None,
                             )],
                             ok: true,
-                        }))];
+                        })];
 
                     let mut ret_chain =
                         TransformChain::new(ret_transforms, String::from("test_chain"));
