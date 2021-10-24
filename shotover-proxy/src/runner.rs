@@ -2,7 +2,7 @@ use std::env;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
-use clap::{crate_version, Clap};
+use clap::{crate_version, Parser};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -23,7 +23,7 @@ use crate::config::Config;
 use crate::transforms::Transforms;
 use crate::transforms::Wrapper;
 
-#[derive(Clap, Clone)]
+#[derive(Parser, Clone)]
 #[clap(version = crate_version!(), author = "Instaclustr")]
 pub struct ConfigOpts {
     #[clap(short, long, default_value = "config/topology.yaml")]
