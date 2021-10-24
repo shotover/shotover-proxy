@@ -153,36 +153,33 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
         // Write the id field
         let id = record_iter
             .next()
-            .ok_or(anyhow!("CLUSTER NODES response missing id field"))?;
+            .ok_or_else(|| anyhow!("CLUSTER NODES response missing id field"))?;
         writer.write_field(id)?;
 
         // Modify and rewrite the port field
         let ip = record_iter
             .next()
-            .ok_or(anyhow!("CLUSTER NODES response missing address field"))?;
+            .ok_or_else(|| anyhow!("CLUSTER NODES response missing address field"))?;
 
         let split = ip.split(|c| c == ':' || c == '@').collect::<Vec<&str>>();
 
         let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
 
-        writer.write_field(&*new_ip).unwrap();
+        writer.write_field(&*new_ip)?;
 
         // Write the last of the record
         writer.write_record(record_iter)?;
     }
 
-    writer.flush().unwrap();
+    writer.flush()?;
 
     Ok(())
 }
 
 fn is_cluster_message(frame: &RawFrame) -> bool {
     if let RawFrame::Redis(Frame::Array(array)) = frame {
-        match &array[0] {
-            Frame::BulkString(b) => {
-                return b.to_ascii_uppercase() == b"CLUSTER";
-            }
-            _ => {}
+        if let Frame::BulkString(b) = &array[0] {
+            return b.to_ascii_uppercase() == b"CLUSTER";
         }
     }
     false
@@ -232,6 +229,21 @@ mod test {
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::redis_transforms::redis_sink_cluster::parse_slots;
     use tokio_util::codec::Decoder;
+
+    #[test]
+    fn test_is_cluster_message() {
+        let cluster_messages = [b"cluster", b"CLUSTER"];
+
+        for msg in cluster_messages {
+            let frame = RawFrame::Redis(Frame::Array(vec![Frame::BulkString(msg.to_vec())]));
+            assert!(is_cluster_message(&frame));
+        }
+
+        let frame = RawFrame::Redis(Frame::Array(vec![Frame::BulkString(
+            b"notcluster".to_vec(),
+        )]));
+        assert!(!is_cluster_message(&frame));
+    }
 
     #[test]
     fn test_is_cluster_slots() {
