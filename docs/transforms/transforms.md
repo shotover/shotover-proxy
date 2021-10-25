@@ -20,11 +20,11 @@ Dont forget to remove them when you are finished.
 
 ### Implementation Status
 
-* Alpha - Should not be used for real purposes yet.
-* Beta - Ready to be used but lacks production testing.
-* Ready - Ready to be used.
+* Alpha - Should not be used in production.
+* Beta - Ready for use but is not battle tested.
+* Ready - Ready for use.
 
-Future transforms wont be added to the public API while in alpha.
+Future transforms won't be added to the public API while in alpha.
 But in these early days we have chosen to publish these alpha transforms to demonstrate the direction we want to take the project.
 
 ### Transforms
@@ -87,7 +87,7 @@ This transform holds onto messages until some requirement is met and then sends 
 
 ## ConsistentScatter
 
-This transform implements a distributed eventual consistent mechanism between the set of defined sub-chains. This transform will wait for a user configurable number of chains to return an OK response before returning the value up-chain. This follows a similar model as used by Cassandra for its consistency model. Strong consistency can be achieved when W + R > RF. In this case RF is always the number of chains in the route_map.
+This transform implements a distributed eventual consistency mechanism between the set of defined sub-chains. This transform will wait for a user configurable number of chains to return an OK response before returning the value up-chain. This follows a similar model as used by Cassandra for its consistency model. Strong consistency can be achieved when W + R > RF. In this case RF is always the number of chains in the `route_map`.
 
 No sharding occurs within this transform and all requests/messages are sent to all routes.
 
@@ -122,7 +122,7 @@ This transform will log the query/message at an info level, then call the down-c
 
 ## Forwarder
 
-This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel succesfully.
+This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel successfully.
 
 ```yaml
 - Forwarder:
@@ -221,7 +221,7 @@ Note: Currently the data encryption key ID function is just defined as a static 
 ## QueryCounter
 
 This transform will log the queries that pass through it.
-The log can be accessed via the shotover metrics.
+The log can be accessed via the [Shotover metrics](/user-guide/configuration/#observability_interface)
 
 ```yaml
 - QueryCounter:
@@ -257,7 +257,7 @@ TODO: This doesnt send a reply for some messages, does this break the transform 
 
 ## RedisCache
 
-This transform will attempt to cache values for a given primary key in a redis hash set. It is a primarily implemented as a write through cache. It currently expects an SQL based AST to figure out what to cache (e.g. CQL, PGSQL) and updates to the cache and the backing datastore are performed sequentially.
+This transform will attempt to cache values for a given primary key in a Redis hash set. It is a primarily implemented as a write through cache. It currently expects an SQL based AST to figure out what to cache (e.g. CQL, PGSQL) and updates to the cache and the backing datastore are performed sequentially.
 
 ```yaml
 - RedisCache:
@@ -271,7 +271,7 @@ This transform will attempt to cache values for a given primary key in a redis h
 
 ### RedisClusterPortsRewrite
 
-This transform should be used with the RedisSinkCluster transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` or `CLUSTER NODES` with a user supplied value (typically the port that Shotover is listening on so cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
+This transform should be used with the `RedisSinkCluster` transform. It will write over the ports of the nodes returned by `CLUSTER SLOTS` or `CLUSTER NODES` with a user supplied value (typically the port that Shotover is listening on so cluster aware Redis drivers will direct traffic through Shotover instead of the nodes themselves).
 
 ```yaml
 - RedisClusterPortsRewrite:
@@ -281,7 +281,7 @@ This transform should be used with the RedisSinkCluster transform. It will write
 
 ## RedisSinkCluster
 
-This transform is a full featured redis driver that will connect to a redis-cluster and handle all discovery, sharding and routing operations.
+This transform is a full featured Redis driver that will connect to a Redis cluster and handle all discovery, sharding and routing operations.
 
 ```yaml
 - RedisSinkCluster:
@@ -298,7 +298,7 @@ This transform is a full featured redis driver that will connect to a redis-clus
     private_key_path: "examples/redis-tls/tls_keys/redis.key"
 ```
 
-Unlike other redis-cluster drivers, this Transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
+Unlike other Redis cluster drivers, this Transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
 
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
@@ -308,7 +308,7 @@ On an existing authenticated connection, a failed auth attempt will not "unauthe
 
 ### Completeness
 
-_Note: Currently Redis-cluster does not support the following functionality:_
+_Note: Currently RedisSinkcluster does not support the following functionality:_
 
 * _Redis Transactions_
 * _Scan based operations e.g. SSCAN_
@@ -337,7 +337,7 @@ Note: this will just pass the query to the remote node. No cluster discovery or 
 
 ## RedisTimestampTagger
 
-A transform that wraps each redis command in a lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a responses timestamp. The response from the lua operation is unwrapped and returned to up-chain transforms looking like a normal redis response.
+A transform that wraps each Redis command in a Lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a response's timestamp. The response from the Lua operation is unwrapped and returned to up-chain transforms looking like a normal Redis response.
 
 This is mainly used in conjunction with the `ConsistentScatter` to enable a Cassandra style consistency model within Redis.
 
@@ -347,7 +347,7 @@ This is mainly used in conjunction with the `ConsistentScatter` to enable a Cass
 
 ## Tee
 
-This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the downstream transform.
+This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the down-chain transform.
 
 ```yaml
 - Tee:
