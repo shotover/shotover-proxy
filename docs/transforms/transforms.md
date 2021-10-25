@@ -152,6 +152,37 @@ This transform will drop any messages it receives and return an empty response.
 - Null
 ```
 
+## ParallelMap
+
+This transform will send messages in a single batch in parallel across multiple instances of the chain.
+
+If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C2, C3.
+If the batch then contains messages M1, M2, M3, M4.
+Then the messages would be sent as follows:
+
+* M1 would be sent to C1
+* M2 would be sent to C2
+* M3 would be sent to C3
+* M4 would be sent to C1
+
+```yaml
+- ParallelMap:
+  # Number of duplicate chains to send messages through.
+  parallelism: 1
+  # if true then responses will be returned in the same as order as the queries went out.
+  # if it is false then response may return in any order.
+  ordered_results: true
+  # The name of the chain
+  # TODO: we should just remove this and default the name to "ParallelMap Chain" or something
+  name: "chain name"
+  # The chain that messages are sent through
+  chain:
+    - QueryCounter:
+      name: "DR chain"
+    - RedisSinkSingle:
+      remote_address: "127.0.0.1:6379"
+```
+
 ## KafkaSink
 
 This transform will take a query and push it to a given Kafka topic.
@@ -187,6 +218,43 @@ Currently the Protect transform supports AWS KMS and or using a local Key Encryp
 
 Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly.
 
+## QueryCounter
+
+This transform will log the queries that pass through it.
+The log can be accessed via the shotover metrics.
+
+```yaml
+- QueryCounter:
+  # this name will be logged with the query count
+  name: "DR chain"
+```
+
+## QueryTypeFilter
+
+This transform will drop messages that match the specified filter.
+
+TODO: This doesnt send a reply for some messages, does this break the transform invariants?
+
+```yaml
+- QueryTypeFilter:
+  # drop messages that are read
+  filter: Read
+
+  # alternatively:
+  #
+  # drop messages that are write
+  # filter: Write
+  #
+  # drop messages that are read write
+  # filter: ReadWrite
+  #
+  # drop messages that are schema changes
+  # filter: SchemaChange
+  #
+  # drop messages that are pub sub messages
+  # filter: PubSubMessage
+```
+
 ## RedisCache
 
 This transform will attempt to cache values for a given primary key in a redis hash set. It is a primarily implemented as a write through cache. It currently expects an SQL based AST to figure out what to cache (e.g. CQL, PGSQL) and updates to the cache and the backing datastore are performed sequentially.
@@ -210,28 +278,6 @@ This transform should be used with the RedisSinkCluster transform. It will write
   #  rewrite the ports returned by `CLUSTER SLOTS` and `CLUSTER NODES` to use this port.
   new_port: 2004
 ```
-
-## RedisSinkSingle
-
-This transform will take a query, serialise it into a RESP2 compatible format and send to the Redis compatible database at the defined address.
-
-```yaml
-- RedisSinkSingle:
-  # The IP address and port of the upstream redis node/service.
-  remote_address: "127.0.0.1:6379"
-
-  # When this field is provided TLS is used when connecting to the remote address.
-  # Removing this field will disable TLS.
-  tls:
-    # Path to the certificate file, typically named with a .crt extension.
-    certificate_path: "tls/redis.crt"
-    # Path to the private key file, typically named with a .key extension.
-    private_key_path: "tls/redis.key"
-    # Path to the certificate authority file typically named ca.crt.
-    certificate_authority_path: "tls/ca.crt"
-```
-
-Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
 ## RedisSinkCluster
 
@@ -266,6 +312,28 @@ _Note: Currently Redis-cluster does not support the following functionality:_
 
 * _Redis Transactions_
 * _Scan based operations e.g. SSCAN_
+
+## RedisSinkSingle
+
+This transform will take a query, serialise it into a RESP2 compatible format and send to the Redis compatible database at the defined address.
+
+```yaml
+- RedisSinkSingle:
+  # The IP address and port of the upstream redis node/service.
+  remote_address: "127.0.0.1:6379"
+
+  # When this field is provided TLS is used when connecting to the remote address.
+  # Removing this field will disable TLS.
+  tls:
+    # Path to the certificate file, typically named with a .crt extension.
+    certificate_path: "tls/redis.crt"
+    # Path to the private key file, typically named with a .key extension.
+    private_key_path: "tls/redis.key"
+    # Path to the certificate authority file typically named ca.crt.
+    certificate_authority_path: "tls/ca.crt"
+```
+
+Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
 ## RedisTimestampTagger
 
