@@ -149,7 +149,7 @@ mod parallel_map_tests {
     };
 
     #[tokio::test]
-    async fn test_validate_chain_empty_chain() {
+    async fn test_validate_chain_invalid_chain() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
@@ -200,113 +200,5 @@ mod parallel_map_tests {
         };
 
         assert_eq!(transform.validate(), Vec::<String>::new());
-    }
-
-    #[tokio::test]
-    async fn test_validate_chain_terminating_in_middle() {
-        let chain_1 = TransformChain::new_no_shared_state(
-            vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-            ],
-            "test-chain-1".to_string(),
-        );
-        let chain_2 = TransformChain::new_no_shared_state(
-            vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-            ],
-            "test-chain-2".to_string(),
-        );
-
-        let transform = ParallelMap {
-            chains: vec![chain_1, chain_2],
-            ordered: true,
-        };
-
-        assert_eq!(
-            transform.validate(),
-            vec![
-                "SequentialMap:",
-                "  test-chain-1:",
-                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
-                "  test-chain-2:",
-                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_validate_chain_non_terminating_at_end() {
-        let chain_1 = TransformChain::new_no_shared_state(
-            vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-            ],
-            "test-chain-1".to_string(),
-        );
-        let chain_2 = TransformChain::new_no_shared_state(
-            vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-            ],
-            "test-chain-2".to_string(),
-        );
-
-        let transform = ParallelMap {
-            chains: vec![chain_1, chain_2],
-            ordered: true,
-        };
-
-        assert_eq!(
-            transform.validate(),
-            vec![
-                "SequentialMap:",
-                "  test-chain-1:",
-                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
-        let chain_1 = TransformChain::new_no_shared_state(
-            vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-            ],
-            "test-chain-1".to_string(),
-        );
-        let chain_2 = TransformChain::new_no_shared_state(
-            vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
-            ],
-            "test-chain-2".to_string(),
-        );
-
-        let transform = ParallelMap {
-            chains: vec![chain_1, chain_2],
-            ordered: true,
-        };
-
-        assert_eq!(
-            transform.validate(),
-            vec![
-                "SequentialMap:",
-                "  test-chain-1:",
-                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
-                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
-                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
-            ]
-        );
     }
 }
