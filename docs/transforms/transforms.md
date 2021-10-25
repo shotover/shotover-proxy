@@ -58,9 +58,9 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 - CassandraSinkSingle:
   # The IP address and port of the upstream cassandra node/service.
   remote_address: "127.0.0.1:9042"
-  # disable creating an Abstract Syntax Tree for the query. Saves CPU for straight passthrough cases (no processing on the query). E.g. `bypass_result_processing: false`.
-  # TODO: can we flip to just name it result_processing?
-  bypass_result_processing: true
+  # When true creates an AST for the query.
+  # When false the AST is not created, this saves CPU for straight passthrough cases (no processing on the query).
+  result_processing: true
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.

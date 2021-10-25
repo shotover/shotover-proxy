@@ -205,7 +205,7 @@ impl Topology {
 
         let codec_config = TransformsConfig::CassandraSinkSingle(CassandraSinkSingleConfig {
             address: server_addr,
-            bypass_result_processing: false,
+            result_processing: true,
         });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
