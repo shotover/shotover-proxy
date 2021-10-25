@@ -321,11 +321,18 @@ fn build_redis_ast_from_sql(
 #[async_trait]
 impl Transform for SimpleRedisCache {
     fn validate(&self) -> Vec<String> {
-        self.cache_chain
+        let mut errors = self
+            .cache_chain
             .validate()
             .iter()
             .map(|x| format!("  {}", x))
-            .collect::<Vec<String>>()
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
     }
 
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
@@ -380,7 +387,11 @@ mod test {
     use crate::message::{ASTHolder, MessageDetails, Value};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
-    use crate::transforms::redis::cache::{build_redis_ast_from_sql, PrimaryKey};
+    use crate::transforms::chain::TransformChain;
+    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::null::Null;
+    use crate::transforms::redis::cache::{build_redis_ast_from_sql, PrimaryKey, SimpleRedisCache};
+    use crate::transforms::{Transform, Transforms};
     use bytes::BytesMut;
     use itertools::Itertools;
     use std::collections::HashMap;
@@ -700,5 +711,123 @@ mod test {
         assert_eq!(expected, query);
 
         println!("{:#?}", query);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_empty_chain() {
+        let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
+        let transform = SimpleRedisCache {
+            cache_chain: chain,
+            caching_schema: HashMap::new(),
+        };
+
+        // RedisCache is allowed to have an empty child chain
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "SimpleRedisCache:",
+                "  test-chain:",
+                "    Chain cannot be empty"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_chain() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain".to_string(),
+        );
+        let transform = SimpleRedisCache {
+            cache_chain: chain,
+            caching_schema: HashMap::new(),
+        };
+
+        assert_eq!(transform.validate(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_in_middle() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain".to_string(),
+        );
+        let transform = SimpleRedisCache {
+            cache_chain: chain,
+            caching_schema: HashMap::new(),
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "SimpleRedisCache:",
+                "  test-chain:",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_non_terminating_at_end() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+            ],
+            "test-chain".to_string(),
+        );
+        let transform = SimpleRedisCache {
+            cache_chain: chain,
+            caching_schema: HashMap::new(),
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "SimpleRedisCache:",
+                "  test-chain:",
+                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+            ],
+            "test-chain".to_string(),
+        );
+
+        let transform = SimpleRedisCache {
+            cache_chain: chain,
+            caching_schema: HashMap::new(),
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "SimpleRedisCache:",
+                "  test-chain:",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
+            ]
+        );
     }
 }

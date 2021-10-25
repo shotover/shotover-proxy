@@ -273,9 +273,9 @@ mod topology_tests {
     use crate::{
         sources::{redis_source::RedisConfig, Sources, SourcesConfig},
         transforms::{
-            distributed::tunable_consistency_scatter::TunableConsistencyConfig,
-            parallel_map::ParallelMapConfig,
-            redis_transforms::redis_cache::RedisConfig as RedisCacheConfig, TransformsConfig,
+            distributed::consistent_scatter::ConsistentScatterConfig,
+            parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
+            TransformsConfig,
         },
     };
     use std::collections::HashMap;
@@ -326,7 +326,7 @@ redis_chain:
 
     #[tokio::test]
     async fn test_validate_chain_valid_chain() {
-        create_test_topology(vec![TransformsConfig::Printer, TransformsConfig::Null])
+        create_test_topology(vec![TransformsConfig::DebugPrinter, TransformsConfig::Null])
             .await
             .unwrap();
     }
@@ -340,7 +340,7 @@ redis_chain:
         .to_string();
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
             TransformsConfig::Null,
         ])
@@ -360,9 +360,9 @@ redis_chain:
         .to_string();
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
         ])
         .await
         .unwrap_err()
@@ -381,10 +381,10 @@ redis_chain:
         .to_string();
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
         ])
         .await
         .unwrap_err()
@@ -394,10 +394,10 @@ redis_chain:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_subchain_tunable_consistency() {
+    async fn test_validate_chain_valid_subchain_consistent_scatter() {
         let subchain = vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
         ];
 
@@ -405,9 +405,9 @@ redis_chain:
         route_map.insert("subchain-1".to_string(), subchain);
 
         create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
-            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -418,19 +418,19 @@ redis_chain:
     }
 
     #[tokio::test]
-    async fn test_validate_chain_invalid_subchain_tunable_consistency() {
+    async fn test_validate_chain_invalid_subchain_consistent_scatter() {
         let expected: String = r#"Topology errors
 redis_chain:
-  TunableConsistency:
+  ConsistentScatter:
     subchain-1:
       Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#
         .to_string();
 
         let subchain = vec![
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
         ];
 
@@ -438,9 +438,9 @@ redis_chain:
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
-            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -456,16 +456,16 @@ redis_chain:
     #[tokio::test]
     async fn test_validate_chain_valid_subchain_redis_cache() {
         let chain = vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
         ];
 
         let caching_schema = HashMap::new();
 
         create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::RedisCache(RedisCacheConfig {
                 chain,
                 caching_schema,
@@ -487,15 +487,15 @@ redis_chain:
         .to_string();
 
         let chain = vec![
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
         ];
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::RedisCache(RedisCacheConfig {
                 chain,
                 caching_schema: HashMap::new(),
@@ -512,14 +512,14 @@ redis_chain:
     #[tokio::test]
     async fn test_validate_chain_valid_subchain_parallel_map() {
         let chain = vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
         ];
 
         create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::ParallelMap(ParallelMapConfig {
                 name: "test-parallel-map".to_string(),
                 parallelism: 1,
@@ -542,15 +542,15 @@ redis_chain:
         .to_string();
 
         let chain = vec![
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
         ];
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::ParallelMap(ParallelMapConfig {
                 name: "test-parallel-map".to_string(),
                 parallelism: 1,
@@ -569,16 +569,16 @@ redis_chain:
     async fn test_validate_chain_subchain_terminating_in_middle() {
         let expected: String = r#"Topology errors
 redis_chain:
-  TunableConsistency:
+  ConsistentScatter:
     subchain-1:
       Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#
         .to_string();
 
         let subchain = vec![
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
         ];
 
@@ -586,9 +586,9 @@ redis_chain:
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
-            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -605,21 +605,24 @@ redis_chain:
     async fn test_validate_chain_subchain_non_terminating_at_end() {
         let expected: String = r#"Topology errors
 redis_chain:
-  TunableConsistency:
+  ConsistentScatter:
     subchain-1:
       Non-terminating transform "Printer" is last in chain. Last transform must be terminating.
 "#
         .to_string();
 
-        let subchain = vec![TransformsConfig::Printer, TransformsConfig::Printer];
+        let subchain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+        ];
 
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
-            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,
@@ -636,7 +639,7 @@ redis_chain:
     async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
         let expected = r#"Topology errors
 redis_chain:
-  TunableConsistency:
+  ConsistentScatter:
     subchain-1:
       Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
       Non-terminating transform "Printer" is last in chain. Last transform must be terminating.
@@ -644,18 +647,18 @@ redis_chain:
         .to_string();
 
         let subchain = vec![
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
             TransformsConfig::Null,
-            TransformsConfig::Printer,
+            TransformsConfig::DebugPrinter,
         ];
 
         let mut route_map = HashMap::new();
         route_map.insert("subchain-1".to_string(), subchain);
 
         let error = create_test_topology(vec![
-            TransformsConfig::Printer,
-            TransformsConfig::Printer,
-            TransformsConfig::ConsistentScatter(TunableConsistencyConfig {
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
                 route_map,
                 write_consistency: 1,
                 read_consistency: 1,

@@ -53,18 +53,6 @@ impl ConsistentScatterConfig {
             count: 0,
         }))
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
-
-    fn get_name(&self) -> &'static str {
-        "TunableConsistency"
-    }
-
-    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
-        todo!();
-    }
 }
 
 fn get_timestamp(frag: &QueryResponse) -> i64 {
@@ -224,6 +212,31 @@ impl Transform for ConsistentScatter {
         })
     }
 
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .route_map
+            .iter()
+            .map(|buffer_chain| {
+                buffer_chain
+                    .original_chain
+                    .validate()
+                    .into_iter()
+                    .map(|x| format!("  {}", x))
+            })
+            .flatten()
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
+    }
+
     fn get_name(&self) -> &'static str {
         "ConsistentScatter"
     }
@@ -232,6 +245,7 @@ impl Transform for ConsistentScatter {
 #[cfg(test)]
 mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChain};
+    use crate::transforms::debug_printer::DebugPrinter;
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
     use crate::transforms::internal_debug_transforms::DebugReturnerTransform;
 
@@ -239,7 +253,8 @@ mod scatter_transform_tests {
         Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
     };
     use crate::protocols::RawFrame;
-    use crate::transforms::{Transforms, Wrapper};
+    use crate::transforms::null::Null;
+    use crate::transforms::{Transform, Transforms, Wrapper};
     use std::collections::HashMap;
 
     fn check_ok_responses(mut messages: Messages, expected_ok: &Value, _expected_count: usize) {
@@ -364,5 +379,197 @@ mod scatter_transform_tests {
         let expected_err = Value::Strings("Not enough responses".to_string());
 
         check_err_responses(response_fail, &expected_err, 1);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_empty_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(vec![], "test-chain-2".to_string());
+
+        let transform = ConsistentScatter {
+            route_map: vec![
+                chain_1.into_buffered_chain(10),
+                chain_2.into_buffered_chain(10),
+            ],
+            write_consistency: 1,
+            read_consistency: 1,
+            timeout: 1000,
+            count: 0,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "ConsistentScatter:",
+                "  test-chain-2:",
+                "    Chain cannot be empty"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ConsistentScatter {
+            route_map: vec![
+                chain_1.into_buffered_chain(10),
+                chain_2.into_buffered_chain(10),
+            ],
+            write_consistency: 1,
+            read_consistency: 1,
+            timeout: 1000,
+            count: 0,
+        };
+
+        assert_eq!(transform.validate(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_in_middle() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ConsistentScatter {
+            route_map: vec![
+                chain_1.into_buffered_chain(10),
+                chain_2.into_buffered_chain(10),
+            ],
+            write_consistency: 1,
+            read_consistency: 1,
+            timeout: 1000,
+            count: 0,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "ConsistentScatter:",
+                "  test-chain-1:",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "  test-chain-2:",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_non_terminating_at_end() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ConsistentScatter {
+            route_map: vec![
+                chain_1.into_buffered_chain(10),
+                chain_2.into_buffered_chain(10),
+            ],
+            write_consistency: 1,
+            read_consistency: 1,
+            timeout: 1000,
+            count: 0,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "ConsistentScatter:",
+                "  test-chain-1:",
+                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ConsistentScatter {
+            route_map: vec![
+                chain_1.into_buffered_chain(10),
+                chain_2.into_buffered_chain(10),
+            ],
+            write_consistency: 1,
+            read_consistency: 1,
+            timeout: 1000,
+            count: 0,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "ConsistentScatter:",
+                "  test-chain-1:",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
+                "    Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
+            ]
+        );
     }
 }

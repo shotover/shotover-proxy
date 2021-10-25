@@ -7,10 +7,9 @@ use redis::{AsyncCommands, ErrorKind, RedisError, Value};
 use serial_test::serial;
 use tracing::trace;
 
+use crate::helpers::ShotoverManager;
 use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
-
-use crate::helpers::ShotoverManager;
 
 async fn test_args(connection: &mut Connection) {
     redis::cmd("SET")

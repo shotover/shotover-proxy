@@ -54,22 +54,14 @@ impl ForwarderConfig {
             timeout: self.timeout_micros,
         }))
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
-
-    fn get_name(&self) -> &'static str {
-        "forward"
-    }
-
-    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
-        todo!();
-    }
 }
 
 #[async_trait]
 impl Transform for Forwarder {
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.async_mode {
             let expected_responses = message_wrapper.messages.len();
@@ -156,14 +148,6 @@ impl TeeConfig {
             timeout: self.timeout_micros,
         }))
     }
-
-    fn is_valid(&self, _position: usize) -> Result<(), anyhow::Error> {
-        todo!();
-    }
-
-    fn get_name(&self) -> &'static str {
-        "tee"
-    }
 }
 
 #[async_trait]
@@ -242,5 +226,9 @@ impl Transform for Tee {
 
     fn get_name(&self) -> &'static str {
         "tee"
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
     }
 }

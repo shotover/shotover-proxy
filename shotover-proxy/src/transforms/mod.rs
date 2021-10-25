@@ -55,7 +55,6 @@ pub mod loopback;
 pub mod noop;
 pub mod null;
 pub mod parallel_map;
-pub mod printer;
 pub mod protect;
 pub mod query_counter;
 pub mod redis;
@@ -183,13 +182,13 @@ impl Transforms {
             Transforms::CassandraSinkSingle(c) => c.validate(),
             Transforms::KafkaSink(k) => k.validate(),
             Transforms::RedisCache(r) => r.validate(),
-            Transforms::MPSCTee(t) => t.validate(),
-            Transforms::MPSCForwarder(f) => f.validate(),
+            Transforms::Tee(t) => t.validate(),
+            Transforms::Forwarder(f) => f.validate(),
             Transforms::RedisSinkSingle(r) => r.validate(),
-            Transforms::TunableConsistency(c) => c.validate(),
+            Transforms::ConsistentScatter(c) => c.validate(),
             Transforms::RedisTimeStampTagger(r) => r.validate(),
             Transforms::RedisClusterPortsRewrite(r) => r.validate(),
-            Transforms::Printer(p) => p.validate(),
+            Transforms::DebugPrinter(p) => p.validate(),
             Transforms::Null(n) => n.validate(),
             Transforms::RedisSinkCluster(r) => r.validate(),
             Transforms::ParallelMap(s) => s.validate(),
@@ -206,13 +205,13 @@ impl Transforms {
             Transforms::CassandraSinkSingle(c) => c.is_terminating(),
             Transforms::KafkaSink(k) => k.is_terminating(),
             Transforms::RedisCache(r) => r.is_terminating(),
-            Transforms::MPSCTee(t) => t.is_terminating(),
-            Transforms::MPSCForwarder(f) => f.is_terminating(),
+            Transforms::Tee(t) => t.is_terminating(),
+            Transforms::Forwarder(f) => f.is_terminating(),
             Transforms::RedisSinkSingle(r) => r.is_terminating(),
-            Transforms::TunableConsistency(c) => c.is_terminating(),
+            Transforms::ConsistentScatter(c) => c.is_terminating(),
             Transforms::RedisTimeStampTagger(r) => r.is_terminating(),
             Transforms::RedisClusterPortsRewrite(r) => r.is_terminating(),
-            Transforms::Printer(p) => p.is_terminating(),
+            Transforms::DebugPrinter(p) => p.is_terminating(),
             Transforms::Null(n) => n.is_terminating(),
             Transforms::RedisSinkCluster(r) => r.is_terminating(),
             Transforms::ParallelMap(s) => s.is_terminating(),

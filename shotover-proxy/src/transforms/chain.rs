@@ -245,8 +245,8 @@ impl TransformChain {
 #[cfg(test)]
 mod chain_tests {
     use crate::transforms::chain::TransformChain;
+    use crate::transforms::debug_printer::DebugPrinter;
     use crate::transforms::null::Null;
-    use crate::transforms::printer::Printer;
     use crate::transforms::Transforms;
 
     #[tokio::test]
@@ -262,8 +262,8 @@ mod chain_tests {
     async fn test_validate_chain_valid_chain() {
         let chain = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain".to_string(),
@@ -275,9 +275,9 @@ mod chain_tests {
     async fn test_validate_chain_terminating_in_middle() {
         let chain = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain".to_string(),
@@ -295,9 +295,9 @@ mod chain_tests {
     async fn test_validate_chain_non_terminating_at_end() {
         let chain = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
             ],
             "test-chain".to_string(),
         );
@@ -314,11 +314,11 @@ mod chain_tests {
     async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
         let chain = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
             ],
             "test-chain".to_string(),
         );

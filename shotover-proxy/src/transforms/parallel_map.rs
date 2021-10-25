@@ -144,16 +144,16 @@ impl Transform for ParallelMap {
 #[cfg(test)]
 mod parallel_map_tests {
     use crate::transforms::{
-        chain::TransformChain, null::Null, parallel_map::ParallelMap, printer::Printer, Transform,
-        Transforms,
+        chain::TransformChain, debug_printer::DebugPrinter, null::Null, parallel_map::ParallelMap,
+        Transform, Transforms,
     };
 
     #[tokio::test]
     async fn test_validate_chain_empty_chain() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
@@ -179,16 +179,16 @@ mod parallel_map_tests {
     async fn test_validate_chain_valid_chain() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
         let chain_2 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
@@ -206,18 +206,18 @@ mod parallel_map_tests {
     async fn test_validate_chain_terminating_in_middle() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
         let chain_2 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
@@ -244,14 +244,14 @@ mod parallel_map_tests {
     async fn test_validate_chain_non_terminating_at_end() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
             ],
             "test-chain-1".to_string(),
         );
         let chain_2 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
@@ -276,18 +276,18 @@ mod parallel_map_tests {
     async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
-                Transforms::Printer(Printer::new()),
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
             ],
             "test-chain-1".to_string(),
         );
         let chain_2 = TransformChain::new_no_shared_state(
             vec![
-                Transforms::Printer(Printer::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
