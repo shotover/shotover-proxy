@@ -41,7 +41,7 @@ TODO: We should define what alpha/beta/stable actually mean, is it about API sta
 |[RedisSinkCluster](#redissinkcluster)                |✅           |Beta                   |
 |[RedisSinkSingle](#redissinksingle)                  |✅           |Beta                   |
 |[RedisTimeStampTagger](#redistimestamptagger)        |❌           |Alpha                  |
-|[TuneableConsistency](#tuneableconsistency)          |✅           |Alpha                  |
+|[ConsistentScatter](#consistentscatter)          |✅           |Alpha                  |
 
 ## CassandraSinkSingle
 
@@ -126,7 +126,7 @@ Currently the Protect transform supports AWS KMS and or using a local Key Encryp
 
 Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly.
 
-## TuneableConsistency
+## ConsistentScatter
 
 This transform implements a distributed eventual consistent mechanism between the set of defined sub-chains. This transform will wait for a user configurable number of chains to return an OK response before returning the value up-chain. This follows a similar model as used by Cassandra for its consistency model. Strong consistency can be achieved when W + R > RF. In this case RF is always the number of chains in the route_map. 
 
@@ -157,7 +157,7 @@ route_map:
 
 A transform that wraps each redis command in a lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a responses timestamp. The response from the lua operation is unwrapped and returned to up-chain transforms looking like a normal redis response.
 
-This is mainly used in conjunction with the `TuneableConsistency` to enable a Cassandra style consistency model within Redis.
+This is mainly used in conjunction with the `ConsistentScatter` to enable a Cassandra style consistency model within Redis.
 
 No configuration is required for this transform.
 

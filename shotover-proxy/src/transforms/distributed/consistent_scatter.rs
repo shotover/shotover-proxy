@@ -152,7 +152,7 @@ impl Transform for ConsistentScatter {
         for chain in self.route_map.iter_mut() {
             rec_fu.push(chain.process_request(
                 message_wrapper.clone(),
-                "TunableConsistency".to_string(),
+                "ConsistentScatter".to_string(),
                 None,
             ));
         }
@@ -213,7 +213,7 @@ impl Transform for ConsistentScatter {
     }
 
     fn get_name(&self) -> &'static str {
-        "TunableConsistency"
+        "ConsistentScatter"
     }
 }
 
