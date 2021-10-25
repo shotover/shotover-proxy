@@ -32,6 +32,6 @@ impl Transform for DebugPrinter {
     }
 
     fn get_name(&self) -> &'static str {
-        "Printer"
+        "DebugPrinter"
     }
 }

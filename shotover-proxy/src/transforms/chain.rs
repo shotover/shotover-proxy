@@ -142,7 +142,7 @@ impl TransformChain {
                     Some(tx) => match tx.send(chain_response) {
                         Ok(_) => {}
                         Err(e) => trace!(
-                            "Dropping response message {:?} as not needed by TunableConsistency",
+                            "Dropping response message {:?} as not needed by ConsistentScatter",
                             e
                         ),
                     },
