@@ -17,7 +17,7 @@ chain_config:
               filter: Read
           - Coalesce:
               max_behavior:
-                COUNT: 2000
+                Count: 2000
           - Forwarder:
               buffer_size: 100
               async_mode: true

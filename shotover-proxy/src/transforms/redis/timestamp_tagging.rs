@@ -27,7 +27,7 @@ impl RedisTimestampTagger {
 
 impl RedisTimestampTaggerConfig {
     pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger {}))
+        Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger {}))
     }
 }
 
@@ -192,6 +192,6 @@ impl Transform for RedisTimestampTagger {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisTimeStampTagger"
+        "RedisTimestampTagger"
     }
 }
