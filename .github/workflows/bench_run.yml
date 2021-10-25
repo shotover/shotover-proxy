@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel already running jobs
+concurrency:
+  group: benchmark_run_${{ github.head_ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
