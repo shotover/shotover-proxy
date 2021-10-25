@@ -13,6 +13,11 @@ on:
   workflow_run:
     workflows: [ "Benchmark Run" ]
 
+# Cancel already running jobs
+concurrency:
+  group: create_comment_${{ github.head_ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
