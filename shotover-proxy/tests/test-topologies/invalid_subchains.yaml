@@ -5,23 +5,23 @@ sources:
       batch_size_hint: 1
       listen_addr: "127.0.0.1:6379"
 chain_config:
-  redis_chain:
+  a_first_chain:
     - Null
     - Null
-    - Printer
-  other_chain:
-    - Printer
+    - DebugPrinter
+  b_second_chain:
+    - DebugPrinter
     - ConsistentScatter:
         read_consistency: 1
         write_consistency: 1
         route_map:
-          chain_1:
+          a_chain_1:
             - Null
-            - Printer
-          chain_2:
+            - DebugPrinter
+          b_chain_2:
             - Null
             - Null
-          chain_3:
+          c_chain_3:
             - ConsistentScatter:
                 read_consistency: 1
                 write_consistency: 1

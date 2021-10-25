@@ -44,6 +44,7 @@ impl ConsistentScatterConfig {
                     .into_buffered_chain(10),
             );
         }
+        route_map.sort_by_key(|x| x.original_chain.name.clone());
 
         Ok(Transforms::ConsistentScatter(ConsistentScatter {
             route_map,
@@ -382,7 +383,7 @@ mod scatter_transform_tests {
     }
 
     #[tokio::test]
-    async fn test_validate_chain_invalid_chain() {
+    async fn test_validate_invalid_chain() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
@@ -415,7 +416,7 @@ mod scatter_transform_tests {
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_chain() {
+    async fn test_validate_valid_chain() {
         let chain_1 = TransformChain::new_no_shared_state(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),

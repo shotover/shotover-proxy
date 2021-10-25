@@ -186,7 +186,7 @@ impl Transforms {
             Transforms::Forwarder(f) => f.validate(),
             Transforms::RedisSinkSingle(r) => r.validate(),
             Transforms::ConsistentScatter(c) => c.validate(),
-            Transforms::RedisTimeStampTagger(r) => r.validate(),
+            Transforms::RedisTimestampTagger(r) => r.validate(),
             Transforms::RedisClusterPortsRewrite(r) => r.validate(),
             Transforms::DebugPrinter(p) => p.validate(),
             Transforms::Null(n) => n.validate(),
@@ -196,7 +196,10 @@ impl Transforms {
             Transforms::Coalesce(s) => s.validate(),
             Transforms::QueryTypeFilter(s) => s.validate(),
             Transforms::QueryCounter(s) => s.validate(),
-            _ => vec![],
+            Transforms::Loopback(l) => l.validate(),
+            Transforms::Protect(p) => p.validate(),
+            Transforms::DebugReturnerTransform(d) => d.validate(),
+            Transforms::DebugRandomDelay(d) => d.validate(),
         }
     }
 
@@ -209,7 +212,7 @@ impl Transforms {
             Transforms::Forwarder(f) => f.is_terminating(),
             Transforms::RedisSinkSingle(r) => r.is_terminating(),
             Transforms::ConsistentScatter(c) => c.is_terminating(),
-            Transforms::RedisTimeStampTagger(r) => r.is_terminating(),
+            Transforms::RedisTimestampTagger(r) => r.is_terminating(),
             Transforms::RedisClusterPortsRewrite(r) => r.is_terminating(),
             Transforms::DebugPrinter(p) => p.is_terminating(),
             Transforms::Null(n) => n.is_terminating(),
@@ -219,7 +222,10 @@ impl Transforms {
             Transforms::Coalesce(s) => s.is_terminating(),
             Transforms::QueryTypeFilter(s) => s.is_terminating(),
             Transforms::QueryCounter(s) => s.is_terminating(),
-            _ => false,
+            Transforms::Loopback(l) => l.is_terminating(),
+            Transforms::Protect(p) => p.is_terminating(),
+            Transforms::DebugReturnerTransform(d) => d.is_terminating(),
+            Transforms::DebugRandomDelay(d) => d.is_terminating(),
         }
     }
 }

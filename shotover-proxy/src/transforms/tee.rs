@@ -227,8 +227,4 @@ impl Transform for Tee {
     fn get_name(&self) -> &'static str {
         "tee"
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
 }

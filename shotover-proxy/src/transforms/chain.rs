@@ -24,7 +24,7 @@ type InnerChain = Vec<Transforms>;
 /// The transform chain is a vector of mutable references to the enum [Transforms] (which is an enum dispatch wrapper around the various transform types).
 #[derive(Debug, Clone)]
 pub struct TransformChain {
-    name: String,
+    pub name: String,
     pub chain: InnerChain,
 }
 
@@ -177,7 +177,7 @@ impl TransformChain {
     }
 
     pub fn validate(&self) -> Vec<String> {
-        if self.chain.len() == 0 {
+        if self.chain.is_empty() {
             return vec![
                 format!("{}:", self.name),
                 "  Chain cannot be empty".to_string(),
@@ -250,7 +250,7 @@ mod chain_tests {
     use crate::transforms::Transforms;
 
     #[tokio::test]
-    async fn test_validate_chain_invalid_chain() {
+    async fn test_validate_invalid_chain() {
         let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
         assert_eq!(
             chain.validate(),
@@ -259,7 +259,7 @@ mod chain_tests {
     }
 
     #[tokio::test]
-    async fn test_validate_chain_valid_chain() {
+    async fn test_validate_valid_chain() {
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
@@ -270,66 +270,4 @@ mod chain_tests {
         );
         assert_eq!(chain.validate(), Vec::<String>::new());
     }
-
-    // #[tokio::test]
-    // async fn test_validate_chain_terminating_in_middle() {
-    //     let chain = TransformChain::new_no_shared_state(
-    //         vec![
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //             Transforms::Null(Null::default()),
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //             Transforms::Null(Null::default()),
-    //         ],
-    //         "test-chain".to_string(),
-    //     );
-    //     assert_eq!(
-    //         chain.validate(),
-    //         vec![
-    //             "test-chain:",
-    //             "  Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
-    //         ]
-    //     );
-    // }
-
-    // #[tokio::test]
-    // async fn test_validate_chain_non_terminating_at_end() {
-    //     let chain = TransformChain::new_no_shared_state(
-    //         vec![
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //         ],
-    //         "test-chain".to_string(),
-    //     );
-    //     assert_eq!(
-    //         chain.validate(),
-    //         vec![
-    //             "test-chain:",
-    //             "  Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
-    //         ]
-    //     );
-    // }
-
-    // #[tokio::test]
-    // async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
-    //     let chain = TransformChain::new_no_shared_state(
-    //         vec![
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //             Transforms::Null(Null::default()),
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //             Transforms::Null(Null::default()),
-    //             Transforms::DebugPrinter(DebugPrinter::new()),
-    //         ],
-    //         "test-chain".to_string(),
-    //     );
-    //     assert_eq!(
-    //         chain.validate(),
-    //         vec![
-    //             "test-chain:",
-    //             "  Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
-    //             "  Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain.",
-    //             "  Non-terminating transform \"Printer\" is last in chain. Last transform must be terminating.",
-    //         ]
-    //     );
-    // }
 }
