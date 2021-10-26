@@ -8,7 +8,7 @@ A source is the main component that listens for traffic from your application an
 
 ## Transform
 
-Transforms are where the bulk of Shotover does its work. A transform is a single unit of operation that does "something" to the database request that's in flight. This may be logging it, modifying it, sending it to an external system or anything else you can think of. Transforms can either be terminating (pass messages on to subsequent transforms on the chain) or non-terminating (return a response without calling the rest of the chain). Transforms that send messages to external systems are called sinks. 
+Transforms are where Shotover does the bulk of it's work. A transform is a single unit of operation that does something to the database request that's in flight. This may be logging it, modifying it, sending it to an external system or anything else you can think of. Transforms can either be terminating (pass messages on to subsequent transforms on the chain) or non-terminating (return a response without calling the rest of the chain). Transforms that send messages to external systems are called sinks. 
 
 ## Transform Chain
 
@@ -23,6 +23,6 @@ A topology is how you configure Shotover. You define your sources, your transfor
 
 ## Topics
 
-Shotover has a basic, built-in topic based messaging capability. A transform can access topic channels to publish messages on to. To recevie messages, there is a message source that you can assign a chain to. This allows for complex routing and asynchronous passing of messages between transform chains in a topology. See [the cassandra and kafka example](/examples/cass-redis-kafka) as an example.
+Shotover has a basic, built-in topic based messaging capability. A transform can access topic channels to publish messages on to. To receive messages, there is a message source that you can assign a chain to. This allows for complex routing and asynchronous passing of messages between transform chains in a topology. See [the cassandra and kafka example](/examples/cass-redis-kafka) as an example.
 
-Generally if you want to build blocking behaviour in your chain, you will use transforms that have child transform chains. For non-blocking behaviour (e.g. copying a query to a kafka queue while sending it the upstream service) use topic based transforms.
+Generally if you want to build blocking behaviour in your chain, you will use transforms that have sub chains. For non-blocking behaviour (e.g. copying a query to a kafka queue while sending it the upstream service) use topic based transforms.
