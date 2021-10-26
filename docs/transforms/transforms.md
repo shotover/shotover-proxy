@@ -348,7 +348,7 @@ This is mainly used in conjunction with the `ConsistentScatter` transform to ena
 ## Tee
 
 This transform sends messages to both the defined sub chain and the remaining down-chain transforms.
-The response from the down-chain transform is returned back up-chain but various behaviours can be defined when there is a mismatch in responses between the sub chain and down-chain
+The response from the down-chain transform is returned back up-chain but various behaviours can be defined by the `behaviour` field to handle the case when the responses from the sub chain and down-chain do not match.
 
 ```yaml
 - Tee:
