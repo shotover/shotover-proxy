@@ -105,7 +105,6 @@ impl Topology {
         Ok(temp)
     }
 
-    #[allow(clippy::type_complexity)]
     pub async fn run_chains(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,

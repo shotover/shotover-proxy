@@ -339,7 +339,7 @@ Note: this will just pass the query to the remote node. No cluster discovery or 
 
 A transform that wraps each Redis command in a Lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a response's timestamp. The response from the Lua operation is unwrapped and returned to up-chain transforms looking like a normal Redis response.
 
-This is mainly used in conjunction with the `ConsistentScatter` to enable a Cassandra style consistency model within Redis.
+This is mainly used in conjunction with the `ConsistentScatter` transform to enable a Cassandra style consistency model within Redis.
 
 ```yaml
 - RedisTimestampTagger
@@ -347,13 +347,32 @@ This is mainly used in conjunction with the `ConsistentScatter` to enable a Cass
 
 ## Tee
 
-This transform asynchronously copies the query/message to the channel associated with the topic named in its configuration. It will then call the down-chain transform.
+This transform sends messages to both the defined sub chain and the remaining down-chain transforms.
+The response from the down-chain transform is returned back up-chain but various behaviours can be defined by the `behaviour` field to handle the case when the responses from the sub chain and down-chain do not match.
 
 ```yaml
 - Tee:
-  behavior: IGNORE
+  # Ignore responses returned by the sub chain
+  behavior: Ignore
+
+  # Alternatively:
+  #
+  # If the responses returned by the sub chain do not equal the responses returned by down-chain then return an error.
+  # behavior: FailOnMismatch
+  #
+  # If the responses returned by the sub chain do not equal the responses returned by down-chain,
+  # then the original message is also sent down the SubchainOnMismatch sub chain.
+  # This is useful for logging failed messages.
+  # behavior: SubchainOnMismatch:
+  # - QueryTypeFilter:
+  #   filter: Read
+  # - Null
+
+  # Timeout for sending to the sub chain in microseconds
   timeout_micros: 1000
+  # The number of messages that Tee will accumulate before passing to the sub chain
   buffer_size: 10000
+  # The sub chain to send duplicate messages through
   chain:
     - QueryTypeFilter:
       filter: Read
