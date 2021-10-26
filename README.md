@@ -1,4 +1,6 @@
-![Logo](docs/logo.png)
+<p align="center">
+  <img width="400px" alt="Shotover logo" src="docs/logo.png">
+</p>
 
 [![Rust](https://github.com/shotover/shotover-proxy/workflows/Rust/badge.svg)](https://github.com/shotover/shotover-proxy/actions?query=workflow%3ARust)
 
