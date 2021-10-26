@@ -1,4 +1,4 @@
-# Shotover
+![Logo](docs/logo.png)
 
 [![Rust](https://github.com/shotover/shotover-proxy/workflows/Rust/badge.svg)](https://github.com/shotover/shotover-proxy/actions?query=workflow%3ARust)
 

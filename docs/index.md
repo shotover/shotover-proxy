@@ -1,4 +1,4 @@
-# Shotover Proxy
+![Logo](logo.png)
 
 Shotover-proxy is an open source, high performance L7 data-layer proxy for controlling, managing and modifying the flow  of database requests in transit. It can be used to solve many different operational and interoperability challenges for teams where polyglot persistence (many different databases) is common.
 
