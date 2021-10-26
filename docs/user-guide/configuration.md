@@ -117,12 +117,12 @@ The following example `chain_config` has three chains:
 # This example will replicate all commands to the DR datacenter on a best effort basis
 ---
 chain_config:
- # The name of the first chain  
+  # The name of the first chain
   redis_chain:
-   # The first transform in the chain, this case, its the Tee
+    # The first transform in the chain, in this case its the Tee transform
     - Tee:
         behavior: IGNORE
-#       The buffer of messages that Tee will accumulate before passing to the child, other values include a timeout
+        # The number of messages that Tee will accumulate before passing to the sub chain
         buffer_size: 10000
         #The child chain, that Tee will asynchronously pass requests to
         chain:

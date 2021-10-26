@@ -18,7 +18,7 @@ pub struct Forwarder {
     pub async_mode: bool,
     pub buffer_size: usize,
     pub chain_to_clone: TransformChain,
-    pub timeout: Option<u64>,
+    pub timeout_micros: Option<u64>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -37,7 +37,7 @@ impl Clone for Forwarder {
             async_mode: false,
             buffer_size: self.buffer_size,
             chain_to_clone: self.chain_to_clone.clone(),
-            timeout: self.timeout,
+            timeout_micros: self.timeout_micros,
         }
     }
 }
@@ -51,7 +51,7 @@ impl ForwarderConfig {
             async_mode: self.async_mode,
             buffer_size: buffer,
             chain_to_clone: chain,
-            timeout: self.timeout_micros,
+            timeout_micros: self.timeout_micros,
         }))
     }
 }
@@ -67,7 +67,11 @@ impl Transform for Forwarder {
             let expected_responses = message_wrapper.messages.len();
             let buffer_result = self
                 .tx
-                .process_request_no_return(message_wrapper, "Buffer".to_string(), self.timeout)
+                .process_request_no_return(
+                    message_wrapper,
+                    "Buffer".to_string(),
+                    self.timeout_micros,
+                )
                 .await;
 
             match buffer_result {
@@ -90,7 +94,7 @@ impl Transform for Forwarder {
                 .collect())
         } else {
             self.tx
-                .process_request(message_wrapper, "Buffer".to_string(), self.timeout)
+                .process_request(message_wrapper, "Buffer".to_string(), self.timeout_micros)
                 .await
         }
     }
@@ -107,14 +111,14 @@ pub struct Tee {
     pub buffer_size: usize,
     pub chain_to_clone: TransformChain,
     pub behavior: ConsistencyBehavior,
-    pub timeout: Option<u64>,
+    pub timeout_micros: Option<u64>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum ConsistencyBehavior {
-    IGNORE,
-    FAIL,
-    LOG { fail_chain: Vec<TransformsConfig> },
+    Ignore,
+    FailOnMismatch,
+    SubchainOnMismatch(Vec<TransformsConfig>),
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -127,15 +131,16 @@ pub struct TeeConfig {
 impl TeeConfig {
     pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let buffer_size = self.buffer_size.unwrap_or(5);
-        let fail_chain = if let Some(ConsistencyBehavior::LOG { fail_chain }) = &self.behavior {
-            Some(
-                build_chain_from_config("fail_chain".to_string(), fail_chain, topics)
-                    .await?
-                    .into_buffered_chain(buffer_size),
-            )
-        } else {
-            None
-        };
+        let fail_chain =
+            if let Some(ConsistencyBehavior::SubchainOnMismatch(fail_chain)) = &self.behavior {
+                Some(
+                    build_chain_from_config("fail_chain".to_string(), fail_chain, topics)
+                        .await?
+                        .into_buffered_chain(buffer_size),
+                )
+            } else {
+                None
+            };
         let tee_chain =
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
@@ -144,8 +149,8 @@ impl TeeConfig {
             fail_chain,
             buffer_size,
             chain_to_clone: tee_chain,
-            behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::IGNORE),
-            timeout: self.timeout_micros,
+            behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
+            timeout_micros: self.timeout_micros,
         }))
     }
 }
@@ -154,12 +159,12 @@ impl TeeConfig {
 impl Transform for Tee {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self.behavior {
-            ConsistencyBehavior::IGNORE => {
+            ConsistencyBehavior::Ignore => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx.process_request_no_return(
                         message_wrapper.clone(),
-                        "tee".to_string(),
-                        self.timeout
+                        "Tee".to_string(),
+                        self.timeout_micros
                     ),
                     message_wrapper.call_next_transform()
                 );
@@ -172,12 +177,12 @@ impl Transform for Tee {
                 }
                 chain_result
             }
-            ConsistencyBehavior::FAIL => {
+            ConsistencyBehavior::FailOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx.process_request(
                         message_wrapper.clone(),
-                        "tee".to_string(),
-                        self.timeout
+                        "Tee".to_string(),
+                        self.timeout_micros
                     ),
                     message_wrapper.call_next_transform()
                 );
@@ -187,7 +192,7 @@ impl Transform for Tee {
                 if !chain_response.eq(&tee_response) {
                     Ok(vec!(Message::new(
                         MessageDetails::Response(QueryResponse::empty_with_error(Some(Value::Strings(
-                            "Shotover could not write to both topics via Tee - Behavior is to fail"
+                            "The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch"
                                 .to_string(),
                         )))),
                         true,
@@ -197,13 +202,13 @@ impl Transform for Tee {
                     Ok(chain_response)
                 }
             }
-            ConsistencyBehavior::LOG { .. } => {
+            ConsistencyBehavior::SubchainOnMismatch(_) => {
                 let failed_message = message_wrapper.clone();
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx.process_request(
                         message_wrapper.clone(),
-                        "tee".to_string(),
-                        self.timeout
+                        "Tee".to_string(),
+                        self.timeout_micros
                     ),
                     message_wrapper.call_next_transform()
                 );
@@ -214,7 +219,7 @@ impl Transform for Tee {
                 if !chain_response.eq(&tee_response) {
                     if let Some(topic) = &mut self.fail_chain {
                         topic
-                            .process_request(failed_message, "tee".to_string(), None)
+                            .process_request(failed_message, "SubchainOnMismatch".to_string(), None)
                             .await?;
                     }
                 }
