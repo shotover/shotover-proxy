@@ -56,6 +56,10 @@ impl RedisSinkSingle {
 
 #[async_trait]
 impl Transform for RedisSinkSingle {
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.outbound.is_none() {
             let tcp_stream = TcpStream::connect(self.address.clone()).await.unwrap();

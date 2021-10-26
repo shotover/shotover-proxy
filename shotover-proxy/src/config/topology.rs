@@ -8,6 +8,7 @@ use crate::transforms::kafka_sink::KafkaSinkConfig;
 use crate::transforms::tee::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
+use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -118,6 +119,20 @@ impl Topology {
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
+
+        let mut chain_errors = String::new();
+        for chain in chains.values().sorted_by_key(|x| x.name.clone()) {
+            let errs = chain.validate().join("\n");
+
+            if !errs.is_empty() {
+                chain_errors.push_str(&errs);
+                chain_errors.push('\n');
+            }
+        }
+
+        if !chain_errors.is_empty() {
+            return Err(anyhow!(format!("Topology errors\n{}", chain_errors)));
+        }
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
             if let Some(source_config) = self.sources.get(source_name.as_str()) {
@@ -249,5 +264,436 @@ impl Topology {
             named_topics,
             source_to_chain_mapping,
         }
+    }
+}
+
+#[cfg(test)]
+mod topology_tests {
+    use tokio::sync::{mpsc, watch};
+
+    use crate::{
+        sources::{redis_source::RedisConfig, Sources, SourcesConfig},
+        transforms::{
+            distributed::consistent_scatter::ConsistentScatterConfig,
+            parallel_map::ParallelMapConfig, redis::cache::RedisConfig as RedisCacheConfig,
+            TransformsConfig,
+        },
+    };
+    use std::{collections::HashMap, fs};
+
+    use super::{Topology, TopologyConfig};
+
+    async fn run_test_topology(
+        chain: Vec<TransformsConfig>,
+    ) -> anyhow::Result<(Vec<Sources>, mpsc::Receiver<()>)> {
+        let mut chain_config = HashMap::new();
+        chain_config.insert("redis_chain".to_string(), chain);
+
+        let redis_source = SourcesConfig::Redis(RedisConfig {
+            listen_addr: "127.0.0.1".to_string(),
+            batch_size_hint: 100,
+            connection_limit: None,
+            hard_connection_limit: None,
+            tls: None,
+        });
+
+        let mut sources = HashMap::new();
+        sources.insert("redis_prod".to_string(), redis_source);
+
+        let config = TopologyConfig {
+            sources,
+            chain_config,
+            named_topics: None,
+            source_to_chain_mapping: HashMap::new(), // Leave source to chain mapping empty so it doesn't build and run the transform chains
+        };
+
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+
+        let topology = Topology::topology_from_config(config);
+        topology.run_chains(trigger_shutdown_rx).await
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_empty_chain() {
+        let expected = r#"Topology errors
+redis_chain:
+  Chain cannot be empty
+"#;
+
+        let error = run_test_topology(vec![]).await.unwrap_err().to_string();
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_chain() {
+        run_test_topology(vec![TransformsConfig::DebugPrinter, TransformsConfig::Null])
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_in_middle() {
+        let expected = r#"Topology errors
+redis_chain:
+  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+"#;
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+            TransformsConfig::Null,
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_non_terminating_at_end() {
+        let expected = r#"Topology errors
+redis_chain:
+  Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+"#;
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
+        let expected = r#"Topology errors
+redis_chain:
+  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+"#;
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+            TransformsConfig::DebugPrinter,
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_subchain_consistent_scatter() {
+        let subchain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ])
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_invalid_subchain_consistent_scatter() {
+        let expected = r#"Topology errors
+redis_chain:
+  ConsistentScatter:
+    subchain-1:
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+"#;
+
+        let subchain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_subchain_redis_cache() {
+        let chain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+        ];
+
+        let caching_schema = HashMap::new();
+
+        run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::RedisCache(RedisCacheConfig {
+                chain,
+                caching_schema,
+            }),
+            TransformsConfig::Null,
+        ])
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_invalid_subchain_redis_cache() {
+        let expected = r#"Topology errors
+redis_chain:
+  SimpleRedisCache:
+    cache_chain:
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+"#;
+
+        let chain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+        ];
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::RedisCache(RedisCacheConfig {
+                chain,
+                caching_schema: HashMap::new(),
+            }),
+            TransformsConfig::Null,
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_valid_subchain_parallel_map() {
+        let chain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+        ];
+
+        run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ParallelMap(ParallelMapConfig {
+                name: "test-parallel-map".to_string(),
+                parallelism: 1,
+                chain,
+                ordered_results: false,
+            }),
+        ])
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_invalid_subchain_parallel_map() {
+        let expected = r#"Topology errors
+redis_chain:
+  SequentialMap:
+    test-parallel-map:
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+"#;
+
+        let chain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+        ];
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ParallelMap(ParallelMapConfig {
+                name: "test-parallel-map".to_string(),
+                parallelism: 1,
+                chain,
+                ordered_results: false,
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_subchain_terminating_in_middle() {
+        let expected = r#"Topology errors
+redis_chain:
+  ConsistentScatter:
+    subchain-1:
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+"#;
+
+        let subchain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_subchain_non_terminating_at_end() {
+        let expected = r#"Topology errors
+redis_chain:
+  ConsistentScatter:
+    subchain-1:
+      Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+"#;
+
+        let subchain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_subchain_terminating_middle_non_terminating_at_end() {
+        let expected = r#"Topology errors
+redis_chain:
+  ConsistentScatter:
+    subchain-1:
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+"#;
+
+        let subchain = vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::Null,
+            TransformsConfig::DebugPrinter,
+        ];
+
+        let mut route_map = HashMap::new();
+        route_map.insert("subchain-1".to_string(), subchain);
+
+        let error = run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::ConsistentScatter(ConsistentScatterConfig {
+                route_map,
+                write_consistency: 1,
+                read_consistency: 1,
+            }),
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_chain_multiple_subchains() {
+        let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
+
+        let yaml_contents =
+            fs::read_to_string("tests/test-topologies/invalid_subchains.yaml").unwrap();
+
+        let topology = Topology::new_from_yaml(yaml_contents);
+        let error = topology
+            .run_chains(trigger_shutdown_rx)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        let expected = r#"Topology errors
+a_first_chain:
+  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+b_second_chain:
+  ConsistentScatter:
+    a_chain_1:
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
+    b_chain_2:
+      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+    c_chain_3:
+      ConsistentScatter:
+        sub_chain_2:
+          Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+"#;
+
+        assert_eq!(error, expected);
     }
 }

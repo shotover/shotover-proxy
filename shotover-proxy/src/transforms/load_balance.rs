@@ -79,6 +79,10 @@ impl Transform for ConnectionBalanceAndPool {
         }
     }
 
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     fn get_name(&self) -> &'static str {
         "PoolConnections"
     }

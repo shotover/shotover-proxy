@@ -114,4 +114,91 @@ impl Transform for ParallelMap {
     fn get_name(&self) -> &'static str {
         "SequentialMap"
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .chains
+            .iter()
+            .map(|chain| {
+                chain
+                    .validate()
+                    .iter()
+                    .map(|x| format!("  {}", x))
+                    .collect::<Vec<String>>()
+            })
+            .flatten()
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
+    }
+}
+
+#[cfg(test)]
+mod parallel_map_tests {
+    use crate::transforms::{
+        chain::TransformChain, debug_printer::DebugPrinter, null::Null, parallel_map::ParallelMap,
+        Transform, Transforms,
+    };
+
+    #[tokio::test]
+    async fn test_validate_invalid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(vec![], "test-chain-2".to_string());
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "SequentialMap:",
+                "  test-chain-2:",
+                "    Chain cannot be empty"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(transform.validate(), Vec::<String>::new());
+    }
 }

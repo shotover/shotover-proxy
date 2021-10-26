@@ -157,4 +157,8 @@ impl Transform for CassandraSinkSingle {
     fn get_name(&self) -> &'static str {
         "CassandraSinkSingle"
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
 }
