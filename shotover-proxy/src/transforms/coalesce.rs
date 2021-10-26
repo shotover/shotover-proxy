@@ -15,12 +15,11 @@ pub struct Coalesce {
     last_write: Instant,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Deserialize, Debug, Clone)]
 pub enum CoalesceBehavior {
-    COUNT(usize),
-    WAIT_MS(u128),
-    COUNT_OR_WAIT(usize, u128),
+    Count(usize),
+    WaitMs(u128),
+    CountOrWait(usize, u128),
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -31,8 +30,8 @@ pub struct CoalesceConfig {
 impl CoalesceConfig {
     pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         let hint = match self.max_behavior {
-            CoalesceBehavior::COUNT(c) => Some(c),
-            CoalesceBehavior::COUNT_OR_WAIT(c, _) => Some(c),
+            CoalesceBehavior::Count(c) => Some(c),
+            CoalesceBehavior::CountOrWait(c, _) => Some(c),
             _ => None,
         };
         Ok(Transforms::Coalesce(Coalesce {
@@ -53,16 +52,16 @@ impl Transform for Coalesce {
         self.buffer.append(&mut message_wrapper.messages);
 
         if match self.max_behavior {
-            CoalesceBehavior::COUNT(c) => self.buffer.len() >= c,
-            CoalesceBehavior::WAIT_MS(w) => self.last_write.elapsed().as_millis() >= w,
-            CoalesceBehavior::COUNT_OR_WAIT(c, w) => {
+            CoalesceBehavior::Count(c) => self.buffer.len() >= c,
+            CoalesceBehavior::WaitMs(w) => self.last_write.elapsed().as_millis() >= w,
+            CoalesceBehavior::CountOrWait(c, w) => {
                 self.last_write.elapsed().as_millis() >= w || self.buffer.len() >= c
             }
         } {
             //this could be done in the if statement above, but for the moment lets keep the
             //evaluation logic separate from the update
             match self.max_behavior {
-                CoalesceBehavior::WAIT_MS(_) | CoalesceBehavior::COUNT_OR_WAIT(_, _) => {
+                CoalesceBehavior::WaitMs(_) | CoalesceBehavior::CountOrWait(_, _) => {
                     self.last_write = Instant::now()
                 }
                 _ => {}
@@ -96,7 +95,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_count() -> Result<()> {
         let mut coalesce = Coalesce {
-            max_behavior: CoalesceBehavior::COUNT(100),
+            max_behavior: CoalesceBehavior::Count(100),
             buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
@@ -133,7 +132,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait() -> Result<()> {
         let mut coalesce = Coalesce {
-            max_behavior: CoalesceBehavior::WAIT_MS(100),
+            max_behavior: CoalesceBehavior::WaitMs(100),
             buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };
@@ -170,7 +169,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait_or_count() -> Result<()> {
         let mut coalesce = Coalesce {
-            max_behavior: CoalesceBehavior::COUNT_OR_WAIT(100, 100),
+            max_behavior: CoalesceBehavior::CountOrWait(100, 100),
             buffer: Vec::with_capacity(100),
             last_write: Instant::now(),
         };

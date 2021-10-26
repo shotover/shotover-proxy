@@ -79,7 +79,7 @@ pub enum Transforms {
     Loopback(Loopback),
     Protect(Protect),
     ConsistentScatter(ConsistentScatter),
-    RedisTimeStampTagger(RedisTimestampTagger),
+    RedisTimestampTagger(RedisTimestampTagger),
     RedisSinkCluster(RedisSinkCluster),
     RedisClusterPortsRewrite(RedisClusterPortsRewrite),
     DebugReturnerTransform(DebugReturnerTransform),
@@ -114,7 +114,7 @@ impl Transforms {
             Transforms::DebugRandomDelay(p) => p.transform(message_wrapper).await,
             Transforms::ConsistentScatter(tc) => tc.transform(message_wrapper).await,
             Transforms::RedisSinkSingle(r) => r.transform(message_wrapper).await,
-            Transforms::RedisTimeStampTagger(r) => r.transform(message_wrapper).await,
+            Transforms::RedisTimestampTagger(r) => r.transform(message_wrapper).await,
             Transforms::RedisClusterPortsRewrite(r) => r.transform(message_wrapper).await,
             Transforms::RedisSinkCluster(r) => r.transform(message_wrapper).await,
             Transforms::ParallelMap(s) => s.transform(message_wrapper).await,
@@ -141,7 +141,7 @@ impl Transforms {
             Transforms::DebugRandomDelay(p) => p.get_name(),
             Transforms::RedisSinkSingle(r) => r.get_name(),
             Transforms::RedisClusterPortsRewrite(r) => r.get_name(),
-            Transforms::RedisTimeStampTagger(r) => r.get_name(),
+            Transforms::RedisTimestampTagger(r) => r.get_name(),
             Transforms::RedisSinkCluster(r) => r.get_name(),
             Transforms::ParallelMap(s) => s.get_name(),
             Transforms::PoolConnections(s) => s.get_name(),
@@ -166,7 +166,7 @@ impl Transforms {
             Transforms::ConsistentScatter(a) => a.prep_transform_chain(t).await,
             Transforms::DebugReturnerTransform(a) => a.prep_transform_chain(t).await,
             Transforms::DebugRandomDelay(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisTimeStampTagger(a) => a.prep_transform_chain(t).await,
+            Transforms::RedisTimestampTagger(a) => a.prep_transform_chain(t).await,
             Transforms::RedisSinkCluster(r) => r.prep_transform_chain(t).await,
             Transforms::RedisClusterPortsRewrite(r) => r.prep_transform_chain(t).await,
             Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
@@ -215,7 +215,7 @@ impl TransformsConfig {
             TransformsConfig::RedisSinkSingle(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
-                Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()))
+                Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger::new()))
             }
             TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source(topics).await,
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),

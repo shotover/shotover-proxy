@@ -24,14 +24,14 @@ use tokio::sync::oneshot::Receiver;
 pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
-    pub bypass_result_processing: bool,
+    pub result_processing: bool,
 }
 
 impl CassandraSinkSingleConfig {
     pub async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
-            self.bypass_result_processing,
+            self.result_processing,
         )))
     }
 }

@@ -35,7 +35,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
             let behavior = self
                 .coalesce_behavior
                 .clone()
-                .unwrap_or(CoalesceBehavior::COUNT(10000));
+                .unwrap_or(CoalesceBehavior::Count(10000));
             Ok(vec![Sources::Mpsc(AsyncMpsc::new(
                 chain.clone(),
                 rx,
@@ -99,17 +99,17 @@ impl AsyncMpsc {
                     None => {
                         buffer.append(&mut messages);
                         if match max_behavior {
-                            CoalesceBehavior::COUNT(c) => buffer.len() >= c,
-                            CoalesceBehavior::WAIT_MS(w) => last_write.elapsed().as_millis() >= w,
-                            CoalesceBehavior::COUNT_OR_WAIT(c, w) => {
+                            CoalesceBehavior::Count(c) => buffer.len() >= c,
+                            CoalesceBehavior::WaitMs(w) => last_write.elapsed().as_millis() >= w,
+                            CoalesceBehavior::CountOrWait(c, w) => {
                                 last_write.elapsed().as_millis() >= w || buffer.len() >= c
                             }
                         } {
                             //this could be done in the if statement above, but for the moment lets keep the
                             //evaluation logic separate from the update
                             match max_behavior {
-                                CoalesceBehavior::WAIT_MS(_)
-                                | CoalesceBehavior::COUNT_OR_WAIT(_, _) => {
+                                CoalesceBehavior::WaitMs(_)
+                                | CoalesceBehavior::CountOrWait(_, _) => {
                                     last_write = Instant::now()
                                 }
                                 _ => {}

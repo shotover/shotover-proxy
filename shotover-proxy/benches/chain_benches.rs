@@ -50,7 +50,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         use redis_protocol::resp2::prelude::*;
         let chain = TransformChain::new_no_shared_state(
             vec![
-                Transforms::RedisTimeStampTagger(RedisTimestampTagger::new()),
+                Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
                 Transforms::Null(Null::default()),
             ],
             "bench".to_string(),

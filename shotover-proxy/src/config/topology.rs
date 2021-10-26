@@ -205,7 +205,7 @@ impl Topology {
 
         let codec_config = TransformsConfig::CassandraSinkSingle(CassandraSinkSingleConfig {
             address: server_addr,
-            bypass_result_processing: false,
+            result_processing: true,
         });
 
         let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
@@ -219,7 +219,7 @@ impl Topology {
         let cassandra_source = SourcesConfig::Cassandra(CassandraConfig {
             listen_addr,
             cassandra_ks,
-            bypass_query_processing: Some(false),
+            query_processing: Some(true),
             connection_limit: None,
             hard_connection_limit: None,
         });
