@@ -3,6 +3,7 @@
 </p>
 
 [![Rust](https://github.com/shotover/shotover-proxy/workflows/Rust/badge.svg)](https://github.com/shotover/shotover-proxy/actions?query=workflow%3ARust)
+[![dependency status](https://deps.rs/repo/github/shotover/shotover-proxy/status.svg)](https://deps.rs/repo/github/shotover/shotover-proxy)
 
 ## Documentation
 For full documentation please go to [https://docs.shotover.io/](https://docs.shotover.io/)
