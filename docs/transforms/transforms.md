@@ -353,7 +353,8 @@ The response from the down-chain transform is returned back up-chain but various
 
     # Timeout for sending to the sub chain in microseconds
     timeout_micros: 1000
-    # The number of messages that Tee will accumulate before passing to the sub chain
+    # The number of message batches that the tee can hold onto in its buffer of messages to send.
+    # If they arent sent quickly enough and the buffer is full then tee will drop new incoming messages.
     buffer_size: 10000
     # The sub chain to send duplicate messages through
     chain:

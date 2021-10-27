@@ -17,7 +17,7 @@ Shotover will listen on the loopback adapter (localhost) and act as a sidecar fo
 
 ## Configuration
 
-First we will modify our config.yml file to have a single Redis source. This will:
+First we will modify our topology.yaml file to have a single Redis source. This will:
 
 * define how shotover listens for incoming connections from our client application (`redis-benchmark`).
 * configure shotover to connect to the redis cluster via our defined contact points
@@ -42,7 +42,7 @@ source_to_chain_mapping:
   redis_prod: redis_chain
 ```
 
-Modify an existing `config.yml` or create a new one and place the above example as the files contents. Remember to change the `first_contact_points` to IPs and ports that matches your redis-cluster. In this example we will save our config as `redis-shotover.yml`.
+Modify an existing `topology.yaml` or create a new one and place the above example as the files contents. Remember to change the `first_contact_points` to IPs and ports that matches your redis-cluster. In this example we will save our config as `redis-shotover.yml`.
 
 ## Starting
 
