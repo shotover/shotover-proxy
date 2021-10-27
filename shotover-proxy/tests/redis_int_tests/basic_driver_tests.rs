@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use async_std::task::sleep;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
+use std::thread::sleep;
 use std::time::Duration;
 use tracing::trace;
 
@@ -1159,7 +1159,7 @@ async fn test_cluster_replication(
     let mut value1 = Ok(1); // These dummy values are fine because they get overwritten on the first loop
     let mut value2 = Ok(b"".to_vec());
     for _ in 0..100 {
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100));
         value1 = replication_connection.get("foo");
         value2 = replication_connection.get("bar");
         if value1.is_ok() && value2.is_ok() {

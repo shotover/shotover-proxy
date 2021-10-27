@@ -77,7 +77,6 @@ serial_test = "0.5.1"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
 nix = "0.23.0"
-async-std = "1.10.0"
 
 [[bench]]
 name = "redis_benches"
