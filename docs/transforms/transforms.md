@@ -35,7 +35,6 @@ But in these early days we have chosen to publish these alpha transforms to demo
 |[Coalesce](#coalesce)                                |❌           |Alpha                  |
 |[ConsistentScatter](#consistentscatter)              |✅           |Alpha                  |
 |[DebugPrinter](#debugprinter)                        |❌           |Alpha                  |
-|[Forwarder](#forwarder)                              |✅           |Alpha                  |
 |[KafkaSink](#kafkasink)                              |✅           |Alpha                  |
 |[Loopback](#loopback)                                |✅           |Beta                   |
 |[Null](#null)                                        |✅           |Beta                   |
@@ -118,22 +117,6 @@ This transform will log the query/message at an info level, then call the down-c
 
 ```yaml
 - DebugPrinter
-```
-
-## Forwarder
-
-This transform pushes the query/message to the channel associated with the topic named in its configuration. It will then return an empty success response if it was able to write to the channel successfully.
-
-```yaml
-- Forwarder:
-  buffer_size: 100
-  async_mode: true
-  timeout_micros: 10000
-  chain:
-    - QueryCounter:
-      name: "DR chain"
-    - RedisSinkCluster:
-      first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
 ```
 
 ## Loopback
