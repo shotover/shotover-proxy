@@ -48,7 +48,7 @@ impl RedisSinkClusterConfig {
         let authenticator = RedisAuthenticator {};
 
         let connection_pool = ConnectionPool::new_with_auth(
-            RedisCodec::new(DecodeType::Response, 3),
+            RedisCodec::new(DecodeType::Response),
             authenticator,
             self.tls.clone(),
         )?;
@@ -900,7 +900,7 @@ mod test {
         // Wireshark capture from a Redis cluster with 3 masters and 3 replicas.
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
 
-        let mut codec = RedisCodec::new(DecodeType::Response, 3);
+        let mut codec = RedisCodec::new(DecodeType::Response);
 
         let raw_frame = codec
             .decode(&mut slots_pcap.into())

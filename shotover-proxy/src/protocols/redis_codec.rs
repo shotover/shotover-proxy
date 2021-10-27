@@ -21,7 +21,6 @@ pub enum DecodeType {
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
     decode_type: DecodeType,
-    batch_hint: usize,
     current_frames: Vec<Frame>,
     enable_metadata: bool,
 }
@@ -485,18 +484,12 @@ impl RedisCodec {
         Ok(frame)
     }
 
-    pub fn new(decode_type: DecodeType, batch_hint: usize) -> RedisCodec {
+    pub fn new(decode_type: DecodeType) -> RedisCodec {
         RedisCodec {
             decode_type,
-            batch_hint,
             current_frames: vec![],
             enable_metadata: false,
         }
-    }
-
-    #[allow(unused)]
-    fn get_batch_hint(&self) -> usize {
-        self.batch_hint
     }
 
     pub fn process_redis_bulk(&self, frames: Vec<Frame>) -> Result<Messages> {
@@ -550,7 +543,6 @@ impl RedisCodec {
     }
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<Frame>>> {
-        // TODO: get_batch_hint may be a premature optimisation
         while src.remaining() != 0 {
             trace!("remaining {}", src.remaining());
 
@@ -664,55 +656,55 @@ mod redis_tests {
 
     #[test]
     fn test_ok_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Response, 1);
+        let mut codec = RedisCodec::new(DecodeType::Response);
         test_frame(&mut codec, &OK_MESSAGE);
     }
 
     #[test]
     fn test_set_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &SET_MESSAGE);
     }
 
     #[test]
     fn test_get_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &GET_MESSAGE);
     }
 
     #[test]
     fn test_inc_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &INC_MESSAGE);
     }
 
     #[test]
     fn test_lpush_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &LPUSH_MESSAGE);
     }
 
     #[test]
     fn test_rpush_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &RPUSH_MESSAGE);
     }
 
     #[test]
     fn test_lpop_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &LPOP_MESSAGE);
     }
 
     #[test]
     fn test_sadd_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &SADD_MESSAGE);
     }
 
     #[test]
     fn test_hset_codec() {
-        let mut codec = RedisCodec::new(DecodeType::Query, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &HSET_MESSAGE);
     }
 }

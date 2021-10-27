@@ -290,7 +290,6 @@ mod topology_tests {
 
         let redis_source = SourcesConfig::Redis(RedisConfig {
             listen_addr: "127.0.0.1".to_string(),
-            batch_size_hint: 100,
             connection_limit: None,
             hard_connection_limit: None,
             tls: None,

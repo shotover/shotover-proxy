@@ -406,7 +406,7 @@ mod test {
     }
 
     fn build_redis_query_frame(query: &str) -> ASTHolder {
-        let mut codec = RedisCodec::new(DecodeType::Query, 0);
+        let mut codec = RedisCodec::new(DecodeType::Query);
 
         let mut final_command_bytes: BytesMut = build_redis_string(query).as_str().into();
         let mut messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
