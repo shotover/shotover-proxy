@@ -18,15 +18,10 @@ chain_config:
           - Coalesce:
               max_behavior:
                 Count: 2000
-          - Forwarder:
-              buffer_size: 100
-              async_mode: true
-              timeout_micros: 10000
-              chain:
-                - QueryCounter:
-                    name: "DR chain"
-                - RedisSinkCluster:
-                    first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
+          - QueryCounter:
+              name: "DR chain"
+          - RedisSinkCluster:
+              first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
     - QueryCounter:
         name: "Main chain"
     - RedisSinkCluster:

@@ -38,7 +38,7 @@ use crate::transforms::redis::cluster_ports_rewrite::{
 use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterConfig};
 use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::tee::{Forwarder, ForwarderConfig, Tee, TeeConfig};
+use crate::transforms::tee::{Tee, TeeConfig};
 use core::fmt::Display;
 use tokio::time::Instant;
 
@@ -74,7 +74,6 @@ pub enum Transforms {
     KafkaSink(KafkaSink),
     RedisCache(SimpleRedisCache),
     Tee(Tee),
-    Forwarder(Forwarder),
     Null(Null),
     Loopback(Loopback),
     Protect(Protect),
@@ -105,7 +104,6 @@ impl Transforms {
             Transforms::KafkaSink(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
-            Transforms::Forwarder(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
             Transforms::Null(n) => n.transform(message_wrapper).await,
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
@@ -131,7 +129,6 @@ impl Transforms {
             Transforms::KafkaSink(k) => k.get_name(),
             Transforms::RedisCache(r) => r.get_name(),
             Transforms::Tee(m) => m.get_name(),
-            Transforms::Forwarder(m) => m.get_name(),
             Transforms::DebugPrinter(p) => p.get_name(),
             Transforms::Null(n) => n.get_name(),
             Transforms::Loopback(n) => n.get_name(),
@@ -158,7 +155,6 @@ impl Transforms {
             Transforms::KafkaSink(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
-            Transforms::Forwarder(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
             Transforms::Loopback(a) => a.prep_transform_chain(t).await,
@@ -183,7 +179,6 @@ impl Transforms {
             Transforms::KafkaSink(k) => k.validate(),
             Transforms::RedisCache(r) => r.validate(),
             Transforms::Tee(t) => t.validate(),
-            Transforms::Forwarder(f) => f.validate(),
             Transforms::RedisSinkSingle(r) => r.validate(),
             Transforms::ConsistentScatter(c) => c.validate(),
             Transforms::RedisTimestampTagger(r) => r.validate(),
@@ -209,7 +204,6 @@ impl Transforms {
             Transforms::KafkaSink(k) => k.is_terminating(),
             Transforms::RedisCache(r) => r.is_terminating(),
             Transforms::Tee(t) => t.is_terminating(),
-            Transforms::Forwarder(f) => f.is_terminating(),
             Transforms::RedisSinkSingle(r) => r.is_terminating(),
             Transforms::ConsistentScatter(c) => c.is_terminating(),
             Transforms::RedisTimestampTagger(r) => r.is_terminating(),
@@ -239,7 +233,6 @@ pub enum TransformsConfig {
     KafkaSink(KafkaSinkConfig),
     RedisCache(RedisConfig),
     Tee(TeeConfig),
-    Forwarder(ForwarderConfig),
     ConsistentScatter(ConsistentScatterConfig),
     RedisSinkCluster(RedisSinkClusterConfig),
     RedisClusterPortsRewrite(RedisClusterPortsRewriteConfig),
@@ -263,7 +256,6 @@ impl TransformsConfig {
             TransformsConfig::KafkaSink(k) => k.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,
-            TransformsConfig::Forwarder(f) => f.get_source(topics).await,
             TransformsConfig::RedisSinkSingle(r) => r.get_source(topics).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
