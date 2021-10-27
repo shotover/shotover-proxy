@@ -9,7 +9,6 @@ chain_config:
   redis_chain:
     - Tee:
         behavior: Ignore
-#        timeout_micros: 1000
         buffer_size: 10000
         chain:
           - QueryTypeFilter:
