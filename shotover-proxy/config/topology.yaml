@@ -1,0 +1,15 @@
+---
+# For an overview of topology configuration: https://docs.shotover.io/user-guide/configuration/#topologyyaml
+sources:
+  example_source:
+    Redis:
+      batch_size_hint: 1
+      listen_addr: "127.0.0.1:6379"
+chain_config:
+  example_chain:
+    # For a list of transforms: https://docs.shotover.io/transforms/transforms/#transforms_1
+    - Null:
+named_topics:
+  testtopic: 5
+source_to_chain_mapping:
+  example_source: example_chain
