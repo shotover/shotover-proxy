@@ -21,14 +21,7 @@ jobs:
       - name: Build & test
         run: |
           # build glibc
-          cd shotover-proxy
-          cargo build --release
-          mkdir -p shotover-proxy
-          cp ../target/release/shotover-proxy shotover-proxy
-          cp -r config shotover-proxy
-          tar -cvzf shotover-proxy-linux_amd64-"$(cargo metadata --format-version 1 --offline --no-deps | jq -c -M -r '.packages[0].version')".tar.gz shotover-proxy
-          rm -rf shotover-proxy
-
+          shotover-proxy/build/build_release.sh
       - name: Publish
         uses: "marvinpinto/action-automatic-releases@latest"
         with:
