@@ -71,7 +71,7 @@ impl Transform for RedisSinkSingle {
             };
             self.outbound = Some(Framed::new(
                 generic_stream,
-                RedisCodec::new(DecodeType::Response, 1),
+                RedisCodec::new(DecodeType::Response),
             ));
         }
 

@@ -2,7 +2,6 @@
 sources:
   redis_prod:
     Redis:
-      batch_size_hint: 1
       listen_addr: "127.0.0.1:6379"
 chain_config:
   a_first_chain:

@@ -32,7 +32,6 @@ sources:
     Redis:
       listen_addr: "127.0.0.1:6379"
       connection_limit: 1000
-      batch_size_hint: 100
 chain_config:
   redis_chain:
     - RedisSinkCluster:
