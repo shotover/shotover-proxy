@@ -449,8 +449,10 @@ mod protect_transform_tests {
         panic!()
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore] // reason: requires AWS credentials
+    //#[tokio::test(flavor = "multi_thread")]
+    //#[ignore] // reason: requires AWS credentials
+    #[allow(unused)]
+    // Had to disable this when the repo went public as we dont have access to github secrets anymore
     async fn test_protect_kms_transform() -> Result<()> {
         let t_holder = TopicHolder {
             topics_rx: Default::default(),

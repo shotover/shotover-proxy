@@ -3,6 +3,7 @@ use crate::codec::util::packet_parse::{PacketHeader, PacketParse, ParsedPacket};
 use anyhow::Result;
 use pcap::{Active, Capture, Device};
 use std::net::IpAddr;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use threadpool::ThreadPool;
 
@@ -134,7 +135,7 @@ impl PacketCapture {
 
     pub fn parse_from_file(
         &mut self,
-        file_name: &str,
+        file_name: &Path,
         filter: Option<String>,
     ) -> Vec<Result<ParsedPacket, String>> {
         // TODO: Fix flakiness from out-of-order futures.

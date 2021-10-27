@@ -41,14 +41,21 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore] // reason: test_tmp is sourced from AWS s3 in CI
-async fn test() {
+async fn test_cassandra_packet_capture() {
+    let test_data = std::path::PathBuf::from("../target/test_data");
+    let cql_mixed = test_data.join("cql_mixed.pcap");
+    if !test_data.exists() {
+        std::fs::create_dir_all("../target/test_data").unwrap();
+
+        let url = "https://shotover-test-captures.s3.us-east-1.amazonaws.com/cql_mixed.pcap";
+        let data = reqwest::get(url).await.unwrap().bytes().await.unwrap();
+        std::fs::write(&cql_mixed, &data).unwrap();
+    }
+
     let mut capture = crate::codec::util::packet_capture::PacketCapture::new();
-    println!("doing some cql");
-    let packets = capture.parse_from_file("../test_tmp/cql_mixed.pcap", None);
+    let packets = capture.parse_from_file(&cql_mixed, None);
     let mut client_packets = Vec::new();
     let mut server_packets = Vec::new();
-    // let mut server_packets: Vec<anyhow::Result<Bytes, std::io::Error>> = Vec::new();
     for packet in packets {
         if let Ok(packet) = packet {
             let (_src_address, src_port, _dst_addr, dst_port, protocol, _length, _timestamp) =
