@@ -121,7 +121,7 @@ chain_config:
   redis_chain:
     # The first transform in the chain, in this case its the Tee transform
     - Tee:
-        behavior: IGNORE
+        behavior: Ignore
         # The number of messages that Tee will accumulate before passing to the sub chain
         buffer_size: 10000
         #The child chain, that Tee will asynchronously pass requests to
