@@ -55,11 +55,11 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 
 ```yaml
 - CassandraSinkSingle:
-  # The IP address and port of the upstream cassandra node/service.
-  remote_address: "127.0.0.1:9042"
-  # When true creates an AST for the query.
-  # When false the AST is not created, this saves CPU for straight passthrough cases (no processing on the query).
-  result_processing: true
+    # The IP address and port of the upstream cassandra node/service.
+    remote_address: "127.0.0.1:9042"
+    # When true creates an AST for the query.
+    # When false the AST is not created, this saves CPU for straight passthrough cases (no processing on the query).
+    result_processing: true
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
@@ -70,18 +70,18 @@ This transform holds onto messages until some requirement is met and then sends 
 
 ```yaml
 - Coalesce:
-  max_behavior:
-    # Messages are held until the specified number of messages have been received.
-    Count: 2000
-    # alternatively:
-    #
-    # Wait until 100ms have passed
-    # Messages are held until the specified number of milliseconds has passed
-    # WaitMs(100)
-    #
-    # Messages are held until the specified number of messages have been received
-    # or the specified number of milliseconds has passed.
-    # CountOrWait(2000, 100)
+    max_behavior:
+      # Messages are held until the specified number of messages have been received.
+      Count: 2000
+      # alternatively:
+      #
+      # Wait until 100ms have passed
+      # Messages are held until the specified number of milliseconds has passed
+      # WaitMs(100)
+      #
+      # Messages are held until the specified number of messages have been received
+      # or the specified number of milliseconds has passed.
+      # CountOrWait(2000, 100)
 ```
 
 ## ConsistentScatter
@@ -94,21 +94,21 @@ Upon receiving the configured number of responses, the transform will attempt to
 
 ```yaml
 - ConsistentScatter:
-  # write_consistency - The number of chains to wait for a "write" response on.
-  write_consistency: 2
-  # read_consistency - The number of chains to wait for a "read" response on.
-  read_consistency: 2
-  # A map of named chains. All chains will be used in each request.
-  route_map:
-    cluster1:
-      - CassandraSinkSingle:
-        remote_address: "127.0.0.1:9043"
-    cluster2:
-      - CassandraSinkSingle:
-        remote_address: "127.1.0.2:9043"
-    cluster3:
-      - CassandraSinkSingle:
-        remote_address: "127.2.0.3:9043"
+    # write_consistency - The number of chains to wait for a "write" response on.
+    write_consistency: 2
+    # read_consistency - The number of chains to wait for a "read" response on.
+    read_consistency: 2
+    # A map of named chains. All chains will be used in each request.
+    route_map:
+      cluster1:
+        - CassandraSinkSingle:
+            remote_address: "127.0.0.1:9043"
+      cluster2:
+        - CassandraSinkSingle:
+            remote_address: "127.1.0.2:9043"
+      cluster3:
+        - CassandraSinkSingle:
+            remote_address: "127.2.0.3:9043"
 ```
 
 ## DebugPrinter
@@ -150,20 +150,20 @@ Then the messages would be sent as follows:
 
 ```yaml
 - ParallelMap:
-  # Number of duplicate chains to send messages through.
-  parallelism: 1
-  # if true then responses will be returned in the same as order as the queries went out.
-  # if it is false then response may return in any order.
-  ordered_results: true
-  # The name of the chain
-  # TODO: we should just remove this and default the name to "ParallelMap Chain" or something
-  name: "chain name"
-  # The chain that messages are sent through
-  chain:
-    - QueryCounter:
-      name: "DR chain"
-    - RedisSinkSingle:
-      remote_address: "127.0.0.1:6379"
+    # Number of duplicate chains to send messages through.
+    parallelism: 1
+    # if true then responses will be returned in the same as order as the queries went out.
+    # if it is false then response may return in any order.
+    ordered_results: true
+    # The name of the chain
+    # TODO: we should just remove this and default the name to "ParallelMap Chain" or something
+    name: "chain name"
+    # The chain that messages are sent through
+    chain:
+      - QueryCounter:
+          name: "DR chain"
+      - RedisSinkSingle:
+          remote_address: "127.0.0.1:6379"
 ```
 
 ## KafkaSink
@@ -172,13 +172,13 @@ This transform will take a query and push it to a given Kafka topic.
 
 ```yaml
 - KafkaSink:
-  # A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver.
-  # See https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html for details.
-  config_values:
-    bootstrap.servers: "127.0.0.1:9092"
-    message.timeout.ms: "5000"
-  # The name of the kafka topic
-  topic: "my_kafka_topic"
+    # A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver.
+    # See https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html for details.
+    config_values:
+      bootstrap.servers: "127.0.0.1:9092"
+      message.timeout.ms: "5000"
+    # The name of the kafka topic
+    topic: "my_kafka_topic"
 ```
 
 ## Protect
@@ -208,8 +208,8 @@ The log can be accessed via the [Shotover metrics](/user-guide/configuration/#ob
 
 ```yaml
 - QueryCounter:
-  # this name will be logged with the query count
-  name: "DR chain"
+    # this name will be logged with the query count
+    name: "DR chain"
 ```
 
 ## QueryTypeFilter
@@ -220,22 +220,22 @@ TODO: This doesnt send a reply for some messages, does this break the transform 
 
 ```yaml
 - QueryTypeFilter:
-  # drop messages that are read
-  filter: Read
+    # drop messages that are read
+    filter: Read
 
-  # alternatively:
-  #
-  # drop messages that are write
-  # filter: Write
-  #
-  # drop messages that are read write
-  # filter: ReadWrite
-  #
-  # drop messages that are schema changes
-  # filter: SchemaChange
-  #
-  # drop messages that are pub sub messages
-  # filter: PubSubMessage
+    # alternatively:
+    #
+    # drop messages that are write
+    # filter: Write
+    #
+    # drop messages that are read write
+    # filter: ReadWrite
+    #
+    # drop messages that are schema changes
+    # filter: SchemaChange
+    #
+    # drop messages that are pub sub messages
+    # filter: PubSubMessage
 ```
 
 ## RedisCache
@@ -244,12 +244,12 @@ This transform will attempt to cache values for a given primary key in a Redis h
 
 ```yaml
 - RedisCache:
-  # The redis connection url. E.g. `config_values: "redis://127.0.0.1/"`
-  config_values: "redis://127.0.0.1/"
-  chain:
-    - QueryTypeFilter:
-      filter: Read
-    - Null
+    # The redis connection url. E.g. `config_values: "redis://127.0.0.1/"`
+    config_values: "redis://127.0.0.1/"
+    chain:
+      - QueryTypeFilter:
+          filter: Read
+      - Null
 ```
 
 ### RedisClusterPortsRewrite
@@ -258,8 +258,8 @@ This transform should be used with the `RedisSinkCluster` transform. It will wri
 
 ```yaml
 - RedisClusterPortsRewrite:
-  #  rewrite the ports returned by `CLUSTER SLOTS` and `CLUSTER NODES` to use this port.
-  new_port: 2004
+    # rewrite the ports returned by `CLUSTER SLOTS` and `CLUSTER NODES` to use this port.
+    new_port: 2004
 ```
 
 ## RedisSinkCluster
@@ -268,17 +268,17 @@ This transform is a full featured Redis driver that will connect to a Redis clus
 
 ```yaml
 - RedisSinkCluster:
-  # A list of IP address and ports of the upstream redis nodes/services.
-  first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
-  # When this field is provided TLS is used when connecting to the remote address.
-  # Removing this field will disable TLS.
-  tls:
-    # Path to the certificate file, typically named with a .crt extension.
-    certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt"
-    # Path to the private key file, typically named with a .key extension.
-    certificate_path: "examples/redis-tls/tls_keys/redis.crt"
-    # Path to the certificate authority file typically named ca.crt.
-    private_key_path: "examples/redis-tls/tls_keys/redis.key"
+    # A list of IP address and ports of the upstream redis nodes/services.
+    first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
+    # When this field is provided TLS is used when connecting to the remote address.
+    # Removing this field will disable TLS.
+    tls:
+      # Path to the certificate file, typically named with a .crt extension.
+      certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt"
+      # Path to the private key file, typically named with a .key extension.
+      certificate_path: "examples/redis-tls/tls_keys/redis.crt"
+      # Path to the certificate authority file typically named ca.crt.
+      private_key_path: "examples/redis-tls/tls_keys/redis.key"
 ```
 
 Unlike other Redis cluster drivers, this Transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
@@ -302,18 +302,18 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 
 ```yaml
 - RedisSinkSingle:
-  # The IP address and port of the upstream redis node/service.
-  remote_address: "127.0.0.1:6379"
+    # The IP address and port of the upstream redis node/service.
+    remote_address: "127.0.0.1:6379"
 
-  # When this field is provided TLS is used when connecting to the remote address.
-  # Removing this field will disable TLS.
-  tls:
-    # Path to the certificate file, typically named with a .crt extension.
-    certificate_path: "tls/redis.crt"
-    # Path to the private key file, typically named with a .key extension.
-    private_key_path: "tls/redis.key"
-    # Path to the certificate authority file typically named ca.crt.
-    certificate_authority_path: "tls/ca.crt"
+    # When this field is provided TLS is used when connecting to the remote address.
+    # Removing this field will disable TLS.
+    tls:
+      # Path to the certificate file, typically named with a .crt extension.
+      certificate_path: "tls/redis.crt"
+      # Path to the private key file, typically named with a .key extension.
+      private_key_path: "tls/redis.key"
+      # Path to the certificate authority file typically named ca.crt.
+      certificate_authority_path: "tls/ca.crt"
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
@@ -335,29 +335,29 @@ The response from the down-chain transform is returned back up-chain but various
 
 ```yaml
 - Tee:
-  # Ignore responses returned by the sub chain
-  behavior: Ignore
+    # Ignore responses returned by the sub chain
+    behavior: Ignore
 
-  # Alternatively:
-  #
-  # If the responses returned by the sub chain do not equal the responses returned by down-chain then return an error.
-  # behavior: FailOnMismatch
-  #
-  # If the responses returned by the sub chain do not equal the responses returned by down-chain,
-  # then the original message is also sent down the SubchainOnMismatch sub chain.
-  # This is useful for logging failed messages.
-  # behavior: SubchainOnMismatch:
-  # - QueryTypeFilter:
-  #   filter: Read
-  # - Null
+    # Alternatively:
+    #
+    # If the responses returned by the sub chain do not equal the responses returned by down-chain then return an error.
+    # behavior: FailOnMismatch
+    #
+    # If the responses returned by the sub chain do not equal the responses returned by down-chain,
+    # then the original message is also sent down the SubchainOnMismatch sub chain.
+    # This is useful for logging failed messages.
+    # behavior: SubchainOnMismatch:
+    #   - QueryTypeFilter:
+    #       filter: Read
+    #   - Null
 
-  # Timeout for sending to the sub chain in microseconds
-  timeout_micros: 1000
-  # The number of messages that Tee will accumulate before passing to the sub chain
-  buffer_size: 10000
-  # The sub chain to send duplicate messages through
-  chain:
-    - QueryTypeFilter:
-      filter: Read
-    - Null
+    # Timeout for sending to the sub chain in microseconds
+    timeout_micros: 1000
+    # The number of messages that Tee will accumulate before passing to the sub chain
+    buffer_size: 10000
+    # The sub chain to send duplicate messages through
+    chain:
+      - QueryTypeFilter:
+          filter: Read
+      - Null
 ```
