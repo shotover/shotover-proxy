@@ -1,6 +1,6 @@
 # Configuration
 
-Shotover proxy accepts a two seperate YAML based configuration files. A configuration file specified by `--config-file` 
+Shotover proxy accepts a two seperate YAML based configuration files. A configuration file specified by `--config-file`
 and a topology file specified by `--topology-file`
 
 ## configuration.yaml
@@ -22,7 +22,7 @@ curl -X PUT -d 'info,shotover_proxy=info' http://127.0.0.1:9001/filter
 
 ### observability_interface
 
-Defines the interface and port for shotover's observability interface. This interface will serve Prometheus metrics from `/metrics` and allow you to configure log levels and filters at `/filter`. Configured as a string following the Rust SocketAddr parsing rules in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses.
+Defines the interface and port for shotover's observability interface. This interface will serve Prometheus metrics from `/metrics` and allow you to configure log levels and filters at `/filter`. Configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses.
 
 ## topology.yaml
 
@@ -30,15 +30,15 @@ The topology file is currently the primary method for defining how shotover beha
 
 The below documentation shows you what each section does and runs through an entire example of a shotover configuration file.
 
-### `sources` (Sources)
+### `sources`
 
 The sources top level resource is a map of named sources, to their definitions.
 
 The sources section of the configuration file allow you to specify a source or origin for requests. You can have multiple sources and even multiple sources of the same type. Each is named to allow you to easily reference it.
 
-A source will generally represent a database protocol and will accept connections and queries from a compatible driver. For example the Redis source will accept connections from any Redis (RESP2) driver (e.g. [redis-py](https://github.com/andymccurdy/redis-py)).
+A source will generally represent a database protocol and will accept connections and queries from a compatible driver. For example the Redis source will accept connections from any Redis (RESP2) driver such as [redis-py](https://github.com/andymccurdy/redis-py).
 
-There is a special source type, called a mpsc_chan source (named after the rust multi-producer, single consumer channel that backs its implementation). This source will only listener to configured topic name and the associated topic and will then pass the received messages from the channel on it's mapped transform chain.
+There is a special source type, called a mpsc_chan source (named after the rust multi-producer, single consumer channel that backs its implementation). This source will only listen to the configured topic name and the associated topic and will then pass the received messages from the channel onto it's mapped transform chain.
 
 There are many `Transforms` that will push a message to a given topic in different ways, enabling complex asynchronous topologies to be created.
 
@@ -122,7 +122,8 @@ chain_config:
     # The first transform in the chain, in this case its the Tee transform
     - Tee:
         behavior: Ignore
-        # The number of messages that Tee will accumulate before passing to the sub chain
+        # The number of message batches that the tee can hold onto in its buffer of messages to send.
+        # If they arent sent quickly enough and the buffer is full then tee will drop new incoming messages.
         buffer_size: 10000
         #The child chain, that Tee will asynchronously pass requests to
         chain:
