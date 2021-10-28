@@ -2,7 +2,7 @@
   <img width="60%" alt="Shotover logo" src="logo.png">
 </p>
 
-Shotover-proxy is an open source, high performance L7 data-layer proxy for controlling, managing and modifying the flow  of database requests in transit. It can be used to solve many different operational and interoperability challenges for teams where polyglot persistence (many different databases) is common.
+Shotover Proxy is an open source, high performance L7 data-layer proxy for controlling, managing and modifying the flow  of database requests in transit. It can be used to solve many different operational and interoperability challenges for teams where polyglot persistence (many different databases) is common.
 
 The following pages are a good place to learn more:
 
@@ -20,17 +20,17 @@ Shotover can be deployed in a number of ways, it will generally be based on the 
 
 See the [deployment guide](user-guide/deployment.md) for details.
 
-## TODO/Roadmap
+## Roadmap
 
-* Support relevant xDS APIs (so Shotover can play nicely with service mesh implementations)
+* Support relevant xDS APIs (so Shotover can play nicely with service mesh implementations).
 * Support hot-reloads and a dynamic configuration API.
 * Additional sources (DynamoDB and PostgreSQL are good first candidates).
-* Add support for rate limiting, explicit back-pressure mechanisms etc
-* Additional Distributed algorithm transform primitives (e.g RAFT, 2PC, etc)
+* Add support for rate limiting, explicit back-pressure mechanisms, etc.
+* Additional Distributed algorithm transform primitives (e.g RAFT, 2PC, etc).
 * Additional sink transforms (these generally get implemented alongside sources).
 * Support user-defined / generated sources (e.g. thrift or a gRPC service from a proto definition).
-* Simulation testing once tokio-rs/simulation reaches compatibility with tokio-2.0
-* zero-copy pass-through transforms and in-place query editing (perf)
+* Simulation testing once tokio-rs/simulation reaches compatibility with tokio-2.0.
+* Zero-copy pass-through transforms and in-place query editing (perf).
 
 ## Name
 
