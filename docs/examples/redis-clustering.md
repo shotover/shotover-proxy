@@ -6,12 +6,12 @@ The following guide shows you how to configure Shotover Proxy to support transpa
 
 In this example, we will be connecting to a Redis cluster that has the following topology:
 
-* `redis://192.168.0.1/`
-* `redis://192.168.0.2/`
-* `redis://192.168.0.3/`
-* `redis://192.168.0.4/`
-* `redis://192.168.0.5/`
-* `redis://192.168.0.6/`
+* `192.168.0.1:6379`
+* `192.168.0.2:6379`
+* `192.168.0.3:6379`
+* `192.168.0.4:6379`
+* `192.168.0.5:6379`
+* `192.168.0.6:6379`
 
 Shotover will listen on the loopback adapter (localhost) and act as a sidecar for our application that speaks Redis. In this example we will use `redis-benchmark` as our Redis cluster unaware client application.
 
@@ -35,7 +35,7 @@ sources:
 chain_config:
   redis_chain:
     - RedisSinkCluster:
-        first_contact_points: ["redis://192.168.0.1/", "redis://192.168.0.2/"]
+        first_contact_points: ["192.168.0.1:6379", "192.168.0.2:6379"]
 named_topics:
   testtopic: 5
 source_to_chain_mapping:
