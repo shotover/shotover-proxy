@@ -65,18 +65,17 @@ impl RedisSource {
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "Redis Source";
 
-        let mut listener = TcpCodecListener {
-            chain: chain.clone(),
-            source_name: name.to_string(),
-            listener: None,
-            listen_addr: listen_addr.clone(),
-            hard_connection_limit: hard_connection_limit.unwrap_or(false),
-            codec: RedisCodec::new(DecodeType::Query),
-            limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
-            trigger_shutdown_rx: trigger_shutdown_rx.clone(),
+        let mut listener = TcpCodecListener::new(
+            chain.clone(),
+            name.to_string(),
+            listen_addr.clone(),
+            hard_connection_limit.unwrap_or(false),
+            RedisCodec::new(DecodeType::Query),
+            Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
+            trigger_shutdown_rx.clone(),
             shutdown_complete_tx,
-            tls: tls.map(TlsAcceptor::new).transpose()?,
-        };
+            tls.map(TlsAcceptor::new).transpose()?,
+        );
 
         let join_handle = Handle::current().spawn(async move {
             // Check we didn't receive a shutdown signal before the receiver was created
