@@ -105,7 +105,7 @@ The response (returned to the chain by the `TerminatingTransform`) will follow t
 
 * `TerminatingTransform` -> `Three` -> `Two` -> `One` -> `Source`
 
-Under the hood, each transform is able to call it's down-chain transform and wait on its response. Each Transform has its own set of configuration values, options and behavior. See [Transforms](../transforms/transforms.md) for details.
+Under the hood, each transform is able to call it's down-chain transform and wait on its response. Each Transform has its own set of configuration values, options and behavior. See [Transforms](../transforms.md) for details.
 
 The following example `chain_config` has three chains:
 

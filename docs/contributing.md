@@ -1,6 +1,6 @@
 # Contributing to Shotover
 
-This guide contains tips and tricks for working on Shotover Proxy itself. See [transform-development](transform-development.md) for details on writing your own transforms.
+This guide contains tips and tricks for working on Shotover Proxy itself.
 
 ## Building Shotover
 

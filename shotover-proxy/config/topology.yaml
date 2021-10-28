@@ -1,15 +1,28 @@
----
 # For an overview of topology configuration: https://docs.shotover.io/user-guide/configuration/#topologyyaml
+---
+# The list of sources that Shotover will receive messages from.
 sources:
+  # The configured name of the source.
   example_source:
+    # The source type, change from Redis to the source type of the database protocol you are receiving messages in.
+    # For a list of possible source types: https://docs.shotover.io/user-guide/source-types
     Redis:
-      batch_size_hint: 1
       listen_addr: "127.0.0.1:6379"
+
+# The list of transform chains.
 chain_config:
+  # The configured name of the chain.
   example_chain:
-    # For a list of transforms: https://docs.shotover.io/transforms/transforms/#transforms_1
+    # A DebugPrinter transform, reports an INFO log for every message that passes through this transform.
+    # You should delete this transform and add as many other transforms in this chain as you need.
+    # For a list of possible transforms: https://docs.shotover.io/transforms/transforms/#transforms_1
+    - DebugPrinter:
+
+    # A Null transform, drops all messages it receives.
+    # You will want to replace this with a sink transform to send the message to a database.
+    # For a list of possible transforms: https://docs.shotover.io/transforms/transforms/#transforms_1
     - Null:
-named_topics:
-  testtopic: 5
+
+# A list of mappings from source name -> transform chain name.
 source_to_chain_mapping:
   example_source: example_chain
