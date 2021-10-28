@@ -9,7 +9,7 @@ In this example, we will be connecting to a Redis cluster that has the following
 * `redis://192.168.0.1/`
 * `redis://192.168.0.2/`
 * `redis://192.168.0.3/`
-* `redis://192.168.0.4/
+* `redis://192.168.0.4/`
 * `redis://192.168.0.5/`
 * `redis://192.168.0.6/`
 

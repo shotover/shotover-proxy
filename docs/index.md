@@ -29,8 +29,8 @@ See the [deployment guide](user-guide/deployment.md) for details.
 * Additional Distributed algorithm transform primitives (e.g RAFT, 2PC, etc).
 * Additional sink transforms (these generally get implemented alongside sources).
 * Support user-defined / generated sources (e.g. thrift or a gRPC service from a proto definition).
-* Simulation testing once tokio-rs/simulation reaches compatibility with tokio-2.0.
-* Zero-copy pass-through transforms and in-place query editing (perf).
+* Simulation testing once tokio-rs/simulation reaches compatibility with tokio-2.0
+* zero-copy pass-through transforms and in-place query editing (performance).
 
 ## Name
 

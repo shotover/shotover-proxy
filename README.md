@@ -47,17 +47,17 @@ and really let it fly.
 * As a sidecar to your database - You can also stick Shotover on the same instance/server as your database is running on, we do it, so
 we won't judge you.
 
-## TODO/Roadmap
+## Roadmap
 * Support relevant xDS APIs (so Shotover can play nicely with service mesh implementations)
 * Support hot-reloads and a dynamic configuration API.
 * Performance metrics.
 * Additional sources (DynamoDB and PostgreSQL are good first candidates).
-* Add support for rate limiting, explicit back-pressure mechanisms etc
+* Add support for rate limiting, explicit back-pressure mechanisms, etc.
 * Additional Distributed algorithm transform primitives (e.g RAFT, 2PC, etc)
 * Additional sink transforms (these generally get implemented alongside sources).
 * Support user-defined / generated sources (e.g. thrift or a gRPC service from a proto definition).
-* Simulation testing once tokio-rs/simulation reaches compatibility with tokio-2.0
-* zero-copy pass-through transforms and in-place query editing (perf)
+* Simulation testing once tokio-rs/simulation reaches compatibility with tokio-2.0.
+* Zero-copy pass-through transforms and in-place query editing (performance).
 
 ## Name
 Shotover refers to the Shotover (Kimi-ākau) river in Otago, New Zealand - close to Queenstown and eventually flowing into Lake Wakatipu
