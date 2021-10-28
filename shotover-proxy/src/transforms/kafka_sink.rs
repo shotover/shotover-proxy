@@ -7,7 +7,6 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use serde::Deserialize;
 
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, QueryResponse};
 use crate::protocols::RawFrame;
@@ -27,7 +26,7 @@ pub struct KafkaSinkConfig {
 }
 
 impl KafkaSinkConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::KafkaSink(KafkaSink::new_from_config(
             &self.keys,
             self.topic.clone(),

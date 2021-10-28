@@ -77,6 +77,7 @@ pub struct TcpCodecListener<C: Codec> {
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
+    #![allow(clippy::too_many_arguments)]
     pub fn new(
         chain: TransformChain,
         source_name: String,

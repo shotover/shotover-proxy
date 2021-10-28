@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use redis_protocol::resp2::prelude::Frame;
 use serde::Deserialize;
 
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::protocols::RawFrame;
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -14,7 +13,7 @@ pub struct RedisClusterPortsRewriteConfig {
 }
 
 impl RedisClusterPortsRewriteConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::RedisClusterPortsRewrite(
             RedisClusterPortsRewrite {
                 new_port: self.new_port,

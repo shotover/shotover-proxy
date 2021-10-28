@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Value::List;
 use crate::message::{ASTHolder, MessageDetails, QueryMessage};
@@ -72,7 +71,7 @@ impl Transform for QueryCounter {
 }
 
 impl QueryCounterConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::QueryCounter(QueryCounter {
             counter_name: self.name.clone(),
         }))

@@ -252,25 +252,25 @@ impl TransformsConfig {
     /// Return a new instance of the transform that the config is specifying.
     pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms> {
         match self {
-            TransformsConfig::CassandraSinkSingle(c) => c.get_source(topics).await,
-            TransformsConfig::KafkaSink(k) => k.get_source(topics).await,
+            TransformsConfig::CassandraSinkSingle(c) => c.get_source().await,
+            TransformsConfig::KafkaSink(k) => k.get_source().await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,
-            TransformsConfig::RedisSinkSingle(r) => r.get_source(topics).await,
+            TransformsConfig::RedisSinkSingle(r) => r.get_source().await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger::new()))
             }
-            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source(topics).await,
+            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source().await,
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
-            TransformsConfig::RedisSinkCluster(r) => r.get_source(topics).await,
+            TransformsConfig::RedisSinkCluster(r) => r.get_source().await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             //TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
-            TransformsConfig::Coalesce(s) => s.get_source(topics).await,
-            TransformsConfig::QueryTypeFilter(s) => s.get_source(topics).await,
-            TransformsConfig::QueryCounter(s) => s.get_source(topics).await,
+            TransformsConfig::Coalesce(s) => s.get_source().await,
+            TransformsConfig::QueryTypeFilter(s) => s.get_source().await,
+            TransformsConfig::QueryCounter(s) => s.get_source().await,
         }
     }
 }

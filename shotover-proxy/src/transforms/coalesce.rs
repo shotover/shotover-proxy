@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::RawFrame;
@@ -28,7 +27,7 @@ pub struct CoalesceConfig {
 }
 
 impl CoalesceConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         let hint = match self.max_behavior {
             CoalesceBehavior::Count(c) => Some(c),
             CoalesceBehavior::CountOrWait(c, _) => Some(c),

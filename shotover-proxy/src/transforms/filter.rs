@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{MessageDetails, QueryType};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -17,7 +16,7 @@ pub struct QueryTypeFilterConfig {
 }
 
 impl QueryTypeFilterConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::QueryTypeFilter(QueryTypeFilter {
             filter: self.filter.clone(),
         }))
