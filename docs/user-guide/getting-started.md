@@ -1,21 +1,20 @@
 # Getting Started
 
-## Quick Setup
+## Setup
 
-1. **Download** - You can find the latest release of Shotover Proxy at our GitHub [release page](https://github.com/shotover/shotover-proxy/releases).
-2. **Extract** - Extract the downloaded tarball using your favourite archive tool e.g. ```tar -xzvf shotover-proxy-0.0.1.tar.gz```
-3. **Configure** - Most releases contain the Shotover binary named `shotover-proxy` and a configuration file. You can run Shotover Proxy from where you extracted it, or you may choose to place it in your path, or create a service for it. For the moment these are left as an exercise for the reader. To configure shotover, modify the included `config.yaml` and `topology.yaml` files.
-4. **Run** - To start shotover-proxy, start with the following command: ```./shotover-proxy```
-5. **Alternate Run** - to start shotover-proxy with a specific configuration or topology file, start with the following command:```./shotover-proxy --config-file config.yaml --topology-file topology.yaml```
+1. **Download & Extract** - You can find the latest release of Shotover Proxy at our GitHub [release page](https://github.com/shotover/shotover-proxy/releases). So download and extract from there onto your Linux machine. Alternatively you can [build and run from source](../contributing.md).
+2. **Run** - cd into the extracted `shotover` folder and run `./shotover-proxy`. Shotover will launch and display some logs.
+3. **Examine Config** - Shotover has two configuration files:
+    * `config/config.yaml` - This is used to configure logging and metrics.
+    * `config/topology.yaml` - This defines how Shotover receives, transforms and delivers messages.
+4. **Configure topology** - Open `topology.yaml` in your text editor and edit it to define the sources and transforms you need, the comments in the file will direct you to suitable documentation. Alternatively you can refer to the [Deployment Scenarios](#deployment-scenarios) section for full `topology.yaml` examples.
+5. **Rerun** - Shotover currently doesn't support hot-reloading config, so first shut it down with ctrl-c. Then rerun `./shotover-proxy` for your new config to take effect.
+6. **Test** - Send a message to Shotover as per your configuration and observe it is delivered to it's configured destination database.
 
-To get more information about command line parameters you can pass to shotover:
-
-```console
-./shotover-proxy --help
-```
+To see Shotover's command line arguments run: `./shotover-proxy --help`
 
 ## Deployment scenarios
 
-For in depth guides to common deployment scenarios see the following examples:
+Full `topology.yaml` examples configured for a specific use case:
 
 * [Redis clustering](../examples/redis-clustering.md)
