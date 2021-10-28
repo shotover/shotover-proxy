@@ -5,14 +5,14 @@ and a topology file specified by `--topology-file`
 
 ## configuration.yaml
 
-The configuration file is used to change general behavior of shotover. Currently it supports two values:
+The configuration file is used to change general behavior of Shotover. Currently it supports two values:
 
 * main_log_level
 * observability_interface
 
 ### main_log_level
 
-This is a single string that you can use to configure logging with shotover. It supports [env_filter](https://docs.rs/env_logger/0.7.1/env_logger/) style configuration and filtering syntax. Log levels and filters can be dynamically changed while shotover-proxy is still running.
+This is a single string that you can use to configure logging with Shotover. It supports [env_filter](https://docs.rs/env_logger/0.7.1/env_logger/) style configuration and filtering syntax. Log levels and filters can be dynamically changed while Shotover Proxy is still running.
 
 This can be done by a POST HTTP request to the `/filter` endpoint (configured located at the observability interface) with the env_filter string set as the POST data. For example:
 
@@ -22,13 +22,13 @@ curl -X PUT -d 'info,shotover_proxy=info' http://127.0.0.1:9001/filter
 
 ### observability_interface
 
-Defines the interface and port for shotover's observability interface. This interface will serve Prometheus metrics from `/metrics` and allow you to configure log levels and filters at `/filter`. Configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses.
+Defines the interface and port for Shotover's observability interface. This interface will serve Prometheus metrics from `/metrics` and allow you to configure log levels and filters at `/filter`. Configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses.
 
 ## topology.yaml
 
-The topology file is currently the primary method for defining how shotover behaves. Within the topology file you can configure sources, transforms and transform chains.
+The topology file is currently the primary method for defining how Shotover behaves. Within the topology file you can configure sources, transforms and transform chains.
 
-The below documentation shows you what each section does and runs through an entire example of a shotover configuration file.
+The below documentation shows you what each section does and runs through an entire example of a Shotover configuration file.
 
 ### `sources`
 
@@ -147,7 +147,7 @@ chain_config:
 
 The `named_topics` top level resource is a list of topics. Each topic is backed by a Rust multi-producer, single consumer channel. Some transforms will use these global list of topics to pass messages outside of the normal chain flow. No transforms currently leverage this capability to any large degree.
 
-The value provided is an usize which defines the size of the channel, default 5.
+The value provided is an unsigned integer which defines the size of the channel, default 5.
 
 The below example creates a single topic, called `testtopic`.
 
@@ -169,8 +169,8 @@ source_to_chain_mapping:
 
 This mapping would effectively create a solution that:
 
-* All redis requests are first batched and then sent to a remote redis cluster in another region. This happens asynchronously and if the remote redis cluster is unavailable it will not block operations to the current cluster.
-* Subsequently, all redis actions get identified based on command type, counted and provided as a set of metrics.
-* The redis request is then transform into a cluster aware request and routed to the correct node
+* All Redis requests are first batched and then sent to a remote Redis cluster in another region. This happens asynchronously and if the remote Redis cluster is unavailable it will not block operations to the current cluster.
+* Subsequently, all Redis actions get identified based on command type, counted and provided as a set of metrics.
+* The Redis request is then transform into a cluster aware request and routed to the correct node
 
 The entire example configuration can be found [here](/examples/redis-cluster-dr/topology.yaml).

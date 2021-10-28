@@ -4,19 +4,15 @@
 
 ### Sink
 
-Sink transforms send data out of shotover to some other service.
-This is the opposite of shotover's sources, although sources are not transforms.
+Sink transforms send data out of Shotover to some other service. This is the opposite of Shotover's sources, although sources are not transforms.
 
 ### Terminating
 
-Every transform chain must have exactly one terminating transform and it must be the final transform of the chain.
-This means that terminating transforms cannot pass messages onto another transform in the same chain.
-However some terminating transforms define their own subchain to allow further processing of messages.
+Every transform chain must have exactly one terminating transform and it must be the final transform of the chain. This means that terminating transforms cannot pass messages onto another transform in the same chain. However some terminating transforms define their own sub-chains to allow further processing of messages.
 
 ### Debug
 
-Debug transforms can be temporarily used to test how your shotover configuration performs.
-Dont forget to remove them when you are finished.
+Debug transforms can be temporarily used to test how your Shotover configuration performs. Dont forget to remove them when you are finished.
 
 ### Implementation Status
 
@@ -24,8 +20,7 @@ Dont forget to remove them when you are finished.
 * Beta - Ready for use but is not battle tested.
 * Ready - Ready for use.
 
-Future transforms won't be added to the public API while in alpha.
-But in these early days we have chosen to publish these alpha transforms to demonstrate the direction we want to take the project.
+Future transforms won't be added to the public API while in alpha. But in these early days we have chosen to publish these alpha transforms to demonstrate the direction we want to take the project.
 
 ### Transforms
 
@@ -139,9 +134,7 @@ This transform will drop any messages it receives and return an empty response.
 
 This transform will send messages in a single batch in parallel across multiple instances of the chain.
 
-If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C2, C3.
-If the batch then contains messages M1, M2, M3, M4.
-Then the messages would be sent as follows:
+If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C2, C3. If the batch then contains messages M1, M2, M3, M4. Then the messages would be sent as follows:
 
 * M1 would be sent to C1
 * M2 would be sent to C2
@@ -193,7 +186,7 @@ Fields are protected using a NaCL secretbox (xsalsa20-poly1305). Modification of
 - Protect
   # A mapping of keyspaces, tables and columns to encrypt.
   keyspace_table_columns
-  # A KeyManagerConfig that configures the protect Transform with how to look up keys.
+  # A KeyManagerConfig that configures the protect transform with how to look up keys.
   key_manager
 ```
 
@@ -281,7 +274,7 @@ This transform is a full featured Redis driver that will connect to a Redis clus
       private_key_path: "examples/redis-tls/tls_keys/redis.key"
 ```
 
-Unlike other Redis cluster drivers, this Transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
+Unlike other Redis cluster drivers, this transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
 
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 

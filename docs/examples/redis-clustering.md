@@ -1,27 +1,27 @@
 # Redis Clustering
 
-The following guide shows you how to configure shotover-proxy to support transparently proxying redis-cluster _unaware_ clients to a [Redis cluster](https://redis.io/topics/cluster-spec).
+The following guide shows you how to configure Shotover Proxy to support transparently proxying Redis cluster _unaware_ clients to a [Redis cluster](https://redis.io/topics/cluster-spec).
 
 ## Overview
 
-In this example, we will be connecting to a redis cluster that has the following topology:
+In this example, we will be connecting to a Redis cluster that has the following topology:
 
-* redis://192.168.0.1/
-* redis://192.168.0.2/
-* redis://192.168.0.3/
-* redis://192.168.0.4/
-* redis://192.168.0.5/
-* redis://192.168.0.6/
+* `redis://192.168.0.1/`
+* `redis://192.168.0.2/`
+* `redis://192.168.0.3/`
+* `redis://192.168.0.4/`
+* `redis://192.168.0.5/`
+* `redis://192.168.0.6/`
 
-Shotover will listen on the loopback adapter (localhost) and act as a sidecar for our application that speaks redis. In this example we will use `redis-benchmark` as our redis-cluster unaware client application.
+Shotover will listen on the loopback adapter (localhost) and act as a sidecar for our application that speaks Redis. In this example we will use `redis-benchmark` as our Redis cluster unaware client application.
 
 ## Configuration
 
-First we will modify our topology.yaml file to have a single Redis source. This will:
+First we will modify our `topology.yaml` file to have a single Redis source. This will:
 
 * define how shotover listens for incoming connections from our client application (`redis-benchmark`).
-* configure shotover to connect to the redis cluster via our defined contact points
-* connect our redis source to our redis cluster sink (transform).
+* configure Shotover to connect to the Redis cluster via our defined contact points
+* connect our Redis source to our Redis cluster sink (transform).
 
 The below configuration will do the trick.
 
@@ -42,7 +42,7 @@ source_to_chain_mapping:
   redis_prod: redis_chain
 ```
 
-Modify an existing `topology.yaml` or create a new one and place the above example as the files contents. Remember to change the `first_contact_points` to IPs and ports that matches your redis-cluster. In this example we will save our config as `redis-shotover.yml`.
+Modify an existing `topology.yaml` or create a new one and place the above example as the files contents. Remember to change the `first_contact_points` to IPs and ports that matches your Redis cluster. In this example we will save our config as `redis-shotover.yml`.
 
 ## Starting
 
@@ -52,7 +52,7 @@ We can now start `shotover-proxy`, by running the following:
 ./shotover-proxy --config-file redis-shotover.yml
 ```
 
-If shotover can successfully contact your redis cluster, you should see the following:
+If Shotover can successfully contact your Redis cluster, you should see the following:
 
 ```console
 user@demo$ ./shotover-proxy --config-file redis-shotover.yml 
@@ -65,13 +65,13 @@ Aug 17 12:11:42.878  INFO shotover_proxy::config::topology: Loaded sources [["re
 Aug 17 12:11:42.878  INFO shotover_proxy::server: accepting inbound connections
 ```
 
-Currently the RedisSinkCluster transform, needs to be able to connect to the redis cluster when it starts up. If it cannot, shotover proxy will exit with a panic, indicating it couldn't connect to the contact points. 
+Currently the RedisSinkCluster transform, needs to be able to connect to the Redis cluster when it starts up. If it cannot, Shotover Proxy will exit with a panic, indicating it couldn't connect to the contact points. 
 
 Note: Currently `shotover-proxy` cannot daemonize itself. So you may wish to use a service supervisor to do this for you or you can simply run this in a different terminal session in development/testing scenarios :)
 
 ## Testing
 
-With shotover proxy now up and running, we can test out our client application. Let's start it up!
+With Shotover Proxy now up and running, we can test out our client application. Let's start it up!
 
 ```console
 redis-benchmark -t set,get
