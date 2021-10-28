@@ -20,7 +20,6 @@ jobs:
           override: true
       - name: Build & test
         run: |
-          # build glibc
           shotover-proxy/build/build_release.sh
       - name: Publish
         uses: "marvinpinto/action-automatic-releases@latest"

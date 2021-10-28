@@ -4,18 +4,21 @@ set -e
 
 SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-cd $SCRIPT_DIR/..
+cd $SCRIPT_DIR/../..
 
 cargo build --release
 #$SCRIPT_DIR/build_static.sh
 
 # Make glibc version
-mkdir -p shotover-proxy
-cp ../target/release/shotover-proxy shotover-proxy
-cp -r config shotover-proxy
-tar -cvzf shotover-proxy-linux_amd64-"$(cargo metadata --format-version 1 --offline --no-deps | jq -c -M -r '.packages[0].version')".tar.gz shotover-proxy
-rm -rf shotover-proxy
-mv *.tar.gz ..
+mkdir -p shotover
+cp target/release/shotover-proxy shotover
+cp -r shotover-proxy/config shotover
+
+# extract the crate version from Cargo.toml
+CRATE_VERSION="$(cargo metadata --format-version 1 --offline --no-deps | jq -c -M -r '.packages[0].version')"
+tar -cvzf shotover-proxy-linux_amd64-${CRATE_VERSION}.tar.gz shotover
+
+rm -rf shotover
 
 # Make musl version
 # mkdir -p shotover-proxy
