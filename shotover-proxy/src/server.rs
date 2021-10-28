@@ -38,16 +38,16 @@ pub struct TcpCodecListener<C: Codec> {
     ///
     /// This is a wrapper around an `Arc`. This enables `db` to be cloned and
     /// passed into the per connection state (`Handler`).
-    pub chain: TransformChain,
+    chain: TransformChain,
 
-    pub source_name: String,
+    source_name: String,
 
     /// TCP listener supplied by the `run` caller.
-    pub listener: Option<TcpListener>,
-    pub listen_addr: String,
-    pub hard_connection_limit: bool,
+    listener: Option<TcpListener>,
+    listen_addr: String,
+    hard_connection_limit: bool,
 
-    pub codec: C,
+    codec: C,
 
     /// Limit the max number of connections.
     ///
@@ -57,7 +57,7 @@ pub struct TcpCodecListener<C: Codec> {
     ///
     /// When handlers complete processing a connection, the permit is returned
     /// to the semaphore.
-    pub limit_connections: Arc<Semaphore>,
+    limit_connections: Arc<Semaphore>,
 
     /// Broadcasts a shutdown signal to all active connections.
     ///
@@ -67,16 +67,41 @@ pub struct TcpCodecListener<C: Codec> {
     /// handle. When a graceful shutdown is initiated, a `true` value is sent via
     /// the watch::Sender. Each active connection receives it, reaches a
     /// safe terminal state, and completes the task.
-    pub trigger_shutdown_rx: watch::Receiver<bool>,
+    trigger_shutdown_rx: watch::Receiver<bool>,
 
     /// Used as part of the graceful shutdown process to wait for client
     /// connections to complete processing.
-    pub shutdown_complete_tx: mpsc::Sender<()>,
+    shutdown_complete_tx: mpsc::Sender<()>,
 
-    pub tls: Option<TlsAcceptor>,
+    tls: Option<TlsAcceptor>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
+    pub fn new(
+        chain: TransformChain,
+        source_name: String,
+        listen_addr: String,
+        hard_connection_limit: bool,
+        codec: C,
+        limit_connections: Arc<Semaphore>,
+        trigger_shutdown_rx: watch::Receiver<bool>,
+        shutdown_complete_tx: mpsc::Sender<()>,
+        tls: Option<TlsAcceptor>,
+    ) -> Self {
+        TcpCodecListener {
+            chain,
+            source_name,
+            listener: None,
+            listen_addr,
+            hard_connection_limit,
+            codec,
+            limit_connections,
+            trigger_shutdown_rx,
+            shutdown_complete_tx,
+            tls,
+        }
+    }
+
     /// Run the server
     ///
     /// Listen for inbound connections. For each inbound connection, spawn a
