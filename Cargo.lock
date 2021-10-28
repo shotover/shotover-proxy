@@ -4,12 +4,6 @@ version = 3
 
 [[package]]
 name = "ahash"
-version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8fd72866655d1904d6b0997d0b07ba561047d070fbe29de039031c641b61217"
-
-[[package]]
-name = "ahash"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"
@@ -200,7 +194,7 @@ dependencies = [
  "cached_proc_macro",
  "cached_proc_macro_types",
  "futures",
- "hashbrown 0.11.2",
+ "hashbrown",
  "once_cell",
 ]
 
@@ -288,7 +282,6 @@ dependencies = [
  "num-integer",
  "num-traits 0.2.14",
  "serde",
- "time 0.1.43",
  "winapi",
 ]
 
@@ -345,9 +338,9 @@ dependencies = [
 
 [[package]]
 name = "combine"
-version = "4.6.1"
+version = "4.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a909e4d93292cd8e9c42e189f61681eff9d67b6541f96b8a1a737f23737bd001"
+checksum = "b2b2f5d0ee456f3928812dfc8c6d9a1d592b98678f6d56db9b0cd2b7bc6c8db5"
 dependencies = [
  "bytes",
  "futures-core",
@@ -955,21 +948,11 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "halfbrown"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c12499524b5585419ab2f51545a19b842263a373580a83c0eb98a0142a260a10"
+checksum = "3ed39577259d319b81a15176a32673271be2786cb463889703c58c90fe83c825"
 dependencies = [
- "hashbrown 0.7.2",
-]
-
-[[package]]
-name = "hashbrown"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96282e96bfcd3da0d3aa9938bedf1e50df3269b6db08b4876d2da0bb1a0841cf"
-dependencies = [
- "ahash 0.3.8",
- "autocfg",
+ "hashbrown",
 ]
 
 [[package]]
@@ -978,7 +961,7 @@ version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
 dependencies = [
- "ahash 0.7.6",
+ "ahash",
 ]
 
 [[package]]
@@ -1125,7 +1108,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc633605454125dec4b66843673f01c7df2b89479b32e0ed634e43a91cff62a5"
 dependencies = [
  "autocfg",
- "hashbrown 0.11.2",
+ "hashbrown",
 ]
 
 [[package]]
@@ -1327,7 +1310,7 @@ version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a00f42f354a2ed4894db863b3a4db47aef2d2e4435b937221749bd37a8a7aaa8"
 dependencies = [
- "ahash 0.7.6",
+ "ahash",
  "metrics-macros",
  "proc-macro-hack",
 ]
@@ -1368,13 +1351,13 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74c9b6aee519e1461b678952d3671652bb341d0664b1188f895a436a4e2e6ffa"
 dependencies = [
- "ahash 0.7.6",
+ "ahash",
  "aho-corasick",
  "atomic-shim",
  "crossbeam-epoch 0.9.5",
  "crossbeam-utils 0.8.5",
  "dashmap",
- "hashbrown 0.11.2",
+ "hashbrown",
  "indexmap",
  "metrics",
  "num_cpus",
@@ -1617,9 +1600,9 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "openssl"
-version = "0.10.36"
+version = "0.10.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d9facdb76fec0b73c406f125d44d86fdad818d66fef0531eec9233ca425ff4a"
+checksum = "2bc6b9e4403633698352880b22cbe2f0e45dd0177f6fabe4585536e56a3e4f75"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
@@ -1646,9 +1629,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.67"
+version = "0.9.68"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69df2d8dfc6ce3aaf44b40dec6f487d5a886516cf6879c49e98e0710f310a058"
+checksum = "1c571f25d3f66dd427e417cebf73dbe2361d6125cf6e3a70d143fdf97c9f5150"
 dependencies = [
  "autocfg",
  "cc",
@@ -2506,7 +2489,6 @@ dependencies = [
  "bytes",
  "cached",
  "cassandra-proto",
- "chrono",
  "clap 3.0.0-beta.5",
  "clap_derive",
  "crc16",

@@ -3,12 +3,9 @@ use bytes::Bytes;
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
 use cassandra_proto::types::data_serialization_types::{
     decode_ascii, decode_bigint, decode_boolean, decode_decimal, decode_double, decode_float,
-    decode_inet, decode_int, decode_smallint, decode_timestamp, decode_tinyint, decode_varchar,
-    decode_varint,
+    decode_inet, decode_int, decode_smallint, decode_tinyint, decode_varchar, decode_varint,
 };
 use cassandra_proto::types::CBytes;
-use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
-use chrono::{DateTime, TimeZone, Utc};
 use redis_protocol::resp2::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -294,8 +291,6 @@ pub enum Value {
     Integer(i64),
     Float(f64),
     Boolean(bool),
-    #[serde(serialize_with = "to_nano_ts")]
-    Timestamp(DateTime<Utc>),
     Inet(IpAddr),
     List(Vec<Value>),
     Rows(Vec<Vec<Value>>),
@@ -342,7 +337,6 @@ impl From<Value> for Frame {
             Value::Integer(i) => Frame::Integer(i),
             Value::Float(f) => Frame::SimpleString(f.to_string()),
             Value::Boolean(b) => Frame::Integer(i64::from(b)),
-            Value::Timestamp(t) => Frame::SimpleString(t.to_rfc2822()),
             Value::Inet(i) => Frame::SimpleString(i.to_string()),
             Value::List(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
             Value::Rows(r) => Frame::Array(r.into_iter().map(|v| Value::List(v).into()).collect()),
@@ -374,14 +368,12 @@ impl Value {
                 ColType::Double => Value::Float(decode_double(actual_bytes).unwrap()),
                 ColType::Float => Value::Float(decode_float(actual_bytes).unwrap() as f64),
                 ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Timestamp => {
-                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap()))
-                }
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
                 ColType::Varint => Value::Integer(decode_varint(actual_bytes).unwrap()),
                 ColType::Timeuuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Inet => Value::Inet(decode_inet(actual_bytes).unwrap()),
+                ColType::Timestamp => Value::NULL,
                 ColType::Date => Value::NULL,
                 ColType::Time => Value::NULL,
                 ColType::Smallint => Value::Integer(decode_smallint(actual_bytes).unwrap() as i64),
@@ -404,9 +396,6 @@ impl Value {
             Value::Integer(i) => Bytes::from(format!("{}", i)),
             Value::Float(f) => Bytes::from(format!("{}", f)),
             Value::Boolean(b) => Bytes::from(format!("{}", b)),
-            Value::Timestamp(t) => {
-                Bytes::from(String::from_utf8_lossy(&t.timestamp().to_le_bytes()).to_string())
-            }
             Value::Inet(i) => Bytes::from(format!("{}", i)),
             _ => unimplemented!(),
         }
@@ -425,7 +414,6 @@ impl Value {
             } else {
                 (0_u8).to_le_bytes()
             })),
-            Value::Timestamp(t) => Bytes::from(Vec::from(t.timestamp().to_le_bytes())),
             Value::Inet(i) => Bytes::from(match i {
                 IpAddr::V4(four) => Vec::from(four.octets()),
                 IpAddr::V6(six) => Vec::from(six.octets()),
@@ -445,7 +433,6 @@ impl From<Value> for cassandra_proto::types::value::Bytes {
             Value::Integer(i) => i.into(),
             Value::Float(f) => f.into(),
             Value::Boolean(b) => b.into(),
-            Value::Timestamp(t) => t.timestamp().into(),
             Value::List(l) => cassandra_proto::types::value::Bytes::from(l),
             Value::Rows(r) => cassandra_proto::types::value::Bytes::from(r),
             Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),

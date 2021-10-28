@@ -14,7 +14,6 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
-use std::str::FromStr;
 use tracing::{info, trace, warn};
 
 use crate::message::{
@@ -22,7 +21,6 @@ use crate::message::{
 };
 use crate::protocols::RawFrame;
 use cassandra_proto::frame::frame_response::ResponseBody;
-use chrono::DateTime;
 use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use sqlparser::ast::Statement::{Delete, Insert, Update};
 use sqlparser::ast::{
@@ -166,7 +164,6 @@ impl CassandraCodec2 {
                                             temp
                                             // (x.clone() as CInt).into_cbytes()
                                         }
-                                        Value::Timestamp(x) => Vec::from(x.to_rfc2822().as_bytes()),
                                         _ => unreachable!(),
                                     });
                                     rb
@@ -207,7 +204,6 @@ impl CassandraCodec2 {
             Value::Integer(i) => SQLValue::Number(i.to_string()),
             Value::Float(f) => SQLValue::Number(f.to_string()),
             Value::Boolean(b) => SQLValue::Boolean(*b),
-            Value::Timestamp(t) => SQLValue::Timestamp(t.to_rfc2822()),
             _ => SQLValue::Null,
         }
     }
@@ -225,13 +221,6 @@ impl CassandraCodec2 {
             SQLValue::HexStringLiteral(v) | SQLValue::Date(v) | SQLValue::Time(v) => {
                 Value::Strings(v.to_string())
             }
-            SQLValue::Timestamp(v) => {
-                if let Ok(r) = DateTime::from_str(v.as_str()) {
-                    Value::Timestamp(r)
-                } else {
-                    Value::Strings(format!("{:?}", v))
-                }
-            }
             SQLValue::Boolean(v) => Value::Boolean(*v),
             _ => Value::Strings("NULL".to_string()),
         }
@@ -244,8 +233,7 @@ impl CassandraCodec2 {
             | SQLValue::NationalStringLiteral(v)
             | SQLValue::HexStringLiteral(v)
             | SQLValue::Date(v)
-            | SQLValue::Time(v)
-            | SQLValue::Timestamp(v) => v.to_string(),
+            | SQLValue::Time(v) => v.to_string(),
             SQLValue::Boolean(v) => v.to_string(),
             _ => "NULL".to_string(),
         }
