@@ -13,17 +13,18 @@ Cassandra:
   # The address to listen from.
   listen_addr: "127.0.0.1:6379"
 
-  cassandra_ks: HashMap<String, Vec<String>>,
+  cassandra_ks:
+    foo: "bar"
 
-  query_processing: Option<bool>,
+  query_processing: false
 
   # The number of concurrent connections the source will accept.
-  connection_limit: Option<usize>,
+  connection_limit: 1000
 
   # Defines the behaviour that occurs when Once the configured connection limit is reached:
   # * when true: the connection is dropped.
   # * when false: the connection will wait until a connection can be made within the limit.
-  hard_connection_limit: Option<bool>,
+  hard_connection_limit: false
 ```
 
 ## MPSC
@@ -45,12 +46,12 @@ Redis:
   listen_addr: "127.0.0.1:6379"
 
   # The number of concurrent connections the source will accept.
-  connection_limit: Option<usize>,
+  connection_limit: 1000
 
   # Defines the behaviour that occurs when Once the configured connection limit is reached:
   # * when true: the connection is dropped.
   # * when false: the connection will wait until a connection can be made within the limit.
-  hard_connection_limit: Option<bool>,
+  hard_connection_limit: false
 
   # When this field is provided TLS is used when connecting to the remote address.
   # Removing this field will disable TLS.
