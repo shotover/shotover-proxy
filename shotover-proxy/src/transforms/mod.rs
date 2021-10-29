@@ -250,7 +250,11 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     #[async_recursion]
     /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_transforms(
+        &self,
+        topics: &TopicHolder,
+        chain_name: String,
+    ) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source().await,
             TransformsConfig::KafkaSink(k) => k.get_source().await,
@@ -265,7 +269,7 @@ impl TransformsConfig {
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
-            TransformsConfig::RedisSinkCluster(r) => r.get_source().await,
+            TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             //TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
             TransformsConfig::Coalesce(s) => s.get_source().await,
@@ -282,7 +286,7 @@ pub async fn build_chain_from_config(
 ) -> Result<TransformChain> {
     let mut transforms: Vec<Transforms> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_transforms(topics).await?)
+        transforms.push(tc.get_transforms(topics, name.clone()).await?)
     }
     Ok(TransformChain::new(transforms, name))
 }

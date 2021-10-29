@@ -8,7 +8,7 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use metrics::counter;
+use metrics::{counter, register_counter, Unit};
 use serde::Deserialize;
 use tracing::trace;
 
@@ -52,14 +52,38 @@ impl TeeConfig {
         let tee_chain =
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
-        Ok(Transforms::Tee(Tee {
-            tx: tee_chain.clone().into_buffered_chain(buffer_size),
+        Ok(Transforms::Tee(Tee::new(
+            tee_chain.clone().into_buffered_chain(buffer_size),
             fail_chain,
             buffer_size,
-            chain_to_clone: tee_chain,
-            behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
-            timeout_micros: self.timeout_micros,
-        }))
+            tee_chain,
+            self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
+            self.timeout_micros,
+        )))
+    }
+}
+
+impl Tee {
+    pub fn new(
+        tx: BufferedChain,
+        fail_chain: Option<BufferedChain>,
+        buffer_size: usize,
+        chain_to_clone: TransformChain,
+        behavior: ConsistencyBehavior,
+        timeout_micros: Option<u64>,
+    ) -> Self {
+        let tee = Tee {
+            tx,
+            fail_chain,
+            buffer_size,
+            chain_to_clone,
+            behavior,
+            timeout_micros,
+        };
+
+        register_counter!("tee_dropped_messages", Unit::Count, "chain" => tee.get_name());
+
+        tee
     }
 }
 
