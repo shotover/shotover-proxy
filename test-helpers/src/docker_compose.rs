@@ -139,7 +139,8 @@ impl DockerCompose {
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::SystemTime::now();
         let mut result = run_command("docker-compose", &args).unwrap();
-        while re.find_iter(&result).count() < count {
+        let mut my_count = re.find_iter(&result).count();
+        while my_count < count {
             match sys_time.elapsed() {
                 Ok(elapsed) => {
                     if elapsed.as_secs() > time {
@@ -152,8 +153,9 @@ impl DockerCompose {
                     info!("Clock aberration: {:?}", e);
                 }
             }
-            debug!("wait_for_n: looping");
+            debug!("wait_for_n: {:?} looping {}/{}", log_text, my_count, count);
             result = run_command("docker-compose", &args).unwrap();
+            my_count = re.find_iter(&result).count();
         }
         info!("wait_for_n_t: found '{}' {} times in {:?} seconds", log_text, count, sys_time.elapsed() );
         self

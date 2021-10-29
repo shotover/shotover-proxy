@@ -13,7 +13,7 @@ fn test_create_keyspace() {
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
     let ctx = CassandraTestContext::new();
-    ctx.session.execute(&query).wait().unwrap();
+    info!("{:?}", ctx.session.execute(&query).wait().unwrap());
 }
 
 #[test]
@@ -35,9 +35,9 @@ fn test_basic_connection() -> Result<()> {
     Ok(())
 }
 
-#[test]
+
 fn test_create_keyspace_direct() {
-    let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
+   // let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
@@ -48,7 +48,7 @@ fn test_create_keyspace_direct() {
         .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
         .collect();
 
-    compose.wait_for_n_t( "Startup complete", 3, 120 );
+    //compose.wait_for_n_t( "cassandra-one_1.*Startup complete", 1, 120 );
     info!("test_args");
     let query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
