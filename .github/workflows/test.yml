@@ -66,7 +66,7 @@ jobs:
     - name: Build
       run: cargo build ${{ matrix.cargo_profile }} --all-targets
     - name: Run tests
-      run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored
+      run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output
       timeout-minutes: 30
     - name: Cleanup docker
       run: shotover-proxy/tests/scripts/teardown.sh
