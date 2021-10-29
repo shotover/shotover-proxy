@@ -35,16 +35,16 @@ Some examples where we envisage Shotover could be deployed include:
 * Dual writing and/or query translation to allow the underlying storage technology to be changed (for example, from DynamoDB to Apache Cassandra)
 * As an alternative to Change Data Capture technology to send writes to a message stream such as Apache Kafka in addition to the primary database
 * Adding auditing, encryption or other security measures
+
 Of course, shotover-proxy is designed to be configurable and extensible so use your imagination and let us know what uses you find!
 
 ## Deploying Shotover
-Shotover can be deployed in a number of ways, it will generally be based on the problem you are trying to solve, but they
-all fall into three categories:
+Shotover can be deployed in several different ways based on the problem you are trying to solve, but they all fall into three categories:
 * As an application sidecar - Shotover is pretty lightweight, so feel free to deploy it as a sidecar to each of your application
 instances.
-* As a stand alone proxy - If you are building a Service/DBaaS/Common data layer, you can deploy Shotover on standalone hardware
+* As a stand-alone proxy - If you are building a Service/DBaaS/Common data layer, you can deploy Shotover on standalone hardware
 and really let it fly.
-* As a sidecar to your database - You can also stick Shotover on the same instance/server as your database is running on, we do it, so
+* As a sidecar to your database - You can also stick Shotover on the same instance/server as your database is running on; we do it, so
 we won't judge you.
 
 ## Roadmap
@@ -53,7 +53,7 @@ we won't judge you.
 * Performance metrics.
 * Additional sources (DynamoDB and PostgreSQL are good first candidates).
 * Add support for rate limiting, explicit back-pressure mechanisms, etc.
-* Additional Distributed algorithm transform primitives (e.g RAFT, 2PC, etc)
+* Additional distributed algorithm transform primitives (e.g RAFT, 2PC, etc)
 * Additional sink transforms (these generally get implemented alongside sources).
 * Support user-defined / generated sources (e.g. thrift or a gRPC service from a proto definition).
 * Simulation testing once tokio-rs/simulation reaches compatibility with tokio-2.0.
