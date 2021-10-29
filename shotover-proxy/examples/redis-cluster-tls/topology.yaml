@@ -2,11 +2,10 @@
 sources:
   redis_prod:
     Redis:
-      batch_size_hint: 1
       listen_addr: "127.0.0.1:6379"
 chain_config:
   redis_chain:
-    - RedisCluster:
+    - RedisSinkCluster:
         first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
         tls:
           certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt"

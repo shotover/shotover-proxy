@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt, TryFutureExt};
-use hyper::body::Bytes;
 use metrics::counter;
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
@@ -19,43 +18,41 @@ use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::concurrency::FuturesOrdered;
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
-use crate::protocols::redis_codec::RedisCodec;
+use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::protocols::RawFrame;
 use crate::tls::TlsConfig;
-use crate::transforms::redis_transforms::RedisError;
-use crate::transforms::redis_transforms::TransformError;
+use crate::transforms::redis::RedisError;
+use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
 use crate::transforms::ResponseFuture;
 use crate::transforms::CONTEXT_CHAIN_NAME;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 const SLOT_SIZE: usize = 16384;
 
 type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct RedisClusterConfig {
+pub struct RedisSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub tls: Option<TlsConfig>,
     connection_count: Option<usize>,
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisClusterConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+impl RedisSinkClusterConfig {
+    pub async fn get_source(&self) -> Result<Transforms> {
         let authenticator = RedisAuthenticator {};
 
         let connection_pool = ConnectionPool::new_with_auth(
-            RedisCodec::new(true, 3),
+            RedisCodec::new(DecodeType::Response),
             authenticator,
             self.tls.clone(),
         )?;
 
-        let mut cluster = RedisCluster {
+        let mut cluster = RedisSinkCluster {
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
             load_scores: HashMap::new(),
@@ -80,13 +77,13 @@ impl TransformsFromConfig for RedisClusterConfig {
             }
         }
 
-        Ok(Transforms::RedisCluster(cluster))
+        Ok(Transforms::RedisSinkCluster(cluster))
     }
 }
 
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-pub struct RedisCluster {
+pub struct RedisSinkCluster {
     pub slots: SlotMap,
     pub channels: ChannelMap,
     load_scores: HashMap<(String, usize), usize>,
@@ -99,7 +96,7 @@ pub struct RedisCluster {
     token: Option<UsernamePasswordToken>,
 }
 
-impl RedisCluster {
+impl RedisSinkCluster {
     #[inline]
     async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
         let command = match message.original {
@@ -144,14 +141,14 @@ impl RedisCluster {
                     let response = responses
                         .fold(vec![], |mut acc, response| async move {
                             match response {
-                                Ok((_, Ok(mut messages))) => acc.push(
-                                    messages.messages.pop().map_or(Frame::Null, |message| {
+                                Ok((_, Ok(mut messages))) => {
+                                    acc.push(messages.pop().map_or(Frame::Null, |message| {
                                         match message.original {
                                             RawFrame::Redis(frame) => frame,
                                             _ => unreachable!(),
                                         }
-                                    }),
-                                ),
+                                    }))
+                                }
                                 Ok((_, Err(e))) => acc.push(Frame::Error(e.to_string())),
                                 Err(e) => acc.push(Frame::Error(e.to_string())),
                             }
@@ -161,7 +158,7 @@ impl RedisCluster {
 
                     Ok((
                         message,
-                        ChainResponse::Ok(Messages::new_from_message(Message {
+                        ChainResponse::Ok(vec![Message {
                             details: MessageDetails::Unknown,
                             modified: false,
                             original: RawFrame::Redis(Frame::Array(response)),
@@ -624,7 +621,7 @@ pub fn parse_slots(results: &[Frame]) -> Result<SlotMap> {
                             build_slot_to_server(replica, &mut replica_entries, start, end)
                                 .context("failed to decode replica slots")?;
                         }
-                        _ => bail!("unexpected value in slot map",),
+                        _ => bail!("unexpected value in slot map"),
                     }
                 }
             }
@@ -645,8 +642,8 @@ async fn get_topology_from_node(
     let return_chan_rx = send_frame_request(
         &sender,
         Frame::Array(vec![
-            Frame::BulkString(Bytes::from("CLUSTER")),
-            Frame::BulkString(Bytes::from("SLOTS")),
+            Frame::BulkString(b"CLUSTER".to_vec()),
+            Frame::BulkString(b"SLOTS".to_vec()),
         ]),
     )?;
 
@@ -730,7 +727,7 @@ async fn receive_frame_response(
     let (_, result) = receiver.await?;
 
     // Exactly one Redis response is guaranteed by the codec on success.
-    let message = result?.messages.pop().unwrap().original;
+    let message = result?.pop().unwrap().original;
 
     match message {
         RawFrame::Redis(frame) => Ok(frame),
@@ -742,11 +739,11 @@ async fn receive_frame_response(
 fn send_frame_response(one_tx: oneshot::Sender<Response>, frame: Frame) -> Result<(), Response> {
     one_tx.send((
         Message::new_bypass(RawFrame::None),
-        Ok(Messages::new_single_response(
-            QueryResponse::empty(),
+        Ok(vec![Message::new(
+            MessageDetails::Response(QueryResponse::empty()),
             false,
             RawFrame::Redis(frame),
-        )),
+        )]),
     ))
 }
 
@@ -763,7 +760,11 @@ fn immediate_responder() -> (
 }
 
 #[async_trait]
-impl Transform for RedisCluster {
+impl Transform for RedisSinkCluster {
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.rebuild_connections {
             self.build_connections(self.token.clone()).await.ok();
@@ -771,7 +772,7 @@ impl Transform for RedisCluster {
 
         let mut responses = FuturesOrdered::new();
 
-        for message in message_wrapper.message {
+        for message in message_wrapper.messages {
             responses.push(match self.dispatch_message(message).await {
                 Ok(response) => response,
                 Err(e) => {
@@ -790,16 +791,16 @@ impl Transform for RedisCluster {
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 Ok((
                     Message::new_bypass(RawFrame::None),
-                    Ok(Messages::new_single_response(
-                        QueryResponse::empty(),
+                    Ok(vec![Message::new(
+                        MessageDetails::Response(QueryResponse::empty()),
                         false,
                         RawFrame::Redis(Frame::Error("ERR Could not route request".to_string())),
-                    )),
+                    )]),
                 ))
             })?;
             let mut response = response?;
-            assert_eq!(response.messages.len(), 1);
-            let response_m = response.messages.remove(0);
+            assert_eq!(response.len(), 1);
+            let response_m = response.remove(0);
             match &response_m.original {
                 RawFrame::Redis(frame) => {
                     match frame.to_redirection() {
@@ -811,7 +812,7 @@ impl Transform for RedisCluster {
 
                             self.rebuild_connections = true;
 
-                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
+                            let one_rx = self.choose_and_send(&server, original).await?;
 
                             responses.prepend(Box::pin(
                                 one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
@@ -820,7 +821,7 @@ impl Transform for RedisCluster {
                         Some(Redirection::Ask { slot, server }) => {
                             debug!("Got ASK {} {}", slot, server);
 
-                            let one_rx = self.choose_and_send(&server, original.clone()).await?;
+                            let one_rx = self.choose_and_send(&server, original).await?;
 
                             responses.prepend(Box::pin(
                                 one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
@@ -832,24 +833,22 @@ impl Transform for RedisCluster {
                 _ => response_buffer.push(response_m),
             }
         }
-        Ok(Messages {
-            messages: response_buffer,
-        })
+        Ok(response_buffer)
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisCluster"
+        "RedisSinkCluster"
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Derivative)]
 #[derivative(Debug)]
 pub struct UsernamePasswordToken {
-    pub username: Option<Bytes>,
+    pub username: Option<Vec<u8>>,
 
     // Reduce risk of logging passwords.
     #[derivative(Debug = "ignore")]
-    pub password: Bytes,
+    pub password: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -864,7 +863,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
         sender: &mut UnboundedSender<Request>,
         token: &UsernamePasswordToken,
     ) -> Result<(), TransformError> {
-        let mut auth_args = vec![Frame::BulkString(Bytes::from("AUTH"))];
+        let mut auth_args = vec![Frame::BulkString(b"AUTH".to_vec())];
 
         // Support non-ACL / username-less.
         if let Some(username) = &token.username {
@@ -902,18 +901,17 @@ mod test {
         // Wireshark capture from a Redis cluster with 3 masters and 3 replicas.
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
 
-        let mut codec = RedisCodec::new(true, 3);
+        let mut codec = RedisCodec::new(DecodeType::Response);
 
         let raw_frame = codec
             .decode(&mut slots_pcap.into())
             .unwrap()
             .unwrap()
-            .messages
             .pop()
             .unwrap()
             .original;
 
-        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame.clone() {
+        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame {
             frames
         } else {
             panic!("bad input: {:?}", raw_frame)

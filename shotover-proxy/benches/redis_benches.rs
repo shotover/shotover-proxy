@@ -70,7 +70,7 @@ fn redis(c: &mut Criterion) {
 
     {
         let mut state = None;
-        group.bench_function("destination_tls", move |b| {
+        group.bench_function("single_tls", move |b| {
             b.iter(|| {
                 let state = state.get_or_insert_with(|| {
                     let compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")

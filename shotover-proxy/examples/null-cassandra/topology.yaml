@@ -2,7 +2,6 @@
 sources:
   cassandra_prod:
     Cassandra:
-      bypass_query_processing: true
       listen_addr: "127.0.0.1:9042"
       cassandra_ks:
         system.local:

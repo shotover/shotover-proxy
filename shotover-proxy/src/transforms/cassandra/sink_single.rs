@@ -1,10 +1,9 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::config::topology::TopicHolder;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use std::collections::HashMap;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
@@ -21,38 +20,38 @@ use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct CassandraCodecConfiguration {
+pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
-    pub bypass_result_processing: bool,
+    pub result_processing: bool,
 }
 
-#[async_trait]
-impl TransformsFromConfig for CassandraCodecConfiguration {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::CassandraCodecDestination(
-            CassandraCodecDestination::new(self.address.clone(), self.bypass_result_processing),
-        ))
+impl CassandraSinkSingleConfig {
+    pub async fn get_source(&self) -> Result<Transforms> {
+        Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
+            self.address.clone(),
+            self.result_processing,
+        )))
     }
 }
 
 #[derive(Debug)]
-pub struct CassandraCodecDestination {
+pub struct CassandraSinkSingle {
     address: String,
     outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec2>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
 }
 
-impl Clone for CassandraCodecDestination {
+impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
-        CassandraCodecDestination::new(self.address.clone(), self.bypass)
+        CassandraSinkSingle::new(self.address.clone(), self.bypass)
     }
 }
 
-impl CassandraCodecDestination {
-    pub fn new(address: String, bypass: bool) -> CassandraCodecDestination {
-        CassandraCodecDestination {
+impl CassandraSinkSingle {
+    pub fn new(address: String, bypass: bool) -> CassandraSinkSingle {
+        CassandraSinkSingle {
             address,
             outbound: None,
             cassandra_ks: HashMap::new(),
@@ -61,7 +60,7 @@ impl CassandraCodecDestination {
     }
 }
 
-impl CassandraCodecDestination {
+impl CassandraSinkSingle {
     async fn send_message(&mut self, messages: Messages) -> ChainResponse {
         loop {
             match self.outbound {
@@ -81,7 +80,7 @@ impl CassandraCodecDestination {
                         .connections
                         .get_mut(0)
                         .expect("No connections found");
-                    let expected_size = messages.messages.len();
+                    let expected_size = messages.len();
                     let results: Result<FuturesOrdered<Receiver<(Message, ChainResponse)>>> =
                         messages
                             .into_iter()
@@ -114,7 +113,7 @@ impl CassandraCodecDestination {
                         match timeout(Duration::from_secs(5), results.next()).await {
                             Ok(Some(prelim)) => {
                                 match prelim? {
-                                    (_, Ok(mut resp)) => responses.append(&mut resp.messages),
+                                    (_, Ok(mut resp)) => responses.append(&mut resp),
                                     (m, Err(err)) => {
                                         responses.push(Message::new_response(
                                             QueryResponse::empty_with_error(Some(
@@ -141,9 +140,7 @@ impl CassandraCodecDestination {
                         }
                     }
 
-                    return Ok(Messages {
-                        messages: responses,
-                    });
+                    return Ok(responses);
                 }
             }
         }
@@ -151,12 +148,16 @@ impl CassandraCodecDestination {
 }
 
 #[async_trait]
-impl Transform for CassandraCodecDestination {
+impl Transform for CassandraSinkSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        self.send_message(message_wrapper.message).await
+        self.send_message(message_wrapper.messages).await
     }
 
     fn get_name(&self) -> &'static str {
-        "CassandraCodecDestination"
+        "CassandraSinkSingle"
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
     }
 }

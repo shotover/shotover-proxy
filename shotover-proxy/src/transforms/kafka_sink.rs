@@ -7,51 +7,47 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use serde::Deserialize;
 
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryResponse};
+use crate::message::{Message, MessageDetails, QueryResponse};
 use crate::protocols::RawFrame;
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Clone)]
-pub struct KafkaDestination {
+pub struct KafkaSink {
     producer: FutureProducer,
     pub topic: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct KafkaConfig {
+pub struct KafkaSinkConfig {
     #[serde(rename = "config_values")]
     pub keys: HashMap<String, String>,
     pub topic: String,
 }
 
-#[async_trait]
-impl TransformsFromConfig for KafkaConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::KafkaDestination(
-            KafkaDestination::new_from_config(&self.keys, self.topic.clone()),
-        ))
+impl KafkaSinkConfig {
+    pub async fn get_source(&self) -> Result<Transforms> {
+        Ok(Transforms::KafkaSink(KafkaSink::new_from_config(
+            &self.keys,
+            self.topic.clone(),
+        )))
     }
 }
 
-impl KafkaDestination {
-    pub fn new_from_config(
-        config_map: &HashMap<String, String>,
-        topic: String,
-    ) -> KafkaDestination {
+impl KafkaSink {
+    pub fn new_from_config(config_map: &HashMap<String, String>, topic: String) -> KafkaSink {
         let mut config = ClientConfig::new();
         for (k, v) in config_map.iter() {
             config.set(k.as_str(), v.as_str());
         }
-        KafkaDestination {
+        KafkaSink {
             producer: config.create().expect("Producer creation error"),
             topic,
         }
     }
 
-    pub fn new() -> KafkaDestination {
-        KafkaDestination {
+    pub fn new() -> KafkaSink {
+        KafkaSink {
             producer: ClientConfig::new()
                 .set("bootstrap.servers", "127.0.0.1:9092")
                 .set("message.timeout.ms", "5000")
@@ -62,17 +58,21 @@ impl KafkaDestination {
     }
 }
 
-impl Default for KafkaDestination {
+impl Default for KafkaSink {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl Transform for KafkaDestination {
+impl Transform for KafkaSink {
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut responses: Vec<Message> = vec![];
-        for message in message_wrapper.message.messages {
+        let mut responses = vec![];
+        for message in message_wrapper.messages {
             match message.details {
                 MessageDetails::Bypass(_) => {}
                 MessageDetails::Query(qm) => {
@@ -98,9 +98,7 @@ impl Transform for KafkaDestination {
                 RawFrame::None,
             ))
         }
-        ChainResponse::Ok(Messages {
-            messages: responses,
-        })
+        Ok(responses)
     }
 
     fn get_name(&self) -> &'static str {

@@ -3,44 +3,16 @@ use bytes::Bytes;
 use cassandra_proto::frame::frame_result::{ColSpec, ColType};
 use cassandra_proto::types::data_serialization_types::{
     decode_ascii, decode_bigint, decode_boolean, decode_decimal, decode_double, decode_float,
-    decode_inet, decode_int, decode_smallint, decode_timestamp, decode_tinyint, decode_varchar,
-    decode_varint,
+    decode_inet, decode_int, decode_smallint, decode_tinyint, decode_varchar, decode_varint,
 };
 use cassandra_proto::types::CBytes;
-use chrono::serde::ts_nanoseconds::serialize as to_nano_ts;
-use chrono::{DateTime, TimeZone, Utc};
 use redis_protocol::resp2::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::HashMap;
-use std::iter::FromIterator;
 use std::net::IpAddr;
 
-// TODO: Clippy says this is bad due to large variation - also almost 1k in size on the stack
-// Should move the message type to just be bulk..
-#[derive(PartialEq, Debug, Clone)]
-pub struct Messages {
-    pub messages: Vec<Message>,
-}
-
-impl FromIterator<Message> for Messages {
-    fn from_iter<T: IntoIterator<Item = Message>>(iter: T) -> Self {
-        let mut messages = Messages::new();
-        for i in iter {
-            messages.messages.push(i);
-        }
-        messages
-    }
-}
-
-impl IntoIterator for Messages {
-    type Item = Message;
-    type IntoIter = std::vec::IntoIter<Message>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.messages.into_iter()
-    }
-}
+pub type Messages = Vec<Message>;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Message {
@@ -71,9 +43,15 @@ impl Message {
         }
     }
 
-    pub fn generate_message_details(&mut self, response: bool) {
+    pub fn generate_message_details_response(&mut self) {
         if let MessageDetails::Unknown = self.details {
-            self.details = self.original.build_message(response).unwrap()
+            self.details = self.original.build_message_response().unwrap()
+        }
+    }
+
+    pub fn generate_message_details_query(&mut self) {
+        if let MessageDetails::Unknown = self.details {
+            self.details = self.original.build_message_query().unwrap() // TODO: this will panic on non utf8 data
         }
     }
 
@@ -91,6 +69,10 @@ impl Message {
             false,
             raw_frame,
         )
+    }
+
+    pub fn new_raw(raw_frame: RawFrame) -> Self {
+        Self::new(MessageDetails::Unknown, false, raw_frame)
     }
 
     pub fn new_no_original(details: MessageDetails, modified: bool) -> Self {
@@ -112,77 +94,6 @@ impl Message {
                 original: self.original,
                 protocol_error : self.protocol_error,
             }
-        }
-    }
-}
-
-impl Default for Messages {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Messages {
-    pub fn new() -> Self {
-        Messages { messages: vec![] }
-    }
-
-    pub fn new_with_size_hint(capacity: usize) -> Self {
-        Messages {
-            messages: Vec::with_capacity(capacity),
-        }
-    }
-
-    pub fn new_from_message(message: Message) -> Self {
-        Messages {
-            messages: vec![message],
-        }
-    }
-
-    pub fn get_raw_original(self) -> Vec<RawFrame> {
-        self.messages.into_iter().map(|m| m.original).collect()
-    }
-
-    pub fn new_single_query(qm: QueryMessage, modified: bool, original: RawFrame) -> Self {
-        Messages {
-            messages: vec![Message::new(MessageDetails::Query(qm), modified, original)],
-        }
-    }
-
-    pub fn new_single_bypass(raw_frame: RawFrame) -> Self {
-        Messages {
-            messages: vec![Message::new(MessageDetails::Unknown, false, raw_frame)],
-        }
-    }
-
-    pub fn new_single_bypass_response(raw_frame: RawFrame, modified: bool) -> Self {
-        Messages {
-            messages: vec![Message::new(
-                MessageDetails::Response(QueryResponse::empty()),
-                modified,
-                raw_frame,
-            )],
-        }
-        .into_bypass()
-    }
-
-    pub fn new_single_response(qr: QueryResponse, modified: bool, original: RawFrame) -> Self {
-        Messages {
-            messages: vec![Message::new(
-                MessageDetails::Response(qr),
-                modified,
-                original,
-            )],
-        }
-    }
-
-    pub fn into_bypass(self) -> Self {
-        Messages {
-            messages: self
-                .messages
-                .into_iter()
-                .map(Message::into_bypass)
-                .collect(),
         }
     }
 }
@@ -387,8 +298,6 @@ pub enum Value {
     Integer(i64),
     Float(f64),
     Boolean(bool),
-    #[serde(serialize_with = "to_nano_ts")]
-    Timestamp(DateTime<Utc>),
     Inet(IpAddr),
     List(Vec<Value>),
     Rows(Vec<Vec<Value>>),
@@ -406,7 +315,7 @@ impl From<Frame> for Value {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
-            Frame::BulkString(b) => Value::Bytes(b),
+            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Null => Value::NULL,
         }
@@ -418,7 +327,7 @@ impl From<&Frame> for Value {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
             Frame::Integer(i) => Value::Integer(i),
-            Frame::BulkString(b) => Value::Bytes(b),
+            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Null => Value::NULL,
         }
@@ -430,22 +339,17 @@ impl From<Value> for Frame {
         match value {
             Value::NULL => Frame::Null,
             Value::None => unimplemented!(),
-            Value::Bytes(b) => Frame::BulkString(b),
+            Value::Bytes(b) => Frame::BulkString(b.to_vec()),
             Value::Strings(s) => Frame::SimpleString(s),
             Value::Integer(i) => Frame::Integer(i),
             Value::Float(f) => Frame::SimpleString(f.to_string()),
             Value::Boolean(b) => Frame::Integer(i64::from(b)),
-            Value::Timestamp(t) => Frame::SimpleString(t.to_rfc2822()),
             Value::Inet(i) => Frame::SimpleString(i.to_string()),
-            Value::List(l) => Frame::Array(l.iter().cloned().map(|v| v.into()).collect()),
-            Value::Rows(r) => {
-                Frame::Array(r.iter().cloned().map(|v| Value::List(v).into()).collect())
-            }
+            Value::List(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
+            Value::Rows(r) => Frame::Array(r.into_iter().map(|v| Value::List(v).into()).collect()),
             Value::NamedRows(_) => unimplemented!(),
             Value::Document(_) => unimplemented!(),
-            Value::FragmentedResponse(l) => {
-                Frame::Array(l.iter().cloned().map(|v| v.into()).collect())
-            }
+            Value::FragmentedResponse(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
         }
     }
 }
@@ -471,14 +375,12 @@ impl Value {
                 ColType::Double => Value::Float(decode_double(actual_bytes).unwrap()),
                 ColType::Float => Value::Float(decode_float(actual_bytes).unwrap() as f64),
                 ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Timestamp => {
-                    Value::Timestamp(Utc.timestamp_nanos(decode_timestamp(actual_bytes).unwrap()))
-                }
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
                 ColType::Varint => Value::Integer(decode_varint(actual_bytes).unwrap()),
                 ColType::Timeuuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Inet => Value::Inet(decode_inet(actual_bytes).unwrap()),
+                ColType::Timestamp => Value::NULL,
                 ColType::Date => Value::NULL,
                 ColType::Time => Value::NULL,
                 ColType::Smallint => Value::Integer(decode_smallint(actual_bytes).unwrap() as i64),
@@ -501,9 +403,6 @@ impl Value {
             Value::Integer(i) => Bytes::from(format!("{}", i)),
             Value::Float(f) => Bytes::from(format!("{}", f)),
             Value::Boolean(b) => Bytes::from(format!("{}", b)),
-            Value::Timestamp(t) => {
-                Bytes::from(String::from_utf8_lossy(&t.timestamp().to_le_bytes()).to_string())
-            }
             Value::Inet(i) => Bytes::from(format!("{}", i)),
             _ => unimplemented!(),
         }
@@ -522,7 +421,6 @@ impl Value {
             } else {
                 (0_u8).to_le_bytes()
             })),
-            Value::Timestamp(t) => Bytes::from(Vec::from(t.timestamp().to_le_bytes())),
             Value::Inet(i) => Bytes::from(match i {
                 IpAddr::V4(four) => Vec::from(four.octets()),
                 IpAddr::V6(six) => Vec::from(six.octets()),
@@ -542,7 +440,6 @@ impl From<Value> for cassandra_proto::types::value::Bytes {
             Value::Integer(i) => i.into(),
             Value::Float(f) => f.into(),
             Value::Boolean(b) => b.into(),
-            Value::Timestamp(t) => t.timestamp().into(),
             Value::List(l) => cassandra_proto::types::value::Bytes::from(l),
             Value::Rows(r) => cassandra_proto::types::value::Bytes::from(r),
             Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),

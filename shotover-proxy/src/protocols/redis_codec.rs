@@ -11,11 +11,17 @@ use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
 use crate::server::CodecErrorFixup;
 
+/// Redis doesn't have an explicit "Response" type as part of the protocol.
+/// So it is up to the code to know whether it is processing queries or responses.
+#[derive(Debug, Clone)]
+pub enum DecodeType {
+    Query,
+    Response,
+}
+
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
-    // Redis doesn't have an explicit "Response" type as part of the protocol
-    decode_as_response: bool,
-    batch_hint: usize,
+    decode_type: DecodeType,
     current_frames: Vec<Frame>,
     enable_metadata: bool,
 }
@@ -40,13 +46,12 @@ pub fn redis_query_type(frame: &Frame) -> QueryType {
 fn get_keys(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Frame>,
+    frames: Vec<Frame>,
 ) -> Result<()> {
-    let mut keys_storage: Vec<Value> = vec![];
-    while !commands.is_empty() {
-        if let Some(Frame::BulkString(v)) = commands.pop() {
-            let key = String::from_utf8(v.to_vec())?;
-            fields.insert(key.clone(), Value::None);
+    let mut keys_storage = vec![];
+    for frame in frames {
+        if let Frame::BulkString(v) = frame {
+            fields.insert(String::from_utf8(v.clone())?, Value::None);
             keys_storage.push(Frame::BulkString(v).into());
         }
     }
@@ -57,21 +62,17 @@ fn get_keys(
 fn get_key_multi_values(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Frame>,
+    mut frames: Vec<Frame>,
 ) -> Result<()> {
-    let mut keys_storage: Vec<Value> = vec![];
-    if let Some(Frame::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8(v.to_vec())?;
-        keys_storage.push(Frame::BulkString(v).into());
-
-        let mut values: Vec<Value> = vec![];
-        while !commands.is_empty() {
-            if let Some(frame) = commands.pop() {
-                values.push(frame.into());
-            }
-        }
-        fields.insert(key, Value::List(values));
-        keys.insert("key".to_string(), Value::List(keys_storage));
+    if let Some(Frame::BulkString(v)) = frames.pop() {
+        fields.insert(
+            String::from_utf8(v.clone())?,
+            Value::List(frames.into_iter().map(|x| x.into()).collect()),
+        );
+        keys.insert(
+            "key".to_string(),
+            Value::List(vec![Frame::BulkString(v).into()]),
+        );
     }
     Ok(())
 }
@@ -79,23 +80,22 @@ fn get_key_multi_values(
 fn get_key_map(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Frame>,
+    mut frames: Vec<Frame>,
 ) -> Result<()> {
-    let mut keys_storage: Vec<Value> = vec![];
-    if let Some(Frame::BulkString(v)) = commands.pop() {
-        let key = String::from_utf8(v.to_vec())?;
-        keys_storage.push(Frame::BulkString(v).into());
-
-        let mut values: HashMap<String, Value> = HashMap::new();
-        while !commands.is_empty() {
-            if let Some(Frame::BulkString(field)) = commands.pop() {
-                if let Some(frame) = commands.pop() {
-                    values.insert(String::from_utf8(field.to_vec())?, frame.into());
+    if let Some(Frame::BulkString(v)) = frames.pop() {
+        let mut values = HashMap::new();
+        while !frames.is_empty() {
+            if let Some(Frame::BulkString(field)) = frames.pop() {
+                if let Some(frame) = frames.pop() {
+                    values.insert(String::from_utf8(field)?, frame.into());
                 }
             }
         }
-        fields.insert(key, Value::Document(values));
-        keys.insert("key".to_string(), Value::List(keys_storage));
+        fields.insert(String::from_utf8(v.clone())?, Value::Document(values));
+        keys.insert(
+            "key".to_string(),
+            Value::List(vec![Frame::BulkString(v).into()]),
+        );
     }
     Ok(())
 }
@@ -103,15 +103,14 @@ fn get_key_map(
 fn get_key_values(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    commands: &mut Vec<Frame>,
+    mut frames: Vec<Frame>,
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
-    while !commands.is_empty() {
-        if let Some(Frame::BulkString(k)) = commands.pop() {
-            let key = String::from_utf8(k.to_vec())?;
-            keys_storage.push(Frame::BulkString(k).into());
-            if let Some(frame) = commands.pop() {
-                fields.insert(key, frame.into());
+    while !frames.is_empty() {
+        if let Some(Frame::BulkString(k)) = frames.pop() {
+            keys_storage.push(Frame::BulkString(k.clone()).into());
+            if let Some(frame) = frames.pop() {
+                fields.insert(String::from_utf8(k)?, frame.into());
             }
         }
     }
@@ -119,296 +118,304 @@ fn get_key_values(
     Ok(())
 }
 
-fn handle_redis_array(
-    commands_vec: Vec<Frame>,
-    decode_as_response: bool,
-) -> Result<MessageDetails> {
-    if !decode_as_response {
-        let mut keys_map: HashMap<String, Value> = HashMap::new();
-        let mut values_map: HashMap<String, Value> = HashMap::new();
-        let values = &mut values_map;
-        let keys = &mut keys_map;
-        let mut query_type: QueryType = QueryType::Write;
-        let mut commands_reversed: Vec<Frame> = commands_vec.iter().cloned().rev().collect_vec();
-        let query_string = commands_vec
-            .iter()
-            .filter_map(|f| f.as_str())
-            .map(|s| s.to_string())
-            .collect_vec()
-            .join(" ");
+fn handle_redis_array_query(commands_vec: Vec<Frame>) -> Result<QueryMessage> {
+    let mut primary_key = HashMap::new();
+    let mut query_values = HashMap::new();
+    let mut query_type = QueryType::Write;
+    let mut commands: Vec<Frame> = commands_vec.iter().cloned().rev().collect_vec();
+
+    // This should be a command from the server
+    // Behaviour cribbed from:
+    // https://redis.io/commands and
+    // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
+    if let Some(Frame::BulkString(command)) = commands.pop() {
+        match command.to_ascii_uppercase().as_slice() {
+            b"APPEND" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // append a value to a key
+            b"BITCOUNT" => {
+                query_type = QueryType::Read;
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // count set bits in a string
+            b"SET" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // set value in key
+            b"SETNX" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // set if not exist value in key
+            b"SETRANGE" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // overwrite part of a string at key starting at the specified offset
+            b"STRLEN" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get the length of the value stored in a key
+            b"MSET" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // set multiple keys to multiple query_values
+            b"MSETNX" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // set multiple keys to multiple query_values, only if none of the keys exist
+            b"GET" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get value in key
+            b"GETRANGE" => {
+                query_type = QueryType::Read;
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // get a substring value of a key and return its old value
+            b"MGET" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get the values of all the given keys
+            b"INCR" => {
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // increment value in key
+            b"INCRBY" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // increment the integer value of a key by the given amount
+            b"INCRBYFLOAT" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // increment the float value of a key by the given amount
+            b"DECR" => {
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // decrement the integer value of key by one
+            b"DECRBY" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // decrement the integer value of a key by the given number
+            b"DEL" => {
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // delete key
+            b"EXPIRE" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // key will be deleted in 120 seconds
+            b"TTL" => {
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // returns the number of seconds until a key is deleted
+            b"RPUSH" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // put the new value at the end of the list
+            b"RPUSHX" => {
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // append a value to a list, only if the exists
+            b"LPUSH" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // put the new value at the start of the list
+            b"LRANGE" => {
+                query_type = QueryType::Read;
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // give a subset of the list
+            b"LINDEX" => {
+                query_type = QueryType::Read;
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // get an element from a list by its index
+            b"LINSERT" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // insert an element before or after another element in a list
+            b"LLEN" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // return the current length of the list
+            b"LPOP" => {
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // remove the first element from the list and returns it
+            b"LSET" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // set the value of an element in a list by its index
+            b"LTRIM" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // trim a list to the specified range
+            b"RPOP" => {
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // remove the last element from the list and returns it
+            b"SADD" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // add the given value to the set
+            b"SCARD" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get the number of members in a set
+            b"SREM" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // remove the given value from the set
+            b"SISMEMBER" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // test if the given value is in the set.
+            b"SMEMBERS" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // return a list of all the members of this set
+            b"SUNION" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // combine two or more sets and returns the list of all elements
+            b"SINTER" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // intersect multiple sets
+            b"SMOVE" => {
+                query_type = QueryType::Write;
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // move a member from one set to another
+            b"SPOP" => {
+                query_type = QueryType::Write;
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // remove and return one or multiple random members from a set
+            b"ZADD" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // add one or more members to a sorted set, or update its score if it already exists
+            b"ZCARD" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get the number of members in a sorted set
+            b"ZCOUNT" => {
+                query_type = QueryType::Read;
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // count the members in a sorted set with scores within the given values
+            b"ZINCRBY" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // increment the score of a member in a sorted set
+            b"ZRANGE" => {
+                query_type = QueryType::Read;
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // returns a subset of the sorted set
+            b"ZRANK" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // determine the index of a member in a sorted set
+            b"ZREM" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // remove one or more members from a sorted set
+            b"ZREMRANGEBYRANK" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // remove all members in a sorted set within the given indexes
+            b"ZREMRANGEBYSCORE" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // remove all members in a sorted set, by index, with scores ordered from high to low
+            b"ZSCORE" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get the score associated with the given mmeber in a sorted set
+            b"ZRANGEBYSCORE" => {
+                query_type = QueryType::Read;
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // return a range of members in a sorted set, by score
+            b"HGET" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get the value of a hash field
+            b"HGETALL" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get all the fields and values in a hash
+            b"HSET" => {
+                get_key_map(&mut query_values, &mut primary_key, commands)?;
+            } // set the string value of a hash field
+            b"HSETNX" => {
+                get_key_map(&mut query_values, &mut primary_key, commands)?;
+            } // set the string value of a hash field, only if the field does not exists
+            b"HMSET" => {
+                get_key_map(&mut query_values, &mut primary_key, commands)?;
+            } // set multiple fields at once
+            b"HINCRBY" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // increment value in hash by X
+            b"HDEL" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // delete one or more hash fields
+            b"HEXISTS" => {
+                query_type = QueryType::Read;
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // determine if a hash field exists
+            b"HKEYS" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get all the fields in a hash
+            b"HLEN" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get all the fields in a hash
+            b"HSTRLEN" => {
+                query_type = QueryType::Read;
+                get_key_values(&mut query_values, &mut primary_key, commands)?;
+            } // get the length of the value of a hash field
+            b"HVALS" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // get all the values in a hash
+            b"PFADD" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // add the specified elements to the specified HyperLogLog
+            b"PFCOUNT" => {
+                query_type = QueryType::Read;
+                get_keys(&mut query_values, &mut primary_key, commands)?;
+            } // return the approximated cardinality of the set(s) observed by the HyperLogLog at key's)
+            b"PFMERGE" => {
+                get_key_multi_values(&mut query_values, &mut primary_key, commands)?;
+            } // merge N HyperLogLogs into a single one
+            _ => {}
+        }
+
+        let query_string = commands_vec.iter().filter_map(|f| f.as_str()).join(" ");
 
         let ast = ASTHolder::Commands(Value::List(
-            commands_vec.iter().cloned().map(|f| f.into()).collect_vec(),
+            commands_vec.into_iter().map(|f| f.into()).collect(),
         ));
 
-        let commands = &mut commands_reversed;
-
-        // This should be a command from the server
-        // Behaviour cribbed from:
-        // https://redis.io/commands and
-        // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
-        if let Some(Frame::BulkString(command)) = commands.pop() {
-            match command.to_ascii_uppercase().as_slice() {
-                b"APPEND" => {
-                    get_key_values(values, keys, commands)?;
-                } // append a value to a key
-                b"BITCOUNT" => {
-                    query_type = QueryType::Read;
-                    get_key_values(values, keys, commands)?;
-                } // count set bits in a string
-                b"SET" => {
-                    get_key_values(values, keys, commands)?;
-                } // set value in key
-                b"SETNX" => {
-                    get_key_values(values, keys, commands)?;
-                } // set if not exist value in key
-                b"SETRANGE" => {
-                    get_key_values(values, keys, commands)?;
-                } // overwrite part of a string at key starting at the specified offset
-                b"STRLEN" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get the length of the value stored in a key
-                b"MSET" => {
-                    get_key_values(values, keys, commands)?;
-                } // set multiple keys to multiple values
-                b"MSETNX" => {
-                    get_key_values(values, keys, commands)?;
-                } // set multiple keys to multiple values, only if none of the keys exist
-                b"GET" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get value in key
-                b"GETRANGE" => {
-                    query_type = QueryType::Read;
-                    get_key_values(values, keys, commands)?;
-                } // get a substring value of a key and return its old value
-                b"MGET" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get the values of all the given keys
-                b"INCR" => {
-                    get_keys(values, keys, commands)?;
-                } // increment value in key
-                b"INCRBY" => {
-                    get_key_values(values, keys, commands)?;
-                } // increment the integer value of a key by the given amount
-                b"INCRBYFLOAT" => {
-                    get_key_values(values, keys, commands)?;
-                } // increment the float value of a key by the given amount
-                b"DECR" => {
-                    get_keys(values, keys, commands)?;
-                } // decrement the integer value of key by one
-                b"DECRBY" => {
-                    get_key_values(values, keys, commands)?;
-                } // decrement the integer value of a key by the given number
-                b"DEL" => {
-                    get_keys(values, keys, commands)?;
-                } // delete key
-                b"EXPIRE" => {
-                    get_key_values(values, keys, commands)?;
-                } // key will be deleted in 120 seconds
-                b"TTL" => {
-                    get_keys(values, keys, commands)?;
-                } // returns the number of seconds until a key is deleted
-                b"RPUSH" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // put the new value at the end of the list
-                b"RPUSHX" => {
-                    get_key_values(values, keys, commands)?;
-                } // append a value to a list, only if the exists
-                b"LPUSH" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // put the new value at the start of the list
-                b"LRANGE" => {
-                    query_type = QueryType::Read;
-                    get_key_multi_values(values, keys, commands)?;
-                } // give a subset of the list
-                b"LINDEX" => {
-                    query_type = QueryType::Read;
-                    get_key_multi_values(values, keys, commands)?;
-                } // get an element from a list by its index
-                b"LINSERT" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // insert an element before or after another element in a list
-                b"LLEN" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // return the current length of the list
-                b"LPOP" => {
-                    get_keys(values, keys, commands)?;
-                } // remove the first element from the list and returns it
-                b"LSET" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // set the value of an element in a list by its index
-                b"LTRIM" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // trim a list to the specified range
-                b"RPOP" => {
-                    get_keys(values, keys, commands)?;
-                } // remove the last element from the list and returns it
-                b"SADD" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // add the given value to the set
-                b"SCARD" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get the number of members in a set
-                b"SREM" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // remove the given value from the set
-                b"SISMEMBER" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // test if the given value is in the set.
-                b"SMEMBERS" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // return a list of all the members of this set
-                b"SUNION" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // combine two or more sets and returns the list of all elements
-                b"SINTER" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // intersect multiple sets
-                b"SMOVE" => {
-                    query_type = QueryType::Write;
-                    get_key_values(values, keys, commands)?;
-                } // move a member from one set to another
-                b"SPOP" => {
-                    query_type = QueryType::Write;
-                    get_key_values(values, keys, commands)?;
-                } // remove and return one or multiple random members from a set
-                b"ZADD" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // add one or more members to a sorted set, or update its score if it already exists
-                b"ZCARD" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get the number of members in a sorted set
-                b"ZCOUNT" => {
-                    query_type = QueryType::Read;
-                    get_key_multi_values(values, keys, commands)?;
-                } // count the members in a sorted set with scores within the given values
-                b"ZINCRBY" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // increment the score of a member in a sorted set
-                b"ZRANGE" => {
-                    query_type = QueryType::Read;
-                    get_key_multi_values(values, keys, commands)?;
-                } // returns a subset of the sorted set
-                b"ZRANK" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // determine the index of a member in a sorted set
-                b"ZREM" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // remove one or more members from a sorted set
-                b"ZREMRANGEBYRANK" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // remove all members in a sorted set within the given indexes
-                b"ZREMRANGEBYSCORE" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // remove all members in a sorted set, by index, with scores ordered from high to low
-                b"ZSCORE" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get the score associated with the given mmeber in a sorted set
-                b"ZRANGEBYSCORE" => {
-                    query_type = QueryType::Read;
-                    get_key_multi_values(values, keys, commands)?;
-                } // return a range of members in a sorted set, by score
-                b"HGET" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get the value of a hash field
-                b"HGETALL" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get all the fields and values in a hash
-                b"HSET" => {
-                    get_key_map(values, keys, commands)?;
-                } // set the string value of a hash field
-                b"HSETNX" => {
-                    get_key_map(values, keys, commands)?;
-                } // set the string value of a hash field, only if the field does not exists
-                b"HMSET" => {
-                    get_key_map(values, keys, commands)?;
-                } // set multiple fields at once
-                b"HINCRBY" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // increment value in hash by X
-                b"HDEL" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // delete one or more hash fields
-                b"HEXISTS" => {
-                    query_type = QueryType::Read;
-                    get_key_values(values, keys, commands)?;
-                } // determine if a hash field exists
-                b"HKEYS" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get all the fields in a hash
-                b"HLEN" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get all the fields in a hash
-                b"HSTRLEN" => {
-                    query_type = QueryType::Read;
-                    get_key_values(values, keys, commands)?;
-                } // get the length of the value of a hash field
-                b"HVALS" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // get all the values in a hash
-                b"PFADD" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // add the specified elements to the specified HyperLogLog
-                b"PFCOUNT" => {
-                    query_type = QueryType::Read;
-                    get_keys(values, keys, commands)?;
-                } // return the approximated cardinality of the set(s) observed by the HyperLogLog at key's)
-                b"PFMERGE" => {
-                    get_key_multi_values(values, keys, commands)?;
-                } // merge N HyperLogLogs into a single one
-                _ => {}
-            }
-            Ok(MessageDetails::Query(QueryMessage {
-                query_string,
-                namespace: vec![],
-                primary_key: keys_map,
-                query_values: Some(values_map),
-                projection: None,
-                query_type,
-                ast: Some(ast),
-            }))
-        } else {
-            Ok(MessageDetails::Bypass(Box::new(MessageDetails::Unknown)))
-        }
+        Ok(QueryMessage {
+            query_string,
+            namespace: vec![],
+            primary_key,
+            query_values: Some(query_values),
+            projection: None,
+            query_type,
+            ast: Some(ast),
+        })
     } else {
-        Ok(MessageDetails::Response(QueryResponse {
-            matching_query: None,
-            result: Some(Value::List(
-                commands_vec.iter().map(|f| f.clone().into()).collect_vec(),
-            )),
-            error: None,
-            response_meta: None,
-        }))
+        Ok(QueryMessage::empty())
     }
 }
 
-fn handle_redis_string(string: String, decode_as_response: bool) -> Result<MessageDetails> {
-    if decode_as_response {
-        Ok(MessageDetails::Response(QueryResponse {
+pub fn process_redis_frame_response(frame: &Frame) -> Result<QueryResponse> {
+    match frame.clone() {
+        Frame::SimpleString(string) => Ok(QueryResponse {
             matching_query: None,
             result: Some(Value::Strings(string)),
             error: None,
             response_meta: None,
-        }))
-    } else {
-        Ok(MessageDetails::Query(QueryMessage {
+        }),
+        Frame::BulkString(bulkstring) => Ok(QueryResponse {
+            matching_query: None,
+            result: Some(Value::Bytes(Bytes::from(bulkstring))),
+            error: None,
+            response_meta: None,
+        }),
+        Frame::Array(frames) => Ok(QueryResponse {
+            matching_query: None,
+            result: Some(Value::List(frames.into_iter().map(|f| f.into()).collect())),
+            error: None,
+            response_meta: None,
+        }),
+        Frame::Integer(integer) => Ok(QueryResponse {
+            matching_query: None,
+            result: Some(Value::Integer(integer)),
+            error: None,
+            response_meta: None,
+        }),
+        Frame::Error(error) => Ok(QueryResponse {
+            matching_query: None,
+            result: None,
+            error: Some(Value::Strings(error)),
+            response_meta: None,
+        }),
+        Frame::Null => Ok(QueryResponse::empty()),
+    }
+}
+
+pub fn process_redis_frame_query(frame: &Frame) -> Result<QueryMessage> {
+    match frame.clone() {
+        Frame::SimpleString(string) => Ok(QueryMessage {
             query_string: string,
             namespace: vec![],
             primary_key: Default::default(),
@@ -416,20 +423,8 @@ fn handle_redis_string(string: String, decode_as_response: bool) -> Result<Messa
             projection: None,
             query_type: QueryType::ReadWrite,
             ast: None,
-        }))
-    }
-}
-
-fn handle_redis_bulkstring(bulkstring: Bytes, decode_as_response: bool) -> Result<MessageDetails> {
-    if decode_as_response {
-        Ok(MessageDetails::Response(QueryResponse {
-            matching_query: None,
-            result: Some(Value::Bytes(bulkstring)),
-            error: None,
-            response_meta: None,
-        }))
-    } else {
-        Ok(MessageDetails::Query(QueryMessage {
+        }),
+        Frame::BulkString(bulkstring) => Ok(QueryMessage {
             query_string: String::from_utf8_lossy(bulkstring.as_ref()).to_string(),
             namespace: vec![],
             primary_key: Default::default(),
@@ -437,20 +432,9 @@ fn handle_redis_bulkstring(bulkstring: Bytes, decode_as_response: bool) -> Resul
             projection: None,
             query_type: QueryType::ReadWrite,
             ast: None,
-        }))
-    }
-}
-
-fn handle_redis_integer(integer: i64, decode_as_response: bool) -> Result<MessageDetails> {
-    if decode_as_response {
-        Ok(MessageDetails::Response(QueryResponse {
-            matching_query: None,
-            result: Some(Value::Integer(integer)),
-            error: None,
-            response_meta: None,
-        }))
-    } else {
-        Ok(MessageDetails::Query(QueryMessage {
+        }),
+        Frame::Array(frames) => handle_redis_array_query(frames),
+        Frame::Integer(integer) => Ok(QueryMessage {
             query_string: format!("{}", integer),
             namespace: vec![],
             primary_key: Default::default(),
@@ -458,20 +442,8 @@ fn handle_redis_integer(integer: i64, decode_as_response: bool) -> Result<Messag
             projection: None,
             query_type: QueryType::ReadWrite,
             ast: None,
-        }))
-    }
-}
-
-fn handle_redis_error(error: String, decode_as_response: bool) -> Result<MessageDetails> {
-    if decode_as_response {
-        Ok(MessageDetails::Response(QueryResponse {
-            matching_query: None,
-            result: None,
-            error: Some(Value::Strings(error)),
-            response_meta: None,
-        }))
-    } else {
-        Ok(MessageDetails::Query(QueryMessage {
+        }),
+        Frame::Error(error) => Ok(QueryMessage {
             query_string: error,
             namespace: vec![],
             primary_key: Default::default(),
@@ -479,24 +451,8 @@ fn handle_redis_error(error: String, decode_as_response: bool) -> Result<Message
             projection: None,
             query_type: QueryType::ReadWrite,
             ast: None,
-        }))
-    }
-}
-
-pub fn process_redis_frame(frame: &Frame, decode_as_response: bool) -> Result<MessageDetails> {
-    match frame.clone() {
-        Frame::SimpleString(s) => handle_redis_string(s, decode_as_response),
-        Frame::BulkString(bs) => handle_redis_bulkstring(bs, decode_as_response),
-        Frame::Array(frames) => handle_redis_array(frames, decode_as_response),
-        Frame::Integer(i) => handle_redis_integer(i, decode_as_response),
-        Frame::Error(s) => handle_redis_error(s, decode_as_response),
-        Frame::Null => {
-            if decode_as_response {
-                Ok(MessageDetails::Response(QueryResponse::empty()))
-            } else {
-                Ok(MessageDetails::Query(QueryMessage::empty()))
-            }
-        }
+        }),
+        Frame::Null => Ok(QueryMessage::empty()),
     }
 }
 
@@ -536,27 +492,29 @@ impl RedisCodec {
         Ok(frame)
     }
 
-    pub fn new(decode_as_response: bool, batch_hint: usize) -> RedisCodec {
+    pub fn new(decode_type: DecodeType) -> RedisCodec {
         RedisCodec {
-            decode_as_response,
-            batch_hint,
+            decode_type,
             current_frames: vec![],
             enable_metadata: false,
         }
     }
 
-    pub fn get_batch_hint(&self) -> usize {
-        self.batch_hint
-    }
-
     pub fn process_redis_bulk(&self, frames: Vec<Frame>) -> Result<Messages> {
         trace!("processing bulk response {:?}", frames);
-        let result: Result<Messages> = frames
+        frames
             .into_iter()
             .map(|frame| {
                 if self.enable_metadata {
                     Ok(Message {
-                        details: process_redis_frame(&frame, self.decode_as_response)?,
+                        details: match self.decode_type {
+                            DecodeType::Response => {
+                                MessageDetails::Response(process_redis_frame_response(&frame)?)
+                            }
+                            DecodeType::Query => {
+                                MessageDetails::Query(process_redis_frame_query(&frame)?)
+                            }
+                        },
                         modified: false,
                         original: RawFrame::Redis(frame),
                         protocol_error : 0,
@@ -570,32 +528,31 @@ impl RedisCodec {
                     })
                 }
             })
-            .collect();
-        result
+            .collect()
     }
 
-    pub fn build_redis_response_frame(resp: QueryResponse) -> Frame {
-        if let Some(result) = &resp.result {
-            return result.clone().into();
+    fn build_redis_response_frame(resp: QueryResponse) -> Frame {
+        if let Some(result) = resp.result {
+            return result.into();
         }
-        if let Some(Value::Strings(s)) = &resp.error {
-            return Frame::Error(s.clone());
+        if let Some(Value::Strings(s)) = resp.error {
+            return Frame::Error(s);
         }
 
         debug!("{:?}", resp);
         Frame::SimpleString("OK".to_string())
     }
 
-    pub fn build_redis_query_frame(query: QueryMessage) -> Frame {
-        if let Some(ASTHolder::Commands(Value::List(ast))) = &query.ast {
-            Frame::Array(ast.iter().cloned().map(|v| v.into()).collect())
-        } else {
-            Frame::SimpleString(query.query_string)
+    fn build_redis_query_frame(query: QueryMessage) -> Frame {
+        match query.ast {
+            Some(ASTHolder::Commands(Value::List(ast))) => {
+                Frame::Array(ast.into_iter().map(|v| v.into()).collect())
+            }
+            _ => Frame::SimpleString(query.query_string),
         }
     }
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<Frame>>> {
-        // TODO: get_batch_hint may be a premature optimisation
         while src.remaining() != 0 {
             trace!("remaining {}", src.remaining());
 
@@ -622,14 +579,11 @@ impl RedisCodec {
             self.current_frames,
             src.remaining()
         );
-        let mut return_buf: Vec<Frame> = vec![];
-        std::mem::swap(&mut self.current_frames, &mut return_buf);
 
-        if return_buf.is_empty() {
+        if self.current_frames.is_empty() {
             Ok(None)
         } else {
-            trace!("Batch size {:?}", return_buf.len());
-            Ok(Some(return_buf))
+            Ok(Some(std::mem::take(&mut self.current_frames)))
         }
     }
 
@@ -672,7 +626,7 @@ impl Encoder<Messages> for RedisCodec {
 
 #[cfg(test)]
 mod redis_tests {
-    use crate::protocols::redis_codec::RedisCodec;
+    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use bytes::BytesMut;
     use hex_literal::hex;
     use tokio_util::codec::{Decoder, Encoder};
@@ -712,55 +666,55 @@ mod redis_tests {
 
     #[test]
     fn test_ok_codec() {
-        let mut codec = RedisCodec::new(true, 1);
+        let mut codec = RedisCodec::new(DecodeType::Response);
         test_frame(&mut codec, &OK_MESSAGE);
     }
 
     #[test]
     fn test_set_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &SET_MESSAGE);
     }
 
     #[test]
     fn test_get_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &GET_MESSAGE);
     }
 
     #[test]
     fn test_inc_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &INC_MESSAGE);
     }
 
     #[test]
     fn test_lpush_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &LPUSH_MESSAGE);
     }
 
     #[test]
     fn test_rpush_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &RPUSH_MESSAGE);
     }
 
     #[test]
     fn test_lpop_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &LPOP_MESSAGE);
     }
 
     #[test]
     fn test_sadd_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &SADD_MESSAGE);
     }
 
     #[test]
     fn test_hset_codec() {
-        let mut codec = RedisCodec::new(false, 1);
+        let mut codec = RedisCodec::new(DecodeType::Query);
         test_frame(&mut codec, &HSET_MESSAGE);
     }
 }

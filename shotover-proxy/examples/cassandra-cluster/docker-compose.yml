@@ -20,6 +20,10 @@ services:
       CASSANDRA_RACK: West
       CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
       CASSANDRA_NUM_TOKENS: 128
+      MAX_HEAP_SIZE: "128M"
+      MIN_HEAP_SIZE: "128M"
+      HEAP_NEWSIZE: "24M"
+
   cassandra-two:
     image: library/cassandra:3.11.10
     networks:

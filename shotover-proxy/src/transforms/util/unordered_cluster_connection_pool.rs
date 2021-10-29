@@ -2,10 +2,7 @@ use crate::protocols::RawFrame;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::transforms::util::{Request, Response};
-use crate::{
-    message::{Message, Messages},
-    server::Codec,
-};
+use crate::{message::Message, server::Codec};
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use halfbrown::HashMap;
@@ -98,12 +95,9 @@ async fn tx_process<C: CodecWriteHalf>(
     return_tx: UnboundedSender<Request>,
     codec: C,
 ) -> Result<()> {
-    let codec = codec.clone();
     let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
-        let ret = Ok(Messages {
-            messages: vec![x.messages.clone()],
-        });
+        let ret = Ok(vec![x.messages.clone()]);
         return_tx.send(x)?;
         ret
     });
@@ -116,7 +110,6 @@ async fn rx_process<C: CodecReadHalf>(
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,
 ) -> Result<()> {
-    let codec = codec.clone();
     let mut in_r = FramedRead::new(read, codec);
     let mut return_channel_map: HashMap<u16, (tokio::sync::oneshot::Sender<Response>, Message)> =
         HashMap::new();
@@ -142,7 +135,7 @@ async fn rx_process<C: CodecReadHalf>(
                                         return_message_map.insert(frame.stream, m);
                                     },
                                     Some((ret, orig)) => {
-                                        ret.send((orig, Ok(Messages { messages: vec![m] }))).map_err(|_| anyhow!("couldn't send message"))?;
+                                        ret.send((orig, Ok(vec![m] ))).map_err(|_| anyhow!("couldn't send message"))?;
                                     }
                                 };
                             }
@@ -168,7 +161,7 @@ async fn rx_process<C: CodecReadHalf>(
                             return_channel_map.insert(id, (chan, orig));
                         }
                         Some(m) => {
-                            chan.send((orig, Ok(Messages { messages: vec![m] })))
+                            chan.send((orig, Ok(vec![m])))
                                 .map_err(|_| anyhow!("couldn't send message"))?;
                         }
                     };

@@ -3,14 +3,16 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
-use redis::{AsyncCommands, ErrorKind, RedisError, Value};
+use redis::cluster::ClusterConnection;
+use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
+use std::thread::sleep;
+use std::time::Duration;
 use tracing::trace;
 
+use crate::helpers::ShotoverManager;
 use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
-
-use crate::helpers::ShotoverManager;
 
 async fn test_args(connection: &mut Connection) {
     redis::cmd("SET")
@@ -912,33 +914,156 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
     }
 }
 
-async fn test_cluster_slots_reports_slot(connection: &mut Connection, port: u16) {
+async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16) {
     let res: Value = redis::cmd("CLUSTER")
         .arg("SLOTS")
         .query_async(connection)
         .await
         .unwrap();
 
+    assert_cluster_ports_rewrite_slots(res, port);
+
+    let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
+        .cmd("SET")
+        .arg("key1")
+        .arg(42)
+        .cmd("CLUSTER")
+        .arg("SLOTS")
+        .cmd("GET")
+        .arg("key1")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert!(matches!(r1, Value::Okay));
+    assert_cluster_ports_rewrite_slots(r2, port);
+    assert_eq!(r3, Value::Data(b"42".to_vec()));
+}
+
+fn assert_cluster_ports_rewrite_slots(res: Value, new_port: u16) {
     let mut assertion_run = false;
     if let Value::Bulk(bulks) = &res {
         for bulk in bulks {
             if let Value::Bulk(b) = bulk {
                 for tuple in b.iter().enumerate() {
                     if let (2..=3, Value::Bulk(val)) = tuple {
-                        assert_eq!(val[1], Value::Int(port.into()));
+                        assert_eq!(val[1], Value::Int(new_port.into()));
                         assertion_run = true;
                     }
                 }
             }
         }
     }
-
     if !assertion_run {
         panic!(
             "CLUSTER SLOTS result did not contain a port, result was: {:?}",
             res
         );
     }
+}
+
+async fn get_master_id(connection: &mut Connection) -> String {
+    let res: Value = redis::cmd("CLUSTER")
+        .arg("NODES")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    if let Value::Data(data) = &res {
+        let read_cursor = std::io::Cursor::new(data);
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(b' ')
+            .has_headers(false)
+            .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+            .from_reader(read_cursor);
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            let is_master = record[2]
+                .split(",")
+                .collect::<Vec<&str>>()
+                .contains(&"master");
+
+            if is_master {
+                return record[0].to_string();
+            }
+        }
+    }
+
+    panic!("Could not find master node in cluster");
+}
+
+async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
+    let mut res = redis::cmd("CLUSTER")
+        .arg("NODES")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert_cluster_ports_rewrite_nodes(res, new_port);
+
+    // Get an id to use for cluster replicas test
+    let id = get_master_id(connection).await;
+
+    res = redis::cmd("CLUSTER")
+        .arg("REPLICAS")
+        .arg(id)
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert_cluster_ports_rewrite_nodes(res, new_port);
+
+    let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
+        .cmd("SET")
+        .arg("key1")
+        .arg(42)
+        .cmd("CLUSTER")
+        .arg("NODES")
+        .cmd("GET")
+        .arg("key1")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert!(matches!(r1, Value::Okay));
+    assert_cluster_ports_rewrite_nodes(r2, new_port);
+    assert_eq!(r3, Value::Data(b"42".to_vec()));
+}
+
+fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
+    let mut assertion_run = false;
+
+    let data = if let Value::Bulk(data) = &res {
+        if let Value::Data(item) = &data[0] {
+            item.to_vec()
+        } else {
+            panic!("Invalid response from Redis")
+        }
+    } else if let Value::Data(data) = &res {
+        data.to_vec()
+    } else {
+        panic!("Invalid response from Redis");
+    };
+
+    let read_cursor = std::io::Cursor::new(data);
+
+    let mut reader = csv::ReaderBuilder::new()
+        .delimiter(b' ')
+        .has_headers(false)
+        .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+        .from_reader(read_cursor);
+
+    for result in reader.records() {
+        let record = result.unwrap();
+
+        let port: Vec<&str> = record[1].split(":").collect();
+        assert_eq!(port[1], format!("{}@16379", new_port));
+        assertion_run = true;
+    }
+
+    assert!(assertion_run);
 }
 
 async fn test_cluster_pipe(connection: &mut Connection) {
@@ -995,6 +1120,55 @@ async fn test_cluster_pipe(connection: &mut Connection) {
     }
 }
 
+async fn test_cluster_replication(
+    connection: &mut Connection,
+    replication_connection: &mut ClusterConnection,
+) {
+    // According to the coalesce config the writes are only flushed to the replication cluster after 2000 total writes pass through shotover
+    for _ in 0..1000 {
+        // 2000 writes havent occured yet so this must be true
+        assert!(replication_connection.get::<&str, i32>("foo").is_err());
+        assert!(replication_connection.get::<&str, i32>("bar").is_err());
+
+        redis::cmd("SET")
+            .arg("foo")
+            .arg(42)
+            .query_async::<_, ()>(connection)
+            .await
+            .unwrap();
+        assert_eq!(
+            redis::cmd("GET").arg("foo").query_async(connection).await,
+            Ok(42)
+        );
+
+        redis::cmd("SET")
+            .arg("bar")
+            .arg("blah")
+            .query_async::<_, ()>(connection)
+            .await
+            .unwrap();
+        assert_eq!(
+            redis::cmd("GET").arg("bar").query_async(connection).await,
+            Ok(b"blah".to_vec())
+        );
+    }
+
+    // 2000 writes have now occured, so this should be true
+    // although we do need to account for the race condition of shotover returning a response before flushing to the replication cluster
+    let mut value1 = Ok(1); // These dummy values are fine because they get overwritten on the first loop
+    let mut value2 = Ok(b"".to_vec());
+    for _ in 0..100 {
+        sleep(Duration::from_millis(100));
+        value1 = replication_connection.get("foo");
+        value2 = replication_connection.get("bar");
+        if value1.is_ok() && value2.is_ok() {
+            break;
+        }
+    }
+    assert_eq!(value1, Ok(42));
+    assert_eq!(value2, Ok(b"blah".to_vec()));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_pass_through() {
@@ -1018,12 +1192,12 @@ async fn test_cluster_tls() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_slots_reports_slot(&mut connection, 6379).await;
+    test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_source_tls_and_destination_tls() {
+async fn test_source_tls_and_single_tls() {
     let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
         .wait_for("Ready to accept connections");
     let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
@@ -1043,17 +1217,20 @@ async fn test_source_tls_and_destination_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_rewrite_cluster_slots() {
-    let _compose = DockerCompose::new("examples/redis-cluster-rewrite/docker-compose.yml")
+async fn test_cluster_ports_rewrite() {
+    let _compose = DockerCompose::new("examples/redis-cluster-ports-rewrite/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-rewrite/topology.yaml");
+        ShotoverManager::from_topology_file("examples/redis-cluster-ports-rewrite/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_cluster_safe(&mut connection).await;
-    test_cluster_slots_reports_slot(&mut connection, 2004).await;
+
+    test_cluster_ports_rewrite_slots(&mut connection, 2004).await;
+
+    test_cluster_ports_rewrite_nodes(&mut connection, 2004).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1093,7 +1270,33 @@ async fn test_cluster_redis() {
     let connection = &mut connection;
 
     run_all_cluster_safe(connection).await;
-    test_cluster_slots_reports_slot(connection, 6379).await;
+    test_cluster_ports_rewrite_slots(connection, 6379).await;
+    test_cluster_ports_rewrite_nodes(connection, 6379).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cluster_dr_redis() {
+    let _compose = DockerCompose::new("examples/redis-cluster-dr/docker-compose.yml")
+        .wait_for_n("Cluster state changed", 12);
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
+
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+    let nodes = vec![
+        "redis://127.0.0.1:2120/",
+        "redis://127.0.0.1:2121/",
+        "redis://127.0.0.1:2122/",
+        "redis://127.0.0.1:2123/",
+        "redis://127.0.0.1:2124/",
+        "redis://127.0.0.1:2125/",
+    ];
+    let client = redis::cluster::ClusterClient::open(nodes).unwrap();
+    let mut replication_connection = client.get_connection().unwrap();
+
+    test_cluster_replication(&mut connection, &mut replication_connection).await;
+    run_all_cluster_safe(&mut connection).await;
 }
 
 async fn run_all_active_safe(connection: &mut Connection) {

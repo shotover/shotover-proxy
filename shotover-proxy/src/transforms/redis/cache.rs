@@ -10,7 +10,7 @@ use crate::message::{ASTHolder, MessageDetails, Messages, QueryType, Value as Sh
 use crate::protocols::RawFrame;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use cassandra_proto::frame::{Frame, Opcode};
@@ -36,16 +36,12 @@ pub struct PrimaryKey {
 impl PrimaryKey {
     #[cfg(test)]
     fn get_compound_key(&self) -> Vec<String> {
-        let mut compound = Vec::new();
-        compound.extend(self.partition_key.clone());
-        compound.extend(self.range_key.clone());
-        compound
+        [self.partition_key.as_slice(), self.range_key.as_slice()].concat()
     }
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl RedisConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::RedisCache(SimpleRedisCache {
             cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, topics)
                 .await?,
@@ -62,7 +58,7 @@ pub struct SimpleRedisCache {
 
 impl SimpleRedisCache {
     async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
-        for message in &mut messages.messages {
+        for message in &mut messages {
             match &mut message.details {
                 MessageDetails::Query(ref mut qm) => {
                     let table_lookup = qm.namespace.join(".");
@@ -71,14 +67,14 @@ impl SimpleRedisCache {
                         .get(&table_lookup)
                         .ok_or_else(|| anyhow!("not a caching table"))?;
 
-                    let ast_ref = qm
+                    let ast = qm
                         .ast
                         .as_ref()
                         .ok_or_else(|| anyhow!("No AST to convert query to cache query"))?
                         .clone();
 
                     qm.ast.replace(build_redis_ast_from_sql(
-                        ast_ref,
+                        ast,
                         &qm.primary_key,
                         table,
                         &qm.query_values,
@@ -147,8 +143,7 @@ fn build_redis_commands(
         Expr::BinaryOp { left, op, right } => {
             // first check if this is a related to PK
             if let Expr::Identifier(i) = left.borrow() {
-                let id_string = i.to_string();
-                if pks.iter().any(|v| v == &id_string) {
+                if pks.iter().any(|v| v == i) {
                     //Ignore this as we build the pk constraint elsewhere
                     return Ok(());
                 }
@@ -167,7 +162,7 @@ fn build_redis_commands(
                         *last_byte += 1;
 
                         append_seperator(min);
-                        min.append(&mut minrv);
+                        min.extend(minrv.iter());
                     }
                 }
                 BinaryOperator::Lt => {
@@ -182,41 +177,41 @@ fn build_redis_commands(
                         *last_byte -= 1;
 
                         append_seperator(max);
-                        max.append(&mut maxrv);
+                        max.extend(maxrv.iter());
                     }
                 }
                 BinaryOperator::GtEq => {
                     if let Expr::Value(v) = right.borrow() {
                         let vh = ValueHelper(v.clone());
 
-                        let mut minrv = Vec::from(vh.as_bytes());
+                        let minrv = Vec::from(vh.as_bytes());
 
                         append_seperator(min);
-                        min.append(&mut minrv);
+                        min.extend(minrv.iter());
                     }
                 }
                 BinaryOperator::LtEq => {
                     if let Expr::Value(v) = right.borrow() {
                         let vh = ValueHelper(v.clone());
 
-                        let mut maxrv = Vec::from(vh.as_bytes());
+                        let maxrv = Vec::from(vh.as_bytes());
 
                         append_seperator(max);
-                        max.append(&mut maxrv);
+                        max.extend(maxrv.iter());
                     }
                 }
                 BinaryOperator::Eq => {
                     if let Expr::Value(v) = right.borrow() {
                         let vh = ValueHelper(v.clone());
 
-                        let mut minrv = Vec::from(vh.as_bytes());
-                        let mut maxrv = minrv.clone();
+                        let minrv = vh.as_bytes();
+                        let maxrv = minrv;
 
                         append_seperator(min);
-                        min.append(&mut minrv);
+                        min.extend(minrv.iter());
 
                         append_seperator(max);
-                        max.append(&mut maxrv);
+                        max.extend(maxrv.iter());
                     }
                 }
                 BinaryOperator::And => {
@@ -325,10 +320,25 @@ fn build_redis_ast_from_sql(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
+    fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .cache_chain
+            .validate()
+            .iter()
+            .map(|x| format!("  {}", x))
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
+    }
+
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut updates = 0_i32;
         {
-            for m in &mut message_wrapper.message.messages {
+            for m in &mut message_wrapper.messages {
                 if let RawFrame::Cassandra(Frame {
                     version: _,
                     flags: _,
@@ -339,7 +349,7 @@ impl Transform for SimpleRedisCache {
                     warnings: _,
                 }) = &m.original
                 {
-                    m.generate_message_details(false);
+                    m.generate_message_details_query();
                     if let MessageDetails::Query(qm) = &m.details {
                         if qm.query_type == QueryType::Write {
                             updates += 1;
@@ -351,7 +361,7 @@ impl Transform for SimpleRedisCache {
 
         if updates == 0 {
             match self
-                .get_or_update_from_cache(message_wrapper.message.clone())
+                .get_or_update_from_cache(message_wrapper.messages.clone())
                 .await
             {
                 Ok(cr) => Ok(cr),
@@ -359,7 +369,7 @@ impl Transform for SimpleRedisCache {
             }
         } else {
             let (_cache_res, upstream) = tokio::join!(
-                self.get_or_update_from_cache(message_wrapper.message.clone()),
+                self.get_or_update_from_cache(message_wrapper.messages.clone()),
                 message_wrapper.call_next_transform()
             );
             upstream
@@ -373,11 +383,15 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
+    use crate::message::Value as ShotoverValue;
     use crate::message::{ASTHolder, MessageDetails, Value};
-    use crate::message::{Messages, Value as ShotoverValue};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
-    use crate::protocols::redis_codec::RedisCodec;
-    use crate::transforms::redis_transforms::redis_cache::{build_redis_ast_from_sql, PrimaryKey};
+    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
+    use crate::transforms::chain::TransformChain;
+    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::null::Null;
+    use crate::transforms::redis::cache::{build_redis_ast_from_sql, PrimaryKey, SimpleRedisCache};
+    use crate::transforms::{Transform, Transforms};
     use bytes::BytesMut;
     use itertools::Itertools;
     use std::collections::HashMap;
@@ -392,15 +406,15 @@ mod test {
     }
 
     fn build_redis_query_frame(query: &str) -> ASTHolder {
-        let mut codec = RedisCodec::new(false, 0);
+        let mut codec = RedisCodec::new(DecodeType::Query);
 
         let mut final_command_bytes: BytesMut = build_redis_string(query).as_str().into();
-        let mut frame: Messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
-        for message in &mut frame.messages {
-            message.generate_message_details(false);
+        let mut messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
+        for message in &mut messages {
+            message.generate_message_details_query();
         }
 
-        match frame.messages.remove(0).details {
+        match messages.remove(0).details {
             MessageDetails::Query(qm) => qm.ast.unwrap(),
             details => panic!(
                 "Exepected message details to be a query but was: {:?}",
@@ -697,5 +711,41 @@ mod test {
         assert_eq!(expected, query);
 
         println!("{:#?}", query);
+    }
+
+    #[tokio::test]
+    async fn test_validate_invalid_chain() {
+        let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
+        let transform = SimpleRedisCache {
+            cache_chain: chain,
+            caching_schema: HashMap::new(),
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "SimpleRedisCache:",
+                "  test-chain:",
+                "    Chain cannot be empty"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_chain() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain".to_string(),
+        );
+        let transform = SimpleRedisCache {
+            cache_chain: chain,
+            caching_schema: HashMap::new(),
+        };
+
+        assert_eq!(transform.validate(), Vec::<String>::new());
     }
 }
