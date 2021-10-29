@@ -163,8 +163,8 @@ impl RedisSinkCluster {
                             modified: false,
                             original: RawFrame::Redis(Frame::Array(response)),
                             protocol_error: 0,
-                        })),
-                    ))
+                        }])),
+                    )
                 })
             }
         })
