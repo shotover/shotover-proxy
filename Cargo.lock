@@ -39,15 +39,6 @@ dependencies = [
 
 [[package]]
 name = "ansi_term"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee49baf6cb617b853aa8d93bf420db2383fab46d314482ca2803b40d5fde979b"
-dependencies = [
- "winapi",
-]
-
-[[package]]
-name = "ansi_term"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
@@ -341,7 +332,6 @@ dependencies = [
  "num-integer",
  "num-traits 0.2.14",
  "serde",
- "time 0.1.43",
  "winapi",
 ]
 
@@ -440,12 +430,6 @@ checksum = "95059428f66df56b63431fdb4e1947ed2190586af5c5a8a8b71122bdf5a7f469"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "crc16"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11a65c4797332f3e3a5945e0377875afc79b1bdc87082a4f98ac1ef15b47e2dd"
 
 [[package]]
 name = "crc16"
@@ -805,19 +789,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.5.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b0a4d2e39f8420210be8b27eeda28029729e2fd4291019455016c348240c38"
-dependencies = [
- "atty",
- "humantime",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44533bbbb3bb3c1fa17d9f2e4e38bbbaf8396ba82193c4cb1b6445d711445d36"
@@ -865,15 +836,6 @@ name = "event-listener"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
-
-[[package]]
-name = "float-cmp"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1267f4ac4f343772758f7b1bdcbe767c218bbab93bb432acbf5162bbf85a6c4"
-dependencies = [
- "num-traits 0.2.14",
-]
 
 [[package]]
 name = "fnv"
@@ -1947,18 +1909,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed0cfbc8191465bed66e1718596ee0b0b35d5ee1f41c5df2189d0fe8bde535ba"
 
 [[package]]
-name = "pretty_env_logger"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed8d1e63042e889b85228620629b51c011d380eed2c7e0015f8a644def280c28"
-dependencies = [
- "ansi_term 0.11.0",
- "chrono",
- "env_logger 0.5.13",
- "log",
-]
-
-[[package]]
 name = "proc-macro-crate"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2229,7 +2179,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "combine",
- "crc16 0.4.0",
+ "crc16",
  "dtoa",
  "futures-util",
  "itoa",
@@ -2244,16 +2194,15 @@ dependencies = [
 
 [[package]]
 name = "redis-protocol"
-version = "3.0.0"
-source = "git+https://github.com/shotover/redis-protocol.rs?branch=shotover_fork#7bc2e2bc0a214ea61b90dbb610b408795c5e2aeb"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26f7b2ced88925385105caeba1157cb8098d4c4923812bd8b86736b35216c1f5"
 dependencies = [
  "bytes",
  "cookie-factory",
- "crc16 0.3.4",
- "float-cmp",
+ "crc16",
  "log",
  "nom 6.1.2",
- "pretty_env_logger",
 ]
 
 [[package]]
@@ -2660,7 +2609,7 @@ dependencies = [
  "cassandra-proto",
  "clap 3.0.0-beta.5",
  "clap_derive",
- "crc16 0.4.0",
+ "crc16",
  "criterion",
  "csv",
  "derivative",
@@ -3141,7 +3090,7 @@ version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6923477a48e41c1951f1999ef8bb5a3023eb723ceadafe78ffb65dc366761e3"
 dependencies = [
- "env_logger 0.7.1",
+ "env_logger",
  "lazy_static",
  "log",
  "tracing-core",
@@ -3153,7 +3102,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80a4ddde70311d8da398062ecf6fc2c309337de6b0f77d6c27aff8d53f6fca52"
 dependencies = [
- "ansi_term 0.12.1",
+ "ansi_term",
  "lazy_static",
  "matchers",
  "regex",

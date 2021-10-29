@@ -8,7 +8,7 @@ services:
       - cassandra
     ports:
       - "9043:9042"
-    healthcheck:
+    healthcheck: &healthcheck
       test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
       interval: 5s
       timeout: 5s
@@ -30,12 +30,8 @@ services:
       - cassandra
     ports:
       - "9044:9042"
-    healthcheck:
-      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
-      interval: 5s
-      timeout: 5s
-      retries: 60
-    environment: *environment    # point to "environment" to use the same environment variables as cass1
+    healthcheck: *healthcheck
+    environment: *environment
     depends_on:
       - cassandra-one
   cassandra-three:
@@ -44,11 +40,7 @@ services:
       - cassandra
     ports:
       - "9045:9042"
-    healthcheck:
-      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
-      interval: 5s
-      timeout: 5s
-      retries: 60
-    environment: *environment    # point to "environment" to use the same environment variables as cass1
+    healthcheck: *healthcheck
+    environment: *environment
     depends_on:
       - cassandra-two

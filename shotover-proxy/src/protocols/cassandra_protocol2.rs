@@ -654,7 +654,7 @@ impl Decoder for CassandraCodec2 {
 
                 message.protocol_error = 0x10000 | e.error_code;
                 info!( "{:?} CDRSError returning {:?}", thread::current().id(), &message );
-                Ok(Some(Messages { messages: vec![message], }))
+                Ok(Some(vec![message]))
             }
         }
     }
@@ -886,7 +886,7 @@ mod cassandra_protocol_tests {
 
         let codec = CassandraCodec2::new(pk_map, false);
         let messages = codec.process_cassandra_frame(frame);
-        assert_eq!( 1, messages.messages.len());
+        assert_eq!( 1, messages.len());
         for message in messages {
             match message.details {
                 MessageDetails::Unknown => {},

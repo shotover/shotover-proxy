@@ -64,7 +64,7 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
     // this code creates a new Vec and uses an iterator with mapping and filtering to determine
     // populate it from the original Messages.message Vec.  It may be more efficient to scan the
     // original Vec and replace or delete individual Message in place.
-    let mut result = Vec::with_capacity(messages.messages.len());
+    let mut result = Vec::with_capacity(messages.len());
     messages.into_iter().map(|m| {
         // if there is a protocol error handle it otherwise return the original message.
         // One thorough the mapping if the message has a protocol_error is dropped.
@@ -75,7 +75,7 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
             if up_msg.is_some() {
                 // send up stream messages now
                 debug!( "{:?} Return message: {:?}", thread::current().id(), &up_msg );
-                tx_out.send(Messages::new_from_message(up_msg.unwrap())).ok();
+                tx_out.send(vec![up_msg.unwrap()]).ok();
             }
             if an_err.is_some() {
                 error!("{:?} (protocol error) chain processing error - {}", thread::current().id(), an_err.unwrap());
@@ -104,9 +104,7 @@ fn handle_protocol_error(codec: &dyn CodecErrorFixup, messages: Messages, tx_out
     }).filter(|m| m.protocol_error == 0).for_each(|m| result.push(m));
     debug!( "{:?} handle_protocol_error returning: {:?}", thread::current().id(), &result );
 
-    Messages {
-        messages: result,
-    }
+    result
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
