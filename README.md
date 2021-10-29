@@ -26,9 +26,8 @@ It currently supports writing output to the following technologies (sinks):
 
 ## What problems does Shotover solve?
 Concrete examples where shotover-proxy has been applied include:
-* [Multi-region, active-active redis](../examples/redis-multi)
-* [Cassandra query caching in redis, with a query audit trail sent to kafka](../examples/cass-redis-kafka)
-* [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../examples/cassandra-encryption)
+* [Multi-region, active-active redis](shotover-proxy/examples/redis-multi/)
+* [Cassandra query caching in redis, with a query audit trail sent to kafka](shotover-proxy/examples/cass-redis-kafka/)
 
 More broadly, shotover-proxy is designed to be used for a very wide ranging class of problems where it is useful to transparently intercept a database call and redirect it. This allows you to change the behaviour of running applications at the infrastructure level without change to the application code itself.
 Some examples where we envisage Shotover could be deployed include:
