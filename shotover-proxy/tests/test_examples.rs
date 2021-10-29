@@ -27,6 +27,8 @@ async fn test_cassandra_standalone() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_cluster() {
+    let start = std::time::Instant::now();
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
         .wait_for_n("Startup complete", 3);
+    println!("test_cassandra_cluster elapsed {:?}", start.elapsed());
 }
