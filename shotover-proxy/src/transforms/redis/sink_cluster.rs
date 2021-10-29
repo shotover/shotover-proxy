@@ -18,7 +18,6 @@ use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::concurrency::FuturesOrdered;
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::redis_codec::{DecodeType, RedisCodec};
@@ -44,7 +43,7 @@ pub struct RedisSinkClusterConfig {
 }
 
 impl RedisSinkClusterConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         let authenticator = RedisAuthenticator {};
 
         let connection_pool = ConnectionPool::new_with_auth(

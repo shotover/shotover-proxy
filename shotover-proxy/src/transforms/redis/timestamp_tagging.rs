@@ -1,5 +1,3 @@
-use crate::config::topology::TopicHolder;
-
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -26,7 +24,7 @@ impl RedisTimestampTagger {
 }
 
 impl RedisTimestampTaggerConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger {}))
     }
 }

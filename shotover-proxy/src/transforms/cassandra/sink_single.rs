@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::config::topology::TopicHolder;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_protocol2::CassandraCodec2;
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -28,7 +27,7 @@ pub struct CassandraSinkSingleConfig {
 }
 
 impl CassandraSinkSingleConfig {
-    pub async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
             self.result_processing,

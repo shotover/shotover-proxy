@@ -9,7 +9,6 @@ use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
@@ -23,7 +22,7 @@ pub struct RedisSinkSingleConfig {
 }
 
 impl RedisSinkSingleConfig {
-    pub async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Transforms::RedisSinkSingle(RedisSinkSingle::new(
             self.address.clone(),

@@ -11,7 +11,6 @@ use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use tracing::warn;
 
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Value;
 use crate::message::Value::Rows;
@@ -147,7 +146,7 @@ impl Protected {
 }
 
 impl ProtectConfig {
-    pub async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::Protect(Protect {
             name: "protect",
             keyspace_table_columns: self.keyspace_table_columns.clone(),
@@ -284,11 +283,6 @@ mod protect_transform_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_transform() -> Result<(), Box<dyn Error>> {
-        let t_holder = TopicHolder {
-            topics_rx: Default::default(),
-            topics_tx: Default::default(),
-        };
-
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
             .iter()
             .map(|&x| String::from(x))
@@ -342,7 +336,7 @@ mod protect_transform_tests {
 
         wrapper.reset(chain.get_inner_chain_refs());
 
-        if let Transforms::Protect(mut protect) = protect_t.get_source(&t_holder).await? {
+        if let Transforms::Protect(mut protect) = protect_t.get_source().await? {
             let result = protect.transform(wrapper).await;
             if let Ok(mut m) = result {
                 if let MessageDetails::Response(QueryResponse {
@@ -454,11 +448,6 @@ mod protect_transform_tests {
     #[allow(unused)]
     // Had to disable this when the repo went public as we dont have access to github secrets anymore
     async fn test_protect_kms_transform() -> Result<()> {
-        let t_holder = TopicHolder {
-            topics_rx: Default::default(),
-            topics_tx: Default::default(),
-        };
-
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
             .iter()
             .map(|&x| String::from(x))
@@ -522,7 +511,7 @@ mod protect_transform_tests {
 
         wrapper.reset(chain.get_inner_chain_refs());
 
-        let t = protect_t.get_source(&t_holder).await?;
+        let t = protect_t.get_source().await?;
         if let Transforms::Protect(mut protect) = t {
             let mut m = protect.transform(wrapper).await?;
             let mut details = m.pop().unwrap().details;
