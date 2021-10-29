@@ -90,6 +90,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         tls: Option<TlsAcceptor>,
     ) -> Self {
         register_gauge!("shotover_available_connections", Unit::Count, "source" => source_name.clone());
+        gauge!("shotover_available_connections", limit_connections.available_permits() as f64, "source" => source_name.clone());
 
         TcpCodecListener {
             chain,

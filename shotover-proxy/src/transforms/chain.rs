@@ -171,12 +171,12 @@ impl TransformChain {
     pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
         register_counter!("shotover_chain_total", Unit::Count, "chain" => name.clone());
         register_counter!("shotover_chain_failures", Unit::Count, "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", Unit::Count, "chain" => name.clone());
+        register_histogram!("shotover_chain_latency", Unit::Seconds, "chain" => name.clone());
 
         for transform in &transform_list {
             register_counter!("shotover_transform_total", Unit::Count, "transform" => transform.get_name());
             register_counter!("shotover_transform_failures", Unit::Count, "transform" => transform.get_name());
-            register_histogram!("shotover_transform_latency", Unit::Seconds, "transform"=> transform.get_name());
+            register_histogram!("shotover_transform_latency", Unit::Seconds, "transform" => transform.get_name());
         }
 
         TransformChain {
