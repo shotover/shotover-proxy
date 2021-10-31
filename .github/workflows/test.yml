@@ -13,7 +13,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: sccache
   RUST_BACKTRACE: 1
 
 jobs:
@@ -29,47 +28,36 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+    - uses: actions-rs/toolchain@v1
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo2-${{ hashFiles('**/Cargo.lock') }}
-    - name: Install latest stable
-      uses: actions-rs/toolchain@v1
-      with:
+          # `toolchain: stable` results in the latest stable toolchain being installed.
+          # However as soon as we use cargo the real version specified in rust-toolchain.toml replaces the stable toolchain.
+          #
+          # When something like https://github.com/actions-rs/toolchain/pull/184 lands we can delete this line and get a nice speedup
+          profile: minimal
           toolchain: stable
-          override: true
-    - name: Install sccache
-      env:
-        LINK: https://github.com/mozilla/sccache/releases/download
-        SCCACHE_VERSION: 0.2.12
-      run: |
-        curl -L "$LINK/$SCCACHE_VERSION/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl.tar.gz" | tar xz
-        echo "$PWD/sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl/" >> $GITHUB_PATH
+    - uses: Swatinem/rust-cache@v1
+      with:
+        # rust-cache already handles all the sane defaults for caching rust builds.
+        # However because we are running seperate debug/release builds in parallel,
+        # we also need to add Debug or Release to the key so that a seperate cache is used.
+        # Otherwise only the last build to finish would get saved to the cache.
+        key: ${{ matrix.name }}
     - name: Install ubuntu packages
       run: |
         sudo apt-get update
         sudo apt-get install -y libpcap-dev
-    - name: Start sccache
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        SCCACHE_BUCKET: shotover-build-caches
-        SCCACHE_IDLE_TIMEOUT: 0
-      run: sccache --start-server
-    - name: Configure sscache
-      run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
+    - name: Install cargo-hack
+      run: cargo install cargo-hack --version 0.5.8
     - name: Check `cargo fmt` was run
       run: cargo fmt --all -- --check
-    - name: Build
-      run: cargo build ${{ matrix.cargo_profile }} --all-targets
-    - name: Run tests
+    - name: Ensure that all crates compile and have no warnings under every possible combination of features
+      # some things to explicitly point out:
+      # * clippy also reports rustc warnings and errors
+      # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
+      run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_profile }} -- -D warnings
+    - name: Ensure that tests pass
       run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output
-      timeout-minutes: 30
-    - name: Cleanup docker
-      run: shotover-proxy/tests/scripts/teardown.sh
     - name: License Check
       run: |
         cargo install --locked cargo-deny

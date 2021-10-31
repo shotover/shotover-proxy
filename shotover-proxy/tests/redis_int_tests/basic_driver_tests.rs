@@ -486,7 +486,7 @@ async fn test_pipeline_reuse_query_clear(connection: &mut Connection) {
         .unwrap();
     pl.clear();
 
-    assert_eq!(k1, false);
+    assert!(!k1);
     assert_eq!(k2, 45);
 }
 
@@ -653,8 +653,8 @@ async fn test_nice_hash_api(connection: &mut Connection) {
     }
 
     assert_eq!(found.len(), 2);
-    assert_eq!(found.contains(&("f3".to_string(), 4)), true);
-    assert_eq!(found.contains(&("f4".to_string(), 8)), true);
+    assert!(found.contains(&("f3".to_string(), 4)));
+    assert!(found.contains(&("f4".to_string(), 8)));
 }
 
 async fn test_nice_list_api(connection: &mut Connection) {
@@ -981,10 +981,7 @@ async fn get_master_id(connection: &mut Connection) -> String {
         for result in reader.records() {
             let record = result.unwrap();
 
-            let is_master = record[2]
-                .split(",")
-                .collect::<Vec<&str>>()
-                .contains(&"master");
+            let is_master = record[2].split(',').any(|x| x == "master");
 
             if is_master {
                 return record[0].to_string();
@@ -1059,7 +1056,7 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     for result in reader.records() {
         let record = result.unwrap();
 
-        let port: Vec<&str> = record[1].split(":").collect();
+        let port: Vec<&str> = record[1].split(':').collect();
         assert_eq!(port[1], format!("{}@16379", new_port));
         assertion_run = true;
     }

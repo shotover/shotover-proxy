@@ -11,6 +11,7 @@ use tls_parser::TlsMessage;
 
 use serde::Deserialize;
 
+#[derive(Default)]
 pub struct PacketParse {}
 
 #[derive(Debug, Deserialize)]
@@ -25,23 +26,12 @@ pub enum PacketHeader {
     Arp(ArpPacket),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct ParsedPacket {
     pub len: u32,
     pub timestamp: String,
     pub headers: Vec<PacketHeader>,
     pub remaining: Vec<u8>,
-}
-
-impl ParsedPacket {
-    pub fn new() -> ParsedPacket {
-        ParsedPacket {
-            len: 0,
-            timestamp: "".to_string(),
-            headers: vec![],
-            remaining: vec![],
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,7 +99,7 @@ impl PacketParse {
     }
 
     pub fn parse_link_layer(&self, content: &[u8]) -> Result<ParsedPacket, String> {
-        let mut pack = ParsedPacket::new();
+        let mut pack = ParsedPacket::default();
         match ethernet::parse_ethernet_frame(content) {
             Ok((content, headers)) => {
                 match headers.ethertype {
