@@ -2,6 +2,7 @@ use crate::message::{
     ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
 };
 use crate::protocols::RawFrame;
+use crate::server::CodecErrorFixup;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
@@ -9,7 +10,6 @@ use redis_protocol::resp2::prelude::*;
 use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
-use crate::server::CodecErrorFixup;
 
 /// Redis doesn't have an explicit "Response" type as part of the protocol.
 /// So it is up to the code to know whether it is processing queries or responses.
@@ -467,8 +467,15 @@ fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
 }
 
 impl CodecErrorFixup for RedisCodec {
-    fn fixup_err( &self, _message : Message ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
-        (None, None, Some( anyhow!("Redis should not have a protocol error")))
+    fn fixup_err(
+        &self,
+        _message: Message,
+    ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
+        (
+            None,
+            None,
+            Some(anyhow!("Redis should not have a protocol error")),
+        )
     }
 }
 
@@ -517,14 +524,14 @@ impl RedisCodec {
                         },
                         modified: false,
                         original: RawFrame::Redis(frame),
-                        protocol_error : 0,
+                        protocol_error: 0,
                     })
                 } else {
                     Ok(Message {
                         details: MessageDetails::Unknown,
                         modified: false,
                         original: RawFrame::Redis(frame),
-                        protocol_error : 0,
+                        protocol_error: 0,
                     })
                 }
             })

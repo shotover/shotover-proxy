@@ -5,7 +5,7 @@ use std::process::Command;
 use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
 /// Runs a command and returns the output as a string.
 ///
@@ -112,7 +112,7 @@ impl DockerCompose {
     /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
-    self.wait_for_n_t(log_text, count, 60)
+        self.wait_for_n_t(log_text, count, 60)
     }
 
     /// Waits for a string to appear in the docker-compose log output `count` times within `time` seconds.
@@ -133,7 +133,7 @@ impl DockerCompose {
     /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
     ///         .wait_for("Ready to accept connections", 3, 65);
     /// ```
-    pub fn wait_for_n_t(self, log_text: &str, count: usize, time :u64 ) -> Self {
+    pub fn wait_for_n_t(self, log_text: &str, count: usize, time: u64) -> Self {
         info!("wait_for_n_t: '{}' {} {}", log_text, count, time);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
@@ -157,7 +157,12 @@ impl DockerCompose {
             result = run_command("docker-compose", &args).unwrap();
             my_count = re.find_iter(&result).count();
         }
-        info!("wait_for_n_t: found '{}' {} times in {:?} seconds", log_text, count, sys_time.elapsed() );
+        info!(
+            "wait_for_n_t: found '{}' {} times in {:?} seconds",
+            log_text,
+            count,
+            sys_time.elapsed()
+        );
         self
     }
 

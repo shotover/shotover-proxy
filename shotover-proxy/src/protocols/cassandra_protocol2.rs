@@ -15,7 +15,7 @@ use tokio_util::codec::{Decoder, Encoder};
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::str::FromStr;
-use tracing::{info, trace, debug, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::message::{
     ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
@@ -32,8 +32,8 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::ops::DerefMut;
 
-use anyhow::{anyhow, Result};
 use crate::server::CodecErrorFixup;
+use anyhow::{anyhow, Result};
 use cassandra_proto::frame::frame_error::CDRSError;
 use std::thread;
 
@@ -605,12 +605,12 @@ impl CassandraCodec2 {
         // }
 
         trace!("{:?} Parsing C* frame", thread::current().id());
-        let v: Result<(Option<Frame>, Option<FrameHeader>), CDRSError> = parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
-         v.map( |(r,h)|  {
+        let v: Result<(Option<Frame>, Option<FrameHeader>), CDRSError> =
+            parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
+        v.map(|(r, h)| {
             self.current_head = h;
             r
-        }
-        )
+        })
     }
 
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
@@ -630,30 +630,41 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        debug!("{:?} Decoding {:?}", thread::current().id(), src.to_vec() );
+        debug!("{:?} Decoding {:?}", thread::current().id(), src.to_vec());
         match self.decode_raw(src) {
             Ok(Some(frame)) => {
-                debug!( "{:?} Decoded {:?}", thread::current().id(), &frame );
+                debug!("{:?} Decoded {:?}", thread::current().id(), &frame);
                 Ok(Some(self.process_cassandra_frame(frame)))
-            },
+            }
             Ok(None) => Ok(None),
             Err(e) => {
-                debug!( "{:?} CDRSError {:?}", thread::current().id(), &e );
+                debug!("{:?} CDRSError {:?}", thread::current().id(), &e);
                 let error_frame = Frame {
                     version: Version::Response,
                     flags: vec![],
                     opcode: Opcode::Error,
                     stream: 0,
-                    body: vec![ e.error_code.into_cbytes(), e.message.into_cbytes(), e.additional_info.into_cbytes()].concat(),
+                    body: vec![
+                        e.error_code.into_cbytes(),
+                        e.message.into_cbytes(),
+                        e.additional_info.into_cbytes(),
+                    ]
+                    .concat(),
                     tracing_id: None,
                     warnings: vec![],
-
                 };
-                let mut message = Message::new(MessageDetails::Unknown, false,
-                                               RawFrame::Cassandra(error_frame ));
+                let mut message = Message::new(
+                    MessageDetails::Unknown,
+                    false,
+                    RawFrame::Cassandra(error_frame),
+                );
 
                 message.protocol_error = 0x10000 | e.error_code;
-                info!( "{:?} CDRSError returning {:?}", thread::current().id(), &message );
+                info!(
+                    "{:?} CDRSError returning {:?}",
+                    thread::current().id(),
+                    &message
+                );
                 Ok(Some(vec![message]))
             }
         }
@@ -669,16 +680,17 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
     }
 }
 
-impl CodecErrorFixup for CassandraCodec2
-{
-    fn fixup_err( &self, message: Message ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
+impl CodecErrorFixup for CassandraCodec2 {
+    fn fixup_err(
+        &self,
+        message: Message,
+    ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
         (Some(message), None, None)
     }
 }
 impl CassandraCodec2 {
-
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
-        debug!( "{:?} encode_message  {:?}", thread::current().id(), &item );
+        debug!("{:?} encode_message  {:?}", thread::current().id(), &item);
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -699,7 +711,11 @@ impl CassandraCodec2 {
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
             }
         };
-        debug!( "{:?} Encoded message as {:?}", thread::current().id(),  &frame );
+        debug!(
+            "{:?} Encoded message as {:?}",
+            thread::current().id(),
+            &frame
+        );
         Ok(frame)
     }
 }
@@ -713,12 +729,12 @@ impl Encoder<Messages> for CassandraCodec2 {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
-            debug!( "{:?} Encoding {:?}", thread::current().id(), &m );
+            debug!("{:?} Encoding {:?}", thread::current().id(), &m);
             match self.encode_message(m) {
                 Ok(frame) => {
                     self.encode_raw(frame, dst);
-                    debug!( "{:?} Encoded frame as {:?}", thread::current().id(), dst);
-                },
+                    debug!("{:?} Encoded frame as {:?}", thread::current().id(), dst);
+                }
                 Err(e) => {
                     warn!("{:?} Couldn't encode frame {:?}", thread::current().id(), e);
                 }
@@ -733,10 +749,10 @@ mod cassandra_protocol_tests {
     use crate::message::{ASTHolder, MessageDetails, QueryMessage};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use bytes::BytesMut;
+    use cassandra_proto::frame::{Frame, Opcode, Version};
     use hex_literal::hex;
     use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
-    use cassandra_proto::frame::{Frame, Opcode,Version};
 
     use crate::protocols::RawFrame::Cassandra;
 
@@ -868,7 +884,7 @@ mod cassandra_protocol_tests {
     #[test]
     fn test_process_cassandra_frame() {
         // Frame { version: Request, flags: [], opcode: Options, stream: 0, body: [], tracing_id: None, warnings: [] }
-        let frame =  Frame {
+        let frame = Frame {
             version: Version::Request,
             flags: vec![],
             opcode: Opcode::Options,
@@ -886,13 +902,13 @@ mod cassandra_protocol_tests {
 
         let codec = CassandraCodec2::new(pk_map, false);
         let messages = codec.process_cassandra_frame(frame);
-        assert_eq!( 1, messages.len());
+        assert_eq!(1, messages.len());
         for message in messages {
             match message.details {
-                MessageDetails::Unknown => {},
+                MessageDetails::Unknown => {}
                 details => panic!("Unexpected details: {:?}", details),
             };
-            assert!( ! message.modified );
+            assert!(!message.modified);
             match message.original {
                 Cassandra(cframe) => {
                     assert_eq!(Version::Request, cframe.version);

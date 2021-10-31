@@ -163,8 +163,8 @@ impl RedisSinkCluster {
                             modified: false,
                             original: RawFrame::Redis(Frame::Array(response)),
                             protocol_error: 0,
-                        }])),
-                    )
+                        }]),
+                    ))
                 })
             }
         })
@@ -711,7 +711,7 @@ fn send_frame_request(
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Redis(frame),
-            protocol_error : 0,
+            protocol_error: 0,
         },
         return_chan: Some(return_chan_tx),
         message_id: None,

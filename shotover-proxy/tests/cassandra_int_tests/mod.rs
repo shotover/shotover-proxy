@@ -14,11 +14,11 @@ impl CassandraTestContext {
         CassandraTestContext::new_with_points("127.0.0.1")
     }
 
-    pub fn new_with_points(contact_points: &str) -> Self{ CassandraTestContext::new_with_points_and_port( contact_points, 9042 )}
+    pub fn new_with_points(contact_points: &str) -> Self {
+        CassandraTestContext::new_with_points_and_port(contact_points, 9042)
+    }
 
-    pub fn new_with_points_and_port(contact_points: &str,  port : u16) -> Self
-    {
-
+    pub fn new_with_points_and_port(contact_points: &str, port: u16) -> Self {
         let mut cluster = Cluster::default();
         cluster.set_contact_points(contact_points).unwrap();
         cluster.set_port(port).ok();
