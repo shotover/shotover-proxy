@@ -14,7 +14,6 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
-use std::str::FromStr;
 use tracing::{debug, info, trace, warn};
 
 use crate::message::{
