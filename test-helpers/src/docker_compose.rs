@@ -103,7 +103,7 @@ impl DockerCompose {
     /// * `count` - The number of times the regular expression should be found.
     ///
     /// # Panics
-    /// * If `count` occurances of `log_text` is not found in the log within 60 seconds.
+    /// * If `count` occurances of `log_text` is not found in the log within 90 seconds.
     ///
     /// # Example
     /// ```
@@ -112,7 +112,7 @@ impl DockerCompose {
     /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
-        self.wait_for_n_t(log_text, count, 60)
+        self.wait_for_n_t(log_text, count, 90)
     }
 
     /// Waits for a string to appear in the docker-compose log output `count` times within `time` seconds.
@@ -141,17 +141,8 @@ impl DockerCompose {
         let mut result = run_command("docker-compose", &args).unwrap();
         let mut my_count = re.find_iter(&result).count();
         while my_count < count {
-            match sys_time.elapsed() {
-                Ok(elapsed) => {
-                    if elapsed.as_secs() > time {
-                        debug!("{}", result);
-                        panic!("wait_for: {} second timer expired. Found {}  instances of '{}' in the log", time, re.find_iter(&result).count(), log_text);
-                    }
-                }
-                Err(e) => {
-                    // an error occurred!
-                    info!("Clock aberration: {:?}", e);
-                }
+            if sys_time.elapsed().as_secs() > time {
+                panic!("wait_for: {} second timer expired. Found {}  instances of '{}' in the log", time, re.find_iter(&result).count(), log_text);
             }
             debug!("wait_for_n: {:?} looping {}/{}", log_text, my_count, count);
             result = run_command("docker-compose", &args).unwrap();

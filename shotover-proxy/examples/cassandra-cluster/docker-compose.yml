@@ -13,7 +13,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 60
-    environment: &environment    # Declare and save environments variables into "environment"
+    environment: &environment
       CASSANDRA_SEEDS: "cassandra-one,cassandra-two"    # The first two nodes will be seeds
       CASSANDRA_CLUSTER_NAME: SolarSystem
       CASSANDRA_DC: Mars

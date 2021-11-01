@@ -53,7 +53,6 @@ halfbrown = "0.1.11"
 # Transform dependencies
 redis-protocol = "3.0.1"
 cassandra-proto = { git = "https://github.com/Claude-at-Instaclustr/cassandra-proto", branch = "OPTION_fix", features = ["v4"]}
-#cassandra-proto = { git = "https://github.com/shotover/cassandra-proto", branch = "move-to-bytes", features = ["v4"] }
 rdkafka = { version = "0.27", features = ["cmake-build"] }
 crc16 = { version = "0.4.0" }
 
