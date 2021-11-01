@@ -815,9 +815,6 @@ mod cassandra_protocol_tests {
                     ast: Some(ASTHolder::SQL(ast)),
                     ..
                 }) => {
-                    println!("{}", query_string);
-                    println!("{}", ast);
-
                     assert_eq!(
                         query_string.replace(char::is_whitespace, ""),
                         ast.to_string().replace(char::is_whitespace, ""),
