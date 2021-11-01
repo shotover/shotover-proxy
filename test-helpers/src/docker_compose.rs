@@ -142,7 +142,12 @@ impl DockerCompose {
         let mut my_count = re.find_iter(&result).count();
         while my_count < count {
             if sys_time.elapsed().as_secs() > time {
-                panic!("wait_for: {} second timer expired. Found {}  instances of '{}' in the log", time, re.find_iter(&result).count(), log_text);
+                panic!(
+                    "wait_for: {} second timer expired. Found {}  instances of '{}' in the log",
+                    time,
+                    re.find_iter(&result).count(),
+                    log_text
+                );
             }
             debug!("wait_for_n: {:?} looping {}/{}", log_text, my_count, count);
             result = run_command("docker-compose", &args).unwrap();
