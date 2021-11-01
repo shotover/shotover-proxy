@@ -82,6 +82,12 @@ impl ParallelMapConfig {
     }
 }
 
+impl ParallelMap {
+    fn get_name(&self) -> &'static str {
+        "ParallelMap"
+    }
+}
+
 #[async_trait]
 impl Transform for ParallelMap {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
@@ -109,10 +115,6 @@ impl Transform for ParallelMap {
             );
         }
         Ok(results)
-    }
-
-    fn get_name(&self) -> &'static str {
-        "SequentialMap"
     }
 
     fn is_terminating(&self) -> bool {
@@ -168,7 +170,7 @@ mod parallel_map_tests {
         assert_eq!(
             transform.validate(),
             vec![
-                "SequentialMap:",
+                "ParallelMap:",
                 "  test-chain-2:",
                 "    Chain cannot be empty"
             ]

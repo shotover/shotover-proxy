@@ -57,6 +57,10 @@ pub struct SimpleRedisCache {
 }
 
 impl SimpleRedisCache {
+    fn get_name(&self) -> &'static str {
+        "SimpleRedisCache"
+    }
+
     async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
         for message in &mut messages {
             match &mut message.details {
@@ -374,10 +378,6 @@ impl Transform for SimpleRedisCache {
             );
             upstream
         }
-    }
-
-    fn get_name(&self) -> &'static str {
-        "SimpleRedisCache"
     }
 }
 

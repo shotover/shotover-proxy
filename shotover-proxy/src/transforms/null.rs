@@ -20,8 +20,4 @@ impl Transform for Null {
             RawFrame::None,
         )])
     }
-
-    fn get_name(&self) -> &'static str {
-        "Null"
-    }
 }

@@ -27,6 +27,10 @@ impl Sampler {
             sample_chain: TransformChain::new_no_shared_state(vec![], "dummy".to_string()),
         }
     }
+
+    fn get_name(&self) -> &'static str {
+        "Sampler"
+    }
 }
 
 #[async_trait]
@@ -47,9 +51,5 @@ impl Transform for Sampler {
         } else {
             message_wrapper.call_next_transform().await
         }
-    }
-
-    fn get_name(&self) -> &'static str {
-        "Sampler"
     }
 }

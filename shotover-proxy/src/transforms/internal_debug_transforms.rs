@@ -23,10 +23,6 @@ impl Transform for DebugReturnerTransform {
         }
     }
 
-    fn get_name(&self) -> &'static str {
-        "returner"
-    }
-
     fn is_terminating(&self) -> bool {
         true
     }
@@ -49,9 +45,5 @@ impl Transform for DebugRandomDelayTransform {
         }
         tokio::time::sleep(delay).await;
         message_wrapper.call_next_transform().await
-    }
-
-    fn get_name(&self) -> &'static str {
-        "RandomDelay"
     }
 }

@@ -188,8 +188,4 @@ impl Transform for RedisTimestampTagger {
         debug!("response after trying to unwrap -> {:?}", response);
         response
     }
-
-    fn get_name(&self) -> &'static str {
-        "RedisTimestampTagger"
-    }
 }

@@ -833,10 +833,6 @@ impl Transform for RedisSinkCluster {
         }
         Ok(response_buffer)
     }
-
-    fn get_name(&self) -> &'static str {
-        "RedisSinkCluster"
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Derivative)]

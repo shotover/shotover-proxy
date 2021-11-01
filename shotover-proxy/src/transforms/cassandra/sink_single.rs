@@ -153,10 +153,6 @@ impl Transform for CassandraSinkSingle {
         self.send_message(message_wrapper.messages).await
     }
 
-    fn get_name(&self) -> &'static str {
-        "CassandraSinkSingle"
-    }
-
     fn is_terminating(&self) -> bool {
         true
     }

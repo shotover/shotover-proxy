@@ -68,7 +68,7 @@ impl CassandraSource {
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
     ) -> CassandraSource {
-        let name = "Cassandra Source";
+        let name = "CassandraSource";
 
         info!("Starting Cassandra source on [{}]", listen_addr);
 

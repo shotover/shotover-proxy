@@ -528,7 +528,7 @@ redis_chain:
     async fn test_validate_chain_invalid_subchain_parallel_map() {
         let expected = r#"Topology errors
 redis_chain:
-  SequentialMap:
+  ParallelMap:
     test-parallel-map:
       Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#;
