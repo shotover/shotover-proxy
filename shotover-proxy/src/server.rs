@@ -120,8 +120,7 @@ fn handle_protocol_error(
                     }
                 }
             } else {
-                debug!("{:?} cloning message: {:?}", thread::current().id(), &m);
-                m.clone()
+                m
             }
         })
         .filter(|m| m.protocol_error == 0)

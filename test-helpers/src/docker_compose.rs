@@ -137,7 +137,7 @@ impl DockerCompose {
         info!("wait_for_n_t: '{}' {} {}", log_text, count, time);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
-        let sys_time = time::SystemTime::now();
+        let sys_time = time::Instant::now();
         let mut result = run_command("docker-compose", &args).unwrap();
         let mut my_count = re.find_iter(&result).count();
         while my_count < count {
