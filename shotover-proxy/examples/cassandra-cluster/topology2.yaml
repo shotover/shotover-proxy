@@ -15,7 +15,7 @@ sources:
 chain_config:
   main_chain:
     #    - Printer
-    - CassandraCodecDestination:
+    - CassandraSinkSingle:
         bypass_result_processing: true
         remote_address: "127.0.0.1:9044"
 named_topics:
