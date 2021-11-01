@@ -655,11 +655,6 @@ impl CassandraCodec2 {
             get_cassandra_frame(item.original)?
         } else {
             match item.details {
-                MessageDetails::Bypass(message) => self.encode_message(Message {
-                    details: *message,
-                    modified: item.modified,
-                    original: item.original,
-                })?,
                 MessageDetails::Query(qm) => {
                     CassandraCodec2::build_cassandra_query_frame(qm, Consistency::LocalQuorum)
                 }

@@ -752,7 +752,7 @@ async fn receive_frame_response(
 #[inline(always)]
 fn send_frame_response(one_tx: oneshot::Sender<Response>, frame: Frame) -> Result<(), Response> {
     one_tx.send((
-        Message::new_bypass(RawFrame::None),
+        Message::new_raw(RawFrame::None),
         Ok(vec![Message::new(
             MessageDetails::Response(QueryResponse::empty()),
             false,
@@ -804,7 +804,7 @@ impl Transform for RedisSinkCluster {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 Ok((
-                    Message::new_bypass(RawFrame::None),
+                    Message::new_raw(RawFrame::None),
                     Ok(vec![Message::new(
                         MessageDetails::Response(QueryResponse::empty()),
                         false,
