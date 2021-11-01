@@ -7,15 +7,12 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use threadpool::ThreadPool;
 
+#[derive(Default)]
 pub struct PacketCapture {
     err_count: u64,
 }
 
 impl PacketCapture {
-    pub fn new() -> PacketCapture {
-        PacketCapture { err_count: 0 }
-    }
-
     pub fn list_devices() {
         let devices: Vec<String> = Device::list()
             .unwrap()
@@ -55,7 +52,7 @@ impl PacketCapture {
                 &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
             );
 
-            let packet_parse = PacketParse::new();
+            let packet_parse = PacketParse::default();
             let parsed_packet = packet_parse.parse_packet(data, len, ts);
             match parsed_packet {
                 Ok(parsed_packet) => {
@@ -112,7 +109,7 @@ impl PacketCapture {
     }
 
     pub fn print_packet(&self, parsed_packet: &ParsedPacket) {
-        let (src_addr, src_port, dst_addr, dst_port) = self.get_packet_meta(&parsed_packet);
+        let (src_addr, src_port, dst_addr, dst_port) = self.get_packet_meta(parsed_packet);
         let protocol = &parsed_packet.headers[0].to_string();
         let length = &parsed_packet.len;
         let ts = &parsed_packet.timestamp;
@@ -126,7 +123,7 @@ impl PacketCapture {
         &self,
         parsed_packet: &ParsedPacket,
     ) -> (String, String, String, String, String, u32, String) {
-        let (src_addr, src_port, dst_addr, dst_port) = self.get_packet_meta(&parsed_packet);
+        let (src_addr, src_port, dst_addr, dst_port) = self.get_packet_meta(parsed_packet);
         let protocol = parsed_packet.headers[0].to_string();
         let length = parsed_packet.len;
         let ts = parsed_packet.timestamp.clone();
@@ -161,7 +158,7 @@ impl PacketCapture {
             let packets = packets.clone();
 
             pool.execute(move || {
-                let packet_parse = PacketParse::new();
+                let packet_parse = PacketParse::default();
                 let parsed_packet = packet_parse.parse_packet(data, len, ts);
 
                 packets.lock().unwrap().push(parsed_packet);

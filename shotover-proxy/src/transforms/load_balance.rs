@@ -120,7 +120,7 @@ mod test {
                 .clone()
                 .process_request(Wrapper::new(Messages::new()), "test_client".to_string())
                 .await;
-            assert_eq!(r.is_ok(), true);
+            assert!(r.is_ok());
         }
 
         match chain.chain.remove(0) {
