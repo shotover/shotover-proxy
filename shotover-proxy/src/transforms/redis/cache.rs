@@ -569,9 +569,6 @@ mod test {
 
         let query_two = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        println!("{:#?}", query_one);
-        println!("{:#?}", query_two);
-
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
         assert_ne!(query_one, query_two);
@@ -625,8 +622,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[test]
@@ -648,8 +643,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[test]
@@ -673,8 +666,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[test]
@@ -709,8 +700,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[tokio::test]

@@ -11,3 +11,4 @@ tests/soaktest-*
 output.txt
 **/.DS_Store
 /.project
+/test_data

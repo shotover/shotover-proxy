@@ -42,10 +42,10 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_cassandra_packet_capture() {
-    let test_data = std::path::PathBuf::from("../target/test_data");
+    let test_data = std::path::PathBuf::from("../test_data");
     let cql_mixed = test_data.join("cql_mixed.pcap");
     if !test_data.exists() {
-        std::fs::create_dir_all("../target/test_data").unwrap();
+        std::fs::create_dir_all(test_data).unwrap();
 
         let url = "https://shotover-test-captures.s3.us-east-1.amazonaws.com/cql_mixed.pcap";
         let data = reqwest::get(url).await.unwrap().bytes().await.unwrap();
