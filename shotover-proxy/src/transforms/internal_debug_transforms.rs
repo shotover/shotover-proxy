@@ -8,13 +8,13 @@ use rand_distr::Normal;
 use tokio::time::Duration;
 
 #[derive(Debug, Clone)]
-pub struct ReturnerTransform {
+pub struct DebugReturnerTransform {
     pub message: Messages,
     pub ok: bool,
 }
 
 #[async_trait]
-impl Transform for ReturnerTransform {
+impl Transform for DebugReturnerTransform {
     async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.ok {
             Ok(self.message.clone())
@@ -26,16 +26,20 @@ impl Transform for ReturnerTransform {
     fn get_name(&self) -> &'static str {
         "returner"
     }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct RandomDelayTransform {
+pub struct DebugRandomDelayTransform {
     pub delay: u64,
     pub distribution: Option<Normal<f64>>,
 }
 
 #[async_trait]
-impl Transform for RandomDelayTransform {
+impl Transform for DebugRandomDelayTransform {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let delay;
         if let Some(dist) = self.distribution {

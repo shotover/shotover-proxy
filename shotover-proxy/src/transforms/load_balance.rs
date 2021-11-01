@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -17,9 +17,8 @@ pub struct ConnectionBalanceAndPoolConfig {
     pub chain: Vec<TransformsConfig>,
 }
 
-#[async_trait]
-impl TransformsFromConfig for ConnectionBalanceAndPoolConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl ConnectionBalanceAndPoolConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
@@ -80,6 +79,10 @@ impl Transform for ConnectionBalanceAndPool {
         }
     }
 
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     fn get_name(&self) -> &'static str {
         "PoolConnections"
     }
@@ -89,8 +92,8 @@ impl Transform for ConnectionBalanceAndPool {
 mod test {
     use crate::message::Messages;
     use crate::transforms::chain::TransformChain;
+    use crate::transforms::internal_debug_transforms::DebugReturnerTransform;
     use crate::transforms::load_balance::ConnectionBalanceAndPool;
-    use crate::transforms::test_transforms::ReturnerTransform;
     use crate::transforms::{Transforms, Wrapper};
     use anyhow::Result;
     use std::sync::Arc;
@@ -102,10 +105,10 @@ mod test {
             parallelism: 3,
             other_connections: Arc::new(Default::default()),
             chain_to_clone: TransformChain::new(
-                vec![Transforms::RepeatMessage(Box::new(ReturnerTransform {
+                vec![Transforms::DebugReturnerTransform(DebugReturnerTransform {
                     message: Messages::new(),
                     ok: true,
-                }))],
+                })],
                 "child_test".to_string(),
             ),
         });

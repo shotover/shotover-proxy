@@ -17,20 +17,20 @@ type InnerChain = Vec<Transforms>;
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
 
-#[derive(Debug)]
+/// A transform chain is a ordered list of transforms that a message will pass through.
+/// Transform chains can be of arbitary complexity and a transform can even have its own set of child transform chains.
+/// Transform chains are defined by the user in Shotover's configuration file and are linked to sources.
+///
+/// The transform chain is a vector of mutable references to the enum [Transforms] (which is an enum dispatch wrapper around the various transform types).
+#[derive(Debug, Clone)]
 pub struct TransformChain {
-    name: String,
+    pub name: String,
     pub chain: InnerChain,
-}
-
-impl Clone for TransformChain {
-    fn clone(&self) -> Self {
-        TransformChain::new(self.chain.clone(), self.name.clone())
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
+    pub original_chain: TransformChain,
     send_handle: Sender<ChannelMessage>,
     #[cfg(test)]
     pub count: std::sync::Arc<tokio::sync::Mutex<usize>>,
@@ -58,14 +58,14 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(ChannelMessage::new(wrapper.message, one_tx))
+                    .send(ChannelMessage::new(wrapper.messages, one_tx))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        ChannelMessage::new(wrapper.message, one_tx),
+                        ChannelMessage::new(wrapper.messages, one_tx),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -85,14 +85,14 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(ChannelMessage::new_with_no_return(wrapper.message))
+                    .send(ChannelMessage::new_with_no_return(wrapper.messages))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        ChannelMessage::new_with_no_return(wrapper.message),
+                        ChannelMessage::new_with_no_return(wrapper.messages),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -113,16 +113,14 @@ impl TransformChain {
         let count_clone = count.clone();
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
-        let _jh = tokio::spawn(async move {
-            let mut chain = self;
 
+        let mut chain = self.clone();
+        let _jh = tokio::spawn(async move {
             while let Some(ChannelMessage {
                 return_chan,
                 messages,
             }) = rx.recv().await
             {
-                let name = chain.name.clone();
-
                 #[cfg(test)]
                 {
                     let mut count = count.lock().await;
@@ -132,13 +130,12 @@ impl TransformChain {
                 let chain_response = chain
                     .process_request(
                         Wrapper::new_with_chain_name(messages, chain.name.clone()),
-                        name,
+                        chain.name.clone(),
                     )
                     .await;
 
                 if let Err(e) = &chain_response {
-                    warn!("Internal error in buffered chain: {:?} - resetting", e);
-                    chain = chain.clone();
+                    warn!("Internal error in buffered chain: {:?}", e);
                 };
 
                 match return_chan {
@@ -146,7 +143,7 @@ impl TransformChain {
                     Some(tx) => match tx.send(chain_response) {
                         Ok(_) => {}
                         Err(e) => trace!(
-                            "Dropping response message {:?} as not needed by TunableConsistency",
+                            "Dropping response message {:?} as not needed by ConsistentScatter",
                             e
                         ),
                     },
@@ -160,6 +157,7 @@ impl TransformChain {
             send_handle: tx,
             #[cfg(test)]
             count: count_clone,
+            original_chain: self,
         }
     }
 
@@ -170,12 +168,54 @@ impl TransformChain {
         }
     }
 
-    #[allow(clippy::type_complexity)]
     pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
         TransformChain {
             name,
             chain: transform_list,
         }
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        if self.chain.is_empty() {
+            return vec![
+                format!("{}:", self.name),
+                "  Chain cannot be empty".to_string(),
+            ];
+        }
+
+        let last_index = self.chain.len() - 1;
+
+        let mut errors = self
+            .chain
+            .iter()
+            .enumerate()
+            .map(|(i, transform)| {
+                let mut errors = vec![];
+
+                if i == last_index && !transform.is_terminating() {
+                    errors.push(format!(
+                        "  Non-terminating transform {:?} is last in chain. Last transform must be terminating.",
+                        transform.get_name()
+                    ));
+                } else if i != last_index && transform.is_terminating() {
+                    errors.push(format!(
+                        "  Terminating transform {:?} is not last in chain. Terminating transform must be last in chain.",
+                        transform.get_name()
+                    ));
+                }
+
+                errors.extend(transform.validate().iter().map(|x| format!("  {}", x)));
+
+                errors
+            })
+            .flatten()
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.name));
+        }
+
+        errors
     }
 
     pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
@@ -198,5 +238,35 @@ impl TransformChain {
         }
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
+    }
+}
+
+#[cfg(test)]
+mod chain_tests {
+    use crate::transforms::chain::TransformChain;
+    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::null::Null;
+    use crate::transforms::Transforms;
+
+    #[tokio::test]
+    async fn test_validate_invalid_chain() {
+        let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
+        assert_eq!(
+            chain.validate(),
+            vec!["test-chain:", "  Chain cannot be empty"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_chain() {
+        let chain = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain".to_string(),
+        );
+        assert_eq!(chain.validate(), Vec::<String>::new());
     }
 }

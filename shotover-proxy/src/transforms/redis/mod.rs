@@ -2,10 +2,10 @@ use std::io;
 
 use crate::transforms::util::ConnectionError;
 
-pub mod redis_cache;
-pub mod redis_cluster;
-pub mod redis_cluster_slot_rewrite;
-pub mod redis_codec_destination;
+pub mod cache;
+pub mod cluster_ports_rewrite;
+pub mod sink_cluster;
+pub mod sink_single;
 pub mod timestamp_tagging;
 
 #[derive(thiserror::Error, Clone, Debug)]

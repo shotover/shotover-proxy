@@ -1,1 +1,1 @@
-pub mod cassandra_codec_destination;
+pub mod sink_single;

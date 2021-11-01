@@ -141,17 +141,8 @@ impl DockerCompose {
         let sys_time = time::SystemTime::now();
         let mut result = run_command("docker-compose", &args).unwrap();
         while re.find_iter(&result).count() < count {
-            match sys_time.elapsed() {
-                Ok(elapsed) => {
-                    if elapsed.as_secs() > time {
-                        debug!("{}", result);
-                        panic!("wait_for: Timer expired");
-                    }
-                }
-                Err(e) => {
-                    // an error occurred!
-                    info!("Clock aberration: {:?}", e);
-                }
+            if sys_time.elapsed().as_secs() > time {
+                panic!("wait_for_n timer expired. Log output: {}", result);
             }
             debug!("wait_for_n: looping");
             result = run_command("docker-compose", &args).unwrap();

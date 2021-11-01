@@ -3,24 +3,21 @@ use std::collections::HashMap;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
-use itertools::Itertools;
 use serde::Deserialize;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{
-    Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
-};
+use crate::message::{Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 
 #[derive(Clone)]
-pub struct TunableConsistency {
+pub struct ConsistentScatter {
     route_map: Vec<BufferedChain>,
     write_consistency: i32,
     read_consistency: i32,
@@ -29,27 +26,27 @@ pub struct TunableConsistency {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct TunableConsistencyConfig {
+pub struct ConsistentScatterConfig {
     pub route_map: HashMap<String, Vec<TransformsConfig>>,
     pub write_consistency: i32,
     pub read_consistency: i32,
 }
 
-#[async_trait]
-impl TransformsFromConfig for TunableConsistencyConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl ConsistentScatterConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
-        for (key, value) in self.route_map.clone() {
+        for (key, value) in &self.route_map {
             route_map.push(
-                build_chain_from_config(key, &value, topics)
+                build_chain_from_config(key.clone(), value, topics)
                     .await?
                     .into_buffered_chain(10),
             );
         }
+        route_map.sort_by_key(|x| x.original_chain.name.clone());
 
-        Ok(Transforms::TunableConsistency(TunableConsistency {
+        Ok(Transforms::ConsistentScatter(ConsistentScatter {
             route_map,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
@@ -120,17 +117,16 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
     }
 }
 
-impl TunableConsistency {}
+impl ConsistentScatter {}
 
 #[async_trait]
-impl Transform for TunableConsistency {
+impl Transform for ConsistentScatter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let required_successes = message_wrapper
-            .message
+        let required_successes: Vec<_> = message_wrapper
             .messages
             .iter_mut()
             .map(|m| {
-                m.generate_message_details(false);
+                m.generate_message_details_query();
 
                 match &m.details {
                     MessageDetails::Query(QueryMessage {
@@ -144,7 +140,7 @@ impl Transform for TunableConsistency {
                     _ => self.write_consistency,
                 }
             })
-            .collect_vec();
+            .collect();
         let max_required_successes = *required_successes
             .iter()
             .max()
@@ -157,7 +153,7 @@ impl Transform for TunableConsistency {
         for chain in self.route_map.iter_mut() {
             rec_fu.push(chain.process_request(
                 message_wrapper.clone(),
-                "TunableConsistency".to_string(),
+                "ConsistentScatter".to_string(),
                 None,
             ));
         }
@@ -167,8 +163,8 @@ impl Transform for TunableConsistency {
             match res {
                 Ok(mut messages) => {
                     debug!("{:#?}", messages);
-                    for message in &mut messages.messages {
-                        message.generate_message_details(true);
+                    for message in &mut messages {
+                        message.generate_message_details_response();
                     }
                     results.push(messages);
                 }
@@ -183,8 +179,8 @@ impl Transform for TunableConsistency {
 
         drop(rec_fu);
 
-        if results.len() < max_required_successes as usize {
-            let collated_response = required_successes
+        Ok(if results.len() < max_required_successes as usize {
+            required_successes
                 .iter()
                 .map(|_| {
                     Message::new_response(
@@ -195,55 +191,75 @@ impl Transform for TunableConsistency {
                         RawFrame::None,
                     )
                 })
-                .collect_vec();
-
-            Ok(Messages {
-                messages: collated_response,
-            })
+                .collect()
         } else {
-            let mut collated_response: Vec<Message> = required_successes
+            required_successes
                 .into_iter()
                 .filter_map(|_required_successes| {
                     let mut collated_results = vec![];
                     for res in &mut results {
-                        if let Some(m) = res.messages.pop() {
-                            if let MessageDetails::Response(qm) = &m.details {
-                                collated_results.push(qm.clone());
+                        if let Some(m) = res.pop() {
+                            if let MessageDetails::Response(qm) = m.details {
+                                collated_results.push(qm);
                             }
                         }
                     }
                     resolve_fragments(&mut collated_results)
                         .map(|qr| Message::new_response(qr, true, RawFrame::None))
                 })
-                .collect_vec();
+                // We do this as we are pop'ing from the end of the results in the filter_map above
+                .rev()
+                .collect()
+        })
+    }
 
-            // We do this as we are pop'ing from the end of the results in the filter_map above
-            collated_response.reverse();
+    fn is_terminating(&self) -> bool {
+        true
+    }
 
-            Ok(Messages {
-                messages: collated_response,
+    fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .route_map
+            .iter()
+            .map(|buffer_chain| {
+                buffer_chain
+                    .original_chain
+                    .validate()
+                    .into_iter()
+                    .map(|x| format!("  {}", x))
             })
+            .flatten()
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
         }
+
+        errors
     }
 
     fn get_name(&self) -> &'static str {
-        "TunableConsistency"
+        "ConsistentScatter"
     }
 }
 
 #[cfg(test)]
 mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChain};
-    use crate::transforms::distributed::tunable_consistency_scatter::TunableConsistency;
-    use crate::transforms::test_transforms::ReturnerTransform;
+    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
+    use crate::transforms::internal_debug_transforms::DebugReturnerTransform;
 
-    use crate::message::{MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value};
+    use crate::message::{
+        Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    };
     use crate::protocols::RawFrame;
-    use crate::transforms::{Transforms, Wrapper};
+    use crate::transforms::null::Null;
+    use crate::transforms::{Transform, Transforms, Wrapper};
     use std::collections::HashMap;
 
-    fn check_ok_responses(mut message: Messages, expected_ok: &Value, _expected_count: usize) {
-        let test_message_details = message.messages.pop().unwrap().details;
+    fn check_ok_responses(mut messages: Messages, expected_ok: &Value, _expected_count: usize) {
+        let test_message_details = messages.pop().unwrap().details;
         if let MessageDetails::Response(QueryResponse {
             result: Some(r), ..
         }) = test_message_details
@@ -254,10 +270,10 @@ mod scatter_transform_tests {
         }
     }
 
-    fn check_err_responses(mut message: Messages, expected_err: &Value, _expected_count: usize) {
+    fn check_err_responses(mut messages: Messages, expected_err: &Value, _expected_count: usize) {
         if let MessageDetails::Response(QueryResponse {
             error: Some(err), ..
-        }) = message.messages.pop().unwrap().details
+        }) = messages.pop().unwrap().details
         {
             assert_eq!(expected_err, &err);
         } else {
@@ -274,14 +290,14 @@ mod scatter_transform_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_scatter_success() {
-        let response = Messages::new_single_response(
-            QueryResponse::just_result(Value::Strings("OK".to_string())),
+        let response = vec![Message::new(
+            MessageDetails::Response(QueryResponse::just_result(Value::Strings("OK".to_string()))),
             true,
             RawFrame::None,
-        );
+        )];
 
-        let wrapper = Wrapper::new(Messages::new_single_query(
-            QueryMessage {
+        let wrapper = Wrapper::new(vec![Message::new(
+            MessageDetails::Query(QueryMessage {
                 query_string: "".to_string(),
                 namespace: vec![String::from("keyspace"), String::from("old")],
                 primary_key: Default::default(),
@@ -289,19 +305,19 @@ mod scatter_transform_tests {
                 projection: None,
                 query_type: QueryType::Read,
                 ast: None,
-            },
+            }),
             true,
             RawFrame::None,
-        ));
+        )]);
 
-        let ok_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {
+        let ok_repeat = Transforms::DebugReturnerTransform(DebugReturnerTransform {
             message: response.clone(),
             ok: true,
-        }));
-        let err_repeat = Transforms::RepeatMessage(Box::new(ReturnerTransform {
+        });
+        let err_repeat = Transforms::DebugReturnerTransform(DebugReturnerTransform {
             message: response.clone(),
             ok: false,
-        }));
+        });
 
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
@@ -317,7 +333,7 @@ mod scatter_transform_tests {
             TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
-        let mut tuneable_success_consistency = Transforms::TunableConsistency(TunableConsistency {
+        let mut tuneable_success_consistency = Transforms::ConsistentScatter(ConsistentScatter {
             route_map: build_chains(two_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
@@ -348,7 +364,7 @@ mod scatter_transform_tests {
             TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
-        let mut tuneable_fail_consistency = Transforms::TunableConsistency(TunableConsistency {
+        let mut tuneable_fail_consistency = Transforms::ConsistentScatter(ConsistentScatter {
             route_map: build_chains(one_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
@@ -364,5 +380,71 @@ mod scatter_transform_tests {
         let expected_err = Value::Strings("Not enough responses".to_string());
 
         check_err_responses(response_fail, &expected_err, 1);
+    }
+
+    #[tokio::test]
+    async fn test_validate_invalid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(vec![], "test-chain-2".to_string());
+
+        let transform = ConsistentScatter {
+            route_map: vec![
+                chain_1.into_buffered_chain(10),
+                chain_2.into_buffered_chain(10),
+            ],
+            write_consistency: 1,
+            read_consistency: 1,
+            timeout: 1000,
+            count: 0,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "ConsistentScatter:",
+                "  test-chain-2:",
+                "    Chain cannot be empty"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ConsistentScatter {
+            route_map: vec![
+                chain_1.into_buffered_chain(10),
+                chain_2.into_buffered_chain(10),
+            ],
+            write_consistency: 1,
+            read_consistency: 1,
+            timeout: 1000,
+            count: 0,
+        };
+
+        assert_eq!(transform.validate(), Vec::<String>::new());
     }
 }

@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel already running jobs
+concurrency:
+  group: testing_${{ github.head_ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: sccache
@@ -31,12 +36,6 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo2-${{ hashFiles('**/Cargo.lock') }}
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
     - name: Install latest stable
       uses: actions-rs/toolchain@v1
       with:
@@ -62,20 +61,15 @@ jobs:
       run: sccache --start-server
     - name: Configure sscache
       run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
-    - name: Sync S3 test files
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      run: mkdir -p test_tmp && aws s3 sync s3://shotover-test-captures ./test_tmp
     - name: Check `cargo fmt` was run
       run: cargo fmt --all -- --check
     - name: Build
       run: cargo build ${{ matrix.cargo_profile }} --all-targets
     - name: Run tests
-      run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored
+      run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output
       timeout-minutes: 30
     - name: Cleanup docker
-      run: ./shotover-proxy/tests/scripts/teardown.sh
+      run: shotover-proxy/tests/scripts/teardown.sh
     - name: License Check
       run: |
         cargo install --locked cargo-deny

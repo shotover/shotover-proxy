@@ -1,5 +1,5 @@
 use crate::config::topology::TopicHolder;
-use crate::protocols::redis_codec::RedisCodec;
+use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::tls::{TlsAcceptor, TlsConfig};
@@ -16,7 +16,6 @@ use tracing::{error, info};
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisConfig {
     pub listen_addr: String,
-    pub batch_size_hint: u64,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
     pub tls: Option<TlsConfig>,
@@ -34,7 +33,6 @@ impl SourcesFromConfig for RedisConfig {
         RedisSource::new(
             chain,
             self.listen_addr.clone(),
-            self.batch_size_hint,
             trigger_shutdown_rx,
             shutdown_complete_tx,
             self.connection_limit,
@@ -58,7 +56,6 @@ impl RedisSource {
     pub async fn new(
         chain: &TransformChain,
         listen_addr: String,
-        batch_hint: u64,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         shutdown_complete_tx: mpsc::Sender<()>,
         connection_limit: Option<usize>,
@@ -68,18 +65,17 @@ impl RedisSource {
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "Redis Source";
 
-        let mut listener = TcpCodecListener {
-            chain: chain.clone(),
-            source_name: name.to_string(),
-            listener: None,
-            listen_addr: listen_addr.clone(),
-            hard_connection_limit: hard_connection_limit.unwrap_or(false),
-            codec: RedisCodec::new(false, batch_hint as usize),
-            limit_connections: Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
-            trigger_shutdown_rx: trigger_shutdown_rx.clone(),
+        let mut listener = TcpCodecListener::new(
+            chain.clone(),
+            name.to_string(),
+            listen_addr.clone(),
+            hard_connection_limit.unwrap_or(false),
+            RedisCodec::new(DecodeType::Query),
+            Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
+            trigger_shutdown_rx.clone(),
             shutdown_complete_tx,
-            tls: tls.map(TlsAcceptor::new).transpose()?,
-        };
+            tls.map(TlsAcceptor::new).transpose()?,
+        );
 
         let join_handle = Handle::current().spawn(async move {
             // Check we didn't receive a shutdown signal before the receiver was created

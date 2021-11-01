@@ -4,41 +4,43 @@ networks:
 services:
   cassandra-one:
     image: library/cassandra:3.11.10
+    networks:
+      - cassandra
     ports:
       - "9043:9042"
-    healthcheck:
+    healthcheck: &healthcheck
       test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
       interval: 5s
       timeout: 5s
       retries: 60
-    environment: &environment    # Declare and save environments variables into "environment"
+    environment: &environment
       CASSANDRA_SEEDS: "cassandra-one,cassandra-two"    # The first two nodes will be seeds
       CASSANDRA_CLUSTER_NAME: SolarSystem
       CASSANDRA_DC: Mars
       CASSANDRA_RACK: West
       CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
       CASSANDRA_NUM_TOKENS: 128
+      MAX_HEAP_SIZE: "128M"
+      MIN_HEAP_SIZE: "128M"
+      HEAP_NEWSIZE: "24M"
+
   cassandra-two:
     image: library/cassandra:3.11.10
+    networks:
+      - cassandra
     ports:
       - "9044:9042"
-    healthcheck:
-      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
-      interval: 5s
-      timeout: 5s
-      retries: 60
-    environment: *environment    # point to "environment" to use the same environment variables as cass1
+    healthcheck: *healthcheck
+    environment: *environment
     depends_on:
       - cassandra-one
   cassandra-three:
     image: library/cassandra:3.11.10
+    networks:
+      - cassandra
     ports:
       - "9045:9042"
-    healthcheck:
-      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
-      interval: 5s
-      timeout: 5s
-      retries: 60
-    environment: *environment    # point to "environment" to use the same environment variables as cass1
+    healthcheck: *healthcheck
+    environment: *environment
     depends_on:
       - cassandra-two

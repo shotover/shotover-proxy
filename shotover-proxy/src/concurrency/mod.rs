@@ -1,3 +1,6 @@
+// This file contains code (futures-util/src/stream/futures_ordered.rs ) modified from https://github.com/rust-lang/futures-rs.
+// It is provided as-is under the same license (Apache v2) as futures-rs. This will be removed once https://github.com/rust-lang/futures-rs/issues/2309 has been resolved.
+
 use core::cmp::Ordering;
 use core::fmt::{self, Debug};
 use core::iter::FromIterator;
@@ -129,6 +132,7 @@ impl<Fut: Future> FuturesOrdered<Fut> {
     }
 
     /// Returns `true` if the queue contains no futures
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.in_progress_queue.is_empty() && self.queued_outputs.is_empty()
     }

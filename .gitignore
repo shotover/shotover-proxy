@@ -4,7 +4,6 @@
 *.data
 *.data.old
 tests/soaktest-*
-*.svg
 *.gz
 /.vscode
 .workspace.code-workspace

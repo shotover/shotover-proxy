@@ -1,4 +1,3 @@
-use crate::message::{ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, Value};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use cassandra_proto::compressors::no_compression::NoCompression;
@@ -15,13 +14,13 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
-use std::str::FromStr;
-use tracing::{info, trace, debug, warn};
+use tracing::{info, trace, warn};
 
-use crate::message::{Messages, QueryType};
+use crate::message::{
+    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+};
 use crate::protocols::RawFrame;
 use cassandra_proto::frame::frame_response::ResponseBody;
-use chrono::DateTime;
 use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use sqlparser::ast::Statement::{Delete, Insert, Update};
 use sqlparser::ast::{
@@ -30,7 +29,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 
 use anyhow::{anyhow, Result};
 use crate::server::CodecErrorFixup;
@@ -148,7 +147,7 @@ impl CassandraCodec2 {
                                         Value::NULL => (-1_i32).into_cbytes(),
                                         Value::Bytes(x) => x.to_vec(),
                                         Value::Strings(x) => {
-                                            Vec::from(x.clone().as_bytes())
+                                            Vec::from(x.as_bytes())
                                             // CString::new(x.clone()).into_cbytes()
                                         }
                                         Value::Integer(x) => {
@@ -168,7 +167,6 @@ impl CassandraCodec2 {
                                             temp
                                             // (x.clone() as CInt).into_cbytes()
                                         }
-                                        Value::Timestamp(x) => Vec::from(x.to_rfc2822().as_bytes()),
                                         _ => unreachable!(),
                                     });
                                     rb
@@ -186,7 +184,7 @@ impl CassandraCodec2 {
 
                     return Frame {
                         version: Version::Response,
-                        flags: query_frame.flags.clone(),
+                        flags: query_frame.flags,
                         opcode: Opcode::Result,
                         stream: query_frame.stream,
                         body: response.into_cbytes(),
@@ -209,7 +207,6 @@ impl CassandraCodec2 {
             Value::Integer(i) => SQLValue::Number(i.to_string()),
             Value::Float(f) => SQLValue::Number(f.to_string()),
             Value::Boolean(b) => SQLValue::Boolean(*b),
-            Value::Timestamp(t) => SQLValue::Timestamp(t.to_rfc2822()),
             _ => SQLValue::Null,
         }
     }
@@ -227,13 +224,6 @@ impl CassandraCodec2 {
             SQLValue::HexStringLiteral(v) | SQLValue::Date(v) | SQLValue::Time(v) => {
                 Value::Strings(v.to_string())
             }
-            SQLValue::Timestamp(v) => {
-                if let Ok(r) = DateTime::from_str(v.as_str()) {
-                    Value::Timestamp(r)
-                } else {
-                    Value::Strings(format!("{:?}", v))
-                }
-            }
             SQLValue::Boolean(v) => Value::Boolean(*v),
             _ => Value::Strings("NULL".to_string()),
         }
@@ -246,8 +236,7 @@ impl CassandraCodec2 {
             | SQLValue::NationalStringLiteral(v)
             | SQLValue::HexStringLiteral(v)
             | SQLValue::Date(v)
-            | SQLValue::Time(v)
-            | SQLValue::Timestamp(v) => v.to_string(),
+            | SQLValue::Time(v) => v.to_string(),
             SQLValue::Boolean(v) => v.to_string(),
             _ => "NULL".to_string(),
         }
@@ -309,7 +298,7 @@ impl CassandraCodec2 {
             for value in &v.0 {
                 for ex in value {
                     if let Expr::Value(v) = ex {
-                        cumulator.push(CassandraCodec2::expr_to_string(v).clone());
+                        cumulator.push(CassandraCodec2::expr_to_string(v));
                     }
                 }
             }
@@ -379,7 +368,7 @@ impl CassandraCodec2 {
                                 let _ = std::mem::replace(
                                     name,
                                     ObjectName {
-                                        0: namespace.deref().clone(),
+                                        0: namespace.clone(),
                                     },
                                 );
                             }
@@ -543,7 +532,7 @@ impl CassandraCodec2 {
             _ => {}
         }
 
-        Messages::new_single_response(
+        vec![Message::new_response(
             QueryResponse {
                 matching_query,
                 result,
@@ -552,15 +541,12 @@ impl CassandraCodec2 {
             },
             false,
             RawFrame::Cassandra(frame),
-        )
+        )]
     }
 
     pub fn process_cassandra_frame(&self, frame: Frame) -> Messages {
         if self.bypass {
-            // if frame.body.len() == 0 {
-            //     info!("detected zero length body");
-            // }
-            return Messages::new_single_bypass(RawFrame::Cassandra(frame));
+            return vec![Message::new_raw(RawFrame::Cassandra(frame))];
         }
 
         match frame.opcode {
@@ -573,10 +559,10 @@ impl CassandraCodec2 {
                     if parsed_string.ast.is_none() {
                         // TODO: Currently this will probably catch schema changes that don't match
                         // what the SQL parser expects
-                        return Messages::new_single_bypass(RawFrame::Cassandra(frame));
+                        return vec![Message::new_raw(RawFrame::Cassandra(frame))];
                     }
-                    return Messages::new_single_query(
-                        QueryMessage {
+                    return vec![Message::new(
+                        MessageDetails::Query(QueryMessage {
                             query_string: body.query.into_plain(),
                             namespace: parsed_string.namespace.unwrap(),
                             primary_key: parsed_string.primary_key,
@@ -584,17 +570,17 @@ impl CassandraCodec2 {
                             projection: parsed_string.projection,
                             query_type: QueryType::Read,
                             ast: parsed_string.ast.map(ASTHolder::SQL),
-                        },
+                        }),
                         false,
                         RawFrame::Cassandra(frame),
-                    );
+                    )];
                 }
-                Messages::new_single_bypass(RawFrame::Cassandra(frame))
+                vec![Message::new_raw(RawFrame::Cassandra(frame))]
             }
             Opcode::Result => CassandraCodec2::build_response_message(frame, None),
             Opcode::Error => {
                 if let Ok(ResponseBody::Error(body)) = frame.get_body() {
-                    return Messages::new_single_response(
+                    return vec![Message::new_response(
                         QueryResponse {
                             matching_query: None,
                             result: None,
@@ -603,12 +589,12 @@ impl CassandraCodec2 {
                         },
                         false,
                         RawFrame::Cassandra(frame),
-                    );
+                    )];
                 }
 
-                Messages::new_single_bypass(RawFrame::Cassandra(frame))
+                vec![Message::new_raw(RawFrame::Cassandra(frame))]
             }
-            _ => Messages::new_single_bypass(RawFrame::Cassandra(frame)),
+            _ => vec![Message::new_raw(RawFrame::Cassandra(frame))],
         }
     }
 
@@ -712,10 +698,13 @@ impl CassandraCodec2 {
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
             }
         };
+<<<<<<< HEAD
         // if frame.body.len() == 0 {
         //     info!("encoding zero length body");
         // }
         debug!( "{:?} Encoded message as {:?}", thread::current().id(),  &frame );
+=======
+>>>>>>> 493552307c8e39d0b374d795212617e89349e488
         Ok(frame)
     }
 }

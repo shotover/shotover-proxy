@@ -9,44 +9,43 @@ use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::protocols::redis_codec::RedisCodec;
+use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct RedisCodecConfiguration {
+pub struct RedisSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub tls: Option<TlsConfig>,
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisCodecConfiguration {
-    async fn get_source(&self, _: &TopicHolder) -> Result<Transforms> {
+impl RedisSinkSingleConfig {
+    pub async fn get_source(&self) -> Result<Transforms> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
-        Ok(Transforms::RedisCodecDestination(
-            RedisCodecDestination::new(self.address.clone(), tls),
-        ))
+        Ok(Transforms::RedisSinkSingle(RedisSinkSingle::new(
+            self.address.clone(),
+            tls,
+        )))
     }
 }
 
-pub struct RedisCodecDestination {
+pub struct RedisSinkSingle {
     address: String,
     tls: Option<TlsConnector>,
     outbound: Option<Framed<Pin<Box<dyn AsyncStream + Send + Sync>>, RedisCodec>>,
 }
 
-impl Clone for RedisCodecDestination {
+impl Clone for RedisSinkSingle {
     fn clone(&self) -> Self {
-        RedisCodecDestination::new(self.address.clone(), self.tls.clone())
+        RedisSinkSingle::new(self.address.clone(), self.tls.clone())
     }
 }
 
-impl RedisCodecDestination {
-    pub fn new(address: String, tls: Option<TlsConnector>) -> RedisCodecDestination {
-        RedisCodecDestination {
+impl RedisSinkSingle {
+    pub fn new(address: String, tls: Option<TlsConnector>) -> RedisSinkSingle {
+        RedisSinkSingle {
             address,
             tls,
             outbound: None,
@@ -55,7 +54,11 @@ impl RedisCodecDestination {
 }
 
 #[async_trait]
-impl Transform for RedisCodecDestination {
+impl Transform for RedisSinkSingle {
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.outbound.is_none() {
             let tcp_stream = TcpStream::connect(self.address.clone()).await.unwrap();
@@ -65,13 +68,16 @@ impl Transform for RedisCodecDestination {
             } else {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             };
-            self.outbound = Some(Framed::new(generic_stream, RedisCodec::new(true, 1)));
+            self.outbound = Some(Framed::new(
+                generic_stream,
+                RedisCodec::new(DecodeType::Response),
+            ));
         }
 
         // self.outbound is gauranteed to be Some by the previous block
         let outbound_framed_codec = self.outbound.as_mut().unwrap();
         outbound_framed_codec
-            .send(message_wrapper.message)
+            .send(message_wrapper.messages)
             .await
             .ok();
 
@@ -82,7 +88,7 @@ impl Transform for RedisCodecDestination {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisCodecDestination"
+        "RedisSinkSingle"
     }
 }
 

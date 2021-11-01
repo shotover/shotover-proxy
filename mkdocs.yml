@@ -6,7 +6,8 @@ nav:
       - "Getting Started": "user-guide/getting-started.md"
       - "Concepts": "user-guide/concepts.md"
       - "Configuration": "user-guide/configuration.md"
-  - "Transforms": "transforms/transforms.md"
+  - "Source Types": "source-types.md"
+  - "Transforms": "transforms.md"
   - "Examples":
       - "Redis": "examples/redis-clustering.md"
   - "Contributing": "contributing.md"
@@ -16,6 +17,8 @@ markdown_extensions:
       permalink: "#"
 
 theme:
+  logo: logo_48x48.png
+  favicon: logo_48x48.png
   name: material
 #theme:
 #  name: readthedocs

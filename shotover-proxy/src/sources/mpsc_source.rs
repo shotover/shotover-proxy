@@ -2,7 +2,6 @@ use crate::transforms::chain::TransformChain;
 use tokio::sync::mpsc::Receiver;
 
 use crate::config::topology::{ChannelMessage, TopicHolder};
-use crate::message::Message;
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::coalesce::CoalesceBehavior;
@@ -36,7 +35,7 @@ impl SourcesFromConfig for AsyncMpscConfig {
             let behavior = self
                 .coalesce_behavior
                 .clone()
-                .unwrap_or(CoalesceBehavior::COUNT(10000));
+                .unwrap_or(CoalesceBehavior::Count(10000));
             Ok(vec![Sources::Mpsc(AsyncMpsc::new(
                 chain.clone(),
                 rx,
@@ -72,11 +71,11 @@ impl AsyncMpsc {
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
         let mut main_chain = chain;
-        let mut buffer: Vec<Message> = Vec::new();
+        let mut buffer = Vec::new();
 
         let jh = Handle::current().spawn(async move {
             // This will go out of scope once we exit the loop below, indicating we are done and shutdown
-            let _notifier = shutdown_complete.clone();
+            let _notifier = shutdown_complete;
             let mut last_write: Instant = Instant::now();
             while !shutdown.is_shutdown() {
                 let channel_message = tokio::select! {
@@ -98,26 +97,26 @@ impl AsyncMpsc {
 
                 match return_chan {
                     None => {
-                        buffer.append(&mut messages.messages);
+                        buffer.append(&mut messages);
                         if match max_behavior {
-                            CoalesceBehavior::COUNT(c) => buffer.len() >= c,
-                            CoalesceBehavior::WAIT_MS(w) => last_write.elapsed().as_millis() >= w,
-                            CoalesceBehavior::COUNT_OR_WAIT(c, w) => {
+                            CoalesceBehavior::Count(c) => buffer.len() >= c,
+                            CoalesceBehavior::WaitMs(w) => last_write.elapsed().as_millis() >= w,
+                            CoalesceBehavior::CountOrWait(c, w) => {
                                 last_write.elapsed().as_millis() >= w || buffer.len() >= c
                             }
                         } {
                             //this could be done in the if statement above, but for the moment lets keep the
                             //evaluation logic separate from the update
                             match max_behavior {
-                                CoalesceBehavior::WAIT_MS(_)
-                                | CoalesceBehavior::COUNT_OR_WAIT(_, _) => {
+                                CoalesceBehavior::WaitMs(_)
+                                | CoalesceBehavior::CountOrWait(_, _) => {
                                     last_write = Instant::now()
                                 }
                                 _ => {}
                             }
-                            std::mem::swap(&mut buffer, &mut messages.messages);
+                            std::mem::swap(&mut buffer, &mut messages);
                             let w: Wrapper = Wrapper::new(messages);
-                            info!("Flushing {} commands", w.message.messages.len());
+                            info!("Flushing {} commands", w.messages.len());
 
                             if let Err(e) =
                                 main_chain.process_request(w, "AsyncMpsc".to_string()).await

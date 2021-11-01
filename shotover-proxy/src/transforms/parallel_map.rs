@@ -1,9 +1,9 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, TransformsFromConfig, Wrapper,
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -69,9 +69,8 @@ pub struct ParallelMapConfig {
     pub ordered_results: bool,
 }
 
-#[async_trait]
-impl TransformsFromConfig for ParallelMapConfig {
-    async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+impl ParallelMapConfig {
+    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
@@ -86,36 +85,120 @@ impl TransformsFromConfig for ParallelMapConfig {
 #[async_trait]
 impl Transform for ParallelMap {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut results: Vec<Message> = Vec::with_capacity(message_wrapper.message.messages.len());
-        let mut message_iter = message_wrapper.message.messages.into_iter();
+        let mut results = Vec::with_capacity(message_wrapper.messages.len());
+        let mut message_iter = message_wrapper.messages.into_iter();
         while message_iter.len() != 0 {
             let mut future = UOFutures::new(self.ordered);
             for chain in self.chains.iter_mut() {
                 if let Some(message) = message_iter.next() {
-                    future.push(chain.process_request(
-                        Wrapper::new(Messages {
-                            messages: vec![message],
-                        }),
-                        "Parallel".to_string(),
-                    ));
+                    future.push(
+                        chain.process_request(Wrapper::new(vec![message]), "Parallel".to_string()),
+                    );
                 }
             }
             // We do this gnarly functional chain to unwrap each individual result and pop an error on the first one
             // then flatten it into one giant response.
-            let mut temp: Vec<Message> = future
-                .collect::<Vec<_>>()
-                .await
-                .into_iter()
-                .collect::<anyhow::Result<Vec<Messages>>>()
-                .into_iter()
-                .flat_map(|ms| ms.into_iter().flat_map(|m| m.messages))
-                .collect();
-            results.append(&mut temp);
+            results.extend(
+                future
+                    .collect::<Vec<_>>()
+                    .await
+                    .into_iter()
+                    .collect::<anyhow::Result<Vec<Messages>>>()
+                    .into_iter()
+                    .flat_map(|ms| ms.into_iter().flatten()),
+            );
         }
-        Ok(Messages { messages: results })
+        Ok(results)
     }
 
     fn get_name(&self) -> &'static str {
         "SequentialMap"
+    }
+
+    fn is_terminating(&self) -> bool {
+        true
+    }
+
+    fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .chains
+            .iter()
+            .map(|chain| {
+                chain
+                    .validate()
+                    .iter()
+                    .map(|x| format!("  {}", x))
+                    .collect::<Vec<String>>()
+            })
+            .flatten()
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
+    }
+}
+
+#[cfg(test)]
+mod parallel_map_tests {
+    use crate::transforms::{
+        chain::TransformChain, debug_printer::DebugPrinter, null::Null, parallel_map::ParallelMap,
+        Transform, Transforms,
+    };
+
+    #[tokio::test]
+    async fn test_validate_invalid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(vec![], "test-chain-2".to_string());
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(
+            transform.validate(),
+            vec![
+                "SequentialMap:",
+                "  test-chain-2:",
+                "    Chain cannot be empty"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_chain() {
+        let chain_1 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-1".to_string(),
+        );
+        let chain_2 = TransformChain::new_no_shared_state(
+            vec![
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::DebugPrinter(DebugPrinter::new()),
+                Transforms::Null(Null::default()),
+            ],
+            "test-chain-2".to_string(),
+        );
+
+        let transform = ParallelMap {
+            chains: vec![chain_1, chain_2],
+            ordered: true,
+        };
+
+        assert_eq!(transform.validate(), Vec::<String>::new());
     }
 }

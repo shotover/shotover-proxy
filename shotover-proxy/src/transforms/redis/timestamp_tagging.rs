@@ -1,8 +1,6 @@
-use crate::config::topology::TopicHolder;
-
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
-use crate::transforms::{Transform, Transforms, TransformsFromConfig, Wrapper};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -25,10 +23,9 @@ impl RedisTimestampTagger {
     }
 }
 
-#[async_trait]
-impl TransformsFromConfig for RedisTimestampTaggerConfig {
-    async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
-        Ok(Transforms::RedisTimeStampTagger(RedisTimestampTagger {}))
+impl RedisTimestampTaggerConfig {
+    pub async fn get_source(&self) -> Result<Transforms> {
+        Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger {}))
     }
 }
 
@@ -128,12 +125,10 @@ fn unwrap_response(qr: &mut QueryResponse) {
             let mut hm: HashMap<String, Value> = HashMap::new();
             hm.insert("timestamp".to_string(), Value::List(timestamps));
 
-            let mut timestamps_holder = Some(Value::Document(hm));
-            let mut results_holder = Some(Value::List(results));
-            std::mem::swap(&mut qr.response_meta, &mut timestamps_holder);
-            std::mem::swap(&mut qr.result, &mut results_holder);
+            qr.response_meta = Some(Value::Document(hm));
+            qr.result = Some(Value::List(results));
         } else if values.len() == 2 {
-            let mut timestamp = values.pop().map(|v| {
+            qr.response_meta = values.pop().map(|v| {
                 let mut hm: HashMap<String, Value> = HashMap::new();
                 if let Value::Integer(i) = v {
                     let start = SystemTime::now();
@@ -149,9 +144,7 @@ fn unwrap_response(qr: &mut QueryResponse) {
                 }
                 Value::Document(hm)
             });
-            let mut actual = values.pop();
-            std::mem::swap(&mut qr.response_meta, &mut timestamp);
-            std::mem::swap(&mut qr.result, &mut actual);
+            qr.result = values.pop();
         }
     }
 }
@@ -162,8 +155,8 @@ impl Transform for RedisTimestampTagger {
         let mut tagged_success: bool = true;
         let mut exec_block: bool = false;
 
-        for message in message_wrapper.message.messages.iter_mut() {
-            message.generate_message_details(false);
+        for message in message_wrapper.messages.iter_mut() {
+            message.generate_message_details_query();
             if let MessageDetails::Query(ref mut qm) = message.details {
                 if let Some(a) = &qm.ast {
                     if a.get_command() == *"EXEC" {
@@ -181,8 +174,8 @@ impl Transform for RedisTimestampTagger {
         debug!("tagging transform got {:?}", response);
         if let Ok(mut messages) = response {
             if tagged_success || exec_block {
-                for mut message in messages.messages.iter_mut() {
-                    message.generate_message_details(true);
+                for mut message in messages.iter_mut() {
+                    message.generate_message_details_response();
                     if let MessageDetails::Response(ref mut qr) = message.details {
                         unwrap_response(qr);
                         message.modified = true;
@@ -197,6 +190,6 @@ impl Transform for RedisTimestampTagger {
     }
 
     fn get_name(&self) -> &'static str {
-        "RedisTimeStampTagger"
+        "RedisTimestampTagger"
     }
 }

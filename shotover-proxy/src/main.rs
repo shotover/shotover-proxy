@@ -2,7 +2,7 @@
 #![recursion_limit = "256"]
 
 use anyhow::Result;
-use clap::Clap;
+use clap::Parser;
 
 use shotover_proxy::runner::{ConfigOpts, Runner};
 
