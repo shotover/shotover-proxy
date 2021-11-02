@@ -6,7 +6,6 @@ use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
 use tracing::debug;
-use tracing::info;
 
 /// Runs a command and returns the output as a string.
 ///
@@ -65,8 +64,7 @@ impl DockerCompose {
 
         DockerCompose::clean_up(file_path).unwrap();
 
-        let result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
-        info!("Starting {}: {}", file_path, result);
+        run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
 
         DockerCompose {
             file_path: file_path.to_string(),
@@ -101,7 +99,7 @@ impl DockerCompose {
     /// * If `count` occurrences of `log_text` is not found in the log within 60 seconds.
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
-        info!("wait_for_n: '{}' {}", log_text, count);
+        debug!("wait_for_n: '{}' {}", log_text, count);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::Instant::now();
@@ -113,7 +111,7 @@ impl DockerCompose {
             debug!("wait_for_n: looping");
             result = run_command("docker-compose", &args).unwrap();
         }
-        info!("wait_for_n: found '{}' {} times", log_text, count);
+        debug!("wait_for_n: found '{}' {} times", log_text, count);
         self
     }
 
@@ -122,7 +120,7 @@ impl DockerCompose {
     /// # Arguments
     /// * `file_path` - The path to the docker-compose yaml file that was used to start docker.
     fn clean_up(file_path: &str) -> Result<()> {
-        info!("bringing down docker compose {}", file_path);
+        debug!("bringing down docker compose {}", file_path);
 
         run_command("docker-compose", &["-f", file_path, "down", "-v"])?;
         run_command("docker-compose", &["-f", file_path, "rm", "-f", "-s", "-v"])?;
