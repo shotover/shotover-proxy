@@ -252,10 +252,6 @@ impl Transform for Protect {
         // todo: destructure the above bracket mountain as below
         Ok(result)
     }
-
-    fn get_name(&self) -> &'static str {
-        "protect"
-    }
 }
 
 #[cfg(test)]

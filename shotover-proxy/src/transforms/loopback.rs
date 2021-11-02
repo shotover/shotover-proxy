@@ -27,10 +27,6 @@ impl Transform for Loopback {
             .collect())
     }
 
-    fn get_name(&self) -> &'static str {
-        "Loopback"
-    }
-
     fn is_terminating(&self) -> bool {
         true
     }

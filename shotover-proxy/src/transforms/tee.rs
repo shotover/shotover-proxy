@@ -63,6 +63,12 @@ impl TeeConfig {
     }
 }
 
+impl Tee {
+    fn get_name(&self) -> &'static str {
+        "Tee"
+    }
+}
+
 #[async_trait]
 impl Transform for Tee {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
@@ -135,9 +141,5 @@ impl Transform for Tee {
                 Ok(chain_response)
             }
         }
-    }
-
-    fn get_name(&self) -> &'static str {
-        "tee"
     }
 }

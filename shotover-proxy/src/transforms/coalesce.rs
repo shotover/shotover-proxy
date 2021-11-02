@@ -75,10 +75,6 @@ impl Transform for Coalesce {
             )])
         }
     }
-
-    fn get_name(&self) -> &'static str {
-        "Coalesce"
-    }
 }
 
 #[cfg(test)]

@@ -86,10 +86,6 @@ impl Transform for RedisSinkSingle {
             None => Err(anyhow!("couldnt get frame")),
         }
     }
-
-    fn get_name(&self) -> &'static str {
-        "RedisSinkSingle"
-    }
 }
 
 #[cfg(test)]

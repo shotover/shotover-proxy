@@ -100,8 +100,4 @@ impl Transform for KafkaSink {
         }
         Ok(responses)
     }
-
-    fn get_name(&self) -> &'static str {
-        "Kafka"
-    }
 }

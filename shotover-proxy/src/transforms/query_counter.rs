@@ -64,10 +64,6 @@ impl Transform for QueryCounter {
 
         message_wrapper.call_next_transform().await
     }
-
-    fn get_name(&self) -> &'static str {
-        "QueryCounter"
-    }
 }
 
 impl QueryCounterConfig {

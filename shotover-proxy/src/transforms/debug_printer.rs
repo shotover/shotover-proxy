@@ -30,8 +30,4 @@ impl Transform for DebugPrinter {
         info!("Response content: {:?}", response);
         response
     }
-
-    fn get_name(&self) -> &'static str {
-        "DebugPrinter"
-    }
 }

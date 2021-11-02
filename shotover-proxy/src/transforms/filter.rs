@@ -35,10 +35,6 @@ impl Transform for QueryTypeFilter {
         });
         message_wrapper.call_next_transform().await
     }
-
-    fn get_name(&self) -> &'static str {
-        "QueryType Filter"
-    }
 }
 
 #[cfg(test)]
