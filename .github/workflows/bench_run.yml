@@ -1,4 +1,4 @@
-name: Benchmark Run
+name: Benchmarks
 
 on:
   pull_request:
@@ -14,8 +14,9 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build:
+  benchmarks:
     runs-on: ubuntu-20.04
+    name: Benchmarks
     steps:
     - uses: actions/checkout@v2
     - uses: actions-rs/toolchain@v1

@@ -25,11 +25,19 @@ cargo bench --bench chain_benches -- --baseline master --noplot | tee benches_lo
 
 # grep returns non zero exit code when it doesnt find anything so we need to disable pipefail
 set +o pipefail
-COUNT=`grep -o "Performance has regressed." benches_log.txt | wc -l`
+COUNT_REGRESS=`grep -o "Performance has regressed." benches_log.txt | wc -l`
+COUNT_IMPROVE=`grep -o "Performance has improved." benches_log.txt | wc -l`
 set -o pipefail
 
 mkdir -p comment_info
-if [ "$COUNT" != "0" ]; then
-  echo "$COUNT benchmarks reported regressed performance. Please check the benchmark workflow logs for details: $LOG_PAGE" > comment_info/message.txt
+if [[ "$COUNT_REGRESS" != "0" || "$COUNT_IMPROVE" != "0" ]]; then
+  echo "$COUNT_REGRESS benchmark regressed. $COUNT_IMPROVE benchmark improved. Please check the benchmark workflow logs for full details: $LOG_PAGE" > comment_info/message.txt
   echo "$GITHUB_EVENT_NUMBER" > ./comment_info/issue_number.txt
+
+  # grep returns non zero exit code when it doesnt find anything so we need to disable -e
+  set +e
+  # Kind of brittle but -B5 includes the 5 lines prior which always happens to includes the bench name + results
+  grep -B5 "Performance has regressed." benches_log.txt >> comment_info/message.txt
+  grep -B5 "Performance has improved." benches_log.txt >> comment_info/message.txt
+  set -e
 fi
