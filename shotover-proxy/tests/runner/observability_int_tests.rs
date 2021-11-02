@@ -34,7 +34,7 @@ async fn test_metrics() {
         r#"shotover_transform_failures{transform="Null"}"#,
         r#"shotover_transform_failures{transform="QueryCounter"}"#,
         r#"# TYPE shotover_available_connections gauge"#,
-        r#"shotover_available_connections{source="Redis Source"}"#,
+        r#"shotover_available_connections{source="RedisSource"}"#,
         r#"# TYPE shotover_transform_latency summary"#,
         r#"shotover_transform_latency{transform="QueryCounter",quantile="0"}"#,
         r#"shotover_transform_latency{transform="QueryCounter",quantile="0.5"}"#,
