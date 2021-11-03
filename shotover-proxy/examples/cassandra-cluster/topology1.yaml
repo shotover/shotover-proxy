@@ -16,8 +16,8 @@ chain_config:
   main_chain:
     #    - Printer
     - CassandraSinkSingle:
-        bypass_result_processing: true
-        remote_address: "127.0.0.1:9043"
+        result_processing: false
+        remote_address: "10.5.0.2:9042"
 named_topics:
   testtopic: 5
 source_to_chain_mapping:

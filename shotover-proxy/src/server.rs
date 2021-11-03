@@ -285,10 +285,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             debug!(
                 "{:?} New connection from {}",
                 thread::current().id(),
-                socket
-                    .peer_addr()
-                    .map(|p| format!("{}", p))
-                    .unwrap_or_else(|_| "Unknown peer".to_string())
+                &conn_string
             );
 
             socket.set_nodelay(true)?;
@@ -302,7 +299,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 source_details: self.source_name.clone(),
 
                 // Initialize the connection state. This allocates read/write
-                // buffers to perform redis protocol frame parsing.
+                // buffers to perform protocol frame parsing.
 
                 // The connection state needs a handle to the max connections
                 // semaphore. When the handler is done processing the
@@ -441,13 +438,15 @@ fn spawn_read_write_tasks<
                         thread::current().id(),
                         filtered_messages
                     );
-                    if let Err(error) = in_tx.send(filtered_messages) {
-                        warn!(
-                            "{:?} failed to send message: {}",
-                            thread::current().id(),
-                            error
-                        );
-                        return;
+                    if filtered_messages.len() > 0 {
+                        if let Err(error) = in_tx.send(filtered_messages) {
+                            warn!(
+                                "{:?} failed to send message: {}",
+                                thread::current().id(),
+                                error
+                            );
+                            return;
+                        }
                     }
                 }
                 Err(error) => {
@@ -550,12 +549,6 @@ impl<C: Codec + 'static> Handler<C> {
                 messages
             );
 
-            let filtered_messages = handle_protocol_error(&self.codec, messages, &out_tx);
-            debug!(
-                "{:?} filtered_messages: {:?}",
-                thread::current().id(),
-                filtered_messages
-            );
             debug!(
                 "{:?} client details: {:?}",
                 thread::current().id(),
@@ -566,7 +559,7 @@ impl<C: Codec + 'static> Handler<C> {
                 .chain
                 .process_request(
                     Wrapper::new_with_client_details(
-                        filtered_messages,
+                        messages,
                         self.client_details.clone(),
                     ),
                     self.client_details.clone(),
@@ -574,8 +567,15 @@ impl<C: Codec + 'static> Handler<C> {
                 .await
             {
                 Ok(modified_message) => {
+                    debug!(
+                        "{:?} sending message: {:?}",
+                        thread::current().id(),
+                        modified_message
+                    );
                     // send the result of the process up stream
-                    out_tx.send(modified_message)?;
+                    let result = out_tx.send(modified_message)?;
+
+                    debug!( "Send message result {:?}", result );
                 }
                 Err(e) => {
                     error!(

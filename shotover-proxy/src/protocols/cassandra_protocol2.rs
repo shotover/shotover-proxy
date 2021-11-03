@@ -43,6 +43,7 @@ pub struct CassandraCodec2 {
     current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
+    last_error: Option<String>,
 }
 
 pub(crate) struct ParsedCassandraQueryString {
@@ -61,6 +62,7 @@ impl CassandraCodec2 {
             current_frames: Vec::new(),
             pk_col_map,
             bypass,
+            last_error: None,
         }
     }
 
@@ -629,6 +631,12 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
+        if self.last_error.is_some() {
+            let result = self.last_error.as_ref().unwrap().clone();
+            self.last_error= None;
+            info!("{:?} Closing errored connection: {:?}", thread::current().id(), &result);
+            return Err( anyhow::Error::msg( result ) );
+        }
         debug!("{:?} Decoding {:?}", thread::current().id(), src.to_vec());
         match self.decode_raw(src) {
             Ok(Some(frame)) => {
@@ -637,6 +645,7 @@ impl Decoder for CassandraCodec2 {
             }
             Ok(None) => Ok(None),
             Err(e) => {
+                self.last_error = Some(e.message.as_plain());
                 debug!("{:?} CDRSError {:?}", thread::current().id(), &e);
                 let error_frame = Frame {
                     version: Version::Response,

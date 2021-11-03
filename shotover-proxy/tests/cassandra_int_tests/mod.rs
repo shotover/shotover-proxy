@@ -1,5 +1,6 @@
 use cassandra_cpp::*;
 use std::thread::sleep;
+use std::thread;
 use std::time::Duration;
 use tracing::info;
 
@@ -47,8 +48,8 @@ impl CassandraTestContext {
                         }
                         Err(e) => {
                             info!(
-                                "Could not execute dummy query {}, retrying again - retries {}",
-                                e, current_attempt
+                                "{:?} Could not execute dummy query {}, retrying again - retries {}",
+                                thread::current().id(), e, current_attempt
                             );
                             sleep(millisecond);
                         }
@@ -56,8 +57,8 @@ impl CassandraTestContext {
                 }
                 Err(e) => {
                     info!(
-                        "Could not connect {}, retrying again - retries {}",
-                        e, current_attempt
+                        "{:?} Could not connect {}, retrying again - retries {}",
+                        thread::current().id(), e, current_attempt
                     );
                     sleep(millisecond);
                 }

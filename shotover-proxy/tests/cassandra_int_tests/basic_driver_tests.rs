@@ -5,15 +5,15 @@ use test_helpers::docker_compose::DockerCompose;
 use anyhow::Result;
 use cassandra_cpp::*;
 use std::{thread, time};
-use tracing::info;
+use tracing::{info,debug,warn};
 
 fn test_create_keyspace() {
-    info!("test_args");
+    info!("{:?} test_args", thread::current().id());
     let query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
     let ctx = CassandraTestContext::new();
-    info!("{:?}", ctx.session.execute(&query).wait().unwrap());
+    info!("{:?} result {:?}", thread::current().id(), ctx.session.execute(&query).wait().unwrap());
 }
 
 #[test]
@@ -35,8 +35,9 @@ fn test_basic_connection() -> Result<()> {
     Ok(())
 }
 
+//#[test]
 fn test_create_keyspace_direct() {
-    let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
+   // let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
@@ -47,11 +48,38 @@ fn test_create_keyspace_direct() {
     .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
     .collect();
 
-    compose.wait_for_n_t("Startup complete", 3, 120);
-    info!("test_args");
-    let query = stmt!(
+    //compose.wait_for_n_t("Startup complete", 3, 120);
+    info!("{:?} test_args", thread::current().id());
+
+    let mut query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
-    let ctx = CassandraTestContext::new_with_points_and_port("127.0.0.1", 9043);
-    ctx.session.execute(&query).wait().unwrap();
+    let ctx = CassandraTestContext::new_with_points("10.5.0.2");
+    print!( "{:?} result {:?}",  thread::current().id(), ctx.session.execute(&query).wait().unwrap());
+    query = stmt!("SELECT release_version FROM system.local");
+    print!( "{:?}", ctx.session.execute(&query).wait().unwrap() );
+    query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
+    print!( "{:?}", ctx.session.execute(&query).wait().unwrap() );
+}
+
+//#[test]
+fn test_cpp_driver() {
+
+    print!( "HELLO");
+    warn!("Starting");
+    let mut cluster = Cluster::default();
+    cluster.set_contact_points("10.5.0.2").unwrap();
+    //cluster.set_port(9043).ok();
+    cluster.set_load_balance_round_robin();
+
+    let mut session= cluster.connect().unwrap();
+
+    let mut query = stmt!(
+        "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+    );
+    print!( "{:?}", session.execute(&query).wait().unwrap() );
+    query = stmt!("SELECT release_version FROM system.local");
+    print!( "{:?}", session.execute(&query).wait().unwrap() );
+    query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
+    print!( "{:?}", session.execute(&query).wait().unwrap() );
 }
