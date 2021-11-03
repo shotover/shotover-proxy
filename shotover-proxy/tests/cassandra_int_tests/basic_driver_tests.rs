@@ -4,7 +4,7 @@ use test_helpers::docker_compose::DockerCompose;
 
 use anyhow::Result;
 use cassandra_cpp::*;
-use std::{thread};
+use std::thread;
 use tracing::{debug, info, warn};
 
 fn test_create_keyspace() {
