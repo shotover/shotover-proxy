@@ -64,11 +64,10 @@ fn handle_protocol_error(
     messages: Messages,
     tx_out: &UnboundedSender<Messages>,
 ) -> Messages {
-    // this code creates a new Vec and uses an iterator with mapping and filtering to determine
+    // this code creates a new Vec and uses an iterator with mapping and filtering to
     // populate it from the original Messages.message Vec.  It may be more efficient to scan the
     // original Vec and replace or delete individual Message in place.
-    let mut result = Vec::with_capacity(messages.len());
-    messages
+    let result = messages
         .into_iter()
         .map(|m| {
             // if there is a protocol error handle it otherwise return the original message.
@@ -124,7 +123,7 @@ fn handle_protocol_error(
             }
         })
         .filter(|m| m.protocol_error == 0)
-        .for_each(|m| result.push(m));
+        .collect();
     debug!(
         "{:?} handle_protocol_error returning: {:?}",
         thread::current().id(),

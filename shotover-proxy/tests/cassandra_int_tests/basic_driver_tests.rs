@@ -8,16 +8,37 @@ use std::{thread, time};
 use tracing::{debug, info, warn};
 
 fn test_create_keyspace() {
-    info!("{:?} test_args", thread::current().id());
-    let query = stmt!(
+    let mut query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
     let ctx = CassandraTestContext::new();
-    info!(
+    let mut result = ctx.session.execute(&query).wait().unwrap();
+    debug!(
         "{:?} result {:?}",
         thread::current().id(),
-        ctx.session.execute(&query).wait().unwrap()
+        result
     );
+    assert_eq!( result.row_count(), 0 );
+
+    query = stmt!("SELECT release_version FROM system.local");
+    result = ctx.session.execute(&query).wait().unwrap();
+    debug!(
+        "{:?} result {:?}",
+        thread::current().id(),
+        result
+    );
+    assert_eq!( result.row_count(), 1 );
+    assert_eq!( result.first_row().unwrap().get_column(0).unwrap().get_str().ok(), Some("3.11.10"));
+
+    query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
+    result = ctx.session.execute(&query).wait().unwrap();
+    debug!(
+        "{:?} result {:?}",
+        thread::current().id(),
+        result
+    );
+    assert_eq!( result.row_count(), 6 );
+    assert_eq!( result.first_row().unwrap().get_column(0).unwrap().get_str().ok(), Some("cycling"));
 }
 
 #[test]
@@ -39,7 +60,8 @@ fn test_basic_connection() -> Result<()> {
     Ok(())
 }
 
-//#[test]
+#[test]
+#[ignore = "used for development debugging"]
 fn test_create_keyspace_direct() {
     // let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
 
@@ -70,7 +92,8 @@ fn test_create_keyspace_direct() {
     print!("{:?}", ctx.session.execute(&query).wait().unwrap());
 }
 
-//#[test]
+#[test]
+#[ignore = "used for development debugging"]
 fn test_cpp_driver() {
     print!("HELLO");
     warn!("Starting");

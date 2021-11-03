@@ -1,3 +1,3 @@
 ---
-main_log_level: "info,shotover_proxy=info,shotover_proxy::server=trace,shotover_proxy::transforms::cassandra::sink_single=trace"
+main_log_level: "info"
 observability_interface: "0.0.0.0:9001"
