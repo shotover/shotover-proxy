@@ -593,8 +593,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [124 ]998");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[test]
