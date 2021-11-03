@@ -269,7 +269,7 @@ checksum = "eadde404d13254d8592f8aaa946a1fb7a2769c137df56ed29a3be5996973a156"
 [[package]]
 name = "cassandra-proto"
 version = "0.1.2"
-source = "git+https://github.com/Claude-at-Instaclustr/cassandra-proto?branch=OPTION_fix#6527d6148c85be77d4eb324e5344be86ebba4fa9"
+source = "git+https://github.com/shotover/cassandra-proto?branch=OPTION_fix#6527d6148c85be77d4eb324e5344be86ebba4fa9"
 dependencies = [
  "byteorder",
  "bytes",
@@ -297,7 +297,7 @@ dependencies = [
 [[package]]
 name = "cbytes_macro_derive"
 version = "0.1.0"
-source = "git+https://github.com/Claude-at-Instaclustr/cassandra-proto?branch=OPTION_fix#6527d6148c85be77d4eb324e5344be86ebba4fa9"
+source = "git+https://github.com/shotover/cassandra-proto?branch=OPTION_fix#6527d6148c85be77d4eb324e5344be86ebba4fa9"
 dependencies = [
  "proc-macro2",
  "quote",
