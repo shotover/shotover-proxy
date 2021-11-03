@@ -144,7 +144,7 @@ fn build_redis_commands(
         Expr::BinaryOp { left, op, right } => {
             // first check if this is a related to PK
             if let Expr::Identifier(i) = left.borrow() {
-                if pks.iter().any(|v| *v == i.to_string()) {
+                if pks.iter().any(|v| *v == i.value) {
                     //Ignore this as we build the pk constraint elsewhere
                     return Ok(());
                 }
@@ -398,7 +398,7 @@ mod test {
         query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> (ASTHolder, Option<HashMap<String, Value>>) {
-        let res = CassandraCodec2::parse_query_string(query_string.to_string(), pk_col_map);
+        let res = CassandraCodec2::parse_query_string(query_string, pk_col_map);
         (ASTHolder::SQL(res.ast.unwrap()), res.colmap)
     }
 
