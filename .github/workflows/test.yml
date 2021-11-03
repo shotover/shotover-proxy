@@ -55,15 +55,6 @@ jobs:
         wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/dependencies/libuv/v1.35.0/libuv1_1.35.0-1_amd64.deb
         wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/dependencies/libuv/v1.35.0/libuv1-dev_1.35.0-1_amd64.deb
         sudo apt -y install ./cassandra-cpp-driver_2.16.0-1_amd64.deb ./cassandra-cpp-driver-dev_2.16.0-1_amd64.deb ./libuv1_1.35.0-1_amd64.deb ./libuv1-dev_1.35.0-1_amd64.deb
-    - name: Start sccache
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        SCCACHE_BUCKET: shotover-build-caches
-        SCCACHE_IDLE_TIMEOUT: 0
-      run: sccache --start-server
-    - name: Configure sscache
-      run: echo "" >> .cargo/config && echo "[build]" >> .cargo/config && echo "rustc-wrapper = \"$(which sccache)\"" >> .cargo/config && cat .cargo/config
     - name: Install cargo-hack
       run: cargo install cargo-hack --version 0.5.8
     - name: Check `cargo fmt` was run
