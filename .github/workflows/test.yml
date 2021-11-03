@@ -48,6 +48,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libpcap-dev
         sudo apt-get upgrade -y
+        cc --version
     - name: Install Cassandra CPP driver
       run: |
         cat /etc/lsb-release
