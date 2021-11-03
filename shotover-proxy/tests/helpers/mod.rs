@@ -55,6 +55,7 @@ impl ShotoverManager {
         }
     }
 
+    #[allow(dead_code)] // to make clippy happy
     pub fn from_topology_file_without_observability(topology_path: &str) -> ShotoverManager {
         let opts = ConfigOpts {
             topology_file: topology_path.into(),

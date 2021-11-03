@@ -4,7 +4,7 @@ use test_helpers::docker_compose::DockerCompose;
 
 use anyhow::Result;
 use cassandra_cpp::*;
-use std::{thread, time};
+use std::{thread};
 use tracing::{debug, info, warn};
 
 fn test_create_keyspace() {
@@ -108,7 +108,7 @@ fn test_cpp_driver() {
     //cluster.set_port(9043).ok();
     cluster.set_load_balance_round_robin();
 
-    let mut session = cluster.connect().unwrap();
+    let session = cluster.connect().unwrap();
 
     let mut query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
