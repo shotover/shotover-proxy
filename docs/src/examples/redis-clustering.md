@@ -2,12 +2,12 @@
 
 The following guide shows you how to configure Shotover Proxy to support transparently proxying Redis cluster _unaware_ clients to a [Redis cluster](https://redis.io/topics/cluster-spec).
 
-## Setting up the redis cluster
+## Setting up the Redis cluster
 
-First you need to setup a redis cluster for shotover to connect to.
+First you need to setup a Redis cluster for Shotover to connect to.
 
 The easiest way to do this is with this example [docker-compose.yml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/examples/redis-cluster/docker-compose.yml)
-You should first inspect the docker-compose.yml to understand what the cluster looks like and how its exposed to the network.
+You should first inspect the `docker-compose.yml` to understand what the cluster looks like and how its exposed to the network.
 
 Then run:
 
@@ -16,9 +16,9 @@ curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-
 docker-compose -f docker-compose.yml up
 ```
 
-When you are finished with the containers ctrl-c will shut them down.
+When you are finished with the containers <kbd>ctrl</kbd> + <kbd>c</kbd> will shut them down.
 
-Alternatively you could spin up a hosted redis cluster on [any cloud provider that provides it](https://www.instaclustr.com/products/managed-redis).
+Alternatively you could spin up a hosted Redis cluster on [any cloud provider that provides it](https://www.instaclustr.com/products/managed-redis).
 This more accurately reflects a real production use but will take a bit more setup.
 
 ## Configuration
@@ -29,11 +29,12 @@ Modify your `topology.yaml` file like this:
 {{#include ../../../shotover-proxy/examples/redis-cluster/topology.yaml}}
 ```
 
-If you didnt use the standard docker-compose setup file then you will need to change first_contact_points to point to the redis instances you used.
+If you didnt use the standard `docker-compose.yml` setup then you will need to change `first_contact_points` to point to the Redis instances you used.
 
 ## Starting
 
-Run shotover, if Shotover can successfully contact your Redis cluster you should see the following:
+Run Shotover, if Shotover can successfully contact your Redis cluster you should see the following:
+
 ```console
 user@demo$ ./shotover-proxy
 2021-11-03T06:20:03.955870Z  INFO shotover_proxy::runner: Starting Shotover 0.1.0
@@ -47,7 +48,7 @@ user@demo$ ./shotover-proxy
 2021-11-03T06:20:03.956675Z  INFO shotover_proxy::server: accepting inbound connections
 ```
 
-Currently the RedisSinkCluster transform, needs to be able to connect to the Redis cluster when it starts up otherwise shotover will exit with an error.
+The `RedisSinkCluster` transform needs to be able to connect to the Redis cluster when it starts up otherwise Shotover will exit with an error.
 
 ## Testing
 
@@ -57,7 +58,7 @@ With Shotover Proxy now up and running, we can test out our client application. 
 redis-benchmark -t set,get
 ```
 
-Running against local containerised redis instances on a Ryzen 9 3900X we get the following:
+Running against local containerised Redis instances on a Ryzen 9 3900X we get the following:
 
 ```console
 user@demo ~$ redis-benchmark -t set,get
