@@ -13,32 +13,38 @@ fn test_create_keyspace() {
     );
     let ctx = CassandraTestContext::new();
     let mut result = ctx.session.execute(&query).wait().unwrap();
-    debug!(
-        "{:?} result {:?}",
-        thread::current().id(),
-        result
-    );
-    assert_eq!( result.row_count(), 0 );
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 0);
 
     query = stmt!("SELECT release_version FROM system.local");
     result = ctx.session.execute(&query).wait().unwrap();
-    debug!(
-        "{:?} result {:?}",
-        thread::current().id(),
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 1);
+    assert_eq!(
         result
+            .first_row()
+            .unwrap()
+            .get_column(0)
+            .unwrap()
+            .get_str()
+            .ok(),
+        Some("3.11.10")
     );
-    assert_eq!( result.row_count(), 1 );
-    assert_eq!( result.first_row().unwrap().get_column(0).unwrap().get_str().ok(), Some("3.11.10"));
 
     query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
     result = ctx.session.execute(&query).wait().unwrap();
-    debug!(
-        "{:?} result {:?}",
-        thread::current().id(),
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 6);
+    assert_eq!(
         result
+            .first_row()
+            .unwrap()
+            .get_column(0)
+            .unwrap()
+            .get_str()
+            .ok(),
+        Some("cycling")
     );
-    assert_eq!( result.row_count(), 6 );
-    assert_eq!( result.first_row().unwrap().get_column(0).unwrap().get_str().ok(), Some("cycling"));
 }
 
 #[test]
