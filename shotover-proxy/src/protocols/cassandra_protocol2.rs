@@ -633,9 +633,13 @@ impl Decoder for CassandraCodec2 {
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
         if self.last_error.is_some() {
             let result = self.last_error.as_ref().unwrap().clone();
-            self.last_error= None;
-            info!("{:?} Closing errored connection: {:?}", thread::current().id(), &result);
-            return Err( anyhow::Error::msg( result ) );
+            self.last_error = None;
+            info!(
+                "{:?} Closing errored connection: {:?}",
+                thread::current().id(),
+                &result
+            );
+            return Err(anyhow::Error::msg(result));
         }
         debug!("{:?} Decoding {:?}", thread::current().id(), src.to_vec());
         match self.decode_raw(src) {

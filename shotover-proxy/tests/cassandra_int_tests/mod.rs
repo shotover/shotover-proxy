@@ -1,6 +1,6 @@
 use cassandra_cpp::*;
-use std::thread::sleep;
 use std::thread;
+use std::thread::sleep;
 use std::time::Duration;
 use tracing::info;
 
@@ -58,7 +58,9 @@ impl CassandraTestContext {
                 Err(e) => {
                     info!(
                         "{:?} Could not connect {}, retrying again - retries {}",
-                        thread::current().id(), e, current_attempt
+                        thread::current().id(),
+                        e,
+                        current_attempt
                     );
                     sleep(millisecond);
                 }

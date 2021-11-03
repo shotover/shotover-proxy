@@ -16,9 +16,9 @@ use crate::protocols::RawFrame;
 use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
+use std::thread;
 use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
-use std::thread;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkSingleConfig {
@@ -66,7 +66,11 @@ impl CassandraSinkSingle {
         loop {
             match self.outbound {
                 None => {
-                    trace!("{:?} creating outbound connection {:?}", thread::current().id(), self.address);
+                    trace!(
+                        "{:?} creating outbound connection {:?}",
+                        thread::current().id(),
+                        self.address
+                    );
                     let mut conn_pool = OwnedUnorderedConnectionPool::new(
                         self.address.clone(),
                         CassandraCodec2::new(self.cassandra_ks.clone(), self.bypass),

@@ -558,10 +558,7 @@ impl<C: Codec + 'static> Handler<C> {
             match self
                 .chain
                 .process_request(
-                    Wrapper::new_with_client_details(
-                        messages,
-                        self.client_details.clone(),
-                    ),
+                    Wrapper::new_with_client_details(messages, self.client_details.clone()),
                     self.client_details.clone(),
                 )
                 .await
@@ -575,7 +572,7 @@ impl<C: Codec + 'static> Handler<C> {
                     // send the result of the process up stream
                     let result = out_tx.send(modified_message)?;
 
-                    debug!( "Send message result {:?}", result );
+                    debug!("Send message result {:?}", result);
                 }
                 Err(e) => {
                     error!(
