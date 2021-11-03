@@ -48,9 +48,10 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libpcap-dev
         sudo apt-get upgrade -y
-        cc --version
     - name: Install Cassandra CPP driver
       run: |
+        echo CPP version number
+        cc --version
         cat /etc/lsb-release
         wget https://downloads.datastax.com/cpp-driver//ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver_2.16.0-1_amd64.deb
         wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver-dev_2.16.0-1_amd64.deb
