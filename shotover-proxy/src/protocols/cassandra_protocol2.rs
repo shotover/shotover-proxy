@@ -69,12 +69,8 @@ impl CassandraCodec2 {
         CassandraCodec2::rebuild_query_string_from_ast(&mut query);
         let QueryMessage {
             query_string,
-            namespace: _,
-            primary_key: _,
             query_values,
-            projection: _,
-            query_type: _,
-            ast: _,
+            ..
         } = query;
 
         let values: Option<QueryValues> = Some(QueryValues::SimpleValues(
@@ -117,7 +113,7 @@ impl CassandraCodec2 {
                                 )),
                                 name: CString::new(x.clone()),
                                 col_type: ColTypeOption {
-                                    id: ColType::Ascii, // todo: get types working
+                                    id: ColType::Ascii, // TODO: get types working
                                     value: None,
                                 },
                             }
@@ -128,8 +124,6 @@ impl CassandraCodec2 {
                         flags: 0,
                         columns_count: count,
                         paging_state: None,
-                        // global_table_space: Some(query.namespace.iter()
-                        //     .map(|x| CString::new(x.clone())).collect()),
                         global_table_space: None,
                         col_specs: col_spec,
                     };
@@ -143,15 +137,11 @@ impl CassandraCodec2 {
                                     let rb: CBytes = CBytes::new(match j {
                                         Value::NULL => (-1_i32).into_cbytes(),
                                         Value::Bytes(x) => x.to_vec(),
-                                        Value::Strings(x) => {
-                                            Vec::from(x.as_bytes())
-                                            // CString::new(x.clone()).into_cbytes()
-                                        }
+                                        Value::Strings(x) => Vec::from(x.as_bytes()),
                                         Value::Integer(x) => {
                                             let mut temp: Vec<u8> = Vec::new();
                                             let _ = temp.write_i64::<BigEndian>(*x).unwrap();
                                             temp
-                                            // Decimal::new(*x, 0).into_cbytes()
                                         }
                                         Value::Float(x) => {
                                             let mut temp: Vec<u8> = Vec::new();
@@ -162,7 +152,6 @@ impl CassandraCodec2 {
                                             let mut temp: Vec<u8> = Vec::new();
                                             let _ = temp.write_i32::<BigEndian>(*x as i32).unwrap();
                                             temp
-                                            // (x.clone() as CInt).into_cbytes()
                                         }
                                         _ => unreachable!(),
                                     });
@@ -199,10 +188,10 @@ impl CassandraCodec2 {
     fn value_to_expr(v: &Value) -> SQLValue {
         match v {
             Value::NULL => SQLValue::Null,
-            Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // todo: this is definitely wrong
+            Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // TODO: this is definitely wrong
             Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            Value::Integer(i) => SQLValue::Number(i.to_string()),
-            Value::Float(f) => SQLValue::Number(f.to_string()),
+            Value::Integer(i) => SQLValue::Number(i.to_string(), false),
+            Value::Float(f) => SQLValue::Number(f.to_string(), false),
             Value::Boolean(b) => SQLValue::Boolean(*b),
             _ => SQLValue::Null,
         }
@@ -215,12 +204,10 @@ impl CassandraCodec2 {
 
     fn expr_to_value(v: &SQLValue) -> Value {
         match v {
-            SQLValue::Number(v)
+            SQLValue::Number(v, false)
             | SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
-            SQLValue::HexStringLiteral(v) | SQLValue::Date(v) | SQLValue::Time(v) => {
-                Value::Strings(v.to_string())
-            }
+            SQLValue::HexStringLiteral(v) => Value::Strings(v.to_string()),
             SQLValue::Boolean(v) => Value::Boolean(*v),
             _ => Value::Strings("NULL".to_string()),
         }
@@ -228,12 +215,10 @@ impl CassandraCodec2 {
 
     fn expr_to_string(v: &SQLValue) -> String {
         match v {
-            SQLValue::Number(v) => v.to_string(),
+            SQLValue::Number(v, false) => v.to_string(),
             SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v)
-            | SQLValue::HexStringLiteral(v)
-            | SQLValue::Date(v)
-            | SQLValue::Time(v) => v.to_string(),
+            | SQLValue::HexStringLiteral(v) => v.to_string(),
             SQLValue::Boolean(v) => v.to_string(),
             _ => "NULL".to_string(),
         }
@@ -306,12 +291,8 @@ impl CassandraCodec2 {
     pub fn rebuild_query_string_from_ast(message: &mut QueryMessage) {
         if let QueryMessage {
             query_string,
-            namespace: _,
-            primary_key: _,
-            query_values: _,
-            projection: _,
-            query_type: _,
             ast: Some(ASTHolder::SQL(ast)),
+            ..
         } = message
         {
             let new_query_string = format!("{}", ast);
@@ -321,25 +302,21 @@ impl CassandraCodec2 {
 
     pub fn rebuild_ast_in_message(message: &mut QueryMessage) {
         if let QueryMessage {
-            query_string: _,
             namespace,
-            primary_key: _,
             query_values: Some(query_values),
             projection: Some(qm_projection),
-            query_type: _,
             ast: Some(ASTHolder::SQL(ast)),
+            ..
         } = message
         {
             match ast {
                 Statement::Query(query) => {
                     if let SetExpr::Select(select) = &mut query.body {
                         let Select {
-                            distinct: _,
                             projection,
                             from,
                             selection,
-                            group_by: _,
-                            having: _,
+                            ..
                         } = select.deref_mut();
 
                         // Rebuild projection
@@ -355,17 +332,15 @@ impl CassandraCodec2 {
 
                         // Rebuild namespace
                         if let Some(table_ref) = from.get_mut(0) {
-                            if let TableFactor::Table {
-                                name,
-                                alias: _,
-                                args: _,
-                                with_hints: _,
-                            } = &mut table_ref.relation
-                            {
+                            if let TableFactor::Table { name, .. } = &mut table_ref.relation {
                                 let _ = std::mem::replace(
                                     name,
                                     ObjectName {
-                                        0: namespace.clone(),
+                                        0: namespace
+                                            .iter()
+                                            .cloned()
+                                            .map(sqlparser::ast::Ident::new)
+                                            .collect(),
                                     },
                                 );
                             }
@@ -387,7 +362,7 @@ impl CassandraCodec2 {
     }
 
     pub(crate) fn parse_query_string(
-        query_string: String,
+        query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> ParsedCassandraQueryString {
         let dialect = GenericDialect {}; //TODO write CQL dialect
@@ -397,9 +372,8 @@ impl CassandraCodec2 {
         let mut primary_key: HashMap<String, Value> = HashMap::new();
         let mut ast: Option<Statement> = None;
         let parsed_sql = Parser::parse_sql(&dialect, query_string);
-        //TODO handle pks
-        // println!("{:#?}", foo);
 
+        //TODO handle pks
         //TODO: We absolutely don't handle multiple statements despite this loop indicating otherwise
         // for statement in ast_list.iter() {
         if let Ok(ast_list) = parsed_sql {
@@ -409,14 +383,10 @@ impl CassandraCodec2 {
                     Statement::Query(q) => {
                         if let SetExpr::Select(s) = q.body.borrow() {
                             projection = s.projection.iter().map(|s| s.to_string()).collect();
-                            if let TableFactor::Table {
-                                name,
-                                alias: _,
-                                args: _,
-                                with_hints: _,
-                            } = &s.from.get(0).unwrap().relation
+                            if let TableFactor::Table { name, .. } =
+                                &s.from.get(0).unwrap().relation
                             {
-                                namespace = name.0.clone();
+                                namespace = name.0.iter().map(|a| a.value.clone()).collect();
                             }
                             if let Some(sel) = &s.selection {
                                 CassandraCodec2::binary_ops_to_hashmap(sel, colmap.borrow_mut());
@@ -436,11 +406,12 @@ impl CassandraCodec2 {
                         table_name,
                         columns,
                         source,
+                        ..
                     } => {
-                        namespace = table_name.0.clone();
+                        namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
                         let values = CassandraCodec2::get_column_values(&source.body);
                         for (i, c) in columns.iter().enumerate() {
-                            projection.push(c.clone());
+                            projection.push(c.value.clone());
                             if let Some(v) = values.get(i) {
                                 colmap.insert(c.to_string(), Value::Strings(v.clone()));
                             }
@@ -461,27 +432,25 @@ impl CassandraCodec2 {
                         assignments,
                         selection,
                     } => {
-                        namespace = table_name.0.clone();
+                        namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
                         for assignment in assignments {
                             if let Expr::Value(v) = assignment.clone().value {
                                 let converted_value = CassandraCodec2::expr_to_value(v.borrow());
-                                colmap.insert(assignment.id.clone(), converted_value);
+                                colmap.insert(assignment.id.value.clone(), converted_value);
                             }
                         }
                         if let Some(s) = selection {
                             CassandraCodec2::binary_ops_to_hashmap(s, &mut primary_key);
                         }
-                        // projection = ;
                     }
                     Delete {
                         table_name,
                         selection,
                     } => {
-                        namespace = table_name.0.clone();
+                        namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
                         if let Some(s) = selection {
                             CassandraCodec2::binary_ops_to_hashmap(s, &mut primary_key);
                         }
-                        // projection = None;
                     }
                     _ => {}
                 }
@@ -549,10 +518,8 @@ impl CassandraCodec2 {
         match frame.opcode {
             Opcode::Query => {
                 if let Ok(ResponseBody::Query(body)) = frame.get_body() {
-                    let parsed_string = CassandraCodec2::parse_query_string(
-                        body.query.clone().into_plain(),
-                        &self.pk_col_map,
-                    );
+                    let parsed_string =
+                        CassandraCodec2::parse_query_string(body.query.as_str(), &self.pk_col_map);
                     if parsed_string.ast.is_none() {
                         // TODO: Currently this will probably catch schema changes that don't match
                         // what the SQL parser expects
@@ -596,10 +563,6 @@ impl CassandraCodec2 {
     }
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
-        // while src.remaining() != 0 {
-        //
-        // }
-
         trace!("Parsing C* frame");
         let v = parser::parse_frame(src, &self.compressor, &self.current_head);
         match v {
