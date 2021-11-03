@@ -201,8 +201,8 @@ impl CassandraCodec2 {
             Value::NULL => SQLValue::Null,
             Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // todo: this is definitely wrong
             Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            Value::Integer(i) => SQLValue::Number(i.to_string()),
-            Value::Float(f) => SQLValue::Number(f.to_string()),
+            Value::Integer(i) => SQLValue::Number(i.to_string(), false),
+            Value::Float(f) => SQLValue::Number(f.to_string(), false),
             Value::Boolean(b) => SQLValue::Boolean(*b),
             _ => SQLValue::Null,
         }
@@ -215,12 +215,10 @@ impl CassandraCodec2 {
 
     fn expr_to_value(v: &SQLValue) -> Value {
         match v {
-            SQLValue::Number(v)
+            SQLValue::Number(v, false)
             | SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
-            SQLValue::HexStringLiteral(v) | SQLValue::Date(v) | SQLValue::Time(v) => {
-                Value::Strings(v.to_string())
-            }
+            SQLValue::HexStringLiteral(v) => Value::Strings(v.to_string()),
             SQLValue::Boolean(v) => Value::Boolean(*v),
             _ => Value::Strings("NULL".to_string()),
         }
@@ -228,12 +226,10 @@ impl CassandraCodec2 {
 
     fn expr_to_string(v: &SQLValue) -> String {
         match v {
-            SQLValue::Number(v) => v.to_string(),
+            SQLValue::Number(v, false) => v.to_string(),
             SQLValue::SingleQuotedString(v)
             | SQLValue::NationalStringLiteral(v)
-            | SQLValue::HexStringLiteral(v)
-            | SQLValue::Date(v)
-            | SQLValue::Time(v) => v.to_string(),
+            | SQLValue::HexStringLiteral(v) => v.to_string(),
             SQLValue::Boolean(v) => v.to_string(),
             _ => "NULL".to_string(),
         }
@@ -340,6 +336,7 @@ impl CassandraCodec2 {
                             selection,
                             group_by: _,
                             having: _,
+                            ..
                         } = select.deref_mut();
 
                         // Rebuild projection
@@ -365,7 +362,14 @@ impl CassandraCodec2 {
                                 let _ = std::mem::replace(
                                     name,
                                     ObjectName {
-                                        0: namespace.clone(),
+                                        0: namespace
+                                            .clone()
+                                            .iter()
+                                            .map(|a| sqlparser::ast::Ident {
+                                                value: a.to_string(),
+                                                quote_style: None,
+                                            })
+                                            .collect(),
                                     },
                                 );
                             }
@@ -396,7 +400,7 @@ impl CassandraCodec2 {
         let mut projection: Vec<String> = Vec::new();
         let mut primary_key: HashMap<String, Value> = HashMap::new();
         let mut ast: Option<Statement> = None;
-        let parsed_sql = Parser::parse_sql(&dialect, query_string);
+        let parsed_sql = Parser::parse_sql(&dialect, &query_string);
         //TODO handle pks
         // println!("{:#?}", foo);
 
@@ -416,7 +420,7 @@ impl CassandraCodec2 {
                                 with_hints: _,
                             } = &s.from.get(0).unwrap().relation
                             {
-                                namespace = name.0.clone();
+                                namespace = name.0.clone().iter().map(|a| a.to_string()).collect();
                             }
                             if let Some(sel) = &s.selection {
                                 CassandraCodec2::binary_ops_to_hashmap(sel, colmap.borrow_mut());
@@ -436,11 +440,12 @@ impl CassandraCodec2 {
                         table_name,
                         columns,
                         source,
+                        ..
                     } => {
-                        namespace = table_name.0.clone();
+                        namespace = table_name.0.clone().iter().map(|a| a.to_string()).collect();
                         let values = CassandraCodec2::get_column_values(&source.body);
                         for (i, c) in columns.iter().enumerate() {
-                            projection.push(c.clone());
+                            projection.push(c.clone().to_string());
                             if let Some(v) = values.get(i) {
                                 colmap.insert(c.to_string(), Value::Strings(v.clone()));
                             }
@@ -461,11 +466,11 @@ impl CassandraCodec2 {
                         assignments,
                         selection,
                     } => {
-                        namespace = table_name.0.clone();
+                        namespace = table_name.0.clone().iter().map(|a| a.to_string()).collect();
                         for assignment in assignments {
                             if let Expr::Value(v) = assignment.clone().value {
                                 let converted_value = CassandraCodec2::expr_to_value(v.borrow());
-                                colmap.insert(assignment.id.clone(), converted_value);
+                                colmap.insert(assignment.id.clone().to_string(), converted_value);
                             }
                         }
                         if let Some(s) = selection {
@@ -477,7 +482,7 @@ impl CassandraCodec2 {
                         table_name,
                         selection,
                     } => {
-                        namespace = table_name.0.clone();
+                        namespace = table_name.0.clone().iter().map(|a| a.to_string()).collect();
                         if let Some(s) = selection {
                             CassandraCodec2::binary_ops_to_hashmap(s, &mut primary_key);
                         }

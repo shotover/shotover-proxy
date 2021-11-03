@@ -101,7 +101,7 @@ struct ValueHelper(Value);
 impl ValueHelper {
     fn as_bytes(&self) -> &[u8] {
         match &self.0 {
-            Value::Number(v) => v.as_bytes(),
+            Value::Number(v, false) => v.as_bytes(),
             Value::SingleQuotedString(v) => v.as_bytes(),
             Value::NationalStringLiteral(v) => v.as_bytes(),
             Value::HexStringLiteral(v) => v.as_bytes(),
@@ -112,9 +112,6 @@ impl ValueHelper {
                     &FALSE
                 }
             }
-            Value::Date(v) => v.as_bytes(),
-            Value::Time(v) => v.as_bytes(),
-            Value::Timestamp(v) => v.as_bytes(),
             Value::Null => &[],
             _ => unreachable!(),
         }
@@ -147,7 +144,7 @@ fn build_redis_commands(
         Expr::BinaryOp { left, op, right } => {
             // first check if this is a related to PK
             if let Expr::Identifier(i) = left.borrow() {
-                if pks.iter().any(|v| v == i) {
+                if pks.iter().any(|v| *v == i.to_string()) {
                     //Ignore this as we build the pk constraint elsewhere
                     return Ok(());
                 }
