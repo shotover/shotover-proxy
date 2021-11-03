@@ -471,11 +471,6 @@ impl RedisCodec {
             get_redis_frame(item.original)?
         } else {
             match item.details {
-                MessageDetails::Bypass(message) => self.encode_message(Message {
-                    details: *message,
-                    modified: item.modified,
-                    original: item.original,
-                })?,
                 MessageDetails::Query(qm) => RedisCodec::build_redis_query_frame(qm),
                 MessageDetails::Response(qr) => RedisCodec::build_redis_response_frame(qr),
                 MessageDetails::Unknown => get_redis_frame(item.original)?,

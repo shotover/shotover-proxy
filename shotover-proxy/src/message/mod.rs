@@ -23,7 +23,6 @@ pub struct Message {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum MessageDetails {
-    Bypass(Box<MessageDetails>),
     Query(QueryMessage),
     Response(QueryResponse),
     Unknown,
@@ -58,14 +57,6 @@ impl Message {
         Self::new(MessageDetails::Response(qr), modified, original)
     }
 
-    pub fn new_bypass(raw_frame: RawFrame) -> Self {
-        Self::new(
-            MessageDetails::Bypass(Box::new(MessageDetails::Unknown)),
-            false,
-            raw_frame,
-        )
-    }
-
     pub fn new_raw(raw_frame: RawFrame) -> Self {
         Self::new(MessageDetails::Unknown, false, raw_frame)
     }
@@ -75,18 +66,6 @@ impl Message {
             details,
             modified,
             original: RawFrame::None,
-        }
-    }
-
-    pub fn into_bypass(self) -> Self {
-        if let MessageDetails::Bypass(_) = &self.details {
-            self
-        } else {
-            Message {
-                details: MessageDetails::Bypass(Box::new(self.details)),
-                modified: false,
-                original: self.original,
-            }
         }
     }
 }
