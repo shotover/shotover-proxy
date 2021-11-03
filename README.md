@@ -10,12 +10,12 @@ For full documentation please go to [https://docs.shotover.io/](https://docs.sho
 
 ## Building
 Shotover is supported on Linux and macOS.
-To build shotover from source please refer to [the contributing documentation](https://docs.shotover.io/contributing)
+To build Shotover from source please refer to [the contributing documentation](https://docs.shotover.io/contributing)
 
 ## What is Shotover?
-Shotover-proxy is a high performance, configurable and extensible L7 data-layer proxy for controlling, managing and modifying the flow of database requests in transit. It can be used to solve many different operational and interoperability challenges by transparently intercepting and transforming queries. It is transparent in the sense that it can be plugged into your architecture without requiring application change.
+Shotover is a high performance, configurable and extensible L7 data-layer proxy for controlling, managing and modifying the flow of database requests in transit. It can be used to solve many different operational and interoperability challenges by transparently intercepting and transforming queries. It is transparent in the sense that it can be plugged into your architecture without requiring application change.
 
-Shotover-proxy currently supports intercepting requests for the following technologies (sources):
+Shotover currently supports intercepting requests for the following technologies (sources):
 * Cassandra (CQL4)
 * Redis (RESP2)
 
@@ -25,18 +25,18 @@ It currently supports writing output to the following technologies (sinks):
 * Kafka
 
 ## What problems does Shotover solve?
-Concrete examples where shotover-proxy has been applied include:
+Concrete examples where Shotover has been applied include:
 * [Multi-region, active-active redis](shotover-proxy/examples/redis-multi/)
 * [Cassandra query caching in redis, with a query audit trail sent to kafka](shotover-proxy/examples/cass-redis-kafka/)
 
-More broadly, shotover-proxy is designed to be used for a very wide ranging class of problems where it is useful to transparently intercept a database call and redirect it. This allows you to change the behaviour of running applications at the infrastructure level without change to the application code itself.
+More broadly, Shotover is designed to be used for a very wide ranging class of problems where it is useful to transparently intercept a database call and redirect it. This allows you to change the behaviour of running applications at the infrastructure level without change to the application code itself.
 Some examples where we envisage Shotover could be deployed include:
 * Moving very large or very hot tenants/customers/keys (that can cause unbalanced partition problems in some systems) to a separate data store by intercepting and redirecting queries for those particular keys
 * Dual writing and/or query translation to allow the underlying storage technology to be changed (for example, from DynamoDB to Apache Cassandra)
 * As an alternative to Change Data Capture technology to send writes to a message stream such as Apache Kafka in addition to the primary database
 * Adding auditing, encryption or other security measures
 
-Of course, shotover-proxy is designed to be configurable and extensible so use your imagination and let us know what uses you find!
+Of course, Shotover is designed to be configurable and extensible so use your imagination and let us know what uses you find!
 
 ## Deploying Shotover
 Shotover can be deployed in several different ways based on the problem you are trying to solve, but they all fall into three categories:
