@@ -63,7 +63,7 @@ impl RedisSource {
         tls: Option<TlsConfig>,
     ) -> Result<RedisSource> {
         info!("Starting Redis source on [{}]", listen_addr);
-        let name = "Redis Source";
+        let name = "RedisSource";
 
         let mut listener = TcpCodecListener::new(
             chain.clone(),

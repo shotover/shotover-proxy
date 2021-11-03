@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt, TryFutureExt};
-use metrics::counter;
+use metrics::{counter, register_counter, Unit};
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
 use redis_protocol::resp2::types::Frame;
@@ -43,27 +43,13 @@ pub struct RedisSinkClusterConfig {
 }
 
 impl RedisSinkClusterConfig {
-    pub async fn get_source(&self) -> Result<Transforms> {
-        let authenticator = RedisAuthenticator {};
-
-        let connection_pool = ConnectionPool::new_with_auth(
-            RedisCodec::new(DecodeType::Response),
-            authenticator,
+    pub async fn get_source(&self, chain_name: String) -> Result<Transforms> {
+        let mut cluster = RedisSinkCluster::new(
+            self.first_contact_points.clone(),
+            self.connection_count.unwrap_or(1),
             self.tls.clone(),
+            chain_name,
         )?;
-
-        let mut cluster = RedisSinkCluster {
-            slots: SlotMap::new(),
-            channels: ChannelMap::new(),
-            load_scores: HashMap::new(),
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            first_contact_points: self.first_contact_points.clone(),
-            connection_count: self.connection_count.unwrap_or(1),
-            connection_pool,
-            connection_error: None,
-            rebuild_connections: false,
-            token: None,
-        };
 
         match cluster.build_connections(None).await {
             Ok(()) => {
@@ -97,6 +83,36 @@ pub struct RedisSinkCluster {
 }
 
 impl RedisSinkCluster {
+    pub fn new(
+        first_contact_points: Vec<String>,
+        connection_count: usize,
+        tls: Option<TlsConfig>,
+        chain_name: String,
+    ) -> Result<Self> {
+        register_counter!("redis_cluster_failed_request", Unit::Count, "chain" => chain_name);
+
+        let authenticator = RedisAuthenticator {};
+
+        let connection_pool = ConnectionPool::new_with_auth(
+            RedisCodec::new(DecodeType::Response),
+            authenticator,
+            tls,
+        )?;
+
+        Ok(RedisSinkCluster {
+            slots: SlotMap::new(),
+            channels: ChannelMap::new(),
+            load_scores: HashMap::new(),
+            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            first_contact_points,
+            connection_count,
+            connection_pool,
+            connection_error: None,
+            rebuild_connections: false,
+            token: None,
+        })
+    }
+
     #[inline]
     async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
         let command = match message.original {
@@ -738,7 +754,7 @@ async fn receive_frame_response(
 #[inline(always)]
 fn send_frame_response(one_tx: oneshot::Sender<Response>, frame: Frame) -> Result<(), Response> {
     one_tx.send((
-        Message::new_bypass(RawFrame::None),
+        Message::new_raw(RawFrame::None),
         Ok(vec![Message::new(
             MessageDetails::Response(QueryResponse::empty()),
             false,
@@ -790,7 +806,7 @@ impl Transform for RedisSinkCluster {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 Ok((
-                    Message::new_bypass(RawFrame::None),
+                    Message::new_raw(RawFrame::None),
                     Ok(vec![Message::new(
                         MessageDetails::Response(QueryResponse::empty()),
                         false,
@@ -834,10 +850,6 @@ impl Transform for RedisSinkCluster {
             }
         }
         Ok(response_buffer)
-    }
-
-    fn get_name(&self) -> &'static str {
-        "RedisSinkCluster"
     }
 }
 

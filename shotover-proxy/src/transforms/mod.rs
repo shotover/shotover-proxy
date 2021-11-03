@@ -40,6 +40,7 @@ use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConf
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::tee::{Tee, TeeConfig};
 use core::fmt::Display;
+use strum_macros::IntoStaticStr;
 use tokio::time::Instant;
 
 pub mod cassandra;
@@ -67,7 +68,7 @@ pub mod util;
 /// The [`crate::transforms::Transforms`] enum is responsible for [`crate::transforms::Transform`] registration and enum dispatch
 /// in the transform chain. This is largely a performance optimisation by using enum dispatch rather
 /// than using dynamic trait objects.
-#[derive(Clone)]
+#[derive(Clone, IntoStaticStr)]
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
     RedisSinkSingle(RedisSinkSingle),
@@ -124,28 +125,7 @@ impl Transforms {
     }
 
     fn get_name(&self) -> &'static str {
-        match self {
-            Transforms::CassandraSinkSingle(c) => c.get_name(),
-            Transforms::KafkaSink(k) => k.get_name(),
-            Transforms::RedisCache(r) => r.get_name(),
-            Transforms::Tee(m) => m.get_name(),
-            Transforms::DebugPrinter(p) => p.get_name(),
-            Transforms::Null(n) => n.get_name(),
-            Transforms::Loopback(n) => n.get_name(),
-            Transforms::Protect(p) => p.get_name(),
-            Transforms::ConsistentScatter(t) => t.get_name(),
-            Transforms::DebugReturnerTransform(p) => p.get_name(),
-            Transforms::DebugRandomDelay(p) => p.get_name(),
-            Transforms::RedisSinkSingle(r) => r.get_name(),
-            Transforms::RedisClusterPortsRewrite(r) => r.get_name(),
-            Transforms::RedisTimestampTagger(r) => r.get_name(),
-            Transforms::RedisSinkCluster(r) => r.get_name(),
-            Transforms::ParallelMap(s) => s.get_name(),
-            Transforms::PoolConnections(s) => s.get_name(),
-            Transforms::Coalesce(s) => s.get_name(),
-            Transforms::QueryTypeFilter(s) => s.get_name(),
-            Transforms::QueryCounter(s) => s.get_name(),
-        }
+        self.into()
     }
 
     async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
@@ -250,7 +230,11 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     #[async_recursion]
     /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transforms(&self, topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_transforms(
+        &self,
+        topics: &TopicHolder,
+        chain_name: String,
+    ) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source().await,
             TransformsConfig::KafkaSink(k) => k.get_source().await,
@@ -265,7 +249,7 @@ impl TransformsConfig {
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
-            TransformsConfig::RedisSinkCluster(r) => r.get_source().await,
+            TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             //TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
             TransformsConfig::Coalesce(s) => s.get_source().await,
@@ -282,7 +266,7 @@ pub async fn build_chain_from_config(
 ) -> Result<TransformChain> {
     let mut transforms: Vec<Transforms> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_transforms(topics).await?)
+        transforms.push(tc.get_transforms(topics, name.clone()).await?)
     }
     Ok(TransformChain::new(transforms, name))
 }
@@ -497,10 +481,6 @@ pub trait Transform: Send {
     ///         info!("Response content: {:?}", response);
     ///         response
     ///     }
-    ///
-    ///     fn get_name(&self) -> &'static str {
-    ///         "Printer"
-    ///     }
     /// }
     /// ```
     ///
@@ -508,9 +488,6 @@ pub trait Transform: Send {
     /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     ///
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
-
-    /// This method provides an access method for getting the name of the transform.
-    fn get_name(&self) -> &'static str;
 
     /// This method provides a hook into chain setup that allows you to perform any chain setup
     /// needed before receiving traffic. It is generally recommended to do any setup on the first query

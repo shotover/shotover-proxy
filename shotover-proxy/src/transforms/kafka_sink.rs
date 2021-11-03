@@ -74,7 +74,6 @@ impl Transform for KafkaSink {
         let mut responses = vec![];
         for message in message_wrapper.messages {
             match message.details {
-                MessageDetails::Bypass(_) => {}
                 MessageDetails::Query(qm) => {
                     if let Some(ref key) = qm.get_namespaced_primary_key() {
                         if let Some(values) = qm.query_values {
@@ -99,9 +98,5 @@ impl Transform for KafkaSink {
             ))
         }
         Ok(responses)
-    }
-
-    fn get_name(&self) -> &'static str {
-        "Kafka"
     }
 }

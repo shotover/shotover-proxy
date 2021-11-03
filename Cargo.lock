@@ -2596,7 +2596,7 @@ checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
 name = "shotover-proxy"
-version = "0.0.23"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -2642,6 +2642,7 @@ dependencies = [
  "serial_test",
  "sodiumoxide",
  "sqlparser",
+ "strum_macros",
  "test-helpers",
  "thiserror",
  "threadpool",
@@ -2736,9 +2737,9 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.5.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7ac1f0f284146472a721eb7b5cb4615e314c781f5f7be41d27aa98d9e0a1ff9"
+checksum = "760e624412a15d5838ae04fad01037beeff1047781431d74360cddd6b3c1c784"
 dependencies = [
  "log",
 ]
@@ -2754,6 +2755,18 @@ name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
+
+[[package]]
+name = "strum_macros"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "339f799d8b549e3744c7ac7feb216383e4005d94bdb22561b3ab8f3b808ae9fb"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "subprocess"

@@ -8,6 +8,7 @@ use helpers::ShotoverManager;
 fn redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
     group.throughput(criterion::Throughput::Elements(1));
+    group.noise_threshold(2.0);
 
     {
         let mut state = None;

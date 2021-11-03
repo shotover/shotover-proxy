@@ -1,4 +1,4 @@
-name: Benchmark Run
+name: Benchmarks
 
 on:
   pull_request:
@@ -14,27 +14,27 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build:
+  benchmarks:
     runs-on: ubuntu-20.04
+    name: Benchmarks
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+    - uses: actions-rs/toolchain@v1
       with:
-        path: |
-          ./cache
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          # `toolchain: stable` results in the latest stable toolchain being installed.
+          # However as soon as we use cargo the real version specified in rust-toolchain.toml replaces the stable toolchain.
+          #
+          # When something like https://github.com/actions-rs/toolchain/pull/184 lands we can delete this line and get a nice speedup
+          profile: minimal
+          toolchain: stable
+    - uses: Swatinem/rust-cache@v1
+      with:
+        # Unique key is used to avoid collisions with the Testing workflow
+        key: 'Benchmark'
     - name: Install ubuntu packages
       run: |
         sudo apt-get update
         sudo apt-get install -y gnuplot libpcap-dev
-    - name: Install latest stable
-      uses: actions-rs/toolchain@v1
-      with:
-          toolchain: stable
-          override: true
     - name: Run benchmarks
       run: shotover-proxy/tests/scripts/bench_against_master.sh ${{ github.event.number }}
     - name: Upload comment artifact
@@ -42,5 +42,3 @@ jobs:
       with:
         name: comment_info
         path: comment_info/
-    - name: Cleanup docker
-      run: shotover-proxy/tests/scripts/teardown.sh

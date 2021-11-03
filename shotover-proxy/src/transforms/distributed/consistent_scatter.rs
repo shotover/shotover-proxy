@@ -117,7 +117,11 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
     }
 }
 
-impl ConsistentScatter {}
+impl ConsistentScatter {
+    fn get_name(&self) -> &'static str {
+        "ConsistentScatter"
+    }
+}
 
 #[async_trait]
 impl Transform for ConsistentScatter {
@@ -236,10 +240,6 @@ impl Transform for ConsistentScatter {
         }
 
         errors
-    }
-
-    fn get_name(&self) -> &'static str {
-        "ConsistentScatter"
     }
 }
 

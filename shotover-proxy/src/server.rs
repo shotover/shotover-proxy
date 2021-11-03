@@ -5,7 +5,7 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
-use metrics::gauge;
+use metrics::{gauge, register_gauge, Unit};
 use std::sync::Arc;
 use std::thread;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -196,6 +196,9 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         shutdown_complete_tx: mpsc::Sender<()>,
         tls: Option<TlsAcceptor>,
     ) -> Self {
+        register_gauge!("shotover_available_connections", Unit::Count, "source" => source_name.clone());
+        gauge!("shotover_available_connections", limit_connections.available_permits() as f64, "source" => source_name.clone());
+
         TcpCodecListener {
             chain,
             source_name,

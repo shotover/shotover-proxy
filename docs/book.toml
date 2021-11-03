@@ -1,0 +1,6 @@
+[book]
+authors = ["Shotover Team"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Shotover"

@@ -252,10 +252,6 @@ impl Transform for Protect {
         // todo: destructure the above bracket mountain as below
         Ok(result)
     }
-
-    fn get_name(&self) -> &'static str {
-        "protect"
-    }
 }
 
 #[cfg(test)]
@@ -270,7 +266,6 @@ mod protect_transform_tests {
     use cassandra_proto::frame::Frame;
     use sodiumoxide::crypto::secretbox;
 
-    use crate::config::topology::TopicHolder;
     use crate::message::{Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;

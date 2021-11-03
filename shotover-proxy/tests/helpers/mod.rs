@@ -137,9 +137,7 @@ impl ShotoverManager {
     fn shutdown_shotover(&mut self) -> Result<()> {
         self.trigger_shutdown_tx.send(true)?;
         let _enter_guard = self.runtime_handle.enter();
-        Ok(futures::executor::block_on(
-            self.join_handle.take().unwrap(),
-        )??)
+        futures::executor::block_on(self.join_handle.take().unwrap())?
     }
 }
 

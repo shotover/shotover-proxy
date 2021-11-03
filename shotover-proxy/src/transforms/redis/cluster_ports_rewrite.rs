@@ -75,10 +75,6 @@ impl Transform for RedisClusterPortsRewrite {
 
         Ok(response)
     }
-
-    fn get_name(&self) -> &'static str {
-        "RedisClusterPortsRewrite"
-    }
 }
 
 /// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`

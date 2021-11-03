@@ -57,6 +57,10 @@ pub struct SimpleRedisCache {
 }
 
 impl SimpleRedisCache {
+    fn get_name(&self) -> &'static str {
+        "SimpleRedisCache"
+    }
+
     async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
         for message in &mut messages {
             match &mut message.details {
@@ -97,7 +101,7 @@ struct ValueHelper(Value);
 impl ValueHelper {
     fn as_bytes(&self) -> &[u8] {
         match &self.0 {
-            Value::Number(v) => v.as_bytes(),
+            Value::Number(v, false) => v.as_bytes(),
             Value::SingleQuotedString(v) => v.as_bytes(),
             Value::NationalStringLiteral(v) => v.as_bytes(),
             Value::HexStringLiteral(v) => v.as_bytes(),
@@ -108,9 +112,6 @@ impl ValueHelper {
                     &FALSE
                 }
             }
-            Value::Date(v) => v.as_bytes(),
-            Value::Time(v) => v.as_bytes(),
-            Value::Timestamp(v) => v.as_bytes(),
             Value::Null => &[],
             _ => unreachable!(),
         }
@@ -143,7 +144,7 @@ fn build_redis_commands(
         Expr::BinaryOp { left, op, right } => {
             // first check if this is a related to PK
             if let Expr::Identifier(i) = left.borrow() {
-                if pks.iter().any(|v| v == i) {
+                if pks.iter().any(|v| *v == i.value) {
                     //Ignore this as we build the pk constraint elsewhere
                     return Ok(());
                 }
@@ -375,10 +376,6 @@ impl Transform for SimpleRedisCache {
             upstream
         }
     }
-
-    fn get_name(&self) -> &'static str {
-        "SimpleRedisCache"
-    }
 }
 
 #[cfg(test)]
@@ -401,7 +398,7 @@ mod test {
         query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> (ASTHolder, Option<HashMap<String, Value>>) {
-        let res = CassandraCodec2::parse_query_string(query_string.to_string(), pk_col_map);
+        let res = CassandraCodec2::parse_query_string(query_string, pk_col_map);
         (ASTHolder::SQL(res.ast.unwrap()), res.colmap)
     }
 
@@ -569,9 +566,6 @@ mod test {
 
         let query_two = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
 
-        println!("{:#?}", query_one);
-        println!("{:#?}", query_two);
-
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
         assert_ne!(query_one, query_two);
@@ -625,8 +619,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[test]
@@ -648,8 +640,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[test]
@@ -673,8 +663,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[test]
@@ -709,8 +697,6 @@ mod test {
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123");
 
         assert_eq!(expected, query);
-
-        println!("{:#?}", query);
     }
 
     #[tokio::test]

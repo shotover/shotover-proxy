@@ -64,8 +64,7 @@ impl DockerCompose {
 
         DockerCompose::clean_up(file_path).unwrap();
 
-        let result = run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
-        info!("Starting {}: {}", file_path, result);
+        run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
 
         DockerCompose {
             file_path: file_path.to_string(),
@@ -153,7 +152,7 @@ impl DockerCompose {
             result = run_command("docker-compose", &args).unwrap();
             my_count = re.find_iter(&result).count();
         }
-        info!(
+        debug!(
             "wait_for_n_t: found '{}' {} times in {:?} seconds",
             log_text,
             count,
@@ -167,7 +166,7 @@ impl DockerCompose {
     /// # Arguments
     /// * `file_path` - The path to the docker-compose yaml file that was used to start docker.
     fn clean_up(file_path: &str) -> Result<()> {
-        info!("bringing down docker compose {}", file_path);
+        debug!("bringing down docker compose {}", file_path);
 
         run_command("docker-compose", &["-f", file_path, "down", "-v"])?;
         run_command("docker-compose", &["-f", file_path, "rm", "-f", "-s", "-v"])?;
