@@ -239,13 +239,11 @@ impl CassandraCodec2 {
                     if let Identifier(i) = left.borrow_mut() {
                         if let Expr::Value(v) = right.borrow_mut() {
                             if let Some((_, new_v)) = map.get_key_value(&i.to_string()) {
-                                if use_bind {
-                                    let _ =
-                                        std::mem::replace(v, CassandraCodec2::value_to_bind(new_v));
+                                *v = if use_bind {
+                                    CassandraCodec2::value_to_bind(new_v)
                                 } else {
-                                    let _ =
-                                        std::mem::replace(v, CassandraCodec2::value_to_expr(new_v));
-                                }
+                                    CassandraCodec2::value_to_expr(new_v)
+                                };
                             }
                         }
                     }
@@ -295,8 +293,7 @@ impl CassandraCodec2 {
             ..
         } = message
         {
-            let new_query_string = format!("{}", ast);
-            let _ = std::mem::replace(query_string, new_query_string);
+            *query_string = format!("{}", ast);
         }
     }
 
@@ -320,7 +317,7 @@ impl CassandraCodec2 {
                         } = select.deref_mut();
 
                         // Rebuild projection
-                        let new_projection: Vec<SelectItem> = qm_projection
+                        *projection = qm_projection
                             .iter()
                             .map(|x| {
                                 SelectItem::UnnamedExpr(Expr::Value(SQLValue::SingleQuotedString(
@@ -328,20 +325,16 @@ impl CassandraCodec2 {
                                 )))
                             })
                             .collect();
-                        let _ = std::mem::replace(projection, new_projection);
 
                         // Rebuild namespace
                         if let Some(table_ref) = from.get_mut(0) {
                             if let TableFactor::Table { name, .. } = &mut table_ref.relation {
-                                let _ = std::mem::replace(
-                                    name,
-                                    ObjectName {
-                                        0: namespace
-                                            .iter()
-                                            .cloned()
-                                            .map(sqlparser::ast::Ident::new)
-                                            .collect(),
-                                    },
+                                *name = ObjectName(
+                                    namespace
+                                        .iter()
+                                        .cloned()
+                                        .map(sqlparser::ast::Ident::new)
+                                        .collect(),
                                 );
                             }
                         }
@@ -473,25 +466,24 @@ impl CassandraCodec2 {
             ResponseBody::Error(e) => error = Some(Value::Strings(e.message.into_plain())),
             ResponseBody::Result(r) => {
                 if let Some(rows) = r.into_rows() {
-                    let mut converted_rows: Vec<HashMap<String, Value>> = Vec::new();
-                    for row in rows {
-                        let x = row
-                            .metadata
-                            .col_specs
-                            .iter()
-                            .enumerate()
-                            .map(|(i, _col)| {
-                                let col_spec = &row.metadata.col_specs[i];
-                                let data: Value = Value::build_value_from_cstar_col_type(
-                                    col_spec,
-                                    &row.row_content[i],
-                                );
+                    let converted_rows = rows
+                        .into_iter()
+                        .map(|row| {
+                            row.metadata
+                                .col_specs
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, col_spec)| {
+                                    let data = Value::build_value_from_cstar_col_type(
+                                        &col_spec,
+                                        &row.row_content[i],
+                                    );
 
-                                (col_spec.name.clone().into_plain(), data)
-                            })
-                            .collect::<HashMap<String, Value>>();
-                        converted_rows.push(x);
-                    }
+                                    (col_spec.name.into_plain(), data)
+                                })
+                                .collect()
+                        })
+                        .collect();
                     result = Some(Value::NamedRows(converted_rows));
                 }
             }
