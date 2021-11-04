@@ -1,11 +1,11 @@
 use crate::protocols::RawFrame;
 use bytes::Bytes;
-use cassandra_proto::frame::frame_result::{ColSpec, ColType};
-use cassandra_proto::types::data_serialization_types::{
-    decode_ascii, decode_bigint, decode_boolean, decode_decimal, decode_double, decode_float,
-    decode_inet, decode_int, decode_smallint, decode_tinyint, decode_varchar, decode_varint,
+use cassandra_protocol::frame::frame_result::{ColSpec, ColType};
+use cassandra_protocol::types::data_serialization_types::{
+    decode_ascii, decode_bigint, decode_boolean, decode_double, decode_float, decode_inet,
+    decode_int, decode_smallint, decode_tinyint, decode_varchar,
 };
-use cassandra_proto::types::CBytes;
+use cassandra_protocol::types::CBytes;
 use redis_protocol::resp2::types::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -347,13 +347,13 @@ impl Value {
                 ColType::Blob => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Boolean => Value::Boolean(decode_boolean(actual_bytes).unwrap()),
                 ColType::Counter => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Decimal => Value::Float(decode_decimal(actual_bytes).unwrap().as_plain()),
+                ColType::Decimal => unimplemented!("We dont have a decimal type yet"),
                 ColType::Double => Value::Float(decode_double(actual_bytes).unwrap()),
                 ColType::Float => Value::Float(decode_float(actual_bytes).unwrap() as f64),
                 ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
-                ColType::Varint => Value::Integer(decode_varint(actual_bytes).unwrap()),
+                ColType::Varint => unimplemented!("We dont have a varint type yet"),
                 ColType::Timeuuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Inet => Value::Inet(decode_inet(actual_bytes).unwrap()),
                 ColType::Timestamp => Value::NULL,
@@ -406,22 +406,22 @@ impl Value {
     }
 }
 
-impl From<Value> for cassandra_proto::types::value::Bytes {
-    fn from(value: Value) -> cassandra_proto::types::value::Bytes {
+impl From<Value> for cassandra_protocol::types::value::Bytes {
+    fn from(value: Value) -> cassandra_protocol::types::value::Bytes {
         match value {
             Value::NULL => (-1).into(),
-            Value::None => cassandra_proto::types::value::Bytes::new(vec![]),
-            Value::Bytes(b) => cassandra_proto::types::value::Bytes::new(b.to_vec()),
+            Value::None => cassandra_protocol::types::value::Bytes::new(vec![]),
+            Value::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
             Value::Strings(s) => s.into(),
             Value::Integer(i) => i.into(),
             Value::Float(f) => f.into(),
             Value::Boolean(b) => b.into(),
-            Value::List(l) => cassandra_proto::types::value::Bytes::from(l),
-            Value::Rows(r) => cassandra_proto::types::value::Bytes::from(r),
-            Value::NamedRows(n) => cassandra_proto::types::value::Bytes::from(n),
-            Value::Document(d) => cassandra_proto::types::value::Bytes::from(d),
+            Value::List(l) => cassandra_protocol::types::value::Bytes::from(l),
+            Value::Rows(r) => cassandra_protocol::types::value::Bytes::from(r),
+            Value::NamedRows(n) => cassandra_protocol::types::value::Bytes::from(n),
+            Value::Document(d) => cassandra_protocol::types::value::Bytes::from(d),
             Value::Inet(i) => i.into(),
-            Value::FragmentedResponse(l) => cassandra_proto::types::value::Bytes::from(l),
+            Value::FragmentedResponse(l) => cassandra_protocol::types::value::Bytes::from(l),
         }
     }
 }

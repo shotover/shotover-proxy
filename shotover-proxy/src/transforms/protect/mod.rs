@@ -260,8 +260,8 @@ mod protect_transform_tests {
 
     use anyhow::{anyhow, Result};
 
-    use cassandra_proto::consistency::Consistency;
-    use cassandra_proto::frame::Frame;
+    use cassandra_protocol::consistency::Consistency;
+    use cassandra_protocol::frame::{Flags, Frame, Version};
     use sodiumoxide::crypto::secretbox;
 
     use crate::message::{Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
@@ -366,12 +366,14 @@ mod protect_transform_tests {
                             .to_string(),
                         Consistency::LocalQuorum,
                         None,
+                        false,
                         None,
                         None,
                         None,
                         None,
-                        None,
-                        vec![],
+                        Flags::empty(),
+                        false,
+                        Version::V4,
                     );
 
                     let mut colk_map: HashMap<String, Vec<String>> = HashMap::new();
@@ -540,12 +542,14 @@ mod protect_transform_tests {
                         .to_string(),
                     Consistency::LocalQuorum,
                     None,
+                    false,
                     None,
                     None,
                     None,
                     None,
-                    None,
-                    vec![],
+                    Flags::empty(),
+                    false,
+                    Version::V4,
                 );
 
                 let mut colk_map: HashMap<String, Vec<String>> = HashMap::new();

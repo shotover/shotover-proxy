@@ -12,7 +12,7 @@ pub mod unordered_cluster_connection_pool;
 pub struct Request {
     pub messages: Message,
     pub return_chan: Option<tokio::sync::oneshot::Sender<Response>>,
-    pub message_id: Option<u16>,
+    pub message_id: Option<i16>,
 }
 
 pub type Response = (Message, ChainResponse);
