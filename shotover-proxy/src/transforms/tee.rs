@@ -95,6 +95,25 @@ impl Tee {
 
 #[async_trait]
 impl Transform for Tee {
+    fn validate(&self) -> Vec<String> {
+        if let Some(fail_chain) = &self.fail_chain {
+            let mut errors = fail_chain
+                .original_chain
+                .validate()
+                .iter()
+                .map(|x| format!("  {}", x))
+                .collect::<Vec<String>>();
+
+            if !errors.is_empty() {
+                errors.insert(0, format!("{}:", self.get_name()));
+            }
+
+            errors
+        } else {
+            vec![]
+        }
+    }
+
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self.behavior {
             ConsistencyBehavior::Ignore => {
@@ -165,5 +184,85 @@ impl Transform for Tee {
                 Ok(chain_response)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::topology::TopicHolder;
+    use crate::transforms::TransformsConfig;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn test_validate_no_subchain() {
+        let holder = TopicHolder {
+            topics_rx: HashMap::new(),
+            topics_tx: HashMap::new(),
+        };
+
+        let mut config = TeeConfig {
+            behavior: Some(ConsistencyBehavior::Ignore),
+            timeout_micros: None,
+            chain: vec![TransformsConfig::Null],
+            buffer_size: None,
+        };
+        let mut transform = config.get_source(&holder).await.unwrap();
+        let mut result = transform.validate();
+        assert_eq!(result, Vec::<String>::new());
+
+        config = TeeConfig {
+            behavior: Some(ConsistencyBehavior::FailOnMismatch),
+            timeout_micros: None,
+            chain: vec![TransformsConfig::Null],
+            buffer_size: None,
+        };
+        transform = config.get_source(&holder).await.unwrap();
+        result = transform.validate();
+        assert_eq!(result, Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn test_validate_invalid_chain() {
+        let holder = TopicHolder {
+            topics_rx: HashMap::new(),
+            topics_tx: HashMap::new(),
+        };
+
+        let config = TeeConfig {
+            behavior: Some(ConsistencyBehavior::SubchainOnMismatch(vec![
+                TransformsConfig::Null,
+                TransformsConfig::Null,
+            ])),
+            timeout_micros: None,
+            chain: vec![TransformsConfig::Null],
+            buffer_size: None,
+        };
+
+        let transform = config.get_source(&holder).await.unwrap();
+        let result = transform.validate();
+        let expected = vec!["Tee:", "  fail_chain:", "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain."];
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_chain() {
+        let holder = TopicHolder {
+            topics_rx: HashMap::new(),
+            topics_tx: HashMap::new(),
+        };
+
+        let config = TeeConfig {
+            behavior: Some(ConsistencyBehavior::SubchainOnMismatch(vec![
+                TransformsConfig::Null,
+            ])),
+            timeout_micros: None,
+            chain: vec![TransformsConfig::Null],
+            buffer_size: None,
+        };
+
+        let transform = config.get_source(&holder).await.unwrap();
+        let result = transform.validate();
+        assert_eq!(result, Vec::<String>::new());
     }
 }
