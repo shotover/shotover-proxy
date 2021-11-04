@@ -66,8 +66,9 @@ fn test_basic_connection() -> Result<()> {
     Ok(())
 }
 
-#[test]
-#[ignore = "used for development debugging"]
+//#[test] // can not use ignore on test as build builds ignored tests
+//#[ignore = "used for development debugging"]
+#[allow(dead_code)] // to make clippy happy
 fn test_create_keyspace_direct() {
     // let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
 
@@ -98,8 +99,9 @@ fn test_create_keyspace_direct() {
     print!("{:?}", ctx.session.execute(&query).wait().unwrap());
 }
 
-#[test]
-#[ignore = "used for development debugging"]
+//#[test] // can not use ignore on test as build builds ignored tests
+//#[ignore = "used for development debugging"]
+#[allow(dead_code)] // to make clippy happy
 fn test_cpp_driver() {
     print!("HELLO");
     warn!("Starting");
