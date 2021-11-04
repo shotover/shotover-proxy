@@ -22,7 +22,7 @@ Debug transforms can be temporarily used to test how your Shotover configuration
 
 Future transforms won't be added to the public API while in alpha. But in these early days we have chosen to publish these alpha transforms to demonstrate the direction we want to take the project.
 
-### Transforms
+## Transforms
 
 | Transform                                           | Terminating | Implementation Status |
 |-----------------------------------------------------|-------------|-----------------------|
@@ -44,7 +44,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 |[RedisTimestampTagger](#redistimestamptagger)        |❌           |Alpha                  |
 |[Tee](#tee)                                          |✅           |Alpha                  |
 
-## CassandraSinkSingle
+### CassandraSinkSingle
 
 This transform will take a query, serialise it into a CQL4 compatible format and send to the Cassandra compatible database at the defined address.
 
@@ -59,7 +59,7 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-## Coalesce
+### Coalesce
 
 This transform holds onto messages until some requirement is met and then sends them batched together.
 
@@ -79,7 +79,7 @@ This transform holds onto messages until some requirement is met and then sends 
       # CountOrWait(2000, 100)
 ```
 
-## ConsistentScatter
+### ConsistentScatter
 
 This transform implements a distributed eventual consistency mechanism between the set of defined sub-chains. This transform will wait for a user configurable number of chains to return an OK response before returning the value up-chain. This follows a similar model as used by Cassandra for its consistency model. Strong consistency can be achieved when W + R > RF. In this case RF is always the number of chains in the `route_map`.
 
@@ -106,7 +106,7 @@ Upon receiving the configured number of responses, the transform will attempt to
             remote_address: "127.2.0.3:9043"
 ```
 
-## DebugPrinter
+### DebugPrinter
 
 This transform will log the query/message at an info level, then call the down-chain transform.
 
@@ -114,7 +114,7 @@ This transform will log the query/message at an info level, then call the down-c
 - DebugPrinter
 ```
 
-## Loopback
+### Loopback
 
 This transform will drop any messages it receives and return the same message back as a response.
 
@@ -122,7 +122,7 @@ This transform will drop any messages it receives and return the same message ba
 - Loopback
 ```
 
-## Null
+### Null
 
 This transform will drop any messages it receives and return an empty response.
 
@@ -130,7 +130,7 @@ This transform will drop any messages it receives and return an empty response.
 - Null
 ```
 
-## ParallelMap
+### ParallelMap
 
 This transform will send messages in a single batch in parallel across multiple instances of the chain.
 
@@ -159,7 +159,7 @@ If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C
           remote_address: "127.0.0.1:6379"
 ```
 
-## KafkaSink
+### KafkaSink
 
 This transform will take a query and push it to a given Kafka topic.
 
@@ -174,7 +174,7 @@ This transform will take a query and push it to a given Kafka topic.
     topic: "my_kafka_topic"
 ```
 
-## Protect
+### Protect
 
 This transform will encrypt specific fields before passing them down-chain, it will also decrypt those same fields from a response. The transform will create a data encryption key on an user defined basis (e.g. per primary key, per value, per table etc).
 
@@ -194,7 +194,7 @@ Currently the Protect transform supports AWS KMS and or using a local Key Encryp
 
 Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly.
 
-## QueryCounter
+### QueryCounter
 
 This transform will log the queries that pass through it.
 The log can be accessed via the [Shotover metrics](/user-guide/configuration/#observability_interface)
@@ -205,7 +205,7 @@ The log can be accessed via the [Shotover metrics](/user-guide/configuration/#ob
     name: "DR chain"
 ```
 
-## QueryTypeFilter
+### QueryTypeFilter
 
 This transform will drop messages that match the specified filter.
 
@@ -231,7 +231,7 @@ TODO: This doesnt send a reply for some messages, does this break the transform 
     # filter: PubSubMessage
 ```
 
-## RedisCache
+### RedisCache
 
 This transform will attempt to cache values for a given primary key in a Redis hash set. It is a primarily implemented as a write through cache. It currently expects an SQL based AST to figure out what to cache (e.g. CQL, PGSQL) and updates to the cache and the backing datastore are performed sequentially.
 
@@ -255,7 +255,7 @@ This transform should be used with the `RedisSinkCluster` transform. It will wri
     new_port: 2004
 ```
 
-## RedisSinkCluster
+### RedisSinkCluster
 
 This transform is a full featured Redis driver that will connect to a Redis cluster and handle all discovery, sharding and routing operations.
 
@@ -278,18 +278,18 @@ Unlike other Redis cluster drivers, this transform does support pipelining. It d
 
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
-### Differences to real Redis
+#### Differences to real Redis
 
 On an existing authenticated connection, a failed auth attempt will not "unauthenticate" the user. This behaviour matches Redis 6 but is different to Redis 5.
 
-### Completeness
+#### Completeness
 
 _Note: Currently RedisSinkcluster does not support the following functionality:_
 
 * _Redis Transactions_
 * _Scan based operations e.g. SSCAN_
 
-## RedisSinkSingle
+### RedisSinkSingle
 
 This transform will take a query, serialise it into a RESP2 compatible format and send to the Redis compatible database at the defined address.
 
@@ -311,7 +311,7 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-## RedisTimestampTagger
+### RedisTimestampTagger
 
 A transform that wraps each Redis command in a Lua script that also fetches the key for the operations idletime. This is then used to build a last modified timestamp and insert it into a response's timestamp. The response from the Lua operation is unwrapped and returned to up-chain transforms looking like a normal Redis response.
 
@@ -321,7 +321,7 @@ This is mainly used in conjunction with the `ConsistentScatter` transform to ena
 - RedisTimestampTagger
 ```
 
-## Tee
+### Tee
 
 This transform sends messages to both the defined sub chain and the remaining down-chain transforms.
 The response from the down-chain transform is returned back up-chain but various behaviours can be defined by the `behaviour` field to handle the case when the responses from the sub chain and down-chain do not match.
