@@ -655,28 +655,6 @@ mod cassandra_protocol_tests {
     use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 
-    const STARTUP_BYTES: [u8; 31] =
-        hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
-
-    const READY_BYTES: [u8; 9] = hex!("840000000200000000");
-
-    const REGISTER_BYTES: [u8; 58] = hex!(
-        "040000010b000000310003000f544f504f4c4f47595f4348414e4745
-    000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
-    );
-
-    const QUERY_BYTES: [u8; 60] = hex!(
-        "0400000307000000330000002c53454c454354202a2046524f4d20737973
-    74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
-    );
-
-    const RESULT_BYTES: [u8; 162] = hex!(
-        "840000020800000099000000020000000100000009000673797374656
-    d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
-    65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
-    573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
-    );
-
     fn test_frame_codec_roundtrip(
         codec: &mut CassandraCodec2,
         raw_frame: &[u8],
@@ -706,8 +684,9 @@ mod cassandra_protocol_tests {
     }
 
     #[test]
-    fn test_startup_codec() {
+    fn test_codec_startup() {
         let mut codec = new_codec();
+        let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
@@ -716,20 +695,18 @@ mod cassandra_protocol_tests {
                 flags: vec![],
                 opcode: Opcode::Startup,
                 stream: 0,
-                body: vec![
-                    0, 1, 0, 11, 67, 81, 76, 95, 86, 69, 82, 83, 73, 79, 78, 0, 5, 51, 46, 48, 46,
-                    48,
-                ],
+                body: hex!("0001000b43514c5f56455253494f4e0005332e302e30").to_vec(),
                 tracing_id: None,
                 warnings: vec![],
             }),
         }];
-        test_frame_codec_roundtrip(&mut codec, &STARTUP_BYTES, messages);
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_ready_codec() {
+    fn test_codec_ready() {
         let mut codec = new_codec();
+        let bytes = hex!("840000000200000000");
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
@@ -743,12 +720,16 @@ mod cassandra_protocol_tests {
                 warnings: vec![],
             }),
         }];
-        test_frame_codec_roundtrip(&mut codec, &READY_BYTES, messages);
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_register_codec() {
+    fn test_codec_register() {
         let mut codec = new_codec();
+        let bytes = hex!(
+            "040000010b000000310003000f544f504f4c4f47595f4348414e4745
+            000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
+        );
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
@@ -757,21 +738,27 @@ mod cassandra_protocol_tests {
                 flags: vec![],
                 opcode: Opcode::Register,
                 stream: 1,
-                body: vec![
-                    0, 3, 0, 15, 84, 79, 80, 79, 76, 79, 71, 89, 95, 67, 72, 65, 78, 71, 69, 0, 13,
-                    83, 84, 65, 84, 85, 83, 95, 67, 72, 65, 78, 71, 69, 0, 13, 83, 67, 72, 69, 77,
-                    65, 95, 67, 72, 65, 78, 71, 69,
-                ],
+                body: hex!(
+                    "0003000f544f504f4c4f47595f4348414e4745
+                    000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
+                )
+                .to_vec(),
                 tracing_id: None,
                 warnings: vec![],
             }),
         }];
-        test_frame_codec_roundtrip(&mut codec, &REGISTER_BYTES, messages);
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_result_codec() {
+    fn test_codec_result() {
         let mut codec = new_codec();
+        let bytes = hex!(
+            "840000020800000099000000020000000100000009000673797374656
+            d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
+            65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
+            573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
+        );
         let messages = vec![Message {
             details: MessageDetails::Response(QueryResponse {
                 matching_query: None,
@@ -785,27 +772,26 @@ mod cassandra_protocol_tests {
                 flags: vec![],
                 opcode: Opcode::Result,
                 stream: 2,
-                body: vec![
-                    0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 9, 0, 6, 115, 121, 115, 116, 101, 109, 0, 5,
-                    112, 101, 101, 114, 115, 0, 4, 112, 101, 101, 114, 0, 16, 0, 11, 100, 97, 116,
-                    97, 95, 99, 101, 110, 116, 101, 114, 0, 13, 0, 7, 104, 111, 115, 116, 95, 105,
-                    100, 0, 12, 0, 12, 112, 114, 101, 102, 101, 114, 114, 101, 100, 95, 105, 112,
-                    0, 16, 0, 4, 114, 97, 99, 107, 0, 13, 0, 15, 114, 101, 108, 101, 97, 115, 101,
-                    95, 118, 101, 114, 115, 105, 111, 110, 0, 13, 0, 11, 114, 112, 99, 95, 97, 100,
-                    100, 114, 101, 115, 115, 0, 16, 0, 14, 115, 99, 104, 101, 109, 97, 95, 118,
-                    101, 114, 115, 105, 111, 110, 0, 12, 0, 6, 116, 111, 107, 101, 110, 115, 0, 34,
-                    0, 13, 0, 0, 0, 0,
-                ],
+                body: hex!(
+                    "000000020000000100000009000673797374656
+                    d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
+                    65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
+                    573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
+                ).to_vec(),
                 tracing_id: None,
                 warnings: vec![],
             }),
         }];
-        test_frame_codec_roundtrip(&mut codec, &RESULT_BYTES, messages);
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_query_codec() {
+    fn test_codec_query() {
         let mut codec = new_codec();
+        let bytes = hex!(
+            "0400000307000000330000002c53454c454354202a2046524f4d20737973
+            74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
+        );
         let messages = vec![Message {
             details: MessageDetails::Query(QueryMessage {
                 query_string: "SELECT * FROM system.local WHERE key='local'".into(),
@@ -870,15 +856,15 @@ mod cassandra_protocol_tests {
                 flags: vec![],
                 opcode: Opcode::Query,
                 stream: 3,
-                body: vec![
-                    0, 0, 0, 44, 83, 69, 76, 69, 67, 84, 32, 42, 32, 70, 82, 79, 77, 32, 115, 121,
-                    115, 116, 101, 109, 46, 108, 111, 99, 97, 108, 32, 87, 72, 69, 82, 69, 32, 107,
-                    101, 121, 61, 39, 108, 111, 99, 97, 108, 39, 0, 1, 0,
-                ],
+                body: hex!(
+                    "0000002c53454c454354202a2046524f4d20737973
+                    74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
+                )
+                .to_vec(),
                 tracing_id: None,
                 warnings: vec![],
             }),
         }];
-        test_frame_codec_roundtrip(&mut codec, &QUERY_BYTES, messages);
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 }
