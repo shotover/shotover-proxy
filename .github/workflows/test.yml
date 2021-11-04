@@ -20,12 +20,17 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: Release
+          - name: Ubuntu 18.04 - Release
+            runner: ubuntu-18.04
             cargo_profile: --release
-          - name: Debug
+          - name: Ubuntu 18.04 - Debug
+            runner: ubuntu-18.04
+            cargo_profile:
+          - name: Ubuntu 20.04 - Debug
+            runner: ubuntu-20.04
             cargo_profile:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-18.04
+    runs-on: ${{ matrix.runner }}
     steps:
     - uses: actions/checkout@v2
     - uses: actions-rs/toolchain@v1
@@ -73,4 +78,4 @@ jobs:
       run: |
         cargo install --locked cargo-deny
         cargo deny check licenses
-      if: ${{ matrix.name == 'Debug' }}
+      if: ${{ matrix.name == 'Ubuntu 20.04 - Debug' }}

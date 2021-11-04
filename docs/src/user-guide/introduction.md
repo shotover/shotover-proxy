@@ -51,7 +51,7 @@ Shotover proxy currently supports the following protocols as sources:
 
 ## Shotover performance
 
-Shotover compiles down to a single binary and just takes a single yaml file and some optional command line parameters to start up. When running a small topology (5 - 10 transforms, 1 or 2 sources, 200 or so TCP connections) memory consumption is rather small with a rough working set size between 10 - 20mb.
+Shotover compiles down to a single binary and just takes a single YAML file and some optional command line parameters to start up. When running a small topology (5 - 10 transforms, 1 or 2 sources, 200 or so TCP connections) memory consumption is rather small with a rough working set size between 10 - 20mb.
 
 Currently benchmarking is limited, but we see around 100k req/s per single logical core for a 1:1 request model. However due to the way Shotover is implemented, it will largely go as fast as your upstream datastore can go. Each tcp connection is driven by a single tokio thread and by default Shotover will use 4 to 8 OS threads for the bulk of it's work (this is user configurable). Occasionally it will spawn additional OS threads for long running non-async code. These are practically unbounded (as defined by Tokio) but use is rare.
 

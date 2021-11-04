@@ -378,15 +378,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cmake"
-version = "0.1.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7b858541263efe664aead4a5209a4ae5c5d2811167d4ed4ee0944503f8d2089"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "combine"
 version = "4.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2154,7 +2145,6 @@ version = "4.1.0+1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e212ccf56a2d4e0b9f874a1cad295495769e0cdbabe60e02b4f654d369a2d6a1"
 dependencies = [
- "cmake",
  "libc",
  "libz-sys",
  "num_enum 0.5.4",
