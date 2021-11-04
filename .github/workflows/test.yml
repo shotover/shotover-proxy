@@ -76,8 +76,10 @@ jobs:
       run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_profile }} -- -D warnings
     - name: Ensure that tests pass
       run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output
+      # can not run tests if cpp driver not installed
+      if: ${{ matrix.name != 'Ubuntu 20.04 - Debug' }}
     - name: License Check
       run: |
         cargo install --locked cargo-deny
         cargo deny check licenses
-      if: ${{ matrix.name == 'Ubuntu 20.04 - Debug' }}
+
