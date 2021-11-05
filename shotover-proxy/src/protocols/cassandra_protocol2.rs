@@ -464,28 +464,24 @@ impl CassandraCodec2 {
         let mut error: Option<Value> = None;
         match frame.get_body().unwrap() {
             ResponseBody::Error(e) => error = Some(Value::Strings(e.message.into_plain())),
-            ResponseBody::Result(r) => {
-                if let Some(rows) = r.into_rows() {
-                    let converted_rows = rows
-                        .into_iter()
-                        .map(|row| {
-                            row.metadata
-                                .col_specs
-                                .into_iter()
-                                .enumerate()
-                                .map(|(i, col_spec)| {
-                                    let data = Value::build_value_from_cstar_col_type(
-                                        &col_spec,
-                                        &row.row_content[i],
-                                    );
+            ResponseBody::Result(ResResultBody::Rows(rows)) => {
+                let converted_rows = rows
+                    .rows_content
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .enumerate()
+                            .map(|(i, row_content)| {
+                                let col_spec = &rows.metadata.col_specs[i];
+                                let data =
+                                    Value::build_value_from_cstar_col_type(col_spec, &row_content);
 
-                                    (col_spec.name.into_plain(), data)
-                                })
-                                .collect()
-                        })
-                        .collect();
-                    result = Some(Value::NamedRows(converted_rows));
-                }
+                                (col_spec.name.as_plain(), data)
+                            })
+                            .collect()
+                    })
+                    .collect();
+                result = Some(Value::NamedRows(converted_rows));
             }
             _ => {}
         }
