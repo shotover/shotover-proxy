@@ -73,7 +73,7 @@ fn handle_protocol_error(
             // if there is a protocol error handle it otherwise return the original message.
             // One thorough the mapping if the message has a protocol_error is dropped.
             if m.protocol_error != 0 {
-                info!(
+                debug!(
                     "{:?} processing protocol error: {:?}",
                     thread::current().id(),
                     &m

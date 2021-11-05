@@ -589,7 +589,7 @@ impl Decoder for CassandraCodec2 {
         if self.last_error.is_some() {
             let result = self.last_error.as_ref().unwrap().clone();
             self.last_error = None;
-            info!(
+            debug!(
                 "{:?} Closing errored connection: {:?}",
                 thread::current().id(),
                 &result
@@ -627,7 +627,7 @@ impl Decoder for CassandraCodec2 {
                 );
 
                 message.protocol_error = 0x10000 | e.error_code;
-                info!(
+                debug!(
                     "{:?} CDRSError returning {:?}",
                     thread::current().id(),
                     &message

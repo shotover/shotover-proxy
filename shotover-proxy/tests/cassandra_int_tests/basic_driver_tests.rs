@@ -66,11 +66,9 @@ fn test_basic_connection() -> Result<()> {
     Ok(())
 }
 
-//#[test] // can not use ignore on test as build builds ignored tests
-//#[ignore = "used for development debugging"]
-#[allow(dead_code)] // to make clippy happy
+#[test]
 fn test_create_keyspace_direct() {
-    // let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
+    let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
@@ -81,28 +79,53 @@ fn test_create_keyspace_direct() {
     .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
     .collect();
 
-    //compose.wait_for_n_t("Startup complete", 3, 120);
-    info!("{:?} test_args", thread::current().id());
+    compose.wait_for_n_t("Startup complete", 3, 120);
 
     let mut query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
     let ctx = CassandraTestContext::new_with_points("10.5.0.2");
-    print!(
-        "{:?} result {:?}",
-        thread::current().id(),
-        ctx.session.execute(&query).wait().unwrap()
-    );
+    let mut result = ctx.session.execute(&query).wait().unwrap();
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 0);
+
     query = stmt!("SELECT release_version FROM system.local");
-    print!("{:?}", ctx.session.execute(&query).wait().unwrap());
+    result = ctx.session.execute(&query).wait().unwrap();
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 1);
+    assert_eq!(
+        result
+            .first_row()
+            .unwrap()
+            .get_column(0)
+            .unwrap()
+            .get_str()
+            .ok(),
+        Some("3.11.10")
+    );
+
     query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
-    print!("{:?}", ctx.session.execute(&query).wait().unwrap());
+    result = ctx.session.execute(&query).wait().unwrap();
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 6);
+    assert_eq!(
+        result
+            .first_row()
+            .unwrap()
+            .get_column(0)
+            .unwrap()
+            .get_str()
+            .ok(),
+        Some("cycling")
+    );
+
 }
 
-//#[test] // can not use ignore on test as build builds ignored tests
-//#[ignore = "used for development debugging"]
-#[allow(dead_code)] // to make clippy happy
+#[test] // can not use ignore on test as build builds ignored tests
 fn test_cpp_driver() {
+   let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
+        .wait_for_n_t("Startup complete", 3, 90);
+
     print!("HELLO");
     warn!("Starting");
     let mut cluster = Cluster::default();
@@ -115,9 +138,37 @@ fn test_cpp_driver() {
     let mut query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
-    print!("{:?}", session.execute(&query).wait().unwrap());
+    let mut result = session.execute(&query).wait().unwrap();
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 0);
+
     query = stmt!("SELECT release_version FROM system.local");
-    print!("{:?}", session.execute(&query).wait().unwrap());
+    result = session.execute(&query).wait().unwrap();
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 1);
+    assert_eq!(
+        result
+            .first_row()
+            .unwrap()
+            .get_column(0)
+            .unwrap()
+            .get_str()
+            .ok(),
+        Some("3.11.10")
+    );
+
     query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
-    print!("{:?}", session.execute(&query).wait().unwrap());
+    result = session.execute(&query).wait().unwrap();
+    debug!("{:?} result {:?}", thread::current().id(), result);
+    assert_eq!(result.row_count(), 6);
+    assert_eq!(
+        result
+            .first_row()
+            .unwrap()
+            .get_column(0)
+            .unwrap()
+            .get_str()
+            .ok(),
+        Some("cycling")
+    );
 }
