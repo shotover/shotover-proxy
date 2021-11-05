@@ -440,7 +440,7 @@ fn spawn_read_write_tasks<
                         thread::current().id(),
                         filtered_messages
                     );
-                    if filtered_messages.len() > 0 {
+                    if !filtered_messages.is_empty() {
                         if let Err(error) = in_tx.send(filtered_messages) {
                             warn!(
                                 "{:?} failed to send message: {}",
