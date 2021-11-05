@@ -5,9 +5,9 @@ use test_helpers::docker_compose::DockerCompose;
 use anyhow::Result;
 use cassandra_cpp::*;
 use std::thread;
-use tracing::{debug};
+use tracing::debug;
 
-fn test_create_keyspace( ctx : CassandraTestContext ) {
+fn test_create_keyspace(ctx: CassandraTestContext) {
     let mut query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
@@ -86,7 +86,6 @@ fn test_create_keyspace_direct() {
     compose.wait_for_n_t("Startup complete", 3, 120);
 
     test_create_keyspace(CassandraTestContext::new_with_points("10.5.0.2"));
-
 }
 
 // this test is used for dev testing to ensure that  the cpp driver we are using actually works
@@ -94,7 +93,7 @@ fn test_create_keyspace_direct() {
 //#[test] // can not use ignore on test as build builds ignored tests
 #[allow(dead_code)] // to make clippy happy
 fn test_cpp_driver() {
-   let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
+    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
         .wait_for_n_t("Startup complete", 3, 90);
 
     let mut cluster = Cluster::default();
@@ -104,6 +103,5 @@ fn test_cpp_driver() {
 
     let session = cluster.connect().unwrap();
 
-    test_create_keyspace( CassandraTestContext { session } );
-
+    test_create_keyspace(CassandraTestContext { session });
 }
