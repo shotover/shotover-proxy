@@ -9,7 +9,7 @@ use cassandra_proto::frame::parser::FrameHeader;
 use cassandra_proto::frame::{parser, Flag, Frame, IntoBytes, Opcode, Version};
 use cassandra_proto::query::QueryValues;
 use cassandra_proto::types::value::Value as CValue;
-use cassandra_proto::types::{CBytes, CInt, CString};
+use cassandra_proto::types::{to_int, CBytes, CInt, CString};
 use tokio_util::codec::{Decoder, Encoder};
 
 use std::borrow::{Borrow, BorrowMut};
@@ -130,12 +130,11 @@ impl CassandraCodec2 {
 
                     let result_bytes = rows
                         .iter()
-                        .map(|i| {
-                            let rr: Vec<CBytes> = i
-                                .iter()
-                                .map(|j| {
-                                    let rb: CBytes = CBytes::new(match j {
-                                        Value::NULL => (-1_i32).into_cbytes(),
+                        .map(|row| {
+                            row.iter()
+                                .map(|value| {
+                                    CBytes::new(match value {
+                                        Value::NULL => to_int(-1_i32),
                                         Value::Bytes(x) => x.to_vec(),
                                         Value::Strings(x) => Vec::from(x.as_bytes()),
                                         Value::Integer(x) => {
@@ -154,11 +153,9 @@ impl CassandraCodec2 {
                                             temp
                                         }
                                         _ => unreachable!(),
-                                    });
-                                    rb
+                                    })
                                 })
-                                .collect();
-                            rr
+                                .collect()
                         })
                         .collect();
 
