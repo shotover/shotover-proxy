@@ -15,7 +15,7 @@ use tracing::trace;
 #[derive(Debug, Clone)]
 pub struct Tee {
     pub tx: BufferedChain,
-    pub fail_chain: Option<BufferedChain>,
+    pub mismatch_chain: Option<BufferedChain>,
     pub buffer_size: usize,
     pub chain_to_clone: TransformChain,
     pub behavior: ConsistencyBehavior,
@@ -39,10 +39,10 @@ pub struct TeeConfig {
 impl TeeConfig {
     pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let buffer_size = self.buffer_size.unwrap_or(5);
-        let fail_chain =
-            if let Some(ConsistencyBehavior::SubchainOnMismatch(fail_chain)) = &self.behavior {
+        let mismatch_chain =
+            if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
                 Some(
-                    build_chain_from_config("fail_chain".to_string(), fail_chain, topics)
+                    build_chain_from_config("mismatch_chain".to_string(), mismatch_chain, topics)
                         .await?
                         .into_buffered_chain(buffer_size),
                 )
@@ -54,7 +54,7 @@ impl TeeConfig {
 
         Ok(Transforms::Tee(Tee::new(
             tee_chain.clone().into_buffered_chain(buffer_size),
-            fail_chain,
+            mismatch_chain,
             buffer_size,
             tee_chain,
             self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
@@ -66,7 +66,7 @@ impl TeeConfig {
 impl Tee {
     pub fn new(
         tx: BufferedChain,
-        fail_chain: Option<BufferedChain>,
+        mismatch_chain: Option<BufferedChain>,
         buffer_size: usize,
         chain_to_clone: TransformChain,
         behavior: ConsistencyBehavior,
@@ -74,7 +74,7 @@ impl Tee {
     ) -> Self {
         let tee = Tee {
             tx,
-            fail_chain,
+            mismatch_chain,
             buffer_size,
             chain_to_clone,
             behavior,
@@ -96,8 +96,8 @@ impl Tee {
 #[async_trait]
 impl Transform for Tee {
     fn validate(&self) -> Vec<String> {
-        if let Some(fail_chain) = &self.fail_chain {
-            let mut errors = fail_chain
+        if let Some(mismatch_chain) = &self.mismatch_chain {
+            let mut errors = mismatch_chain
                 .original_chain
                 .validate()
                 .iter()
@@ -174,7 +174,7 @@ impl Transform for Tee {
                 let chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
-                    if let Some(topic) = &mut self.fail_chain {
+                    if let Some(topic) = &mut self.mismatch_chain {
                         topic
                             .process_request(failed_message, "SubchainOnMismatch".to_string(), None)
                             .await?;
@@ -201,25 +201,29 @@ mod tests {
             topics_tx: HashMap::new(),
         };
 
-        let mut config = TeeConfig {
-            behavior: Some(ConsistencyBehavior::Ignore),
-            timeout_micros: None,
-            chain: vec![TransformsConfig::Null],
-            buffer_size: None,
-        };
-        let mut transform = config.get_source(&holder).await.unwrap();
-        let mut result = transform.validate();
-        assert_eq!(result, Vec::<String>::new());
+        {
+            let config = TeeConfig {
+                behavior: Some(ConsistencyBehavior::Ignore),
+                timeout_micros: None,
+                chain: vec![TransformsConfig::Null],
+                buffer_size: None,
+            };
+            let transform = config.get_source(&holder).await.unwrap();
+            let result = transform.validate();
+            assert_eq!(result, Vec::<String>::new());
+        }
 
-        config = TeeConfig {
-            behavior: Some(ConsistencyBehavior::FailOnMismatch),
-            timeout_micros: None,
-            chain: vec![TransformsConfig::Null],
-            buffer_size: None,
-        };
-        transform = config.get_source(&holder).await.unwrap();
-        result = transform.validate();
-        assert_eq!(result, Vec::<String>::new());
+        {
+            let config = TeeConfig {
+                behavior: Some(ConsistencyBehavior::FailOnMismatch),
+                timeout_micros: None,
+                chain: vec![TransformsConfig::Null],
+                buffer_size: None,
+            };
+            let transform = config.get_source(&holder).await.unwrap();
+            let result = transform.validate();
+            assert_eq!(result, Vec::<String>::new());
+        }
     }
 
     #[tokio::test]
@@ -241,7 +245,7 @@ mod tests {
 
         let transform = config.get_source(&holder).await.unwrap();
         let result = transform.validate();
-        let expected = vec!["Tee:", "  fail_chain:", "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain."];
+        let expected = vec!["Tee:", "  mismatch_chain:", "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain."];
         assert_eq!(result, expected);
     }
 
