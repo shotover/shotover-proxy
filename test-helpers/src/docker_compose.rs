@@ -82,13 +82,6 @@ impl DockerCompose {
     /// # Panics
     /// * If `log_text` is not found within 60 seconds.
     ///
-    /// # Example
-    /// ```
-    /// use test_helpers::docker_compose::DockerCompose;
-    /// let _compose = DockerCompose::new("../examples/redis-passthrough/docker-compose.yml")
-    ///         .wait_for("Ready to accept connections");
-    /// ```
-    ///
     pub fn wait_for(self, log_text: &str) -> Self {
         self.wait_for_n(log_text, 1)
     }
@@ -104,13 +97,6 @@ impl DockerCompose {
     ///
     /// # Panics
     /// * If `count` occurances of `log_text` is not found in the log within 90 seconds.
-    ///
-    /// # Example
-    /// ```
-    /// use test_helpers::docker_compose::DockerCompose;
-    /// let _compose = DockerCompose::new("../examples/redis-passthrough/docker-compose.yml")
-    ///         .wait_for_n("Ready to accept connections", 3);
-    /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
         self.wait_for_n_t(log_text, count, 90)
@@ -129,12 +115,6 @@ impl DockerCompose {
     /// # Panics
     /// * If `count` occurances of `log_text` is not found in the log within `time` seconds.
     ///
-    /// # Example
-    /// ```
-    /// use test_helpers::docker_compose::DockerCompose;
-    /// let _compose = DockerCompose::new("../examples/redis-passthrough/docker-compose.yml")
-    ///         .wait_for_n_t("Ready to accept connections", 3, 65);
-    /// ```
     pub fn wait_for_n_t(self, log_text: &str, count: usize, time: u64) -> Self {
         info!("wait_for_n_t: '{}' {} {}", log_text, count, time);
         let args = ["-f", &self.file_path, "logs"];
