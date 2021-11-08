@@ -29,6 +29,6 @@ async fn test_cassandra_standalone() {
 async fn test_cassandra_cluster() {
     let start = std::time::Instant::now();
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
-        .wait_for_n("Startup complete", 3);
+        .wait_for_n_t("Startup complete", 3, 180);
     println!("test_cassandra_cluster elapsed {:?}", start.elapsed());
 }

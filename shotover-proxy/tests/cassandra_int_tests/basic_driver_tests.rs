@@ -50,7 +50,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
 #[test]
 fn test_basic_connection() -> Result<()> {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 3, 90);
+        .wait_for_n_t("Startup complete", 3, 180);
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
