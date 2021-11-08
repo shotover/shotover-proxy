@@ -21,8 +21,10 @@ use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
+use crate::transforms::internal_debug_transforms::DebugRandomDelayTransform;
+#[cfg(test)]
 use crate::transforms::internal_debug_transforms::{
-    DebugRandomDelayTransform, DebugReturnerTransform,
+    DebugReturnerTransform, DebugReturnerTransformConfig,
 };
 use crate::transforms::kafka_sink::{KafkaSink, KafkaSinkConfig};
 use crate::transforms::load_balance::ConnectionBalanceAndPool;
@@ -82,6 +84,7 @@ pub enum Transforms {
     RedisTimestampTagger(RedisTimestampTagger),
     RedisSinkCluster(RedisSinkCluster),
     RedisClusterPortsRewrite(RedisClusterPortsRewrite),
+    #[cfg(test)]
     DebugReturnerTransform(DebugReturnerTransform),
     DebugRandomDelay(DebugRandomDelayTransform),
     DebugPrinter(DebugPrinter),
@@ -109,6 +112,7 @@ impl Transforms {
             Transforms::Null(n) => n.transform(message_wrapper).await,
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
+            #[cfg(test)]
             Transforms::DebugReturnerTransform(p) => p.transform(message_wrapper).await,
             Transforms::DebugRandomDelay(p) => p.transform(message_wrapper).await,
             Transforms::ConsistentScatter(tc) => tc.transform(message_wrapper).await,
@@ -140,6 +144,7 @@ impl Transforms {
             Transforms::Loopback(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
             Transforms::ConsistentScatter(a) => a.prep_transform_chain(t).await,
+            #[cfg(test)]
             Transforms::DebugReturnerTransform(a) => a.prep_transform_chain(t).await,
             Transforms::DebugRandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimestampTagger(a) => a.prep_transform_chain(t).await,
@@ -173,6 +178,7 @@ impl Transforms {
             Transforms::QueryCounter(s) => s.validate(),
             Transforms::Loopback(l) => l.validate(),
             Transforms::Protect(p) => p.validate(),
+            #[cfg(test)]
             Transforms::DebugReturnerTransform(d) => d.validate(),
             Transforms::DebugRandomDelay(d) => d.validate(),
         }
@@ -198,6 +204,7 @@ impl Transforms {
             Transforms::QueryCounter(s) => s.is_terminating(),
             Transforms::Loopback(l) => l.is_terminating(),
             Transforms::Protect(p) => p.is_terminating(),
+            #[cfg(test)]
             Transforms::DebugReturnerTransform(d) => d.is_terminating(),
             Transforms::DebugRandomDelay(d) => d.is_terminating(),
         }
@@ -218,6 +225,8 @@ pub enum TransformsConfig {
     RedisClusterPortsRewrite(RedisClusterPortsRewriteConfig),
     RedisTimestampTagger,
     DebugPrinter,
+    #[cfg(test)]
+    DebugReturnerTransform(DebugReturnerTransformConfig),
     Null,
     Loopback,
     ParallelMap(ParallelMapConfig),
@@ -247,6 +256,8 @@ impl TransformsConfig {
             }
             TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source().await,
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
+            #[cfg(test)]
+            TransformsConfig::DebugReturnerTransform(d) => d.get_source().await,
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
             TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,

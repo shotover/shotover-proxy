@@ -1,23 +1,74 @@
 use crate::error::ChainResponse;
-use crate::message::Messages;
 use crate::transforms::{Transform, Wrapper};
-use anyhow::anyhow;
 use async_trait::async_trait;
 use rand_distr::Distribution;
 use rand_distr::Normal;
 use tokio::time::Duration;
 
-#[derive(Debug, Clone)]
-pub struct DebugReturnerTransform {
-    pub message: Messages,
-    pub ok: bool,
+#[cfg(test)]
+use {
+    crate::message::{Message, MessageDetails, Messages},
+    crate::protocols::RawFrame,
+    crate::transforms::Transforms,
+    anyhow::{anyhow, Result},
+    redis_protocol::resp2::prelude::Frame,
+    serde::Deserialize,
+};
+
+#[cfg(test)]
+#[derive(Deserialize, Debug, Clone)]
+pub struct DebugReturnerTransformConfig {
+    ok: bool,
+    response: Response,
 }
 
+#[cfg(test)]
+impl DebugReturnerTransformConfig {
+    pub async fn get_source(&self) -> Result<Transforms> {
+        Ok(Transforms::DebugReturnerTransform(
+            DebugReturnerTransform::new(self.response.clone(), self.ok),
+        ))
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Deserialize)]
+pub enum Response {
+    #[serde(skip)]
+    Message(Messages),
+    Redis(String),
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone)]
+pub struct DebugReturnerTransform {
+    response: Response,
+    ok: bool,
+}
+
+#[cfg(test)]
+impl DebugReturnerTransform {
+    pub fn new(response: Response, ok: bool) -> Self {
+        DebugReturnerTransform { response, ok }
+    }
+}
+
+#[cfg(test)]
 #[async_trait]
 impl Transform for DebugReturnerTransform {
     async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.ok {
-            Ok(self.message.clone())
+            match &self.response {
+                Response::Message(message) => Ok(message.clone()),
+                Response::Redis(string) => {
+                    let res = vec![Message {
+                        details: MessageDetails::Unknown,
+                        modified: false,
+                        original: RawFrame::Redis(Frame::BulkString(string.clone().into_bytes())),
+                    }];
+                    return Ok(res);
+                }
+            }
         } else {
             Err(anyhow!("Intentional Fail"))
         }
