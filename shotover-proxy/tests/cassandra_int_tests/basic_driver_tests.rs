@@ -4,8 +4,8 @@ use test_helpers::docker_compose::DockerCompose;
 
 use anyhow::Result;
 use cassandra_cpp::*;
-use std::thread;
 use serial_test::serial;
+use std::thread;
 use tracing::debug;
 
 fn test_create_keyspace(ctx: CassandraTestContext) {
