@@ -48,7 +48,8 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
 }
 
 #[test]
-fn test_basic_connection() -> Result<()> {
+#[serial]
+fn test_basic_connection()  {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
         .wait_for_n_t("Startup complete", 3, 180);
 
@@ -63,13 +64,13 @@ fn test_basic_connection() -> Result<()> {
 
     test_create_keyspace(CassandraTestContext::new());
 
-    Ok(())
 }
 
 // this test is used for dev testing to ensure that the driver works we directly connect vi the
 // test context
 // with the Cassandra we are running against.
 //#[test] // can not use ignore on test as build builds ignored tests
+//#[serial]
 #[allow(dead_code)] // to make clippy happy
 fn test_create_keyspace_direct() {
     let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
@@ -91,6 +92,7 @@ fn test_create_keyspace_direct() {
 // this test is used for dev testing to ensure that  the cpp driver we are using actually works
 // with the Cassandra we are running against.
 //#[test] // can not use ignore on test as build builds ignored tests
+//#[serial]
 #[allow(dead_code)] // to make clippy happy
 fn test_cpp_driver() {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
