@@ -49,7 +49,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
 
 #[test]
 #[serial]
-fn test_basic_connection()  {
+fn test_basic_connection() {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
         .wait_for_n_t("Startup complete", 3, 180);
 
@@ -63,7 +63,6 @@ fn test_basic_connection()  {
     .collect();
 
     test_create_keyspace(CassandraTestContext::new());
-
 }
 
 // this test is used for dev testing to ensure that the driver works we directly connect vi the
