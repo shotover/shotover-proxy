@@ -109,7 +109,7 @@ impl DockerCompose {
     /// ```
     /// use test_helpers::docker_compose::DockerCompose;
     /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-    ///         .wait_for("Ready to accept connections", 3);
+    ///         .wait_for_n("Ready to accept connections", 3);
     /// ```
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
@@ -133,7 +133,7 @@ impl DockerCompose {
     /// ```
     /// use test_helpers::docker_compose::DockerCompose;
     /// let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-    ///         .wait_for("Ready to accept connections", 3, 65);
+    ///         .wait_for_n_t("Ready to accept connections", 3, 65);
     /// ```
     pub fn wait_for_n_t(self, log_text: &str, count: usize, time: u64) -> Self {
         info!("wait_for_n_t: '{}' {} {}", log_text, count, time);
