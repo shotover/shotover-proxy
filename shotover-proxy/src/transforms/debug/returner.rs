@@ -10,7 +10,6 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DebugReturnerConfig {
-    ok: bool,
     response: Response,
 }
 
@@ -18,7 +17,6 @@ impl DebugReturnerConfig {
     pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::DebugReturner(DebugReturner::new(
             self.response.clone(),
-            self.ok,
         )))
     }
 }
@@ -28,37 +26,34 @@ pub enum Response {
     #[serde(skip)]
     Message(Messages),
     Redis(String),
+    Fail,
 }
 
 #[derive(Debug, Clone)]
 pub struct DebugReturner {
     response: Response,
-    ok: bool,
 }
 
 impl DebugReturner {
-    pub fn new(response: Response, ok: bool) -> Self {
-        DebugReturner { response, ok }
+    pub fn new(response: Response) -> Self {
+        DebugReturner { response }
     }
 }
 
 #[async_trait]
 impl Transform for DebugReturner {
     async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
-        if self.ok {
-            match &self.response {
-                Response::Message(message) => Ok(message.clone()),
-                Response::Redis(string) => {
-                    let res = vec![Message {
-                        details: MessageDetails::Unknown,
-                        modified: false,
-                        original: RawFrame::Redis(Frame::BulkString(string.clone().into_bytes())),
-                    }];
-                    return Ok(res);
-                }
+        match &self.response {
+            Response::Message(message) => Ok(message.clone()),
+            Response::Redis(string) => {
+                let res = vec![Message {
+                    details: MessageDetails::Unknown,
+                    modified: false,
+                    original: RawFrame::Redis(Frame::BulkString(string.clone().into_bytes())),
+                }];
+                return Ok(res);
             }
-        } else {
-            Err(anyhow!("Intentional Fail"))
+            Response::Fail => Err(anyhow!("Intentional Fail")),
         }
     }
 

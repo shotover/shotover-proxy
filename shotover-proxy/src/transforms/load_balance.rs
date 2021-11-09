@@ -103,7 +103,6 @@ mod test {
             chain_to_clone: TransformChain::new(
                 vec![Transforms::DebugReturner(DebugReturner::new(
                     Response::Message(Messages::new()),
-                    true,
                 ))],
                 "child_test".to_string(),
             ),

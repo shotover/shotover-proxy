@@ -397,15 +397,13 @@ mod protect_transform_tests {
                             response_meta: None,
                         };
 
-                        let ret_transforms: Vec<Transforms> =
-                            vec![Transforms::DebugReturner(DebugReturner::new(
-                                Response::Message(vec![Message::new(
-                                    MessageDetails::Response(returner_message.clone()),
-                                    true,
-                                    RawFrame::None,
-                                )]),
+                        let ret_transforms: Vec<Transforms> = vec![Transforms::DebugReturner(
+                            DebugReturner::new(Response::Message(vec![Message::new(
+                                MessageDetails::Response(returner_message.clone()),
                                 true,
-                            ))];
+                                RawFrame::None,
+                            )])),
+                        )];
 
                         let mut ret_chain =
                             TransformChain::new(ret_transforms, String::from("test_chain"));
@@ -573,15 +571,13 @@ mod protect_transform_tests {
                         response_meta: None,
                     };
 
-                    let ret_transforms: Vec<Transforms> =
-                        vec![Transforms::DebugReturner(DebugReturner::new(
-                            Response::Message(vec![Message::new(
-                                MessageDetails::Response(returner_message.clone()),
-                                true,
-                                RawFrame::None,
-                            )]),
+                    let ret_transforms: Vec<Transforms> = vec![Transforms::DebugReturner(
+                        DebugReturner::new(Response::Message(vec![Message::new(
+                            MessageDetails::Response(returner_message.clone()),
                             true,
-                        ))];
+                            RawFrame::None,
+                        )])),
+                    )];
 
                     let mut ret_chain =
                         TransformChain::new(ret_transforms, String::from("test_chain"));

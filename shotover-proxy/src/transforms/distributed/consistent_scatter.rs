@@ -310,14 +310,9 @@ mod scatter_transform_tests {
             RawFrame::None,
         )]);
 
-        let ok_repeat = Transforms::DebugReturner(DebugReturner::new(
-            Response::Message(response.clone()),
-            true,
-        ));
-        let err_repeat = Transforms::DebugReturner(DebugReturner::new(
-            Response::Message(response.clone()),
-            false,
-        ));
+        let ok_repeat =
+            Transforms::DebugReturner(DebugReturner::new(Response::Message(response.clone())));
+        let err_repeat = Transforms::DebugReturner(DebugReturner::new(Response::Fail));
 
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
