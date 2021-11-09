@@ -1170,13 +1170,16 @@ async fn test_cluster_replication(
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_pass_through() {
-    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    {
+        let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+            .wait_for("Ready to accept connections");
+        let shotover_manager =
+            ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
+        let mut connection = shotover_manager.redis_connection_async(6379).await;
 
-    run_all(&mut connection).await;
+        run_all(&mut connection).await;
+    }
+    std::thread::sleep(std::time::Duration::from_secs(400));
 }
 
 #[tokio::test(flavor = "multi_thread")]
