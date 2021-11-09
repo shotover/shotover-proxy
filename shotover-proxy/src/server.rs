@@ -16,6 +16,7 @@ use tokio::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::Instrument;
 use tracing::{debug, error, info, trace, warn};
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
@@ -74,6 +75,9 @@ pub struct TcpCodecListener<C: Codec> {
     shutdown_complete_tx: mpsc::Sender<()>,
 
     tls: Option<TlsAcceptor>,
+
+    /// Keep track of how many messages we have received so we can use it as a request id.
+    message_count: u64,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -103,6 +107,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             trigger_shutdown_rx,
             shutdown_complete_tx,
             tls,
+            message_count: 0,
         }
     }
 
@@ -164,7 +169,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
-            gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64,"source" => self.source_name.clone());
+            gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64, "source" => self.source_name.clone());
 
             let peer = socket
                 .peer_addr()
@@ -177,52 +182,54 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 .unwrap_or_else(|_| "Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
-            info!(
-                "New connection from {}",
-                socket
-                    .peer_addr()
-                    .map(|p| format!("{}", p))
-                    .unwrap_or_else(|_| "Unknown peer".to_string())
-            );
-
             socket.set_nodelay(true)?;
 
             let mut handler = Handler {
-                // Get a handle to the shared database. Internally, this is an
-                // `Arc`, so a clone only increments the ref count.
                 chain: self.chain.clone(),
                 client_details: peer,
                 conn_details: conn_string,
                 source_details: self.source_name.clone(),
 
-                // Initialize the connection state. This allocates read/write
-                // buffers to perform redis protocol frame parsing.
-
                 // The connection state needs a handle to the max connections
                 // semaphore. When the handler is done processing the
                 // connection, a permit is added back to the semaphore.
                 codec: self.codec.clone(),
-                // connection: Framed::new(socket, self.codec.clone()),
                 limit_connections: self.limit_connections.clone(),
 
                 // Receive shutdown notifications.
                 shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
-                // Notifies the receiver half once all clones are
-                // dropped.
+                // Notifies the receiver half once all clones are dropped.
                 _shutdown_complete: self.shutdown_complete_tx.clone(),
 
                 tls: self.tls.clone(),
             };
 
+            self.message_count = self.message_count.wrapping_add(1);
+
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
-            tokio::spawn(async move {
-                // Process the connection. If an error is encountered, log it.
-                if let Err(err) = handler.run(socket).await {
-                    error!(cause = ?err, "connection error");
+            tokio::spawn(
+                async move {
+                    tracing::info!(
+                        "New connection from {}",
+                        socket
+                            .peer_addr()
+                            .map(|p| format!("{}", p))
+                            .unwrap_or_else(|_| "Unknown peer".to_string())
+                    );
+
+                    // Process the connection. If an error is encountered, log it.
+                    if let Err(err) = handler.run(socket).await {
+                        error!(cause = ?err, "connection error");
+                    }
                 }
-            });
+                .instrument(tracing::info_span!(
+                    "request",
+                    id = self.message_count,
+                    source = self.source_name.as_str()
+                )),
+            );
         }
     }
 
@@ -324,29 +331,35 @@ fn spawn_read_write_tasks<
     let mut reader = FramedRead::new(rx, codec.clone());
     let writer = FramedWrite::new(tx, codec);
 
-    tokio::spawn(async move {
-        while let Some(message) = reader.next().await {
-            match message {
-                Ok(message) => {
-                    if let Err(error) = in_tx.send(message) {
-                        warn!("failed to send message: {}", error);
+    tokio::spawn(
+        async move {
+            while let Some(message) = reader.next().await {
+                match message {
+                    Ok(message) => {
+                        if let Err(error) = in_tx.send(message) {
+                            warn!("failed to send message: {}", error);
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        warn!("failed to decode message: {}", error);
                         return;
                     }
                 }
-                Err(error) => {
-                    warn!("failed to decode message: {}", error);
-                    return;
-                }
             }
         }
-    });
+        .in_current_span(),
+    );
 
-    tokio::spawn(async move {
-        let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-        if let Err(err) = rx_stream.forward(writer).await {
-            error!("Stream ended with error {:?}", err);
+    tokio::spawn(
+        async move {
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+            if let Err(err) = rx_stream.forward(writer).await {
+                error!("Stream ended with error {:?}", err);
+            }
         }
-    });
+        .in_current_span(),
+    );
 }
 
 impl<C: Codec + 'static> Handler<C> {
