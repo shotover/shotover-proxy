@@ -1,20 +1,13 @@
 FROM rust:latest as builder
 
-WORKDIR ./shotover-proxy
+WORKDIR /shotover-proxy
 
 COPY ./ ./
 
-# Clean out anything already built in the target dir
-RUN rm -rf target
-
-RUN cargo build
+RUN cargo build --release
 
 FROM debian:bullseye-slim
 
-RUN apt-get update -y
-    \ && apt-get install glibc-doc -y
-    \ && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /shotover-proxy/target/debug/shotover-proxy /shotover-proxy
+COPY --from=builder /shotover-proxy/target/release/shotover-proxy /shotover-proxy
 
 ENTRYPOINT ["./shotover-proxy"]
