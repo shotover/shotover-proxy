@@ -17,9 +17,9 @@ use metrics::{counter, histogram};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::printer::DebugPrinter;
-use crate::transforms::debug::random_delay::DebugRandomDelayTransform;
+use crate::transforms::debug::random_delay::DebugRandomDelay;
 #[cfg(test)]
-use crate::transforms::debug::returner::{DebugReturnerTransform, DebugReturnerTransformConfig};
+use crate::transforms::debug::returner::{DebugReturner, DebugReturnerConfig};
 use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
@@ -82,8 +82,8 @@ pub enum Transforms {
     RedisSinkCluster(RedisSinkCluster),
     RedisClusterPortsRewrite(RedisClusterPortsRewrite),
     #[cfg(test)]
-    DebugReturnerTransform(DebugReturnerTransform),
-    DebugRandomDelay(DebugRandomDelayTransform),
+    DebugReturner(DebugReturner),
+    DebugRandomDelay(DebugRandomDelay),
     DebugPrinter(DebugPrinter),
     ParallelMap(ParallelMap),
     PoolConnections(ConnectionBalanceAndPool),
@@ -110,7 +110,7 @@ impl Transforms {
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
             #[cfg(test)]
-            Transforms::DebugReturnerTransform(p) => p.transform(message_wrapper).await,
+            Transforms::DebugReturner(p) => p.transform(message_wrapper).await,
             Transforms::DebugRandomDelay(p) => p.transform(message_wrapper).await,
             Transforms::ConsistentScatter(tc) => tc.transform(message_wrapper).await,
             Transforms::RedisSinkSingle(r) => r.transform(message_wrapper).await,
@@ -142,7 +142,7 @@ impl Transforms {
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
             Transforms::ConsistentScatter(a) => a.prep_transform_chain(t).await,
             #[cfg(test)]
-            Transforms::DebugReturnerTransform(a) => a.prep_transform_chain(t).await,
+            Transforms::DebugReturner(a) => a.prep_transform_chain(t).await,
             Transforms::DebugRandomDelay(a) => a.prep_transform_chain(t).await,
             Transforms::RedisTimestampTagger(a) => a.prep_transform_chain(t).await,
             Transforms::RedisSinkCluster(r) => r.prep_transform_chain(t).await,
@@ -176,7 +176,7 @@ impl Transforms {
             Transforms::Loopback(l) => l.validate(),
             Transforms::Protect(p) => p.validate(),
             #[cfg(test)]
-            Transforms::DebugReturnerTransform(d) => d.validate(),
+            Transforms::DebugReturner(d) => d.validate(),
             Transforms::DebugRandomDelay(d) => d.validate(),
         }
     }
@@ -202,7 +202,7 @@ impl Transforms {
             Transforms::Loopback(l) => l.is_terminating(),
             Transforms::Protect(p) => p.is_terminating(),
             #[cfg(test)]
-            Transforms::DebugReturnerTransform(d) => d.is_terminating(),
+            Transforms::DebugReturner(d) => d.is_terminating(),
             Transforms::DebugRandomDelay(d) => d.is_terminating(),
         }
     }
@@ -223,7 +223,7 @@ pub enum TransformsConfig {
     RedisTimestampTagger,
     DebugPrinter,
     #[cfg(test)]
-    DebugReturnerTransform(DebugReturnerTransformConfig),
+    DebugReturner(DebugReturnerConfig),
     Null,
     Loopback,
     ParallelMap(ParallelMapConfig),
@@ -254,7 +254,7 @@ impl TransformsConfig {
             TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source().await,
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
             #[cfg(test)]
-            TransformsConfig::DebugReturnerTransform(d) => d.get_source().await,
+            TransformsConfig::DebugReturner(d) => d.get_source().await,
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
             TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,

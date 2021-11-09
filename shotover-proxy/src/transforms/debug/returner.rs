@@ -9,16 +9,17 @@ use redis_protocol::resp2::prelude::Frame;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct DebugReturnerTransformConfig {
+pub struct DebugReturnerConfig {
     ok: bool,
     response: Response,
 }
 
-impl DebugReturnerTransformConfig {
+impl DebugReturnerConfig {
     pub async fn get_source(&self) -> Result<Transforms> {
-        Ok(Transforms::DebugReturnerTransform(
-            DebugReturnerTransform::new(self.response.clone(), self.ok),
-        ))
+        Ok(Transforms::DebugReturner(DebugReturner::new(
+            self.response.clone(),
+            self.ok,
+        )))
     }
 }
 
@@ -30,19 +31,19 @@ pub enum Response {
 }
 
 #[derive(Debug, Clone)]
-pub struct DebugReturnerTransform {
+pub struct DebugReturner {
     response: Response,
     ok: bool,
 }
 
-impl DebugReturnerTransform {
+impl DebugReturner {
     pub fn new(response: Response, ok: bool) -> Self {
-        DebugReturnerTransform { response, ok }
+        DebugReturner { response, ok }
     }
 }
 
 #[async_trait]
-impl Transform for DebugReturnerTransform {
+impl Transform for DebugReturner {
     async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.ok {
             match &self.response {

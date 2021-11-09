@@ -247,7 +247,7 @@ impl Transform for ConsistentScatter {
 mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::debug::printer::DebugPrinter;
-    use crate::transforms::debug::returner::{DebugReturnerTransform, Response};
+    use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
 
     use crate::message::{
@@ -310,11 +310,11 @@ mod scatter_transform_tests {
             RawFrame::None,
         )]);
 
-        let ok_repeat = Transforms::DebugReturnerTransform(DebugReturnerTransform::new(
+        let ok_repeat = Transforms::DebugReturner(DebugReturner::new(
             Response::Message(response.clone()),
             true,
         ));
-        let err_repeat = Transforms::DebugReturnerTransform(DebugReturnerTransform::new(
+        let err_repeat = Transforms::DebugReturner(DebugReturner::new(
             Response::Message(response.clone()),
             false,
         ));

@@ -6,13 +6,13 @@ use rand_distr::Normal;
 use tokio::time::Duration;
 
 #[derive(Debug, Clone)]
-pub struct DebugRandomDelayTransform {
+pub struct DebugRandomDelay {
     pub delay: u64,
     pub distribution: Option<Normal<f64>>,
 }
 
 #[async_trait]
-impl Transform for DebugRandomDelayTransform {
+impl Transform for DebugRandomDelay {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let delay;
         if let Some(dist) = self.distribution {

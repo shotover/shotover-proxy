@@ -270,7 +270,7 @@ mod protect_transform_tests {
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;
     use crate::transforms::chain::TransformChain;
-    use crate::transforms::debug::returner::{DebugReturnerTransform, Response};
+    use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::loopback::Loopback;
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;
@@ -398,16 +398,14 @@ mod protect_transform_tests {
                         };
 
                         let ret_transforms: Vec<Transforms> =
-                            vec![Transforms::DebugReturnerTransform(
-                                DebugReturnerTransform::new(
-                                    Response::Message(vec![Message::new(
-                                        MessageDetails::Response(returner_message.clone()),
-                                        true,
-                                        RawFrame::None,
-                                    )]),
+                            vec![Transforms::DebugReturner(DebugReturner::new(
+                                Response::Message(vec![Message::new(
+                                    MessageDetails::Response(returner_message.clone()),
                                     true,
-                                ),
-                            )];
+                                    RawFrame::None,
+                                )]),
+                                true,
+                            ))];
 
                         let mut ret_chain =
                             TransformChain::new(ret_transforms, String::from("test_chain"));
@@ -575,16 +573,15 @@ mod protect_transform_tests {
                         response_meta: None,
                     };
 
-                    let ret_transforms: Vec<Transforms> = vec![Transforms::DebugReturnerTransform(
-                        DebugReturnerTransform::new(
+                    let ret_transforms: Vec<Transforms> =
+                        vec![Transforms::DebugReturner(DebugReturner::new(
                             Response::Message(vec![Message::new(
                                 MessageDetails::Response(returner_message.clone()),
                                 true,
                                 RawFrame::None,
                             )]),
                             true,
-                        ),
-                    )];
+                        ))];
 
                     let mut ret_chain =
                         TransformChain::new(ret_transforms, String::from("test_chain"));
