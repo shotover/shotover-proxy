@@ -246,9 +246,9 @@ impl Transform for ConsistentScatter {
 #[cfg(test)]
 mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChain};
-    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::debug::printer::DebugPrinter;
+    use crate::transforms::debug::returner::{DebugReturnerTransform, Response};
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
-    use crate::transforms::internal_debug_transforms::{DebugReturnerTransform, Response};
 
     use crate::message::{
         Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,

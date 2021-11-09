@@ -254,7 +254,7 @@ impl TransformChain {
 #[cfg(test)]
 mod chain_tests {
     use crate::transforms::chain::TransformChain;
-    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
     use crate::transforms::Transforms;
 

@@ -270,7 +270,7 @@ mod protect_transform_tests {
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::RawFrame;
     use crate::transforms::chain::TransformChain;
-    use crate::transforms::internal_debug_transforms::{DebugReturnerTransform, Response};
+    use crate::transforms::debug::returner::{DebugReturnerTransform, Response};
     use crate::transforms::loopback::Loopback;
     use crate::transforms::protect::key_management::KeyManagerConfig;
     use crate::transforms::protect::ProtectConfig;

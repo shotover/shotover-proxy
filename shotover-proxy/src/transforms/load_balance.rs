@@ -88,7 +88,7 @@ impl Transform for ConnectionBalanceAndPool {
 mod test {
     use crate::message::Messages;
     use crate::transforms::chain::TransformChain;
-    use crate::transforms::internal_debug_transforms::{DebugReturnerTransform, Response};
+    use crate::transforms::debug::returner::{DebugReturnerTransform, Response};
     use crate::transforms::load_balance::ConnectionBalanceAndPool;
     use crate::transforms::{Transforms, Wrapper};
     use anyhow::Result;

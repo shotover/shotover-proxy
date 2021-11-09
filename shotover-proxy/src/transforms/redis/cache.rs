@@ -385,7 +385,7 @@ mod test {
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::chain::TransformChain;
-    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
     use crate::transforms::redis::cache::{build_redis_ast_from_sql, PrimaryKey, SimpleRedisCache};
     use crate::transforms::{Transform, Transforms};

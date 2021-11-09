@@ -16,16 +16,14 @@ use metrics::{counter, histogram};
 
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
-use crate::transforms::debug_printer::DebugPrinter;
+use crate::transforms::debug::printer::DebugPrinter;
+use crate::transforms::debug::random_delay::DebugRandomDelayTransform;
+#[cfg(test)]
+use crate::transforms::debug::returner::{DebugReturnerTransform, DebugReturnerTransformConfig};
 use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::internal_debug_transforms::DebugRandomDelayTransform;
-#[cfg(test)]
-use crate::transforms::internal_debug_transforms::{
-    DebugReturnerTransform, DebugReturnerTransformConfig,
-};
 use crate::transforms::kafka_sink::{KafkaSink, KafkaSinkConfig};
 use crate::transforms::load_balance::ConnectionBalanceAndPool;
 use crate::transforms::loopback::Loopback;
@@ -48,10 +46,9 @@ use tokio::time::Instant;
 pub mod cassandra;
 pub mod chain;
 pub mod coalesce;
-pub mod debug_printer;
+pub mod debug;
 pub mod distributed;
 pub mod filter;
-pub mod internal_debug_transforms;
 pub mod kafka_sink;
 pub mod load_balance;
 pub mod loopback;
