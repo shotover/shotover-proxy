@@ -339,10 +339,11 @@ The response from the down-chain transform is returned back up-chain but various
     # If the responses returned by the sub chain do not equal the responses returned by down-chain,
     # then the original message is also sent down the SubchainOnMismatch sub chain.
     # This is useful for logging failed messages.
-    # behavior: SubchainOnMismatch:
-    #   - QueryTypeFilter:
-    #       filter: Read
-    #   - Null
+    # behavior: 
+    #   SubchainOnMismatch:
+    #     - QueryTypeFilter:
+    #         filter: Read
+    #     - Null
 
     # Timeout for sending to the sub chain in microseconds
     timeout_micros: 1000
