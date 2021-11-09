@@ -2,7 +2,6 @@ use crate::cassandra_int_tests::CassandraTestContext;
 use crate::helpers::ShotoverManager;
 use test_helpers::docker_compose::DockerCompose;
 
-use anyhow::Result;
 use cassandra_cpp::*;
 use serial_test::serial;
 use std::thread;
