@@ -54,7 +54,7 @@ jobs:
         sudo apt-get install -y libpcap-dev
         sudo apt-get upgrade -y
     - name: Install Cassandra CPP driver
-      if: ${{ startsWith( matrix.name, 'Ubuntu 18.04') }}
+      if: ${{ matrix.runner == 'ubuntu-18.04' }}
       run: |
         echo CPP version number
         cc --version
@@ -77,9 +77,9 @@ jobs:
     - name: Ensure that tests pass
       run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output
       # can not run tests if cpp driver not installed
-      if: ${{ startsWith( matrix.name, 'Ubuntu 18.04') }}
+      if: ${{ matrix.runner == 'ubuntu-18.04' }}
     - name: License Check
       run: |
         cargo install --locked cargo-deny
         cargo deny check licenses
-
+      if: ${{ matrix.name == 'Ubuntu 20.04 - Debug' }}

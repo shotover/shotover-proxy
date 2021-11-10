@@ -81,16 +81,16 @@ fn handle_protocol_error(
                 );
                 let (up_msg, down_msg, an_err) = codec.fixup_err(m);
                 // if there is a message for upstream send it
-                if up_msg.is_some() {
+                if let Some(up_msg) = up_msg {
                     // send up stream messages now
                     debug!("{:?} Return message: {:?}", thread::current().id(), &up_msg);
-                    tx_out.send(vec![up_msg.unwrap()]).ok();
+                    tx_out.send(vec![up_msg]).ok();
                 }
-                if an_err.is_some() {
+                if let Some(an_err) = an_err {
                     error!(
                         "{:?} (protocol error) chain processing error - {}",
                         thread::current().id(),
-                        an_err.unwrap()
+                        an_err
                     );
                 }
                 match down_msg {
