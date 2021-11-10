@@ -50,7 +50,7 @@ impl ConsistentScatterConfig {
             route_map,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
-            timeout: 1000, //todo this timeout needs to be longer for the initial connection...
+            timeout: 1000, //TODO this timeout needs to be longer for the initial connection...
             count: 0,
         }))
     }
@@ -246,9 +246,9 @@ impl Transform for ConsistentScatter {
 #[cfg(test)]
 mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChain};
-    use crate::transforms::debug_printer::DebugPrinter;
+    use crate::transforms::debug::printer::DebugPrinter;
+    use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
-    use crate::transforms::internal_debug_transforms::DebugReturnerTransform;
 
     use crate::message::{
         Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
@@ -310,14 +310,9 @@ mod scatter_transform_tests {
             RawFrame::None,
         )]);
 
-        let ok_repeat = Transforms::DebugReturnerTransform(DebugReturnerTransform {
-            message: response.clone(),
-            ok: true,
-        });
-        let err_repeat = Transforms::DebugReturnerTransform(DebugReturnerTransform {
-            message: response.clone(),
-            ok: false,
-        });
+        let ok_repeat =
+            Transforms::DebugReturner(DebugReturner::new(Response::Message(response.clone())));
+        let err_repeat = Transforms::DebugReturner(DebugReturner::new(Response::Fail));
 
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
@@ -337,7 +332,7 @@ mod scatter_transform_tests {
             route_map: build_chains(two_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
-            timeout: 5000, //todo this timeout needs to be longer for the initial connection...
+            timeout: 5000, //TODO this timeout needs to be longer for the initial connection...
             count: 0,
         });
 
