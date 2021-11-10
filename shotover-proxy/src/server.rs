@@ -295,7 +295,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 thread::current().id(),
                 &conn_string
             );
-
             socket.set_nodelay(true)?;
 
             let mut handler = Handler {
