@@ -13,7 +13,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::info;
+use tracing::{info, Instrument};
 
 #[derive(Clone)]
 pub struct OwnedUnorderedConnectionPool<C: Codec> {
@@ -67,9 +67,11 @@ impl<C: Codec + 'static> OwnedUnorderedConnectionPool<C> {
             let (mut out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
             let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
 
-            tokio::spawn(tx_process(write, out_rx, return_tx, self.codec.clone()));
+            tokio::spawn(
+                tx_process(write, out_rx, return_tx, self.codec.clone()).in_current_span(),
+            );
 
-            tokio::spawn(rx_process(read, return_rx, self.codec.clone()));
+            tokio::spawn(rx_process(read, return_rx, self.codec.clone()).in_current_span());
             match (self.auth_func)(self, &mut out_tx) {
                 Ok(_) => {
                     connection_pool.push(out_tx);

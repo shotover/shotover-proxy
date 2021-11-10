@@ -10,7 +10,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace, warn, Instrument};
 
 type InnerChain = Vec<Transforms>;
 
@@ -115,43 +115,48 @@ impl TransformChain {
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
 
         let mut chain = self.clone();
-        let _jh = tokio::spawn(async move {
-            while let Some(ChannelMessage {
-                return_chan,
-                messages,
-            }) = rx.recv().await
-            {
-                #[cfg(test)]
+        let _jh = tokio::spawn(
+            async move {
+                while let Some(ChannelMessage {
+                    return_chan,
+                    messages,
+                }) = rx.recv().await
                 {
-                    let mut count = count.lock().await;
-                    *count += 1;
+                    #[cfg(test)]
+                    {
+                        let mut count = count.lock().await;
+                        *count += 1;
+                    }
+
+                    let chain_response = chain
+                        .process_request(
+                            Wrapper::new_with_chain_name(messages, chain.name.clone()),
+                            chain.name.clone(),
+                        )
+                        .await;
+
+                    if let Err(e) = &chain_response {
+                        warn!("Internal error in buffered chain: {:?}", e);
+                    };
+
+                    match return_chan {
+                        None => trace!("Ignoring response due to lack of return chan"),
+                        Some(tx) => match tx.send(chain_response) {
+                            Ok(_) => {}
+                            Err(e) => trace!(
+                                "Dropping response message {:?} as not needed by ConsistentScatter",
+                                e
+                            ),
+                        },
+                    };
                 }
 
-                let chain_response = chain
-                    .process_request(
-                        Wrapper::new_with_chain_name(messages, chain.name.clone()),
-                        chain.name.clone(),
-                    )
-                    .await;
-
-                if let Err(e) = &chain_response {
-                    warn!("Internal error in buffered chain: {:?}", e);
-                };
-
-                match return_chan {
-                    None => trace!("Ignoring response due to lack of return chan"),
-                    Some(tx) => match tx.send(chain_response) {
-                        Ok(_) => {}
-                        Err(e) => trace!(
-                            "Dropping response message {:?} as not needed by ConsistentScatter",
-                            e
-                        ),
-                    },
-                };
+                debug!(
+                    "buffered chain processing thread exiting, stopping chain loop and dropping"
+                );
             }
-
-            debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
-        });
+            .in_current_span(),
+        );
 
         BufferedChain {
             send_handle: tx,
