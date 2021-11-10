@@ -304,7 +304,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 conn_details: conn_string,
                 source_details: self.source_name.clone(),
 
-
                 // Initialize the connection state. This allocates read/write
                 // buffers to perform protocol frame parsing.
 
@@ -483,17 +482,18 @@ fn spawn_read_write_tasks<
         }
     });
 
-    tokio::spawn(async move {
-        let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-        if let Err(err) = rx_stream.forward(writer).await {
-            error!(
-                "{:?} Stream ended with error {:?}",
-                thread::current().id(),
-                err
-            );
+    tokio::spawn(
+        async move {
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+            if let Err(err) = rx_stream.forward(writer).await {
+                error!(
+                    "{:?} Stream ended with error {:?}",
+                    thread::current().id(),
+                    err
+                );
+            }
         }
-    }
-    .in_current_span(),
+        .in_current_span(),
     );
 }
 

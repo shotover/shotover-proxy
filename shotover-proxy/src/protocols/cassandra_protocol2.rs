@@ -749,7 +749,7 @@ mod cassandra_protocol_tests {
         let mut codec = new_codec();
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
         let messages = vec![Message {
-            protocol_error : 0,
+            protocol_error: 0,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -770,7 +770,7 @@ mod cassandra_protocol_tests {
         let mut codec = new_codec();
         let bytes = hex!("840000000200000000");
         let messages = vec![Message {
-            protocol_error : 0,
+            protocol_error: 0,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -794,7 +794,7 @@ mod cassandra_protocol_tests {
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
         let messages = vec![Message {
-            protocol_error : 0,
+            protocol_error: 0,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -858,7 +858,7 @@ mod cassandra_protocol_tests {
             74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
         );
         let messages = vec![Message {
-            protocol_error : 0,
+            protocol_error: 0,
             details: MessageDetails::Query(QueryMessage {
                 query_string: "SELECT * FROM system.local WHERE key='local'".into(),
                 namespace: vec!["system".into(), "local".into()],
