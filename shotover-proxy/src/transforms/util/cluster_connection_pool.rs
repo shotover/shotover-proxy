@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace, warn, Instrument};
 
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
@@ -221,20 +221,23 @@ pub fn spawn_read_write_tasks<
                 trace!("connection write-closed by remote upstream");
             },
         }
-    });
+    }.in_current_span());
 
     let codec_clone = codec.clone();
 
-    tokio::spawn(async move {
-        if let Err(e) = rx_process(stream_rx, return_rx, codec_clone).await {
-            trace!("connection read-closed with error: {:?}", e);
-        } else {
-            trace!("connection read-closed gracefully");
-        }
+    tokio::spawn(
+        async move {
+            if let Err(e) = rx_process(stream_rx, return_rx, codec_clone).await {
+                trace!("connection read-closed with error: {:?}", e);
+            } else {
+                trace!("connection read-closed gracefully");
+            }
 
-        // Signal the writer to also exit, which then closes `out_tx` - what we consider as the connection.
-        closed_tx.send(())
-    });
+            // Signal the writer to also exit, which then closes `out_tx` - what we consider as the connection.
+            closed_tx.send(())
+        }
+        .in_current_span(),
+    );
 
     out_tx
 }
