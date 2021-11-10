@@ -31,7 +31,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
         Some("3.11.10")
     );
 
-    /*query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
+    query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
     result = ctx.session.execute(&query).wait().unwrap();
     debug!("{:?} query result {:?}", thread::current().id(), result);
     assert_eq!(result.row_count(), 6);
@@ -45,14 +45,13 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
             .ok(),
         Some("cycling")
     );
-    */
 }
 
 #[test]
 #[serial]
 fn test_basic_connection() {
-    let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
-
+    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
+        .wait_for_n_t("Startup complete", 3, 300);
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
         "examples/cassandra-cluster/topology2.yaml",
@@ -61,8 +60,6 @@ fn test_basic_connection() {
     .iter()
     .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
     .collect();
-
-    compose.wait_for_n_t("Startup complete", 3, 300);
 
     test_create_keyspace(CassandraTestContext::new());
 }
@@ -74,7 +71,8 @@ fn test_basic_connection() {
 //#[serial]
 #[allow(dead_code)] // to make clippy happy
 fn test_create_keyspace_direct() {
-    let compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml");
+    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
+        .wait_for_n_t("Startup complete", 3, 120);
 
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
@@ -84,8 +82,6 @@ fn test_create_keyspace_direct() {
     .iter()
     .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
     .collect();
-
-    compose.wait_for_n_t("Startup complete", 3, 120);
 
     test_create_keyspace(CassandraTestContext::new_with_points("10.5.0.2"));
 }
