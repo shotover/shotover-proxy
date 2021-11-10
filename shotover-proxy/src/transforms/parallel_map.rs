@@ -146,7 +146,7 @@ impl Transform for ParallelMap {
 #[cfg(test)]
 mod parallel_map_tests {
     use crate::transforms::{
-        chain::TransformChain, debug_printer::DebugPrinter, null::Null, parallel_map::ParallelMap,
+        chain::TransformChain, debug::printer::DebugPrinter, null::Null, parallel_map::ParallelMap,
         Transform, Transforms,
     };
 

@@ -363,7 +363,7 @@ impl Value {
                 ColType::Time => Value::NULL,
                 ColType::Smallint => Value::Integer(decode_smallint(actual_bytes).unwrap() as i64),
                 ColType::Tinyint => Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64),
-                // todo: process collection types based on ColTypeOption
+                // TODO: process collection types based on ColTypeOption
                 // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
                 _ => Value::NULL,
             }

@@ -1,41 +1,18 @@
 use crate::error::ChainResponse;
-use crate::message::Messages;
 use crate::transforms::{Transform, Wrapper};
-use anyhow::anyhow;
 use async_trait::async_trait;
 use rand_distr::Distribution;
 use rand_distr::Normal;
 use tokio::time::Duration;
 
 #[derive(Debug, Clone)]
-pub struct DebugReturnerTransform {
-    pub message: Messages,
-    pub ok: bool,
-}
-
-#[async_trait]
-impl Transform for DebugReturnerTransform {
-    async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
-        if self.ok {
-            Ok(self.message.clone())
-        } else {
-            Err(anyhow!("Intentional Fail"))
-        }
-    }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct DebugRandomDelayTransform {
+pub struct DebugRandomDelay {
     pub delay: u64,
     pub distribution: Option<Normal<f64>>,
 }
 
 #[async_trait]
-impl Transform for DebugRandomDelayTransform {
+impl Transform for DebugRandomDelay {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let delay;
         if let Some(dist) = self.distribution {

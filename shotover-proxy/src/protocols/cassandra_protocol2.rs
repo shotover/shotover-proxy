@@ -9,7 +9,7 @@ use cassandra_proto::frame::parser::FrameHeader;
 use cassandra_proto::frame::{parser, Flag, Frame, IntoBytes, Opcode, Version};
 use cassandra_proto::query::QueryValues;
 use cassandra_proto::types::value::Value as CValue;
-use cassandra_proto::types::{CBytes, CInt, CString};
+use cassandra_proto::types::{to_int, CBytes, CInt, CString};
 use tokio_util::codec::{Decoder, Encoder};
 
 use std::borrow::{Borrow, BorrowMut};
@@ -135,12 +135,11 @@ impl CassandraCodec2 {
 
                     let result_bytes = rows
                         .iter()
-                        .map(|i| {
-                            let rr: Vec<CBytes> = i
-                                .iter()
-                                .map(|j| {
-                                    let rb: CBytes = CBytes::new(match j {
-                                        Value::NULL => (-1_i32).into_cbytes(),
+                        .map(|row| {
+                            row.iter()
+                                .map(|value| {
+                                    CBytes::new(match value {
+                                        Value::NULL => to_int(-1_i32),
                                         Value::Bytes(x) => x.to_vec(),
                                         Value::Strings(x) => Vec::from(x.as_bytes()),
                                         Value::Integer(x) => {
@@ -159,11 +158,9 @@ impl CassandraCodec2 {
                                             temp
                                         }
                                         _ => unreachable!(),
-                                    });
-                                    rb
+                                    })
                                 })
-                                .collect();
-                            rr
+                                .collect()
                         })
                         .collect();
 
@@ -703,136 +700,238 @@ impl Encoder<Messages> for CassandraCodec2 {
 
 #[cfg(test)]
 mod cassandra_protocol_tests {
-    use crate::message::{ASTHolder, MessageDetails, QueryMessage};
+    use crate::message::{
+        ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
+    };
     use crate::protocols::cassandra_protocol2::CassandraCodec2;
+    use crate::protocols::RawFrame;
     use bytes::BytesMut;
     use cassandra_proto::frame::{Frame, Opcode, Version};
     use hex_literal::hex;
+    use sqlparser::ast::Expr::BinaryOp;
+    use sqlparser::ast::{
+        BinaryOperator, Expr, Ident, ObjectName, Query, Select, SelectItem, SetExpr, Statement,
+        TableFactor, TableWithJoins, Value as SQLValue,
+    };
     use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 
-    use crate::protocols::RawFrame::Cassandra;
-
-    const STARTUP_BYTES: [u8; 31] =
-        hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
-
-    const READY_BYTES: [u8; 9] = hex!("840000000200000000");
-
-    const REGISTER_BYTES: [u8; 58] = hex!(
-        "040000010b000000310003000f544f504f4c4f47595f4348414e4745
-    000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
-    );
-
-    const QUERY_BYTES: [u8; 60] = hex!(
-        "0400000307000000330000002c53454c454354202a2046524f4d20737973
-    74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
-    );
-
-    const RESULT_BYTES: [u8; 162] = hex!(
-        "840000020800000099000000020000000100000009000673797374656
-    d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
-    65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
-    573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
-    );
-
-    fn test_frame(codec: &mut CassandraCodec2, raw_frame: &[u8]) {
-        let message = codec
+    fn test_frame_codec_roundtrip(
+        codec: &mut CassandraCodec2,
+        raw_frame: &[u8],
+        expected_messages: Vec<Message>,
+    ) {
+        // test decode
+        let decoded_messages = codec
             .decode(&mut BytesMut::from(raw_frame))
             .unwrap()
             .unwrap();
+        assert_eq!(decoded_messages, expected_messages);
 
+        // test encode round trip
         let mut dest = BytesMut::new();
-        codec.encode(message, &mut dest).unwrap();
+        codec.encode(decoded_messages, &mut dest).unwrap();
         assert_eq!(raw_frame, &dest);
     }
 
-    #[test]
-    fn test_startup_codec() {
+    fn new_codec() -> CassandraCodec2 {
         let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
             vec!["pk".to_string(), "clustering".to_string()],
         );
-        let mut codec = CassandraCodec2::new(pk_map, false);
-        test_frame(&mut codec, &STARTUP_BYTES);
+        CassandraCodec2::new(pk_map, false)
     }
 
     #[test]
-    fn test_ready_codec() {
-        let mut pk_map = HashMap::new();
-        pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        pk_map.insert(
-            "test.clustering".to_string(),
-            vec!["pk".to_string(), "clustering".to_string()],
-        );
-        let mut codec = CassandraCodec2::new(pk_map, false);
-        test_frame(&mut codec, &READY_BYTES);
+    fn test_codec_startup() {
+        let mut codec = new_codec();
+        let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
+        let messages = vec![Message {
+            protocol_error : 0,
+            details: MessageDetails::Unknown,
+            modified: false,
+            original: RawFrame::Cassandra(Frame {
+                version: Version::Request,
+                flags: vec![],
+                opcode: Opcode::Startup,
+                stream: 0,
+                body: hex!("0001000b43514c5f56455253494f4e0005332e302e30").to_vec(),
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        }];
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_register_codec() {
-        let mut pk_map = HashMap::new();
-        pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        pk_map.insert(
-            "test.clustering".to_string(),
-            vec!["pk".to_string(), "clustering".to_string()],
-        );
-        let mut codec = CassandraCodec2::new(pk_map, false);
-        test_frame(&mut codec, &REGISTER_BYTES);
+    fn test_codec_ready() {
+        let mut codec = new_codec();
+        let bytes = hex!("840000000200000000");
+        let messages = vec![Message {
+            protocol_error : 0,
+            details: MessageDetails::Unknown,
+            modified: false,
+            original: RawFrame::Cassandra(Frame {
+                version: Version::Response,
+                flags: vec![],
+                opcode: Opcode::Ready,
+                stream: 0,
+                body: vec![],
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        }];
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_result_codec() {
-        let mut pk_map = HashMap::new();
-        pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        pk_map.insert(
-            "test.clustering".to_string(),
-            vec!["pk".to_string(), "clustering".to_string()],
+    fn test_codec_register() {
+        let mut codec = new_codec();
+        let bytes = hex!(
+            "040000010b000000310003000f544f504f4c4f47595f4348414e4745
+            000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
-        let mut codec = CassandraCodec2::new(pk_map, false);
-        test_frame(&mut codec, &RESULT_BYTES);
+        let messages = vec![Message {
+            protocol_error : 0,
+            details: MessageDetails::Unknown,
+            modified: false,
+            original: RawFrame::Cassandra(Frame {
+                version: Version::Request,
+                flags: vec![],
+                opcode: Opcode::Register,
+                stream: 1,
+                body: hex!(
+                    "0003000f544f504f4c4f47595f4348414e4745
+                    000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
+                )
+                .to_vec(),
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        }];
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_query_codec() {
-        let mut pk_map = HashMap::new();
-        pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        pk_map.insert(
-            "test.clustering".to_string(),
-            vec!["pk".to_string(), "clustering".to_string()],
+    fn test_codec_result() {
+        let mut codec = new_codec();
+        let bytes = hex!(
+            "840000020800000099000000020000000100000009000673797374656
+            d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
+            65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
+            573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
         );
-        let mut codec = CassandraCodec2::new(pk_map, false);
-        test_frame(&mut codec, &QUERY_BYTES);
+        let messages = vec![Message {
+            protocol_error : 0,
+            details: MessageDetails::Response(QueryResponse {
+                matching_query: None,
+                result: Some(Value::NamedRows(vec![])),
+                error: None,
+                response_meta: None,
+            }),
+            modified: false,
+            original: RawFrame::Cassandra(Frame {
+                version: Version::Response,
+                flags: vec![],
+                opcode: Opcode::Result,
+                stream: 2,
+                body: hex!(
+                    "000000020000000100000009000673797374656
+                    d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
+                    65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
+                    573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
+                ).to_vec(),
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        }];
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
-    fn test_query_codec_ast_builder() {
-        let mut pk_map = HashMap::new();
-        pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        pk_map.insert(
-            "test.clustering".to_string(),
-            vec!["pk".to_string(), "clustering".to_string()],
+    fn test_codec_query() {
+        let mut codec = new_codec();
+        let bytes = hex!(
+            "0400000307000000330000002c53454c454354202a2046524f4d20737973
+            74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
         );
-
-        let mut codec = CassandraCodec2::new(pk_map, false);
-        let mut bytes = BytesMut::from(QUERY_BYTES.as_ref());
-        let messages = codec.decode(&mut bytes).unwrap().unwrap();
-        for message in messages {
-            match message.details {
-                MessageDetails::Query(QueryMessage {
-                    query_string,
-                    ast: Some(ASTHolder::SQL(ast)),
-                    ..
-                }) => {
-                    assert_eq!(
-                        query_string.replace(char::is_whitespace, ""),
-                        ast.to_string().replace(char::is_whitespace, ""),
-                    );
-                }
-                details => panic!("Unexpected details: {:?}", details),
-            }
-        }
+        let messages = vec![Message {
+            protocol_error : 0,
+            details: MessageDetails::Query(QueryMessage {
+                query_string: "SELECT * FROM system.local WHERE key='local'".into(),
+                namespace: vec!["system".into(), "local".into()],
+                primary_key: HashMap::new(),
+                query_values: Some(HashMap::from([(
+                    "key".into(),
+                    Value::Strings("local".into()),
+                )])),
+                projection: Some(vec!["*".into()]),
+                query_type: QueryType::Read,
+                ast: Some(ASTHolder::SQL(Statement::Query(Box::new(Query {
+                    with: None,
+                    body: SetExpr::Select(Box::new(Select {
+                        distinct: false,
+                        top: None,
+                        projection: vec![SelectItem::Wildcard],
+                        from: vec![TableWithJoins {
+                            relation: TableFactor::Table {
+                                name: ObjectName(vec![
+                                    Ident {
+                                        value: "system".into(),
+                                        quote_style: None,
+                                    },
+                                    Ident {
+                                        value: "local".into(),
+                                        quote_style: None,
+                                    },
+                                ]),
+                                alias: None,
+                                args: vec![],
+                                with_hints: vec![],
+                            },
+                            joins: vec![],
+                        }],
+                        lateral_views: vec![],
+                        selection: Some(BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident {
+                                value: "key".into(),
+                                quote_style: None,
+                            })),
+                            op: BinaryOperator::Eq,
+                            right: Box::new(Expr::Value(SQLValue::SingleQuotedString(
+                                "local".into(),
+                            ))),
+                        }),
+                        group_by: vec![],
+                        cluster_by: vec![],
+                        distribute_by: vec![],
+                        sort_by: vec![],
+                        having: None,
+                    })),
+                    order_by: vec![],
+                    limit: None,
+                    offset: None,
+                    fetch: None,
+                })))),
+            }),
+            modified: false,
+            original: RawFrame::Cassandra(Frame {
+                version: Version::Request,
+                flags: vec![],
+                opcode: Opcode::Query,
+                stream: 3,
+                body: hex!(
+                    "0000002c53454c454354202a2046524f4d20737973
+                    74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
+                )
+                .to_vec(),
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        }];
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
     #[test]
@@ -864,7 +963,7 @@ mod cassandra_protocol_tests {
             };
             assert!(!message.modified);
             match message.original {
-                Cassandra(cframe) => {
+                RawFrame::Cassandra(cframe) => {
                     assert_eq!(Version::Request, cframe.version);
                     assert_eq!(0, cframe.flags.len());
                     assert_eq!(Opcode::Options, cframe.opcode);
