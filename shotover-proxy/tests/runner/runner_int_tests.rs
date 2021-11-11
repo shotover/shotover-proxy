@@ -28,7 +28,9 @@ fn test_runtime_create() {
 #[test]
 #[serial]
 fn test_early_shutdown_cassandra_source() {
-    ShotoverManager::from_topology_file("examples/null-cassandra/topology.yaml");
+    std::mem::drop(ShotoverManager::from_topology_file(
+        "examples/null-cassandra/topology.yaml",
+    ));
 }
 
 #[test]
