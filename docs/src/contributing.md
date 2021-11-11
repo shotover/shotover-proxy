@@ -10,7 +10,6 @@ Once you've installed Rust via Rustup (you should just be fine with the latest s
 
 Shotover requires the following in order to build:
 
-* cmake
 * gcc
 * g++
 * libssl-dev
