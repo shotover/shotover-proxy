@@ -63,5 +63,3 @@ fn test_basic_connection() {
 
     test_create_keyspace(CassandraTestContext::new());
 }
-
-

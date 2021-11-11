@@ -23,4 +23,3 @@ async fn test_cassandra_standalone() {
     let _shotover_proxy =
         ShotoverManager::from_topology_file("examples/cassandra-standalone/topology.yaml");
 }
-
