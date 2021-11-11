@@ -64,43 +64,4 @@ fn test_basic_connection() {
     test_create_keyspace(CassandraTestContext::new());
 }
 
-// this test is used for dev testing to ensure that the driver works we directly connect vi the
-// test context
-// with the Cassandra we are running against.
-//#[test] // can not use ignore on test as build builds ignored tests
-//#[serial]
-#[allow(dead_code)] // to make clippy happy
-fn test_create_keyspace_direct() {
-    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 3, 120);
 
-    let _handles: Vec<_> = vec![
-        "examples/cassandra-cluster/topology1.yaml",
-        "examples/cassandra-cluster/topology2.yaml",
-        "examples/cassandra-cluster/topology3.yaml",
-    ]
-    .iter()
-    .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
-    .collect();
-
-    test_create_keyspace(CassandraTestContext::new_with_points("10.5.0.2"));
-}
-
-// this test is used for dev testing to ensure that  the cpp driver we are using actually works
-// with the Cassandra we are running against.
-//#[test] // can not use ignore on test as build builds ignored tests
-//#[serial]
-#[allow(dead_code)] // to make clippy happy
-fn test_cpp_driver() {
-    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 3, 90);
-
-    let mut cluster = Cluster::default();
-    cluster.set_contact_points("10.5.0.2").unwrap();
-    //cluster.set_port(9043).ok();
-    cluster.set_load_balance_round_robin();
-
-    let session = cluster.connect().unwrap();
-
-    test_create_keyspace(CassandraTestContext { session });
-}

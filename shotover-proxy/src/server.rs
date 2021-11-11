@@ -303,9 +303,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 conn_details: conn_string,
                 source_details: self.source_name.clone(),
 
-                // Initialize the connection state. This allocates read/write
-                // buffers to perform protocol frame parsing.
-
                 // The connection state needs a handle to the max connections
                 // semaphore. When the handler is done processing the
                 // connection, a permit is added back to the semaphore.
