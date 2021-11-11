@@ -36,6 +36,7 @@ fn run_command(command: &str, args: &[&str]) -> Result<String> {
     }
 }
 
+#[must_use]
 pub struct DockerCompose {
     file_path: String,
 }

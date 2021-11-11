@@ -49,13 +49,11 @@ jobs:
         # Otherwise only the last build to finish would get saved to the cache.
         key: ${{ matrix.name }}
     - name: Install ubuntu packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libpcap-dev
-        sudo apt-get upgrade -y
+      run: shotover-proxy/build/install_ubuntu_packages.sh
     - name: Install Cassandra CPP driver
       if: ${{ matrix.runner == 'ubuntu-18.04' }}
       run: |
+        sudo apt-get upgrade -y
         echo CPP version number
         cc --version
         cat /etc/lsb-release

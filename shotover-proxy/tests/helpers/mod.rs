@@ -14,6 +14,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_io_timeout::TimeoutStream;
 
+#[must_use]
 pub struct ShotoverManager {
     pub runtime: Option<Runtime>,
     pub runtime_handle: RuntimeHandle,
