@@ -119,7 +119,7 @@ This transform will log the query/message at an info level, then call the down-c
 
 ### DebugReturner
 
-This transform will return the supplied response.
+This transform will drop any messages it receives and return the supplied response.
 
 ```yaml
 - DebugReturner
