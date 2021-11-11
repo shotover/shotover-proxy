@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DebugReturnerConfig {
+    #[serde(flatten)]
     response: Response,
 }
 
