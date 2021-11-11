@@ -4,26 +4,7 @@ use test_helpers::docker_compose::DockerCompose;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_ignore() {
-    ignore_matches().await;
-    ignore_with_mismatch().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_fail() {
-    fail_matches().await;
-    fail_with_mismatch().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_subchain() {
-    subchain_matches().await;
-    subchain_with_mismatch().await;
-}
-
-async fn ignore_matches() {
+async fn test_ignore_matches() {
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-topologies/tee/ignore.yaml");
 
@@ -45,7 +26,9 @@ async fn ignore_matches() {
     assert_eq!("42", result);
 }
 
-async fn ignore_with_mismatch() {
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_ignore_with_mismatch() {
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-topologies/tee/ignore_with_mismatch.yaml");
 
@@ -61,7 +44,9 @@ async fn ignore_with_mismatch() {
     assert_eq!("42", result);
 }
 
-async fn fail_matches() {
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_fail_matches() {
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-topologies/tee/fail.yaml");
 
@@ -76,7 +61,9 @@ async fn fail_matches() {
     assert_eq!("42", result);
 }
 
-async fn fail_with_mismatch() {
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_fail_with_mismatch() {
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-topologies/tee/fail_with_mismatch.yaml");
 
@@ -93,7 +80,9 @@ async fn fail_with_mismatch() {
     assert_eq!(expected, err);
 }
 
-async fn subchain_matches() {
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_subchain_matches() {
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-topologies/tee/subchain.yaml");
 
@@ -117,7 +106,9 @@ async fn subchain_matches() {
     assert_eq!(result, "42");
 }
 
-async fn subchain_with_mismatch() {
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_subchain_with_mismatch() {
     let _compose = DockerCompose::new("examples/redis-cluster-dr/docker-compose.yml")
         .wait_for_n("Cluster state changed", 12);
 
