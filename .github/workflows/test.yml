@@ -50,8 +50,7 @@ jobs:
         key: ${{ matrix.name }}
     - name: Install ubuntu packages
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libpcap-dev
+        shotover-proxy/build/install_ubuntu_packages.sh
     - name: Install cargo-hack
       run: cargo install cargo-hack --version 0.5.8
     - name: Check `cargo fmt` was run

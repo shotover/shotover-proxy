@@ -8,6 +8,7 @@ on:
 
 jobs:
   publish-image:
+    name: "Publish Docker Image to Docker Hub"
     runs-on: ubuntu-latest
     steps:
       -
@@ -24,10 +25,9 @@ jobs:
           docker push shotover/shotover-proxy:latest
           docker push shotover/shotover-proxy:${GITHUB_REF/refs\/tags\//}
 
-  tagged-release:
-    name: "Tagged Release"
+  publish-binary:
+    name: "Publish Binary to GitHub"
     runs-on: ubuntu-18.04
-
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -38,6 +38,9 @@ jobs:
             # When something like https://github.com/actions-rs/toolchain/pull/184 lands we can delete this line and get a nice speedup
             profile: minimal
             toolchain: stable
+      - name: Install ubuntu packages
+        run: |
+          shotover-proxy/build/install_ubuntu_packages.sh
       - name: Build & test
         run: |
           shotover-proxy/build/build_release.sh
