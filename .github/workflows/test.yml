@@ -49,9 +49,7 @@ jobs:
         # Otherwise only the last build to finish would get saved to the cache.
         key: ${{ matrix.name }}
     - name: Install ubuntu packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libpcap-dev
+      run: shotover-proxy/build/install_ubuntu_packages.sh
     - name: Install cargo-hack
       run: cargo install cargo-hack --version 0.5.8
     - name: Check `cargo fmt` was run
