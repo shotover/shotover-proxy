@@ -11,8 +11,6 @@ chain_config:
         behavior: Ignore
         buffer_size: 10000
         chain:
-          - QueryTypeFilter:
-              filter: Read
           - Coalesce:
               max_behavior:
                 Count: 2000

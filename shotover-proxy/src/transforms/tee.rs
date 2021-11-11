@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryResponse, Value};
+use crate::message::{Message, MessageDetails, QueryResponse, QueryType, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
@@ -115,11 +115,20 @@ impl Transform for Tee {
     }
 
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        let mut subchain_message_wrapper = message_wrapper.clone();
+        subchain_message_wrapper.messages.retain(|m| {
+            if let MessageDetails::Query(qm) = &m.details {
+                qm.query_type != QueryType::Read
+            } else {
+                m.original.get_query_type() != QueryType::Read
+            }
+        });
+
         match self.behavior {
             ConsistencyBehavior::Ignore => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx.process_request_no_return(
-                        message_wrapper.clone(),
+                        subchain_message_wrapper,
                         "Tee".to_string(),
                         self.timeout_micros
                     ),
@@ -137,7 +146,7 @@ impl Transform for Tee {
             ConsistencyBehavior::FailOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx.process_request(
-                        message_wrapper.clone(),
+                        subchain_message_wrapper,
                         "Tee".to_string(),
                         self.timeout_micros
                     ),
@@ -160,10 +169,10 @@ impl Transform for Tee {
                 }
             }
             ConsistencyBehavior::SubchainOnMismatch(_) => {
-                let failed_message = message_wrapper.clone();
+                let failed_message = subchain_message_wrapper.clone();
                 let (tee_result, chain_result) = tokio::join!(
                     self.tx.process_request(
-                        message_wrapper.clone(),
+                        subchain_message_wrapper,
                         "Tee".to_string(),
                         self.timeout_micros
                     ),

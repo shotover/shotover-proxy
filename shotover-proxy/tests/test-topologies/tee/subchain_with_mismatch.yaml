@@ -10,13 +10,9 @@ chain_config:
         buffer_size: 10000
         behavior:
           SubchainOnMismatch:
-            - QueryTypeFilter:
-                filter: Read
             - RedisSinkSingle:
                 remote_address: "127.0.0.1:1111"
         chain:
-          - QueryTypeFilter:
-              filter: Read
           - DebugReturner:
               Redis: "41"
     - DebugReturner:

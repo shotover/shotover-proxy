@@ -127,8 +127,6 @@ chain_config:
         buffer_size: 10000
         #The child chain, that Tee will asynchronously pass requests to
         chain:
-          - QueryTypeFilter:
-              filter: Read
           - Coalesce:
               max_behavior:
                 Count: 2000

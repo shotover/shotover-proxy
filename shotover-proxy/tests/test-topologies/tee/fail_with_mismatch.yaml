@@ -10,8 +10,6 @@ chain_config:
         behavior: FailOnMismatch
         buffer_size: 10000
         chain:
-          - QueryTypeFilter:
-              filter: Read
           - DebugReturner:
               Redis: "41"
     - DebugReturner:

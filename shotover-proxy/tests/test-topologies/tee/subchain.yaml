@@ -9,8 +9,6 @@ chain_config:
     - Tee:
         behavior:
           SubchainOnMismatch:
-            - QueryTypeFilter:
-                filter: Read
             - RedisSinkSingle:
                 remote_address: "127.0.0.1:1111"
         buffer_size: 10000
