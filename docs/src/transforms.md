@@ -24,25 +24,27 @@ Future transforms won't be added to the public API while in alpha. But in these 
 
 ## Transforms
 
-| Transform                                           | Terminating | Implementation Status |
-|-----------------------------------------------------|-------------|-----------------------|
-|[CassandraSinkSingle](#cassandrasinksingle)          |✅           |Alpha                  |
-|[Coalesce](#coalesce)                                |❌           |Alpha                  |
-|[ConsistentScatter](#consistentscatter)              |✅           |Alpha                  |
-|[DebugPrinter](#debugprinter)                        |❌           |Alpha                  |
-|[KafkaSink](#kafkasink)                              |✅           |Alpha                  |
-|[Loopback](#loopback)                                |✅           |Beta                   |
-|[Null](#null)                                        |✅           |Beta                   |
-|[ParallelMap](#parallelmap)                          |✅           |Alpha                  |
-|[Protect](#protect)                                  |❌           |Alpha                  |
-|[QueryCounter](#querycounter)                        |❌           |Alpha                  |
-|[QueryTypeFilter](#querytypefilter)                  |❌           |Alpha                  |
-|[RedisCache](#rediscache)                            |❌           |Alpha                  |
-|[RedisClusterPortsRewrite](#redisclusterportsrewrite)|❌           |Beta                   |
-|[RedisSinkCluster](#redissinkcluster)                |✅           |Beta                   |
-|[RedisSinkSingle](#redissinksingle)                  |✅           |Beta                   |
-|[RedisTimestampTagger](#redistimestamptagger)        |❌           |Alpha                  |
-|[Tee](#tee)                                          |✅           |Alpha                  |
+| Transform                                             | Terminating | Implementation Status |
+|-------------------------------------------------------|-------------|-----------------------|
+| [CassandraSinkSingle](#cassandrasinksingle)           | ✅          | Alpha                 |
+| [Coalesce](#coalesce)                                 | ❌          | Alpha                 |
+| [ConsistentScatter](#consistentscatter)               | ✅          | Alpha                 |
+| [DebugPrinter](#debugprinter)                         | ❌          | Alpha                 |
+| [DebugReturner](#debugreturner)                       | ✅          | Alpha                 |
+| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |
+| [KafkaSink](#kafkasink)                               | ✅          | Alpha                 |
+| [Loopback](#loopback)                                 | ✅          | Beta                  |
+| [Null](#null)                                         | ✅          | Beta                  |
+| [ParallelMap](#parallelmap)                           | ✅          | Alpha                 |
+| [Protect](#protect)                                   | ❌          | Alpha                 |
+| [QueryCounter](#querycounter)                         | ❌          | Alpha                 |
+| [QueryTypeFilter](#querytypefilter)                   | ❌          | Alpha                 |
+| [RedisCache](#rediscache)                             | ❌          | Alpha                 |
+| [RedisClusterPortsRewrite](#redisclusterportsrewrite) | ❌          | Beta                  |
+| [RedisSinkCluster](#redissinkcluster)                 | ✅          | Beta                  |
+| [RedisSinkSingle](#redissinksingle)                   | ✅          | Beta                  |
+| [RedisTimestampTagger](#redistimestamptagger)         | ❌          | Alpha                 |
+| [Tee](#tee)                                           | ✅          | Alpha                 |
 
 ### CassandraSinkSingle
 
@@ -110,8 +112,35 @@ Upon receiving the configured number of responses, the transform will attempt to
 
 This transform will log the query/message at an info level, then call the down-chain transform.
 
-```yaml
+```YAML
 - DebugPrinter
+```
+
+
+### DebugReturner
+
+This transform will return the supplied response.
+
+```yaml
+- DebugReturner
+    # return a Redis response
+    Redis: "42"
+   
+    # To intentionally fail, use this variant 
+    # Fail
+```
+
+### DebugRandomDelay
+
+Delay the transform chain at the position that this transform sits at.
+
+```yaml
+- DebugRandomDelay
+  # length of time to delay in milliseconds
+  delay: 1000
+  
+  # optionally provide a distribution for a random amount to add to the base delay
+  distribution: 500
 ```
 
 ### Loopback
