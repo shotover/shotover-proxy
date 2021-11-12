@@ -30,7 +30,7 @@ async fn test_ignore_matches() {
 #[serial]
 async fn test_ignore_with_mismatch() {
     let shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-topologies/tee/ignore.yaml");
+        ShotoverManager::from_topology_file("tests/test-topologies/tee/ignore_with_mismatch.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
