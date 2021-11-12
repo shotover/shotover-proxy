@@ -936,7 +936,6 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_process_cassandra_frame() {
-        // Frame { version: Request, flags: [], opcode: Options, stream: 0, body: [], tracing_id: None, warnings: [] }
         let frame = Frame {
             version: Version::Request,
             flags: vec![],

@@ -27,7 +27,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
             .get_column(0)
             .unwrap()
             .get_str()
-            .ok(),
+            .unwrap(),
         Some("3.11.10")
     );
 
@@ -42,7 +42,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
             .get_column(0)
             .unwrap()
             .get_str()
-            .ok(),
+            .unwrap(),
         Some("cycling")
     );
 }
@@ -51,7 +51,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
 #[serial]
 fn test_basic_connection() {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 3, 300);
+        .wait_for_n_t("Startup complete", 3, 90);
     let _handles: Vec<_> = vec![
         "examples/cassandra-cluster/topology1.yaml",
         "examples/cassandra-cluster/topology2.yaml",

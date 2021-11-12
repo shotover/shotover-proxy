@@ -14,7 +14,6 @@ sources:
           - clustering
 chain_config:
   main_chain:
-    #    - Printer
     - CassandraSinkSingle:
         result_processing: false
         remote_address: "10.5.0.2:9042"

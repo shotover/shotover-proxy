@@ -764,6 +764,7 @@ async fn test_auth(connection: &mut Connection) {
             .code(),
         Some("NOAUTH")
     );
+
     // Authenticating with incorrect password should fail.
     assert_eq!(
         redis::cmd("AUTH")
