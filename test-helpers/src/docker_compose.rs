@@ -171,10 +171,6 @@ impl Drop for DockerCompose {
                     "ERROR: docker compose failed to bring down while already panicking: {:?}",
                     err
                 );
-                error!(
-                    "docker compose failed to bring down while already panicking: {:?}",
-                    err
-                );
             }
         } else {
             DockerCompose::clean_up(&self.file_path).unwrap();
