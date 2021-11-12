@@ -97,7 +97,7 @@ impl DockerCompose {
     /// * `count` - The number of times the regular expression should be found.
     ///
     /// # Panics
-    /// * If `count` occurances of `log_text` is not found in the log within 90 seconds.
+    /// * If `count` occurrences of `log_text` is not found in the log within 90 seconds.
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
         self.wait_for_n_t(log_text, count, 30)
