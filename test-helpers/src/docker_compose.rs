@@ -5,7 +5,7 @@ use std::process::Command;
 use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 /// Runs a command and returns the output as a string.
 ///

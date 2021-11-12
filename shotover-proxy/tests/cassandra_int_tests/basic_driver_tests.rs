@@ -1,23 +1,23 @@
-use crate::cassandra_int_tests::CassandraTestContext;
 use crate::helpers::ShotoverManager;
 use test_helpers::docker_compose::DockerCompose;
 
-use cassandra_cpp::*;
+use crate::cassandra_int_tests::new_with_points;
+use cassandra_cpp::{stmt, Session};
 use serial_test::serial;
 use std::thread;
 use tracing::debug;
 
-fn test_create_keyspace(ctx: CassandraTestContext) {
+fn test_create_keyspace(session: Session) {
     let mut query = stmt!(
         "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     );
 
-    let mut result = ctx.session.execute(&query).wait().unwrap();
+    let mut result = session.execute(&query).wait().unwrap();
     debug!("{:?} query result {:?}", thread::current().id(), result);
     assert_eq!(result.row_count(), 0);
 
     query = stmt!("SELECT release_version FROM system.local");
-    result = ctx.session.execute(&query).wait().unwrap();
+    result = session.execute(&query).wait().unwrap();
     debug!("{:?} query result {:?}", thread::current().id(), result);
     assert_eq!(result.row_count(), 1);
     assert_eq!(
@@ -32,7 +32,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
     );
 
     query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
-    result = ctx.session.execute(&query).wait().unwrap();
+    result = session.execute(&query).wait().unwrap();
     debug!("{:?} query result {:?}", thread::current().id(), result);
     assert_eq!(result.row_count(), 6);
     assert_eq!(
@@ -61,5 +61,5 @@ fn test_basic_connection() {
     .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
     .collect();
 
-    test_create_keyspace(CassandraTestContext::new());
+    test_create_keyspace(new_with_points("127.0.0.1"));
 }
