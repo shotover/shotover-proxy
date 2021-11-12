@@ -28,7 +28,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
             .unwrap()
             .get_str()
             .unwrap(),
-        Some("3.11.10")
+        "3.11.10"
     );
 
     query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
@@ -43,7 +43,7 @@ fn test_create_keyspace(ctx: CassandraTestContext) {
             .unwrap()
             .get_str()
             .unwrap(),
-        Some("cycling")
+        "cycling"
     );
 }
 

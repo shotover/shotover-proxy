@@ -1,4 +1,4 @@
-use cassandra_cpp::{Session,Cluster};
+use cassandra_cpp::{stmt, Cluster, Session};
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
