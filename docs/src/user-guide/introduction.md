@@ -38,11 +38,13 @@ Shotover prioritises the following principals in the order listed:
 
 Shotover provides a set of predefined transforms that can modify, route and control queries from any number of sources to a similar number of sinks. As the user you can construct chains of these transforms to achieve the behaviour required. Each chain can then be attached to a "source" that speaks the native protocol of you chosen database. The transform chain will process each request with access to a unified/simplified representation of a generic query, the original raw query and optionally (for SQL like protocols) a parsed AST representing the query.
 
+<!--
 You can also implement your own transforms natively with Rust. For concrete examples of what you can achieve with shotover-proxy, see the following examples:
 
 * [Multi-region, active-active redis](../examples/redis-multi)
 * [Cassandra query caching in redis, with a query audit trail sent to kafka](../examples/cass-redis-kafka)
 * [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../examples/cassandra-encryption)
+-->
 
 Shotover proxy currently supports the following protocols as sources:
 

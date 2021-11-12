@@ -4,3 +4,12 @@ language = "en"
 multilingual = false
 src = "src"
 title = "Shotover"
+
+[output.html]
+
+[output.linkcheck]
+# Should we check links on the internet? Enabling this option adds a
+# non-negligible performance impact
+follow-web-links = false
+
+warning-policy = "error"

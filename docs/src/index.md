@@ -18,8 +18,6 @@ Shotover can be deployed in a number of ways, it will generally be based on the 
 * As a stand alone proxy - If you are building a Service/DBaaS/Common data layer, you can deploy Shotover on standalone hardware and really let it fly.
 * As a sidecar to your database - You can also stick Shotover on the same instance/server as your database is running on, we do it, so we won't judge you.
 
-See the [deployment guide](user-guide/deployment.md) for details.
-
 ## Roadmap
 
 * Support relevant xDS APIs (so Shotover can play nicely with service mesh implementations).
