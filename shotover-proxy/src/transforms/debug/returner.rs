@@ -46,7 +46,7 @@ impl Transform for DebugReturner {
         match &self.response {
             Response::Message(message) => Ok(message.clone()),
             Response::Redis(string) => Ok(vec![Message {
-                protocol_error: false,
+                return_to_sender: false,
                 details: MessageDetails::Unknown,
                 modified: false,
                 original: RawFrame::Redis(Frame::BulkString(string.clone().into_bytes())),

@@ -504,14 +504,14 @@ impl RedisCodec {
                         },
                         modified: false,
                         original: RawFrame::Redis(frame),
-                        protocol_error: false,
+                        return_to_sender: false,
                     })
                 } else {
                     Ok(Message {
                         details: MessageDetails::Unknown,
                         modified: false,
                         original: RawFrame::Redis(frame),
-                        protocol_error: false,
+                        return_to_sender: false,
                     })
                 }
             })

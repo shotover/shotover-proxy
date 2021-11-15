@@ -29,18 +29,18 @@ impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecRea
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
-fn handle_protocol_error(messages: Messages, tx_out: &UnboundedSender<Messages>) -> Messages {
+fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages>) -> Messages {
     // this code creates a new Vec and uses an iterator with mapping and filtering to
-    // populate it from the original Messages.message Vec.  It may be more efficient to scan the
-    // original Vec and replace or delete individual Message in place.
+    // populate it from the original Messages.message Vec.  Any messages that require special
+    // handling are processed here.  Specifically messages with return_to_sender set `true`.
     let result = messages
         .into_iter()
         .map(|m| {
             // if there is a protocol error handle it.  always return the original message
             // it will be filtered out in the next step.
-            if m.protocol_error {
+            if m.return_to_sender {
                 debug!(
-                    "{:?} processing protocol error: {:?}",
+                    "{:?} processing return_to_sender: {:?}",
                     thread::current().id(),
                     &m
                 );
@@ -50,16 +50,16 @@ fn handle_protocol_error(messages: Messages, tx_out: &UnboundedSender<Messages>)
                     details: MessageDetails::Unknown,
                     modified: true,
                     original: RawFrame::None,
-                    protocol_error: true,
+                    return_to_sender: true,
                 }
             } else {
                 m
             }
         })
-        .filter(|m| !m.protocol_error)
+        .filter(|m| !m.return_to_sender)
         .collect();
     debug!(
-        "{:?} handle_protocol_error returning: {:?}",
+        "{:?} perform_custom_handling returning: {:?}",
         thread::current().id(),
         &result
     );
@@ -381,7 +381,7 @@ fn spawn_read_write_tasks<
         while let Some(message) = reader.next().await {
             match message {
                 Ok(message) => {
-                    let filtered_messages = handle_protocol_error(message, &out_tx);
+                    let filtered_messages = perform_custom_handling(message, &out_tx);
                     debug!(
                         "{:?} filtered_messages: {:?}",
                         thread::current().id(),

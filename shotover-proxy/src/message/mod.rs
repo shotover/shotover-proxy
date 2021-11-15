@@ -20,9 +20,8 @@ pub struct Message {
     pub modified: bool,
     /// The frame in the format defined by the protocol.
     pub original: RawFrame,
-    /// If protocol_error true then the message is a protocol_error message.  Protocol error
-    /// messages are alwasy sent back to the originating system.
-    pub protocol_error: bool,
+    /// If return_to_sender true then the message is sent back to the originating system.
+    pub return_to_sender: bool,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -38,7 +37,7 @@ impl Message {
             details,
             modified,
             original,
-            protocol_error: false,
+            return_to_sender: false,
         }
     }
 
@@ -71,7 +70,7 @@ impl Message {
             details,
             modified,
             original: RawFrame::None,
-            protocol_error: false,
+            return_to_sender: false,
         }
     }
 }
