@@ -10,15 +10,9 @@ async fn test_ignore_matches() {
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
-    redis::cmd("SET")
+    let result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, ()>(&mut connection)
-        .await
-        .unwrap();
-
-    let result = redis::cmd("GET")
-        .arg("key")
         .query_async::<_, String>(&mut connection)
         .await
         .unwrap();
@@ -52,8 +46,9 @@ async fn test_fail_matches() {
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
-    let result = redis::cmd("GET")
+    let result = redis::cmd("SET")
         .arg("key")
+        .arg("myvalue")
         .query_async::<_, String>(&mut connection)
         .await
         .unwrap();
@@ -76,6 +71,7 @@ async fn test_fail_with_mismatch() {
         .await
         .unwrap_err()
         .to_string();
+
     let expected = "An error was signalled by the server: The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch";
     assert_eq!(expected, err);
 }
@@ -83,15 +79,25 @@ async fn test_fail_with_mismatch() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_matches() {
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+        .wait_for("Ready to accept connections");
+
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-topologies/tee/subchain.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut shotover_connection = shotover_manager.redis_connection_async(6379).await;
+    let mut mismatch_chain_redis = shotover_manager.redis_connection_async(1111).await;
+    redis::cmd("SET")
+        .arg("key")
+        .arg("myvalue")
+        .query_async::<_, String>(&mut mismatch_chain_redis)
+        .await
+        .unwrap();
 
     let mut result = redis::cmd("SET")
         .arg("key")
-        .arg("myvalue")
-        .query_async::<_, String>(&mut connection)
+        .arg("notmyvalue")
+        .query_async::<_, String>(&mut shotover_connection)
         .await
         .unwrap();
 
@@ -99,38 +105,40 @@ async fn test_subchain_matches() {
 
     result = redis::cmd("GET")
         .arg("key")
-        .query_async::<_, String>(&mut connection)
+        .query_async::<_, String>(&mut mismatch_chain_redis)
         .await
         .unwrap();
 
-    assert_eq!(result, "42");
+    assert_eq!(result, "myvalue");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_with_mismatch() {
-    let _compose = DockerCompose::new("examples/redis-cluster-dr/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 12);
+    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+        .wait_for("Ready to accept connections");
 
     let shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-topologies/tee/subchain_with_mismatch.yaml",
     );
 
-    let mut top_level_chain_cluster = shotover_manager.redis_connection_async(6379).await;
-    let mut mismatch_chain_cluster = shotover_manager.redis_connection_async(6379).await;
+    let mut shotover_connection = shotover_manager.redis_connection_async(6379).await;
+    let mut mismatch_chain_redis = shotover_manager.redis_connection_async(1111).await;
 
-    // Set the value on the top level chain cluster
-    redis::cmd("SET")
+    // Set the value on the top level chain redis
+    let mut result = redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
-        .query_async::<_, String>(&mut top_level_chain_cluster)
+        .query_async::<_, String>(&mut shotover_connection)
         .await
         .unwrap();
 
-    // When the mismatch occurs, the value should be sent to the mismatch chain's cluster
-    let result = redis::cmd("GET")
+    assert_eq!(result, "42");
+
+    // When the mismatch occurs, the value should be sent to the mismatch chain's redis
+    result = redis::cmd("GET")
         .arg("key")
-        .query_async::<_, String>(&mut mismatch_chain_cluster)
+        .query_async::<_, String>(&mut mismatch_chain_redis)
         .await
         .unwrap();
 

@@ -7,7 +7,7 @@ sources:
 chain_config:
   redis_chain:
     - Tee:
-        behavior: Ignore
+        behavior: FailOnMismatch
         buffer_size: 10000
         chain:
           - QueryTypeFilter:

@@ -13,9 +13,9 @@ chain_config:
           - QueryTypeFilter:
               filter: Read
           - DebugReturner:
-              Redis: "42"
+              Redis: "41"
     - DebugReturner:
-        Redis: "41"
+        Redis: "42"
 named_topics:
   example: 10
 source_to_chain_mapping:

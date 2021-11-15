@@ -12,7 +12,8 @@ chain_config:
         chain:
           - QueryTypeFilter:
               filter: Read
-          - Null
+          - DebugReturner:
+              Redis: "41"
     - DebugReturner:
         Redis: "42"
 named_topics:

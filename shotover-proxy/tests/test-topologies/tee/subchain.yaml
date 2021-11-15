@@ -7,10 +7,16 @@ sources:
 chain_config:
   redis_chain:
     - Tee:
-        behavior: Ignore
+        behavior:
+          SubchainOnMismatch:
+            - QueryTypeFilter:
+                filter: Read
+            - RedisSinkSingle:
+                remote_address: "127.0.0.1:1111"
         buffer_size: 10000
         chain:
-          - Null
+          - DebugReturner:
+              Redis: "42"
     - DebugReturner:
         Redis: "42"
 named_topics:
