@@ -1,4 +1,4 @@
-use crate::message::{Message, MessageDetails, Messages};
+use crate::message::{Message, Messages, MessageDetails};
 use crate::protocols::RawFrame;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
@@ -29,39 +29,8 @@ impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecRea
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
-pub trait CodecErrorFixup {
-    /// An method to fix up an error.
-    ///
-    /// Codecs that do not have additional error handling should return `(None, None, Optional<Err>)`
-    ///
-    /// Returns a tuple comprising:
-    ///  * `up_msg` An optional message to send back to the source of the original message.
-    ///  * `down_msg` An optional message to send down chain in the direction the original message was
-    /// flowing.
-    ///  * `an_err` An optional error.  May be the same or a different error.  The Error will be
-    /// processed normally.
-    ///
-    /// # Arguments
-    /// `err` - The original error.
-    ///
-    fn fixup_err(
-        &self,
-        message: Message,
-    ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>);
-}
 
-///
-/// Process the messages.  Any messages with protocol errors are handled by calling the `codec.fixup_err`
-/// method and processing the results.
-/// The resulting Messages contains:
-/// * Any original messages that do not have the protocol_error set.
-/// * Any upstream messages produced by processing the protocol_error message.
-///
-/// Messages that only produce errors for logging or down stream messages are removed from the
-/// result.
-///
 fn handle_protocol_error(
-    codec: &dyn CodecErrorFixup,
     messages: Messages,
     tx_out: &UnboundedSender<Messages>,
 ) -> Messages {
@@ -71,72 +40,39 @@ fn handle_protocol_error(
     let result = messages
         .into_iter()
         .map(|m| {
-            // if there is a protocol error handle it otherwise return the original message.
-            // One thorough the mapping if the message has a protocol_error is dropped.
-            if m.protocol_error != 0 {
+            // if there is a protocol error handle it.  always return the original message
+            // it will be filtered out in the next step.
+            if m.protocol_error  {
                 debug!(
                     "{:?} processing protocol error: {:?}",
                     thread::current().id(),
                     &m
                 );
-                let (up_msg, down_msg, an_err) = codec.fixup_err(m);
-                // if there is a message for upstream send it
-                if let Some(up_msg) = up_msg {
-                    // send up stream messages now
-                    debug!("{:?} Return message: {:?}", thread::current().id(), &up_msg);
-                    tx_out.send(vec![up_msg]).ok();
-                }
-                if let Some(an_err) = an_err {
-                    error!(
-                        "{:?} (protocol error) chain processing error - {}",
-                        thread::current().id(),
-                        an_err
-                    );
-                }
-                match down_msg {
-                    // If there is a down stream message return it otherwise, create a
-                    // new message with a protocol_error so that we filter it out in the
-                    // next step.
-                    Some(x) => {
-                        debug!(
-                            "{:?} returning down message: {:?}",
-                            thread::current().id(),
-                            &x
-                        );
-                        x
-                    }
-                    None => {
-                        debug!(
-                            "{:?} replacing down message with error for filter.",
-                            thread::current().id()
-                        );
-                        Message {
-                            // put a protocol error in (we will filter it out later)
-                            details: MessageDetails::Unknown,
-                            modified: true,
-                            original: RawFrame::None,
-                            protocol_error: 1,
-                        }
-                    }
+                tx_out.send(vec![m]).ok();
+                Message {
+                    // put a protocol error in (we will filter it out later)
+                    details: MessageDetails::Unknown,
+                    modified: true,
+                    original: RawFrame::None,
+                    protocol_error: true,
                 }
             } else {
                 m
             }
         })
-        .filter(|m| m.protocol_error == 0)
+        .filter(|m| !m.protocol_error)
         .collect();
     debug!(
         "{:?} handle_protocol_error returning: {:?}",
         thread::current().id(),
         &result
     );
-
     result
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf + CodecErrorFixup {}
-impl<T: CodecReadHalf + CodecWriteHalf + CodecErrorFixup> Codec for T {}
+pub trait Codec: CodecReadHalf + CodecWriteHalf  {}
+impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
     /// Shared database handle.
@@ -443,13 +379,13 @@ fn spawn_read_write_tasks<
     out_tx: UnboundedSender<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
-    let writer = FramedWrite::new(tx, codec.clone());
+    let writer = FramedWrite::new(tx, codec);
 
     tokio::spawn(async move {
         while let Some(message) = reader.next().await {
             match message {
                 Ok(message) => {
-                    let filtered_messages = handle_protocol_error(&codec, message, &out_tx);
+                    let filtered_messages = handle_protocol_error(message, &out_tx);
                     debug!(
                         "{:?} filtered_messages: {:?}",
                         thread::current().id(),

@@ -2,7 +2,6 @@ use crate::message::{
     ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
 };
 use crate::protocols::RawFrame;
-use crate::server::CodecErrorFixup;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
@@ -466,19 +465,6 @@ fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
     }
 }
 
-impl CodecErrorFixup for RedisCodec {
-    fn fixup_err(
-        &self,
-        _message: Message,
-    ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
-        (
-            None,
-            None,
-            Some(anyhow!("Redis should not have a protocol error")),
-        )
-    }
-}
-
 impl RedisCodec {
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
         let frame = if !item.modified {
@@ -518,14 +504,14 @@ impl RedisCodec {
                         },
                         modified: false,
                         original: RawFrame::Redis(frame),
-                        protocol_error: 0,
+                        protocol_error: false,
                     })
                 } else {
                     Ok(Message {
                         details: MessageDetails::Unknown,
                         modified: false,
                         original: RawFrame::Redis(frame),
-                        protocol_error: 0,
+                        protocol_error: false,
                     })
                 }
             })

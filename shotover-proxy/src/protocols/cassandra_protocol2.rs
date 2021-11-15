@@ -31,7 +31,6 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::ops::DerefMut;
 
-use crate::server::CodecErrorFixup;
 use anyhow::{anyhow, Result};
 use cassandra_proto::frame::frame_error::CDRSError;
 use std::thread;
@@ -619,7 +618,7 @@ impl Decoder for CassandraCodec2 {
                     RawFrame::Cassandra(error_frame),
                 );
 
-                message.protocol_error = 0x10000 | e.error_code;
+                message.protocol_error = true;
                 debug!(
                     "{:?} CDRSError returning {:?}",
                     thread::current().id(),
@@ -640,14 +639,6 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
     }
 }
 
-impl CodecErrorFixup for CassandraCodec2 {
-    fn fixup_err(
-        &self,
-        message: Message,
-    ) -> (Option<Message>, Option<Message>, Option<anyhow::Error>) {
-        (Some(message), None, None)
-    }
-}
 impl CassandraCodec2 {
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
         debug!("{:?} encode_message  {:?}", thread::current().id(), &item);
@@ -749,7 +740,7 @@ mod cassandra_protocol_tests {
         let mut codec = new_codec();
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
         let messages = vec![Message {
-            protocol_error: 0,
+            protocol_error: false,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -770,7 +761,7 @@ mod cassandra_protocol_tests {
         let mut codec = new_codec();
         let bytes = hex!("840000000200000000");
         let messages = vec![Message {
-            protocol_error: 0,
+            protocol_error: false,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -794,7 +785,7 @@ mod cassandra_protocol_tests {
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
         let messages = vec![Message {
-            protocol_error: 0,
+            protocol_error: false,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -824,7 +815,7 @@ mod cassandra_protocol_tests {
             573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
         );
         let messages = vec![Message {
-            protocol_error : 0,
+            protocol_error : false,
             details: MessageDetails::Response(QueryResponse {
                 matching_query: None,
                 result: Some(Value::NamedRows(vec![])),
@@ -858,7 +849,7 @@ mod cassandra_protocol_tests {
             74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
         );
         let messages = vec![Message {
-            protocol_error: 0,
+            protocol_error: false,
             details: MessageDetails::Query(QueryMessage {
                 query_string: "SELECT * FROM system.local WHERE key='local'".into(),
                 namespace: vec!["system".into(), "local".into()],
