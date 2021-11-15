@@ -1,4 +1,4 @@
-use crate::message::{Message, Messages, MessageDetails};
+use crate::message::{Message, MessageDetails, Messages};
 use crate::protocols::RawFrame;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
@@ -29,11 +29,7 @@ impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecRea
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
-
-fn handle_protocol_error(
-    messages: Messages,
-    tx_out: &UnboundedSender<Messages>,
-) -> Messages {
+fn handle_protocol_error(messages: Messages, tx_out: &UnboundedSender<Messages>) -> Messages {
     // this code creates a new Vec and uses an iterator with mapping and filtering to
     // populate it from the original Messages.message Vec.  It may be more efficient to scan the
     // original Vec and replace or delete individual Message in place.
@@ -42,7 +38,7 @@ fn handle_protocol_error(
         .map(|m| {
             // if there is a protocol error handle it.  always return the original message
             // it will be filtered out in the next step.
-            if m.protocol_error  {
+            if m.protocol_error {
                 debug!(
                     "{:?} processing protocol error: {:?}",
                     thread::current().id(),
@@ -71,7 +67,7 @@ fn handle_protocol_error(
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf  {}
+pub trait Codec: CodecReadHalf + CodecWriteHalf {}
 impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
