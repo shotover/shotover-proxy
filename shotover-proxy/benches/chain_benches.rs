@@ -19,19 +19,22 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![Transforms::Null(Null::default())],
             "bench".to_string(),
         );
-        let wrapper = Wrapper::new(vec![Message::new_query(
-            QueryMessage {
-                query_string: "".to_string(),
-                namespace: vec![],
-                primary_key: HashMap::new(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Write,
-                ast: None,
-            },
-            true,
-            RawFrame::None,
-        )]);
+        let wrapper = Wrapper::new_with_chain_name(
+            vec![Message::new_query(
+                QueryMessage {
+                    query_string: "".to_string(),
+                    namespace: vec![],
+                    primary_key: HashMap::new(),
+                    query_values: None,
+                    projection: None,
+                    query_type: QueryType::Write,
+                    ast: None,
+                },
+                true,
+                RawFrame::None,
+            )],
+            chain.name.clone(),
+        );
 
         group.bench_function("null", |b| {
             b.to_async(&rt).iter_batched(
@@ -55,11 +58,14 @@ fn criterion_benchmark(c: &mut Criterion) {
             ],
             "bench".to_string(),
         );
-        let wrapper = Wrapper::new(vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
-            Frame::BulkString(b"SET".to_vec()),
-            Frame::BulkString(b"foo".to_vec()),
-            Frame::BulkString(b"bar".to_vec()),
-        ])))]);
+        let wrapper = Wrapper::new_with_chain_name(
+            vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
+                Frame::BulkString(b"SET".to_vec()),
+                Frame::BulkString(b"foo".to_vec()),
+                Frame::BulkString(b"bar".to_vec()),
+            ])))],
+            chain.name.clone(),
+        );
 
         group.bench_function("redis_timestamp_tagger", |b| {
             b.to_async(&rt).iter_batched(
@@ -83,11 +89,14 @@ fn criterion_benchmark(c: &mut Criterion) {
             ],
             "bench".to_string(),
         );
-        let wrapper = Wrapper::new(vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
-            Frame::BulkString(b"SET".to_vec()),
-            Frame::BulkString(b"foo".to_vec()),
-            Frame::BulkString(b"bar".to_vec()),
-        ])))]);
+        let wrapper = Wrapper::new_with_chain_name(
+            vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
+                Frame::BulkString(b"SET".to_vec()),
+                Frame::BulkString(b"foo".to_vec()),
+                Frame::BulkString(b"bar".to_vec()),
+            ])))],
+            chain.name.clone(),
+        );
 
         group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(

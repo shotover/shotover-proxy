@@ -341,6 +341,7 @@ impl<'a> Wrapper<'a> {
         result
     }
 
+    #[cfg(test)]
     pub fn new(m: Messages) -> Self {
         Wrapper {
             messages: m,
@@ -359,21 +360,16 @@ impl<'a> Wrapper<'a> {
         }
     }
 
-    pub fn new_with_client_details(m: Messages, client_details: String) -> Self {
+    pub fn new_with_client_details(
+        m: Messages,
+        client_details: String,
+        chain_name: String,
+    ) -> Self {
         Wrapper {
             messages: m,
             transforms: vec![],
             client_details,
-            chain_name: "".to_string(),
-        }
-    }
-
-    pub fn new_with_next_transform(m: Messages, _next_transform: usize) -> Self {
-        Wrapper {
-            messages: m,
-            transforms: vec![],
-            client_details: "".to_string(),
-            chain_name: "".to_string(),
+            chain_name,
         }
     }
 
