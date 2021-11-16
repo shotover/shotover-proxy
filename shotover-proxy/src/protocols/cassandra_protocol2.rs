@@ -42,7 +42,13 @@ pub struct CassandraCodec2 {
     current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
-    last_error: Option<String>,
+    /// if force_close is not None then the connection will be closed the next time the
+    /// system attempts to read data from it.  This is used in protocol errors where we
+    /// need to return a message to the client so we can not immediately close the connection
+    /// but we also do not know the state of the input stream.  For example if the protocol
+    /// number does not match there may be too much or too little data in the buffer so we need
+    /// to discard the connection.  The string is used in the error message.
+    force_close: Option<String>,
 }
 
 pub(crate) struct ParsedCassandraQueryString {
@@ -61,7 +67,7 @@ impl CassandraCodec2 {
             current_frames: Vec::new(),
             pk_col_map,
             bypass,
-            last_error: None,
+            force_close: None,
         }
     }
 
@@ -578,9 +584,10 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        if self.last_error.is_some() {
-            let result = self.last_error.as_ref().unwrap().clone();
-            self.last_error = None;
+        // if we need to close the connection return an error.
+        if self.force_close.is_some() {
+            let result = self.force_close.as_ref().unwrap().clone();
+            self.force_close = None;
             debug!(
                 "{:?} Closing errored connection: {:?}",
                 thread::current().id(),
@@ -596,7 +603,8 @@ impl Decoder for CassandraCodec2 {
             }
             Ok(None) => Ok(None),
             Err(e) => {
-                self.last_error = Some(e.message.as_plain());
+                // if we got an error force the close on the next read.
+                self.force_close = Some(e.message.as_plain());
                 debug!("{:?} CDRSError {:?}", thread::current().id(), &e);
                 let error_frame = Frame {
                     version: Version::Response,
@@ -612,13 +620,11 @@ impl Decoder for CassandraCodec2 {
                     tracing_id: None,
                     warnings: vec![],
                 };
-                let mut message = Message::new(
-                    MessageDetails::Unknown,
+                let message = Message::new(
+                    MessageDetails::ReturnToSender,
                     false,
                     RawFrame::Cassandra(error_frame),
                 );
-
-                message.return_to_sender = true;
                 debug!(
                     "{:?} CDRSError returning {:?}",
                     thread::current().id(),
@@ -654,6 +660,7 @@ impl CassandraCodec2 {
                     get_cassandra_frame(item.original)?,
                 ),
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
+                MessageDetails::ReturnToSender => get_cassandra_frame(item.original)?,
             }
         };
         debug!(
@@ -740,7 +747,6 @@ mod cassandra_protocol_tests {
         let mut codec = new_codec();
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
         let messages = vec![Message {
-            return_to_sender: false,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -761,7 +767,6 @@ mod cassandra_protocol_tests {
         let mut codec = new_codec();
         let bytes = hex!("840000000200000000");
         let messages = vec![Message {
-            return_to_sender: false,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -785,7 +790,6 @@ mod cassandra_protocol_tests {
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
         let messages = vec![Message {
-            return_to_sender: false,
             details: MessageDetails::Unknown,
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -815,7 +819,6 @@ mod cassandra_protocol_tests {
             573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
         );
         let messages = vec![Message {
-            return_to_sender: false,
             details: MessageDetails::Response(QueryResponse {
                 matching_query: None,
                 result: Some(Value::NamedRows(vec![])),
@@ -849,7 +852,6 @@ mod cassandra_protocol_tests {
             74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
         );
         let messages = vec![Message {
-            return_to_sender: false,
             details: MessageDetails::Query(QueryMessage {
                 query_string: "SELECT * FROM system.local WHERE key='local'".into(),
                 namespace: vec!["system".into(), "local".into()],

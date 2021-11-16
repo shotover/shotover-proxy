@@ -90,6 +90,7 @@ impl Transform for KafkaSink {
                 }
                 MessageDetails::Response(_) => {}
                 MessageDetails::Unknown => {}
+                MessageDetails::ReturnToSender => {}
             }
             responses.push(Message::new_response(
                 QueryResponse::empty(),

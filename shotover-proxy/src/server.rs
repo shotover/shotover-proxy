@@ -1,5 +1,4 @@
 use crate::message::{Message, MessageDetails, Messages};
-use crate::protocols::RawFrame;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
@@ -32,31 +31,25 @@ impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf 
 fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages>) -> Messages {
     // this code creates a new Vec and uses an iterator with mapping and filtering to
     // populate it from the original Messages.message Vec.  Any messages that require special
-    // handling are processed here.  Specifically messages with return_to_sender set `true`.
+    // handling are processed here.  Specifically messages with ReturnToSender details.
     let result = messages
         .into_iter()
         .map(|m| {
             // if there is a protocol error handle it.  always return the original message
             // it will be filtered out in the next step.
-            if m.return_to_sender {
+            if m.details == MessageDetails::ReturnToSender {
                 debug!(
-                    "{:?} processing return_to_sender: {:?}",
+                    "{:?} processing ReturnToSender: {:?}",
                     thread::current().id(),
                     &m
                 );
                 tx_out.send(vec![m]).ok();
-                Message {
-                    // put a protocol error in (we will filter it out later)
-                    details: MessageDetails::Unknown,
-                    modified: true,
-                    original: RawFrame::None,
-                    return_to_sender: true,
-                }
+                Message::new_no_original(MessageDetails::ReturnToSender, true)
             } else {
                 m
             }
         })
-        .filter(|m| !m.return_to_sender)
+        .filter(|m| m.details != MessageDetails::ReturnToSender)
         .collect();
     debug!(
         "{:?} perform_custom_handling returning: {:?}",
