@@ -37,7 +37,6 @@ use anyhow::{anyhow, Result};
 pub struct CassandraCodec2 {
     compressor: NoCompression,
     current_head: Option<FrameHeader>,
-    current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
 }
@@ -55,7 +54,6 @@ impl CassandraCodec2 {
         CassandraCodec2 {
             compressor: NoCompression::new(),
             current_head: None,
-            current_frames: Vec::new(),
             pk_col_map,
             bypass,
         }

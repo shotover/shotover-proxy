@@ -25,7 +25,6 @@ mod pkcs_11;
 
 #[derive(Clone)]
 pub struct Protect {
-    name: &'static str,
     keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
     key_source: KeyManager,
     // TODO this should be a function to create key_ids based on "something", e.g. primary key
@@ -148,7 +147,6 @@ impl Protected {
 impl ProtectConfig {
     pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::Protect(Protect {
-            name: "protect",
             keyspace_table_columns: self.keyspace_table_columns.clone(),
             key_source: self.key_manager.build()?,
             key_id: "XXXXXXX".to_string(),

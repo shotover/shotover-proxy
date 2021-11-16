@@ -21,8 +21,6 @@ pub struct ConsistentScatter {
     route_map: Vec<BufferedChain>,
     write_consistency: i32,
     read_consistency: i32,
-    timeout: u64,
-    count: u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -50,8 +48,6 @@ impl ConsistentScatterConfig {
             route_map,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
-            timeout: 1000, //TODO this timeout needs to be longer for the initial connection...
-            count: 0,
         }))
     }
 }
@@ -258,7 +254,7 @@ mod scatter_transform_tests {
     use crate::transforms::{Transform, Transforms, Wrapper};
     use std::collections::HashMap;
 
-    fn check_ok_responses(mut messages: Messages, expected_ok: &Value, _expected_count: usize) {
+    fn check_ok_responses(mut messages: Messages, expected_ok: &Value) {
         let test_message_details = messages.pop().unwrap().details;
         if let MessageDetails::Response(QueryResponse {
             result: Some(r), ..
@@ -270,7 +266,7 @@ mod scatter_transform_tests {
         }
     }
 
-    fn check_err_responses(mut messages: Messages, expected_err: &Value, _expected_count: usize) {
+    fn check_err_responses(mut messages: Messages, expected_err: &Value) {
         if let MessageDetails::Response(QueryResponse {
             error: Some(err), ..
         }) = messages.pop().unwrap().details
@@ -332,8 +328,6 @@ mod scatter_transform_tests {
             route_map: build_chains(two_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
-            timeout: 5000, //TODO this timeout needs to be longer for the initial connection...
-            count: 0,
         });
 
         let expected_ok = Value::Strings("OK".to_string());
@@ -343,7 +337,7 @@ mod scatter_transform_tests {
             .await
             .unwrap();
 
-        check_ok_responses(test, &expected_ok, 2);
+        check_ok_responses(test, &expected_ok);
 
         let mut one_of_three = HashMap::new();
         one_of_three.insert(
@@ -363,8 +357,6 @@ mod scatter_transform_tests {
             route_map: build_chains(one_of_three).await,
             write_consistency: 2,
             read_consistency: 2,
-            timeout: 500, //todo this timeout needs to be longer for the initial connection...
-            count: 0,
         });
 
         let response_fail = tuneable_fail_consistency
@@ -374,7 +366,7 @@ mod scatter_transform_tests {
 
         let expected_err = Value::Strings("Not enough responses".to_string());
 
-        check_err_responses(response_fail, &expected_err, 1);
+        check_err_responses(response_fail, &expected_err);
     }
 
     #[tokio::test]
@@ -396,8 +388,6 @@ mod scatter_transform_tests {
             ],
             write_consistency: 1,
             read_consistency: 1,
-            timeout: 1000,
-            count: 0,
         };
 
         assert_eq!(
@@ -436,8 +426,6 @@ mod scatter_transform_tests {
             ],
             write_consistency: 1,
             read_consistency: 1,
-            timeout: 1000,
-            count: 0,
         };
 
         assert_eq!(transform.validate(), Vec::<String>::new());
