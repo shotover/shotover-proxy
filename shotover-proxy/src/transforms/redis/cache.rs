@@ -90,7 +90,10 @@ impl SimpleRedisCache {
         }
 
         self.cache_chain
-            .process_request(Wrapper::new(messages), "cliebntdetailstodo".to_string())
+            .process_request(
+                Wrapper::new_with_chain_name(messages, self.cache_chain.name.clone()),
+                "cliebntdetailstodo".to_string(),
+            )
             .await
     }
 }
