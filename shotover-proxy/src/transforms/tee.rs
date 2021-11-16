@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, QueryResponse, Value};
+use crate::message::{Message, QueryResponse, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
@@ -147,11 +147,11 @@ impl Transform for Tee {
                 let chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
-                    Ok(vec!(Message::new(
-                        MessageDetails::Response(QueryResponse::empty_with_error(Some(Value::Strings(
-                            "The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch"
+                    Ok(vec!(Message::new_response(
+                        QueryResponse::empty_with_error(Some(Value::Strings(
+                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch"
                                 .to_string(),
-                        )))),
+                        ))),
                         true,
                         RawFrame::None,
                     )))
