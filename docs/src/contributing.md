@@ -14,9 +14,28 @@ Shotover requires the following in order to build:
 * g++
 * libssl-dev
 * pkg-config (Linux)
-* Cassandra CPP Driver
 
-On Ubuntu you can install all except the Cassandra driver via `sudo apt-get install cmake gcc g++ libssl-dev pkg-config`
+On Ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-dev pkg-config
+
+### Installing Optional Tools and Libraries
+
+#### Docker
+While not required for building Shotover, installing `docker` and `docker-compose` will allow you to run Shotover's integration tests and also build the static libc version of Shotover.
+
+#### libpcap-dev
+Some tests will require `libpcap-dev` to be installed as well (reading pcap files for protocol tests).
+
+## Building Shotover 
+
+Now you can build Shotover by running `cargo build`. The executable will then be found in `target/debug/shotover-proxy`.
+
+### Building Shotover (release)
+
+The way you build Shotover will dramatically impact performance. To build Shotover for deployment in production environments, for maximum performance or for any benchmarking use `cargo build --release`. The resulting executable will be found in `target/release/shotover-proxy`.
+
+## Running the Tests
+
+The Cassandra tests require the Cassandra CPP driver.
 
 ### Installing Cassandra CPP Driver
 
@@ -40,23 +59,6 @@ wait
 sudo apt -y install ./cassandra-cpp-driver_2.16.0-1_amd64.deb ./cassandra-cpp-driver-dev_2.16.0-1_amd64.deb ./libuv1_1.35.0-1_amd64.deb ./libuv1-dev_1.35.0-1_amd64.deb
 ```
 
-### Installing Optional Tools and Libraries
-
-#### Docker
-While not required for building Shotover, installing `docker` and `docker-compose` will allow you to run Shotover's integration tests and also build the static libc version of Shotover.
-
-#### libpcap-dev
-Some tests will require `libpcap-dev` to be installed as well (reading pcap files for protocol tests).
-
-## Building Shotover 
-
-Now you can build Shotover by running `cargo build`. The executable will then be found in `target/debug/shotover-proxy`.
-
-### Building Shotover (release)
-
-The way you build Shotover will dramatically impact performance. To build Shotover for deployment in production environments, for maximum performance or for any benchmarking use `cargo build --release`. The resulting executable will be found in `target/release/shotover-proxy`.
-
-## Running the Tests
 
 ### Functionally Testing Shotover
 

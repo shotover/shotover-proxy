@@ -453,7 +453,7 @@ impl<C: Codec + 'static> Handler<C> {
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
             debug!("{:?} Waiting for message", thread::current().id());
-            let messages: Messages = tokio::select! {
+            let messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
