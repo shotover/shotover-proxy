@@ -308,7 +308,7 @@ mod test {
             .unwrap()
             .original;
 
-        rewrite_port_slot(&mut raw_frame, 2004).unwrap();
+        rewrite_port_slot(&mut raw_frame, 6380).unwrap();
 
         let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame {
             frames
@@ -319,27 +319,27 @@ mod test {
         let slots = parse_slots(&slots_frames).unwrap();
 
         let nodes = vec![
-            "192.168.80.2:2004",
-            "192.168.80.3:2004",
-            "192.168.80.4:2004",
-            "192.168.80.5:2004",
-            "192.168.80.6:2004",
-            "192.168.80.7:2004",
+            "192.168.80.2:6380",
+            "192.168.80.3:6380",
+            "192.168.80.4:6380",
+            "192.168.80.5:6380",
+            "192.168.80.6:6380",
+            "192.168.80.7:6380",
         ]
         .into_iter()
         .map(String::from)
         .collect();
 
         let masters = vec![
-            (5460u16, "192.168.80.7:2004".to_string()),
-            (10922u16, "192.168.80.5:2004".to_string()),
-            (16383u16, "192.168.80.6:2004".to_string()),
+            (5460u16, "192.168.80.7:6380".to_string()),
+            (10922u16, "192.168.80.5:6380".to_string()),
+            (16383u16, "192.168.80.6:6380".to_string()),
         ];
 
         let replicas = vec![
-            (5460u16, "192.168.80.4:2004".to_string()),
-            (10922u16, "192.168.80.2:2004".to_string()),
-            (16383u16, "192.168.80.3:2004".to_string()),
+            (5460u16, "192.168.80.4:6380".to_string()),
+            (10922u16, "192.168.80.2:6380".to_string()),
+            (16383u16, "192.168.80.3:6380".to_string()),
         ];
 
         assert_eq!(slots.nodes, nodes);

@@ -9,5 +9,7 @@
 - [Source Types](./source-types.md)
 - [Transforms](./transforms.md)
 - [Examples]()
-  - [Redis Clustering](./examples/redis-clustering.md)
+  - [Redis Cluster]()
+    - [Unaware client](./examples/redis-clustering-unaware.md)
+    - [Aware client](./examples/redis-clustering-aware.md)
 - [Contributing](./contributing.md)
