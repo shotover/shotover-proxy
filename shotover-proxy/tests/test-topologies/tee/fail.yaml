@@ -1,0 +1,22 @@
+---
+sources:
+  redis_prod:
+    Redis:
+      listen_addr: "127.0.0.1:6379"
+      connection_limit: 3000000
+chain_config:
+  redis_chain:
+    - Tee:
+        behavior: FailOnMismatch
+        buffer_size: 10000
+        chain:
+          - QueryTypeFilter:
+              filter: Read
+          - DebugReturner:
+              Redis: "42"
+    - DebugReturner:
+        Redis: "42"
+named_topics:
+  example: 10
+source_to_chain_mapping:
+  redis_prod: redis_chain

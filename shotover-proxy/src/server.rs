@@ -469,7 +469,11 @@ impl<C: Codec + 'static> Handler<C> {
             match self
                 .chain
                 .process_request(
-                    Wrapper::new_with_client_details(messages, self.client_details.clone()),
+                    Wrapper::new_with_client_details(
+                        messages,
+                        self.client_details.clone(),
+                        self.chain.name.clone(),
+                    ),
                     self.client_details.clone(),
                 )
                 .await
