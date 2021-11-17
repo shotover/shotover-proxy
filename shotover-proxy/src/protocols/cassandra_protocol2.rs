@@ -598,6 +598,10 @@ impl Decoder for CassandraCodec2 {
             Ok(None) => Ok(None),
             Err(e) => {
                 // if we got an error force the close on the next read.
+                // We can not immediately close as we are gong to queue a message
+                // back to the client and we have to allow time for the message
+                // to be sent.  We can not reuse the connection as it may/does contain excess
+                // data from the failed parse.
                 self.force_close = Some(e.message.as_plain());
                 debug!("CDRSError {:?}", &e);
                 let error_frame = Frame {
