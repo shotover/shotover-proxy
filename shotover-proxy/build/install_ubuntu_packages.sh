@@ -1,11 +1,11 @@
-#! /bin/bash
+#! /bin/bash -e
 
 sudo apt-get update
 sudo apt-get install -y libpcap-dev wget
 
 . /etc/lsb-release
 
-if [ ${DISTRIB_RELEASE} == "18.04"]
+if [ ${DISTRIB_RELEASE} == "18.04" ]
 then
   wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver_2.16.0-1_amd64.deb &
   wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver-dev_2.16.0-1_amd64.deb &
