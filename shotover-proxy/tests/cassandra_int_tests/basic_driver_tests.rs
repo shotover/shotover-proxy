@@ -4,7 +4,6 @@ use test_helpers::docker_compose::DockerCompose;
 use crate::cassandra_int_tests::new_with_points;
 use cassandra_cpp::{stmt, Session};
 use serial_test::serial;
-use std::thread;
 use tracing::debug;
 
 fn test_create_keyspace(session: Session) {
@@ -13,12 +12,12 @@ fn test_create_keyspace(session: Session) {
     );
 
     let mut result = session.execute(&query).wait().unwrap();
-    debug!("{:?} query result {:?}", thread::current().id(), result);
+    debug!("query result {:?}", result);
     assert_eq!(result.row_count(), 0);
 
     query = stmt!("SELECT release_version FROM system.local");
     result = session.execute(&query).wait().unwrap();
-    debug!("{:?} query result {:?}", thread::current().id(), result);
+    debug!("query result {:?}", result);
     assert_eq!(result.row_count(), 1);
     assert_eq!(
         result
@@ -33,7 +32,7 @@ fn test_create_keyspace(session: Session) {
 
     query = stmt!("SELECT keyspace_name FROM system_schema.keyspaces;");
     result = session.execute(&query).wait().unwrap();
-    debug!("{:?} query result {:?}", thread::current().id(), result);
+    debug!("query result {:?}", result);
     assert_eq!(result.row_count(), 6);
     assert_eq!(
         result

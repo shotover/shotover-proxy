@@ -16,7 +16,6 @@ use crate::protocols::RawFrame;
 use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
 use anyhow::{anyhow, Result};
-use std::thread;
 use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
 
@@ -66,11 +65,7 @@ impl CassandraSinkSingle {
         loop {
             match self.outbound {
                 None => {
-                    trace!(
-                        "{:?} creating outbound connection {:?}",
-                        thread::current().id(),
-                        self.address
-                    );
+                    trace!("creating outbound connection {:?}", self.address);
                     let mut conn_pool = OwnedUnorderedConnectionPool::new(
                         self.address.clone(),
                         CassandraCodec2::new(self.cassandra_ks.clone(), self.bypass),
@@ -80,7 +75,7 @@ impl CassandraSinkSingle {
                     self.outbound.replace(conn_pool);
                 }
                 Some(ref mut outbound_framed_codec) => {
-                    trace!("{:?} sending frame upstream", thread::current().id());
+                    trace!("sending frame upstream");
                     let sender = outbound_framed_codec
                         .connections
                         .get_mut(0)
@@ -96,7 +91,7 @@ impl CassandraSinkSingle {
                                 if let RawFrame::Cassandra(frame) = &m.original {
                                     stream = frame.stream;
                                 } else {
-                                    info!("{:?} no cassandra frame found", thread::current().id());
+                                    info!("no cassandra frame found");
                                     return Err(anyhow!("no cassandra frame found"));
                                 }
 

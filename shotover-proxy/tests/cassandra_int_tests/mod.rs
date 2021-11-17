@@ -1,5 +1,4 @@
 use cassandra_cpp::{stmt, Cluster, Session};
-use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::info;
@@ -39,10 +38,8 @@ pub fn new_with_points_and_port(contact_points: &str, port: u16) -> Session {
                     }
                     Err(e) => {
                         info!(
-                            "{:?} Could not execute dummy query {}, retrying again - retries {}",
-                            thread::current().id(),
-                            e,
-                            current_attempt
+                            "Could not execute dummy query {}, retrying again - retries {}",
+                            e, current_attempt
                         );
                         sleep(millisecond);
                     }
@@ -50,10 +47,8 @@ pub fn new_with_points_and_port(contact_points: &str, port: u16) -> Session {
             }
             Err(e) => {
                 info!(
-                    "{:?} Could not connect {}, retrying again - retries {}",
-                    thread::current().id(),
-                    e,
-                    current_attempt
+                    "Could not connect {}, retrying again - retries {}",
+                    e, current_attempt
                 );
                 sleep(millisecond);
             }

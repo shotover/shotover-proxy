@@ -50,19 +50,6 @@ jobs:
         key: ${{ matrix.name }}
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
-    - name: Install Cassandra CPP driver
-      if: ${{ matrix.runner == 'ubuntu-18.04' }}
-      run: |
-        sudo apt-get upgrade -y
-        echo CPP version number
-        cc --version
-        cat /etc/lsb-release
-        wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver_2.16.0-1_amd64.deb &
-        wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/cassandra/v2.16.0/cassandra-cpp-driver-dev_2.16.0-1_amd64.deb &
-        wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/dependencies/libuv/v1.35.0/libuv1_1.35.0-1_amd64.deb &
-        wget https://downloads.datastax.com/cpp-driver/ubuntu/18.04/dependencies/libuv/v1.35.0/libuv1-dev_1.35.0-1_amd64.deb &
-        wait
-        sudo apt -y install ./cassandra-cpp-driver_2.16.0-1_amd64.deb ./cassandra-cpp-driver-dev_2.16.0-1_amd64.deb ./libuv1_1.35.0-1_amd64.deb ./libuv1-dev_1.35.0-1_amd64.deb
     - name: Install cargo-hack
       run: cargo install cargo-hack --version 0.5.8
     - name: Check `cargo fmt` was run

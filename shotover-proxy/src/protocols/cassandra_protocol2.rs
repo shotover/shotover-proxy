@@ -33,7 +33,6 @@ use std::ops::DerefMut;
 
 use anyhow::{anyhow, Result};
 use cassandra_proto::frame::frame_error::CDRSError;
-use std::thread;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec2 {
@@ -558,7 +557,7 @@ impl CassandraCodec2 {
     }
 
     fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>, CDRSError> {
-        trace!("{:?} Parsing C* frame", thread::current().id());
+        trace!(" Parsing C* frame");
         let v: Result<(Option<Frame>, Option<FrameHeader>), CDRSError> =
             parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
         v.map(|(r, h)| {
@@ -570,7 +569,7 @@ impl CassandraCodec2 {
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
         let buffer = item.into_cbytes();
         if buffer.is_empty() {
-            info!("{:?} trying to send 0 length frame", thread::current().id());
+            info!("trying to send 0 length frame");
         }
         dst.put(buffer.as_slice());
     }
@@ -585,27 +584,22 @@ impl Decoder for CassandraCodec2 {
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
         // if we need to close the connection return an error.
-        if self.force_close.is_some() {
-            let result = self.force_close.as_ref().unwrap().clone();
+        if let Some(result) = self.force_close.take() {
             self.force_close = None;
-            debug!(
-                "{:?} Closing errored connection: {:?}",
-                thread::current().id(),
-                &result
-            );
+            debug!("Closing errored connection: {:?}", &result);
             return Err(anyhow::Error::msg(result));
         }
-        debug!("{:?} Decoding {:?}", thread::current().id(), src.to_vec());
+        debug!("Decoding {:?}", src.to_vec());
         match self.decode_raw(src) {
             Ok(Some(frame)) => {
-                debug!("{:?} Decoded {:?}", thread::current().id(), &frame);
+                debug!("Decoded {:?}", &frame);
                 Ok(Some(self.process_cassandra_frame(frame)))
             }
             Ok(None) => Ok(None),
             Err(e) => {
                 // if we got an error force the close on the next read.
                 self.force_close = Some(e.message.as_plain());
-                debug!("{:?} CDRSError {:?}", thread::current().id(), &e);
+                debug!("CDRSError {:?}", &e);
                 let error_frame = Frame {
                     version: Version::Response,
                     flags: vec![],
@@ -625,11 +619,7 @@ impl Decoder for CassandraCodec2 {
                     false,
                     RawFrame::Cassandra(error_frame),
                 );
-                debug!(
-                    "{:?} CDRSError returning {:?}",
-                    thread::current().id(),
-                    &message
-                );
+                debug!("CDRSError returning {:?}", &message);
                 Ok(Some(vec![message]))
             }
         }
@@ -647,7 +637,7 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
 
 impl CassandraCodec2 {
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
-        debug!("{:?} encode_message  {:?}", thread::current().id(), &item);
+        debug!("encode_message  {:?}", &item);
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -663,11 +653,7 @@ impl CassandraCodec2 {
                 MessageDetails::ReturnToSender => get_cassandra_frame(item.original)?,
             }
         };
-        debug!(
-            "{:?} Encoded message as {:?}",
-            thread::current().id(),
-            &frame
-        );
+        debug!("Encoded message as {:?}", &frame);
         Ok(frame)
     }
 }
@@ -681,14 +667,14 @@ impl Encoder<Messages> for CassandraCodec2 {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
-            debug!("{:?} Encoding {:?}", thread::current().id(), &m);
+            debug!("Encoding {:?}", &m);
             match self.encode_message(m) {
                 Ok(frame) => {
                     self.encode_raw(frame, dst);
-                    debug!("{:?} Encoded frame as {:?}", thread::current().id(), dst);
+                    debug!("Encoded frame as {:?}", dst);
                 }
                 Err(e) => {
-                    warn!("{:?} Couldn't encode frame {:?}", thread::current().id(), e);
+                    warn!("Couldn't encode frame {:?}", e);
                 }
             };
         }

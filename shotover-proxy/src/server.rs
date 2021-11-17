@@ -6,7 +6,6 @@ use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use metrics::{gauge, register_gauge, Unit};
 use std::sync::Arc;
-use std::thread;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -38,11 +37,7 @@ fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages
             // if there is a protocol error handle it.  always return the original message
             // it will be filtered out in the next step.
             if m.details == MessageDetails::ReturnToSender {
-                debug!(
-                    "{:?} processing ReturnToSender: {:?}",
-                    thread::current().id(),
-                    &m
-                );
+                debug!("processing ReturnToSender: {:?}", &m);
                 tx_out.send(vec![m]).ok();
                 Message::new_no_original(MessageDetails::ReturnToSender, true)
             } else {
@@ -51,11 +46,7 @@ fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages
         })
         .filter(|m| m.details != MessageDetails::ReturnToSender)
         .collect();
-    debug!(
-        "{:?} perform_custom_handling returning: {:?}",
-        thread::current().id(),
-        &result
-    );
+    debug!("perform_custom_handling returning: {:?}", &result);
     result
 }
 
@@ -159,7 +150,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     /// itself. One strategy for handling this is to implement a back off
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
-        info!("{:?} accepting inbound connections", thread::current().id());
+        info!("accepting inbound connections");
 
         loop {
             // Wait for a permit to become available
@@ -201,7 +192,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
-            debug!("{:?} got socket", thread::current().id());
+            debug!("got socket");
             gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64, "source" => self.source_name.clone());
 
             let peer = socket
@@ -215,11 +206,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 .unwrap_or_else(|_| "Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
-            debug!(
-                "{:?} New connection from {}",
-                thread::current().id(),
-                &conn_string
-            );
+            debug!("New connection from {}", &conn_string);
             socket.set_nodelay(true)?;
 
             let mut handler = Handler {
@@ -259,7 +246,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
                     // Process the connection. If an error is encountered, log it.
                     if let Err(err) = handler.run(socket).await {
-                        error!(cause = ?err, "{:?} connection error", thread::current().id());
+                        error!(cause = ?err, "connection error");
                     }
                 }
                 .instrument(tracing::info_span!(
@@ -370,48 +357,35 @@ fn spawn_read_write_tasks<
     let mut reader = FramedRead::new(rx, codec.clone());
     let writer = FramedWrite::new(tx, codec);
 
-    tokio::spawn(async move {
-        while let Some(message) = reader.next().await {
-            match message {
-                Ok(message) => {
-                    let filtered_messages = perform_custom_handling(message, &out_tx);
-                    debug!(
-                        "{:?} filtered_messages: {:?}",
-                        thread::current().id(),
-                        filtered_messages
-                    );
-                    if !filtered_messages.is_empty() {
-                        if let Err(error) = in_tx.send(filtered_messages) {
-                            warn!(
-                                "{:?} failed to send message: {}",
-                                thread::current().id(),
-                                error
-                            );
-                            return;
+    tokio::spawn(
+        async move {
+            while let Some(message) = reader.next().await {
+                match message {
+                    Ok(message) => {
+                        let filtered_messages = perform_custom_handling(message, &out_tx);
+                        debug!("filtered_messages: {:?}", filtered_messages);
+                        if !filtered_messages.is_empty() {
+                            if let Err(error) = in_tx.send(filtered_messages) {
+                                warn!("failed to send message: {}", error);
+                                return;
+                            }
                         }
                     }
-                }
-                Err(error) => {
-                    warn!(
-                        "{:?} failed to decode message: {}",
-                        thread::current().id(),
-                        error
-                    );
-                    return;
+                    Err(error) => {
+                        warn!("failed to decode message: {}", error);
+                        return;
+                    }
                 }
             }
         }
-    });
+        .in_current_span(),
+    );
 
     tokio::spawn(
         async move {
             let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
             if let Err(err) = rx_stream.forward(writer).await {
-                error!(
-                    "{:?} Stream ended with error {:?}",
-                    thread::current().id(),
-                    err
-                );
+                error!("Stream ended with error {:?}", err);
             }
         }
         .in_current_span(),
@@ -433,7 +407,7 @@ impl<C: Codec + 'static> Handler<C> {
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
-        debug!("{:?} Handler run() started", thread::current().id());
+        debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         let mut idle_time_seconds: u64 = 1;
@@ -452,7 +426,7 @@ impl<C: Codec + 'static> Handler<C> {
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
-            debug!("{:?} Waiting for message", thread::current().id());
+            debug!("Waiting for message");
             let messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
@@ -465,11 +439,11 @@ impl<C: Codec + 'static> Handler<C> {
                         },
                         Err(_) => {
                             if idle_time_seconds < 35 {
-                                trace!("{:?} Connection Idle for more than {} seconds {}", thread::current().id(),
+                                trace!("Connection Idle for more than {} seconds {}",
                                     idle_time_seconds, self.conn_details);
                             } else {
-                                debug!("{:?} Dropping. Connection Idle for more than {} seconds {}",
-                                    thread::current().id(), idle_time_seconds, self.conn_details);
+                                debug!("Dropping. Connection Idle for more than {} seconds {}",
+                                    idle_time_seconds, self.conn_details);
                                 return Ok(());
                             }
                             idle_time_seconds *= 2;
@@ -488,17 +462,9 @@ impl<C: Codec + 'static> Handler<C> {
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            debug!(
-                "{:?} Received raw message {:?}",
-                thread::current().id(),
-                messages
-            );
+            debug!("Received raw message {:?}", messages);
 
-            debug!(
-                "{:?} client details: {:?}",
-                thread::current().id(),
-                &self.client_details
-            );
+            debug!("client details: {:?}", &self.client_details);
 
             match self
                 .chain
@@ -509,22 +475,14 @@ impl<C: Codec + 'static> Handler<C> {
                 .await
             {
                 Ok(modified_message) => {
-                    debug!(
-                        "{:?} sending message: {:?}",
-                        thread::current().id(),
-                        modified_message
-                    );
+                    debug!("sending message: {:?}", modified_message);
                     // send the result of the process up stream
                     let result = out_tx.send(modified_message)?;
 
                     debug!("Send message result {:?}", result);
                 }
                 Err(e) => {
-                    error!(
-                        "{:?} process_request chain processing error - {}",
-                        thread::current().id(),
-                        e
-                    );
+                    error!("process_request chain processing error - {}", e);
                 }
             }
         }
