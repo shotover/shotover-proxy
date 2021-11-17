@@ -236,7 +236,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // asynchronous green threads and are executed concurrently.
             tokio::spawn(
                 async move {
-                    tracing::info!(
+                    tracing::debug!(
                         "New connection from {}",
                         socket
                             .peer_addr()
@@ -249,7 +249,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                         error!(cause = ?err, "connection error");
                     }
                 }
-                .instrument(tracing::info_span!(
+                .instrument(tracing::debug_span!(
                     "request",
                     id = self.message_count,
                     source = self.source_name.as_str()
