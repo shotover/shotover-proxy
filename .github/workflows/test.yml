@@ -61,6 +61,8 @@ jobs:
       run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_profile }} -- -D warnings
     - name: Ensure that tests pass
       run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output
+      # can not run tests if cpp driver not installed
+      if: ${{ matrix.runner == 'ubuntu-18.04' }}
     - name: License Check
       run: |
         cargo install --locked cargo-deny

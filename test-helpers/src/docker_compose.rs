@@ -5,7 +5,7 @@ use std::process::Command;
 use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
-use tracing::debug;
+use tracing::{debug, info};
 
 /// Runs a command and returns the output as a string.
 ///
@@ -97,22 +97,51 @@ impl DockerCompose {
     /// * `count` - The number of times the regular expression should be found.
     ///
     /// # Panics
-    /// * If `count` occurrences of `log_text` is not found in the log within 60 seconds.
+    /// * If `count` occurrences of `log_text` is not found in the log within 30 seconds.
     ///
     pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
-        debug!("wait_for_n: '{}' {}", log_text, count);
+        self.wait_for_n_t(log_text, count, 30)
+    }
+
+    /// Waits for a string to appear in the docker-compose log output `count` times within `time` seconds.
+    ///
+    /// Counts the number of items returned by `regex.find_iter`.
+    ///
+    /// # Arguments
+    /// * `log_text` - A regular expression defining the text to find in the docker-container log
+    /// output.
+    /// * `count` - The number of times the regular expression should be found.
+    /// * `time` - The number of seconds to wait for the count to be found.
+    ///
+    /// # Panics
+    /// * If `count` occurrences of `log_text` is not found in the log within `time` seconds.
+    ///
+    pub fn wait_for_n_t(self, log_text: &str, count: usize, time: u64) -> Self {
+        info!("wait_for_n_t: '{}' {} {}", log_text, count, time);
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::Instant::now();
         let mut result = run_command("docker-compose", &args).unwrap();
-        while re.find_iter(&result).count() < count {
-            if sys_time.elapsed().as_secs() > 90 {
-                panic!("wait_for_n timer expired. Log output: {}", result);
+        let mut my_count = re.find_iter(&result).count();
+        while my_count < count {
+            if sys_time.elapsed().as_secs() > time {
+                panic!(
+                    "wait_for: {} second timer expired. Found {}  instances of '{}' in the log",
+                    time,
+                    re.find_iter(&result).count(),
+                    log_text
+                );
             }
-            debug!("wait_for_n: looping");
+            debug!("wait_for_n: {:?} looping {}/{}", log_text, my_count, count);
             result = run_command("docker-compose", &args).unwrap();
+            my_count = re.find_iter(&result).count();
         }
-        debug!("wait_for_n: found '{}' {} times", log_text, count);
+        debug!(
+            "wait_for_n_t: found '{}' {} times in {:?} seconds",
+            log_text,
+            count,
+            sys_time.elapsed()
+        );
         self
     }
 

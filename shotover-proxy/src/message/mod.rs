@@ -18,6 +18,7 @@ pub type Messages = Vec<Message>;
 pub struct Message {
     pub details: MessageDetails,
     pub modified: bool,
+    /// The frame in the format defined by the protocol.
     pub original: RawFrame,
 }
 
@@ -25,6 +26,9 @@ pub struct Message {
 pub enum MessageDetails {
     Query(QueryMessage),
     Response(QueryResponse),
+    // identifies a message that is to be returned to the sender.  Message is stored in the
+    // `original` frame.
+    ReturnToSender,
     Unknown,
 }
 

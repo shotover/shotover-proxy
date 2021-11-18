@@ -1,6 +1,11 @@
 version: "3.3"
 networks:
   cassandra:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.5.0.0/16
+
 services:
   cassandra-one:
     image: library/cassandra:3.11.10

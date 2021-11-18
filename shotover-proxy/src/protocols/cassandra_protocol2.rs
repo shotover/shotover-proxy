@@ -14,7 +14,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::message::{
     ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
@@ -32,6 +32,7 @@ use sqlparser::parser::Parser;
 use std::ops::DerefMut;
 
 use anyhow::{anyhow, Result};
+use cassandra_proto::frame::frame_error::CDRSError;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec2 {
@@ -40,6 +41,13 @@ pub struct CassandraCodec2 {
     current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
+    /// if force_close is Some then the connection will be closed the next time the
+    /// system attempts to read data from it.  This is used in protocol errors where we
+    /// need to return a message to the client so we can not immediately close the connection
+    /// but we also do not know the state of the input stream.  For example if the protocol
+    /// number does not match there may be too much or too little data in the buffer so we need
+    /// to discard the connection.  The string is used in the error message.
+    force_close: Option<String>,
 }
 
 pub(crate) struct ParsedCassandraQueryString {
@@ -58,6 +66,7 @@ impl CassandraCodec2 {
             current_frames: Vec::new(),
             pk_col_map,
             bypass,
+            force_close: None,
         }
     }
 
@@ -547,17 +556,14 @@ impl CassandraCodec2 {
         }
     }
 
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>> {
-        trace!("Parsing C* frame");
-        let v = parser::parse_frame(src, &self.compressor, &self.current_head);
-        match v {
-            Ok((r, h)) => {
-                self.current_head = h;
-                Ok(r)
-            }
-            // Note these should be parse errors, not actual protocol errors
-            Err(e) => Err(anyhow!(e)),
-        }
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Frame>, CDRSError> {
+        trace!(" Parsing C* frame");
+        let v: Result<(Option<Frame>, Option<FrameHeader>), CDRSError> =
+            parser::parse_frame(src, &self.compressor, self.current_head.as_ref());
+        v.map(|(r, h)| {
+            self.current_head = h;
+            r
+        })
     }
 
     fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
@@ -577,12 +583,47 @@ impl Decoder for CassandraCodec2 {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
+        // if we need to close the connection return an error.
+        if let Some(result) = self.force_close.take() {
+            debug!("Closing errored connection: {:?}", &result);
+            return Err(anyhow::Error::msg(result));
+        }
+        debug!("Decoding {:?}", src.to_vec());
         match self.decode_raw(src) {
-            Ok(Some(frame)) => Ok(Some(self.process_cassandra_frame(frame))),
+            Ok(Some(frame)) => {
+                debug!("Decoded {:?}", &frame);
+                Ok(Some(self.process_cassandra_frame(frame)))
+            }
             Ok(None) => Ok(None),
             Err(e) => {
-                warn!("decode raw error {:?}", e);
-                Err(e)
+                // if we got an error force the close on the next read.
+                // We can not immediately close as we are gong to queue a message
+                // back to the client and we have to allow time for the message
+                // to be sent.  We can not reuse the connection as it may/does contain excess
+                // data from the failed parse.
+                self.force_close = Some(e.message.as_plain());
+                debug!("CDRSError {:?}", &e);
+                let error_frame = Frame {
+                    version: Version::Response,
+                    flags: vec![],
+                    opcode: Opcode::Error,
+                    stream: 0,
+                    body: vec![
+                        e.error_code.into_cbytes(),
+                        e.message.into_cbytes(),
+                        e.additional_info.into_cbytes(),
+                    ]
+                    .concat(),
+                    tracing_id: None,
+                    warnings: vec![],
+                };
+                let message = Message::new(
+                    MessageDetails::ReturnToSender,
+                    false,
+                    RawFrame::Cassandra(error_frame),
+                );
+                debug!("CDRSError returning {:?}", &message);
+                Ok(Some(vec![message]))
             }
         }
     }
@@ -599,6 +640,7 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
 
 impl CassandraCodec2 {
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
+        debug!("encode_message  {:?}", &item);
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -611,8 +653,10 @@ impl CassandraCodec2 {
                     get_cassandra_frame(item.original)?,
                 ),
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
+                MessageDetails::ReturnToSender => get_cassandra_frame(item.original)?,
             }
         };
+        debug!("Encoded message as {:?}", &frame);
         Ok(frame)
     }
 }
@@ -626,8 +670,12 @@ impl Encoder<Messages> for CassandraCodec2 {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
+            debug!("Encoding {:?}", &m);
             match self.encode_message(m) {
-                Ok(frame) => self.encode_raw(frame, dst),
+                Ok(frame) => {
+                    self.encode_raw(frame, dst);
+                    debug!("Encoded frame as {:?}", dst);
+                }
                 Err(e) => {
                     warn!("Couldn't encode frame {:?}", e);
                 }
@@ -866,5 +914,47 @@ mod cassandra_protocol_tests {
             }),
         }];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
+    }
+
+    #[test]
+    fn test_process_cassandra_frame() {
+        let frame = Frame {
+            version: Version::Request,
+            flags: vec![],
+            opcode: Opcode::Options,
+            stream: 0,
+            body: vec![],
+            tracing_id: None,
+            warnings: vec![],
+        };
+        let mut pk_map = HashMap::new();
+        pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
+        pk_map.insert(
+            "test.clustering".to_string(),
+            vec!["pk".to_string(), "clustering".to_string()],
+        );
+
+        let codec = CassandraCodec2::new(pk_map, false);
+        let messages = codec.process_cassandra_frame(frame);
+        assert_eq!(1, messages.len());
+        for message in messages {
+            match message.details {
+                MessageDetails::Unknown => {}
+                details => panic!("Unexpected details: {:?}", details),
+            };
+            assert!(!message.modified);
+            match message.original {
+                RawFrame::Cassandra(cframe) => {
+                    assert_eq!(Version::Request, cframe.version);
+                    assert_eq!(0, cframe.flags.len());
+                    assert_eq!(Opcode::Options, cframe.opcode);
+                    assert_eq!(0, cframe.stream);
+                    assert_eq!(0, cframe.body.len());
+                    assert_eq!(None, cframe.tracing_id);
+                    assert_eq!(0, cframe.warnings.len());
+                }
+                original => panic!("Unexpected original: {:?}", original),
+            }
+        }
     }
 }

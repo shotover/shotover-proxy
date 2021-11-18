@@ -1,4 +1,4 @@
-use crate::message::Messages;
+use crate::message::{Message, MessageDetails, Messages};
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
@@ -26,6 +26,31 @@ impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecRea
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
+
+fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages>) -> Messages {
+    // this code creates a new Vec and uses an iterator with mapping and filtering to
+    // populate it from the original Messages.message Vec.  Any messages that require special
+    // handling are processed here.  Specifically messages with ReturnToSender details.
+    let result = messages
+        .into_iter()
+        .map(|m| {
+            // if there is a protocol error handle it and return a new ReturnToSender message
+            // it will be filtered out in the next step.
+            if m.details == MessageDetails::ReturnToSender {
+                debug!("processing ReturnToSender: {:?}", &m);
+                if let Err(err) = tx_out.send(vec![m]) {
+                    error!("Failed to send return to sender message: {:?}", err);
+                }
+                Message::new_no_original(MessageDetails::ReturnToSender, true)
+            } else {
+                m
+            }
+        })
+        .filter(|m| m.details != MessageDetails::ReturnToSender)
+        .collect();
+    debug!("perform_custom_handling returning: {:?}", &result);
+    result
+}
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait Codec: CodecReadHalf + CodecWriteHalf {}
@@ -169,6 +194,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
+            debug!("got socket");
             gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64, "source" => self.source_name.clone());
 
             let peer = socket
@@ -211,20 +237,14 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // asynchronous green threads and are executed concurrently.
             tokio::spawn(
                 async move {
-                    tracing::info!(
-                        "New connection from {}",
-                        socket
-                            .peer_addr()
-                            .map(|p| format!("{}", p))
-                            .unwrap_or_else(|_| "Unknown peer".to_string())
-                    );
+                    tracing::debug!("New connection from {}", handler.conn_details);
 
                     // Process the connection. If an error is encountered, log it.
                     if let Err(err) = handler.run(socket).await {
                         error!(cause = ?err, "connection error");
                     }
                 }
-                .instrument(tracing::info_span!(
+                .instrument(tracing::error_span!(
                     "request",
                     id = self.message_count,
                     source = self.source_name.as_str()
@@ -327,6 +347,7 @@ fn spawn_read_write_tasks<
     tx: W,
     in_tx: UnboundedSender<Messages>,
     out_rx: UnboundedReceiver<Messages>,
+    out_tx: UnboundedSender<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
     let writer = FramedWrite::new(tx, codec);
@@ -336,9 +357,13 @@ fn spawn_read_write_tasks<
             while let Some(message) = reader.next().await {
                 match message {
                     Ok(message) => {
-                        if let Err(error) = in_tx.send(message) {
-                            warn!("failed to send message: {}", error);
-                            return;
+                        let filtered_messages = perform_custom_handling(message, &out_tx);
+                        debug!("filtered_messages: {:?}", filtered_messages);
+                        if !filtered_messages.is_empty() {
+                            if let Err(error) = in_tx.send(filtered_messages) {
+                                warn!("failed to send message: {}", error);
+                                return;
+                            }
                         }
                     }
                     Err(error) => {
@@ -377,6 +402,7 @@ impl<C: Codec + 'static> Handler<C> {
     /// it reaches a safe state, at which point it is terminated.
     // #[instrument(skip(self))]
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
+        debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
         let mut idle_time_seconds: u64 = 1;
@@ -387,16 +413,16 @@ impl<C: Codec + 'static> Handler<C> {
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         };
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
-            trace!("Waiting for message");
-            let frame = tokio::select! {
+            debug!("Waiting for message");
+            let messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
@@ -408,16 +434,17 @@ impl<C: Codec + 'static> Handler<C> {
                         },
                         Err(_) => {
                             if idle_time_seconds < 35 {
-                                trace!("Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                                trace!("Connection Idle for more than {} seconds {}",
+                                    idle_time_seconds, self.conn_details);
                             } else {
-                                debug!("Dropping. Connection Idle for more than {} seconds {}", idle_time_seconds, self.conn_details);
+                                debug!("Dropping. Connection Idle for more than {} seconds {}",
+                                    idle_time_seconds, self.conn_details);
                                 return Ok(());
                             }
                             idle_time_seconds *= 2;
                             continue
                         }
                     }
-
                 },
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
@@ -430,12 +457,15 @@ impl<C: Codec + 'static> Handler<C> {
             // the socket. There is no further work to do and the task can be
             // terminated.
 
-            trace!("Received raw message {:?}", frame);
+            debug!("Received raw message {:?}", messages);
+
+            debug!("client details: {:?}", &self.client_details);
+
             match self
                 .chain
                 .process_request(
                     Wrapper::new_with_client_details(
-                        frame,
+                        messages,
                         self.client_details.clone(),
                         self.chain.name.clone(),
                     ),
@@ -444,15 +474,15 @@ impl<C: Codec + 'static> Handler<C> {
                 .await
             {
                 Ok(modified_message) => {
+                    debug!("sending message: {:?}", modified_message);
+                    // send the result of the process up stream
                     out_tx.send(modified_message)?;
                 }
                 Err(e) => {
-                    error!("chain processing error - {}", e);
-                    return Ok(());
+                    error!("process_request chain processing error - {}", e);
                 }
             }
         }
-
         Ok(())
     }
 }
@@ -515,7 +545,7 @@ impl Shutdown {
 
         // check we didn't receive a shutdown message before the receiver was created
         if !*self.notify.borrow() {
-            // Await the shutdown messsage
+            // Await the shutdown message
             self.notify.changed().await.unwrap();
         }
 

@@ -39,9 +39,32 @@ impl ShotoverManager {
             ..ConfigOpts::default()
         };
         let spawn = Runner::new(opts)
-            .unwrap()
+            .unwrap_or_else(|x| panic!("{} occurred processing {:?}", x, topology_path))
             .with_observability_interface()
-            .unwrap()
+            .unwrap_or_else(|x| panic!("{} occurred processing {:?}", x, topology_path))
+            .run_spawn();
+
+        // If we allow the tracing_guard to be dropped then the following tests in the same file will not get tracing so we mem::forget it.
+        // This is because tracing can only be initialized once in the same execution, secondary attempts to initalize tracing will silently fail.
+        std::mem::forget(spawn.tracing_guard);
+
+        ShotoverManager {
+            runtime: spawn.runtime,
+            runtime_handle: spawn.runtime_handle,
+            join_handle: Some(spawn.join_handle),
+            trigger_shutdown_tx: spawn.trigger_shutdown_tx,
+        }
+    }
+
+    #[allow(dead_code)] // to make clippy happy
+    pub fn from_topology_file_without_observability(topology_path: &str) -> ShotoverManager {
+        let opts = ConfigOpts {
+            topology_file: topology_path.into(),
+            config_file: "config/config.yaml".into(),
+            ..ConfigOpts::default()
+        };
+        let spawn = Runner::new(opts)
+            .unwrap_or_else(|x| panic!("{} occurred processing {:?}", x, topology_path))
             .run_spawn();
 
         // If we allow the tracing_guard to be dropped then the following tests in the same file will not get tracing so we mem::forget it.
