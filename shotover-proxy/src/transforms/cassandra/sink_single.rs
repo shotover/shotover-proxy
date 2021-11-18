@@ -87,20 +87,18 @@ impl CassandraSinkSingle {
                             .map(|m| {
                                 let (return_chan_tx, return_chan_rx) =
                                     tokio::sync::oneshot::channel();
-                                let stream;
-                                if let RawFrame::Cassandra(frame) = &m.original {
-                                    stream = frame.stream;
+                                let stream = if let RawFrame::Cassandra(frame) = &m.original {
+                                    frame.stream
                                 } else {
                                     info!("no cassandra frame found");
                                     return Err(anyhow!("no cassandra frame found"));
-                                }
+                                };
 
-                                let req: Request = Request {
+                                sender.send(Request {
                                     messages: m,
                                     return_chan: Some(return_chan_tx),
                                     message_id: Some(stream),
-                                };
-                                sender.send(req)?;
+                                })?;
 
                                 Ok(return_chan_rx)
                             })
