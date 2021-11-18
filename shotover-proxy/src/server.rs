@@ -34,11 +34,13 @@ fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages
     let result = messages
         .into_iter()
         .map(|m| {
-            // if there is a protocol error handle it.  always return the original message
+            // if there is a protocol error handle it and return a new ReturnToSender message
             // it will be filtered out in the next step.
             if m.details == MessageDetails::ReturnToSender {
                 debug!("processing ReturnToSender: {:?}", &m);
-                tx_out.send(vec![m]).ok();
+                if let Err(err) = tx_out.send(vec![m]) {
+                    error!("Failed to send return to sender message: {:?}", err);
+                }
                 Message::new_no_original(MessageDetails::ReturnToSender, true)
             } else {
                 m
@@ -206,7 +208,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 .unwrap_or_else(|_| "Unknown peer".to_string());
 
             // Create the necessary per-connection handler state.
-            debug!("New connection from {}", &conn_string);
             socket.set_nodelay(true)?;
 
             let mut handler = Handler {
@@ -236,20 +237,14 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // asynchronous green threads and are executed concurrently.
             tokio::spawn(
                 async move {
-                    tracing::debug!(
-                        "New connection from {}",
-                        socket
-                            .peer_addr()
-                            .map(|p| format!("{}", p))
-                            .unwrap_or_else(|_| "Unknown peer".to_string())
-                    );
+                    tracing::debug!("New connection from {}", handler.conn_details);
 
                     // Process the connection. If an error is encountered, log it.
                     if let Err(err) = handler.run(socket).await {
                         error!(cause = ?err, "connection error");
                     }
                 }
-                .instrument(tracing::debug_span!(
+                .instrument(tracing::error_span!(
                     "request",
                     id = self.message_count,
                     source = self.source_name.as_str()
@@ -481,9 +476,7 @@ impl<C: Codec + 'static> Handler<C> {
                 Ok(modified_message) => {
                     debug!("sending message: {:?}", modified_message);
                     // send the result of the process up stream
-                    let result = out_tx.send(modified_message)?;
-
-                    debug!("Send message result {:?}", result);
+                    out_tx.send(modified_message)?;
                 }
                 Err(e) => {
                     error!("process_request chain processing error - {}", e);

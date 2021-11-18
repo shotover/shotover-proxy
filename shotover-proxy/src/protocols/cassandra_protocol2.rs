@@ -41,7 +41,7 @@ pub struct CassandraCodec2 {
     current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
-    /// if force_close is not None then the connection will be closed the next time the
+    /// if force_close is Some then the connection will be closed the next time the
     /// system attempts to read data from it.  This is used in protocol errors where we
     /// need to return a message to the client so we can not immediately close the connection
     /// but we also do not know the state of the input stream.  For example if the protocol
@@ -585,7 +585,6 @@ impl Decoder for CassandraCodec2 {
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
         // if we need to close the connection return an error.
         if let Some(result) = self.force_close.take() {
-            self.force_close = None;
             debug!("Closing errored connection: {:?}", &result);
             return Err(anyhow::Error::msg(result));
         }
