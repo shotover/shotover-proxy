@@ -38,7 +38,6 @@ use cassandra_proto::frame::frame_error::CDRSError;
 pub struct CassandraCodec2 {
     compressor: NoCompression,
     current_head: Option<FrameHeader>,
-    current_frames: Vec<Frame>,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
     /// if force_close is Some then the connection will be closed the next time the
@@ -63,7 +62,6 @@ impl CassandraCodec2 {
         CassandraCodec2 {
             compressor: NoCompression::new(),
             current_head: None,
-            current_frames: Vec::new(),
             pk_col_map,
             bypass,
             force_close: None,

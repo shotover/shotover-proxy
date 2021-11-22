@@ -271,11 +271,6 @@ pub async fn build_chain_from_config(
     Ok(TransformChain::new(transforms, name))
 }
 
-#[derive(Debug, Clone)]
-struct QueryData {
-    query: String,
-}
-
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
 /// Most [`Transform`] authors will only be interested in [`Wrapper.messages`].
@@ -376,11 +371,6 @@ impl<'a> Wrapper<'a> {
     pub fn reset(&mut self, transforms: Vec<&'a mut Transforms>) {
         self.transforms = transforms;
     }
-}
-
-#[derive(Debug)]
-struct ResponseData {
-    response: Messages,
 }
 
 /// This trait is the primary extension point for Shotover-proxy.
