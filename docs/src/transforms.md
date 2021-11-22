@@ -219,14 +219,14 @@ Fields are protected using a NaCL secretbox (xsalsa20-poly1305). Modification of
   key_manager
 ```
 
-Currently the Protect transform supports AWS KMS and or using a local Key Encryption Key on disk. See [key management](keys.md)
+Currently the Protect transform supports AWS KMS and or using a local Key Encryption Key on disk.
 
 Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly.
 
 ### QueryCounter
 
 This transform will log the queries that pass through it.
-The log can be accessed via the [Shotover metrics](/user-guide/configuration/#observability_interface)
+The log can be accessed via the [Shotover metrics](user-guide/configuration.md#observability_interface)
 
 ```yaml
 - QueryCounter:

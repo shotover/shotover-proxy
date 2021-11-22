@@ -23,6 +23,6 @@ A topology is how you configure Shotover. You define your sources, your transfor
 
 ## Topics
 
-Shotover has a basic, built-in topic based messaging capability. A transform can access topic channels to publish messages on to. To receive messages, there is a message source that you can assign a chain to. This allows for complex routing and asynchronous passing of messages between transform chains in a topology. See [the cassandra and kafka example](/examples/cass-redis-kafka) as an example.
+Shotover has a basic, built-in topic based messaging capability. A transform can access topic channels to publish messages on to. To receive messages, there is a message source that you can assign a chain to. This allows for complex routing and asynchronous passing of messages between transform chains in a topology.
 
 Generally if you want to build blocking behaviour in your chain, you will use transforms that have sub chains. For non-blocking behaviour (e.g. copying a query to a Kafka queue while sending it the upstream service) use topic based transforms.

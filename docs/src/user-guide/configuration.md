@@ -172,5 +172,3 @@ This mapping would effectively create a solution that:
 * All Redis requests are first batched and then sent to a remote Redis cluster in another region. This happens asynchronously and if the remote Redis cluster is unavailable it will not block operations to the current cluster.
 * Subsequently, all Redis actions get identified based on command type, counted and provided as a set of metrics.
 * The Redis request is then transform into a cluster aware request and routed to the correct node
-
-The entire example configuration can be found [here](/examples/redis-cluster-dr/topology.yaml).
