@@ -6,7 +6,7 @@ use cassandra_proto::frame::frame_result::{
     BodyResResultRows, ColSpec, ColType, ColTypeOption, ResResultBody, RowsMetadata,
 };
 use cassandra_proto::frame::parser::FrameHeader;
-use cassandra_proto::frame::{parser, Flag, Frame, IntoBytes, Opcode, Version};
+use cassandra_proto::frame::{parser, Frame, IntoBytes, Opcode, Version};
 use cassandra_proto::query::QueryValues;
 use cassandra_proto::types::value::Value as CValue;
 use cassandra_proto::types::{to_int, CBytes, CInt, CString};
@@ -89,12 +89,12 @@ impl CassandraCodec2 {
                 .map(|x| CValue::new_normal(x.clone()))
                 .collect(),
         ));
-        let with_names: Option<bool> = Some(false);
-        let page_size: Option<i32> = None;
-        let paging_state: Option<CBytes> = None;
-        let serial_consistency: Option<Consistency> = None;
-        let timestamp: Option<i64> = None;
-        let flags: Vec<Flag> = vec![];
+        let with_names = Some(false);
+        let page_size = None;
+        let paging_state = None;
+        let serial_consistency = None;
+        let timestamp = None;
+        let flags = vec![];
         Frame::new_req_query(
             query_string,
             default_consistency,
