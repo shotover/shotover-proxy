@@ -22,9 +22,9 @@ pub struct ShotoverManager {
     pub trigger_shutdown_tx: watch::Sender<bool>,
 }
 
-fn wait_for_socket_to_open(port: u16) {
+pub fn wait_for_socket_to_open(address: &str, port: u16) {
     let mut tries = 0;
-    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+    while std::net::TcpStream::connect((address, port)).is_err() {
         thread::sleep(Duration::from_millis(100));
         assert!(tries < 50, "Ran out of retries to connect to the socket");
         tries += 1;
@@ -82,9 +82,10 @@ impl ShotoverManager {
     // false unused warning caused by https://github.com/rust-lang/rust/issues/46379
     #[allow(unused)]
     pub fn redis_connection(&self, port: u16) -> redis::Connection {
-        wait_for_socket_to_open(port);
+        let address = "127.0.0.1";
+        wait_for_socket_to_open(address, port);
 
-        let connection = Client::open(("127.0.0.1", port))
+        let connection = Client::open((address, port))
             .unwrap()
             .get_connection()
             .unwrap();
@@ -94,10 +95,11 @@ impl ShotoverManager {
 
     #[allow(unused)]
     pub async fn redis_connection_async(&self, port: u16) -> redis::aio::Connection {
-        wait_for_socket_to_open(port);
+        let address = "127.0.0.1";
+        wait_for_socket_to_open(address, port);
 
         let stream = Box::pin(
-            tokio::net::TcpStream::connect(("127.0.0.1", port))
+            tokio::net::TcpStream::connect((address, port))
                 .await
                 .unwrap(),
         );
@@ -119,9 +121,10 @@ impl ShotoverManager {
         port: u16,
         config: TlsConfig,
     ) -> redis::aio::Connection {
-        wait_for_socket_to_open(port);
+        let address = "127.0.0.1";
+        wait_for_socket_to_open(address, port);
 
-        let tcp_stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        let tcp_stream = tokio::net::TcpStream::connect((address, port))
             .await
             .unwrap();
         let connector = TlsConnector::new(config).unwrap();
@@ -182,7 +185,7 @@ impl ShotoverProcess {
             .spawn()
             .unwrap();
 
-        wait_for_socket_to_open(9001); // Wait for observability metrics port to open
+        wait_for_socket_to_open("127.0.0.1", 9001); // Wait for observability metrics port to open
 
         ShotoverProcess { child }
     }

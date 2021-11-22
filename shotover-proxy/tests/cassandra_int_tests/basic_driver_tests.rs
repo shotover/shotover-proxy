@@ -1,7 +1,7 @@
 use crate::helpers::ShotoverManager;
 use test_helpers::docker_compose::DockerCompose;
 
-use crate::cassandra_int_tests::new_with_points;
+use crate::cassandra_int_tests::cassandra_connection;
 use cassandra_cpp::{stmt, Session};
 use serial_test::serial;
 use tracing::debug;
@@ -60,5 +60,5 @@ fn test_basic_connection() {
     .map(|s| ShotoverManager::from_topology_file_without_observability(*s))
     .collect();
 
-    test_create_keyspace(new_with_points("127.0.0.1"));
+    test_create_keyspace(cassandra_connection("127.0.0.1", 9042));
 }
