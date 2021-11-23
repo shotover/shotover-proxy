@@ -1294,11 +1294,13 @@ async fn test_source_tls_and_single_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_ports_rewrite() {
-    let _compose = DockerCompose::new("examples/redis-cluster-ports-rewrite/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
+    let _compose =
+        DockerCompose::new("tests/test-topologies/redis-cluster-ports-rewrite/docker-compose.yml")
+            .wait_for_n("Cluster state changed", 6);
 
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-ports-rewrite/topology.yaml");
+    let shotover_manager = ShotoverManager::from_topology_file(
+        "tests/test-topologies/redis-cluster-ports-rewrite/topology.yaml",
+    );
 
     let mut connection = shotover_manager.redis_connection_async(6380).await;
 

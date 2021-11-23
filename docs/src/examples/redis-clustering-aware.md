@@ -15,8 +15,36 @@ In this example, we will be connecting to a Redis cluster that has the following
 Shotover will be deployed as a sidecar to each node in the Redis cluster, listening on `6380`. Use the following [docker-compose.yml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/examples/redis-cluster-ports-rewrite/docker-compose.yml) to run the Redis cluster and Shotover sidecars.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/docs/topology/docker-compose.yml --output docker-compose.yml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/examples/redis-cluster-ports-rewrite/docker-compose.yml --output docker-compose.yml
 docker-compose -f docker-compose.yml up
+```
+
+Below we can see an example of a Redis node and it's Shotover sidecar. Notice they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
+
+```YAML
+
+redis-node-0:
+  image: docker.io/bitnami/redis-cluster:6.0-debian-10
+  networks:
+  cluster_subnet:
+    ipv4_address: 172.16.1.2
+  volumes:
+    - redis-cluster_data-0:/bitnami/redis/data
+  environment:
+    - 'ALLOW_EMPTY_PASSWORD=yes'
+    - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2'
+
+shotover-0:
+  restart: always
+  depends_on:
+    - redis-node-0
+  image: shotover/shotover-proxy
+  network_mode: "service:redis-node-0"
+  volumes:
+    - type: bind
+      source: $PWD
+      target: /config
+
 ```
 
 In this example we will use `redis-benchmark` with cluster mode enabled as our Redis cluster aware client application. 
@@ -31,7 +59,7 @@ First we will modify our `topology.yaml` file to have a single Redis source. Thi
 * Connect our Redis Source to our Redis cluster sink (transform).
 
 ```yaml
-{{#include ../../topology/topology.yaml}}
+{{#include ../../../shotover-proxy/examples/redis-cluster-ports-rewrite/topology.yaml}}
 ```
 
 Modify an existing `topology.yaml` or create a new one and place the above example as the files contents.
