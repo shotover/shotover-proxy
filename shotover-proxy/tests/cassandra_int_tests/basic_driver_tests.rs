@@ -1,39 +1,9 @@
 use crate::helpers::ShotoverManager;
+use cassandra_cpp::{stmt, Session};
+use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
-use crate::cassandra_int_tests::cassandra_connection;
-use cassandra_cpp::{stmt, Session, Statement, Value, ValueType};
-use serial_test::serial;
-
-#[derive(PartialEq, Debug)]
-enum ResultValue {
-    Text(String),
-    Varchar(String),
-    Int(i64),
-}
-
-impl ResultValue {
-    fn new(value: Value) -> ResultValue {
-        match value.get_type() {
-            ValueType::TEXT => ResultValue::Text(value.get_string().unwrap()),
-            ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
-            ValueType::INT => ResultValue::Int(value.get_i64().unwrap()),
-            ty => todo!(
-                "The test infrastructure hasnt implemented the type {} yet, you should add it.",
-                ty
-            ),
-        }
-    }
-}
-
-fn assert_query_result(session: &Session, query: Statement, expected_rows: &[&[ResultValue]]) {
-    let result = session.execute(&query).wait().unwrap();
-    let result_rows: Vec<Vec<ResultValue>> = result
-        .into_iter()
-        .map(|x| x.into_iter().map(ResultValue::new).collect())
-        .collect();
-    assert_eq!(result_rows, expected_rows);
-}
+use crate::cassandra_int_tests::{assert_query_result, cassandra_connection, ResultValue};
 
 fn test_create_keyspace(session: Session) {
     assert_query_result(
