@@ -14,6 +14,14 @@ use crate::helpers::ShotoverManager;
 use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
 
+// Debug rust is pretty slow, so keep the stress test small.
+// CI runs in both debug and release so the larger iteration count does get run there.
+#[cfg(debug_assertions)]
+const STRESS_TEST_MULTIPLIER: usize = 1;
+
+#[cfg(not(debug_assertions))]
+const STRESS_TEST_MULTIPLIER: usize = 100;
+
 async fn test_args(connection: &mut Connection) {
     redis::cmd("SET")
         .arg("key1")
@@ -37,7 +45,7 @@ async fn test_args(connection: &mut Connection) {
 }
 
 async fn test_getset(connection: &mut Connection) {
-    for _ in 1..10000 {
+    for _ in 0..100 * STRESS_TEST_MULTIPLIER {
         redis::cmd("SET")
             .arg("foo")
             .arg(42)
@@ -269,7 +277,7 @@ async fn test_scanning(connection: &mut Connection) {
         .unwrap();
     let mut unseen = HashSet::<usize>::new();
 
-    for x in 0..1000 {
+    for x in 0..100 * STRESS_TEST_MULTIPLIER {
         let _a: i64 = redis::cmd("SADD")
             .arg("foo")
             .arg(x)
@@ -279,7 +287,7 @@ async fn test_scanning(connection: &mut Connection) {
         unseen.insert(x);
     }
 
-    assert_eq!(unseen.len(), 1000);
+    assert_eq!(unseen.len(), 100 * STRESS_TEST_MULTIPLIER);
 
     let mut iter = redis::cmd("SSCAN")
         .arg("foo")
@@ -1066,7 +1074,7 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
 
 async fn test_cluster_pipe(connection: &mut Connection) {
     //do this a few times to be sure we are not hitting a single master
-    for i in 0..2000 {
+    for i in 0..100 * STRESS_TEST_MULTIPLIER {
         // make sure there are no overlaps etc
         let key1 = format!("key{}", i);
         let key2 = format!("{}key", i);
@@ -1093,9 +1101,9 @@ async fn test_cluster_pipe(connection: &mut Connection) {
         assert_eq!(k2, 43);
     }
 
-    for _ in 0..200 {
+    for _ in 0..2 * STRESS_TEST_MULTIPLIER {
         let mut pipe = redis::pipe();
-        for i in 0..1000 {
+        for i in 0..100 {
             let key1 = format!("{}kaey", i);
             pipe.cmd("SET").arg(&key1).arg(i);
         }
@@ -1104,14 +1112,14 @@ async fn test_cluster_pipe(connection: &mut Connection) {
 
         let mut pipe = redis::pipe();
 
-        for i in 0..1000 {
+        for i in 0..100 {
             let key1 = format!("{}kaey", i);
             pipe.cmd("GET").arg(&key1);
         }
 
         let mut results: Vec<i32> = pipe.query_async(connection).await.unwrap();
 
-        for i in 0..1000 {
+        for i in 0..100 {
             let result = results.remove(0);
             assert_eq!(i, result);
         }
