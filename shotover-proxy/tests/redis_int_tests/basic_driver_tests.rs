@@ -1169,7 +1169,7 @@ async fn test_cluster_replication(
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_pass_through() {
+async fn test_passthrough() {
     let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
         .wait_for("Ready to accept connections");
     let shotover_manager =
