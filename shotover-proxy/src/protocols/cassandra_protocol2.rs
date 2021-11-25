@@ -747,6 +747,27 @@ mod cassandra_protocol_tests {
     }
 
     #[test]
+    fn test_codec_options() {
+        let mut codec = new_codec();
+        let bytes = hex!("040000000500000000");
+        let messages = vec![Message {
+            details: MessageDetails::Unknown,
+            modified: false,
+            original: RawFrame::Cassandra(Frame {
+                version: Version::V4,
+                direction: Direction::Request,
+                flags: Flags::empty(),
+                opcode: Opcode::Options,
+                stream: 0,
+                body: vec![],
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        }];
+        test_frame_codec_roundtrip(&mut codec, &bytes, messages);
+    }
+
+    #[test]
     fn test_codec_ready() {
         let mut codec = new_codec();
         let bytes = hex!("840000000200000000");
