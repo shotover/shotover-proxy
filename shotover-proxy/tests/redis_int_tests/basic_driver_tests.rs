@@ -1175,6 +1175,73 @@ async fn test_cluster_replication(
     assert_eq!(value2, Ok(b"blah".to_vec()));
 }
 
+// This test case is picky about the ordering of connection auth so we take a ShotoverManager and make all the connections ourselves
+async fn test_dr_auth(shotover_manager: &ShotoverManager) {
+    // setup 3 different connections in different states
+    let mut connection_shotover_noauth = shotover_manager.redis_connection_async(6379).await;
+
+    let mut connection_shotover_auth = shotover_manager.redis_connection_async(6379).await;
+    redis::cmd("AUTH")
+        .arg("default")
+        .arg("shotover")
+        .query_async::<_, ()>(&mut connection_shotover_auth)
+        .await
+        .unwrap();
+
+    let mut connection_dr_auth = shotover_manager.redis_connection_async(2120).await;
+    redis::cmd("AUTH")
+        .arg("default")
+        .arg("shotover")
+        .query_async::<_, ()>(&mut connection_dr_auth)
+        .await
+        .unwrap();
+
+    // writing to shotover when authed should succeed
+    redis::cmd("SET")
+        .arg("authed_write")
+        .arg(42)
+        .query_async::<_, ()>(&mut connection_shotover_auth)
+        .await
+        .unwrap();
+    assert_eq!(
+        redis::cmd("GET")
+            .arg("authed_write")
+            .query_async(&mut connection_shotover_auth)
+            .await,
+        Ok(42)
+    );
+
+    // writing to shotover when not authed should not write to either destination
+    // important that this comes after the previous authed test
+    // to ensure that auth'ing once doesnt result in other connections being considered auth'd
+    for _ in 0..2000 {
+        // Need to run 2000 times to ensure we hit the configured coallesce max
+        redis::cmd("SET")
+            .arg("authed_write")
+            .arg(1111)
+            .query_async::<_, ()>(&mut connection_shotover_noauth)
+            .await
+            .unwrap_err();
+    }
+
+    // Need to delay a bit to avoid race condition on the write to the dr cluster
+    sleep(Duration::from_secs(1));
+    assert_eq!(
+        redis::cmd("GET")
+            .arg("authed_write")
+            .query_async(&mut connection_shotover_auth)
+            .await,
+        Ok(42)
+    );
+    assert_eq!(
+        redis::cmd("GET")
+            .arg("authed_write")
+            .query_async::<_, Option<i32>>(&mut connection_dr_auth)
+            .await,
+        Ok(None)
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough() {
@@ -1294,7 +1361,10 @@ async fn test_cluster_dr_redis() {
         "redis://127.0.0.1:2124/",
         "redis://127.0.0.1:2125/",
     ];
-    let client = redis::cluster::ClusterClient::open(nodes).unwrap();
+    let client = redis::cluster::ClusterClientBuilder::new(nodes)
+        .password("shotover".to_string())
+        .open()
+        .unwrap();
     let mut replication_connection = client.get_connection().unwrap();
 
     // test coalesce sends messages on shotover shutdown
@@ -1302,6 +1372,12 @@ async fn test_cluster_dr_redis() {
         let shotover_manager =
             ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
         let mut connection = shotover_manager.redis_connection_async(6379).await;
+        redis::cmd("AUTH")
+            .arg("default")
+            .arg("shotover")
+            .query_async::<_, ()>(&mut connection)
+            .await
+            .unwrap();
 
         redis::cmd("SET")
             .arg("key1")
@@ -1318,7 +1394,7 @@ async fn test_cluster_dr_redis() {
 
         // shotover is shutdown here because shotover_manager goes out of scope and is dropped.
     }
-    sleep(std::time::Duration::from_secs(1));
+    sleep(Duration::from_secs(1));
     assert_eq!(replication_connection.get::<&str, i32>("key1").unwrap(), 42);
     assert_eq!(
         replication_connection.get::<&str, i32>("key2").unwrap(),
@@ -1329,8 +1405,15 @@ async fn test_cluster_dr_redis() {
         ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
+    redis::cmd("AUTH")
+        .arg("default")
+        .arg("shotover")
+        .query_async::<_, ()>(&mut connection)
+        .await
+        .unwrap();
 
     test_cluster_replication(&mut connection, &mut replication_connection).await;
+    test_dr_auth(&shotover_manager).await;
     run_all_cluster_safe(&mut connection).await;
 }
 
