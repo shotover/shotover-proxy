@@ -77,7 +77,7 @@ impl SimpleRedisCache {
                         .ok_or_else(|| anyhow!("No AST to convert query to cache query"))?
                         .clone();
 
-                    qm.ast.replace(build_redis_ast_from_sql(
+                    qm.ast = Some(build_redis_ast_from_sql(
                         ast,
                         &qm.primary_key,
                         table,
