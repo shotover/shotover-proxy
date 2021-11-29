@@ -241,9 +241,9 @@ fn build_redis_ast_from_sql(
     query_values: &Option<HashMap<String, ShotoverValue>>,
 ) -> Result<ASTHolder> {
     match &mut ast {
-        ASTHolder::SQL(sql) => match sql {
-            Statement::Query(ref mut q) => match q.body {
-                SetExpr::Select(ref mut s) if s.selection.is_some() => {
+        ASTHolder::SQL(sql) => match &mut **sql {
+            Statement::Query(q) => match &mut q.body {
+                SetExpr::Select(s) if s.selection.is_some() => {
                     let expr = s.selection.as_mut().unwrap();
                     let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
                     let mut min: Vec<u8> = vec![b'-'];
@@ -402,7 +402,7 @@ mod test {
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> (ASTHolder, Option<HashMap<String, Value>>) {
         let res = CassandraCodec2::parse_query_string(query_string, pk_col_map);
-        (ASTHolder::SQL(res.ast.unwrap()), res.colmap)
+        (ASTHolder::SQL(Box::new(res.ast.unwrap())), res.colmap)
     }
 
     fn build_redis_query_frame(query: &str) -> ASTHolder {

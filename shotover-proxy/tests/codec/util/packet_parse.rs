@@ -17,7 +17,6 @@ pub struct PacketParse {}
 #[derive(Debug, Deserialize)]
 pub enum PacketHeader {
     Tls(TlsType),
-    Dns(DnsPacket),
     Tcp(TcpHeader),
     Udp(UdpHeader),
     Ipv4(IPv4Header),
@@ -44,34 +43,11 @@ pub enum TlsType {
     EncryptedData,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct DnsPacket {
-    questions: Vec<String>,
-    answers: Vec<String>,
-}
-
-impl From<dns_parser::Packet<'_>> for DnsPacket {
-    fn from(dns_packet: dns_parser::Packet) -> Self {
-        let questions: Vec<String> = dns_packet
-            .questions
-            .iter()
-            .map(|q| q.qname.to_string())
-            .collect();
-        let answers: Vec<String> = dns_packet
-            .answers
-            .iter()
-            .map(|a| a.name.to_string())
-            .collect();
-        Self { questions, answers }
-    }
-}
-
 impl ToString for PacketHeader {
     fn to_string(&self) -> String {
         match self {
             PacketHeader::Ipv4(_) => String::from("Ipv4"),
             PacketHeader::Ipv6(_) => String::from("Ipv6"),
-            PacketHeader::Dns(_) => String::from("Dns"),
             PacketHeader::Tls(_) => String::from("Tls"),
             PacketHeader::Tcp(_) => String::from("Tcp"),
             PacketHeader::Udp(_) => String::from("Udp"),
@@ -199,8 +175,7 @@ impl PacketParse {
 
     fn parse_udp(&self, content: &[u8], parsed_packet: &mut ParsedPacket) -> Result<(), String> {
         match udp::parse_udp_header(content) {
-            Ok((content, headers)) => {
-                self.parse_dns(content, parsed_packet);
+            Ok((_, headers)) => {
                 parsed_packet.headers.push(PacketHeader::Udp(headers));
                 Ok(())
             }
@@ -220,19 +195,6 @@ impl PacketParse {
             Err(err) => {
                 parsed_packet.remaining = content.to_owned();
                 Err(err.to_string())
-            }
-        }
-    }
-
-    fn parse_dns(&self, content: &[u8], parsed_packet: &mut ParsedPacket) {
-        match dns_parser::Packet::parse(content) {
-            Ok(packet) => {
-                parsed_packet
-                    .headers
-                    .push(PacketHeader::Dns(DnsPacket::from(packet)));
-            }
-            Err(_) => {
-                parsed_packet.remaining = content.to_owned();
             }
         }
     }

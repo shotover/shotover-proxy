@@ -87,14 +87,15 @@ pub struct RawMessage {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum ASTHolder {
-    SQL(Statement),
+    // Statement is boxed because Statement takes up a lot more stack space than Value.
+    SQL(Box<Statement>),
     Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
 }
 
 impl ASTHolder {
     pub fn get_command(&self) -> String {
         match self {
-            ASTHolder::SQL(statement) => match statement {
+            ASTHolder::SQL(statement) => match **statement {
                 Statement::Query(_) => "SELECT",
                 Statement::Insert { .. } => "INSERT",
                 Statement::Update { .. } => "UPDATE",
