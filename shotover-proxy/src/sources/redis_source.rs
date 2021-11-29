@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::runtime::Handle;
-use tokio::sync::{mpsc, watch, Semaphore};
+use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -28,13 +28,11 @@ impl SourcesFromConfig for RedisConfig {
         chain: &TransformChain,
         _topics: &mut TopicHolder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         RedisSource::new(
             chain,
             self.listen_addr.clone(),
             trigger_shutdown_rx,
-            shutdown_complete_tx,
             self.connection_limit,
             self.hard_connection_limit,
             self.tls.clone(),
@@ -57,7 +55,6 @@ impl RedisSource {
         chain: &TransformChain,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
         tls: Option<TlsConfig>,
@@ -73,7 +70,6 @@ impl RedisSource {
             RedisCodec::new(DecodeType::Query),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
-            shutdown_complete_tx,
             tls.map(TlsAcceptor::new).transpose()?,
         );
 
