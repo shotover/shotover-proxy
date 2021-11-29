@@ -10,7 +10,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tracing::{debug, trace, warn, Instrument};
+use tracing::{debug, error, info, trace, Instrument};
 
 type InnerChain = Vec<Transforms>;
 
@@ -136,7 +136,7 @@ impl TransformChain {
                         .await;
 
                     if let Err(e) = &chain_response {
-                        warn!("Internal error in buffered chain: {:?}", e);
+                        error!("Internal error in buffered chain: {:?}", e);
                     };
 
                     match return_chan {
@@ -154,6 +154,19 @@ impl TransformChain {
                 debug!(
                     "buffered chain processing thread exiting, stopping chain loop and dropping"
                 );
+
+                match chain
+                    .shutdown(Wrapper::new_with_chain_name(vec![], chain.name.clone()))
+                    .await
+                {
+                    Ok(()) => {
+                        info!("Buffered chain {} was shutdown", chain.name)
+                    }
+                    Err(e) => error!(
+                        "Internal error in buffered chain when shutting down: {:?}",
+                        e
+                    ),
+                }
             }
             .in_current_span(),
         );
@@ -253,6 +266,11 @@ impl TransformChain {
         }
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
+    }
+
+    pub async fn shutdown(&mut self, mut wrapper: Wrapper<'_>) -> Result<()> {
+        wrapper.reset(self.chain.iter_mut().collect_vec());
+        wrapper.call_next_shutdown().await
     }
 }
 

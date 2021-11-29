@@ -13,8 +13,7 @@ use std::time::Instant;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tracing::info;
-use tracing::warn;
+use tracing::{error, info, warn};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AsyncMpscConfig {
@@ -129,6 +128,11 @@ impl AsyncMpsc {
                         }
                     }
                 }
+            }
+            let w = Wrapper::new_with_chain_name(vec![], main_chain.name.clone());
+            match main_chain.shutdown(w).await {
+                Ok(()) => info!("source AsyncMpsc was shutdown"),
+                Err(e) => error!("process_request chain processing error - {}", e),
             }
             Ok(())
         });

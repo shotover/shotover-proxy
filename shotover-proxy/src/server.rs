@@ -244,6 +244,24 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         }
     }
 
+    pub async fn shutdown(&mut self) {
+        match self
+            .chain
+            .shutdown(Wrapper::new_with_chain_name(
+                vec![],
+                self.chain.name.clone(),
+            ))
+            .await
+        {
+            Ok(()) => {
+                info!("source {} was shutdown", self.source_name);
+            }
+            Err(e) => {
+                error!("shutdown chain processing error - {}", e);
+            }
+        }
+    }
+
     async fn create_listener(&self) -> Result<TcpListener> {
         TcpListener::bind(&self.listen_addr)
             .await
@@ -382,14 +400,8 @@ impl<C: Codec + 'static> Handler<C> {
     /// Request frames are read from the socket and processed. Responses are
     /// written back to the socket.
     ///
-    /// Currently, pipelining is not implemented. Pipelining is the ability to
-    /// process more than one request concurrently per connection without
-    /// interleaving frames. See for more details:
-    /// <https://redis.io/topics/pipelining>
-    ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    // #[instrument(skip(self))]
     pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
         debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a

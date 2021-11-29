@@ -1285,10 +1285,6 @@ async fn test_cluster_redis() {
 async fn test_cluster_dr_redis() {
     let _compose = DockerCompose::new("examples/redis-cluster-dr/docker-compose.yml")
         .wait_for_n("Cluster state changed", 12);
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
-
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     let nodes = vec![
         "redis://127.0.0.1:2120/",
@@ -1300,6 +1296,39 @@ async fn test_cluster_dr_redis() {
     ];
     let client = redis::cluster::ClusterClient::open(nodes).unwrap();
     let mut replication_connection = client.get_connection().unwrap();
+
+    // test coalesce sends messages on shotover shutdown
+    {
+        let shotover_manager =
+            ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
+        let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+        redis::cmd("SET")
+            .arg("key1")
+            .arg(42)
+            .query_async::<_, ()>(&mut connection)
+            .await
+            .unwrap();
+        redis::cmd("SET")
+            .arg("key2")
+            .arg(358)
+            .query_async::<_, ()>(&mut connection)
+            .await
+            .unwrap();
+
+        // shotover is shutdown here because shotover_manager goes out of scope and is dropped.
+    }
+    sleep(std::time::Duration::from_secs(1));
+    assert_eq!(replication_connection.get::<&str, i32>("key1").unwrap(), 42);
+    assert_eq!(
+        replication_connection.get::<&str, i32>("key2").unwrap(),
+        358
+    );
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
+
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     test_cluster_replication(&mut connection, &mut replication_connection).await;
     run_all_cluster_safe(&mut connection).await;

@@ -75,6 +75,11 @@ impl Transform for Coalesce {
             )])
         }
     }
+
+    async fn shutdown<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<()> {
+        message_wrapper.messages.append(&mut self.buffer);
+        message_wrapper.call_next_shutdown().await
+    }
 }
 
 #[cfg(test)]

@@ -122,6 +122,31 @@ impl Transforms {
         }
     }
 
+    async fn shutdown<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<()> {
+        match self {
+            Transforms::CassandraSinkSingle(c) => c.shutdown(message_wrapper).await,
+            Transforms::KafkaSink(k) => k.shutdown(message_wrapper).await,
+            Transforms::RedisCache(r) => r.shutdown(message_wrapper).await,
+            Transforms::Tee(m) => m.shutdown(message_wrapper).await,
+            Transforms::DebugPrinter(p) => p.shutdown(message_wrapper).await,
+            Transforms::Null(n) => n.shutdown(message_wrapper).await,
+            Transforms::Loopback(n) => n.shutdown(message_wrapper).await,
+            Transforms::Protect(p) => p.shutdown(message_wrapper).await,
+            Transforms::DebugReturner(p) => p.shutdown(message_wrapper).await,
+            Transforms::DebugRandomDelay(p) => p.shutdown(message_wrapper).await,
+            Transforms::ConsistentScatter(tc) => tc.shutdown(message_wrapper).await,
+            Transforms::RedisSinkSingle(r) => r.shutdown(message_wrapper).await,
+            Transforms::RedisTimestampTagger(r) => r.shutdown(message_wrapper).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.shutdown(message_wrapper).await,
+            Transforms::RedisSinkCluster(r) => r.shutdown(message_wrapper).await,
+            Transforms::ParallelMap(s) => s.shutdown(message_wrapper).await,
+            Transforms::PoolConnections(s) => s.shutdown(message_wrapper).await,
+            Transforms::Coalesce(s) => s.shutdown(message_wrapper).await,
+            Transforms::QueryTypeFilter(s) => s.shutdown(message_wrapper).await,
+            Transforms::QueryCounter(s) => s.shutdown(message_wrapper).await,
+        }
+    }
+
     fn get_name(&self) -> &'static str {
         self.into()
     }
@@ -336,6 +361,15 @@ impl<'a> Wrapper<'a> {
         result
     }
 
+    pub async fn call_next_shutdown(mut self) -> Result<()> {
+        let transform = self.transforms.remove(0);
+        let chain_name = self.chain_name.clone();
+
+        CONTEXT_CHAIN_NAME
+            .scope(chain_name, transform.shutdown(self))
+            .await
+    }
+
     #[cfg(test)]
     pub fn new(m: Messages) -> Self {
         Wrapper {
@@ -472,8 +506,18 @@ pub trait Transform: Send {
     ///
     /// In this example `counter` will contain the count of the number of messages seen for this connection.
     /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
-    ///
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
+
+    /// Called when shotover or buffered chain hosting the transform is shutting down.
+    /// The default implementation will automatically `call_next_shutdown` when non terminating.
+    /// So if you need to override this method to provide your own shutdown logic make sure to do the same.
+    async fn shutdown<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> Result<()> {
+        if self.is_terminating() {
+            self.transform(message_wrapper).await.map(|_| ())
+        } else {
+            message_wrapper.call_next_shutdown().await
+        }
+    }
 
     /// This method provides a hook into chain setup that allows you to perform any chain setup
     /// needed before receiving traffic. It is generally recommended to do any setup on the first query

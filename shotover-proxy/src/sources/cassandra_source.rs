@@ -90,7 +90,7 @@ impl CassandraSource {
                         }
                     }
                     _ = trigger_shutdown_rx.changed() => {
-                        info!("cassandra source shutting down")
+                        listener.shutdown().await;
                     }
                 }
             }
