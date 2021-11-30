@@ -86,7 +86,7 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
                     Some(ref frag) => {
                         let current = get_timestamp(frag);
                         if candidate > current {
-                            newest_fragment.replace(fragment);
+                            newest_fragment = Some(fragment);
                         }
                     }
                 }
@@ -97,7 +97,7 @@ fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse
                     Some(ref frag) => {
                         let current = get_size(frag);
                         if candidate > current {
-                            biggest_fragment.replace(fragment);
+                            biggest_fragment = Some(fragment);
                         }
                     }
                 }

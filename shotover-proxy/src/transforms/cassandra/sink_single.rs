@@ -72,7 +72,7 @@ impl CassandraSinkSingle {
                     );
                     // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
                     conn_pool.connect(1).await?;
-                    self.outbound.replace(conn_pool);
+                    self.outbound = Some(conn_pool);
                 }
                 Some(ref mut outbound_framed_codec) => {
                     trace!("sending frame upstream");

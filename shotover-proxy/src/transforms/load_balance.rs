@@ -56,27 +56,25 @@ impl Transform for ConnectionBalanceAndPool {
             let mut guard = self.other_connections.lock().await;
             if guard.len() < self.parallelism {
                 let chain = self.chain_to_clone.clone().into_buffered_chain(5);
-                self.active_connection.replace(chain.clone());
+                self.active_connection = Some(chain.clone());
                 guard.push(chain);
             } else {
                 //take the first available existing change and grab its reference
                 let top = guard.remove(0);
-                self.active_connection.replace(top.clone());
+                self.active_connection = Some(top.clone());
                 // put the chain at the back of the list
                 guard.push(top);
             }
         }
-        if let Some(chain) = &mut self.active_connection {
-            chain
-                .process_request(
-                    message_wrapper,
-                    "Connection Balance and Pooler".to_string(),
-                    None,
-                )
-                .await
-        } else {
-            unreachable!()
-        }
+        self.active_connection
+            .as_mut()
+            .unwrap()
+            .process_request(
+                message_wrapper,
+                "Connection Balance and Pooler".to_string(),
+                None,
+            )
+            .await
     }
 
     fn is_terminating(&self) -> bool {

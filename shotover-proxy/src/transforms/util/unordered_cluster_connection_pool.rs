@@ -118,8 +118,6 @@ async fn rx_process<C: CodecReadHalf>(
 
     let mut return_message_map: HashMap<u16, Message> = HashMap::new();
 
-    // let foo = timeout(Duration::from_millis(10), )
-
     loop {
         tokio::select! {
             Some(maybe_req) = in_r.next() => {
@@ -172,7 +170,6 @@ async fn rx_process<C: CodecReadHalf>(
                 }
             },
             else => {
-                // info!("tjos happened");
                 break
             }
         }
