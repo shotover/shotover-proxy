@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use std::time::Instant;
 use tokio::runtime::Handle;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::info;
 use tracing::warn;
@@ -29,7 +29,6 @@ impl SourcesFromConfig for AsyncMpscConfig {
         chain: &TransformChain,
         topics: &mut TopicHolder,
         trigger_shutdown_on_drop_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         if let Some(rx) = topics.get_rx(&self.topic_name) {
             let behavior = self
@@ -41,7 +40,6 @@ impl SourcesFromConfig for AsyncMpscConfig {
                 rx,
                 &self.topic_name,
                 Shutdown::new(trigger_shutdown_on_drop_rx),
-                shutdown_complete_tx,
                 behavior,
             ))])
         } else {
@@ -66,7 +64,6 @@ impl AsyncMpsc {
         mut rx: Receiver<ChannelMessage>,
         name: &str,
         mut shutdown: Shutdown,
-        shutdown_complete: mpsc::Sender<()>,
         max_behavior: CoalesceBehavior,
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
@@ -74,9 +71,7 @@ impl AsyncMpsc {
         let mut buffer = Vec::new();
 
         let jh = Handle::current().spawn(async move {
-            // This will go out of scope once we exit the loop below, indicating we are done and shutdown
-            let _notifier = shutdown_complete;
-            let mut last_write: Instant = Instant::now();
+            let mut last_write = Instant::now();
             while !shutdown.is_shutdown() {
                 let channel_message = tokio::select! {
                     res = rx.recv() => {

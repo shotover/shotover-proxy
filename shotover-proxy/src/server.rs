@@ -95,10 +95,6 @@ pub struct TcpCodecListener<C: Codec> {
     /// safe terminal state, and completes the task.
     trigger_shutdown_rx: watch::Receiver<bool>,
 
-    /// Used as part of the graceful shutdown process to wait for client
-    /// connections to complete processing.
-    shutdown_complete_tx: mpsc::Sender<()>,
-
     tls: Option<TlsAcceptor>,
 
     /// Keep track of how many messages we have received so we can use it as a request id.
@@ -115,7 +111,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         codec: C,
         limit_connections: Arc<Semaphore>,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
         tls: Option<TlsAcceptor>,
     ) -> Self {
         register_gauge!("shotover_available_connections", Unit::Count, "source" => source_name.clone());
@@ -130,7 +125,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             codec,
             limit_connections,
             trigger_shutdown_rx,
-            shutdown_complete_tx,
             tls,
             message_count: 0,
         }
@@ -224,9 +218,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
                 // Receive shutdown notifications.
                 shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
-
-                // Notifies the receiver half once all clones are dropped.
-                _shutdown_complete: self.shutdown_complete_tx.clone(),
 
                 tls: self.tls.clone(),
             };
@@ -331,8 +322,6 @@ pub struct Handler<C: Codec> {
     /// processed for the peer is continued until it reaches a safe state, at
     /// which point the connection is terminated.
     shutdown: Shutdown,
-
-    _shutdown_complete: mpsc::Sender<()>,
 
     tls: Option<TlsAcceptor>,
 }

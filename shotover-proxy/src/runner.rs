@@ -233,8 +233,8 @@ pub async fn run(
     );
 
     match topology.run_chains(trigger_shutdown_rx).await {
-        Ok((_, mut shutdown_complete_rx)) => {
-            shutdown_complete_rx.recv().await;
+        Ok(sources) => {
+            futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;
             info!("Shotover was shutdown cleanly.");
             Ok(())
         }

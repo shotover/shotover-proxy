@@ -108,13 +108,11 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<(Vec<Sources>, Receiver<()>)> {
+    ) -> Result<Vec<Sources>> {
         let mut topics = self.build_topics();
         info!("Loaded topics {:?}", topics.topics_tx.keys());
 
         let mut sources_list: Vec<Sources> = Vec::new();
-
-        let (shutdown_complete_tx, shutdown_complete_rx) = channel(1);
 
         let chains = self.build_chains(&topics).await?;
         info!("Loaded chains {:?}", chains.keys());
@@ -138,12 +136,7 @@ impl Topology {
                 if let Some(chain) = chains.get(chain_name.as_str()) {
                     sources_list.append(
                         &mut source_config
-                            .get_source(
-                                chain,
-                                &mut topics,
-                                trigger_shutdown_rx.clone(),
-                                shutdown_complete_tx.clone(),
-                            )
+                            .get_source(chain, &mut topics, trigger_shutdown_rx.clone())
                             .await?,
                     );
                 } else {
@@ -165,7 +158,7 @@ impl Topology {
             "Loaded sources [{:?}] and linked to chains",
             &self.source_to_chain_mapping.keys()
         );
-        Ok((sources_list, shutdown_complete_rx))
+        Ok(sources_list)
     }
 
     pub fn from_file(filepath: String) -> Result<Topology> {
@@ -268,7 +261,7 @@ impl Topology {
 
 #[cfg(test)]
 mod topology_tests {
-    use tokio::sync::{mpsc, watch};
+    use tokio::sync::watch;
 
     use crate::{
         sources::{redis_source::RedisConfig, Sources, SourcesConfig},
@@ -282,9 +275,7 @@ mod topology_tests {
 
     use super::{Topology, TopologyConfig};
 
-    async fn run_test_topology(
-        chain: Vec<TransformsConfig>,
-    ) -> anyhow::Result<(Vec<Sources>, mpsc::Receiver<()>)> {
+    async fn run_test_topology(chain: Vec<TransformsConfig>) -> anyhow::Result<Vec<Sources>> {
         let mut chain_config = HashMap::new();
         chain_config.insert("redis_chain".to_string(), chain);
 

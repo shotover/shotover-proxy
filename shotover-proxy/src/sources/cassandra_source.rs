@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 use tokio::runtime::Handle;
-use tokio::sync::{mpsc, watch, Semaphore};
+use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -31,7 +31,6 @@ impl SourcesFromConfig for CassandraConfig {
         chain: &TransformChain,
         _topics: &mut TopicHolder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Cassandra(
             CassandraSource::new(
@@ -39,7 +38,6 @@ impl SourcesFromConfig for CassandraConfig {
                 self.listen_addr.clone(),
                 self.cassandra_ks.clone(),
                 trigger_shutdown_rx,
-                shutdown_complete_tx,
                 self.query_processing.unwrap_or(false),
                 self.connection_limit,
                 self.hard_connection_limit,
@@ -63,7 +61,6 @@ impl CassandraSource {
         listen_addr: String,
         cassandra_ks: HashMap<String, Vec<String>>,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
         query_processing: bool,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
@@ -80,7 +77,6 @@ impl CassandraSource {
             CassandraCodec2::new(cassandra_ks, !query_processing),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
-            shutdown_complete_tx,
             None,
         );
 

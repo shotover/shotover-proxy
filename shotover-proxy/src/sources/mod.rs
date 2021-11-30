@@ -5,7 +5,7 @@ use crate::sources::redis_source::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChain;
 use async_trait::async_trait;
 use serde::Deserialize;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use anyhow::Result;
@@ -41,11 +41,11 @@ pub enum Sources {
 }
 
 impl Sources {
-    pub fn get_join_handles<T>(&self) -> &JoinHandle<Result<()>> {
+    pub fn into_join_handle(self) -> JoinHandle<Result<()>> {
         match self {
-            Sources::Cassandra(c) => &c.join_handle,
-            Sources::Mpsc(m) => &m.rx_handle,
-            Sources::Redis(r) => &r.join_handle,
+            Sources::Cassandra(c) => c.join_handle,
+            Sources::Mpsc(m) => m.rx_handle,
+            Sources::Redis(r) => r.join_handle,
         }
     }
 }
@@ -63,21 +63,11 @@ impl SourcesConfig {
         chain: &TransformChain,
         topics: &mut TopicHolder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>> {
         match self {
-            SourcesConfig::Cassandra(c) => {
-                c.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
-                    .await
-            }
-            SourcesConfig::Mpsc(m) => {
-                m.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
-                    .await
-            }
-            SourcesConfig::Redis(r) => {
-                r.get_source(chain, topics, trigger_shutdown_rx, shutdown_complete_tx)
-                    .await
-            }
+            SourcesConfig::Cassandra(c) => c.get_source(chain, topics, trigger_shutdown_rx).await,
+            SourcesConfig::Mpsc(m) => m.get_source(chain, topics, trigger_shutdown_rx).await,
+            SourcesConfig::Redis(r) => r.get_source(chain, topics, trigger_shutdown_rx).await,
         }
     }
 }
@@ -89,6 +79,5 @@ pub trait SourcesFromConfig: Send {
         chain: &TransformChain,
         topics: &mut TopicHolder,
         trigger_shutdown_rx: watch::Receiver<bool>,
-        shutdown_complete_tx: mpsc::Sender<()>,
     ) -> Result<Vec<Sources>>;
 }
