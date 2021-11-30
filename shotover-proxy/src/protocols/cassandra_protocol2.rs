@@ -310,7 +310,7 @@ impl CassandraCodec2 {
             ..
         } = message
         {
-            match ast {
+            match &mut **ast {
                 Statement::Query(query) => {
                     if let SetExpr::Select(select) = &mut query.body {
                         let Select {
@@ -525,7 +525,7 @@ impl CassandraCodec2 {
                             query_values: parsed_string.colmap,
                             projection: parsed_string.projection,
                             query_type: QueryType::Read,
-                            ast: parsed_string.ast.map(ASTHolder::SQL),
+                            ast: parsed_string.ast.map(|x| ASTHolder::SQL(Box::new(x))),
                         }),
                         false,
                         RawFrame::Cassandra(frame),
@@ -849,52 +849,54 @@ mod cassandra_protocol_tests {
                 )])),
                 projection: Some(vec!["*".into()]),
                 query_type: QueryType::Read,
-                ast: Some(ASTHolder::SQL(Statement::Query(Box::new(Query {
-                    with: None,
-                    body: SetExpr::Select(Box::new(Select {
-                        distinct: false,
-                        top: None,
-                        projection: vec![SelectItem::Wildcard],
-                        from: vec![TableWithJoins {
-                            relation: TableFactor::Table {
-                                name: ObjectName(vec![
-                                    Ident {
-                                        value: "system".into(),
-                                        quote_style: None,
-                                    },
-                                    Ident {
-                                        value: "local".into(),
-                                        quote_style: None,
-                                    },
-                                ]),
-                                alias: None,
-                                args: vec![],
-                                with_hints: vec![],
-                            },
-                            joins: vec![],
-                        }],
-                        lateral_views: vec![],
-                        selection: Some(BinaryOp {
-                            left: Box::new(Expr::Identifier(Ident {
-                                value: "key".into(),
-                                quote_style: None,
-                            })),
-                            op: BinaryOperator::Eq,
-                            right: Box::new(Expr::Value(SQLValue::SingleQuotedString(
-                                "local".into(),
-                            ))),
-                        }),
-                        group_by: vec![],
-                        cluster_by: vec![],
-                        distribute_by: vec![],
-                        sort_by: vec![],
-                        having: None,
-                    })),
-                    order_by: vec![],
-                    limit: None,
-                    offset: None,
-                    fetch: None,
-                })))),
+                ast: Some(ASTHolder::SQL(Box::new(Statement::Query(Box::new(
+                    Query {
+                        with: None,
+                        body: SetExpr::Select(Box::new(Select {
+                            distinct: false,
+                            top: None,
+                            projection: vec![SelectItem::Wildcard],
+                            from: vec![TableWithJoins {
+                                relation: TableFactor::Table {
+                                    name: ObjectName(vec![
+                                        Ident {
+                                            value: "system".into(),
+                                            quote_style: None,
+                                        },
+                                        Ident {
+                                            value: "local".into(),
+                                            quote_style: None,
+                                        },
+                                    ]),
+                                    alias: None,
+                                    args: vec![],
+                                    with_hints: vec![],
+                                },
+                                joins: vec![],
+                            }],
+                            lateral_views: vec![],
+                            selection: Some(BinaryOp {
+                                left: Box::new(Expr::Identifier(Ident {
+                                    value: "key".into(),
+                                    quote_style: None,
+                                })),
+                                op: BinaryOperator::Eq,
+                                right: Box::new(Expr::Value(SQLValue::SingleQuotedString(
+                                    "local".into(),
+                                ))),
+                            }),
+                            group_by: vec![],
+                            cluster_by: vec![],
+                            distribute_by: vec![],
+                            sort_by: vec![],
+                            having: None,
+                        })),
+                        order_by: vec![],
+                        limit: None,
+                        offset: None,
+                        fetch: None,
+                    },
+                ))))),
             }),
             modified: false,
             original: RawFrame::Cassandra(Frame {

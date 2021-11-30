@@ -25,7 +25,7 @@ pub enum RedisError {
 
 impl RedisError {
     fn from_message(error: &str) -> RedisError {
-        match error.splitn(2, ' ').next() {
+        match error.split_once(' ').map(|x| x.0) {
             Some("NOAUTH") => RedisError::NotAuthenticated,
             Some("NOPERM") => RedisError::NotAuthorized,
             Some("WRONGPASS") => RedisError::BadCredentials,

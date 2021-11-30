@@ -170,9 +170,7 @@ pub struct ShotoverProcess {
 impl ShotoverProcess {
     #[allow(unused)]
     pub fn new(topology_path: &str) -> ShotoverProcess {
-        // TODO: this will be nicer when --profile is stabilized
-        //let all_args = ["run", "--profile", env!("PROFILE"), "--", "-t", topology_path];
-
+        // Set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
         let all_args = if env!("PROFILE") == "release" {
             vec!["run", "--release", "--", "-t", topology_path]
         } else {

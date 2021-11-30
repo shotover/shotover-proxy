@@ -66,7 +66,7 @@ fn get_timestamp(frag: &QueryResponse) -> i64 {
 }
 
 fn get_size(frag: &QueryResponse) -> usize {
-    frag.result.as_ref().map_or(0, |v| std::mem::size_of_val(v))
+    frag.result.as_ref().map_or(0, std::mem::size_of_val)
 }
 
 fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse> {

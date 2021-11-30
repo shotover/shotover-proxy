@@ -42,7 +42,7 @@ impl Transform for QueryCounter {
             {
                 match ast {
                     ASTHolder::SQL(statement) => {
-                        let query_type = match statement {
+                        let query_type = match **statement {
                             Statement::Query(_) => "SELECT",
                             Statement::Insert { .. } => "INSERT",
                             Statement::Copy { .. } => "COPY",

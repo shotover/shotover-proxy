@@ -46,7 +46,7 @@ fn test_cluster() {
         "examples/cassandra-cluster/topology3.yaml",
     ]
     .into_iter()
-    .map(|s| ShotoverManager::from_topology_file_without_observability(s))
+    .map(ShotoverManager::from_topology_file_without_observability)
     .collect();
 
     test_create_keyspace(cassandra_connection("127.0.0.1", 9042));
