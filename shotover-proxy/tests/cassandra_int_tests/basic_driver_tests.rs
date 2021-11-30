@@ -12,7 +12,7 @@ mod keyspace {
     };
 
     fn test_create_keyspace(session: &Session) {
-        run_query(session, "CREATE KEYSPACE IF NOT EXISTS keyspace_tests_create WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(session, "CREATE KEYSPACE keyspace_tests_create WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         assert_query_result(
             session,
             "SELECT release_version FROM system.local",
@@ -37,7 +37,7 @@ mod keyspace {
     }
 
     fn test_drop_keyspace(session: &Session) {
-        run_query(session, "CREATE KEYSPACE IF NOT EXISTS keyspace_tests_delete_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(session, "CREATE KEYSPACE keyspace_tests_delete_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         assert_query_result(
             session,
             "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name='keyspace_tests_delete_me';",
@@ -51,7 +51,7 @@ mod keyspace {
     }
 
     fn test_alter_keyspace(session: &Session) {
-        run_query(session, "CREATE KEYSPACE IF NOT EXISTS keyspace_tests_alter_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 } AND DURABLE_WRITES = false;");
+        run_query(session, "CREATE KEYSPACE keyspace_tests_alter_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 } AND DURABLE_WRITES = false;");
         run_query(
             session,
             "ALTER KEYSPACE keyspace_tests_alter_me WITH DURABLE_WRITES = true;",
