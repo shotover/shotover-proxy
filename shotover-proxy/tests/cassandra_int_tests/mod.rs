@@ -1,4 +1,4 @@
-use cassandra_cpp::{Cluster, Session, Statement, Value, ValueType};
+use cassandra_cpp::{stmt, Cluster, Session, Value, ValueType};
 
 mod basic_driver_tests;
 
@@ -13,11 +13,12 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.connect().unwrap()
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 enum ResultValue {
     Text(String),
     Varchar(String),
     Int(i64),
+    Boolean(bool),
 }
 
 impl ResultValue {
@@ -26,6 +27,7 @@ impl ResultValue {
             ValueType::TEXT => ResultValue::Text(value.get_string().unwrap()),
             ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
             ValueType::INT => ResultValue::Int(value.get_i64().unwrap()),
+            ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
             ty => todo!(
                 "The test infrastructure hasnt implemented the type {} yet, you should add it.",
                 ty
@@ -34,11 +36,21 @@ impl ResultValue {
     }
 }
 
-fn assert_query_result(session: &Session, query: Statement, expected_rows: &[&[ResultValue]]) {
-    let result = session.execute(&query).wait().unwrap();
-    let result_rows: Vec<Vec<ResultValue>> = result
+fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
+    let result_rows = run_query(session, query);
+    assert_eq!(result_rows, expected_rows);
+}
+
+fn assert_query_result_contains(session: &Session, query: &str, row: &[ResultValue]) {
+    let result_rows = run_query(session, query);
+    assert!(result_rows.contains(&row.to_vec()));
+}
+
+fn run_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
+    let statement = stmt!(query);
+    let result = session.execute(&statement).wait().unwrap();
+    result
         .into_iter()
         .map(|x| x.into_iter().map(ResultValue::new).collect())
-        .collect();
-    assert_eq!(result_rows, expected_rows);
+        .collect()
 }
