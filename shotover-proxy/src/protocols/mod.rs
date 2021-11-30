@@ -1,7 +1,7 @@
 pub mod cassandra_protocol2;
 pub mod redis_codec;
 
-pub use cassandra_proto::frame::Frame as CassandraFrame;
+pub use cassandra_protocol::frame::Frame as CassandraFrame;
 pub use redis_protocol::resp2::prelude::Frame as RedisFrame;
 
 use anyhow::Result;

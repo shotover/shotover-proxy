@@ -13,7 +13,7 @@ use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use bytes::{BufMut, Bytes, BytesMut};
-use cassandra_proto::frame::{Frame, Opcode};
+use cassandra_protocol::frame::{Frame, Opcode};
 use itertools::Itertools;
 use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
@@ -344,13 +344,8 @@ impl Transform for SimpleRedisCache {
         {
             for m in &mut message_wrapper.messages {
                 if let RawFrame::Cassandra(Frame {
-                    version: _,
-                    flags: _,
                     opcode: Opcode::Query,
-                    stream: _,
-                    body: _,
-                    tracing_id: _,
-                    warnings: _,
+                    ..
                 }) = &m.original
                 {
                     m.generate_message_details_query();

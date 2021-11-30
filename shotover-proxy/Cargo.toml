@@ -52,9 +52,9 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = "3.0.1"
-cassandra-proto = { git = "https://github.com/shotover/cassandra-proto", branch = "OPTION_fix", features = ["v4"]}
-rdkafka = { version = "0.27" }
-crc16 = { version = "0.4.0" }
+cassandra-protocol = "=1.0.0-beta.2"
+rdkafka = "0.27"
+crc16 = "0.4.0"
 
 #Crypto
 sodiumoxide = "0.2.5"

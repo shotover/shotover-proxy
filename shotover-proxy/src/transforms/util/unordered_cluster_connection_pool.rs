@@ -113,10 +113,10 @@ async fn rx_process<C: CodecReadHalf>(
     codec: C,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec);
-    let mut return_channel_map: HashMap<u16, (tokio::sync::oneshot::Sender<Response>, Message)> =
+    let mut return_channel_map: HashMap<i16, (tokio::sync::oneshot::Sender<Response>, Message)> =
         HashMap::new();
 
-    let mut return_message_map: HashMap<u16, Message> = HashMap::new();
+    let mut return_message_map: HashMap<i16, Message> = HashMap::new();
 
     loop {
         tokio::select! {
