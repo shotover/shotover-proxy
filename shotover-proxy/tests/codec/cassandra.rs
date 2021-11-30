@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::SinkExt;
-use shotover_proxy::protocols::cassandra_protocol2::CassandraCodec2;
+use shotover_proxy::protocols::cassandra_codec::CassandraCodec;
 use std::collections::HashMap;
 use tokio::io::BufWriter;
 use tokio_stream::StreamExt;
@@ -16,8 +16,8 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
         vec!["pk".to_string(), "clustering".to_string()],
     );
 
-    let codec = CassandraCodec2::new(pk_map.clone(), true);
-    let write_codec = CassandraCodec2::new(pk_map.clone(), true);
+    let codec = CassandraCodec::new(pk_map.clone(), true);
+    let write_codec = CassandraCodec::new(pk_map.clone(), true);
     let stream = tokio_stream::iter(
         packet_stream
             .into_iter()
