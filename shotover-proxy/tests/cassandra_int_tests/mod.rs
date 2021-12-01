@@ -36,21 +36,39 @@ impl ResultValue {
     }
 }
 
-fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
-    let result_rows = run_query(session, query);
-    assert_eq!(result_rows, expected_rows);
-}
-
-fn assert_query_result_contains(session: &Session, query: &str, row: &[ResultValue]) {
-    let result_rows = run_query(session, query);
-    assert!(result_rows.contains(&row.to_vec()));
-}
-
-fn run_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
+/// Execute a `query` against the `session` and return result rows
+fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
     let statement = stmt!(query);
     let result = session.execute(&statement).wait().unwrap();
     result
         .into_iter()
         .map(|x| x.into_iter().map(ResultValue::new).collect())
         .collect()
+}
+
+/// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
+fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
+    let result_rows = execute_query(session, query);
+    assert!(expected_rows.len() == result_rows.len());
+    expected_rows
+        .iter()
+        .map(|x| x.to_vec())
+        .collect::<Vec<Vec<ResultValue>>>()
+        .iter()
+        .for_each(|item| {
+            if !result_rows.contains(item) {
+                panic!("{:?} missing from results", item);
+            }
+        });
+}
+
+/// Execute a `query` against the `session` and assert the result rows contain `row`
+fn assert_query_result_contains_row(session: &Session, query: &str, row: &[ResultValue]) {
+    let result_rows = execute_query(session, query);
+    assert!(result_rows.contains(&row.to_vec()));
+}
+
+/// Execute a `query` against the `session` and assert that no rows were returned
+fn run_query(session: &Session, query: &str) {
+    assert_query_result(session, query, &[]);
 }

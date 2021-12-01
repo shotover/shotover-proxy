@@ -8,7 +8,7 @@ mod keyspace {
     use cassandra_cpp::Session;
 
     use crate::cassandra_int_tests::{
-        assert_query_result, assert_query_result_contains, run_query, ResultValue,
+        assert_query_result, assert_query_result_contains_row, run_query, ResultValue,
     };
 
     fn test_create_keyspace(session: &Session) {
@@ -19,7 +19,7 @@ mod keyspace {
             &[&[ResultValue::Varchar("3.11.10".into())]],
         );
 
-        assert_query_result_contains(
+        assert_query_result_contains_row(
             session,
             "SELECT keyspace_name FROM system_schema.keyspaces;",
             &[ResultValue::Varchar("keyspace_tests_create".into())],
