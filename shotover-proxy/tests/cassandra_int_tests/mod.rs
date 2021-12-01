@@ -13,7 +13,8 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.connect().unwrap()
 }
 
-#[derive(PartialEq, Debug, Clone)]
+// first turn ResultValue into derive soup
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 enum ResultValue {
     Text(String),
     Varchar(String),
@@ -48,24 +49,24 @@ fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
 fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
-    let result_rows = execute_query(session, query);
-    assert!(expected_rows.len() == result_rows.len());
-    expected_rows
-        .iter()
-        .map(|x| x.to_vec())
-        .collect::<Vec<Vec<ResultValue>>>()
-        .iter()
-        .for_each(|item| {
-            if !result_rows.contains(item) {
-                panic!("{:?} missing from results", item);
-            }
-        });
+    let mut result_rows = execute_query(session, query);
+    result_rows.sort();
+
+    let mut expected_rows: Vec<_> = expected_rows.iter().map(|x| x.to_vec()).collect();
+    expected_rows.sort();
+
+    assert_eq!(result_rows, expected_rows);
 }
 
 /// Execute a `query` against the `session` and assert the result rows contain `row`
 fn assert_query_result_contains_row(session: &Session, query: &str, row: &[ResultValue]) {
     let result_rows = execute_query(session, query);
-    assert!(result_rows.contains(&row.to_vec()));
+    if !result_rows.contains(&row.to_vec()) {
+        panic!(
+            "expected row: {:?} missing from actual rows: {:?}",
+            row, result_rows
+        );
+    }
 }
 
 /// Execute a `query` against the `session` and assert that no rows were returned
