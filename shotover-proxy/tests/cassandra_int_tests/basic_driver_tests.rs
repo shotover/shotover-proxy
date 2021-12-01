@@ -172,6 +172,39 @@ mod udt {
     }
 }
 
+mod functions {
+    use cassandra_cpp::Session;
+
+    use crate::cassandra_int_tests::run_query;
+
+    // fn drop_function() {
+    //     todo!();
+    // }
+
+    fn create_function(session: &Session) {
+        run_query(
+            session,
+            "CREATE FUNCTION IF NOT EXISTS test_function_keyspace.my_function (a int, b int) RETURNS NULL ON NULL INPUT RETURNS int LANGUAGE javascript AS $$ a * b $$;",
+        )
+    }
+
+    pub fn test(session: &Session) {
+        run_query(session, "CREATE KEYSPACE test_function_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(
+            session,
+            "CREATE TABLE test_function_keyspace.test_function (id int PRIMARY KEY, x int, y int);",
+        );
+        run_query(
+            session,
+            "BEGIN BATCH INSERT INTO test_function_keyspace.test_function (id, x, y) VALUES (1, 1, 1); APPLY BATCH;",
+        );
+
+        create_function(session);
+    }
+}
+
+mod aggregate {}
+
 #[test]
 #[serial]
 fn test_cluster() {
@@ -192,6 +225,7 @@ fn test_cluster() {
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
+    functions::test(&connection);
 }
 
 #[test]
@@ -199,6 +233,7 @@ fn test_cluster() {
 fn test_passthrough() {
     let _compose = DockerCompose::new("examples/cassandra-passthrough/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
+
     let _shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-passthrough/topology.yaml");
 
@@ -207,4 +242,5 @@ fn test_passthrough() {
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
+    functions::test(&connection);
 }
