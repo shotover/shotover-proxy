@@ -102,11 +102,7 @@ mod table {
             "SELECT table_name FROM system_schema.tables;",
             &[ResultValue::Varchar("delete_me".into())],
         );
-        assert_query_result(
-            session,
-            "DROP TABLE IF EXISTS test_table_keyspace.delete_me;",
-            &[],
-        );
+        run_query(session, "DROP TABLE test_table_keyspace.delete_me;");
         assert_query_result_not_contains_row(
             session,
             "SELECT table_name FROM system_schema.tables;",

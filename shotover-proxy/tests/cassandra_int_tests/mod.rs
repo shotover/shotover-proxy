@@ -72,7 +72,12 @@ fn assert_query_result_contains_row(session: &Session, query: &str, row: &[Resul
 /// Execute a `query` against the `session` and assert the result rows does not contain `row`
 fn assert_query_result_not_contains_row(session: &Session, query: &str, row: &[ResultValue]) {
     let result_rows = execute_query(session, query);
-    assert!(!result_rows.contains(&row.to_vec()));
+    if result_rows.contains(&row.to_vec()) {
+        panic!(
+            "unexpected row: {:?} was found in actual rows: {:?}",
+            row, result_rows
+        );
+    }
 }
 
 /// Execute a `query` against the `session` and assert that no rows were returned
