@@ -8,3 +8,7 @@ services:
       MAX_HEAP_SIZE: "128M"
       MIN_HEAP_SIZE: "128M"
       HEAP_NEWSIZE: "24M"
+      CASSANDRA_ENABLE_SCRIPTED_USER_DEFINED_FUNCTIONS: "true"
+      CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
+    volumes:
+      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
