@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::message::{Message, Messages, QueryResponse};
-use crate::protocols::cassandra_protocol2::CassandraCodec2;
+use crate::protocols::cassandra_codec::CassandraCodec;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use std::collections::HashMap;
 use tokio::time::timeout;
@@ -38,7 +38,7 @@ impl CassandraSinkSingleConfig {
 #[derive(Debug)]
 pub struct CassandraSinkSingle {
     address: String,
-    outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec2>>,
+    outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
 }
@@ -68,7 +68,7 @@ impl CassandraSinkSingle {
                     trace!("creating outbound connection {:?}", self.address);
                     let mut conn_pool = OwnedUnorderedConnectionPool::new(
                         self.address.clone(),
-                        CassandraCodec2::new(self.cassandra_ks.clone(), self.bypass),
+                        CassandraCodec::new(self.cassandra_ks.clone(), self.bypass),
                     );
                     // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
                     conn_pool.connect(1).await?;

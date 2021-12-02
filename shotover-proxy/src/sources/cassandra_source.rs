@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::config::topology::TopicHolder;
-use crate::protocols::cassandra_protocol2::CassandraCodec2;
+use crate::protocols::cassandra_codec::CassandraCodec;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::chain::TransformChain;
@@ -74,7 +74,7 @@ impl CassandraSource {
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            CassandraCodec2::new(cassandra_ks, !query_processing),
+            CassandraCodec::new(cassandra_ks, !query_processing),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             None,

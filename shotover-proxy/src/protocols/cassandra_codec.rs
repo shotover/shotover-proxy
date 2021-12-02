@@ -37,7 +37,7 @@ use crate::message::{
 use crate::protocols::RawFrame;
 
 #[derive(Debug, Clone)]
-pub struct CassandraCodec2 {
+pub struct CassandraCodec {
     compressor: Compression,
     pk_col_map: HashMap<String, Vec<String>>,
     bypass: bool,
@@ -58,9 +58,9 @@ pub(crate) struct ParsedCassandraQueryString {
     pub(crate) ast: Option<Statement>,
 }
 
-impl CassandraCodec2 {
-    pub fn new(pk_col_map: HashMap<String, Vec<String>>, bypass: bool) -> CassandraCodec2 {
-        CassandraCodec2 {
+impl CassandraCodec {
+    pub fn new(pk_col_map: HashMap<String, Vec<String>>, bypass: bool) -> CassandraCodec {
+        CassandraCodec {
             compressor: Compression::None,
             pk_col_map,
             bypass,
@@ -72,8 +72,8 @@ impl CassandraCodec2 {
         mut query: QueryMessage,
         default_consistency: Consistency,
     ) -> Frame {
-        CassandraCodec2::rebuild_ast_in_message(&mut query);
-        CassandraCodec2::rebuild_query_string_from_ast(&mut query);
+        CassandraCodec::rebuild_ast_in_message(&mut query);
+        CassandraCodec::rebuild_query_string_from_ast(&mut query);
         let QueryMessage {
             query_string,
             query_values,
@@ -190,7 +190,7 @@ impl CassandraCodec2 {
     }
 }
 
-impl CassandraCodec2 {
+impl CassandraCodec {
     fn value_to_expr(v: &Value) -> SQLValue {
         match v {
             Value::NULL => SQLValue::Null,
@@ -238,17 +238,17 @@ impl CassandraCodec2 {
         if let BinaryOp { left, op, right } = node {
             match op {
                 BinaryOperator::And => {
-                    CassandraCodec2::rebuild_binops_tree(left, map, use_bind);
-                    CassandraCodec2::rebuild_binops_tree(right, map, use_bind);
+                    CassandraCodec::rebuild_binops_tree(left, map, use_bind);
+                    CassandraCodec::rebuild_binops_tree(right, map, use_bind);
                 }
                 BinaryOperator::Eq => {
                     if let Identifier(i) = left.borrow_mut() {
                         if let Expr::Value(v) = right.borrow_mut() {
                             if let Some((_, new_v)) = map.get_key_value(&i.to_string()) {
                                 *v = if use_bind {
-                                    CassandraCodec2::value_to_bind(new_v)
+                                    CassandraCodec::value_to_bind(new_v)
                                 } else {
-                                    CassandraCodec2::value_to_expr(new_v)
+                                    CassandraCodec::value_to_expr(new_v)
                                 };
                             }
                         }
@@ -263,13 +263,13 @@ impl CassandraCodec2 {
         if let BinaryOp { left, op, right } = node {
             match op {
                 BinaryOperator::And => {
-                    CassandraCodec2::binary_ops_to_hashmap(left, map);
-                    CassandraCodec2::binary_ops_to_hashmap(right, map);
+                    CassandraCodec::binary_ops_to_hashmap(left, map);
+                    CassandraCodec::binary_ops_to_hashmap(right, map);
                 }
                 BinaryOperator::Eq => {
                     if let Identifier(i) = left.borrow() {
                         if let Expr::Value(v) = right.borrow() {
-                            map.insert(i.to_string(), CassandraCodec2::expr_to_value(v));
+                            map.insert(i.to_string(), CassandraCodec::expr_to_value(v));
                         }
                     }
                 }
@@ -284,7 +284,7 @@ impl CassandraCodec2 {
             for value in &v.0 {
                 for ex in value {
                     if let Expr::Value(v) = ex {
-                        cumulator.push(CassandraCodec2::expr_to_string(v));
+                        cumulator.push(CassandraCodec::expr_to_string(v));
                     }
                 }
             }
@@ -348,7 +348,7 @@ impl CassandraCodec2 {
                         //Rebuild selection
                         // TODO allow user control of bind
                         if let Some(selection) = selection {
-                            CassandraCodec2::rebuild_binops_tree(selection, query_values, true);
+                            CassandraCodec::rebuild_binops_tree(selection, query_values, true);
                         }
                     }
                 }
@@ -388,7 +388,7 @@ impl CassandraCodec2 {
                                 namespace = name.0.iter().map(|a| a.value.clone()).collect();
                             }
                             if let Some(sel) = &s.selection {
-                                CassandraCodec2::binary_ops_to_hashmap(sel, colmap.borrow_mut());
+                                CassandraCodec::binary_ops_to_hashmap(sel, colmap.borrow_mut());
                             }
                             if let Some(pk_col_names) = pk_col_map.get(&namespace.join(".")) {
                                 for pk_component in pk_col_names {
@@ -408,7 +408,7 @@ impl CassandraCodec2 {
                         ..
                     } => {
                         namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
-                        let values = CassandraCodec2::get_column_values(&source.body);
+                        let values = CassandraCodec::get_column_values(&source.body);
                         for (i, c) in columns.iter().enumerate() {
                             projection.push(c.value.clone());
                             if let Some(v) = values.get(i) {
@@ -434,12 +434,12 @@ impl CassandraCodec2 {
                         namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
                         for assignment in assignments {
                             if let Expr::Value(v) = assignment.clone().value {
-                                let converted_value = CassandraCodec2::expr_to_value(v.borrow());
+                                let converted_value = CassandraCodec::expr_to_value(v.borrow());
                                 colmap.insert(assignment.id.value.clone(), converted_value);
                             }
                         }
                         if let Some(s) = selection {
-                            CassandraCodec2::binary_ops_to_hashmap(s, &mut primary_key);
+                            CassandraCodec::binary_ops_to_hashmap(s, &mut primary_key);
                         }
                     }
                     Delete {
@@ -448,7 +448,7 @@ impl CassandraCodec2 {
                     } => {
                         namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
                         if let Some(s) = selection {
-                            CassandraCodec2::binary_ops_to_hashmap(s, &mut primary_key);
+                            CassandraCodec::binary_ops_to_hashmap(s, &mut primary_key);
                         }
                     }
                     _ => {}
@@ -513,7 +513,7 @@ impl CassandraCodec2 {
             Opcode::Query => {
                 if let Ok(RequestBody::Query(body)) = frame.request_body() {
                     let parsed_string =
-                        CassandraCodec2::parse_query_string(body.query.as_str(), &self.pk_col_map);
+                        CassandraCodec::parse_query_string(body.query.as_str(), &self.pk_col_map);
                     if parsed_string.ast.is_none() {
                         // TODO: Currently this will probably catch schema changes that don't match
                         // what the SQL parser expects
@@ -535,7 +535,7 @@ impl CassandraCodec2 {
                 }
                 vec![Message::new_raw(RawFrame::Cassandra(frame))]
             }
-            Opcode::Result => CassandraCodec2::build_response_message(frame, None),
+            Opcode::Result => CassandraCodec::build_response_message(frame, None),
             Opcode::Error => {
                 if let Ok(ResponseBody::Error(body)) = frame.response_body() {
                     return vec![Message::new_response(
@@ -565,7 +565,7 @@ impl CassandraCodec2 {
     }
 }
 
-impl Decoder for CassandraCodec2 {
+impl Decoder for CassandraCodec {
     type Item = Messages;
     type Error = anyhow::Error;
 
@@ -633,16 +633,16 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
     }
 }
 
-impl CassandraCodec2 {
+impl CassandraCodec {
     fn encode_message(&mut self, item: Message) -> Result<Frame> {
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
             match item.details {
                 MessageDetails::Query(qm) => {
-                    CassandraCodec2::build_cassandra_query_frame(qm, Consistency::LocalQuorum)
+                    CassandraCodec::build_cassandra_query_frame(qm, Consistency::LocalQuorum)
                 }
-                MessageDetails::Response(qr) => CassandraCodec2::build_cassandra_response_frame(
+                MessageDetails::Response(qr) => CassandraCodec::build_cassandra_response_frame(
                     qr,
                     get_cassandra_frame(item.original)?,
                 ),
@@ -655,7 +655,7 @@ impl CassandraCodec2 {
     }
 }
 
-impl Encoder<Messages> for CassandraCodec2 {
+impl Encoder<Messages> for CassandraCodec {
     type Error = anyhow::Error;
 
     fn encode(
@@ -684,7 +684,7 @@ mod cassandra_protocol_tests {
     use crate::message::{
         ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
     };
-    use crate::protocols::cassandra_protocol2::CassandraCodec2;
+    use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::RawFrame;
     use bytes::BytesMut;
     use cassandra_protocol::frame::{Direction, Flags, Frame, Opcode, Version};
@@ -698,7 +698,7 @@ mod cassandra_protocol_tests {
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame_codec_roundtrip(
-        codec: &mut CassandraCodec2,
+        codec: &mut CassandraCodec,
         raw_frame: &[u8],
         expected_messages: Vec<Message>,
     ) {
@@ -715,14 +715,14 @@ mod cassandra_protocol_tests {
         assert_eq!(raw_frame, &dest);
     }
 
-    fn new_codec() -> CassandraCodec2 {
+    fn new_codec() -> CassandraCodec {
         let mut pk_map = HashMap::new();
         pk_map.insert("test.simple".to_string(), vec!["pk".to_string()]);
         pk_map.insert(
             "test.clustering".to_string(),
             vec!["pk".to_string(), "clustering".to_string()],
         );
-        CassandraCodec2::new(pk_map, false)
+        CassandraCodec::new(pk_map, false)
     }
 
     #[test]
