@@ -1,37 +1,74 @@
 use crate::helpers::ShotoverManager;
-use cassandra_cpp::{stmt, Session};
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
-use crate::cassandra_int_tests::{assert_query_result, cassandra_connection, ResultValue};
+use crate::cassandra_int_tests::cassandra_connection;
 
-fn test_create_keyspace(session: Session) {
-    assert_query_result(
-        &session,
-        stmt!(
-            "CREATE KEYSPACE IF NOT EXISTS cycling WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
-        ),
-        &[],
-    );
+mod keyspace {
+    use cassandra_cpp::Session;
 
-    assert_query_result(
-        &session,
-        stmt!("SELECT release_version FROM system.local"),
-        &[&[ResultValue::Varchar("3.11.10".into())]],
-    );
+    use crate::cassandra_int_tests::{
+        assert_query_result, assert_query_result_contains_row, run_query, ResultValue,
+    };
 
-    assert_query_result(
-        &session,
-        stmt!("SELECT keyspace_name FROM system_schema.keyspaces;"),
-        &[
-            &[ResultValue::Varchar("cycling".into())],
-            &[ResultValue::Varchar("system_auth".into())],
-            &[ResultValue::Varchar("system_schema".into())],
-            &[ResultValue::Varchar("system_distributed".into())],
-            &[ResultValue::Varchar("system".into())],
-            &[ResultValue::Varchar("system_traces".into())],
-        ],
-    );
+    fn test_create_keyspace(session: &Session) {
+        run_query(session, "CREATE KEYSPACE keyspace_tests_create WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        assert_query_result(
+            session,
+            "SELECT release_version FROM system.local",
+            &[&[ResultValue::Varchar("3.11.10".into())]],
+        );
+
+        assert_query_result_contains_row(
+            session,
+            "SELECT keyspace_name FROM system_schema.keyspaces;",
+            &[ResultValue::Varchar("keyspace_tests_create".into())],
+        );
+    }
+
+    fn test_use_keyspace(session: &Session) {
+        run_query(session, "USE system");
+
+        assert_query_result(
+            session,
+            "SELECT release_version FROM local",
+            &[&[ResultValue::Varchar("3.11.10".into())]],
+        );
+    }
+
+    fn test_drop_keyspace(session: &Session) {
+        run_query(session, "CREATE KEYSPACE keyspace_tests_delete_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        assert_query_result(
+            session,
+            "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name='keyspace_tests_delete_me';",
+            &[&[ResultValue::Varchar("keyspace_tests_delete_me".into())]],
+        );
+        run_query(session, "DROP KEYSPACE keyspace_tests_delete_me");
+        run_query(
+            session,
+            "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name='keyspace_tests_delete_me';",
+        );
+    }
+
+    fn test_alter_keyspace(session: &Session) {
+        run_query(session, "CREATE KEYSPACE keyspace_tests_alter_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 } AND DURABLE_WRITES = false;");
+        run_query(
+            session,
+            "ALTER KEYSPACE keyspace_tests_alter_me WITH DURABLE_WRITES = true;",
+        );
+        assert_query_result(
+            session,
+            "SELECT durable_writes FROM system_schema.keyspaces WHERE keyspace_name='keyspace_tests_alter_me'",
+            &[&[ResultValue::Boolean(true)]],
+        );
+    }
+
+    pub fn test(session: Session) {
+        test_create_keyspace(&session);
+        test_use_keyspace(&session);
+        test_drop_keyspace(&session);
+        test_alter_keyspace(&session);
+    }
 }
 
 #[test]
@@ -49,7 +86,7 @@ fn test_cluster() {
     .map(ShotoverManager::from_topology_file_without_observability)
     .collect();
 
-    test_create_keyspace(cassandra_connection("127.0.0.1", 9042));
+    keyspace::test(cassandra_connection("127.0.0.1", 9042));
 }
 
 #[test]
@@ -60,5 +97,5 @@ fn test_passthrough() {
     let _shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-passthrough/topology.yaml");
 
-    test_create_keyspace(cassandra_connection("127.0.0.1", 9042));
+    keyspace::test(cassandra_connection("127.0.0.1", 9042));
 }
