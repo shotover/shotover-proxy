@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+###  https://github.com/docker-library/cassandra/blob/master/3.11/docker-entrypoint.sh
+###  This file has been copied from the above link and modified to include enable_user_defined_functions and enable_scripted_user_defined_functions to the for yaml in \ loop
+###  so extra cassandra config options can be modified from the docker-compose.yml
+
 # first arg is `-f` or `--some-option`
 # or there are no args
 if [ "$#" -eq 0 ] || [ "${1#-}" != "$1" ]; then
