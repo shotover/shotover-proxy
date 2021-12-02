@@ -60,6 +60,12 @@ impl Transform for RedisSinkSingle {
     }
 
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        // Return immediately if we have no messages.
+        // If we tried to send no messages we would block forever waiting for a reply that will will never come.
+        if message_wrapper.messages.is_empty() {
+            return Ok(message_wrapper.messages);
+        }
+
         if self.outbound.is_none() {
             let tcp_stream = TcpStream::connect(self.address.clone()).await.unwrap();
             let generic_stream = if let Some(tls) = self.tls.as_mut() {
