@@ -63,11 +63,72 @@ mod keyspace {
         );
     }
 
-    pub fn test(session: Session) {
-        test_create_keyspace(&session);
-        test_use_keyspace(&session);
-        test_drop_keyspace(&session);
-        test_alter_keyspace(&session);
+    pub fn test(session: &Session) {
+        test_create_keyspace(session);
+        test_use_keyspace(session);
+        test_drop_keyspace(session);
+        test_alter_keyspace(session);
+    }
+}
+
+mod table {
+    use cassandra_cpp::Session;
+
+    use crate::cassandra_int_tests::{
+        assert_query_result, assert_query_result_contains_row,
+        assert_query_result_not_contains_row, run_query, ResultValue,
+    };
+
+    fn test_create_table(session: &Session) {
+        run_query(
+            session,
+            "CREATE TABLE test_table_keyspace.my_table (id UUID PRIMARY KEY, name text, age int);",
+        );
+        assert_query_result_contains_row(
+            session,
+            "SELECT table_name FROM system_schema.tables;",
+            &[ResultValue::Varchar("my_table".into())],
+        );
+    }
+
+    fn test_drop_table(session: &Session) {
+        run_query(
+            session,
+            "CREATE TABLE test_table_keyspace.delete_me (id UUID PRIMARY KEY, name text, age int);",
+        );
+
+        assert_query_result_contains_row(
+            session,
+            "SELECT table_name FROM system_schema.tables;",
+            &[ResultValue::Varchar("delete_me".into())],
+        );
+        run_query(session, "DROP TABLE test_table_keyspace.delete_me;");
+        assert_query_result_not_contains_row(
+            session,
+            "SELECT table_name FROM system_schema.tables;",
+            &[ResultValue::Varchar("delete_me".into())],
+        );
+    }
+
+    fn test_alter_table(session: &Session) {
+        run_query(
+            session,
+            "CREATE TABLE test_table_keyspace.alter_me (id UUID PRIMARY KEY, name text, age int);",
+        );
+
+        assert_query_result(session, "SELECT column_name FROM system_schema.columns WHERE keyspace_name = 'test_table_keyspace' AND table_name = 'alter_me' AND column_name = 'age';", &[&[ResultValue::Varchar("age".into())]]);
+        run_query(
+            session,
+            "ALTER TABLE test_table_keyspace.alter_me RENAME id TO new_id",
+        );
+        assert_query_result(session, "SELECT column_name FROM system_schema.columns WHERE keyspace_name = 'test_table_keyspace' AND table_name = 'alter_me' AND column_name = 'new_id';", &[&[ResultValue::Varchar("new_id".into())]]);
+    }
+
+    pub fn test(session: &Session) {
+        run_query(session, "CREATE KEYSPACE test_table_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        test_create_table(session);
+        test_drop_table(session);
+        test_alter_table(session);
     }
 }
 
@@ -86,7 +147,10 @@ fn test_cluster() {
     .map(ShotoverManager::from_topology_file_without_observability)
     .collect();
 
-    keyspace::test(cassandra_connection("127.0.0.1", 9042));
+    let connection = cassandra_connection("127.0.0.1", 9042);
+
+    keyspace::test(&connection);
+    table::test(&connection);
 }
 
 #[test]
@@ -97,5 +161,8 @@ fn test_passthrough() {
     let _shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-passthrough/topology.yaml");
 
-    keyspace::test(cassandra_connection("127.0.0.1", 9042));
+    let connection = cassandra_connection("127.0.0.1", 9042);
+
+    keyspace::test(&connection);
+    table::test(&connection);
 }
