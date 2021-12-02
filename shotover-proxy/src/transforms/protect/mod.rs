@@ -265,7 +265,7 @@ mod protect_transform_tests {
     use sodiumoxide::crypto::secretbox;
 
     use crate::message::{Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
-    use crate::protocols::cassandra_protocol2::CassandraCodec2;
+    use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::RawFrame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::returner::{DebugReturner, Response};
@@ -382,7 +382,7 @@ mod protect_transform_tests {
                         vec!["pk".to_string(), "cluster".to_string()],
                     );
 
-                    let codec = CassandraCodec2::new(colk_map, false);
+                    let codec = CassandraCodec::new(colk_map, false);
 
                     if let MessageDetails::Query(qm) = codec
                         .process_cassandra_frame(cframe.clone())
@@ -558,7 +558,7 @@ mod protect_transform_tests {
                     vec!["pk".to_string(), "cluster".to_string()],
                 );
 
-                let codec = CassandraCodec2::new(colk_map, false);
+                let codec = CassandraCodec::new(colk_map, false);
 
                 if let MessageDetails::Query(qm) = codec
                     .process_cassandra_frame(cframe.clone())

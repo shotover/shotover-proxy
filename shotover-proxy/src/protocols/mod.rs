@@ -1,4 +1,4 @@
-pub mod cassandra_protocol2;
+pub mod cassandra_codec;
 pub mod redis_codec;
 
 pub use cassandra_protocol::frame::Frame as CassandraFrame;

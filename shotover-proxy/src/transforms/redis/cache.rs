@@ -380,7 +380,7 @@ impl Transform for SimpleRedisCache {
 mod test {
     use crate::message::Value as ShotoverValue;
     use crate::message::{ASTHolder, MessageDetails, Value};
-    use crate::protocols::cassandra_protocol2::CassandraCodec2;
+    use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
@@ -396,7 +396,7 @@ mod test {
         query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
     ) -> (ASTHolder, Option<HashMap<String, Value>>) {
-        let res = CassandraCodec2::parse_query_string(query_string, pk_col_map);
+        let res = CassandraCodec::parse_query_string(query_string, pk_col_map);
         (ASTHolder::SQL(Box::new(res.ast.unwrap())), res.colmap)
     }
 
