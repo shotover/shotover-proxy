@@ -1,6 +1,9 @@
 use anyhow::{anyhow, Result};
 use regex::Regex;
+use std::env::{current_dir, set_current_dir};
+use std::fs::metadata;
 use std::io::ErrorKind;
+use std::path::Path;
 use std::process::Command;
 use std::thread;
 use std::time;
@@ -48,6 +51,8 @@ impl DockerCompose {
     /// # Notes:
     /// * Does not sleep - Calling processes should sleep or use `wait_for()` to delay until the
     /// containers are ready.
+    /// * Switches to the directory containing the docker-compose.yml so any volume mounting relying on
+    /// the process being in that directory functions correctly. Switches to the previous dir when complete.
     ///
     /// # Arguments
     /// * `file_path` - The path to the docker-compose yaml file.
@@ -56,6 +61,9 @@ impl DockerCompose {
     /// * Will panic if docker-compose is not installed
     ///
     pub fn new(file_path: &str) -> Self {
+        // Assert that the path given was a file
+        assert!(metadata(file_path).unwrap().is_file());
+
         if let Err(ErrorKind::NotFound) = Command::new("docker-compose")
             .output()
             .map_err(|e| e.kind())
@@ -65,7 +73,18 @@ impl DockerCompose {
 
         DockerCompose::clean_up(file_path).unwrap();
 
-        run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
+        // Save the current directory to go back to later
+        let current = current_dir().unwrap();
+
+        // Get the containing directory of the docker-compose file and switch to it
+        let example_dir_path = Path::new(file_path).parent().unwrap();
+        set_current_dir(example_dir_path).unwrap();
+
+        // Start the docker compose services
+        run_command("docker-compose", &["up", "-d"]).unwrap();
+
+        // Return to the starting dir
+        set_current_dir(&current).unwrap();
 
         DockerCompose {
             file_path: file_path.to_string(),
