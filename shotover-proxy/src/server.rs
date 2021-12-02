@@ -247,18 +247,17 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     pub async fn shutdown(&mut self) {
         match self
             .chain
-            .shutdown(Wrapper::new_with_chain_name(
-                vec![],
-                self.chain.name.clone(),
-            ))
+            .process_request(
+                Wrapper::flush_with_chain_name(self.chain.name.clone()),
+                "".into(),
+            )
             .await
         {
-            Ok(()) => {
-                info!("source {} was shutdown", self.source_name);
-            }
-            Err(e) => {
-                error!("shutdown chain processing error - {}", e);
-            }
+            Ok(_) => info!("source {} was shutdown", self.source_name),
+            Err(e) => error!(
+                "source {} encountered an error when flushing the chain for shutdown: {}",
+                self.source_name, e
+            ),
         }
     }
 

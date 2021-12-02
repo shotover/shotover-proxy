@@ -156,15 +156,16 @@ impl TransformChain {
                 );
 
                 match chain
-                    .shutdown(Wrapper::new_with_chain_name(vec![], chain.name.clone()))
+                    .process_request(
+                        Wrapper::flush_with_chain_name(chain.name.clone()),
+                        "".into(),
+                    )
                     .await
                 {
-                    Ok(()) => {
-                        info!("Buffered chain {} was shutdown", chain.name)
-                    }
+                    Ok(_) => info!("Buffered chain {} was shutdown", chain.name),
                     Err(e) => error!(
-                        "Internal error in buffered chain when shutting down: {:?}",
-                        e
+                        "Buffered chain {} encountered an error when flushing the chain for shutdown: {}",
+                        chain.name, e
                     ),
                 }
             }
@@ -266,11 +267,6 @@ impl TransformChain {
         }
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
-    }
-
-    pub async fn shutdown(&mut self, mut wrapper: Wrapper<'_>) -> Result<()> {
-        wrapper.reset(self.chain.iter_mut().collect_vec());
-        wrapper.call_next_shutdown().await
     }
 }
 

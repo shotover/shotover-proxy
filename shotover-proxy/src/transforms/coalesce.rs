@@ -50,13 +50,16 @@ impl Transform for Coalesce {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         self.buffer.append(&mut message_wrapper.messages);
 
-        if match self.max_behavior {
-            CoalesceBehavior::Count(c) => self.buffer.len() >= c,
-            CoalesceBehavior::WaitMs(w) => self.last_write.elapsed().as_millis() >= w,
-            CoalesceBehavior::CountOrWait(c, w) => {
-                self.last_write.elapsed().as_millis() >= w || self.buffer.len() >= c
-            }
-        } {
+        let flush_buffer = message_wrapper.flush
+            || match self.max_behavior {
+                CoalesceBehavior::Count(c) => self.buffer.len() >= c,
+                CoalesceBehavior::WaitMs(w) => self.last_write.elapsed().as_millis() >= w,
+                CoalesceBehavior::CountOrWait(c, w) => {
+                    self.last_write.elapsed().as_millis() >= w || self.buffer.len() >= c
+                }
+            };
+
+        if flush_buffer {
             //this could be done in the if statement above, but for the moment lets keep the
             //evaluation logic separate from the update
             match self.max_behavior {
@@ -74,11 +77,6 @@ impl Transform for Coalesce {
                 RawFrame::None,
             )])
         }
-    }
-
-    async fn shutdown<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> Result<()> {
-        message_wrapper.messages.append(&mut self.buffer);
-        message_wrapper.call_next_shutdown().await
     }
 }
 
