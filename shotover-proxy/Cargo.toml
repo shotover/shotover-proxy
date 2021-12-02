@@ -9,7 +9,7 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.11.0", features = ["full", "macros"] }
+tokio = { version = "1.14.0", features = ["full", "macros"] }
 tokio-util = { version = "0.6.1", features = ["full"] }
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
@@ -53,7 +53,7 @@ halfbrown = "0.1.11"
 # Transform dependencies
 redis-protocol = "3.0.1"
 cassandra-protocol = "=1.0.0-beta.2"
-rdkafka = "0.27"
+rdkafka = "0.28"
 crc16 = "0.4.0"
 
 #Crypto
@@ -61,7 +61,7 @@ sodiumoxide = "0.2.5"
 rusoto_kms = "0.47.0"
 rusoto_signature = "0.47.0"
 csv = "1.1.6"
-strum_macros = "0.22.0"
+strum_macros = "0.23"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async_tokio", "html_reports"] }
