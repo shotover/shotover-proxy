@@ -69,11 +69,7 @@ impl Transform for ConnectionBalanceAndPool {
         self.active_connection
             .as_mut()
             .unwrap()
-            .process_request(
-                message_wrapper,
-                "Connection Balance and Pooler".to_string(),
-                None,
-            )
+            .process_request(message_wrapper, None)
             .await
     }
 

@@ -40,18 +40,16 @@ impl BufferedChain {
     pub async fn process_request(
         &mut self,
         wrapper: Wrapper<'_>,
-        client_details: String,
         buffer_timeout_micros: Option<u64>,
     ) -> ChainResponse {
-        self.process_request_with_receiver(wrapper, client_details, buffer_timeout_micros)
+        self.process_request_with_receiver(wrapper, buffer_timeout_micros)
             .await?
             .await?
     }
 
-    pub async fn process_request_with_receiver(
+    async fn process_request_with_receiver(
         &mut self,
         wrapper: Wrapper<'_>,
-        _client_details: String,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<OneReceiver<ChainResponse>> {
         let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
@@ -79,7 +77,6 @@ impl BufferedChain {
     pub async fn process_request_no_return(
         &mut self,
         wrapper: Wrapper<'_>,
-        _client_details: String,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<()> {
         match buffer_timeout_micros {

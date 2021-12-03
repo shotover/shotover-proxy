@@ -118,11 +118,8 @@ impl Transform for Tee {
         match self.behavior {
             ConsistencyBehavior::Ignore => {
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx.process_request_no_return(
-                        message_wrapper.clone(),
-                        "Tee".to_string(),
-                        self.timeout_micros
-                    ),
+                    self.tx
+                        .process_request_no_return(message_wrapper.clone(), self.timeout_micros),
                     message_wrapper.call_next_transform()
                 );
                 match tee_result {
@@ -136,11 +133,8 @@ impl Transform for Tee {
             }
             ConsistencyBehavior::FailOnMismatch => {
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx.process_request(
-                        message_wrapper.clone(),
-                        "Tee".to_string(),
-                        self.timeout_micros
-                    ),
+                    self.tx
+                        .process_request(message_wrapper.clone(), self.timeout_micros),
                     message_wrapper.call_next_transform()
                 );
                 let tee_response = tee_result?;
@@ -162,11 +156,8 @@ impl Transform for Tee {
             ConsistencyBehavior::SubchainOnMismatch(_) => {
                 let failed_message = message_wrapper.clone();
                 let (tee_result, chain_result) = tokio::join!(
-                    self.tx.process_request(
-                        message_wrapper.clone(),
-                        "Tee".to_string(),
-                        self.timeout_micros
-                    ),
+                    self.tx
+                        .process_request(message_wrapper.clone(), self.timeout_micros),
                     message_wrapper.call_next_transform()
                 );
 
@@ -175,9 +166,7 @@ impl Transform for Tee {
 
                 if !chain_response.eq(&tee_response) {
                     if let Some(topic) = &mut self.mismatch_chain {
-                        topic
-                            .process_request(failed_message, "SubchainOnMismatch".to_string(), None)
-                            .await?;
+                        topic.process_request(failed_message, None).await?;
                     }
                 }
 
