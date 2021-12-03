@@ -38,6 +38,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anes"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
+
+[[package]]
 name = "ansi_term"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -449,14 +455,13 @@ dependencies = [
 [[package]]
 name = "criterion"
 version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1604dafd25fba2fe2d5895a9da139f8dc9b319a5fe5354ca137cbbce4e178d10"
+source = "git+https://github.com/bheisler/criterion.rs?branch=version-0.4#77f1b38906ffdc3b6edc506ea5aeb50beafa63fe"
 dependencies = [
+ "anes",
  "atty",
  "cast",
  "clap 2.34.0",
  "criterion-plot",
- "csv",
  "futures",
  "itertools",
  "lazy_static",
@@ -477,8 +482,7 @@ dependencies = [
 [[package]]
 name = "criterion-plot"
 version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d00996de9f2f7559f7f4dc286073197f83e92256a59ed395f9aac01fe717da57"
+source = "git+https://github.com/bheisler/criterion.rs?branch=version-0.4#77f1b38906ffdc3b6edc506ea5aeb50beafa63fe"
 dependencies = [
  "cast",
  "itertools",

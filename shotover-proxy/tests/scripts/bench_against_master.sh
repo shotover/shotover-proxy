@@ -20,8 +20,8 @@ cargo bench --bench chain_benches -- --save-baseline master --noplot
 
 echo -e "\nBenchmarking PR branch against main as a baseline"
 git checkout $ORIGINAL_REF
-cargo bench --bench redis_benches -- --baseline master --noplot | tee benches_log.txt -a
-cargo bench --bench chain_benches -- --baseline master --noplot | tee benches_log.txt -a
+cargo bench --bench redis_benches -- --baseline-lenient master --noplot | tee benches_log.txt -a
+cargo bench --bench chain_benches -- --baseline-lenient master --noplot | tee benches_log.txt -a
 
 # grep returns non zero exit code when it doesnt find anything so we need to disable pipefail
 set +o pipefail
