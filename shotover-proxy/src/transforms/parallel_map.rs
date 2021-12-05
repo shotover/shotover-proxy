@@ -63,7 +63,6 @@ where
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ParallelMapConfig {
-    pub name: String,
     pub parallelism: u32,
     pub chain: Vec<TransformsConfig>,
     pub ordered_results: bool,
@@ -71,7 +70,8 @@ pub struct ParallelMapConfig {
 
 impl ParallelMapConfig {
     pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
+        let chain =
+            build_chain_from_config("parallel_map_chain".into(), &self.chain, topics).await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
             chains: std::iter::repeat(chain)

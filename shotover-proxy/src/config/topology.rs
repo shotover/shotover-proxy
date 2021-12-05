@@ -505,7 +505,6 @@ redis_chain:
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
             TransformsConfig::ParallelMap(ParallelMapConfig {
-                name: "test-parallel-map".to_string(),
                 parallelism: 1,
                 chain,
                 ordered_results: false,
@@ -520,7 +519,7 @@ redis_chain:
         let expected = r#"Topology errors
 redis_chain:
   ParallelMap:
-    test-parallel-map:
+    parallel_map_chain:
       Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
 "#;
 
@@ -535,7 +534,6 @@ redis_chain:
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
             TransformsConfig::ParallelMap(ParallelMapConfig {
-                name: "test-parallel-map".to_string(),
                 parallelism: 1,
                 chain,
                 ordered_results: false,
