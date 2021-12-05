@@ -151,11 +151,7 @@ impl Transform for ConsistentScatter {
 
         //TODO: FuturesUnordered does bias to polling the first submitted task - this will bias all requests
         for chain in self.route_map.iter_mut() {
-            rec_fu.push(chain.process_request(
-                message_wrapper.clone(),
-                "ConsistentScatter".to_string(),
-                None,
-            ));
+            rec_fu.push(chain.process_request(message_wrapper.clone(), None));
         }
 
         let mut results = Vec::new();
