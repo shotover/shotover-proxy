@@ -10,7 +10,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tracing::{debug, trace, warn, Instrument};
+use tracing::{debug, error, info, trace, Instrument};
 
 type InnerChain = Vec<Transforms>;
 
@@ -133,7 +133,7 @@ impl TransformChain {
                         .await;
 
                     if let Err(e) = &chain_response {
-                        warn!("Internal error in buffered chain: {:?}", e);
+                        error!("Internal error in buffered chain: {:?}", e);
                     };
 
                     match return_chan {
@@ -151,6 +151,20 @@ impl TransformChain {
                 debug!(
                     "buffered chain processing thread exiting, stopping chain loop and dropping"
                 );
+
+                match chain
+                    .process_request(
+                        Wrapper::flush_with_chain_name(chain.name.clone()),
+                        "".into(),
+                    )
+                    .await
+                {
+                    Ok(_) => info!("Buffered chain {} was shutdown", chain.name),
+                    Err(e) => error!(
+                        "Buffered chain {} encountered an error when flushing the chain for shutdown: {}",
+                        chain.name, e
+                    ),
+                }
             }
             .in_current_span(),
         );

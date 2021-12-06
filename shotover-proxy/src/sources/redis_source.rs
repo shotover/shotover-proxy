@@ -82,8 +82,8 @@ impl RedisSource {
                             error!(cause = %err, "failed to accept connection");
                         }
                     }
-                    _ =  trigger_shutdown_rx.changed() => {
-                        info!("redis source shutting down")
+                    _ = trigger_shutdown_rx.changed() => {
+                        listener.shutdown().await;
                     }
                 }
             }

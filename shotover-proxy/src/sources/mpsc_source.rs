@@ -13,8 +13,7 @@ use std::time::Instant;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tracing::info;
-use tracing::warn;
+use tracing::{error, info, warn};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AsyncMpscConfig {
@@ -60,14 +59,13 @@ pub struct AsyncMpsc {
 
 impl AsyncMpsc {
     pub fn new(
-        chain: TransformChain,
+        mut main_chain: TransformChain,
         mut rx: Receiver<ChannelMessage>,
         name: &str,
         mut shutdown: Shutdown,
         max_behavior: CoalesceBehavior,
     ) -> AsyncMpsc {
         info!("Starting MPSC source for the topic [{}] ", name);
-        let mut main_chain = chain;
         let mut buffer = Vec::new();
 
         let jh = Handle::current().spawn(async move {
@@ -129,6 +127,19 @@ impl AsyncMpsc {
                         }
                     }
                 }
+            }
+            match main_chain
+                .process_request(
+                    Wrapper::flush_with_chain_name(main_chain.name.clone()),
+                    "".into(),
+                )
+                .await
+            {
+                Ok(_) => info!("source AsyncMpsc was shutdown"),
+                Err(e) => error!(
+                    "source AsyncMpsc encountered an error when flushing the chain for shutdown: {}",
+                    e
+                )
             }
             Ok(())
         });

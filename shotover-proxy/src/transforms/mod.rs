@@ -280,6 +280,10 @@ pub struct Wrapper<'a> {
     transforms: Vec<&'a mut Transforms>,
     pub client_details: String,
     chain_name: String,
+    /// When true transforms must flush any buffered messages into the messages field.
+    /// This can occur at any time but will always occur before the transform is destroyed due to either
+    /// shotover or the transform's chain shutting down.
+    pub flush: bool,
 }
 
 /// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
@@ -292,6 +296,7 @@ impl<'a> Clone for Wrapper<'a> {
             transforms: vec![],
             client_details: self.client_details.clone(),
             chain_name: self.chain_name.clone(),
+            flush: false,
         }
     }
 }
@@ -343,6 +348,7 @@ impl<'a> Wrapper<'a> {
             transforms: vec![],
             client_details: "".to_string(),
             chain_name: "".to_string(),
+            flush: false,
         }
     }
 
@@ -352,6 +358,17 @@ impl<'a> Wrapper<'a> {
             transforms: vec![],
             client_details: "".to_string(),
             chain_name,
+            flush: false,
+        }
+    }
+
+    pub fn flush_with_chain_name(chain_name: String) -> Self {
+        Wrapper {
+            messages: vec![],
+            transforms: vec![],
+            client_details: "".into(),
+            chain_name,
+            flush: true,
         }
     }
 
@@ -365,6 +382,7 @@ impl<'a> Wrapper<'a> {
             transforms: vec![],
             client_details,
             chain_name,
+            flush: false,
         }
     }
 
@@ -419,7 +437,8 @@ pub trait Transform: Send {
     /// messages to an external system or generates its own response to the query e.g.
     /// [`crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingle`]. This type of transform
     /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
-    /// * _Message count_ - Your transform should return the same number of responses as messages it receives. Transforms that
+    /// * _Message count_ - message_wrapper.messages will contain 0 or more messages.
+    /// Your transform should return the same number of responses as messages received in message_wrapper.messages. Transforms that
     /// don't do this explicitly for each call, should return the same number of responses as messages it receives over the lifetime
     /// of the transform chain. A good example of this is the [`crate::transforms::coalesce::Coalesce`] transform. The
     /// [`crate::transforms::sampler::Sampler`] transform is also another example of this, with a slightly different twist.
@@ -472,7 +491,6 @@ pub trait Transform: Send {
     ///
     /// In this example `counter` will contain the count of the number of messages seen for this connection.
     /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
-    ///
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
     /// This method provides a hook into chain setup that allows you to perform any chain setup
