@@ -13,7 +13,6 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.connect().unwrap()
 }
 
-// first turn ResultValue into derive soup
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 enum ResultValue {
     Text(String),
