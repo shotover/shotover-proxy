@@ -280,7 +280,9 @@ pub struct Wrapper<'a> {
     transforms: Vec<&'a mut Transforms>,
     pub client_details: String,
     chain_name: String,
-    /// When true transforms must flush any buffered messages into the messages field
+    /// When true transforms must flush any buffered messages into the messages field.
+    /// This can occur at any time but will always occur before the transform is destroyed due to either
+    /// shotover or the transform's chain shutting down.
     pub flush: bool,
 }
 
@@ -435,7 +437,8 @@ pub trait Transform: Send {
     /// messages to an external system or generates its own response to the query e.g.
     /// [`crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingle`]. This type of transform
     /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
-    /// * _Message count_ - Your transform should return the same number of responses as messages it receives. Transforms that
+    /// * _Message count_ - message_wrapper.messages will contain 0 or more messages.
+    /// Your transform should return the same number of responses as messages received in message_wrapper.messages. Transforms that
     /// don't do this explicitly for each call, should return the same number of responses as messages it receives over the lifetime
     /// of the transform chain. A good example of this is the [`crate::transforms::coalesce::Coalesce`] transform. The
     /// [`crate::transforms::sampler::Sampler`] transform is also another example of this, with a slightly different twist.
