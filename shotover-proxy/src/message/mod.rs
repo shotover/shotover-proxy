@@ -1,6 +1,10 @@
 use crate::protocols::RawFrame;
 use bytes::Bytes;
+use cassandra_protocol::frame::frame_error::{AdditionalErrorInfo, ErrorBody};
 use cassandra_protocol::frame::frame_result::{ColSpec, ColType};
+use cassandra_protocol::frame::{
+    Direction, Flags, Frame as CassandraFrame, Opcode, Serialize as CassandraSerialize,
+};
 use cassandra_protocol::types::data_serialization_types::{
     decode_ascii, decode_bigint, decode_boolean, decode_double, decode_float, decode_inet,
     decode_int, decode_smallint, decode_tinyint, decode_varchar,
@@ -70,6 +74,32 @@ impl Message {
             details,
             modified,
             original: RawFrame::None,
+        }
+    }
+
+    pub fn to_filtered_reply(&self) -> Message {
+        Message {
+            details: MessageDetails::Unknown,
+            modified: true,
+            original: match &self.original {
+                RawFrame::Redis(_) => RawFrame::Redis(Frame::Null),
+                RawFrame::Cassandra(frame) => RawFrame::Cassandra(CassandraFrame {
+                    version: frame.version,
+                    direction: Direction::Response,
+                    flags: Flags::empty(),
+                    opcode: Opcode::Error,
+                    stream: frame.stream,
+                    body: ErrorBody {
+                        error_code: 0,
+                        message: "Message was filtered out by shotover".into(),
+                        additional_info: AdditionalErrorInfo::Server,
+                    }
+                    .serialize_to_vec(),
+                    tracing_id: None,
+                    warnings: vec![],
+                }),
+                RawFrame::None => RawFrame::None,
+            },
         }
     }
 }

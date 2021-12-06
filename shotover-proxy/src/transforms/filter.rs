@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::message::{MessageDetails, QueryType};
+use crate::message::{Message, MessageDetails, QueryType};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -26,14 +26,33 @@ impl QueryTypeFilterConfig {
 #[async_trait]
 impl Transform for QueryTypeFilter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        message_wrapper.messages.retain(|m| {
-            if let MessageDetails::Query(qm) = &m.details {
-                qm.query_type != self.filter
-            } else {
-                m.original.get_query_type() != self.filter
-            }
-        });
-        message_wrapper.call_next_transform().await
+        let removed_indexes: Vec<(usize, Message)> = message_wrapper
+            .messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                if let MessageDetails::Query(qm) = &m.details {
+                    qm.query_type == self.filter
+                } else {
+                    m.original.get_query_type() == self.filter
+                }
+            })
+            .map(|(i, m)| (i, m.to_filtered_reply()))
+            .collect();
+
+        for (i, _) in removed_indexes.iter().rev() {
+            message_wrapper.messages.remove(*i);
+        }
+
+        message_wrapper
+            .call_next_transform()
+            .await
+            .map(|mut messages| {
+                for (i, message) in removed_indexes.into_iter() {
+                    messages.insert(i, message);
+                }
+                messages
+            })
     }
 }
 
@@ -81,7 +100,7 @@ mod test {
         let mut message_wrapper = Wrapper::new(messages);
         message_wrapper.transforms = vec![&mut loopback];
         let result = coalesce.transform(message_wrapper).await?;
-        assert_eq!(result.len(), 13);
+        assert_eq!(result.len(), 26);
         let any = result.iter().find(|m| {
             if let MessageDetails::Response(qr) = &m.details {
                 if let Some(qm) = &qr.matching_query {
