@@ -82,7 +82,9 @@ impl Message {
             details: MessageDetails::Unknown,
             modified: true,
             original: match &self.original {
-                RawFrame::Redis(_) => RawFrame::Redis(Frame::Null),
+                RawFrame::Redis(_) => RawFrame::Redis(Frame::Error(
+                    "ERR Message was filtered out by shotover".into(),
+                )),
                 RawFrame::Cassandra(frame) => RawFrame::Cassandra(CassandraFrame {
                     version: frame.version,
                     direction: Direction::Response,
