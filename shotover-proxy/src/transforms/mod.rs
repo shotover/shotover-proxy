@@ -239,7 +239,7 @@ impl TransformsConfig {
             TransformsConfig::KafkaSink(k) => k.get_source().await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,
-            TransformsConfig::RedisSinkSingle(r) => r.get_source().await,
+            TransformsConfig::RedisSinkSingle(r) => r.get_source(chain_name).await,
             TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger::new()))
