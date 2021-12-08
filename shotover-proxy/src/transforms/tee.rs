@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, QueryResponse, Value};
 use crate::protocols::RawFrame;
-use crate::transforms::chain::{BufferedChain, TransformChain};
+use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
@@ -12,35 +12,13 @@ use metrics::{counter, register_counter, Unit};
 use serde::Deserialize;
 use tracing::trace;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tee {
     pub tx: BufferedChain,
-    pub tx_chain_to_clone: TransformChain,
     pub mismatch_chain: Option<BufferedChain>,
-    pub mismatch_chain_to_clone: Option<TransformChain>,
     pub buffer_size: usize,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
-}
-
-impl Clone for Tee {
-    fn clone(&self) -> Self {
-        Tee {
-            tx: self
-                .tx_chain_to_clone
-                .clone()
-                .into_buffered_chain(self.buffer_size),
-            tx_chain_to_clone: self.tx_chain_to_clone.clone(),
-            mismatch_chain: self
-                .mismatch_chain_to_clone
-                .clone()
-                .map(|x| x.into_buffered_chain(self.buffer_size)),
-            mismatch_chain_to_clone: self.mismatch_chain_to_clone.clone(),
-            buffer_size: self.buffer_size,
-            behavior: self.behavior.clone(),
-            timeout_micros: self.timeout_micros,
-        }
-    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -64,7 +42,8 @@ impl TeeConfig {
             if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
                 Some(
                     build_chain_from_config("mismatch_chain".to_string(), mismatch_chain, topics)
-                        .await?,
+                        .await?
+                        .into_buffered_chain(buffer_size),
                 )
             } else {
                 None
@@ -72,21 +51,35 @@ impl TeeConfig {
         let tee_chain =
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
-        let tee = Tee {
-            tx: tee_chain.clone().into_buffered_chain(buffer_size),
-            tx_chain_to_clone: tee_chain,
-            mismatch_chain: mismatch_chain
-                .clone()
-                .map(|x| x.into_buffered_chain(buffer_size)),
-            mismatch_chain_to_clone: mismatch_chain,
+        Ok(Transforms::Tee(Tee::new(
+            tee_chain.into_buffered_chain(buffer_size),
+            mismatch_chain,
             buffer_size,
-            behavior: self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
-            timeout_micros: self.timeout_micros,
+            self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
+            self.timeout_micros,
+        )))
+    }
+}
+
+impl Tee {
+    pub fn new(
+        tx: BufferedChain,
+        mismatch_chain: Option<BufferedChain>,
+        buffer_size: usize,
+        behavior: ConsistencyBehavior,
+        timeout_micros: Option<u64>,
+    ) -> Self {
+        let tee = Tee {
+            tx,
+            mismatch_chain,
+            buffer_size,
+            behavior,
+            timeout_micros,
         };
 
         register_counter!("tee_dropped_messages", Unit::Count, "chain" => tee.get_name());
 
-        Ok(Transforms::Tee(tee))
+        tee
     }
 }
 
