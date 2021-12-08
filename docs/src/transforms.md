@@ -177,9 +177,6 @@ If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C
     # if true then responses will be returned in the same as order as the queries went out.
     # if it is false then response may return in any order.
     ordered_results: true
-    # The name of the chain
-    # TODO: we should just remove this and default the name to "ParallelMap Chain" or something
-    name: "chain name"
     # The chain that messages are sent through
     chain:
       - QueryCounter:
