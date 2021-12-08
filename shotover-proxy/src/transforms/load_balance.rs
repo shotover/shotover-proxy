@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConnectionBalanceAndPoolConfig {
     pub name: String,
-    pub parallelism: usize,
+    pub max_connections: usize,
     pub chain: Vec<TransformsConfig>,
 }
 
@@ -23,18 +23,20 @@ impl ConnectionBalanceAndPoolConfig {
 
         Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
             active_connection: None,
-            parallelism: self.parallelism,
-            other_connections: Arc::new(Mutex::new(Vec::with_capacity(self.parallelism))),
+            max_connections: self.max_connections,
+            all_connections: Arc::new(Mutex::new(Vec::with_capacity(self.max_connections))),
             chain_to_clone: chain,
         }))
     }
 }
 
+/// Every cloned instance of ConnectionBalanceAndPool will use a new connection until `max_connections` clones are made.
+/// Once this happens cloned instances will reuse connections from earlier clones.
 #[derive(Debug)]
 pub struct ConnectionBalanceAndPool {
     pub active_connection: Option<BufferedChain>,
-    pub parallelism: usize,
-    pub other_connections: Arc<Mutex<Vec<BufferedChain>>>,
+    pub max_connections: usize,
+    pub all_connections: Arc<Mutex<Vec<BufferedChain>>>,
     pub chain_to_clone: TransformChain,
 }
 
@@ -42,8 +44,8 @@ impl Clone for ConnectionBalanceAndPool {
     fn clone(&self) -> Self {
         ConnectionBalanceAndPool {
             active_connection: None,
-            parallelism: self.parallelism,
-            other_connections: self.other_connections.clone(),
+            max_connections: self.max_connections,
+            all_connections: self.all_connections.clone(),
             chain_to_clone: self.chain_to_clone.clone(),
         }
     }
@@ -53,17 +55,17 @@ impl Clone for ConnectionBalanceAndPool {
 impl Transform for ConnectionBalanceAndPool {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.active_connection.is_none() {
-            let mut guard = self.other_connections.lock().await;
-            if guard.len() < self.parallelism {
+            let mut all_connections = self.all_connections.lock().await;
+            if all_connections.len() < self.max_connections {
                 let chain = self.chain_to_clone.clone().into_buffered_chain(5);
                 self.active_connection = Some(chain.clone());
-                guard.push(chain);
+                all_connections.push(chain);
             } else {
                 //take the first available existing change and grab its reference
-                let top = guard.remove(0);
+                let top = all_connections.remove(0);
                 self.active_connection = Some(top.clone());
                 // put the chain at the back of the list
-                guard.push(top);
+                all_connections.push(top);
             }
         }
         self.active_connection
@@ -92,8 +94,8 @@ mod test {
     pub async fn test_balance() -> Result<()> {
         let transform = Transforms::PoolConnections(ConnectionBalanceAndPool {
             active_connection: None,
-            parallelism: 3,
-            other_connections: Arc::new(Default::default()),
+            max_connections: 3,
+            all_connections: Arc::new(Default::default()),
             chain_to_clone: TransformChain::new(
                 vec![Transforms::DebugReturner(DebugReturner::new(
                     Response::Message(Messages::new()),
@@ -114,11 +116,11 @@ mod test {
 
         match chain.chain.remove(0) {
             Transforms::PoolConnections(p) => {
-                let guard = p.other_connections.lock().await;
-                assert_eq!(guard.len(), 3);
-                for bc in guard.iter() {
-                    let guard = bc.count.lock().await;
-                    assert_eq!(*guard, 30);
+                let all_connections = p.all_connections.lock().await;
+                assert_eq!(all_connections.len(), 3);
+                for bc in all_connections.iter() {
+                    let count = bc.count.lock().await;
+                    assert_eq!(*count, 30);
                 }
             }
             _ => panic!("whoops"),
