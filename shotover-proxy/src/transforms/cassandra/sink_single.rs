@@ -1,23 +1,24 @@
-use async_trait::async_trait;
-use serde::Deserialize;
-
-use crate::message::{Message, Messages, QueryResponse};
-use crate::protocols::cassandra_codec::CassandraCodec;
-use crate::transforms::{Transform, Transforms, Wrapper};
-use std::collections::HashMap;
-use tokio::time::timeout;
-use tokio_stream::StreamExt;
-use tracing::{info, trace};
-
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::message;
+use crate::message::{Message, Messages, QueryResponse};
+use crate::protocols::cassandra_codec::CassandraCodec;
 use crate::protocols::RawFrame;
 use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
+use crate::transforms::{Transform, Transforms, Wrapper};
+
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
+use cassandra_protocol::frame::Frame;
+use metrics::{counter, register_counter, Unit};
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::oneshot::Receiver;
+use tokio::time::timeout;
+use tokio_stream::StreamExt;
+use tracing::{info, trace};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkSingleConfig {
@@ -27,10 +28,11 @@ pub struct CassandraSinkSingleConfig {
 }
 
 impl CassandraSinkSingleConfig {
-    pub async fn get_source(&self) -> Result<Transforms> {
+    pub async fn get_source(&self, chain_name: String) -> Result<Transforms> {
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
             self.result_processing,
+            chain_name,
         )))
     }
 }
@@ -41,21 +43,24 @@ pub struct CassandraSinkSingle {
     outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
+    chain_name: String,
 }
 
 impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
-        CassandraSinkSingle::new(self.address.clone(), self.bypass)
+        CassandraSinkSingle::new(self.address.clone(), self.bypass, self.chain_name.clone())
     }
 }
 
 impl CassandraSinkSingle {
-    pub fn new(address: String, bypass: bool) -> CassandraSinkSingle {
+    pub fn new(address: String, bypass: bool, chain_name: String) -> CassandraSinkSingle {
+        register_counter!("cassandra_single_failed_request", Unit::Count, "chain" => chain_name.clone());
         CassandraSinkSingle {
             address,
             outbound: None,
             cassandra_ks: HashMap::new(),
             bypass,
+            chain_name,
         }
     }
 }
@@ -91,6 +96,7 @@ impl CassandraSinkSingle {
                                     frame.stream_id
                                 } else {
                                     info!("no cassandra frame found");
+                                    counter!("cassandra_single_failed_request", 1, "chain" => self.chain_name.clone());
                                     return Err(anyhow!("no cassandra frame found"));
                                 };
 
@@ -111,8 +117,20 @@ impl CassandraSinkSingle {
                         match timeout(Duration::from_secs(5), results.next()).await {
                             Ok(Some(prelim)) => {
                                 match prelim? {
-                                    (_, Ok(mut resp)) => responses.append(&mut resp),
+                                    (_, Ok(mut resp)) => {
+                                        for message in &resp {
+                                            if let RawFrame::Cassandra(Frame {
+                                                opcode: cassandra_protocol::frame::Opcode::Error,
+                                                ..
+                                            }) = &message.original
+                                            {
+                                                counter!("cassandra_single_failed_request", 1, "chain" => self.chain_name.clone());
+                                            }
+                                        }
+                                        responses.append(&mut resp);
+                                    }
                                     (m, Err(err)) => {
+                                        counter!("cassandra_single_failed_request", 1, "chain" => self.chain_name.clone());
                                         responses.push(Message::new_response(
                                             QueryResponse::empty_with_error(Some(
                                                 message::Value::Strings(format!("{}", err)),

@@ -235,7 +235,7 @@ impl TransformsConfig {
         chain_name: String,
     ) -> Result<Transforms> {
         match self {
-            TransformsConfig::CassandraSinkSingle(c) => c.get_source().await,
+            TransformsConfig::CassandraSinkSingle(c) => c.get_source(chain_name).await,
             TransformsConfig::KafkaSink(k) => k.get_source().await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,
