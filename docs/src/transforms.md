@@ -235,8 +235,6 @@ The log can be accessed via the [Shotover metrics](user-guide/configuration.md#o
 
 This transform will drop messages that match the specified filter.
 
-TODO: This doesnt send a reply for some messages, does this break the transform invariants?
-
 ```yaml
 - QueryTypeFilter:
     # drop messages that are read

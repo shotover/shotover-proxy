@@ -43,14 +43,18 @@ impl DebugReturner {
 
 #[async_trait]
 impl Transform for DebugReturner {
-    async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match &self.response {
             Response::Message(message) => Ok(message.clone()),
-            Response::Redis(string) => Ok(vec![Message {
-                details: MessageDetails::Unknown,
-                modified: false,
-                original: RawFrame::Redis(Frame::BulkString(string.clone().into_bytes())),
-            }]),
+            Response::Redis(string) => Ok(message_wrapper
+                .messages
+                .iter()
+                .map(|_| Message {
+                    details: MessageDetails::Unknown,
+                    modified: false,
+                    original: RawFrame::Redis(Frame::BulkString(string.clone().into_bytes())),
+                })
+                .collect()),
             Response::Fail => Err(anyhow!("Intentional Fail")),
         }
     }
