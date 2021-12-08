@@ -12,13 +12,28 @@ use metrics::{counter, register_counter, Unit};
 use serde::Deserialize;
 use tracing::trace;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Tee {
     pub tx: BufferedChain,
     pub mismatch_chain: Option<BufferedChain>,
     pub buffer_size: usize,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
+}
+
+impl Clone for Tee {
+    fn clone(&self) -> Self {
+        Tee {
+            tx: self.tx.to_new_instance(self.buffer_size),
+            mismatch_chain: self
+                .mismatch_chain
+                .as_ref()
+                .map(|x| x.to_new_instance(self.buffer_size)),
+            buffer_size: self.buffer_size,
+            behavior: self.behavior.clone(),
+            timeout_micros: self.timeout_micros,
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -35,6 +50,7 @@ pub struct TeeConfig {
     pub chain: Vec<TransformsConfig>,
     pub buffer_size: Option<usize>,
 }
+
 impl TeeConfig {
     pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let buffer_size = self.buffer_size.unwrap_or(5);

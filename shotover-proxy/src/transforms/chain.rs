@@ -28,24 +28,19 @@ pub struct TransformChain {
     pub chain: InnerChain,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BufferedChain {
     pub original_chain: TransformChain,
     send_handle: Sender<ChannelMessage>,
     #[cfg(test)]
     pub count: std::sync::Arc<tokio::sync::Mutex<usize>>,
-    buffer_size: usize,
-}
-
-impl Clone for BufferedChain {
-    fn clone(&self) -> Self {
-        self.original_chain
-            .clone()
-            .into_buffered_chain(self.buffer_size)
-    }
 }
 
 impl BufferedChain {
+    pub fn to_new_instance(&self, buffer_size: usize) -> Self {
+        self.original_chain.clone().into_buffered_chain(buffer_size)
+    }
+
     pub async fn process_request(
         &mut self,
         wrapper: Wrapper<'_>,
@@ -183,7 +178,6 @@ impl TransformChain {
             #[cfg(test)]
             count: count_clone,
             original_chain: self,
-            buffer_size,
         }
     }
 

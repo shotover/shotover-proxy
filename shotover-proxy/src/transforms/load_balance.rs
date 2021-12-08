@@ -102,7 +102,7 @@ mod test {
             ),
         });
 
-        let chain = TransformChain::new(vec![transform], "test".to_string());
+        let mut chain = TransformChain::new(vec![transform], "test".to_string());
 
         for _ in 0..90 {
             let r = chain
@@ -110,6 +110,18 @@ mod test {
                 .process_request(Wrapper::new(Messages::new()), "test_client".to_string())
                 .await;
             assert!(r.is_ok());
+        }
+
+        match chain.chain.remove(0) {
+            Transforms::PoolConnections(p) => {
+                let guard = p.other_connections.lock().await;
+                assert_eq!(guard.len(), 3);
+                for bc in guard.iter() {
+                    let guard = bc.count.lock().await;
+                    assert_eq!(*guard, 30);
+                }
+            }
+            _ => panic!("whoops"),
         }
 
         Ok(())
