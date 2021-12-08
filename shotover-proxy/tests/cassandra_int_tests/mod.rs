@@ -17,7 +17,7 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
 enum ResultValue {
     Text(String),
     Varchar(String),
-    Int(i64),
+    Int(i32),
     Boolean(bool),
 }
 
@@ -26,7 +26,7 @@ impl ResultValue {
         match value.get_type() {
             ValueType::TEXT => ResultValue::Text(value.get_string().unwrap()),
             ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
-            ValueType::INT => ResultValue::Int(value.get_i64().unwrap()),
+            ValueType::INT => ResultValue::Int(value.get_i32().unwrap()),
             ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
             ty => todo!(
                 "The test infrastructure hasnt implemented the type {} yet, you should add it.",
