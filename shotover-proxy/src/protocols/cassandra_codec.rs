@@ -102,7 +102,6 @@ impl CassandraCodec {
             serial_consistency,
             timestamp,
             Flags::empty(),
-            false,
             Version::V4,
         )
     }
@@ -178,7 +177,7 @@ impl CassandraCodec {
                         direction: Direction::Response,
                         flags: query_frame.flags,
                         opcode: Opcode::Result,
-                        stream: query_frame.stream,
+                        stream_id: query_frame.stream_id,
                         body: response.serialize_to_vec(),
                         tracing_id: query_frame.tracing_id,
                         warnings: Vec::new(),
@@ -521,7 +520,7 @@ impl CassandraCodec {
                     }
                     return vec![Message::new(
                         MessageDetails::Query(QueryMessage {
-                            query_string: body.query.into_plain(),
+                            query_string: body.query,
                             namespace: parsed_string.namespace.unwrap(),
                             primary_key: parsed_string.primary_key,
                             query_values: parsed_string.colmap,
@@ -580,11 +579,11 @@ impl Decoder for CassandraCodec {
         }
 
         match Frame::from_buffer(src, self.compressor) {
-            Ok((frame, bytes_read)) => {
+            Ok(parsed_frame) => {
                 // Clear the read bytes from the FramedReader
-                let _ = src.split_to(bytes_read);
+                let _ = src.split_to(parsed_frame.frame_len);
 
-                Ok(Some(self.process_cassandra_frame(frame)))
+                Ok(Some(self.process_cassandra_frame(parsed_frame.frame)))
             }
             Err(ParseFrameError::NotEnoughBytes) => Ok(None),
             Err(ParseFrameError::UnsupportedVersion(version)) => {
@@ -606,7 +605,7 @@ impl Decoder for CassandraCodec {
                         direction: Direction::Response,
                         flags: Flags::empty(),
                         opcode: Opcode::Error,
-                        stream: 0,
+                        stream_id: 0,
                         body: ErrorBody {
                             error_code: 0xA,
                             message: "Invalid or unsupported protocol version".into(),
@@ -737,7 +736,7 @@ mod cassandra_protocol_tests {
                 direction: Direction::Request,
                 flags: Flags::empty(),
                 opcode: Opcode::Startup,
-                stream: 0,
+                stream_id: 0,
                 body: hex!("0001000b43514c5f56455253494f4e0005332e302e30").to_vec(),
                 tracing_id: None,
                 warnings: vec![],
@@ -758,7 +757,7 @@ mod cassandra_protocol_tests {
                 direction: Direction::Request,
                 flags: Flags::empty(),
                 opcode: Opcode::Options,
-                stream: 0,
+                stream_id: 0,
                 body: vec![],
                 tracing_id: None,
                 warnings: vec![],
@@ -779,7 +778,7 @@ mod cassandra_protocol_tests {
                 direction: Direction::Response,
                 flags: Flags::empty(),
                 opcode: Opcode::Ready,
-                stream: 0,
+                stream_id: 0,
                 body: vec![],
                 tracing_id: None,
                 warnings: vec![],
@@ -803,7 +802,7 @@ mod cassandra_protocol_tests {
                 direction: Direction::Request,
                 flags: Flags::empty(),
                 opcode: Opcode::Register,
-                stream: 1,
+                stream_id: 1,
                 body: hex!(
                     "0003000f544f504f4c4f47595f4348414e4745
                     000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
@@ -838,7 +837,7 @@ mod cassandra_protocol_tests {
                 direction: Direction::Response,
                 flags: Flags::empty(),
                 opcode: Opcode::Result,
-                stream: 2,
+                stream_id: 2,
                 body: hex!(
                     "000000020000000100000009000673797374656
                     d000570656572730004706565720010000b646174615f63656e746572000d0007686f73745f6964000c000c70726566
@@ -925,7 +924,7 @@ mod cassandra_protocol_tests {
                 direction: Direction::Request,
                 flags: Flags::empty(),
                 opcode: Opcode::Query,
-                stream: 3,
+                stream_id: 3,
                 body: hex!(
                     "0000002c53454c454354202a2046524f4d20737973
                     74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"

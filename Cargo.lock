@@ -274,15 +274,16 @@ checksum = "eadde404d13254d8592f8aaa946a1fb7a2769c137df56ed29a3be5996973a156"
 
 [[package]]
 name = "cassandra-protocol"
-version = "1.0.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6bcea031b58e1e74da299f6307d175ee37b581fe1b3488cf2fd6b2ab8c47376"
+version = "1.0.0-beta.3"
+source = "git+https://github.com/krojew/cdrs-tokio?rev=e1de5ffc30cf0e2cc13a657835f916fd4e61bf99#e1de5ffc30cf0e2cc13a657835f916fd4e61bf99"
 dependencies = [
  "arrayref",
  "bitflags",
  "chrono",
+ "derivative",
  "derive_more",
  "float_eq",
+ "itertools",
  "lz4_flex",
  "num",
  "snap",
@@ -836,9 +837,9 @@ checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 
 [[package]]
 name = "float_eq"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa334a728fecaf0922f5735ede5f27c08fefc7c4e5b04c5efe02a3861b512f2e"
+checksum = "c1d53499e94f9a7828e63c574adf62bcade7f358c3738f9ea70d7c2edb61023d"
 
 [[package]]
 name = "fnv"
@@ -1313,9 +1314,9 @@ dependencies = [
 
 [[package]]
 name = "lz4_flex"
-version = "0.8.2"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5827b976d911b5d2e42b2ccfc7c0d2461a1414e8280436885218762fc529b3f8"
+checksum = "42c51df9d8d4842336c835df1d85ed447c4813baa237d033d95128bf5552ad8a"
 dependencies = [
  "twox-hash",
 ]

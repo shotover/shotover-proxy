@@ -130,9 +130,9 @@ async fn rx_process<C: CodecReadHalf>(
                     Ok(req) => {
                         for m in req {
                             if let RawFrame::Cassandra(frame) = &m.original {
-                                match return_channel_map.remove(&frame.stream) {
+                                match return_channel_map.remove(&frame.stream_id) {
                                     None => {
-                                        return_message_map.insert(frame.stream, m);
+                                        return_message_map.insert(frame.stream_id, m);
                                     },
                                     Some((ret, orig)) => {
                                         ret.send((orig, Ok(vec![m] ))).map_err(|_| anyhow!("couldn't send message"))?;
