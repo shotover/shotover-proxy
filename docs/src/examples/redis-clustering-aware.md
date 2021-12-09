@@ -66,7 +66,7 @@ Modify an existing `topology.yaml` or create a new one and place the above examp
 You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml) to run Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml --output config.yaml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/examples/redis-cluster-ports-rewrite/config.yaml --output config.yaml
 ```
 
 ## Starting
