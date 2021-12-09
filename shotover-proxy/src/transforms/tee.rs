@@ -2,7 +2,7 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, QueryResponse, Value};
 use crate::protocols::RawFrame;
-use crate::transforms::chain::{BufferedChain, TransformChain};
+use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
@@ -12,14 +12,28 @@ use metrics::{counter, register_counter, Unit};
 use serde::Deserialize;
 use tracing::trace;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Tee {
     pub tx: BufferedChain,
     pub mismatch_chain: Option<BufferedChain>,
     pub buffer_size: usize,
-    pub chain_to_clone: TransformChain,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
+}
+
+impl Clone for Tee {
+    fn clone(&self) -> Self {
+        Tee {
+            tx: self.tx.to_new_instance(self.buffer_size),
+            mismatch_chain: self
+                .mismatch_chain
+                .as_ref()
+                .map(|x| x.to_new_instance(self.buffer_size)),
+            buffer_size: self.buffer_size,
+            behavior: self.behavior.clone(),
+            timeout_micros: self.timeout_micros,
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -36,6 +50,7 @@ pub struct TeeConfig {
     pub chain: Vec<TransformsConfig>,
     pub buffer_size: Option<usize>,
 }
+
 impl TeeConfig {
     pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
         let buffer_size = self.buffer_size.unwrap_or(5);
@@ -53,10 +68,9 @@ impl TeeConfig {
             build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
 
         Ok(Transforms::Tee(Tee::new(
-            tee_chain.clone().into_buffered_chain(buffer_size),
+            tee_chain.into_buffered_chain(buffer_size),
             mismatch_chain,
             buffer_size,
-            tee_chain,
             self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
             self.timeout_micros,
         )))
@@ -68,7 +82,6 @@ impl Tee {
         tx: BufferedChain,
         mismatch_chain: Option<BufferedChain>,
         buffer_size: usize,
-        chain_to_clone: TransformChain,
         behavior: ConsistencyBehavior,
         timeout_micros: Option<u64>,
     ) -> Self {
@@ -76,7 +89,6 @@ impl Tee {
             tx,
             mismatch_chain,
             buffer_size,
-            chain_to_clone,
             behavior,
             timeout_micros,
         };

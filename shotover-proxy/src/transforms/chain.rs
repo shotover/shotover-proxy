@@ -37,6 +37,10 @@ pub struct BufferedChain {
 }
 
 impl BufferedChain {
+    pub fn to_new_instance(&self, buffer_size: usize) -> Self {
+        self.original_chain.clone().into_buffered_chain(buffer_size)
+    }
+
     pub async fn process_request(
         &mut self,
         wrapper: Wrapper<'_>,
