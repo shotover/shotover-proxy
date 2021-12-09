@@ -16,7 +16,6 @@ Shotover will be deployed as a sidecar to each node in the Redis cluster, listen
 
 ```console
 curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/examples/redis-cluster-ports-rewrite/docker-compose.yml --output docker-compose.yml
-docker-compose -f docker-compose.yml up
 ```
 
 Below we can see an example of a Redis node and it's Shotover sidecar. Notice they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
