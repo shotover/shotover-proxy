@@ -130,8 +130,7 @@ chain_config:
           - QueryTypeFilter:
               filter: Read
           - Coalesce:
-              max_behavior:
-                Count: 2000
+              flush_when_buffered_message_count: 2000
           - QueryCounter:
               name: "DR chain"
           - RedisSinkCluster:
