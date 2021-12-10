@@ -254,3 +254,20 @@ fn test_passthrough() {
     udt::test(&connection);
     functions::test(&connection);
 }
+
+#[test]
+#[serial]
+fn test_cassandra_redis_cache() {
+    let _compose = DockerCompose::new("examples/cassandra-redis-cache/docker-compose.yml")
+        .wait_for_n_t("Startup complete", 1, 90);
+
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/cassandra-redis-cache/topology.yaml");
+
+    let connection = cassandra_connection("127.0.0.1", 9042);
+
+    keyspace::test(&connection);
+    table::test(&connection);
+    udt::test(&connection);
+    functions::test(&connection);
+}
