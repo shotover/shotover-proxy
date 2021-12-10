@@ -349,10 +349,8 @@ impl Transform for SimpleRedisCache {
                 }) = &m.original
                 {
                     m.generate_message_details_query();
-                    if let MessageDetails::Query(qm) = &m.details {
-                        if qm.query_type == QueryType::Write {
-                            updates += 1;
-                        }
+                    if m.get_query_type() == QueryType::Write {
+                        updates += 1;
                     }
                 }
             }

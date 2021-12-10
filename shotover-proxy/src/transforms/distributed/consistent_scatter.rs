@@ -9,7 +9,7 @@ use tracing::{debug, error, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value};
+use crate::message::{Message, MessageDetails, QueryResponse, QueryType, Value};
 use crate::protocols::RawFrame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
@@ -128,16 +128,10 @@ impl Transform for ConsistentScatter {
             .map(|m| {
                 m.generate_message_details_query();
 
-                match &m.details {
-                    MessageDetails::Query(QueryMessage {
-                        query_type: QueryType::Read,
-                        ..
-                    }) => self.read_consistency,
-                    MessageDetails::Query(QueryMessage { .. }) => self.write_consistency,
-                    _ if matches!(m.original.get_query_type(), QueryType::Read) => {
-                        self.read_consistency
-                    }
-                    _ => self.write_consistency,
+                if m.get_query_type() == QueryType::Read {
+                    self.read_consistency
+                } else {
+                    self.write_consistency
                 }
             })
             .collect();

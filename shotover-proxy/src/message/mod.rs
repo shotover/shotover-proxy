@@ -104,6 +104,16 @@ impl Message {
             },
         }
     }
+
+    /// Gets the `QueryType` for a message.
+    /// First checks the `details` of the message and then falls back to the `original` message.
+    pub fn get_query_type(&self) -> QueryType {
+        if let MessageDetails::Query(query) = &self.details {
+            query.query_type.clone()
+        } else {
+            self.original.get_query_type()
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
