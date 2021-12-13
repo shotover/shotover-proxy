@@ -20,6 +20,7 @@ use cassandra_protocol::frame::{
 use cassandra_protocol::query::QueryValues;
 use cassandra_protocol::types::value::Value as CValue;
 use cassandra_protocol::types::{to_int, CBytes, CInt};
+use itertools::Itertools;
 use sqlparser::ast::Expr::{BinaryOp, Identifier};
 use sqlparser::ast::Statement::{Delete, Insert, Update};
 use sqlparser::ast::{
@@ -29,7 +30,7 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::message::{
     ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
@@ -373,23 +374,50 @@ impl CassandraCodec {
         let parsed_sql = Parser::parse_sql(&dialect, query_string);
 
         //TODO handle pks
-        //TODO: We absolutely don't handle multiple statements despite this loop indicating otherwise
-        // for statement in ast_list.iter() {
-        if let Ok(ast_list) = parsed_sql {
-            if let Some(statement) = ast_list.get(0) {
-                ast = Some(statement.clone());
-                match statement {
-                    Statement::Query(q) => {
-                        if let SetExpr::Select(s) = q.body.borrow() {
-                            projection = s.projection.iter().map(|s| s.to_string()).collect();
-                            if let TableFactor::Table { name, .. } =
-                                &s.from.get(0).unwrap().relation
-                            {
-                                namespace = name.0.iter().map(|a| a.value.clone()).collect();
+        match parsed_sql {
+            Ok(ast_list) => {
+                //TODO: We absolutely don't handle multiple statements despite this loop indicating otherwise
+                // for statement in ast_list.iter() {
+                if let Some(statement) = ast_list.get(0) {
+                    ast = Some(statement.clone());
+                    match statement {
+                        Statement::Query(q) => {
+                            if let SetExpr::Select(s) = q.body.borrow() {
+                                projection = s.projection.iter().map(|s| s.to_string()).collect();
+                                if let TableFactor::Table { name, .. } =
+                                    &s.from.get(0).unwrap().relation
+                                {
+                                    namespace = name.0.iter().map(|a| a.value.clone()).collect();
+                                }
+                                if let Some(sel) = &s.selection {
+                                    CassandraCodec::binary_ops_to_hashmap(sel, colmap.borrow_mut());
+                                }
+                                if let Some(pk_col_names) = pk_col_map.get(&namespace.join(".")) {
+                                    for pk_component in pk_col_names {
+                                        if let Some(value) = colmap.get(pk_component) {
+                                            primary_key.insert(pk_component.clone(), value.clone());
+                                        } else {
+                                            primary_key.insert(pk_component.clone(), Value::NULL);
+                                        }
+                                    }
+                                }
                             }
-                            if let Some(sel) = &s.selection {
-                                CassandraCodec::binary_ops_to_hashmap(sel, colmap.borrow_mut());
+                        }
+                        Insert {
+                            table_name,
+                            columns,
+                            source,
+                            ..
+                        } => {
+                            namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
+                            let values = CassandraCodec::get_column_values(&source.body);
+                            for (i, c) in columns.iter().enumerate() {
+                                projection.push(c.value.clone());
+                                if let Some(v) = values.get(i) {
+                                    colmap.insert(c.to_string(), Value::Strings(v.clone()));
+                                }
                             }
+
                             if let Some(pk_col_names) = pk_col_map.get(&namespace.join(".")) {
                                 for pk_component in pk_col_names {
                                     if let Some(value) = colmap.get(pk_component) {
@@ -400,59 +428,49 @@ impl CassandraCodec {
                                 }
                             }
                         }
-                    }
-                    Insert {
-                        table_name,
-                        columns,
-                        source,
-                        ..
-                    } => {
-                        namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
-                        let values = CassandraCodec::get_column_values(&source.body);
-                        for (i, c) in columns.iter().enumerate() {
-                            projection.push(c.value.clone());
-                            if let Some(v) = values.get(i) {
-                                colmap.insert(c.to_string(), Value::Strings(v.clone()));
+                        Update {
+                            table,
+                            assignments,
+                            selection,
+                        } => {
+                            match &table.relation {
+                            TableFactor::Table { name, .. } => {
+                                namespace = name.0.iter().map(|a| a.value.clone()).collect();
                             }
-                        }
-
-                        if let Some(pk_col_names) = pk_col_map.get(&namespace.join(".")) {
-                            for pk_component in pk_col_names {
-                                if let Some(value) = colmap.get(pk_component) {
-                                    primary_key.insert(pk_component.clone(), value.clone());
-                                } else {
-                                    primary_key.insert(pk_component.clone(), Value::NULL);
+                            _ => error!(
+                                "The cassandra query language does not support `update`s with table of {:?}",
+                                table
+                            ),
+                        };
+                            for assignment in assignments {
+                                if let Expr::Value(v) = assignment.clone().value {
+                                    let converted_value = CassandraCodec::expr_to_value(v.borrow());
+                                    colmap.insert(
+                                        assignment.id.iter().map(|x| &x.value).join("."),
+                                        converted_value,
+                                    );
                                 }
                             }
-                        }
-                    }
-                    Update {
-                        table_name,
-                        assignments,
-                        selection,
-                    } => {
-                        namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
-                        for assignment in assignments {
-                            if let Expr::Value(v) = assignment.clone().value {
-                                let converted_value = CassandraCodec::expr_to_value(v.borrow());
-                                colmap.insert(assignment.id.value.clone(), converted_value);
+                            if let Some(s) = selection {
+                                CassandraCodec::binary_ops_to_hashmap(s, &mut primary_key);
                             }
                         }
-                        if let Some(s) = selection {
-                            CassandraCodec::binary_ops_to_hashmap(s, &mut primary_key);
+                        Delete {
+                            table_name,
+                            selection,
+                        } => {
+                            namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
+                            if let Some(s) = selection {
+                                CassandraCodec::binary_ops_to_hashmap(s, &mut primary_key);
+                            }
                         }
+                        _ => {}
                     }
-                    Delete {
-                        table_name,
-                        selection,
-                    } => {
-                        namespace = table_name.0.iter().map(|a| a.value.clone()).collect();
-                        if let Some(s) = selection {
-                            CassandraCodec::binary_ops_to_hashmap(s, &mut primary_key);
-                        }
-                    }
-                    _ => {}
                 }
+            }
+            Err(err) => {
+                // TODO: We should handle this error better but for now we can at least log it
+                error!("Failed to parse csql: {}\nError: {:?}", query_string, err)
             }
         }
 

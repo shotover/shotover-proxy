@@ -107,12 +107,14 @@ exceptions = [
     { allow = ["LGPL-3.0"], name = "pktparse", version = "*" }, # Allowed because its only used as a dev-dependency
 ]
 
-# TODO: cbytes_macro_derive is something ben wrote as part of the cassandra-proto changes. Ignore it until we depend on upstream cassandra-proto.
+# TODO: Should be fixed upstream soon https://github.com/hsivonen/encoding_rs/issues/75
 [[licenses.clarify]]
-name = "cbytes_macro_derive"
+name = "encoding_rs"
 version = "*"
-expression = "Apache-2.0"
-license-files = []
+expression = "(Apache-2.0 OR MIT) AND BSD-3-Clause"
+license-files = [
+    { path = "COPYRIGHT", hash = 0x39f8ad31 }
+]
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
