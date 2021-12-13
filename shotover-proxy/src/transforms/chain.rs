@@ -219,7 +219,7 @@ impl TransformChain {
             .chain
             .iter()
             .enumerate()
-            .map(|(i, transform)| {
+            .flat_map(|(i, transform)| {
                 let mut errors = vec![];
 
                 if i == last_index && !transform.is_terminating() {
@@ -238,7 +238,6 @@ impl TransformChain {
 
                 errors
             })
-            .flatten()
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
