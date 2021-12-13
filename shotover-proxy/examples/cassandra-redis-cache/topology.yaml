@@ -1,0 +1,30 @@
+---
+sources:
+  cassandra_prod:
+    Cassandra:
+      listen_addr: "127.0.0.1:9042"
+      cassandra_ks:
+        system.local:
+          - key
+        test.simple:
+          - pk
+        test.clustering:
+          - pk
+          - clustering
+chain_config:
+  main_chain:
+    - RedisCache:
+        caching_schema:
+          test:
+            partition_key: [test]
+            range_key: [test]
+        chain:
+          - RedisSinkSingle:
+              remote_address: "127.0.0.1:6379"
+    - CassandraSinkSingle:
+        remote_address: "127.0.0.1:9043"
+        result_processing: false
+named_topics:
+  testtopic: 5
+source_to_chain_mapping:
+  cassandra_prod: main_chain

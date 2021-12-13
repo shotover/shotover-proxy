@@ -112,7 +112,6 @@ This transform will log the query/message at an info level, then call the down-c
 - DebugPrinter
 ```
 
-
 ### DebugReturner
 
 This transform will drop any messages it receives and return the supplied response.
@@ -257,12 +256,15 @@ This transform will attempt to cache values for a given primary key in a Redis h
 
 ```yaml
 - RedisCache:
-    # The redis connection url. E.g. `config_values: "redis://127.0.0.1/"`
-    config_values: "redis://127.0.0.1/"
+    caching_schema:
+      test:
+        partition_key: [test]
+        range_key: [test]
     chain:
-      - QueryTypeFilter:
-          filter: Read
-      - Null
+      # The chain can contain anything but must end in a Redis sink
+      - RedisSinkSingle:
+          # The IP address and port of the upstream redis node/service.
+          remote_address: "127.0.0.1:6379"
 ```
 
 ### RedisClusterPortsRewrite
