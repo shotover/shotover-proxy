@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, QueryType};
+use crate::message::{Message, QueryType};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -30,13 +30,7 @@ impl Transform for QueryTypeFilter {
             .messages
             .iter()
             .enumerate()
-            .filter(|(_, m)| {
-                if let MessageDetails::Query(qm) = &m.details {
-                    qm.query_type == self.filter
-                } else {
-                    m.original.get_query_type() == self.filter
-                }
-            })
+            .filter(|(_, m)| m.get_query_type() == self.filter)
             .map(|(i, m)| (i, m.to_filtered_reply()))
             .collect();
 
