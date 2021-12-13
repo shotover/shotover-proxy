@@ -215,6 +215,66 @@ APPLY BATCH;"#,
     }
 }
 
+mod cache {
+    use cassandra_cpp::Session;
+    use redis::Commands;
+
+    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+
+    pub fn test(session: &Session, redis_connection: &mut redis::Connection) {
+        run_query(session, "CREATE KEYSPACE test_cache_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(
+            session,
+            "CREATE TABLE test_cache_keyspace.test_table (id int PRIMARY KEY, x int, name varchar);",
+        );
+        run_query(
+            session,
+            r#"BEGIN BATCH
+                INSERT INTO test_cache_keyspace.test_table (id, x, name) VALUES (1, 11, 'foo');
+                INSERT INTO test_cache_keyspace.test_table (id, x, name) VALUES (2, 12, 'bar');
+                INSERT INTO test_cache_keyspace.test_table (id, x, name) VALUES (3, 13, 'baz');
+            APPLY BATCH;"#,
+        );
+
+        // TODO: SELECTS without a WHERE do not get cached
+        assert_query_result(
+            session,
+            "SELECT id, x, name FROM test_cache_keyspace.test_table",
+            &[
+                &[
+                    ResultValue::Int(1),
+                    ResultValue::Int(11),
+                    ResultValue::Varchar("foo".into()),
+                ],
+                &[
+                    ResultValue::Int(2),
+                    ResultValue::Int(12),
+                    ResultValue::Varchar("bar".into()),
+                ],
+                &[
+                    ResultValue::Int(3),
+                    ResultValue::Int(13),
+                    ResultValue::Varchar("baz".into()),
+                ],
+            ],
+        );
+
+        // TODO: This triggers a panic in transforms/redis/cache.rs
+        // assert_query_result(
+        //     session,
+        //     "SELECT id, x, name FROM test_cache_keyspace.test_table WHERE x=400",
+        //     &[],
+        // );
+
+        // Insert a dummy key to ensure the keys command is working correctly, we can remove this later.
+        redis_connection
+            .set::<&str, i32, ()>("dummy_key", 1)
+            .unwrap();
+        let result: Vec<String> = redis_connection.keys("*").unwrap();
+        assert_eq!(result, ["dummy_key".to_string()]);
+    }
+}
+
 #[test]
 #[serial]
 fn test_cluster() {
@@ -261,13 +321,15 @@ fn test_cassandra_redis_cache() {
     let _compose = DockerCompose::new("examples/cassandra-redis-cache/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
-    let _shotover_manager =
+    let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-redis-cache/topology.yaml");
 
+    let mut redis_connection = shotover_manager.redis_connection(6379);
     let connection = cassandra_connection("127.0.0.1", 9042);
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     functions::test(&connection);
+    cache::test(&connection, &mut redis_connection);
 }
