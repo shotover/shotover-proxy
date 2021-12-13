@@ -31,7 +31,6 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [ConsistentScatter](#consistentscatter)               | ✅          | Alpha                 |
 | [DebugPrinter](#debugprinter)                         | ❌          | Alpha                 |
 | [DebugReturner](#debugreturner)                       | ✅          | Alpha                 |
-| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |
 | [KafkaSink](#kafkasink)                               | ✅          | Alpha                 |
 | [Loopback](#loopback)                                 | ✅          | Beta                  |
 | [Null](#null)                                         | ✅          | Beta                  |
@@ -45,6 +44,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [RedisSinkSingle](#redissinksingle)                   | ✅          | Beta                  |
 | [RedisTimestampTagger](#redistimestamptagger)         | ❌          | Alpha                 |
 | [Tee](#tee)                                           | ✅          | Alpha                 |
+<!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
 
 ### CassandraSinkSingle
 
@@ -93,13 +93,13 @@ Upon receiving the configured number of responses, the transform will attempt to
     read_consistency: 2
     # A map of named chains. All chains will be used in each request.
     route_map:
-      cluster1:
+      instance1:
         - CassandraSinkSingle:
             remote_address: "127.0.0.1:9043"
-      cluster2:
+      instance2:
         - CassandraSinkSingle:
             remote_address: "127.1.0.2:9043"
-      cluster3:
+      instance3:
         - CassandraSinkSingle:
             remote_address: "127.2.0.3:9043"
 ```
@@ -125,6 +125,7 @@ This transform will drop any messages it receives and return the supplied respon
     # Fail
 ```
 
+<!-- commented out until included in the public API
 ### DebugRandomDelay
 
 Delay the transform chain at the position that this transform sits at.
@@ -137,6 +138,7 @@ Delay the transform chain at the position that this transform sits at.
   # optionally provide a distribution for a random amount to add to the base delay
   distribution: 500
 ```
+-->
 
 ### Loopback
 
@@ -285,6 +287,10 @@ This transform is a full featured Redis driver that will connect to a Redis clus
 - RedisSinkCluster:
     # A list of IP address and ports of the upstream redis nodes/services.
     first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
+    # The number of connections in the connection pool for each node.
+    # e.g. if connection_count is 4 and there are 4 nodes there will be a total of 16 connections.
+    # When this field is not provided connection_count defaults to 1.
+    connection_count: 1
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
     tls:
