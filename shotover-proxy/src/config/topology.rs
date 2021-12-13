@@ -263,6 +263,7 @@ impl Topology {
 mod topology_tests {
     use tokio::sync::watch;
 
+    use crate::transforms::coalesce::CoalesceConfig;
     use crate::{
         sources::{redis_source::RedisConfig, Sources, SourcesConfig},
         transforms::{
@@ -318,6 +319,33 @@ redis_chain:
         run_test_topology(vec![TransformsConfig::DebugPrinter, TransformsConfig::Null])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_validate_coalesce() {
+        let expected = r#"Topology errors
+redis_chain:
+  Coalesce:
+    Need to provide at least one of these fields:
+    * flush_when_buffered_message_count
+    * flush_when_millis_since_last_flush
+  
+    But none of them were provided.
+    Check https://docs.shotover.io/transforms.html#coalesce for more information.
+"#;
+
+        let error = run_test_topology(vec![
+            TransformsConfig::Coalesce(CoalesceConfig {
+                flush_when_buffered_message_count: None,
+                flush_when_millis_since_last_flush: None,
+            }),
+            TransformsConfig::Null,
+        ])
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, expected);
     }
 
     #[tokio::test]

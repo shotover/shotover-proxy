@@ -4,7 +4,6 @@ use tokio::sync::mpsc::Receiver;
 use crate::config::topology::{ChannelMessage, TopicHolder};
 use crate::server::Shutdown;
 use crate::sources::{Sources, SourcesFromConfig};
-use crate::transforms::coalesce::CoalesceBehavior;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -14,6 +13,13 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
+
+#[derive(Deserialize, Debug, Clone)]
+pub enum CoalesceBehavior {
+    Count(usize),
+    WaitMs(u128),
+    CountOrWait(usize, u128),
+}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AsyncMpscConfig {

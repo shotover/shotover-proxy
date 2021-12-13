@@ -64,21 +64,17 @@ Note: this will just pass the query to the remote node. No cluster discovery or 
 ### Coalesce
 
 This transform holds onto messages until some requirement is met and then sends them batched together.
+Validation will fail if none of the `flush_when_` fields are provided, as this would otherwise result in a Coalesce transform that never flushes.
 
 ```yaml
 - Coalesce:
-    max_behavior:
-      # Messages are held until the specified number of messages have been received.
-      Count: 2000
-      # alternatively:
-      #
-      # Wait until 100ms have passed
-      # Messages are held until the specified number of milliseconds has passed
-      # WaitMs(100)
-      #
-      # Messages are held until the specified number of messages have been received
-      # or the specified number of milliseconds has passed.
-      # CountOrWait(2000, 100)
+    # When this field is provided a flush will occur when the specified number of messages are currently held in the buffer.
+    flush_when_buffered_message_count: 2000
+
+    # When this field is provided a flush will occur when the following occurs in sequence:
+    # 1. the specified number of milliseconds have passed since the last flush ocurred
+    # 2. a new message is received
+    flush_when_millis_since_last_flush: 10000
 ```
 
 ### ConsistentScatter
@@ -91,9 +87,9 @@ Upon receiving the configured number of responses, the transform will attempt to
 
 ```yaml
 - ConsistentScatter:
-    # write_consistency - The number of chains to wait for a "write" response on.
+    # The number of chains to wait for a "write" response on.
     write_consistency: 2
-    # read_consistency - The number of chains to wait for a "read" response on.
+    # The number of chains to wait for a "read" response on.
     read_consistency: 2
     # A map of named chains. All chains will be used in each request.
     route_map:
