@@ -1,4 +1,4 @@
-use cassandra_cpp::{stmt, Cluster, Session, Value, ValueType};
+use cassandra_cpp::{stmt, Cluster, Error, Session, Value, ValueType};
 
 mod basic_driver_tests;
 
@@ -39,11 +39,13 @@ impl ResultValue {
 /// Execute a `query` against the `session` and return result rows
 fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
     let statement = stmt!(query);
-    let result = session.execute(&statement).wait().unwrap();
-    result
-        .into_iter()
-        .map(|x| x.into_iter().map(ResultValue::new).collect())
-        .collect()
+    match session.execute(&statement).wait() {
+        Ok(result) => result
+            .into_iter()
+            .map(|x| x.into_iter().map(ResultValue::new).collect())
+            .collect(),
+        Err(Error(err, _)) => panic!("The CSQL query: {}\nFailed with: {}", query, err),
+    }
 }
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
