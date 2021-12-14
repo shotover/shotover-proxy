@@ -14,12 +14,11 @@ pub struct DebugRandomDelay {
 #[async_trait]
 impl Transform for DebugRandomDelay {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let delay;
-        if let Some(dist) = self.distribution {
-            delay = Duration::from_millis(dist.sample(&mut rand::thread_rng()) as u64 + self.delay);
+        let delay = if let Some(dist) = self.distribution {
+            Duration::from_millis(dist.sample(&mut rand::thread_rng()) as u64 + self.delay)
         } else {
-            delay = Duration::from_millis(self.delay);
-        }
+            Duration::from_millis(self.delay)
+        };
         tokio::time::sleep(delay).await;
         message_wrapper.call_next_transform().await
     }

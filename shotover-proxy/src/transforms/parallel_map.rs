@@ -126,14 +126,13 @@ impl Transform for ParallelMap {
         let mut errors = self
             .chains
             .iter()
-            .map(|chain| {
+            .flat_map(|chain| {
                 chain
                     .validate()
                     .iter()
                     .map(|x| format!("  {}", x))
                     .collect::<Vec<String>>()
             })
-            .flatten()
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {

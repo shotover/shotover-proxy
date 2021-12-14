@@ -211,14 +211,13 @@ impl Transform for ConsistentScatter {
         let mut errors = self
             .route_map
             .iter()
-            .map(|buffer_chain| {
+            .flat_map(|buffer_chain| {
                 buffer_chain
                     .original_chain
                     .validate()
                     .into_iter()
                     .map(|x| format!("  {}", x))
             })
-            .flatten()
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
