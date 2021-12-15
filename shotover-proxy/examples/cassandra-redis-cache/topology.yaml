@@ -2,6 +2,7 @@
 sources:
   cassandra_prod:
     Cassandra:
+      query_processing: true
       listen_addr: "127.0.0.1:9042"
       cassandra_ks:
         system.local:
@@ -15,7 +16,7 @@ chain_config:
   main_chain:
     - RedisCache:
         caching_schema:
-          test:
+          test_cache_keyspace.test_table:
             partition_key: [test]
             range_key: [test]
         chain:

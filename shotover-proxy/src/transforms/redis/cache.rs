@@ -69,7 +69,7 @@ impl SimpleRedisCache {
                     let table = self
                         .caching_schema
                         .get(&table_lookup)
-                        .ok_or_else(|| anyhow!("not a caching table"))?;
+                        .ok_or_else(|| anyhow!("{} not a caching table", table_lookup))?;
 
                     let ast = qm
                         .ast
@@ -84,7 +84,7 @@ impl SimpleRedisCache {
                         &qm.query_values,
                     )?);
                 }
-                _ => return Err(anyhow!("cannot fetch from cache")),
+                details => return Err(anyhow!("cannot fetch {:?} from cache", details)),
             };
             message.modified = true;
         }
@@ -265,7 +265,7 @@ fn build_redis_ast_from_sql(
                     commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
                     Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
                 }
-                _ => Err(anyhow!("Couldn't build query")),
+                expr => Err(anyhow!("Can't build query from expr: {}", expr)),
             },
             Statement::Insert { .. } | Statement::Update { .. } => {
                 let mut commands_buffer: Vec<ShotoverValue> =
@@ -292,7 +292,7 @@ fn build_redis_ast_from_sql(
 
                 let values = query_values
                     .as_ref()
-                    .ok_or_else(|| anyhow!("Couldn't build query"))?
+                    .ok_or_else(|| anyhow!("query_values is None"))?
                     .iter()
                     .filter_map(|(p, v)| {
                         if !pk_schema.partition_key.contains(p) && !pk_schema.range_key.contains(p)
@@ -316,7 +316,7 @@ fn build_redis_ast_from_sql(
 
                 Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
             }
-            _ => Err(anyhow!("Couldn't build query")),
+            statement => Err(anyhow!("Cant build query from statement: {}", statement)),
         },
         ASTHolder::Commands(_) => Ok(ast),
     }
@@ -362,7 +362,10 @@ impl Transform for SimpleRedisCache {
                 .await
             {
                 Ok(cr) => Ok(cr),
-                Err(_e) => message_wrapper.call_next_transform().await,
+                Err(e) => {
+                    tracing::error!("failed to fetch from cache: {:?}", e);
+                    message_wrapper.call_next_transform().await
+                }
             }
         } else {
             let (_cache_res, upstream) = tokio::join!(
