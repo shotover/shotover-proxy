@@ -89,8 +89,6 @@ impl RedisSinkCluster {
         tls: Option<TlsConfig>,
         chain_name: String,
     ) -> Result<Self> {
-        register_counter!("redis_cluster_failed_request", Unit::Count, "chain" => chain_name);
-
         let authenticator = RedisAuthenticator {};
 
         let connection_pool = ConnectionPool::new_with_auth(
@@ -99,7 +97,7 @@ impl RedisSinkCluster {
             tls,
         )?;
 
-        Ok(RedisSinkCluster {
+        let sink_cluster = RedisSinkCluster {
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
             load_scores: HashMap::new(),
@@ -110,7 +108,15 @@ impl RedisSinkCluster {
             connection_error: None,
             rebuild_connections: false,
             token: None,
-        })
+        };
+
+        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => sink_cluster.get_name());
+
+        Ok(sink_cluster)
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisSinkCluster"
     }
 
     #[inline]
@@ -132,9 +138,9 @@ impl RedisSinkCluster {
                 let (one_tx, one_rx) = immediate_responder();
                 match self.connection_error {
                     Some(message) => {
-                        send_error_response(one_tx, message).ok();
+                        self.send_error_response(one_tx, message).ok();
                     }
-                    None => short_circuit(one_tx),
+                    None => self.short_circuit(one_tx),
                 };
                 Box::pin(one_rx)
             }
@@ -354,13 +360,13 @@ impl RedisSinkCluster {
                 Ok(Err(e)) => {
                     debug!("failed to connect to {}: {}", host, e);
                     self.rebuild_connections = true;
-                    short_circuit(one_tx);
+                    self.short_circuit(one_tx);
                     return Ok(one_rx);
                 }
                 Err(_) => {
                     debug!("timed out connecting to {}", host);
                     self.rebuild_connections = true;
-                    short_circuit(one_tx);
+                    self.short_circuit(one_tx);
                     return Ok(one_rx);
                 }
             }
@@ -373,7 +379,7 @@ impl RedisSinkCluster {
         }) {
             if let Some(error_return) = e.0.return_chan {
                 self.rebuild_connections = true;
-                short_circuit(error_return);
+                self.short_circuit(error_return);
             }
             self.channels.remove(host);
         }
@@ -436,13 +442,13 @@ impl RedisSinkCluster {
                 send_simple_response(one_tx, "OK")?;
             }
             Err(TransformError::Upstream(RedisError::BadCredentials)) => {
-                send_error_response(one_tx, "WRONGPASS invalid username-password")?;
+                self.send_error_response(one_tx, "WRONGPASS invalid username-password")?;
             }
             Err(TransformError::Upstream(RedisError::NotAuthorized)) => {
-                send_error_response(one_tx, "NOPERM upstream user lacks required permission")?;
+                self.send_error_response(one_tx, "NOPERM upstream user lacks required permission")?;
             }
             Err(TransformError::Upstream(e)) => {
-                send_error_response(one_tx, e.to_string().as_str())?;
+                self.send_error_response(one_tx, e.to_string().as_str())?;
             }
             Err(e) => {
                 bail!("authentication failed: {}", e);
@@ -450,6 +456,25 @@ impl RedisSinkCluster {
         }
 
         Ok(Box::pin(one_rx))
+    }
+
+    #[inline(always)]
+    fn send_error_response(&self, one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
+        if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
+        counter!("failed_requests", 1, "chain" => chain_name.to_string(), "transform" => self.get_name());
+    }) {
+        error!("failed to count failed request - missing chain name: {}", e);
+    }
+        send_frame_response(one_tx, Frame::Error(message.to_string()))
+            .map_err(|_| anyhow!("failed to send error: {}", message))
+    }
+
+    #[inline(always)]
+    fn short_circuit(&self, one_tx: oneshot::Sender<Response>) {
+        warn!("Could not route request - short circuiting");
+        if let Err(e) = self.send_error_response(one_tx, "ERR Could not route request") {
+            trace!("short circuiting - couldn't send error - {:?}", e);
+        }
     }
 }
 
@@ -690,28 +715,9 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 }
 
 #[inline(always)]
-fn short_circuit(one_tx: oneshot::Sender<Response>) {
-    warn!("Could not route request - short circuiting");
-    if let Err(e) = send_error_response(one_tx, "ERR Could not route request") {
-        trace!("short circuiting - couldn't send error - {:?}", e);
-    }
-}
-
-#[inline(always)]
 fn send_simple_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
     send_frame_response(one_tx, Frame::SimpleString(message.to_string()))
         .map_err(|_| anyhow!("failed to send simple: {}", message))
-}
-
-#[inline(always)]
-fn send_error_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
-    if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
-        counter!("redis_cluster_failed_request", 1, "chain" => chain_name.to_string());
-    }) {
-        error!("failed to count failed request - missing chain name: {}", e);
-    }
-    send_frame_response(one_tx, Frame::Error(message.to_string()))
-        .map_err(|_| anyhow!("failed to send error: {}", message))
 }
 
 #[inline(always)]
@@ -791,7 +797,7 @@ impl Transform for RedisSinkCluster {
                 Ok(response) => response,
                 Err(e) => {
                     let (one_tx, one_rx) = immediate_responder();
-                    send_error_response(one_tx, &format!("ERR {}", e))?;
+                    self.send_error_response(one_tx, &format!("ERR {}", e))?;
                     Box::pin(one_rx)
                 }
             });

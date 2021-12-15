@@ -54,13 +54,19 @@ impl Clone for RedisSinkSingle {
 
 impl RedisSinkSingle {
     pub fn new(address: String, tls: Option<TlsConnector>, chain_name: String) -> RedisSinkSingle {
-        register_counter!("redis_single_failed_request", Unit::Count, "chain" => chain_name.clone());
-        RedisSinkSingle {
+        let redis_sink = RedisSinkSingle {
             address,
             tls,
             outbound: None,
-            chain_name,
-        }
+            chain_name: chain_name.clone(),
+        };
+        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => redis_sink.get_name());
+
+        redis_sink
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisSinkSingle"
     }
 }
 
@@ -103,7 +109,7 @@ impl Transform for RedisSinkSingle {
                 if let Ok(ref messages) = a {
                     for message in messages {
                         if let RawFrame::Redis(Frame::Error(_)) = message.original {
-                            counter!("redis_single_failed_request", 1, "chain" => self.chain_name.clone());
+                            counter!("failed_requests", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
                         }
                     }
                 }
