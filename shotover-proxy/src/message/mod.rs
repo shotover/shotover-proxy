@@ -90,7 +90,7 @@ impl Message {
                     direction: Direction::Response,
                     flags: Flags::empty(),
                     opcode: Opcode::Error,
-                    stream: frame.stream,
+                    stream_id: frame.stream_id,
                     body: ErrorBody {
                         error_code: 0,
                         message: "Message was filtered out by shotover".into(),

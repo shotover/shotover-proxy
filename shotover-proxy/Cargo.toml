@@ -52,7 +52,7 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = "3.0.1"
-cassandra-protocol = "=1.0.0-beta.2"
+cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", rev="e1de5ffc30cf0e2cc13a657835f916fd4e61bf99" }
 rdkafka = "0.28"
 crc16 = "0.4.0"
 

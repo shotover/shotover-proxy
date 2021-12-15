@@ -372,7 +372,6 @@ mod protect_transform_tests {
                         None,
                         None,
                         Flags::empty(),
-                        false,
                         Version::V4,
                     );
 
@@ -548,7 +547,6 @@ mod protect_transform_tests {
                     None,
                     None,
                     Flags::empty(),
-                    false,
                     Version::V4,
                 );
 
