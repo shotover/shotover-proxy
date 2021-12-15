@@ -34,7 +34,7 @@ thiserror = "1.0"
 anyhow = "1.0.31"
 
 # Parsers
-sqlparser = "0.12"
+sqlparser = "0.13"
 serde = { version = "1.0.111", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.8.21"
