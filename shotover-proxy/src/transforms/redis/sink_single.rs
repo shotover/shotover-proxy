@@ -3,6 +3,8 @@ use std::fmt::Debug;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
+use metrics::{counter, register_counter, Unit};
+use redis_protocol::resp2::prelude::Frame;
 use serde::Deserialize;
 use std::pin::Pin;
 use tokio::net::TcpStream;
@@ -11,6 +13,7 @@ use tokio_util::codec::Framed;
 
 use crate::error::ChainResponse;
 use crate::protocols::redis_codec::{DecodeType, RedisCodec};
+use crate::protocols::RawFrame;
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, Wrapper};
 
@@ -22,11 +25,12 @@ pub struct RedisSinkSingleConfig {
 }
 
 impl RedisSinkSingleConfig {
-    pub async fn get_source(&self) -> Result<Transforms> {
+    pub async fn get_source(&self, chain_name: String) -> Result<Transforms> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Transforms::RedisSinkSingle(RedisSinkSingle::new(
             self.address.clone(),
             tls,
+            chain_name,
         )))
     }
 }
@@ -35,21 +39,34 @@ pub struct RedisSinkSingle {
     address: String,
     tls: Option<TlsConnector>,
     outbound: Option<Framed<Pin<Box<dyn AsyncStream + Send + Sync>>, RedisCodec>>,
+    chain_name: String,
 }
 
 impl Clone for RedisSinkSingle {
     fn clone(&self) -> Self {
-        RedisSinkSingle::new(self.address.clone(), self.tls.clone())
+        RedisSinkSingle::new(
+            self.address.clone(),
+            self.tls.clone(),
+            self.chain_name.clone(),
+        )
     }
 }
 
 impl RedisSinkSingle {
-    pub fn new(address: String, tls: Option<TlsConnector>) -> RedisSinkSingle {
-        RedisSinkSingle {
+    pub fn new(address: String, tls: Option<TlsConnector>, chain_name: String) -> RedisSinkSingle {
+        let redis_sink = RedisSinkSingle {
             address,
             tls,
             outbound: None,
-        }
+            chain_name: chain_name.clone(),
+        };
+        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => redis_sink.get_name());
+
+        redis_sink
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisSinkSingle"
     }
 }
 
@@ -88,66 +105,17 @@ impl Transform for RedisSinkSingle {
             .ok();
 
         match outbound_framed_codec.next().fuse().await {
-            Some(a) => a,
+            Some(a) => {
+                if let Ok(ref messages) = a {
+                    for message in messages {
+                        if let RawFrame::Redis(Frame::Error(_)) = message.original {
+                            counter!("failed_requests", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
+                        }
+                    }
+                }
+                a
+            }
             None => Err(anyhow!("couldnt get frame")),
         }
     }
-}
-
-#[cfg(test)]
-mod test {
-    // #[tokio::test(flavor = "multi_thread")]
-    // pub async fn test_clock_wrap() -> Result<()> {
-    //     let address = "".to_string();
-    //
-    //     let mut stream = stream::iter(1..=10);
-    //
-    //     let _ = maybe_fastforward::<_, i32>(
-    //         &address,
-    //         &mut stream,
-    //         Wrapping(u32::MIN),
-    //         &mut Wrapping(u32::MAX),
-    //     )
-    //     .await;
-    //
-    //     assert_eq!(stream.next().await, Some(1));
-    //
-    //     let mut stream = stream::iter(1..=10);
-    //
-    //     let _ = maybe_fastforward::<_, i32>(
-    //         &address,
-    //         &mut stream,
-    //         Wrapping(1),
-    //         &mut Wrapping(u32::MAX),
-    //     )
-    //     .await;
-    //
-    //     assert_eq!(stream.next().await, Some(2));
-    //
-    //     let mut stream = stream::iter(1..=10);
-    //
-    //     let _ = maybe_fastforward::<_, i32>(
-    //         &address,
-    //         &mut stream,
-    //         Wrapping(1),
-    //         &mut Wrapping(u32::MIN),
-    //     )
-    //     .await;
-    //
-    //     assert_eq!(stream.next().await, Some(1));
-    //
-    //     let mut stream = stream::iter(1..=10);
-    //
-    //     let _ = maybe_fastforward::<_, i32>(
-    //         &address,
-    //         &mut stream,
-    //         Wrapping(2),
-    //         &mut Wrapping(u32::MIN),
-    //     )
-    //     .await;
-    //
-    //     assert_eq!(stream.next().await, Some(2));
-    //
-    //     Ok(())
-    // }
 }
