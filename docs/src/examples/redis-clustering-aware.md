@@ -25,8 +25,8 @@ Below we can see an example of a Redis node and it's Shotover sidecar. Notice th
 redis-node-0:
   image: docker.io/bitnami/redis-cluster:6.0-debian-10
   networks:
-  cluster_subnet:
-    ipv4_address: 172.16.1.2
+    cluster_subnet:
+      ipv4_address: 172.16.1.2
   volumes:
     - redis-cluster_data-0:/bitnami/redis/data
   environment:
@@ -53,7 +53,7 @@ In this example we will use `redis-benchmark` with cluster mode enabled as our R
 First we will modify our `topology.yaml` file to have a single Redis source. This will:
 
 * Define how Shotover listens for incoming connection from our client application (`redis-benchmark`).
-* Configure Shotover to connect to the Redis node via our defined contact point.
+* Configure Shotover to connect to the Redis node via our defined remote address.
 * Configure Shotover to rewrite all Redis ports with our Shotover port when the cluster aware driver is talking to the cluster, through Shotover.
 * Connect our Redis Source to our Redis cluster sink (transform).
 
