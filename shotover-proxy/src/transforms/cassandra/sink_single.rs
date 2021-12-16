@@ -54,14 +54,21 @@ impl Clone for CassandraSinkSingle {
 
 impl CassandraSinkSingle {
     pub fn new(address: String, bypass: bool, chain_name: String) -> CassandraSinkSingle {
-        register_counter!("cassandra_single_failed_request", Unit::Count, "chain" => chain_name.clone());
-        CassandraSinkSingle {
+        let sink_single = CassandraSinkSingle {
             address,
             outbound: None,
             cassandra_ks: HashMap::new(),
             bypass,
-            chain_name,
-        }
+            chain_name: chain_name.clone(),
+        };
+
+        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => sink_single.get_name());
+
+        sink_single
+    }
+
+    fn get_name(&self) -> &'static str {
+        "CassandraSinkSingle"
     }
 }
 
@@ -123,13 +130,12 @@ impl CassandraSinkSingle {
                                                 ..
                                             }) = &message.original
                                             {
-                                                counter!("cassandra_single_failed_request", 1, "chain" => self.chain_name.clone());
+                                                counter!("failed_requests", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
                                             }
                                         }
                                         responses.append(&mut resp);
                                     }
                                     (m, Err(err)) => {
-                                        counter!("cassandra_single_failed_request", 1, "chain" => self.chain_name.clone());
                                         responses.push(Message::new_response(
                                             QueryResponse::empty_with_error(Some(
                                                 message::Value::Strings(format!("{}", err)),
