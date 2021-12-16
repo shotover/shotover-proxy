@@ -259,12 +259,19 @@ mod cache {
             ],
         );
 
-        // TODO: This triggers a panic in transforms/redis/cache.rs
-        // assert_query_result(
-        //     session,
-        //     "SELECT id, x, name FROM test_cache_keyspace.test_table WHERE x=400",
-        //     &[],
-        // );
+        // query against the primary key
+        assert_query_result(
+            session,
+            "SELECT id, x, name FROM test_cache_keyspace.test_table WHERE id=1",
+            &[],
+        );
+
+        // query against some other field
+        assert_query_result(
+            session,
+            "SELECT id, x, name FROM test_cache_keyspace.test_table WHERE x=11",
+            &[],
+        );
 
         // Insert a dummy key to ensure the keys command is working correctly, we can remove this later.
         redis_connection

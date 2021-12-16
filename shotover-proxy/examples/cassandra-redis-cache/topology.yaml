@@ -5,19 +5,14 @@ sources:
       query_processing: true
       listen_addr: "127.0.0.1:9042"
       cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
+        test_cache_keyspace.test_table:
+          - id
 chain_config:
   main_chain:
     - RedisCache:
         caching_schema:
           test_cache_keyspace.test_table:
-            partition_key: [test]
+            partition_key: [id]
             range_key: [test]
         chain:
           - RedisSinkSingle:
