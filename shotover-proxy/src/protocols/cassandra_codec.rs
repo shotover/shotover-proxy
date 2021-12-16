@@ -230,11 +230,7 @@ impl CassandraCodec {
         }
     }
 
-    fn rebuild_binops_tree<'a>(
-        node: &'a mut Expr,
-        map: &'a mut HashMap<String, Value>,
-        use_bind: bool,
-    ) {
+    fn rebuild_binops_tree(node: &mut Expr, map: &mut HashMap<String, Value>, use_bind: bool) {
         if let BinaryOp { left, op, right } = node {
             match op {
                 BinaryOperator::And => {
@@ -259,7 +255,7 @@ impl CassandraCodec {
         }
     }
 
-    fn binary_ops_to_hashmap<'a>(node: &'a Expr, map: &'a mut HashMap<String, Value>) {
+    fn binary_ops_to_hashmap(node: &Expr, map: &mut HashMap<String, Value>) {
         if let BinaryOp { left, op, right } = node {
             match op {
                 BinaryOperator::And => {
@@ -381,7 +377,7 @@ impl CassandraCodec {
                     ast = Some(statement.clone());
                     match statement {
                         Statement::Query(q) => {
-                            if let SetExpr::Select(s) = q.body.borrow() {
+                            if let SetExpr::Select(s) = &q.body {
                                 projection = s.projection.iter().map(|s| s.to_string()).collect();
                                 if let TableFactor::Table { name, .. } =
                                     &s.from.get(0).unwrap().relation
@@ -389,7 +385,7 @@ impl CassandraCodec {
                                     namespace = name.0.iter().map(|a| a.value.clone()).collect();
                                 }
                                 if let Some(sel) = &s.selection {
-                                    CassandraCodec::binary_ops_to_hashmap(sel, colmap.borrow_mut());
+                                    CassandraCodec::binary_ops_to_hashmap(sel, &mut colmap);
                                 }
                                 if let Some(pk_col_names) = pk_col_map.get(&namespace.join(".")) {
                                     for pk_component in pk_col_names {
@@ -443,7 +439,7 @@ impl CassandraCodec {
                         };
                             for assignment in assignments {
                                 if let Expr::Value(v) = assignment.clone().value {
-                                    let converted_value = CassandraCodec::expr_to_value(v.borrow());
+                                    let converted_value = CassandraCodec::expr_to_value(&v);
                                     colmap.insert(
                                         assignment.id.iter().map(|x| &x.value).join("."),
                                         converted_value,

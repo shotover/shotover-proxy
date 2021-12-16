@@ -1,5 +1,4 @@
 use core::mem;
-use std::borrow::Borrow;
 use std::collections::HashMap;
 
 use anyhow::anyhow;
@@ -225,10 +224,8 @@ impl Transform for Protect {
                                         if let Some(v) = row.get_mut(*index) {
                                             if let Value::Bytes(_) = v {
                                                 let protected =
-                                                    Protected::from_encrypted_bytes_value(
-                                                        v.borrow(),
-                                                    )
-                                                    .await?;
+                                                    Protected::from_encrypted_bytes_value(v)
+                                                        .await?;
                                                 let new_value: Value = protected
                                                     .unprotect(&self.key_source, &self.key_id)
                                                     .await?;
