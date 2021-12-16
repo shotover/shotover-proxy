@@ -529,9 +529,9 @@ impl CassandraCodec {
         match frame.opcode {
             Opcode::Query => {
                 if let Ok(RequestBody::Query(body)) = frame.request_body() {
-                    let parsed_string =
+                    let parsed_query =
                         CassandraCodec::parse_query_string(body.query.as_str(), &self.pk_col_map);
-                    if parsed_string.ast.is_none() {
+                    if parsed_query.ast.is_none() {
                         // TODO: Currently this will probably catch schema changes that don't match
                         // what the SQL parser expects
                         return vec![Message::new_raw(RawFrame::Cassandra(frame))];
@@ -539,12 +539,12 @@ impl CassandraCodec {
                     return vec![Message::new(
                         MessageDetails::Query(QueryMessage {
                             query_string: body.query,
-                            namespace: parsed_string.namespace.unwrap(),
-                            primary_key: parsed_string.primary_key,
-                            query_values: parsed_string.colmap,
-                            projection: parsed_string.projection,
+                            namespace: parsed_query.namespace.unwrap(),
+                            primary_key: parsed_query.primary_key,
+                            query_values: parsed_query.colmap,
+                            projection: parsed_query.projection,
                             query_type: QueryType::Read,
-                            ast: parsed_string.ast.map(|x| ASTHolder::SQL(Box::new(x))),
+                            ast: parsed_query.ast.map(|x| ASTHolder::SQL(Box::new(x))),
                         }),
                         false,
                         RawFrame::Cassandra(frame),
