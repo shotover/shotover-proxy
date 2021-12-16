@@ -96,7 +96,6 @@ impl CassandraSinkSingle {
                                     frame.stream_id
                                 } else {
                                     info!("no cassandra frame found");
-                                    counter!("cassandra_single_failed_request", 1, "chain" => self.chain_name.clone());
                                     return Err(anyhow!("no cassandra frame found"));
                                 };
 
