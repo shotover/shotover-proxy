@@ -276,7 +276,7 @@ This transform should be used with the `RedisSinkCluster` transform. It will wri
 ```yaml
 - RedisClusterPortsRewrite:
     # rewrite the ports returned by `CLUSTER SLOTS` and `CLUSTER NODES` to use this port.
-    new_port: 6379
+    new_port: 6380
 ```
 
 ### RedisSinkCluster

@@ -87,7 +87,7 @@ services:
   shotover-0:
     restart: always
     depends_on:
-      - redis-node-3
+      - redis-node-0
     image: shotover/shotover-proxy
     network_mode: "service:redis-node-0"
     volumes:
@@ -98,7 +98,7 @@ services:
   shotover-1:
     restart: always
     depends_on:
-      - redis-node-3
+      - redis-node-1
     image: shotover/shotover-proxy
     network_mode: "service:redis-node-1"
     volumes:
@@ -109,7 +109,7 @@ services:
   shotover-2:
     restart: always
     depends_on:
-      - redis-node-3
+      - redis-node-2
     image: shotover/shotover-proxy
     network_mode: "service:redis-node-2"
     volumes:
@@ -142,7 +142,7 @@ services:
   shotover-5:
     restart: always
     depends_on:
-      - redis-node-4
+      - redis-node-5
     image: shotover/shotover-proxy
     network_mode: "service:redis-node-5"
     volumes:
