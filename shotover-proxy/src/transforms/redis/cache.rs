@@ -385,8 +385,8 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::message::Value as ShotoverValue;
-    use crate::message::{ASTHolder, MessageDetails, Value};
+    use crate::message::{ASTHolder, MessageDetails};
+    use crate::message::{IntSize as ShotoverValueIntSize, Value as ShotoverValue};
     use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::chain::TransformChain;
@@ -404,7 +404,7 @@ mod test {
     fn build_query(
         query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
-    ) -> (ASTHolder, Option<HashMap<String, Value>>) {
+    ) -> (ASTHolder, Option<HashMap<String, ShotoverValue>>) {
         let res = CassandraCodec::parse_query_string(query_string, pk_col_map);
         (ASTHolder::SQL(Box::new(res.ast.unwrap())), res.colmap)
     }
@@ -452,7 +452,10 @@ mod test {
     #[test]
     fn equal_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
 
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -478,7 +481,10 @@ mod test {
     #[test]
     fn insert_simple_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
 
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -502,7 +508,10 @@ mod test {
     #[test]
     fn insert_simple_clustering_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
         pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
 
         let table_cache_schema = TableCacheSchema {
@@ -529,7 +538,10 @@ mod test {
     #[test]
     fn update_simple_clustering_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
         pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
 
         let table_cache_schema = TableCacheSchema {
@@ -554,7 +566,10 @@ mod test {
     #[test]
     fn check_deterministic_order_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
@@ -587,7 +602,10 @@ mod test {
     #[test]
     fn range_exclusive_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
@@ -612,7 +630,10 @@ mod test {
     #[test]
     fn range_inclusive_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
@@ -637,7 +658,10 @@ mod test {
     #[test]
     fn single_pk_only_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
@@ -659,8 +683,14 @@ mod test {
     #[test]
     fn compound_pk_only_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
-        pks.insert("y".to_string(), ShotoverValue::Integer(2));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
+        pks.insert(
+            "y".to_string(),
+            ShotoverValue::Integer(2, ShotoverValueIntSize::I32),
+        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string(), "y".to_string()],
             range_key: vec![],
@@ -683,7 +713,10 @@ mod test {
     #[test]
     fn open_range_test() {
         let mut pks = HashMap::new();
-        pks.insert("z".to_string(), ShotoverValue::Integer(1));
+        pks.insert(
+            "z".to_string(),
+            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],

@@ -1,5 +1,6 @@
 use crate::message::{
-    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    ASTHolder, IntSize, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType,
+    Value,
 };
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
@@ -398,7 +399,7 @@ pub fn process_redis_frame_response(frame: &Frame) -> Result<QueryResponse> {
         }),
         Frame::Integer(integer) => Ok(QueryResponse {
             matching_query: None,
-            result: Some(Value::Integer(integer)),
+            result: Some(Value::Integer(integer, IntSize::I32)),
             error: None,
             response_meta: None,
         }),

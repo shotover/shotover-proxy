@@ -56,7 +56,7 @@ fn get_timestamp(frag: &QueryResponse) -> i64 {
     debug!("\n\n {:#?} \n\n", frag.response_meta);
     if let Some(Value::Document(meta)) = frag.response_meta.as_ref() {
         if let Some(t) = meta.get("timestamp") {
-            if let Value::Integer(i) = t {
+            if let Value::Integer(i, _) = t {
                 return *i;
             }
             return 0;

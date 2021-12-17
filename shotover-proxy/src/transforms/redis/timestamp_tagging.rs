@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, MessageDetails, QueryMessage, QueryResponse, Value};
+use crate::message::{ASTHolder, IntSize, MessageDetails, QueryMessage, QueryResponse, Value};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -130,14 +130,14 @@ fn unwrap_response(qr: &mut QueryResponse) {
         } else if values.len() == 2 {
             qr.response_meta = values.pop().map(|v| {
                 let mut hm: HashMap<String, Value> = HashMap::new();
-                if let Value::Integer(i) = v {
+                if let Value::Integer(i, _) = v {
                     let start = SystemTime::now();
                     let since_the_epoch = start
                         .duration_since(UNIX_EPOCH)
                         .expect("Time went backwards");
                     hm.insert(
                         "timestamp".to_string(),
-                        Value::Integer(since_the_epoch.as_secs() as i64 - i),
+                        Value::Integer(since_the_epoch.as_secs() as i64 - i, IntSize::I32),
                     );
                 } else {
                     hm.insert("timestamp".to_string(), v);

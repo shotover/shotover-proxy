@@ -321,7 +321,7 @@ pub enum Value {
     Bytes(Bytes),
     Ascii(String),
     Strings(String),
-    Integer(i64),
+    Integer(i64, IntSize),
     Double(f64),
     Float(f32),
     Boolean(bool),
@@ -334,13 +334,10 @@ pub enum Value {
     Set(Vec<Value>),
     Map(Vec<(Value, Value)>),
     Varint(BigInt),
-    Bigint(BigInt),
     Decimal(BigDecimal),
     Date(i32),
     Timestamp(i64),
     Timeuuid(Uuid),
-    Tinyint(i8),
-    Smallint(i16),
     Varchar(String),
     Uuid(Uuid),
     Time(i64),
@@ -349,12 +346,20 @@ pub enum Value {
     Udt(HashMap<String, Value>),
 }
 
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub enum IntSize {
+    I64, // BigInt
+    I32, // Int
+    I16, // Smallint
+    I8,  // tinyint
+}
+
 impl From<Frame> for Value {
     fn from(f: Frame) -> Self {
         match f {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
-            Frame::Integer(i) => Value::Integer(i),
+            Frame::Integer(i) => Value::Integer(i, IntSize::I32),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Null => Value::NULL,
@@ -366,7 +371,7 @@ impl From<&Frame> for Value {
         match f.clone() {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
-            Frame::Integer(i) => Value::Integer(i),
+            Frame::Integer(i) => Value::Integer(i, IntSize::I32),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Null => Value::NULL,
@@ -381,7 +386,7 @@ impl From<Value> for Frame {
             Value::None => unimplemented!(),
             Value::Bytes(b) => Frame::BulkString(b.to_vec()),
             Value::Strings(s) => Frame::SimpleString(s),
-            Value::Integer(i) => Frame::Integer(i),
+            Value::Integer(i, _) => Frame::Integer(i),
             Value::Float(f) => Frame::SimpleString(f.to_string()),
             Value::Boolean(b) => Frame::Integer(i64::from(b)),
             Value::Inet(i) => Frame::SimpleString(i.to_string()),
@@ -395,13 +400,10 @@ impl From<Value> for Frame {
             Value::Set(_) => unimplemented!(),
             Value::Map(_) => unimplemented!(),
             Value::Varint(_) => unimplemented!(),
-            Value::Bigint(_) => unimplemented!(),
             Value::Decimal(_) => unimplemented!(),
             Value::Date(_) => unimplemented!(),
             Value::Timestamp(_) => unimplemented!(),
             Value::Timeuuid(_) => unimplemented!(),
-            Value::Tinyint(_) => unimplemented!(),
-            Value::Smallint(_) => unimplemented!(),
             Value::Varchar(_) => unimplemented!(),
             Value::Uuid(_) => unimplemented!(),
             Value::Time(_) => unimplemented!(),
@@ -425,14 +427,18 @@ impl Value {
         if let Some(actual_bytes) = data.as_slice() {
             match spec.col_type.id {
                 ColType::Ascii => Value::Strings(decode_ascii(actual_bytes).unwrap()),
-                ColType::Bigint => Value::Integer(decode_bigint(actual_bytes).unwrap()),
+                ColType::Bigint => {
+                    Value::Integer(decode_bigint(actual_bytes).unwrap(), IntSize::I64)
+                }
                 ColType::Blob => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Boolean => Value::Boolean(decode_boolean(actual_bytes).unwrap()),
-                ColType::Counter => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
+                ColType::Counter => Value::Counter(decode_int(actual_bytes).unwrap() as i64),
                 ColType::Decimal => unimplemented!("We dont have a decimal type yet"),
                 ColType::Double => Value::Double(decode_double(actual_bytes).unwrap()),
                 ColType::Float => Value::Float(decode_float(actual_bytes).unwrap()),
-                ColType::Int => Value::Integer(decode_int(actual_bytes).unwrap() as i64),
+                ColType::Int => {
+                    Value::Integer(decode_int(actual_bytes).unwrap() as i64, IntSize::I32)
+                }
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
                 ColType::Varint => unimplemented!("We dont have a varint type yet"),
@@ -441,8 +447,12 @@ impl Value {
                 ColType::Timestamp => Value::NULL,
                 ColType::Date => Value::NULL,
                 ColType::Time => Value::NULL,
-                ColType::Smallint => Value::Integer(decode_smallint(actual_bytes).unwrap() as i64),
-                ColType::Tinyint => Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64),
+                ColType::Smallint => {
+                    Value::Integer(decode_smallint(actual_bytes).unwrap() as i64, IntSize::I16)
+                }
+                ColType::Tinyint => {
+                    Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64, IntSize::I8)
+                }
                 // TODO: process collection types based on ColTypeOption
                 // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
                 _ => Value::NULL,
@@ -458,7 +468,7 @@ impl Value {
             Value::None => Bytes::from("".to_string()),
             Value::Bytes(b) => b,
             Value::Strings(s) => Bytes::from(s),
-            Value::Integer(i) => Bytes::from(format!("{}", i)),
+            Value::Integer(i, _) => Bytes::from(format!("{}", i)),
             Value::Float(f) => Bytes::from(format!("{}", f)),
             Value::Boolean(b) => Bytes::from(format!("{}", b)),
             Value::Inet(i) => Bytes::from(format!("{}", i)),
@@ -472,13 +482,10 @@ impl Value {
             Value::Set(_) => unimplemented!(),
             Value::Map(_) => unimplemented!(),
             Value::Varint(_) => unimplemented!(),
-            Value::Bigint(_) => unimplemented!(),
             Value::Decimal(_) => unimplemented!(),
             Value::Date(_) => unimplemented!(),
             Value::Timestamp(_) => unimplemented!(),
             Value::Timeuuid(_) => unimplemented!(),
-            Value::Tinyint(_) => unimplemented!(),
-            Value::Smallint(_) => unimplemented!(),
             Value::Varchar(_) => unimplemented!(),
             Value::Uuid(_) => unimplemented!(),
             Value::Time(_) => unimplemented!(),
@@ -494,7 +501,7 @@ impl Value {
             Value::None => Bytes::new(),
             Value::Bytes(b) => b,
             Value::Strings(s) => Bytes::from(s),
-            Value::Integer(i) => Bytes::from(Vec::from(i.to_le_bytes())),
+            Value::Integer(i, _) => Bytes::from(Vec::from(i.to_le_bytes())),
             Value::Float(f) => Bytes::from(Vec::from(f.to_le_bytes())),
             Value::Boolean(b) => Bytes::from(Vec::from(if b {
                 (1_u8).to_le_bytes()
@@ -515,13 +522,10 @@ impl Value {
             Value::Set(_) => unimplemented!(),
             Value::Map(_) => unimplemented!(),
             Value::Varint(_) => unimplemented!(),
-            Value::Bigint(_) => unimplemented!(),
             Value::Decimal(_) => unimplemented!(),
             Value::Date(_) => unimplemented!(),
             Value::Timestamp(_) => unimplemented!(),
             Value::Timeuuid(_) => unimplemented!(),
-            Value::Tinyint(_) => unimplemented!(),
-            Value::Smallint(_) => unimplemented!(),
             Value::Varchar(_) => unimplemented!(),
             Value::Uuid(_) => unimplemented!(),
             Value::Time(_) => unimplemented!(),
@@ -539,7 +543,7 @@ impl From<Value> for cassandra_protocol::types::value::Bytes {
             Value::None => cassandra_protocol::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
             Value::Strings(s) => s.into(),
-            Value::Integer(i) => i.into(),
+            Value::Integer(i, _) => i.into(),
             Value::Float(f) => f.into(),
             Value::Boolean(b) => b.into(),
             Value::List(l) => cassandra_protocol::types::value::Bytes::from(l),
@@ -553,13 +557,10 @@ impl From<Value> for cassandra_protocol::types::value::Bytes {
             Value::Set(_) => unimplemented!(),
             Value::Map(_) => unimplemented!(),
             Value::Varint(_) => unimplemented!(),
-            Value::Bigint(_) => unimplemented!(),
             Value::Decimal(_) => unimplemented!(),
             Value::Date(_) => unimplemented!(),
             Value::Timestamp(_) => unimplemented!(),
             Value::Timeuuid(_) => unimplemented!(),
-            Value::Tinyint(_) => unimplemented!(),
-            Value::Smallint(_) => unimplemented!(),
             Value::Varchar(_) => unimplemented!(),
             Value::Uuid(_) => unimplemented!(),
             Value::Time(_) => unimplemented!(),

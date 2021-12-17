@@ -145,7 +145,7 @@ impl CassandraCodec {
                                         Value::NULL => to_int(-1_i32),
                                         Value::Bytes(x) => x.to_vec(),
                                         Value::Strings(x) => Vec::from(x.as_bytes()),
-                                        Value::Integer(x) => {
+                                        Value::Integer(x, _) => {
                                             let mut temp: Vec<u8> = Vec::new();
                                             let _ = temp.write_i64::<BigEndian>(*x).unwrap();
                                             temp
@@ -196,7 +196,7 @@ impl CassandraCodec {
             Value::NULL => SQLValue::Null,
             Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // TODO: this is definitely wrong
             Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            Value::Integer(i) => SQLValue::Number(i.to_string(), false),
+            Value::Integer(i, _) => SQLValue::Number(i.to_string(), false),
             Value::Float(f) => SQLValue::Number(f.to_string(), false),
             Value::Boolean(b) => SQLValue::Boolean(*b),
             _ => SQLValue::Null,
