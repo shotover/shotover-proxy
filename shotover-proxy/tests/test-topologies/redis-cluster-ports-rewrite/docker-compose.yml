@@ -2,9 +2,8 @@ version: '2'
 services:
   redis-node-0:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
-    networks:
-      cluster_subnet:
-        ipv4_address: 172.16.1.2
+    ports:
+      - "2220:6379"
     volumes:
       - redis-cluster_data-0:/bitnami/redis/data
     environment:
@@ -13,9 +12,8 @@ services:
 
   redis-node-1:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
-    networks:
-      cluster_subnet:
-        ipv4_address: 172.16.1.3
+    ports:
+      - "2221:6379"
     volumes:
       - redis-cluster_data-1:/bitnami/redis/data
     environment:
@@ -24,9 +22,8 @@ services:
 
   redis-node-2:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
-    networks:
-      cluster_subnet:
-        ipv4_address: 172.16.1.4
+    ports:
+      - "2222:6379"
     volumes:
       - redis-cluster_data-2:/bitnami/redis/data
     environment:
@@ -35,9 +32,8 @@ services:
 
   redis-node-3:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
-    networks:
-      cluster_subnet:
-          ipv4_address: 172.16.1.5
+    ports:
+      - "2223:6379"
     volumes:
       - redis-cluster_data-3:/bitnami/redis/data
     environment:
@@ -46,9 +42,8 @@ services:
 
   redis-node-4:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
-    networks:
-      cluster_subnet:
-        ipv4_address: 172.16.1.6
+    ports:
+      - "2224:6379"
     volumes:
       - redis-cluster_data-4:/bitnami/redis/data
     environment:
@@ -57,9 +52,8 @@ services:
 
   redis-node-5:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
-    networks:
-      cluster_subnet:
-        ipv4_address: 172.16.1.7
+    ports:
+      - "2225:6379"
     volumes:
       - redis-cluster_data-5:/bitnami/redis/data
     environment:
@@ -68,9 +62,6 @@ services:
 
   redis-cluster-init:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
-    networks:
-      cluster_subnet:
-        ipv4_address: 172.16.1.8
     depends_on:
       - redis-node-0
       - redis-node-1
@@ -83,72 +74,6 @@ services:
       - 'REDIS_CLUSTER_REPLICAS=1'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_CLUSTER_CREATOR=yes'
-
-  shotover-0:
-    restart: always
-    depends_on:
-      - redis-node-0
-    image: shotover/shotover-proxy
-    network_mode: "service:redis-node-0"
-    volumes:
-      - type: bind
-        source: $PWD
-        target: /config
-
-  shotover-1:
-    restart: always
-    depends_on:
-      - redis-node-1
-    image: shotover/shotover-proxy
-    network_mode: "service:redis-node-1"
-    volumes:
-      - type: bind
-        source: $PWD
-        target: /config
-
-  shotover-2:
-    restart: always
-    depends_on:
-      - redis-node-2
-    image: shotover/shotover-proxy
-    network_mode: "service:redis-node-2"
-    volumes:
-      - type: bind
-        source: $PWD
-        target: /config
-
-  shotover-3:
-    restart: always
-    depends_on:
-      - redis-node-3
-    image: shotover/shotover-proxy
-    network_mode: "service:redis-node-3"
-    volumes:
-      - type: bind
-        source: $PWD
-        target: /config
-
-  shotover-4:
-    restart: always
-    depends_on:
-      - redis-node-4
-    image: shotover/shotover-proxy
-    network_mode: "service:redis-node-4"
-    volumes:
-      - type: bind
-        source: $PWD
-        target: /config
-
-  shotover-5:
-    restart: always
-    depends_on:
-      - redis-node-5
-    image: shotover/shotover-proxy
-    network_mode: "service:redis-node-5"
-    volumes:
-      - type: bind
-        source: $PWD
-        target: /config
 
 volumes:
   redis-cluster_data-0:
@@ -163,13 +88,3 @@ volumes:
     driver: local
   redis-cluster_data-5:
     driver: local
-
-networks:
-  cluster_subnet:
-    name: cluster_subnet
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.16.1.0/24
-          gateway: 172.16.1.1

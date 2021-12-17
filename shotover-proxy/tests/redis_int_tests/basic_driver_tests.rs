@@ -1064,8 +1064,11 @@ fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     for result in reader.records() {
         let record = result.unwrap();
 
-        let port: Vec<&str> = record[1].split(':').collect();
-        assert_eq!(port[1], format!("{}@16379", new_port));
+        let port = record[1]
+            .split(|c| c == ':' || c == '@')
+            .collect::<Vec<&str>>();
+
+        assert_eq!(port[1].parse::<u16>().unwrap(), new_port);
         assertion_run = true;
     }
 
@@ -1291,19 +1294,21 @@ async fn test_source_tls_and_single_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_ports_rewrite() {
-    let _compose = DockerCompose::new("examples/redis-cluster-ports-rewrite/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
+    let _compose =
+        DockerCompose::new("tests/test-topologies/redis-cluster-ports-rewrite/docker-compose.yml")
+            .wait_for_n("Cluster state changed", 6);
 
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-ports-rewrite/topology.yaml");
+    let shotover_manager = ShotoverManager::from_topology_file(
+        "tests/test-topologies/redis-cluster-ports-rewrite/topology.yaml",
+    );
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = shotover_manager.redis_connection_async(6380).await;
 
     run_all_cluster_safe(&mut connection).await;
 
-    test_cluster_ports_rewrite_slots(&mut connection, 2004).await;
+    test_cluster_ports_rewrite_slots(&mut connection, 6380).await;
 
-    test_cluster_ports_rewrite_nodes(&mut connection, 2004).await;
+    test_cluster_ports_rewrite_nodes(&mut connection, 6380).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

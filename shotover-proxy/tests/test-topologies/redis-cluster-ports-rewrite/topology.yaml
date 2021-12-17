@@ -2,13 +2,13 @@
 sources:
   redis_prod:
     Redis:
-      listen_addr: "0.0.0.0:6380"
+      listen_addr: "127.0.0.1:6380"
 chain_config:
   redis_chain:
     - RedisClusterPortsRewrite:
          new_port: 6380
-    - RedisSinkSingle:
-        remote_address: "0.0.0.0:6379"
+    - RedisSinkCluster:
+        first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
 named_topics:
   testtopic: 5
 source_to_chain_mapping:
