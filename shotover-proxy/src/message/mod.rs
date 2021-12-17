@@ -15,6 +15,7 @@ use cassandra_protocol::{
         CBytes,
     },
 };
+use num::BigInt;
 use redis_protocol::resp2::prelude::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
@@ -332,8 +333,8 @@ pub enum Value {
     FragmentedResponse(Vec<Value>),
     Set(Vec<Value>),
     Map(Vec<(Value, Value)>),
-    Varint(num::BigInt),
-    Bigint(num::BigInt),
+    Varint(BigInt),
+    Bigint(BigInt),
     Decimal(BigDecimal),
     Date(i32),
     Timestamp(i64),
