@@ -30,16 +30,7 @@ impl QueryCounter {
 impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         for m in &message_wrapper.messages {
-            if let MessageDetails::Query(QueryMessage {
-                query_string: _query_string,
-                namespace: _namespace,
-                primary_key: _primary_key,
-                query_values: _query_values,
-                projection: _projection,
-                query_type: _query_type,
-                ast: Some(ast),
-            }) = &m.details
-            {
+            if let MessageDetails::Query(QueryMessage { ast: Some(ast), .. }) = &m.details {
                 match ast {
                     ASTHolder::SQL(statement) => {
                         let query_type = match **statement {

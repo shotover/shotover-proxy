@@ -190,20 +190,15 @@ impl Transform for Protect {
 
         for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {
             if let MessageDetails::Response(QueryResponse {
-                matching_query: _,
                 result: Some(Rows(rows)),
                 error: None,
-                response_meta: _,
+                ..
             }) = &mut response.details
             {
                 if let MessageDetails::Query(QueryMessage {
-                    query_string: _,
                     namespace,
-                    primary_key: _,
-                    query_values: _,
                     projection: Some(projection),
-                    query_type: _,
-                    ast: _,
+                    ..
                 }) = &request.details
                 {
                     if namespace.len() == 2 {
@@ -335,17 +330,10 @@ mod protect_transform_tests {
                 if let MessageDetails::Response(QueryResponse {
                     matching_query:
                         Some(QueryMessage {
-                            query_string: _,
-                            namespace: _,
-                            primary_key: _,
                             query_values: Some(query_values),
-                            projection: _,
-                            query_type: _,
-                            ast: _,
+                            ..
                         }),
-                    result: _,
-                    error: _,
-                    response_meta: _,
+                    ..
                 }) = &mut m.pop().unwrap().details
                 {
                     let encrypted_val = query_values.remove("col1").unwrap();
@@ -417,10 +405,8 @@ mod protect_transform_tests {
 
                         let result = protect.transform(new_wrapper).await;
                         if let MessageDetails::Response(QueryResponse {
-                            matching_query: _,
                             result: Some(Value::Rows(r)),
-                            error: _,
-                            response_meta: _,
+                            ..
                         }) = result.unwrap().pop().unwrap().details
                         {
                             if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
@@ -510,17 +496,10 @@ mod protect_transform_tests {
             if let MessageDetails::Response(QueryResponse {
                 matching_query:
                     Some(QueryMessage {
-                        query_string: _,
-                        namespace: _,
-                        primary_key: _,
                         query_values: Some(query_values),
-                        projection: _,
-                        query_type: _,
-                        ast: _,
+                        ..
                     }),
-                result: _,
-                error: _,
-                response_meta: _,
+                ..
             }) = &mut details
             {
                 let encrypted_val = query_values.remove("col1").unwrap();
@@ -592,10 +571,8 @@ mod protect_transform_tests {
 
                     let result = protect.transform(new_wrapper).await;
                     if let MessageDetails::Response(QueryResponse {
-                        matching_query: _,
                         result: Some(Value::Rows(r)),
-                        error: _,
-                        response_meta: _,
+                        ..
                     }) = result.unwrap().pop().unwrap().details
                     {
                         return if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {

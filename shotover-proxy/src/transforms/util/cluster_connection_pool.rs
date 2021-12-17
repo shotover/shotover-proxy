@@ -271,7 +271,7 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
                     if let Some(Request {
                         messages,
                         return_chan: Some(ret),
-                        message_id: _,
+                        ..
                     }) = return_rx.recv().await
                     {
                         // If the receiver hangs up, just silently ignore
