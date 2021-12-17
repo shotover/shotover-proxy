@@ -23,17 +23,17 @@ const FALSE: [u8; 1] = [0x0];
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisConfig {
-    pub caching_schema: HashMap<String, PrimaryKey>,
+    pub caching_schema: HashMap<String, TableCacheSchema>,
     pub chain: Vec<TransformsConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct PrimaryKey {
+pub struct TableCacheSchema {
     partition_key: Vec<String>,
     range_key: Vec<String>,
 }
 
-impl PrimaryKey {
+impl TableCacheSchema {
     #[cfg(test)]
     fn get_compound_key(&self) -> Vec<String> {
         [self.partition_key.as_slice(), self.range_key.as_slice()].concat()
@@ -53,7 +53,7 @@ impl RedisConfig {
 #[derive(Clone)]
 pub struct SimpleRedisCache {
     cache_chain: TransformChain,
-    caching_schema: HashMap<String, PrimaryKey>,
+    caching_schema: HashMap<String, TableCacheSchema>,
 }
 
 impl SimpleRedisCache {
@@ -65,11 +65,11 @@ impl SimpleRedisCache {
         for message in &mut messages {
             match &mut message.details {
                 MessageDetails::Query(ref mut qm) => {
-                    let table_lookup = qm.namespace.join(".");
-                    let table = self
+                    let table_name = qm.namespace.join(".");
+                    let table_cache_schema = self
                         .caching_schema
-                        .get(&table_lookup)
-                        .ok_or_else(|| anyhow!("{} not a caching table", table_lookup))?;
+                        .get(&table_name)
+                        .ok_or_else(|| anyhow!("{} not a caching table", table_name))?;
 
                     let ast = qm
                         .ast
@@ -80,7 +80,7 @@ impl SimpleRedisCache {
                     qm.ast = Some(build_redis_ast_from_sql(
                         ast,
                         &qm.primary_key,
-                        table,
+                        table_cache_schema,
                         &qm.query_values,
                     )?);
                 }
@@ -237,7 +237,7 @@ fn build_redis_commands(
 fn build_redis_ast_from_sql(
     mut ast: ASTHolder,
     primary_key_values: &HashMap<String, ShotoverValue>,
-    pk_schema: &PrimaryKey,
+    table_cache_schema: &TableCacheSchema,
     query_values: &Option<HashMap<String, ShotoverValue>>,
 ) -> Result<ASTHolder> {
     match &mut ast {
@@ -249,10 +249,15 @@ fn build_redis_ast_from_sql(
                     let mut min: Vec<u8> = vec![b'-'];
                     let mut max: Vec<u8> = vec![b'+'];
 
-                    build_redis_commands(expr, &pk_schema.partition_key, &mut min, &mut max)?;
+                    build_redis_commands(
+                        expr,
+                        &table_cache_schema.partition_key,
+                        &mut min,
+                        &mut max,
+                    )?;
 
                     commands_buffer.push(ShotoverValue::Bytes("ZRANGEBYLEX".into()));
-                    let pk = pk_schema
+                    let pk = table_cache_schema
                         .partition_key
                         .iter()
                         .map(|k| primary_key_values.get(k).unwrap())
@@ -271,7 +276,7 @@ fn build_redis_ast_from_sql(
                 let mut commands_buffer: Vec<ShotoverValue> =
                     vec![ShotoverValue::Bytes("ZADD".into())];
 
-                let pk = pk_schema
+                let pk = table_cache_schema
                     .partition_key
                     .iter()
                     .map(|k| primary_key_values.get(k).unwrap())
@@ -281,7 +286,7 @@ fn build_redis_ast_from_sql(
                     });
                 commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
 
-                let clustering = pk_schema
+                let clustering = table_cache_schema
                     .range_key
                     .iter()
                     .map(|k| primary_key_values.get(k).unwrap())
@@ -295,7 +300,8 @@ fn build_redis_ast_from_sql(
                     .ok_or_else(|| anyhow!("query_values is None"))?
                     .iter()
                     .filter_map(|(p, v)| {
-                        if !pk_schema.partition_key.contains(p) && !pk_schema.range_key.contains(p)
+                        if !table_cache_schema.partition_key.contains(p)
+                            && !table_cache_schema.range_key.contains(p)
                         {
                             Some(v)
                         } else {
@@ -386,7 +392,9 @@ mod test {
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
-    use crate::transforms::redis::cache::{build_redis_ast_from_sql, PrimaryKey, SimpleRedisCache};
+    use crate::transforms::redis::cache::{
+        build_redis_ast_from_sql, SimpleRedisCache, TableCacheSchema,
+    };
     use crate::transforms::{Transform, Transforms};
     use bytes::BytesMut;
     use itertools::Itertools;
@@ -446,20 +454,21 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
 
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
             &pk_col_map,
         );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123:965 ]123:965");
 
@@ -471,18 +480,19 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
 
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) =
             build_query("INSERT INTO foo (z, v) VALUES (1, 123)", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZADD 1 0 123");
 
@@ -495,20 +505,21 @@ mod test {
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
 
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec!["c".to_string()],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) = build_query(
             "INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)",
             &pk_col_map,
         );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZADD 1 0 yo:123");
 
@@ -521,18 +532,19 @@ mod test {
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
 
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec!["c".to_string()],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) =
             build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZADD 1 0 yo:123");
 
@@ -543,27 +555,29 @@ mod test {
     fn check_deterministic_order_test() {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
             &pk_col_map,
         );
 
-        let query_one = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query_one =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123",
             &pk_col_map,
         );
 
-        let query_two = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query_two =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
@@ -574,20 +588,21 @@ mod test {
     fn range_exclusive_test() {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999",
             &pk_col_map,
         );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [124 ]998");
 
@@ -598,20 +613,21 @@ mod test {
     fn range_inclusive_test() {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) = build_query(
             "SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999",
             &pk_col_map,
         );
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999");
 
@@ -622,17 +638,18 @@ mod test {
     fn single_pk_only_test() {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) = build_query("SELECT * FROM foo WHERE z = 1", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +");
 
@@ -644,18 +661,19 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
         pks.insert("y".to_string(), ShotoverValue::Integer(2));
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string(), "y".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) =
             build_query("SELECT * FROM foo WHERE z = 1 AND y = 2", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +");
 
@@ -666,30 +684,32 @@ mod test {
     fn open_range_test() {
         let mut pks = HashMap::new();
         pks.insert("z".to_string(), ShotoverValue::Integer(1));
-        let pk_holder = PrimaryKey {
+        let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) =
             build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 +");
 
         assert_eq!(expected, query);
 
         let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), pk_holder.get_compound_key());
+        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
 
         let (ast, query_values) =
             build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123", &pk_col_map);
 
-        let query = build_redis_ast_from_sql(ast, &pks, &pk_holder, &query_values).unwrap();
+        let query =
+            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
 
         let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123");
 
