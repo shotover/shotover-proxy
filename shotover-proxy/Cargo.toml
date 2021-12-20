@@ -54,9 +54,10 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = "3.0.1"
-cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", rev="e1de5ffc30cf0e2cc13a657835f916fd4e61bf99" }
+cassandra-protocol = { git = "https://github.com/conorbros/cdrs-tokio", branch = "typed-collections" }
 rdkafka = "0.28"
 crc16 = "0.4.0"
+ordered-float = { version = "2.8.0", features = ["serde"] }
 
 #Crypto
 sodiumoxide = "0.2.5"

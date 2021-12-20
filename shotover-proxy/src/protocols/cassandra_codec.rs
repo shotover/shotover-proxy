@@ -168,7 +168,9 @@ impl CassandraCodec {
                                         }
                                         Value::Float(x) => {
                                             let mut temp: Vec<u8> = Vec::new();
-                                            let _ = temp.write_f32::<BigEndian>(*x).unwrap();
+                                            let _ = temp
+                                                .write_f32::<BigEndian>(x.into_inner())
+                                                .unwrap();
                                             temp
                                         }
                                         Value::Boolean(x) => {

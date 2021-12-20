@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
 use redis_protocol::resp2::prelude::*;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
 
@@ -83,7 +83,7 @@ fn get_key_map(
     mut frames: Vec<Frame>,
 ) -> Result<()> {
     if let Some(Frame::BulkString(v)) = frames.pop() {
-        let mut values = HashMap::new();
+        let mut values = BTreeMap::new();
         while !frames.is_empty() {
             if let Some(Frame::BulkString(field)) = frames.pop() {
                 if let Some(frame) = frames.pop() {

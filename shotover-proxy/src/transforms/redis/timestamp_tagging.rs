@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
@@ -122,14 +122,14 @@ fn unwrap_response(qr: &mut QueryResponse) {
                     }
                 }
             }
-            let mut hm: HashMap<String, Value> = HashMap::new();
+            let mut hm = BTreeMap::new();
             hm.insert("timestamp".to_string(), Value::List(timestamps));
 
             qr.response_meta = Some(Value::Document(hm));
             qr.result = Some(Value::List(results));
         } else if values.len() == 2 {
             qr.response_meta = values.pop().map(|v| {
-                let mut hm: HashMap<String, Value> = HashMap::new();
+                let mut hm = BTreeMap::new();
                 if let Value::Integer(i, _) = v {
                     let start = SystemTime::now();
                     let since_the_epoch = start

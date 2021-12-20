@@ -287,7 +287,7 @@ checksum = "eadde404d13254d8592f8aaa946a1fb7a2769c137df56ed29a3be5996973a156"
 [[package]]
 name = "cassandra-protocol"
 version = "1.0.0-beta.3"
-source = "git+https://github.com/krojew/cdrs-tokio?rev=e1de5ffc30cf0e2cc13a657835f916fd4e61bf99#e1de5ffc30cf0e2cc13a657835f916fd4e61bf99"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=typed-collections#905e49133279c996fac28aa4e79b7f98aad32259"
 dependencies = [
  "arrayref",
  "bitflags",
@@ -1720,6 +1720,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8aa3d135650b150c29f0c3e385896f9d3ceb42d2d87b02f0d7a8cbd0fc7e19a6"
 dependencies = [
  "num-traits 0.2.14",
+ "serde",
 ]
 
 [[package]]
@@ -2534,6 +2535,7 @@ dependencies = [
  "num",
  "num_cpus",
  "openssl",
+ "ordered-float",
  "pcap",
  "pin-project-lite",
  "pktparse",

@@ -9,16 +9,18 @@ use cassandra_protocol::{
     },
     types::{
         data_serialization_types::{
-            decode_ascii, decode_bigint, decode_boolean, decode_double, decode_float, decode_inet,
-            decode_int, decode_smallint, decode_tinyint, decode_varchar,
+            decode_ascii, decode_bigint, decode_boolean, decode_decimal, decode_double,
+            decode_float, decode_inet, decode_int, decode_smallint, decode_tinyint, decode_varchar,
         },
         CBytes,
     },
 };
 use num::BigInt;
+use ordered_float::OrderedFloat;
 use redis_protocol::resp2::prelude::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
+use std::collections::BTreeMap;
 use std::{collections::HashMap, net::IpAddr};
 use uuid::Uuid;
 
@@ -313,7 +315,7 @@ pub enum QueryType {
     PubSubMessage,
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash)]
 pub enum Value {
     NULL,
     None,
@@ -322,14 +324,14 @@ pub enum Value {
     Ascii(String),
     Strings(String),
     Integer(i64, IntSize),
-    Double(f64),
-    Float(f32),
+    Double(OrderedFloat<f64>),
+    Float(OrderedFloat<f32>),
     Boolean(bool),
     Inet(IpAddr),
     List(Vec<Value>),
     Rows(Vec<Vec<Value>>),
-    NamedRows(Vec<HashMap<String, Value>>),
-    Document(HashMap<String, Value>),
+    NamedRows(Vec<BTreeMap<String, Value>>),
+    Document(BTreeMap<String, Value>),
     FragmentedResponse(Vec<Value>),
     Set(Vec<Value>),
     Map(Vec<(Value, Value)>),
@@ -343,10 +345,10 @@ pub enum Value {
     Time(i64),
     Counter(i64),
     Tuple(Vec<Value>),
-    Udt(HashMap<String, Value>),
+    Udt(BTreeMap<String, Value>),
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash)]
 pub enum IntSize {
     I64, // BigInt
     I32, // Int
@@ -433,9 +435,13 @@ impl Value {
                 ColType::Blob => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Boolean => Value::Boolean(decode_boolean(actual_bytes).unwrap()),
                 ColType::Counter => Value::Counter(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Decimal => unimplemented!("We dont have a decimal type yet"),
-                ColType::Double => Value::Double(decode_double(actual_bytes).unwrap()),
-                ColType::Float => Value::Float(decode_float(actual_bytes).unwrap()),
+                ColType::Decimal => {
+                    let decimal = decode_decimal(actual_bytes).unwrap();
+                    let big_decimal = BigDecimal::new(decimal.unscaled, decimal.scale.into());
+                    Value::Decimal(big_decimal)
+                }
+                ColType::Double => Value::Double(decode_double(actual_bytes).unwrap().into()),
+                ColType::Float => Value::Float(decode_float(actual_bytes).unwrap().into()),
                 ColType::Int => {
                     Value::Integer(decode_int(actual_bytes).unwrap() as i64, IntSize::I32)
                 }
@@ -544,7 +550,7 @@ impl From<Value> for cassandra_protocol::types::value::Bytes {
             Value::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
             Value::Strings(s) => s.into(),
             Value::Integer(i, _) => i.into(),
-            Value::Float(f) => f.into(),
+            Value::Float(f) => f.into_inner().into(),
             Value::Boolean(b) => b.into(),
             Value::List(l) => cassandra_protocol::types::value::Bytes::from(l),
             Value::Rows(r) => cassandra_protocol::types::value::Bytes::from(r),
