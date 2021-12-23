@@ -2,6 +2,7 @@
 use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
+use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
 
 mod keyspace {
@@ -944,6 +945,7 @@ mod functions {
 
         let statement = stmt!("SELECT test_function_keyspace.my_function(x) FROM test_function_keyspace.test_function_table WHERE id=1;");
         let result = session.execute(&statement).wait().unwrap_err().to_string();
+        println!("{:?}", result);
 
         assert_eq!(result, "Cassandra detailed error SERVER_INVALID_QUERY: Unknown function 'test_function_keyspace.my_function'");
     }
@@ -1321,6 +1323,30 @@ fn test_passthrough() {
     collections::test(&connection);
     functions::test(&connection);
     prepared_statements::test(&connection);
+}
+
+#[test]
+#[serial]
+fn test_passthrough_tls() {
+    let _compose = DockerCompose::new("examples/cassandra-passthrough-tls/docker-compose.yml")
+        .wait_for_n_t("Startup complete", 1, 90);
+
+    // let _shotover_manager =
+    //     ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
+
+    let tls_config = TlsConfig {
+        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/my-cluster.cer"
+            .into(),
+        certificate_path: "examples/cassandra-passthrough-tls/certs/my-cluster.cer.pem".into(),
+        private_key_path: "examples/cassandra-passthrough-tls/certs/my-cluster.key.pem".into(),
+    };
+
+    let connection = cassandra_connection_tls("127.0.0.1", 9043, tls_config);
+
+    keyspace::test(&connection);
+    table::test(&connection);
+    udt::test(&connection);
+    functions::test(&connection);
 }
 
 #[test]
