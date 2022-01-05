@@ -20,7 +20,7 @@ use ordered_float::OrderedFloat;
 use redis_protocol::resp2::prelude::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::{collections::HashMap, net::IpAddr};
 use uuid::Uuid;
 
@@ -315,7 +315,7 @@ pub enum QueryType {
     PubSubMessage,
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
 pub enum Value {
     NULL,
     None,
@@ -333,8 +333,8 @@ pub enum Value {
     NamedRows(Vec<BTreeMap<String, Value>>),
     Document(BTreeMap<String, Value>),
     FragmentedResponse(Vec<Value>),
-    Set(Vec<Value>),
-    Map(Vec<(Value, Value)>),
+    Set(BTreeSet<Value>),
+    Map(BTreeMap<Value, Value>),
     Varint(BigInt),
     Decimal(BigDecimal),
     Date(i32),
@@ -348,12 +348,12 @@ pub enum Value {
     Udt(BTreeMap<String, Value>),
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
 pub enum IntSize {
     I64, // BigInt
     I32, // Int
     I16, // Smallint
-    I8,  // tinyint
+    I8,  // Tinyint
 }
 
 impl From<Frame> for Value {
