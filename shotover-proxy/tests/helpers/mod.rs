@@ -164,7 +164,20 @@ impl Drop for ShotoverManager {
 }
 
 pub struct ShotoverProcess {
-    pub child: Child,
+    /// Always Some while ShotoverProcess is owned
+    pub child: Option<Child>,
+}
+
+impl Drop for ShotoverProcess {
+    fn drop(&mut self) {
+        if let Some(child) = &self.child {
+            if let Err(err) =
+                nix::sys::signal::kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL)
+            {
+                println!("Failed to shutdown ShotoverProcess {}", err);
+            }
+        }
+    }
 }
 
 impl ShotoverProcess {
@@ -176,12 +189,14 @@ impl ShotoverProcess {
         } else {
             vec!["run", "--", "-t", topology_path]
         };
-        let child = Command::new(env!("CARGO"))
-            .env("RUST_LOG", "debug,shotover_proxy=debug")
-            .args(&all_args)
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = Some(
+            Command::new(env!("CARGO"))
+                .env("RUST_LOG", "debug,shotover_proxy=debug")
+                .args(&all_args)
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
 
         wait_for_socket_to_open("127.0.0.1", 9001); // Wait for observability metrics port to open
 
@@ -190,7 +205,7 @@ impl ShotoverProcess {
 
     #[allow(unused)]
     fn pid(&self) -> Pid {
-        Pid::from_raw(self.child.id() as i32)
+        Pid::from_raw(self.child.as_ref().unwrap().id() as i32)
     }
 
     #[allow(unused)]
@@ -199,8 +214,8 @@ impl ShotoverProcess {
     }
 
     #[allow(unused)]
-    pub fn wait(self) -> (Option<i32>, String, String) {
-        let output = self.child.wait_with_output().unwrap();
+    pub fn wait(mut self) -> (Option<i32>, String, String) {
+        let output = self.child.take().unwrap().wait_with_output().unwrap();
 
         let stdout = String::from_utf8(output.stdout).unwrap();
         let stderr = String::from_utf8(output.stderr).unwrap();
