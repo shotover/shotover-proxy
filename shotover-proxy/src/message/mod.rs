@@ -361,7 +361,7 @@ impl From<Frame> for Value {
         match f {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
-            Frame::Integer(i) => Value::Integer(i, IntSize::I32),
+            Frame::Integer(i) => Value::Integer(i, IntSize::I64),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Null => Value::NULL,
@@ -373,7 +373,7 @@ impl From<&Frame> for Value {
         match f.clone() {
             Frame::SimpleString(s) => Value::Strings(s),
             Frame::Error(e) => Value::Strings(e),
-            Frame::Integer(i) => Value::Integer(i, IntSize::I32),
+            Frame::Integer(i) => Value::Integer(i, IntSize::I64),
             Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
             Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             Frame::Null => Value::NULL,
