@@ -5,15 +5,20 @@ sources:
       query_processing: true
       listen_addr: "127.0.0.1:9042"
       cassandra_ks:
-        test_cache_keyspace.test_table:
+        test_cache_keyspace_batch_insert.test_table:
+          - id
+        test_cache_keyspace_simple.test_table:
           - id
 chain_config:
   main_chain:
     - RedisCache:
         caching_schema:
-          test_cache_keyspace.test_table:
+          test_cache_keyspace_batch_insert.test_table:
             partition_key: [id]
-            range_key: [test]
+            range_key: [id]
+          test_cache_keyspace_simple.test_table:
+            partition_key: [id]
+            range_key: [id]
         chain:
           - RedisSinkSingle:
               remote_address: "127.0.0.1:6379"

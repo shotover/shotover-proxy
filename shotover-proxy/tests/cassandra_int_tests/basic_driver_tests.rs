@@ -218,28 +218,36 @@ APPLY BATCH;"#,
 mod cache {
     use cassandra_cpp::Session;
     use redis::Commands;
+    use std::collections::HashSet;
 
     use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
 
     pub fn test(session: &Session, redis_connection: &mut redis::Connection) {
-        run_query(session, "CREATE KEYSPACE test_cache_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        test_batch_insert(session, redis_connection);
+        test_simple(session, redis_connection);
+    }
+
+    pub fn test_batch_insert(session: &Session, redis_connection: &mut redis::Connection) {
+        redis::cmd("FLUSHDB").execute(redis_connection);
+
+        run_query(session, "CREATE KEYSPACE test_cache_keyspace_batch_insert WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         run_query(
             session,
-            "CREATE TABLE test_cache_keyspace.test_table (id int PRIMARY KEY, x int, name varchar);",
+            "CREATE TABLE test_cache_keyspace_batch_insert.test_table (id int PRIMARY KEY, x int, name varchar);",
         );
         run_query(
             session,
             r#"BEGIN BATCH
-                INSERT INTO test_cache_keyspace.test_table (id, x, name) VALUES (1, 11, 'foo');
-                INSERT INTO test_cache_keyspace.test_table (id, x, name) VALUES (2, 12, 'bar');
-                INSERT INTO test_cache_keyspace.test_table (id, x, name) VALUES (3, 13, 'baz');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (1, 11, 'foo');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (2, 12, 'bar');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');
             APPLY BATCH;"#,
         );
 
         // TODO: SELECTS without a WHERE do not get cached
         assert_query_result(
             session,
-            "SELECT id, x, name FROM test_cache_keyspace.test_table",
+            "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table",
             &[
                 &[
                     ResultValue::Int(1),
@@ -262,14 +270,14 @@ mod cache {
         // query against the primary key
         assert_query_result(
             session,
-            "SELECT id, x, name FROM test_cache_keyspace.test_table WHERE id=1",
+            "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table WHERE id=1",
             &[],
         );
 
         // query against some other field
         assert_query_result(
             session,
-            "SELECT id, x, name FROM test_cache_keyspace.test_table WHERE x=11",
+            "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table WHERE x=11",
             &[],
         );
 
@@ -279,6 +287,72 @@ mod cache {
             .unwrap();
         let result: Vec<String> = redis_connection.keys("*").unwrap();
         assert_eq!(result, ["dummy_key".to_string()]);
+    }
+
+    pub fn test_simple(session: &Session, redis_connection: &mut redis::Connection) {
+        redis::cmd("FLUSHDB").execute(redis_connection);
+
+        run_query(session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(
+            session,
+            "CREATE TABLE test_cache_keyspace_simple.test_table (id int PRIMARY KEY, x int, name varchar);",
+        );
+
+        run_query(
+            session,
+            "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (1, 11, 'foo');",
+        );
+        run_query(
+            session,
+            "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (2, 12, 'bar');",
+        );
+        run_query(
+            session,
+            "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (3, 13, 'baz');",
+        );
+
+        // TODO: SELECTS without a WHERE do not get cached
+        assert_query_result(
+            session,
+            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table",
+            &[],
+        );
+
+        // query against the primary key
+        assert_query_result(
+            session,
+            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=1",
+            &[],
+        );
+
+        // query against some other field
+        assert_query_result(
+            session,
+            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE x=11",
+            &[],
+        );
+
+        let result: HashSet<String> = redis_connection.keys("*").unwrap();
+        let expected: HashSet<String> =
+            ["1", "2", "3"].into_iter().map(|x| x.to_string()).collect();
+        assert_eq!(result, expected);
+
+        assert_sorted_set_equals(redis_connection, "1", &["1:11", "1:foo"]);
+        assert_sorted_set_equals(redis_connection, "2", &["2:12", "2:bar"]);
+        assert_sorted_set_equals(redis_connection, "3", &["3:13", "3:baz"]);
+    }
+
+    fn assert_sorted_set_equals(
+        redis_connection: &mut redis::Connection,
+        key: &str,
+        expected_values: &[&str],
+    ) {
+        let expected_values: HashSet<String> =
+            expected_values.iter().map(|x| x.to_string()).collect();
+        let values = redis_connection
+            .zrange::<&str, HashSet<String>>(key, 0, -1)
+            .unwrap();
+        assert_eq!(values, expected_values)
     }
 }
 
