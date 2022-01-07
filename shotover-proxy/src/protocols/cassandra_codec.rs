@@ -33,7 +33,8 @@ use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, error, info, warn};
 
 use crate::message::{
-    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    ASTHolder, IntSize, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType,
+    Value,
 };
 use crate::protocols::RawFrame;
 
@@ -145,14 +146,31 @@ impl CassandraCodec {
                                         Value::NULL => to_int(-1_i32),
                                         Value::Bytes(x) => x.to_vec(),
                                         Value::Strings(x) => Vec::from(x.as_bytes()),
-                                        Value::Integer(x) => {
+                                        Value::Integer(x, size) => {
                                             let mut temp: Vec<u8> = Vec::new();
-                                            let _ = temp.write_i64::<BigEndian>(*x).unwrap();
+
+                                            match size {
+                                                IntSize::I64 => {
+                                                    temp.write_i64::<BigEndian>(*x).unwrap();
+                                                }
+                                                IntSize::I32 => {
+                                                    temp.write_i32::<BigEndian>(*x as i32).unwrap();
+                                                }
+                                                IntSize::I16 => {
+                                                    temp.write_i16::<BigEndian>(*x as i16).unwrap();
+                                                }
+                                                IntSize::I8 => {
+                                                    temp.write_i8(*x as i8).unwrap();
+                                                }
+                                            }
+
                                             temp
                                         }
                                         Value::Float(x) => {
                                             let mut temp: Vec<u8> = Vec::new();
-                                            let _ = temp.write_f64::<BigEndian>(*x).unwrap();
+                                            let _ = temp
+                                                .write_f32::<BigEndian>(x.into_inner())
+                                                .unwrap();
                                             temp
                                         }
                                         Value::Boolean(x) => {
@@ -196,7 +214,7 @@ impl CassandraCodec {
             Value::NULL => SQLValue::Null,
             Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // TODO: this is definitely wrong
             Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            Value::Integer(i) => SQLValue::Number(i.to_string(), false),
+            Value::Integer(i, _) => SQLValue::Number(i.to_string(), false),
             Value::Float(f) => SQLValue::Number(f.to_string(), false),
             Value::Boolean(b) => SQLValue::Boolean(*b),
             _ => SQLValue::Null,

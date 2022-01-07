@@ -153,6 +153,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
+name = "bigdecimal"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6aaf33151a6429fe9211d1b276eafdf70cdff28b071e76c0b0e1503221ea3744"
+dependencies = [
+ "num-bigint",
+ "num-integer",
+ "num-traits 0.2.14",
+ "serde",
+]
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -274,8 +286,8 @@ checksum = "eadde404d13254d8592f8aaa946a1fb7a2769c137df56ed29a3be5996973a156"
 
 [[package]]
 name = "cassandra-protocol"
-version = "1.0.0-beta.3"
-source = "git+https://github.com/krojew/cdrs-tokio?rev=e1de5ffc30cf0e2cc13a657835f916fd4e61bf99#e1de5ffc30cf0e2cc13a657835f916fd4e61bf99"
+version = "1.0.0"
+source = "git+https://github.com/krojew/cdrs-tokio#5f9d22e124265bbe6a001386153f26dc4c6a7930"
 dependencies = [
  "arrayref",
  "bitflags",
@@ -1528,6 +1540,7 @@ dependencies = [
  "autocfg",
  "num-integer",
  "num-traits 0.2.14",
+ "serde",
 ]
 
 [[package]]
@@ -1537,6 +1550,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26873667bbbb7c5182d4a37c1add32cdf09f841af72da53318fdb81543c15085"
 dependencies = [
  "num-traits 0.2.14",
+ "serde",
 ]
 
 [[package]]
@@ -1570,6 +1584,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits 0.2.14",
+ "serde",
 ]
 
 [[package]]
@@ -1705,6 +1720,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8aa3d135650b150c29f0c3e385896f9d3ceb42d2d87b02f0d7a8cbd0fc7e19a6"
 dependencies = [
  "num-traits 0.2.14",
+ "serde",
 ]
 
 [[package]]
@@ -2495,6 +2511,7 @@ dependencies = [
  "anyhow",
  "async-recursion",
  "async-trait",
+ "bigdecimal",
  "bincode",
  "byteorder",
  "bytes",
@@ -2515,8 +2532,10 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "nix",
+ "num",
  "num_cpus",
  "openssl",
+ "ordered-float",
  "pcap",
  "pin-project-lite",
  "pktparse",
@@ -2548,6 +2567,7 @@ dependencies = [
  "tracing-appender",
  "tracing-log",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2561,9 +2581,9 @@ dependencies = [
 
 [[package]]
 name = "signature"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02658e48d89f2bec991f9a78e69cfa4c316f8d6a6c4ec12fae1aeb263d486788"
+checksum = "f054c6c1a6e95179d6f23ed974060dcefb2d9388bb7256900badad682c499de4"
 
 [[package]]
 name = "siphasher"
@@ -3091,6 +3111,9 @@ name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "vcpkg"

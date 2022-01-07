@@ -1,12 +1,13 @@
 use crate::message::{
-    ASTHolder, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+    ASTHolder, IntSize, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType,
+    Value,
 };
 use crate::protocols::RawFrame;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
 use redis_protocol::resp2::prelude::*;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
 
@@ -82,7 +83,7 @@ fn get_key_map(
     mut frames: Vec<Frame>,
 ) -> Result<()> {
     if let Some(Frame::BulkString(v)) = frames.pop() {
-        let mut values = HashMap::new();
+        let mut values = BTreeMap::new();
         while !frames.is_empty() {
             if let Some(Frame::BulkString(field)) = frames.pop() {
                 if let Some(frame) = frames.pop() {
@@ -398,7 +399,7 @@ pub fn process_redis_frame_response(frame: &Frame) -> Result<QueryResponse> {
         }),
         Frame::Integer(integer) => Ok(QueryResponse {
             matching_query: None,
-            result: Some(Value::Integer(integer)),
+            result: Some(Value::Integer(integer, IntSize::I32)),
             error: None,
             response_meta: None,
         }),
