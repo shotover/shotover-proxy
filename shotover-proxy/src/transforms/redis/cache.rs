@@ -143,23 +143,23 @@ impl ValueHelper {
     }
 }
 
-fn append_seperator(command_builder: &mut Vec<u8>) {
-    let min_size = command_builder.len();
-    let prev_char = command_builder.get_mut(min_size - 1).unwrap();
-
-    // TODO this is super fragile and depends on hidden array values to signal whether we should build the query a certain way
-    if min_size == 1 {
-        if *prev_char == b'-' {
-            *prev_char = b'['
-        } else if *prev_char == b'+' {
-            *prev_char = b']'
-        }
+fn append_prefix_min(min: &mut Vec<u8>) {
+    if min.is_empty() {
+        min.push(b'[');
     } else {
-        command_builder.push(b':');
+        min.push(b':');
     }
 }
 
-fn build_redis_commands(
+fn append_prefix_max(max: &mut Vec<u8>) {
+    if max.is_empty() {
+        max.push(b']');
+    } else {
+        max.push(b':');
+    }
+}
+
+fn build_zrangebylex_min_max_from_sql(
     expr: &Expr,
     pks: &[String],
     min: &mut Vec<u8>,
@@ -182,12 +182,10 @@ fn build_redis_commands(
                         let vh = ValueHelper(v.clone());
 
                         let mut minrv = Vec::from(vh.as_bytes());
-                        let len = minrv.len();
-
-                        let last_byte = minrv.get_mut(len - 1).unwrap();
+                        let last_byte = minrv.last_mut().unwrap();
                         *last_byte += 1;
 
-                        append_seperator(min);
+                        append_prefix_min(min);
                         min.extend(minrv.iter());
                     }
                 }
@@ -197,12 +195,10 @@ fn build_redis_commands(
                         let vh = ValueHelper(v.clone());
 
                         let mut maxrv = Vec::from(vh.as_bytes());
-                        let len = maxrv.len();
-
-                        let last_byte = maxrv.get_mut(len - 1).unwrap();
+                        let last_byte = maxrv.last_mut().unwrap();
                         *last_byte -= 1;
 
-                        append_seperator(max);
+                        append_prefix_max(max);
                         max.extend(maxrv.iter());
                     }
                 }
@@ -212,7 +208,7 @@ fn build_redis_commands(
 
                         let minrv = Vec::from(vh.as_bytes());
 
-                        append_seperator(min);
+                        append_prefix_min(min);
                         min.extend(minrv.iter());
                     }
                 }
@@ -222,7 +218,7 @@ fn build_redis_commands(
 
                         let maxrv = Vec::from(vh.as_bytes());
 
-                        append_seperator(max);
+                        append_prefix_max(max);
                         max.extend(maxrv.iter());
                     }
                 }
@@ -230,19 +226,17 @@ fn build_redis_commands(
                     if let Expr::Value(v) = right.borrow() {
                         let vh = ValueHelper(v.clone());
 
-                        let minrv = vh.as_bytes();
-                        let maxrv = minrv;
+                        let vh_bytes = vh.as_bytes();
 
-                        append_seperator(min);
-                        min.extend(minrv.iter());
-
-                        append_seperator(max);
-                        max.extend(maxrv.iter());
+                        append_prefix_min(min);
+                        append_prefix_max(max);
+                        min.extend(vh_bytes.iter());
+                        max.extend(vh_bytes.iter());
                     }
                 }
                 BinaryOperator::And => {
-                    build_redis_commands(left, pks, min, max)?;
-                    build_redis_commands(right, pks, min, max)?;
+                    build_zrangebylex_min_max_from_sql(left, pks, min, max)?;
+                    build_zrangebylex_min_max_from_sql(right, pks, min, max)?;
                 }
                 _ => {
                     return Err(anyhow!("Couldn't build query"));
@@ -267,18 +261,27 @@ fn build_redis_ast_from_sql(
             Statement::Query(q) => match &mut q.body {
                 SetExpr::Select(s) if s.selection.is_some() => {
                     let expr = s.selection.as_mut().unwrap();
-                    let mut commands_buffer: Vec<ShotoverValue> = Vec::new();
-                    let mut min: Vec<u8> = vec![b'-'];
-                    let mut max: Vec<u8> = vec![b'+'];
+                    let mut min: Vec<u8> = Vec::new();
+                    let mut max: Vec<u8> = Vec::new();
 
-                    build_redis_commands(
+                    build_zrangebylex_min_max_from_sql(
                         expr,
                         &table_cache_schema.partition_key,
                         &mut min,
                         &mut max,
                     )?;
 
-                    commands_buffer.push(ShotoverValue::Bytes("ZRANGEBYLEX".into()));
+                    let min = if min.is_empty() {
+                        Bytes::from_static(b"-")
+                    } else {
+                        Bytes::from(min)
+                    };
+                    let max = if max.is_empty() {
+                        Bytes::from_static(b"+")
+                    } else {
+                        Bytes::from(max)
+                    };
+
                     let pk = table_cache_schema
                         .partition_key
                         .iter()
@@ -287,9 +290,13 @@ fn build_redis_ast_from_sql(
                             acc.extend(v.clone().into_str_bytes());
                             acc
                         });
-                    commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
-                    commands_buffer.push(ShotoverValue::Bytes(Bytes::from(min)));
-                    commands_buffer.push(ShotoverValue::Bytes(Bytes::from(max)));
+
+                    let commands_buffer = vec![
+                        ShotoverValue::Bytes("ZRANGEBYLEX".into()),
+                        ShotoverValue::Bytes(pk.freeze()),
+                        ShotoverValue::Bytes(min),
+                        ShotoverValue::Bytes(max),
+                    ];
                     Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
                 }
                 expr => Err(anyhow!("Can't build query from expr: {}", expr)),
