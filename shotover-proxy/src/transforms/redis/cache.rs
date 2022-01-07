@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
+use tracing::info;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
@@ -13,7 +14,7 @@ use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use bytes::{BufMut, Bytes, BytesMut};
-use cassandra_protocol::frame::{Frame, Opcode};
+use cassandra_protocol::frame::{Direction, Flags, Frame, Opcode, Version};
 use itertools::Itertools;
 use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
@@ -62,7 +63,11 @@ impl SimpleRedisCache {
     }
 
     async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
+        let mut stream_ids = Vec::with_capacity(messages.len());
         for message in &mut messages {
+            if let RawFrame::Cassandra(frame) = &message.original {
+                stream_ids.push(frame.stream_id);
+            }
             match &mut message.details {
                 MessageDetails::Query(ref mut qm) => {
                     let table_name = qm.namespace.join(".");
@@ -89,12 +94,29 @@ impl SimpleRedisCache {
             message.modified = true;
         }
 
-        self.cache_chain
+        let mut messages = self
+            .cache_chain
             .process_request(
                 Wrapper::new_with_chain_name(messages, self.cache_chain.name.clone()),
-                "cliebntdetailstodo".to_string(),
+                "clientdetailstodo".to_string(),
             )
-            .await
+            .await?;
+        for message in &mut messages {
+            info!("Received reply from redis cache {:?}", message);
+            // TODO: Translate the redis reply into cassandra
+            message.original = RawFrame::Cassandra(Frame {
+                version: Version::V4,
+                direction: Direction::Response,
+                flags: Flags::empty(),
+                opcode: Opcode::Result,
+                stream_id: stream_ids.remove(0),
+                body: vec![0x00, 0x00, 0x00, 0x01], // void result
+                tracing_id: None,
+                warnings: vec![],
+            });
+            message.modified = true;
+        }
+        Ok(messages)
     }
 }
 
