@@ -4,15 +4,19 @@ use bytes::Bytes;
 use cassandra_protocol::{
     frame::{
         frame_error::{AdditionalErrorInfo, ErrorBody},
-        frame_result::{ColSpec, ColType},
+        frame_result::{ColSpec, ColType, ColTypeOptionValue},
         Direction, Flags, Frame as CassandraFrame, Opcode, Serialize as CassandraSerialize,
     },
     types::{
+        cassandra_type::CassandraType,
         data_serialization_types::{
-            decode_ascii, decode_bigint, decode_boolean, decode_decimal, decode_double,
-            decode_float, decode_inet, decode_int, decode_smallint, decode_tinyint, decode_varchar,
+            decode_ascii, decode_bigint, decode_boolean, decode_date, decode_decimal,
+            decode_double, decode_float, decode_inet, decode_int, decode_list, decode_map,
+            decode_set, decode_smallint, decode_time, decode_timestamp, decode_tinyint,
+            decode_tuple, decode_udt, decode_varchar, decode_varint,
         },
-        CBytes,
+        prelude::{List, Map, Tuple, Udt},
+        AsCassandraType, CBytes,
     },
 };
 use num::BigInt;
@@ -321,6 +325,7 @@ pub enum Value {
     None,
     #[serde(with = "my_bytes")]
     Bytes(Bytes),
+    Bigint(BigInt),
     Ascii(String),
     Strings(String),
     Integer(i64, IntSize),
@@ -384,6 +389,7 @@ impl From<&Frame> for Value {
 impl From<Value> for Frame {
     fn from(value: Value) -> Frame {
         match value {
+            Value::Bigint(_) => unimplemented!(),
             Value::NULL => Frame::Null,
             Value::None => unimplemented!(),
             Value::Bytes(b) => Frame::BulkString(b.to_vec()),
@@ -397,19 +403,19 @@ impl From<Value> for Frame {
             Value::NamedRows(_) => unimplemented!(),
             Value::Document(_) => unimplemented!(),
             Value::FragmentedResponse(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
-            Value::Ascii(_) => unimplemented!(),
-            Value::Double(_) => unimplemented!(),
-            Value::Set(_) => unimplemented!(),
+            Value::Ascii(a) => Frame::SimpleString(a),
+            Value::Double(d) => Frame::SimpleString(d.to_string()),
+            Value::Set(s) => Frame::Array(s.into_iter().map(|v| v.into()).collect()),
             Value::Map(_) => unimplemented!(),
-            Value::Varint(_) => unimplemented!(),
-            Value::Decimal(_) => unimplemented!(),
-            Value::Date(_) => unimplemented!(),
-            Value::Timestamp(_) => unimplemented!(),
-            Value::Timeuuid(_) => unimplemented!(),
-            Value::Varchar(_) => unimplemented!(),
-            Value::Uuid(_) => unimplemented!(),
-            Value::Time(_) => unimplemented!(),
-            Value::Counter(_) => unimplemented!(),
+            Value::Varint(v) => Frame::SimpleString(v.to_string()),
+            Value::Decimal(d) => Frame::SimpleString(d.to_string()),
+            Value::Date(date) => Frame::Integer(date.into()),
+            Value::Timestamp(timestamp) => Frame::Integer(timestamp),
+            Value::Timeuuid(timeuuid) => Frame::SimpleString(timeuuid.to_hyphenated().to_string()),
+            Value::Varchar(v) => Frame::SimpleString(v),
+            Value::Uuid(uuid) => Frame::SimpleString(uuid.to_hyphenated().to_string()),
+            Value::Time(t) => Frame::Integer(t),
+            Value::Counter(c) => Frame::Integer(c),
             Value::Tuple(_) => unimplemented!(),
             Value::Udt(_) => unimplemented!(),
         }
@@ -447,29 +453,203 @@ impl Value {
                 }
                 ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
-                ColType::Varint => unimplemented!("We dont have a varint type yet"),
+                ColType::Varint => Value::Varint(decode_varint(actual_bytes).unwrap()),
                 ColType::Timeuuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
                 ColType::Inet => Value::Inet(decode_inet(actual_bytes).unwrap()),
-                ColType::Timestamp => Value::NULL,
-                ColType::Date => Value::NULL,
-                ColType::Time => Value::NULL,
+                ColType::Date => Value::Date(decode_date(actual_bytes).unwrap()),
+                ColType::Timestamp => Value::Timestamp(decode_timestamp(actual_bytes).unwrap()),
+                ColType::Time => Value::Time(decode_time(actual_bytes).unwrap()),
                 ColType::Smallint => {
                     Value::Integer(decode_smallint(actual_bytes).unwrap() as i64, IntSize::I16)
                 }
                 ColType::Tinyint => {
                     Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64, IntSize::I8)
                 }
+                ColType::List => {
+                    let decoded_list = decode_list(actual_bytes).unwrap();
+                    let list = List::new(spec.col_type.clone(), decoded_list)
+                        .as_cassandra_type()
+                        .unwrap()
+                        .unwrap();
+
+                    let typed_list = Value::create_list(list);
+                    Value::List(typed_list)
+                }
+                ColType::Map => {
+                    let decoded_map = decode_map(actual_bytes).unwrap();
+                    let map = Map::new(decoded_map, spec.col_type.clone())
+                        .as_cassandra_type()
+                        .unwrap()
+                        .unwrap();
+
+                    #[allow(clippy::mutable_key_type)]
+                    let typed_map = Value::create_map(map);
+
+                    Value::Map(typed_map)
+                }
+                ColType::Set => {
+                    let decoded_set = decode_set(actual_bytes).unwrap();
+                    let set = List::new(spec.col_type.clone(), decoded_set)
+                        .as_cassandra_type()
+                        .unwrap()
+                        .unwrap();
+
+                    #[allow(clippy::mutable_key_type)]
+                    let typed_set = Value::create_set(set);
+                    Value::Set(typed_set)
+                }
+                ColType::Udt => {
+                    if let Some(ColTypeOptionValue::UdtType(ref list_type_option)) =
+                        spec.col_type.value
+                    {
+                        let len = list_type_option.descriptions.len();
+                        let decoded_udt = decode_udt(actual_bytes, len).unwrap();
+
+                        let udt = Udt::new(decoded_udt, list_type_option)
+                            .as_cassandra_type()
+                            .unwrap()
+                            .unwrap();
+
+                        let typed_udt = Value::create_udt(udt);
+
+                        Value::Udt(typed_udt)
+                    } else {
+                        panic!("not a udt")
+                    }
+                }
+                ColType::Tuple => {
+                    if let Some(ColTypeOptionValue::TupleType(ref list_type_option)) =
+                        spec.col_type.value
+                    {
+                        let len = list_type_option.types.len();
+                        let decoded_tuple = decode_tuple(actual_bytes, len).unwrap();
+                        let tuple = Tuple::new(decoded_tuple, list_type_option)
+                            .as_cassandra_type()
+                            .unwrap()
+                            .unwrap();
+
+                        let typed_tuple = Value::create_tuple(tuple);
+                        Value::Tuple(typed_tuple)
+                    } else {
+                        panic!("not a tuple") // TODO
+                    }
+                }
+                ColType::Custom => unimplemented!(),
+                ColType::Null => Value::NULL,
                 // TODO: process collection types based on ColTypeOption
                 // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
-                _ => Value::NULL,
             }
         } else {
             Value::NULL
         }
     }
 
+    fn create_udt(collection: CassandraType) -> BTreeMap<String, Value> {
+        if let CassandraType::Udt(udt) = collection {
+            let mut values = BTreeMap::new();
+            udt.into_iter().for_each(|(key, element)| {
+                values.insert(key, Value::create_element(element));
+            });
+
+            values
+        } else {
+            panic!("not a udt");
+        }
+    }
+
+    #[allow(clippy::mutable_key_type)]
+    fn create_map(collection: CassandraType) -> BTreeMap<Value, Value> {
+        if let CassandraType::Map(map) = collection {
+            let mut value_list = BTreeMap::new();
+            for (key, value) in map.into_iter() {
+                value_list.insert(Value::create_element(key), Value::create_element(value));
+            }
+
+            value_list
+        } else {
+            panic!("this is not a map");
+        }
+    }
+
+    fn create_element(element: CassandraType) -> Value {
+        match element {
+            CassandraType::Ascii(a) => Value::Ascii(a),
+            CassandraType::Bigint(b) => Value::Bigint(b),
+            CassandraType::Blob(b) => Value::Bytes(b.into_vec().into()),
+            CassandraType::Boolean(b) => Value::Boolean(b),
+            CassandraType::Counter(c) => Value::Counter(c),
+            CassandraType::Decimal(d) => {
+                let big_decimal = BigDecimal::new(d.unscaled, d.scale.into());
+                Value::Decimal(big_decimal)
+            }
+            CassandraType::Double(d) => Value::Double(d.into()),
+            CassandraType::Float(f) => Value::Float(f.into()),
+            CassandraType::Int(c) => Value::Integer(c as i64, IntSize::I64),
+            CassandraType::Timestamp(t) => Value::Timestamp(t),
+            CassandraType::Uuid(u) => Value::Uuid(u),
+            CassandraType::Varchar(v) => Value::Varchar(v),
+            CassandraType::Varint(v) => Value::Varint(v),
+            CassandraType::Timeuuid(t) => Value::Timeuuid(t),
+            CassandraType::Inet(i) => Value::Inet(i),
+            CassandraType::Date(d) => Value::Date(d),
+            CassandraType::Time(d) => Value::Time(d),
+            CassandraType::Smallint(d) => Value::Integer(d.into(), IntSize::I16),
+            CassandraType::Tinyint(d) => Value::Integer(d.into(), IntSize::I8),
+            CassandraType::List(_) => Value::List(Value::create_list(element)),
+            CassandraType::Map(_) => Value::Map(Value::create_map(element)),
+            CassandraType::Set(_) => Value::Set(Value::create_set(element)),
+            CassandraType::Udt(_) => Value::Udt(Value::create_udt(element)),
+            CassandraType::Tuple(_) => Value::Tuple(Value::create_tuple(element)),
+            CassandraType::Null => Value::NULL,
+        }
+    }
+
+    fn create_list(collection: CassandraType) -> Vec<Value> {
+        match collection {
+            CassandraType::List(collection) => {
+                let mut value_list = Vec::with_capacity(collection.len());
+                for element in collection.into_iter() {
+                    value_list.push(Value::create_element(element));
+                }
+
+                value_list
+            }
+            _ => panic!("this is not a list"), // TODO handle this better
+        }
+    }
+
+    #[allow(clippy::mutable_key_type)]
+    fn create_set(collection: CassandraType) -> BTreeSet<Value> {
+        match collection {
+            CassandraType::List(collection) | CassandraType::Set(collection) => {
+                let mut value_list = BTreeSet::new();
+                for element in collection.into_iter() {
+                    value_list.insert(Value::create_element(element));
+                }
+
+                value_list
+            }
+            _ => panic!("this is not a set"), // TODO handle this better
+        }
+    }
+
+    fn create_tuple(collection: CassandraType) -> Vec<Value> {
+        match collection {
+            CassandraType::Tuple(collection) => {
+                let mut value_list = Vec::with_capacity(collection.len());
+                for element in collection.into_iter() {
+                    value_list.push(Value::create_element(element));
+                }
+
+                value_list
+            }
+            _ => panic!("this is not a tuple"),
+        }
+    }
+
     pub fn into_str_bytes(self) -> Bytes {
         match self {
+            Value::Bigint(_) => unimplemented!(),
             Value::NULL => Bytes::from("".to_string()),
             Value::None => Bytes::from("".to_string()),
             Value::Bytes(b) => b,
@@ -503,6 +683,7 @@ impl Value {
 
     pub fn into_bytes(self) -> Bytes {
         match self {
+            Value::Bigint(_) => unimplemented!(),
             Value::NULL => Bytes::new(),
             Value::None => Bytes::new(),
             Value::Bytes(b) => b,
@@ -545,6 +726,7 @@ impl Value {
 impl From<Value> for cassandra_protocol::types::value::Bytes {
     fn from(value: Value) -> cassandra_protocol::types::value::Bytes {
         match value {
+            Value::Bigint(_) => unimplemented!(),
             Value::NULL => (-1).into(),
             Value::None => cassandra_protocol::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
