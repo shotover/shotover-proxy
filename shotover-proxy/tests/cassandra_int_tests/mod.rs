@@ -19,6 +19,26 @@ enum ResultValue {
     Varchar(String),
     Int(i32),
     Boolean(bool),
+    Uuid(uuid::Uuid),
+    Ascii(String),
+    BigInt(i64),
+    Blob(Vec<u8>),
+    Decimal(Vec<u8>),
+    Double(Vec<u8>),
+    Duration(Vec<u8>),
+    Float(Vec<u8>),
+    Inet(String),
+    SmallInt(i16),
+    Time(Vec<u8>),
+    Timestamp(Vec<u8>),
+    TimeUuid(uuid::Uuid),
+    Counter(i64),
+    TinyInt(i8),
+    VarInt(Vec<u8>),
+    Date(Vec<u8>),
+    List(Vec<ResultValue>),
+    Set(Vec<ResultValue>),
+    Map(Vec<(ResultValue, ResultValue)>),
 }
 
 impl ResultValue {
@@ -28,10 +48,52 @@ impl ResultValue {
             ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
             ValueType::INT => ResultValue::Int(value.get_i32().unwrap()),
             ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
-            ty => todo!(
-                "The test infrastructure hasnt implemented the type {} yet, you should add it.",
-                ty
+            ValueType::UUID => ResultValue::Uuid(
+                uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
             ),
+            ValueType::ASCII => ResultValue::Ascii(value.get_string().unwrap()),
+            ValueType::BIGINT => ResultValue::BigInt(value.get_i64().unwrap()),
+            ValueType::BLOB => ResultValue::Blob(value.get_bytes().unwrap().to_vec()),
+            ValueType::DATE => ResultValue::Date(value.get_bytes().unwrap().to_vec()),
+            ValueType::DECIMAL => ResultValue::Decimal(value.get_bytes().unwrap().to_vec()),
+            ValueType::DOUBLE => ResultValue::Double(value.get_bytes().unwrap().to_vec()),
+            ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
+            ValueType::FLOAT => ResultValue::Float(value.get_bytes().unwrap().to_vec()),
+            ValueType::INET => ResultValue::Inet(value.get_inet().unwrap().to_string()),
+            ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
+            ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
+            ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_bytes().unwrap().to_vec()),
+            ValueType::TIMEUUID => ResultValue::TimeUuid(
+                uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
+            ),
+            ValueType::UNKNOWN => todo!(),
+            ValueType::CUSTOM => todo!(),
+            ValueType::COUNTER => ResultValue::Counter(value.get_i64().unwrap()),
+            ValueType::VARINT => ResultValue::VarInt(value.get_bytes().unwrap().to_vec()),
+            ValueType::TINY_INT => ResultValue::TinyInt(value.get_i8().unwrap()),
+            ValueType::LIST => {
+                let mut list = Vec::new();
+                for i in value.get_set().unwrap() {
+                    list.push(ResultValue::new(i));
+                }
+                ResultValue::List(list)
+            }
+            ValueType::MAP => {
+                let mut map = Vec::new();
+                for (k, v) in value.get_map().unwrap() {
+                    map.push((ResultValue::new(k), ResultValue::new(v)));
+                }
+                ResultValue::Map(map)
+            }
+            ValueType::SET => {
+                let mut set = Vec::new();
+                for i in value.get_set().unwrap() {
+                    set.push(ResultValue::new(i));
+                }
+                ResultValue::Set(set)
+            }
+            ValueType::UDT => todo!(),
+            ValueType::TUPLE => todo!(),
         }
     }
 }
