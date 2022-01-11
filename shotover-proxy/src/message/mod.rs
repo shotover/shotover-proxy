@@ -325,7 +325,6 @@ pub enum Value {
     None,
     #[serde(with = "my_bytes")]
     Bytes(Bytes),
-    Bigint(BigInt),
     Ascii(String),
     Strings(String),
     Integer(i64, IntSize),
@@ -389,7 +388,6 @@ impl From<&Frame> for Value {
 impl From<Value> for Frame {
     fn from(value: Value) -> Frame {
         match value {
-            Value::Bigint(_) => unimplemented!(),
             Value::NULL => Frame::Null,
             Value::None => unimplemented!(),
             Value::Bytes(b) => Frame::BulkString(b.to_vec()),
@@ -574,7 +572,7 @@ impl Value {
     fn create_element(element: CassandraType) -> Value {
         match element {
             CassandraType::Ascii(a) => Value::Ascii(a),
-            CassandraType::Bigint(b) => Value::Bigint(b),
+            CassandraType::Bigint(b) => Value::Integer(b, IntSize::I64),
             CassandraType::Blob(b) => Value::Bytes(b.into_vec().into()),
             CassandraType::Boolean(b) => Value::Boolean(b),
             CassandraType::Counter(c) => Value::Counter(c),
@@ -649,7 +647,6 @@ impl Value {
 
     pub fn into_str_bytes(self) -> Bytes {
         match self {
-            Value::Bigint(_) => unimplemented!(),
             Value::NULL => Bytes::from("".to_string()),
             Value::None => Bytes::from("".to_string()),
             Value::Bytes(b) => b,
@@ -683,7 +680,6 @@ impl Value {
 
     pub fn into_bytes(self) -> Bytes {
         match self {
-            Value::Bigint(_) => unimplemented!(),
             Value::NULL => Bytes::new(),
             Value::None => Bytes::new(),
             Value::Bytes(b) => b,
@@ -726,7 +722,6 @@ impl Value {
 impl From<Value> for cassandra_protocol::types::value::Bytes {
     fn from(value: Value) -> cassandra_protocol::types::value::Bytes {
         match value {
-            Value::Bigint(_) => unimplemented!(),
             Value::NULL => (-1).into(),
             Value::None => cassandra_protocol::types::value::Bytes::new(vec![]),
             Value::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),

@@ -178,7 +178,6 @@ impl CassandraCodec {
                                             let _ = temp.write_i32::<BigEndian>(*x as i32).unwrap();
                                             temp
                                         }
-                                        Value::Bigint(_) => unimplemented!(),
                                         Value::None => unimplemented!(),
                                         Value::Inet(_) => unimplemented!(),
                                         Value::FragmentedResponse(_) => unimplemented!(),

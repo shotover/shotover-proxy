@@ -287,7 +287,7 @@ checksum = "eadde404d13254d8592f8aaa946a1fb7a2769c137df56ed29a3be5996973a156"
 [[package]]
 name = "cassandra-protocol"
 version = "1.0.0"
-source = "git+https://github.com/krojew/cdrs-tokio#5f9d22e124265bbe6a001386153f26dc4c6a7930"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=typed-collections#9dcc647ce809a5c76336c646b8afd37da605d6bf"
 dependencies = [
  "arrayref",
  "bitflags",
