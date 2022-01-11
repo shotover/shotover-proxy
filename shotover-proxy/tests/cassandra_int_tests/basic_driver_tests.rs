@@ -416,6 +416,7 @@ mod collections {
         use super::*;
 
         fn create(session: &Session) {
+            // create lists of native types
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 run_query(
                     session,
@@ -428,6 +429,7 @@ mod collections {
                 );
             }
 
+            // create lists of lists and sets
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 for (j, collection_col_type) in COLLECTION_COL_TYPES.iter().enumerate() {
                     run_query(
@@ -444,12 +446,14 @@ mod collections {
                 }
             }
 
+            // create lists of maps
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 run_query(session, format!("CREATE TABLE test_collections_keyspace.test_list_table_map_{} (id int PRIMARY KEY, my_list frozen<list<frozen<map<int, {}>>>>);", i, get_type_str(*col_type)).as_str());
             }
         }
 
         fn insert(session: &Session) {
+            // insert lists of native types
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 let query = format!("INSERT INTO test_collections_keyspace.test_list_table_{} (id, my_list) VALUES ({}, [{}]);", i, i, get_type_example(*col_type));
                 run_query(session, query.as_str());
@@ -469,7 +473,7 @@ mod collections {
                 );
             }
 
-            // // test inserting list of lists
+            // test inserting list of lists
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 run_query(
                     session,
@@ -503,13 +507,13 @@ mod collections {
         }
 
         fn select(session: &Session) {
+            // select lists of native types
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 let query = format!(
                     "SELECT my_list FROM test_collections_keyspace.test_list_table_{};",
                     i
                 );
 
-                // , i, i, get_type_example(*col_type));
                 assert_query_result(
                     session,
                     query.as_str(),
@@ -519,7 +523,7 @@ mod collections {
                 );
             }
 
-            // test inserting list of sets
+            // test selecting list of sets
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 assert_query_result(
                     session,
@@ -534,7 +538,22 @@ mod collections {
                 );
             }
 
-            // test inserting list of maps
+            // test selecting list of lists
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                assert_query_result(
+                    session,
+                    format!(
+                        "SELECT my_list FROM test_collections_keyspace.test_list_table_{}_1;",
+                        i
+                    )
+                    .as_str(),
+                    &[&[ResultValue::List(vec![ResultValue::List(vec![
+                        get_type_example_result_value(*native_col_type),
+                    ])])]],
+                );
+            }
+
+            // test selecting list of maps
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 assert_query_result(
                     session,
@@ -558,10 +577,176 @@ mod collections {
         }
     }
 
+    mod set {
+        use super::*;
+
+        fn create(session: &Session) {
+            // create sets of native types
+            for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                run_query(
+                    session,
+                    format!(
+                        "CREATE TABLE test_collections_keyspace.test_set_table_{} (id int PRIMARY KEY, my_set set<{}>);",
+                        i,
+                        get_type_str(*col_type)
+                    )
+                    .as_str(),
+                );
+            }
+
+            // create sets of lists and sets
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                for (j, collection_col_type) in COLLECTION_COL_TYPES.iter().enumerate() {
+                    run_query(
+                    session,
+                    format!(
+                        "CREATE TABLE test_collections_keyspace.test_set_table_{}_{} (id int PRIMARY KEY, my_set frozen<set<{}<{}>>>);",
+                        i,
+                        j,
+                        get_type_str(*collection_col_type),
+                        get_type_str(*native_col_type)
+                    )
+                    .as_str(),
+                );
+                }
+            }
+
+            // create sets of maps
+            for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                run_query(session, format!("CREATE TABLE test_collections_keyspace.test_set_table_map_{} (id int PRIMARY KEY, my_set frozen<set<frozen<map<int, {}>>>>);", i, get_type_str(*col_type)).as_str());
+            }
+        }
+
+        fn insert(session: &Session) {
+            // insert lists of native types
+            for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                let query = format!("INSERT INTO test_collections_keyspace.test_set_table_{} (id, my_set) VALUES ({}, {{{}}});", i, i, get_type_example(*col_type));
+                run_query(session, query.as_str());
+            }
+
+            // test inserting sets of sets
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                run_query(
+                    session,
+                    format!(
+                        "INSERT INTO test_collections_keyspace.test_set_table_{}_0 (id, my_set) VALUES ({}, {{{{{}}}}});",
+                        i,
+                        i,
+                        get_type_example(*native_col_type)
+                    )
+                    .as_str(),
+                );
+            }
+
+            // test inserting set of lists
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                run_query(
+                    session,
+                    format!(
+                        "INSERT INTO test_collections_keyspace.test_set_table_{}_1 (id, my_set) VALUES ({}, {{[{}]}});",
+                        i,
+                        i,
+                        get_type_example(*native_col_type)
+                    )
+                    .as_str(),
+                );
+            }
+
+            fn get_map_example(_key: usize, value: &str) -> String {
+                format!("{{0 : {}}}", value)
+            }
+
+            // test inserting set of maps
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                run_query(
+                    session,
+                    format!(
+                        "INSERT INTO test_collections_keyspace.test_set_table_map_{} (id, my_set) VALUES ({}, {{{}}});",
+                        i,
+                        i,
+                        get_map_example(i, get_type_example(*native_col_type))
+                    )
+                    .as_str(),
+                );
+            }
+        }
+
+        fn select(session: &Session) {
+            // select sets of native types
+            for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                let query = format!(
+                    "SELECT my_set FROM test_collections_keyspace.test_set_table_{};",
+                    i
+                );
+
+                assert_query_result(
+                    session,
+                    query.as_str(),
+                    &[&[ResultValue::Set(vec![get_type_example_result_value(
+                        *col_type,
+                    )])]],
+                );
+            }
+
+            // test selecting set of sets
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                assert_query_result(
+                    session,
+                    format!(
+                        "SELECT my_set FROM test_collections_keyspace.test_set_table_{}_0;",
+                        i
+                    )
+                    .as_str(),
+                    &[&[ResultValue::Set(vec![ResultValue::Set(vec![
+                        get_type_example_result_value(*native_col_type),
+                    ])])]],
+                );
+            }
+
+            // test selecting set of lists
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                assert_query_result(
+                    session,
+                    format!(
+                        "SELECT my_set FROM test_collections_keyspace.test_set_table_{}_1;",
+                        i
+                    )
+                    .as_str(),
+                    &[&[ResultValue::Set(vec![ResultValue::List(vec![
+                        get_type_example_result_value(*native_col_type),
+                    ])])]],
+                );
+            }
+
+            // test selecting set  of maps
+            for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+                assert_query_result(
+                    session,
+                    format!(
+                        "SELECT my_set FROM test_collections_keyspace.test_set_table_map_{};",
+                        i,
+                    )
+                    .as_str(),
+                    &[&[ResultValue::Set(vec![ResultValue::Map(vec![(
+                        ResultValue::Int(0),
+                        get_type_example_result_value(*native_col_type),
+                    )])])]],
+                );
+            }
+        }
+
+        pub fn test(session: &Session) {
+            create(session);
+            insert(session);
+            select(session);
+        }
+    }
+
     pub fn test(session: &Session) {
         run_query(session, "CREATE KEYSPACE test_collections_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
 
         list::test(session);
+        set::test(session);
     }
 }
 
@@ -766,10 +951,11 @@ fn test_cluster() {
 
     let connection = cassandra_connection("127.0.0.1", 9042);
 
-    keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
-    functions::test(&connection);
+    //    keyspace::test(&connection);
+    //table::test(&connection);
+    //udt::test(&connection);
+    //functions::test(&connection);
+    collections::test(&connection);
 }
 
 #[test]
@@ -783,12 +969,12 @@ fn test_passthrough() {
 
     let connection = cassandra_connection("127.0.0.1", 9042);
 
-    keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
-    native_types::test(&connection);
+    //keyspace::test(&connection);
+    //table::test(&connection);
+    //udt::test(&connection);
+    //native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    //functions::test(&connection);
 }
 
 #[test]
