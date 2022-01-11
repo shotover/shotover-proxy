@@ -389,7 +389,7 @@ impl From<Value> for Frame {
     fn from(value: Value) -> Frame {
         match value {
             Value::NULL => Frame::Null,
-            Value::None => unimplemented!(),
+            Value::None => todo!(),
             Value::Bytes(b) => Frame::BulkString(b.to_vec()),
             Value::Strings(s) => Frame::SimpleString(s),
             Value::Integer(i, _) => Frame::Integer(i),
@@ -398,24 +398,24 @@ impl From<Value> for Frame {
             Value::Inet(i) => Frame::SimpleString(i.to_string()),
             Value::List(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
             Value::Rows(r) => Frame::Array(r.into_iter().map(|v| Value::List(v).into()).collect()),
-            Value::NamedRows(_) => unimplemented!(),
-            Value::Document(_) => unimplemented!(),
+            Value::NamedRows(_) => todo!(),
+            Value::Document(_) => todo!(),
             Value::FragmentedResponse(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
-            Value::Ascii(a) => Frame::SimpleString(a),
-            Value::Double(d) => Frame::SimpleString(d.to_string()),
-            Value::Set(s) => Frame::Array(s.into_iter().map(|v| v.into()).collect()),
-            Value::Map(_) => unimplemented!(),
-            Value::Varint(v) => Frame::SimpleString(v.to_string()),
-            Value::Decimal(d) => Frame::SimpleString(d.to_string()),
-            Value::Date(date) => Frame::Integer(date.into()),
-            Value::Timestamp(timestamp) => Frame::Integer(timestamp),
-            Value::Timeuuid(timeuuid) => Frame::SimpleString(timeuuid.to_hyphenated().to_string()),
-            Value::Varchar(v) => Frame::SimpleString(v),
-            Value::Uuid(uuid) => Frame::SimpleString(uuid.to_hyphenated().to_string()),
-            Value::Time(t) => Frame::Integer(t),
-            Value::Counter(c) => Frame::Integer(c),
-            Value::Tuple(_) => unimplemented!(),
-            Value::Udt(_) => unimplemented!(),
+            Value::Ascii(_a) => todo!(),
+            Value::Double(_d) => todo!(),
+            Value::Set(_s) => todo!(),
+            Value::Map(_) => todo!(),
+            Value::Varint(_v) => todo!(),
+            Value::Decimal(_d) => todo!(),
+            Value::Date(_date) => todo!(),
+            Value::Timestamp(_timestamp) => todo!(),
+            Value::Timeuuid(_timeuuid) => todo!(),
+            Value::Varchar(_v) => todo!(),
+            Value::Uuid(_uuid) => todo!(),
+            Value::Time(_t) => todo!(),
+            Value::Counter(_c) => todo!(),
+            Value::Tuple(_) => todo!(),
+            Value::Udt(_) => todo!(),
         }
     }
 }
@@ -512,7 +512,7 @@ impl Value {
 
                         Value::Udt(typed_udt)
                     } else {
-                        panic!("not a udt")
+                        panic!("Not a UDT. This indicates a bug in cassandra_protocol")
                     }
                 }
                 ColType::Tuple => {
@@ -529,13 +529,11 @@ impl Value {
                         let typed_tuple = Value::create_tuple(tuple);
                         Value::Tuple(typed_tuple)
                     } else {
-                        panic!("not a tuple") // TODO
+                        panic!("Not a Tuple. This indicates a bug in cassandra_protocol")
                     }
                 }
                 ColType::Custom => unimplemented!(),
                 ColType::Null => Value::NULL,
-                // TODO: process collection types based on ColTypeOption
-                // (https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L569)
             }
         } else {
             Value::NULL
@@ -551,7 +549,7 @@ impl Value {
 
             values
         } else {
-            panic!("not a udt");
+            panic!("Not a UDT. Only CassandraType::Udt should be passed to this method.");
         }
     }
 
@@ -565,7 +563,7 @@ impl Value {
 
             value_list
         } else {
-            panic!("this is not a map");
+            panic!("Not a Map. Only CassandraType::Map should be passed to this method");
         }
     }
 
@@ -612,7 +610,7 @@ impl Value {
 
                 value_list
             }
-            _ => panic!("this is not a list"), // TODO handle this better
+            _ => panic!("Not a List. Only CassandraType::List should be passed to this method."),
         }
     }
 
@@ -627,7 +625,9 @@ impl Value {
 
                 value_list
             }
-            _ => panic!("this is not a set"), // TODO handle this better
+            _ => panic!(
+                "Not a List or Set. Only CassandraType::List or CassandraType::Set should be passed to this method."
+            ),
         }
     }
 
@@ -641,7 +641,7 @@ impl Value {
 
                 value_list
             }
-            _ => panic!("this is not a tuple"),
+            _ => panic!("Not a Tuple. Only CassandraType::Tuple should be passed to this method."),
         }
     }
 
@@ -655,46 +655,6 @@ impl Value {
             Value::Float(f) => Bytes::from(format!("{}", f)),
             Value::Boolean(b) => Bytes::from(format!("{}", b)),
             Value::Inet(i) => Bytes::from(format!("{}", i)),
-            Value::FragmentedResponse(_) => unimplemented!(),
-            Value::Document(_) => unimplemented!(),
-            Value::NamedRows(_) => unimplemented!(),
-            Value::List(_) => unimplemented!(),
-            Value::Rows(_) => unimplemented!(),
-            Value::Ascii(_) => unimplemented!(),
-            Value::Double(_) => unimplemented!(),
-            Value::Set(_) => unimplemented!(),
-            Value::Map(_) => unimplemented!(),
-            Value::Varint(_) => unimplemented!(),
-            Value::Decimal(_) => unimplemented!(),
-            Value::Date(_) => unimplemented!(),
-            Value::Timestamp(_) => unimplemented!(),
-            Value::Timeuuid(_) => unimplemented!(),
-            Value::Varchar(_) => unimplemented!(),
-            Value::Uuid(_) => unimplemented!(),
-            Value::Time(_) => unimplemented!(),
-            Value::Counter(_) => unimplemented!(),
-            Value::Tuple(_) => unimplemented!(),
-            Value::Udt(_) => unimplemented!(),
-        }
-    }
-
-    pub fn into_bytes(self) -> Bytes {
-        match self {
-            Value::NULL => Bytes::new(),
-            Value::None => Bytes::new(),
-            Value::Bytes(b) => b,
-            Value::Strings(s) => Bytes::from(s),
-            Value::Integer(i, _) => Bytes::from(Vec::from(i.to_le_bytes())),
-            Value::Float(f) => Bytes::from(Vec::from(f.to_le_bytes())),
-            Value::Boolean(b) => Bytes::from(Vec::from(if b {
-                (1_u8).to_le_bytes()
-            } else {
-                (0_u8).to_le_bytes()
-            })),
-            Value::Inet(i) => Bytes::from(match i {
-                IpAddr::V4(four) => Vec::from(four.octets()),
-                IpAddr::V6(six) => Vec::from(six.octets()),
-            }),
             Value::FragmentedResponse(_) => unimplemented!(),
             Value::Document(_) => unimplemented!(),
             Value::NamedRows(_) => unimplemented!(),
