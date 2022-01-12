@@ -456,80 +456,30 @@ impl Value {
             CassandraType::Time(d) => Value::Time(d),
             CassandraType::Smallint(d) => Value::Integer(d.into(), IntSize::I16),
             CassandraType::Tinyint(d) => Value::Integer(d.into(), IntSize::I8),
-            CassandraType::List(_) => Value::create_list(element),
-            CassandraType::Map(_) => Value::create_map(element),
-            CassandraType::Set(_) => Value::create_set(element),
-            CassandraType::Udt(_) => Value::create_udt(element),
-            CassandraType::Tuple(_) => Value::create_tuple(element),
-            CassandraType::Null => Value::NULL,
-        }
-    }
-
-    /// Create a `Value::Udt` from a `CassandraType::Udt`
-    fn create_udt(collection: CassandraType) -> Value {
-        if let CassandraType::Udt(udt) = collection {
-            let mut values = BTreeMap::new();
-            udt.into_iter().for_each(|(key, element)| {
-                values.insert(key, Value::create_element(element));
-            });
-
-            Value::Udt(values)
-        } else {
-            panic!("Not a UDT. Only CassandraType::Udt should be passed to this method.");
-        }
-    }
-
-    /// Create a `Value::Map` from a `CassandraType::Map`
-    #[allow(clippy::mutable_key_type)]
-    fn create_map(collection: CassandraType) -> Value {
-        if let CassandraType::Map(map) = collection {
-            let mut value_list = BTreeMap::new();
-            for (key, value) in map.into_iter() {
-                value_list.insert(Value::create_element(key), Value::create_element(value));
-            }
-
-            Value::Map(value_list)
-        } else {
-            panic!("Not a Map. Only CassandraType::Map should be passed to this method");
-        }
-    }
-
-    /// Create a `Value::List` from a `CassandraType::List`
-    fn create_list(collection: CassandraType) -> Value {
-        match collection {
-            CassandraType::List(collection) => {
-                let value_list = collection.into_iter().map(Value::create_element).collect();
+            CassandraType::List(list) => {
+                let value_list = list.into_iter().map(Value::create_element).collect();
                 Value::List(value_list)
             }
-            _ => panic!("Not a List. Only CassandraType::List should be passed to this method."),
-        }
-    }
-
-    /// Create a `Value::Set` from a `CassandraType::Set` or `CassandraType::List`
-    #[allow(clippy::mutable_key_type)]
-    fn create_set(collection: CassandraType) -> Value {
-        match collection {
-            CassandraType::List(collection) | CassandraType::Set(collection) => {
-                let mut value_list = BTreeSet::new();
-                for element in collection.into_iter() {
-                    value_list.insert(Value::create_element(element));
-                }
-
-                Value::Set(value_list)
-            }
-            _ => panic!(
-                "Not a List or Set. Only CassandraType::List or CassandraType::Set should be passed to this method."
+            CassandraType::Map(map) => Value::Map(
+                map.into_iter()
+                    .map(|(key, value)| (Value::create_element(key), Value::create_element(value)))
+                    .collect(),
             ),
-        }
-    }
-
-    fn create_tuple(collection: CassandraType) -> Value {
-        match collection {
-            CassandraType::Tuple(collection) => {
-                let value_list = collection.into_iter().map(Value::create_element).collect();
+            CassandraType::Set(set) => {
+                Value::Set(set.into_iter().map(Value::create_element).collect())
+            }
+            CassandraType::Udt(udt) => {
+                let values = udt
+                    .into_iter()
+                    .map(|(key, element)| (key, Value::create_element(element)))
+                    .collect();
+                Value::Udt(values)
+            }
+            CassandraType::Tuple(tuple) => {
+                let value_list = tuple.into_iter().map(Value::create_element).collect();
                 Value::Tuple(value_list)
             }
-            _ => panic!("Not a Tuple. Only CassandraType::Tuple should be passed to this method."),
+            CassandraType::Null => Value::NULL,
         }
     }
 
