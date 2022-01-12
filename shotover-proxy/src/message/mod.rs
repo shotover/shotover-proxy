@@ -470,8 +470,7 @@ impl Value {
                         .unwrap()
                         .unwrap();
 
-                    let typed_list = Value::create_list(list);
-                    Value::List(typed_list)
+                    Value::create_list(list)
                 }
                 ColType::Map => {
                     let decoded_map = decode_map(actual_bytes).unwrap();
@@ -480,10 +479,8 @@ impl Value {
                         .unwrap()
                         .unwrap();
 
-                    #[allow(clippy::mutable_key_type)]
-                    let typed_map = Value::create_map(map);
-
-                    Value::Map(typed_map)
+                    //#[allow(clippy::mutable_key_type)]
+                    Value::create_map(map)
                 }
                 ColType::Set => {
                     let decoded_set = decode_set(actual_bytes).unwrap();
@@ -492,9 +489,8 @@ impl Value {
                         .unwrap()
                         .unwrap();
 
-                    #[allow(clippy::mutable_key_type)]
-                    let typed_set = Value::create_set(set);
-                    Value::Set(typed_set)
+                    //#[allow(clippy::mutable_key_type)]
+                    Value::create_set(set)
                 }
                 ColType::Udt => {
                     if let Some(ColTypeOptionValue::UdtType(ref list_type_option)) =
@@ -508,9 +504,7 @@ impl Value {
                             .unwrap()
                             .unwrap();
 
-                        let typed_udt = Value::create_udt(udt);
-
-                        Value::Udt(typed_udt)
+                        Value::create_udt(udt)
                     } else {
                         panic!("Not a UDT. This indicates a bug in cassandra_protocol")
                     }
@@ -526,8 +520,7 @@ impl Value {
                             .unwrap()
                             .unwrap();
 
-                        let typed_tuple = Value::create_tuple(tuple);
-                        Value::Tuple(typed_tuple)
+                        Value::create_tuple(tuple)
                     } else {
                         panic!("Not a Tuple. This indicates a bug in cassandra_protocol")
                     }
@@ -537,33 +530,6 @@ impl Value {
             }
         } else {
             Value::NULL
-        }
-    }
-
-    fn create_udt(collection: CassandraType) -> BTreeMap<String, Value> {
-        if let CassandraType::Udt(udt) = collection {
-            let mut values = BTreeMap::new();
-            udt.into_iter().for_each(|(key, element)| {
-                values.insert(key, Value::create_element(element));
-            });
-
-            values
-        } else {
-            panic!("Not a UDT. Only CassandraType::Udt should be passed to this method.");
-        }
-    }
-
-    #[allow(clippy::mutable_key_type)]
-    fn create_map(collection: CassandraType) -> BTreeMap<Value, Value> {
-        if let CassandraType::Map(map) = collection {
-            let mut value_list = BTreeMap::new();
-            for (key, value) in map.into_iter() {
-                value_list.insert(Value::create_element(key), Value::create_element(value));
-            }
-
-            value_list
-        } else {
-            panic!("Not a Map. Only CassandraType::Map should be passed to this method");
         }
     }
 
@@ -591,31 +557,58 @@ impl Value {
             CassandraType::Time(d) => Value::Time(d),
             CassandraType::Smallint(d) => Value::Integer(d.into(), IntSize::I16),
             CassandraType::Tinyint(d) => Value::Integer(d.into(), IntSize::I8),
-            CassandraType::List(_) => Value::List(Value::create_list(element)),
-            CassandraType::Map(_) => Value::Map(Value::create_map(element)),
-            CassandraType::Set(_) => Value::Set(Value::create_set(element)),
-            CassandraType::Udt(_) => Value::Udt(Value::create_udt(element)),
-            CassandraType::Tuple(_) => Value::Tuple(Value::create_tuple(element)),
+            CassandraType::List(_) => Value::create_list(element),
+            CassandraType::Map(_) => Value::create_map(element),
+            CassandraType::Set(_) => Value::create_set(element),
+            CassandraType::Udt(_) => Value::create_udt(element),
+            CassandraType::Tuple(_) => Value::create_tuple(element),
             CassandraType::Null => Value::NULL,
         }
     }
 
-    fn create_list(collection: CassandraType) -> Vec<Value> {
+    /// Create a `Value::Udt` from a `CassandraType::Udt`
+    fn create_udt(collection: CassandraType) -> Value {
+        if let CassandraType::Udt(udt) = collection {
+            let mut values = BTreeMap::new();
+            udt.into_iter().for_each(|(key, element)| {
+                values.insert(key, Value::create_element(element));
+            });
+
+            Value::Udt(values)
+        } else {
+            panic!("Not a UDT. Only CassandraType::Udt should be passed to this method.");
+        }
+    }
+
+    /// Create a `Value::Map` from a `CassandraType::Map`
+    #[allow(clippy::mutable_key_type)]
+    fn create_map(collection: CassandraType) -> Value {
+        if let CassandraType::Map(map) = collection {
+            let mut value_list = BTreeMap::new();
+            for (key, value) in map.into_iter() {
+                value_list.insert(Value::create_element(key), Value::create_element(value));
+            }
+
+            Value::Map(value_list)
+        } else {
+            panic!("Not a Map. Only CassandraType::Map should be passed to this method");
+        }
+    }
+
+    /// Create a `Value::List` from a `CassandraType::List`
+    fn create_list(collection: CassandraType) -> Value {
         match collection {
             CassandraType::List(collection) => {
-                let mut value_list = Vec::with_capacity(collection.len());
-                for element in collection.into_iter() {
-                    value_list.push(Value::create_element(element));
-                }
-
-                value_list
+                let value_list = collection.into_iter().map(Value::create_element).collect();
+                Value::List(value_list)
             }
             _ => panic!("Not a List. Only CassandraType::List should be passed to this method."),
         }
     }
 
+    /// Create a `Value::Set` from a `CassandraType::Set` or `CassandraType::List`
     #[allow(clippy::mutable_key_type)]
-    fn create_set(collection: CassandraType) -> BTreeSet<Value> {
+    fn create_set(collection: CassandraType) -> Value {
         match collection {
             CassandraType::List(collection) | CassandraType::Set(collection) => {
                 let mut value_list = BTreeSet::new();
@@ -623,7 +616,7 @@ impl Value {
                     value_list.insert(Value::create_element(element));
                 }
 
-                value_list
+                Value::Set(value_list)
             }
             _ => panic!(
                 "Not a List or Set. Only CassandraType::List or CassandraType::Set should be passed to this method."
@@ -631,15 +624,11 @@ impl Value {
         }
     }
 
-    fn create_tuple(collection: CassandraType) -> Vec<Value> {
+    fn create_tuple(collection: CassandraType) -> Value {
         match collection {
             CassandraType::Tuple(collection) => {
-                let mut value_list = Vec::with_capacity(collection.len());
-                for element in collection.into_iter() {
-                    value_list.push(Value::create_element(element));
-                }
-
-                value_list
+                let value_list = collection.into_iter().map(Value::create_element).collect();
+                Value::Tuple(value_list)
             }
             _ => panic!("Not a Tuple. Only CassandraType::Tuple should be passed to this method."),
         }
