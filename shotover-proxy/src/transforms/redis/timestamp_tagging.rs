@@ -128,7 +128,11 @@ fn unwrap_response(qr: &mut QueryResponse) {
                         let since_the_epoch = start
                             .duration_since(UNIX_EPOCH)
                             .expect("Time went backwards");
-                        Value::Integer(since_the_epoch.as_secs() as i64 - i, IntSize::I32)
+                        let seconds = since_the_epoch.as_secs();
+                        if seconds.leading_ones() > 1 {
+                            panic!("Cannot convert u64 to i64 without overflow");
+                        }
+                        Value::Integer(seconds as i64 - i, IntSize::I64)
                     }
                     v => v,
                 };
