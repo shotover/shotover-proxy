@@ -4,19 +4,12 @@ use bytes::Bytes;
 use cassandra_protocol::{
     frame::{
         frame_error::{AdditionalErrorInfo, ErrorBody},
-        frame_result::{ColSpec, ColType, ColTypeOptionValue},
+        frame_result::{ColSpec, ColTypeOption},
         Direction, Flags, Frame as CassandraFrame, Opcode, Serialize as CassandraSerialize,
     },
     types::{
-        cassandra_type::CassandraType,
-        data_serialization_types::{
-            decode_ascii, decode_bigint, decode_boolean, decode_date, decode_decimal,
-            decode_double, decode_float, decode_inet, decode_int, decode_list, decode_map,
-            decode_set, decode_smallint, decode_time, decode_timestamp, decode_tinyint,
-            decode_tuple, decode_udt, decode_varchar, decode_varint,
-        },
-        prelude::{List, Map, Tuple, Udt},
-        AsCassandraType, CBytes,
+        cassandra_type::{get_wrapper_fn, CassandraType},
+        CBytes,
     },
 };
 use num::BigInt;
@@ -430,107 +423,13 @@ impl Value {
     }
 
     pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> Value {
-        if let Some(actual_bytes) = data.as_slice() {
-            match spec.col_type.id {
-                ColType::Ascii => Value::Strings(decode_ascii(actual_bytes).unwrap()),
-                ColType::Bigint => {
-                    Value::Integer(decode_bigint(actual_bytes).unwrap(), IntSize::I64)
-                }
-                ColType::Blob => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
-                ColType::Boolean => Value::Boolean(decode_boolean(actual_bytes).unwrap()),
-                ColType::Counter => Value::Counter(decode_int(actual_bytes).unwrap() as i64),
-                ColType::Decimal => {
-                    let decimal = decode_decimal(actual_bytes).unwrap();
-                    let big_decimal = BigDecimal::new(decimal.unscaled, decimal.scale.into());
-                    Value::Decimal(big_decimal)
-                }
-                ColType::Double => Value::Double(decode_double(actual_bytes).unwrap().into()),
-                ColType::Float => Value::Float(decode_float(actual_bytes).unwrap().into()),
-                ColType::Int => {
-                    Value::Integer(decode_int(actual_bytes).unwrap() as i64, IntSize::I32)
-                }
-                ColType::Uuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
-                ColType::Varchar => Value::Strings(decode_varchar(actual_bytes).unwrap()),
-                ColType::Varint => Value::Varint(decode_varint(actual_bytes).unwrap()),
-                ColType::Timeuuid => Value::Bytes(Bytes::copy_from_slice(actual_bytes)),
-                ColType::Inet => Value::Inet(decode_inet(actual_bytes).unwrap()),
-                ColType::Date => Value::Date(decode_date(actual_bytes).unwrap()),
-                ColType::Timestamp => Value::Timestamp(decode_timestamp(actual_bytes).unwrap()),
-                ColType::Time => Value::Time(decode_time(actual_bytes).unwrap()),
-                ColType::Smallint => {
-                    Value::Integer(decode_smallint(actual_bytes).unwrap() as i64, IntSize::I16)
-                }
-                ColType::Tinyint => {
-                    Value::Integer(decode_tinyint(actual_bytes).unwrap() as i64, IntSize::I8)
-                }
-                ColType::List => {
-                    let decoded_list = decode_list(actual_bytes).unwrap();
-                    let list = List::new(spec.col_type.clone(), decoded_list)
-                        .as_cassandra_type()
-                        .unwrap()
-                        .unwrap();
+        let cassandra_type = Value::into_cassandra_type(&spec.col_type, data);
+        Value::create_element(cassandra_type)
+    }
 
-                    Value::create_list(list)
-                }
-                ColType::Map => {
-                    let decoded_map = decode_map(actual_bytes).unwrap();
-                    let map = Map::new(decoded_map, spec.col_type.clone())
-                        .as_cassandra_type()
-                        .unwrap()
-                        .unwrap();
-
-                    //#[allow(clippy::mutable_key_type)]
-                    Value::create_map(map)
-                }
-                ColType::Set => {
-                    let decoded_set = decode_set(actual_bytes).unwrap();
-                    let set = List::new(spec.col_type.clone(), decoded_set)
-                        .as_cassandra_type()
-                        .unwrap()
-                        .unwrap();
-
-                    //#[allow(clippy::mutable_key_type)]
-                    Value::create_set(set)
-                }
-                ColType::Udt => {
-                    if let Some(ColTypeOptionValue::UdtType(ref list_type_option)) =
-                        spec.col_type.value
-                    {
-                        let len = list_type_option.descriptions.len();
-                        let decoded_udt = decode_udt(actual_bytes, len).unwrap();
-
-                        let udt = Udt::new(decoded_udt, list_type_option)
-                            .as_cassandra_type()
-                            .unwrap()
-                            .unwrap();
-
-                        Value::create_udt(udt)
-                    } else {
-                        panic!("Not a UDT. This indicates a bug in cassandra_protocol")
-                    }
-                }
-                ColType::Tuple => {
-                    if let Some(ColTypeOptionValue::TupleType(ref list_type_option)) =
-                        spec.col_type.value
-                    {
-                        let len = list_type_option.types.len();
-                        let decoded_tuple = decode_tuple(actual_bytes, len).unwrap();
-                        let tuple = Tuple::new(decoded_tuple, list_type_option)
-                            .as_cassandra_type()
-                            .unwrap()
-                            .unwrap();
-
-                        Value::create_tuple(tuple)
-                    } else {
-                        panic!("Not a Tuple. This indicates a bug in cassandra_protocol")
-                    }
-                }
-                ColType::Custom => unimplemented!(),
-                ColType::Null => Value::NULL,
-            }
-        } else {
-            Value::NULL
-        }
+    fn into_cassandra_type(col_type: &ColTypeOption, data: &CBytes) -> CassandraType {
+        let wrapper = get_wrapper_fn(&col_type.id);
+        wrapper(data, col_type)
     }
 
     fn create_element(element: CassandraType) -> Value {
