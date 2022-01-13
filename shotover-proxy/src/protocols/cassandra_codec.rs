@@ -968,4 +968,90 @@ mod cassandra_protocol_tests {
         }];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
+
+    #[test]
+    fn test_parse_insert_string() {
+        let query_str = "INSERT into tbl(col1,col2,col3) values('one', 2, 3);";
+        let hash_map: HashMap<String,Vec<String>> = HashMap::new();
+        let query = CassandraCodec::parse_query_string( query_str, &hash_map);
+        let colmap = query.colmap.unwrap();
+        let namespace = query.namespace.unwrap();
+        let projection = query.projection.unwrap();
+        assert_eq!( colmap.len(), 3 );
+        assert_eq!( colmap.get( "col1").unwrap(), &Value::Strings("one".to_string()));
+        assert_eq!( colmap.get( "col2").unwrap(), &Value::Strings("2".to_string()));
+        assert_eq!( colmap.get( "col3").unwrap(), &Value::Strings("3".to_string()));
+        assert_eq!( namespace.len(), 1);
+        assert_eq!( namespace[0], "tbl");
+        assert_eq!( projection.len(), 3 );
+        assert_eq!( projection[0], "col1");
+        assert_eq!( projection[1], "col2");
+        assert_eq!( projection[2], "col3");
+
+    }
+
+    #[test]
+    fn test_parse_update_string() {
+        let query_str = "UPDATE keyspace.tbl Set col1='one', col2='2'  Where col3=3";
+        let hash_map: HashMap<String,Vec<String>> = HashMap::new();
+        let query = CassandraCodec::parse_query_string( query_str, &hash_map);
+        let colmap = query.colmap.unwrap();
+        let namespace = query.namespace.unwrap();
+        let projection = query.projection.unwrap();
+        assert_eq!( colmap.len(), 2  );
+        assert_eq!( colmap.get( "col1").unwrap(), &Value::Strings("one".to_string()));
+        assert_eq!( colmap.get( "col2").unwrap(), &Value::Strings("2".to_string()));
+        assert_eq!( namespace.len(), 2);
+        assert_eq!( namespace[0], "keyspace");
+        assert_eq!( namespace[1], "tbl");
+        assert_eq!( projection.len(), 0 );
+        print!( "{:?}", query.ast );
+    }
+
+    #[test]
+    fn test_parse_delete_column_string() {
+        let query_str = "DELETE col1 from keyspace.tbl WHERE col3=3";
+        let hash_map: HashMap<String,Vec<String>> = HashMap::new();
+        let query = CassandraCodec::parse_query_string( query_str, &hash_map);
+        let colmap = query.colmap.unwrap();
+        let namespace = query.namespace.unwrap();
+        let projection = query.projection.unwrap();
+        println!( "colmap {:?}", colmap );
+        assert_eq!( colmap.len(), 0  );
+//        assert_eq!( colmap.get( "col1").unwrap(), &Value::Strings("one".to_string()));
+//        assert_eq!( colmap.get( "col2").unwrap(), &Value::Strings("2".to_string()));
+        println!( "namespace {:?}", namespace );
+        assert_eq!( namespace.len(), 2);
+        assert_eq!( namespace[0], "keyspace");
+        assert_eq!( namespace[1], "tbl");
+        println!( "projection {:?}", projection );
+        assert_eq!( projection.len(), 0 );
+
+        print!( "ast {:?}", query.ast );
+    }
+
+    #[test]
+    fn test_parse_delete_string() {
+        let query_str = "DELETE from keyspace.tbl Where col3=3";
+        let hash_map: HashMap<String,Vec<String>> = HashMap::new();
+        let query = CassandraCodec::parse_query_string( query_str, &hash_map);
+        let colmap = query.colmap.unwrap();
+        let namespace = query.namespace.unwrap();
+        let projection = query.projection.unwrap();
+        let primary_key = query.primary_key;
+        println!( "primary_key {:?}", primary_key );
+        assert_eq!( primary_key.len(), 1 );
+        assert_eq!( primary_key.get( "col3").unwrap(), &Value::Strings("3".to_string()));
+        println!( "colmap {:?}", colmap );
+        assert_eq!( colmap.len(), 0  );
+        println!( "namespace {:?}", namespace );
+        assert_eq!( namespace.len(), 2);
+        assert_eq!( namespace[0], "keyspace");
+        assert_eq!( namespace[1], "tbl");
+        println!( "projection {:?}", projection );
+        assert_eq!( projection.len(), 0 );
+
+        print!( "{:?}", query.ast );
+    }
+
 }
