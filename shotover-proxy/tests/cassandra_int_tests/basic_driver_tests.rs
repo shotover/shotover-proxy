@@ -222,21 +222,24 @@ mod cache {
 
     use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
 
-    pub fn test(session: &Session, redis_connection: &mut redis::Connection) {
-        test_batch_insert(session, redis_connection);
-        test_simple(session, redis_connection);
+    pub fn test(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
+        test_batch_insert(cassandra_session, redis_connection);
+        test_simple(cassandra_session, redis_connection);
     }
 
-    pub fn test_batch_insert(session: &Session, redis_connection: &mut redis::Connection) {
+    pub fn test_batch_insert(
+        cassandra_session: &Session,
+        redis_connection: &mut redis::Connection,
+    ) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
-        run_query(session, "CREATE KEYSPACE test_cache_keyspace_batch_insert WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_batch_insert WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         run_query(
-            session,
+            cassandra_session,
             "CREATE TABLE test_cache_keyspace_batch_insert.test_table (id int PRIMARY KEY, x int, name varchar);",
         );
         run_query(
-            session,
+            cassandra_session,
             r#"BEGIN BATCH
                 INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (1, 11, 'foo');
                 INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (2, 12, 'bar');
@@ -246,7 +249,7 @@ mod cache {
 
         // TODO: SELECTS without a WHERE do not get cached
         assert_query_result(
-            session,
+            cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table",
             &[
                 &[
@@ -269,14 +272,14 @@ mod cache {
 
         // query against the primary key
         assert_query_result(
-            session,
+            cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table WHERE id=1",
             &[],
         );
 
         // query against some other field
         assert_query_result(
-            session,
+            cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table WHERE x=11",
             &[],
         );
@@ -289,45 +292,45 @@ mod cache {
         assert_eq!(result, ["dummy_key".to_string()]);
     }
 
-    pub fn test_simple(session: &Session, redis_connection: &mut redis::Connection) {
+    pub fn test_simple(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
-        run_query(session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         run_query(
-            session,
+            cassandra_session,
             "CREATE TABLE test_cache_keyspace_simple.test_table (id int PRIMARY KEY, x int, name varchar);",
         );
 
         run_query(
-            session,
+            cassandra_session,
             "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (1, 11, 'foo');",
         );
         run_query(
-            session,
+            cassandra_session,
             "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (2, 12, 'bar');",
         );
         run_query(
-            session,
+            cassandra_session,
             "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (3, 13, 'baz');",
         );
 
         // TODO: SELECTS without a WHERE do not get cached
         assert_query_result(
-            session,
+            cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_simple.test_table",
             &[],
         );
 
         // query against the primary key
         assert_query_result(
-            session,
+            cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=1",
             &[],
         );
 
         // query against some other field
         assert_query_result(
-            session,
+            cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE x=11",
             &[],
         );
