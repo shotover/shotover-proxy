@@ -8,7 +8,7 @@ use cassandra_protocol::{
         Direction, Flags, Frame as CassandraFrame, Opcode, Serialize as CassandraSerialize,
     },
     types::{
-        cassandra_type::{get_wrapper_fn, CassandraType},
+        cassandra_type::{wrapper_fn, CassandraType},
         CBytes,
     },
 };
@@ -428,8 +428,8 @@ impl Value {
     }
 
     fn into_cassandra_type(col_type: &ColTypeOption, data: &CBytes) -> CassandraType {
-        let wrapper = get_wrapper_fn(&col_type.id);
-        wrapper(data, col_type)
+        let wrapper = wrapper_fn(&col_type.id);
+        wrapper(data, col_type).unwrap()
     }
 
     fn create_element(element: CassandraType) -> Value {
