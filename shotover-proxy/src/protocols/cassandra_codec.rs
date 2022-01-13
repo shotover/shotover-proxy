@@ -727,9 +727,12 @@ mod cassandra_protocol_tests {
     use cassandra_protocol::frame::{Direction, Flags, Frame, Opcode, Version};
     use hex_literal::hex;
     use sqlparser::ast::Expr::BinaryOp;
-    use sqlparser::ast::{BinaryOperator, Expr, Ident, ObjectName, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, Value as SQLValue, Values};
-    use std::collections::HashMap;
     use sqlparser::ast::Value::SingleQuotedString;
+    use sqlparser::ast::{
+        BinaryOperator, Expr, Ident, ObjectName, Query, Select, SelectItem, SetExpr, Statement,
+        TableFactor, TableWithJoins, Value as SQLValue, Values,
+    };
+    use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame_codec_roundtrip(
@@ -968,7 +971,7 @@ mod cassandra_protocol_tests {
                     "0000002c53454c454354202a2046524f4d20737973
                     74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
                 )
-                    .to_vec(),
+                .to_vec(),
                 tracing_id: None,
                 warnings: vec![],
             }),
@@ -995,7 +998,7 @@ mod cassandra_protocol_tests {
                 )])),
                 projection: Some(vec!["bar".into()]),
                 query_type: QueryType::Write,
-                ast: Some(ASTHolder::SQL(Box::new(Statement::Insert{
+                ast: Some(ASTHolder::SQL(Box::new(Statement::Insert {
                     or: None,
                     table_name: ObjectName(vec![
                         Ident {
@@ -1012,19 +1015,21 @@ mod cassandra_protocol_tests {
                         quote_style: None,
                     }]),
                     overwrite: false,
-                    source: Box::new(Query{
+                    source: Box::new(Query {
                         with: None,
-                        body: (SetExpr::Values(Values(vec![vec![sqlparser::ast::Expr::Value(SingleQuotedString("bar2".to_string()))]]))),
+                        body: (SetExpr::Values(Values(vec![vec![sqlparser::ast::Expr::Value(
+                            SingleQuotedString("bar2".to_string()),
+                        )]]))),
                         order_by: vec![],
                         limit: None,
                         offset: None,
-                        fetch: None }),
+                        fetch: None,
+                    }),
                     partitioned: None,
                     after_columns: (vec![]),
                     table: false,
-                    on: None
-                },
-                ))),
+                    on: None,
+                }))),
             }),
             modified: false,
             original: RawFrame::Cassandra(Frame {
@@ -1103,23 +1108,23 @@ mod cassandra_protocol_tests {
         let query_str = "DELETE col1 from keyspace.tbl WHERE col3=3";
         let hash_map: HashMap<String, Vec<String>> = HashMap::new();
         let query = CassandraCodec::parse_query_string(query_str, &hash_map);
-        assert_eq!( query.ast, None );  // not implemented yet
-        /*let colmap = query.colmap.unwrap();
-        let namespace = query.namespace.unwrap();
-        let projection = query.projection.unwrap();
-        println!("colmap {:?}", colmap);
-        assert_eq!(colmap.len(), 0);
-        //        assert_eq!( colmap.get( "col1").unwrap(), &Value::Strings("one".to_string()));
-        //        assert_eq!( colmap.get( "col2").unwrap(), &Value::Strings("2".to_string()));
-        println!("namespace {:?}", namespace);
-        assert_eq!(namespace.len(), 2);
-        assert_eq!(namespace[0], "keyspace");
-        assert_eq!(namespace[1], "tbl");
-        println!("projection {:?}", projection);
-        assert_eq!(projection.len(), 0);
+        assert_eq!(query.ast, None); // not implemented yet
+                                     /*let colmap = query.colmap.unwrap();
+                                     let namespace = query.namespace.unwrap();
+                                     let projection = query.projection.unwrap();
+                                     println!("colmap {:?}", colmap);
+                                     assert_eq!(colmap.len(), 0);
+                                     //        assert_eq!( colmap.get( "col1").unwrap(), &Value::Strings("one".to_string()));
+                                     //        assert_eq!( colmap.get( "col2").unwrap(), &Value::Strings("2".to_string()));
+                                     println!("namespace {:?}", namespace);
+                                     assert_eq!(namespace.len(), 2);
+                                     assert_eq!(namespace[0], "keyspace");
+                                     assert_eq!(namespace[1], "tbl");
+                                     println!("projection {:?}", projection);
+                                     assert_eq!(projection.len(), 0);
 
-        print!("ast {:?}", query.ast);
-         */
+                                     print!("ast {:?}", query.ast);
+                                      */
     }
 
     #[test]
