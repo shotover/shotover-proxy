@@ -1,7 +1,7 @@
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, IntSize, MessageDetails, QueryMessage, QueryResponse, Value};
 use crate::transforms::{Transform, Transforms, Wrapper};
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
@@ -32,84 +32,76 @@ impl RedisTimestampTaggerConfig {
 // The way we try and get a "liveness" timestamp from redis, is to use
 // OBJECT IDLETIME. This requires maxmemory-policy is set to an LRU policy
 // or noeviction and maxmemory is set.
-// Unfortuantly REDIS only provides a 10second resolution on this, so high
+// Unfortunately REDIS only provides a 10 second resolution on this, so high
 // update keys where update freq < 20 seconds, will not be terribly consistent
 
-fn value_byte_string(string: String) -> Value {
-    Value::Bytes(Bytes::from(string))
-}
-
-fn wrap_command(qm: &QueryMessage) -> Result<Value> {
-    if let Some(Value::List(keys)) = qm.primary_key.get("key") {
-        //TODO: this could be a take instead
-        if let Some(first) = keys.get(0) {
-            if let Some(ASTHolder::Commands(Value::List(com))) = &qm.ast {
-                let original_command = com
-                    .iter()
-                    .map(|v| {
-                        if let Value::Bytes(b) = v {
-                            let mut literal = String::with_capacity(2 + b.len() * 4);
-                            literal.push('\'');
-                            for value in b {
-                                // Here we encode an arbitrary sequence of bytes into a lua string.
-                                // lua, unlike rust, is quite happy to store whatever in its strings as long as you give it the relevant escape sequence https://www.lua.org/pil/2.4.html
-                                //
-                                // We could just write every value as a \ddd escape sequence but its probably faster and definitely more readable to someone inspecting traffic to just use the actual value when we can
-                                if *value == b'\'' {
-                                    // despite being printable we cant include this without escaping it
-                                    literal.push_str("\\\'");
-                                } else if *value == b'\\' {
-                                    // despite being printable we cant include this without escaping it
-                                    literal.push_str("\\\\");
-                                } else if value.is_ascii_graphic() {
-                                    literal.push(*value as char);
-                                } else {
-                                    write!(literal, "\\{}", value).unwrap();
-                                }
-                            }
-                            literal.push('\'');
-                            literal
-                        } else {
-                            todo!("this might not be right... but we should only be dealing with bytes")
-                        }
-                    })
-                    .join(",");
-
-                let original_pcall = format!(r###"redis.call({})"###, original_command);
-                let last_used_pcall = r###"redis.call('OBJECT', 'IDLETIME', KEYS[1])"###;
-
-                let script = format!("return {{{},{}}}", original_pcall, last_used_pcall);
-                debug!("\n\nGenerated eval script for timestamp: {}\n\n", script);
-                let commands: Vec<Value> = vec![
-                    value_byte_string("EVAL".to_string()),
-                    value_byte_string(script),
-                    value_byte_string("1".to_string()),
-                    first.clone(),
-                ];
-                return Ok(Value::List(commands));
-            }
+fn wrap_command(qm: &mut QueryMessage) -> Result<()> {
+    if let Some(Value::List(keys)) = qm.primary_key.get_mut("key") {
+        if keys.is_empty() {
+            bail!("primary key `key` contained no keys");
         }
-    }
-    Err(anyhow!("Could not build command from AST"))
-}
+        let first = keys.swap_remove(0);
+        if let Some(ASTHolder::Commands(Value::List(com))) = &qm.ast {
+            let original_command = com
+                .iter()
+                .map(|v| {
+                    if let Value::Bytes(b) = v {
+                        let mut literal = String::with_capacity(2 + b.len() * 4);
+                        literal.push('\'');
+                        for value in b {
+                            // Here we encode an arbitrary sequence of bytes into a lua string.
+                            // lua, unlike rust, is quite happy to store whatever in its strings as long as you give it the relevant escape sequence https://www.lua.org/pil/2.4.html
+                            //
+                            // We could just write every value as a \ddd escape sequence but its probably faster and definitely more readable to someone inspecting traffic to just use the actual value when we can
+                            if *value == b'\'' {
+                                // despite being printable we cant include this without escaping it
+                                literal.push_str("\\\'");
+                            } else if *value == b'\\' {
+                                // despite being printable we cant include this without escaping it
+                                literal.push_str("\\\\");
+                            } else if value.is_ascii_graphic() {
+                                literal.push(*value as char);
+                            } else {
+                                write!(literal, "\\{}", value).unwrap();
+                            }
+                        }
+                        literal.push('\'');
+                        literal
+                    } else {
+                        todo!("this might not be right... but we should only be dealing with bytes")
+                    }
+                })
+                .join(",");
 
-fn try_tag_query_message(qm: &mut QueryMessage) -> bool {
-    if let Ok(wrapped) = wrap_command(qm) {
-        std::mem::swap(&mut qm.ast, &mut Some(ASTHolder::Commands(wrapped)));
-        true
+            let original_pcall = format!(r###"redis.call({})"###, original_command);
+            let last_used_pcall = r###"redis.call('OBJECT', 'IDLETIME', KEYS[1])"###;
+
+            let script = format!("return {{{},{}}}", original_pcall, last_used_pcall);
+            debug!("\n\nGenerated eval script for timestamp: {}\n\n", script);
+            let commands = vec![
+                Value::Bytes(Bytes::from_static(b"EVAL")),
+                Value::Bytes(Bytes::from(script)),
+                Value::Bytes(Bytes::from_static(b"1")),
+                first,
+            ];
+            qm.ast = Some(ASTHolder::Commands(Value::List(commands)));
+        } else {
+            bail!("Ast is not a command with a list");
+        }
     } else {
-        trace!("couldn't wrap commands");
-        false
+        bail!("Primary key `key` does not exist or is not a list");
     }
+
+    Ok(())
 }
 
 fn unwrap_response(qr: &mut QueryResponse) {
-    if let Some(Value::List(mut values)) = qr.result.clone() {
+    if let Some(Value::List(mut values)) = qr.result.take() {
         let all_lists = values.iter().all(|v| matches!(v, Value::List(_)));
-        // This means the result is likely from a transaction or something that returns
-        // lots of things
-        // panic!("this doesn't seem to work on the test_pass_through_one test")
-        if all_lists && values.len() > 1 {
+        qr.result = if all_lists && values.len() > 1 {
+            // This means the result is likely from a transaction or something that returns
+            // lots of things
+
             let mut timestamps: Vec<Value> = vec![];
             let mut results: Vec<Value> = vec![];
             for v_u in values {
@@ -122,38 +114,44 @@ fn unwrap_response(qr: &mut QueryResponse) {
                     }
                 }
             }
-            let mut hm = BTreeMap::new();
-            hm.insert("timestamp".to_string(), Value::List(timestamps));
 
-            qr.response_meta = Some(Value::Document(hm));
-            qr.result = Some(Value::List(results));
+            qr.response_meta = Some(Value::Document(BTreeMap::from([(
+                "timestamp".to_string(),
+                Value::List(timestamps),
+            )])));
+            Some(Value::List(results))
         } else if values.len() == 2 {
             qr.response_meta = values.pop().map(|v| {
-                let mut hm = BTreeMap::new();
-                if let Value::Integer(i, _) = v {
-                    let start = SystemTime::now();
-                    let since_the_epoch = start
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards");
-                    hm.insert(
-                        "timestamp".to_string(),
-                        Value::Integer(since_the_epoch.as_secs() as i64 - i, IntSize::I32),
-                    );
-                } else {
-                    hm.insert("timestamp".to_string(), v);
-                }
-                Value::Document(hm)
+                let processed_value = match v {
+                    Value::Integer(i, _) => {
+                        let start = SystemTime::now();
+                        let since_the_epoch = start
+                            .duration_since(UNIX_EPOCH)
+                            .expect("Time went backwards");
+                        let seconds = since_the_epoch.as_secs();
+                        if seconds.leading_ones() > 1 {
+                            panic!("Cannot convert u64 to i64 without overflow");
+                        }
+                        Value::Integer(seconds as i64 - i, IntSize::I64)
+                    }
+                    v => v,
+                };
+                Value::Document(BTreeMap::from([("timestamp".to_string(), processed_value)]))
             });
-            qr.result = values.pop();
-        }
+            values.pop()
+        } else {
+            Some(Value::List(values))
+        };
     }
 }
 
 #[async_trait]
 impl Transform for RedisTimestampTagger {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut tagged_success: bool = true;
-        let mut exec_block: bool = false;
+        // TODO: This is wrong. We need to keep track of tagged_success per message
+        let mut tagged_success = true;
+        // TODO: This is wrong. We need more robust handling of transactions
+        let mut exec_block = false;
 
         for message in message_wrapper.messages.iter_mut() {
             message.generate_message_details_query();
@@ -164,25 +162,26 @@ impl Transform for RedisTimestampTagger {
                     }
                 }
 
-                let tagged = try_tag_query_message(qm);
-                tagged_success = tagged_success && tagged;
+                if let Err(err) = wrap_command(qm) {
+                    trace!("Couldn't wrap command with timestamp tagger: {}", err);
+                    tagged_success = false;
+                }
                 message.modified = true;
             }
         }
 
-        let response = message_wrapper.call_next_transform().await;
+        let mut response = message_wrapper.call_next_transform().await;
         debug!("tagging transform got {:?}", response);
-        if let Ok(mut messages) = response {
+        if let Ok(messages) = &mut response {
             if tagged_success || exec_block {
-                for mut message in messages.iter_mut() {
+                for message in messages.iter_mut() {
                     message.generate_message_details_response();
-                    if let MessageDetails::Response(ref mut qr) = message.details {
+                    if let MessageDetails::Response(qr) = &mut message.details {
                         unwrap_response(qr);
                         message.modified = true;
                     }
                 }
             }
-            return Ok(messages);
         }
 
         debug!("response after trying to unwrap -> {:?}", response);
