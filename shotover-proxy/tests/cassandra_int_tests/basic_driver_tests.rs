@@ -227,10 +227,7 @@ mod cache {
         test_simple(cassandra_session, redis_connection);
     }
 
-    pub fn test_batch_insert(
-        cassandra_session: &Session,
-        redis_connection: &mut redis::Connection,
-    ) {
+    fn test_batch_insert(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
         run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_batch_insert WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -292,7 +289,7 @@ mod cache {
         assert_eq!(result, ["dummy_key".to_string()]);
     }
 
-    pub fn test_simple(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
+    fn test_simple(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
         run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
