@@ -178,7 +178,28 @@ impl CassandraCodec {
                                             let _ = temp.write_i32::<BigEndian>(*x as i32).unwrap();
                                             temp
                                         }
-                                        _ => unreachable!(),
+                                        Value::None => unimplemented!(),
+                                        Value::Inet(_) => unimplemented!(),
+                                        Value::FragmentedResponse(_) => unimplemented!(),
+                                        Value::Document(_) => unimplemented!(),
+                                        Value::NamedRows(_) => unimplemented!(),
+                                        Value::List(_) => unimplemented!(),
+                                        Value::Rows(_) => unimplemented!(),
+                                        Value::Ascii(_) => unimplemented!(),
+                                        Value::Double(_) => unimplemented!(),
+                                        Value::Set(_) => unimplemented!(),
+                                        Value::Map(_) => unimplemented!(),
+                                        Value::Varint(_) => unimplemented!(),
+                                        Value::Decimal(_) => unimplemented!(),
+                                        Value::Date(_) => unimplemented!(),
+                                        Value::Timestamp(_) => unimplemented!(),
+                                        Value::Timeuuid(_) => unimplemented!(),
+                                        Value::Varchar(_) => unimplemented!(),
+                                        Value::Uuid(_) => unimplemented!(),
+                                        Value::Time(_) => unimplemented!(),
+                                        Value::Counter(_) => unimplemented!(),
+                                        Value::Tuple(_) => unimplemented!(),
+                                        Value::Udt(_) => unimplemented!(),
                                     })
                                 })
                                 .collect()
