@@ -898,8 +898,6 @@ mod cassandra_protocol_tests {
             74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
         );
 
-        // 53454c454354202a2046524f4d2073797374656d2e6c6f63616c205748455245206b65793d276c6f63616c27
-        // 496e7365727420496e746f2073797374656d2e666f6f2028626172292076616c756573202827626172322729
         let messages = vec![Message {
             details: MessageDetails::Query(QueryMessage {
                 query_string: "SELECT * FROM system.local WHERE key='local'".into(),
@@ -1100,7 +1098,6 @@ mod cassandra_protocol_tests {
         assert_eq!(namespace[0], "keyspace");
         assert_eq!(namespace[1], "tbl");
         assert_eq!(projection.len(), 0);
-        print!("{:?}", query.ast);
     }
 
     #[test]
@@ -1108,23 +1105,7 @@ mod cassandra_protocol_tests {
         let query_str = "DELETE col1 from keyspace.tbl WHERE col3=3";
         let hash_map: HashMap<String, Vec<String>> = HashMap::new();
         let query = CassandraCodec::parse_query_string(query_str, &hash_map);
-        assert_eq!(query.ast, None); // not implemented yet
-                                     /*let colmap = query.colmap.unwrap();
-                                     let namespace = query.namespace.unwrap();
-                                     let projection = query.projection.unwrap();
-                                     println!("colmap {:?}", colmap);
-                                     assert_eq!(colmap.len(), 0);
-                                     //        assert_eq!( colmap.get( "col1").unwrap(), &Value::Strings("one".to_string()));
-                                     //        assert_eq!( colmap.get( "col2").unwrap(), &Value::Strings("2".to_string()));
-                                     println!("namespace {:?}", namespace);
-                                     assert_eq!(namespace.len(), 2);
-                                     assert_eq!(namespace[0], "keyspace");
-                                     assert_eq!(namespace[1], "tbl");
-                                     println!("projection {:?}", projection);
-                                     assert_eq!(projection.len(), 0);
-
-                                     print!("ast {:?}", query.ast);
-                                      */
+        assert_eq!(query.ast, None);
     }
 
     #[test]
@@ -1136,21 +1117,15 @@ mod cassandra_protocol_tests {
         let namespace = query.namespace.unwrap();
         let projection = query.projection.unwrap();
         let primary_key = query.primary_key;
-        println!("primary_key {:?}", primary_key);
         assert_eq!(primary_key.len(), 1);
         assert_eq!(
             primary_key.get("col3").unwrap(),
             &Value::Strings("3".to_string())
         );
-        println!("colmap {:?}", colmap);
         assert_eq!(colmap.len(), 0);
-        println!("namespace {:?}", namespace);
         assert_eq!(namespace.len(), 2);
         assert_eq!(namespace[0], "keyspace");
         assert_eq!(namespace[1], "tbl");
-        println!("projection {:?}", projection);
         assert_eq!(projection.len(), 0);
-
-        print!("{:?}", query.ast);
     }
 }

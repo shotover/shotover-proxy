@@ -244,7 +244,7 @@ mod cache {
             APPLY BATCH;"#,
         );
 
-        // TODO: SELECTS without a WHERE do not get cached
+        // TODO: SELECTS without a WHERE do not hit cache
         assert_query_result(
             cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table",
@@ -311,11 +311,29 @@ mod cache {
             "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (3, 13, 'baz');",
         );
 
-        // TODO: SELECTS without a WHERE do not get cached
+        // TODO: SELECTS without a WHERE do not hit cache
         assert_query_result(
             cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_simple.test_table",
-            &[],
+            &[
+/*                &[
+                    ResultValue::Int(1),
+                    ResultValue::Int(11),
+                    ResultValue::Varchar("foo".into()),
+                ],
+                &[
+                    ResultValue::Int(2),
+                    ResultValue::Int(12),
+                    ResultValue::Varchar("bar".into()),
+                ],
+                &[
+                    ResultValue::Int(3),
+                    ResultValue::Int(13),
+                    ResultValue::Varchar("baz".into()),
+                ],
+
+ */
+            ],
         );
 
         // query against the primary key
