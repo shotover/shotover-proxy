@@ -1,4 +1,5 @@
 use cassandra_cpp::{stmt, Cluster, Error, Session, Value, ValueType};
+use ordered_float::OrderedFloat;
 
 mod basic_driver_tests;
 
@@ -13,7 +14,7 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.connect().unwrap()
 }
 
-#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
 enum ResultValue {
     Text(String),
     Varchar(String),
@@ -24,18 +25,18 @@ enum ResultValue {
     BigInt(i64),
     Blob(Vec<u8>),
     Decimal(Vec<u8>),
-    Double(Vec<u8>),
-    Duration(Vec<u8>),
-    Float(Vec<u8>),
+    Double(OrderedFloat<f64>),
+    Duration(Vec<u8>), // TODO should be i32
+    Float(OrderedFloat<f32>),
     Inet(String),
     SmallInt(i16),
-    Time(Vec<u8>),
-    Timestamp(Vec<u8>),
+    Time(Vec<u8>), // TODO shoulbe be String
+    Timestamp(i64),
     TimeUuid(uuid::Uuid),
     Counter(i64),
     TinyInt(i8),
     VarInt(Vec<u8>),
-    Date(Vec<u8>),
+    Date(Vec<u8>), // TODO should be string
     List(Vec<ResultValue>),
     Set(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
@@ -56,13 +57,13 @@ impl ResultValue {
             ValueType::BLOB => ResultValue::Blob(value.get_bytes().unwrap().to_vec()),
             ValueType::DATE => ResultValue::Date(value.get_bytes().unwrap().to_vec()),
             ValueType::DECIMAL => ResultValue::Decimal(value.get_bytes().unwrap().to_vec()),
-            ValueType::DOUBLE => ResultValue::Double(value.get_bytes().unwrap().to_vec()),
+            ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
             ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
-            ValueType::FLOAT => ResultValue::Float(value.get_bytes().unwrap().to_vec()),
+            ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
             ValueType::INET => ResultValue::Inet(value.get_inet().unwrap().to_string()),
             ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
             ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
-            ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_bytes().unwrap().to_vec()),
+            ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_i64().unwrap()),
             ValueType::TIMEUUID => ResultValue::TimeUuid(
                 uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
             ),
