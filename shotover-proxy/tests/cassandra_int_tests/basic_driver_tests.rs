@@ -768,6 +768,8 @@ fn test_cluster() {
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
+    native_types::test(&connection);
+    collections::test(&connection);
     functions::test(&connection);
 }
 
