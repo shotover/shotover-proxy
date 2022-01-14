@@ -111,7 +111,9 @@ async fn test_metrics() {
         r#"shotover_chain_latency_count{chain="redis_chain",client_details="127.0.0.1"}"#,
     ];
 
-    assert_eq!(lines + new_lines.len(), body.lines().count());
-
+    let count= body.lines().count();
+    // report missing rows before counting rows -- aids in debugging
     assert_array_elems(&expected, body);
+
+    assert_eq!(lines + new_lines.len(), count);
 }

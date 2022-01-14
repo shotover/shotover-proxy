@@ -316,7 +316,7 @@ mod cache {
             cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_simple.test_table",
             &[
-/*                &[
+                &[
                     ResultValue::Int(1),
                     ResultValue::Int(11),
                     ResultValue::Varchar("foo".into()),
@@ -331,8 +331,6 @@ mod cache {
                     ResultValue::Int(13),
                     ResultValue::Varchar("baz".into()),
                 ],
-
- */
             ],
         );
 
