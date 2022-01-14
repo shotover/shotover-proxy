@@ -469,7 +469,7 @@ mod collections {
                 );
             }
 
-            // // test inserting list of lists
+            // test inserting list of lists
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 run_query(
                     session,
@@ -483,7 +483,7 @@ mod collections {
                 );
             }
 
-            fn get_map_example(_key: usize, value: &str) -> String {
+            fn get_map_example(value: &str) -> String {
                 format!("{{0 : {}}}", value)
             }
 
@@ -495,7 +495,7 @@ mod collections {
                         "INSERT INTO test_collections_keyspace.test_list_table_map_{} (id, my_list) VALUES ({}, [{}]);",
                         i,
                         i,
-                        get_map_example(i, get_type_example(*native_col_type))
+                        get_map_example(get_type_example(*native_col_type))
                     )
                     .as_str(),
                 );
@@ -509,7 +509,6 @@ mod collections {
                     i
                 );
 
-                // , i, i, get_type_example(*col_type));
                 assert_query_result(
                     session,
                     query.as_str(),
