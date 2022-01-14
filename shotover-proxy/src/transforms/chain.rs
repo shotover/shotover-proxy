@@ -234,7 +234,7 @@ impl TransformChain {
                     ));
                 }
 
-                errors.extend(transform.validate().iter().map(|x| format!("  {}", x)));
+                errors.extend(transform.validate().iter().map(|x| format!("  {x}")));
 
                 errors
             })

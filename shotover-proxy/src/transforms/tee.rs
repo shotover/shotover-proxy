@@ -113,7 +113,7 @@ impl Transform for Tee {
                 .original_chain
                 .validate()
                 .iter()
-                .map(|x| format!("  {}", x))
+                .map(|x| format!("  {x}"))
                 .collect::<Vec<String>>();
 
             if !errors.is_empty() {

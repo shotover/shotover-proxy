@@ -138,7 +138,7 @@ impl CassandraSinkSingle {
                                     (m, Err(err)) => {
                                         responses.push(Message::new_response(
                                             QueryResponse::empty_with_error(Some(
-                                                message::Value::Strings(format!("{}", err)),
+                                                message::Value::Strings(format!("{err}")),
                                             )),
                                             true,
                                             m.original,

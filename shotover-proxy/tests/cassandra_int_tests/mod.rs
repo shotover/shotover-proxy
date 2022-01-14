@@ -44,7 +44,7 @@ fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
             .into_iter()
             .map(|x| x.into_iter().map(ResultValue::new).collect())
             .collect(),
-        Err(Error(err, _)) => panic!("The CSQL query: {}\nFailed with: {}", query, err),
+        Err(Error(err, _)) => panic!("The CSQL query: {query}\nFailed with: {err}"),
     }
 }
 

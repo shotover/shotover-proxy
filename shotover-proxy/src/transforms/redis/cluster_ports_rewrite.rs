@@ -313,7 +313,7 @@ mod test {
         let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame {
             frames
         } else {
-            panic!("bad input: {:?}", raw_frame)
+            panic!("bad input: {raw_frame:?}")
         };
 
         let slots = parse_slots(&slots_frames).unwrap();
@@ -372,7 +372,7 @@ f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534
         let rewritten = if let RawFrame::Redis(Frame::BulkString(string)) = raw_frame.clone() {
             string
         } else {
-            panic!("bad input: {:?}", raw_frame)
+            panic!("bad input: {raw_frame:?}")
         };
 
         assert_eq!(rewritten, expected_string);
