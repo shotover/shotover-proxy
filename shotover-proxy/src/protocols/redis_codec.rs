@@ -435,7 +435,7 @@ pub fn process_redis_frame_query(frame: &Frame) -> Result<QueryMessage> {
         }),
         Frame::Array(frames) => handle_redis_array_query(frames),
         Frame::Integer(integer) => Ok(QueryMessage {
-            query_string: format!("{}", integer),
+            query_string: integer.to_string(),
             namespace: vec![],
             primary_key: Default::default(),
             query_values: None,

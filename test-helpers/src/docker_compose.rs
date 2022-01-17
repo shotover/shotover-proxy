@@ -169,8 +169,7 @@ impl Drop for DockerCompose {
                 // We need to use println! here instead of error! because error! does not
                 // get output when panicking
                 println!(
-                    "ERROR: docker compose failed to bring down while already panicking: {:?}",
-                    err
+                    "ERROR: docker compose failed to bring down while already panicking: {err:?}",
                 );
             }
         } else {

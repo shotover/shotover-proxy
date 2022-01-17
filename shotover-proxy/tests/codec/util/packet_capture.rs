@@ -20,7 +20,7 @@ impl PacketCapture {
             .map(|val| val.name.clone())
             .collect();
         println!("All Interfaces : ");
-        devices.iter().for_each(|val| println!("* {}", val));
+        devices.iter().for_each(|val| println!("* {val}"));
     }
 
     fn print_err(&mut self, err: String) {

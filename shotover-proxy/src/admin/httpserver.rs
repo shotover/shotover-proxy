@@ -24,12 +24,12 @@ where
     S: tracing::Subscriber + 'static,
 {
     use std::str;
-    let body = str::from_utf8(bytes.as_ref()).map_err(|e| format!("{}", e))?;
+    let body = str::from_utf8(bytes.as_ref()).map_err(|e| format!("{e}"))?;
     trace!(request.body = ?body);
     let new_filter = body
         .parse::<tracing_subscriber::filter::EnvFilter>()
-        .map_err(|e| format!("{}", e))?;
-    handle.reload(new_filter).map_err(|e| format!("{}", e))
+        .map_err(|e| format!("{e}"))?;
+    handle.reload(new_filter).map_err(|e| format!("{e}"))
 }
 
 fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
@@ -96,10 +96,7 @@ where
                                     },
                                     Err(error) => {
                                         error!(%error, "setting filter failed - Couldn't read bytes");
-                                        rsp(
-                                            StatusCode::INTERNAL_SERVER_ERROR,
-                                            format!("{:?}", error),
-                                        )
+                                        rsp(StatusCode::INTERNAL_SERVER_ERROR, format!("{error:?}"))
                                     }
                                 }
                             }

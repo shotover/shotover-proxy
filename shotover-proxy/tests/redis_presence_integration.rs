@@ -116,11 +116,11 @@ async fn test_presence_fresh_join_single_workflow() {
     let channel = "channel1";
     let user = "user2";
 
-    let build_key = || -> String { format!("{}:{}", subkey, channel) };
+    let build_key = || -> String { format!("{subkey}:{channel}") };
 
-    let build_c_key = || -> String { format!("c:{}:{}", subkey, channel) };
+    let build_c_key = || -> String { format!("c:{subkey}:{channel}") };
 
-    let build_key_user = || -> String { format!("{}:{}:{}", subkey, channel, user) };
+    let build_key_user = || -> String { format!("{subkey}:{channel}:{user}") };
 
     let connection = &mut get_redis_conn();
 
@@ -171,11 +171,11 @@ async fn test_presence_fresh_join_pipeline_workflow() {
     let channel = "channel1";
     let user = "user2";
 
-    let build_key = || -> String { format!("{}:{}", subkey, channel) };
+    let build_key = || -> String { format!("{subkey}:{channel}") };
 
-    let build_c_key = || -> String { format!("c:{}:{}", subkey, channel) };
+    let build_c_key = || -> String { format!("c:{subkey}:{channel}") };
 
-    let build_key_user = || -> String { format!("{}:{}:{}", subkey, channel, user) };
+    let build_key_user = || -> String { format!("{subkey}:{channel}:{user}") };
 
     let mut connection = get_redis_conn();
 

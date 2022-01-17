@@ -364,7 +364,7 @@ impl Transform for SimpleRedisCache {
             .cache_chain
             .validate()
             .iter()
-            .map(|x| format!("  {}", x))
+            .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
@@ -465,7 +465,7 @@ mod test {
 
         for token in tokens {
             command_buffer.push_str(&format!("${}\r\n", token.len()));
-            command_buffer.push_str(&format!("{}\r\n", token));
+            command_buffer.push_str(&format!("{token}\r\n"));
         }
 
         command_buffer
