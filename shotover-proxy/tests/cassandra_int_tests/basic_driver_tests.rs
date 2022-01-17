@@ -951,11 +951,12 @@ fn test_cluster() {
 
     let connection = cassandra_connection("127.0.0.1", 9042);
 
-    //    keyspace::test(&connection);
-    //table::test(&connection);
-    //udt::test(&connection);
-    //functions::test(&connection);
+    keyspace::test(&connection);
+    table::test(&connection);
+    udt::test(&connection);
+    native_types::test(&connection);
     collections::test(&connection);
+    functions::test(&connection);
 }
 
 #[test]
@@ -969,12 +970,12 @@ fn test_passthrough() {
 
     let connection = cassandra_connection("127.0.0.1", 9042);
 
-    //keyspace::test(&connection);
-    //table::test(&connection);
-    //udt::test(&connection);
-    //native_types::test(&connection);
+    keyspace::test(&connection);
+    table::test(&connection);
+    udt::test(&connection);
+    native_types::test(&connection);
     collections::test(&connection);
-    //functions::test(&connection);
+    functions::test(&connection);
 }
 
 #[test]
