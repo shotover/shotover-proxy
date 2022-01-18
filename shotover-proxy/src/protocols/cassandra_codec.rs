@@ -2,6 +2,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::ops::DerefMut;
 
+use crate::protocols::CassandraFrame;
 use anyhow::{anyhow, Result};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
@@ -14,10 +15,7 @@ use cassandra_protocol::frame::frame_result::{
     BodyResResultRows, ColSpec, ColType, ColTypeOption, ResResultBody, RowsMetadata,
     RowsMetadataFlags, TableSpec,
 };
-use crate::protocols::CassandraFrame;
-use cassandra_protocol::frame::{
-    Direction, Flags, Opcode, ParseFrameError, Serialize, Version,
-};
+use cassandra_protocol::frame::{Direction, Flags, Opcode, ParseFrameError, Serialize, Version};
 use cassandra_protocol::query::QueryValues;
 use cassandra_protocol::types::value::Value as CValue;
 use cassandra_protocol::types::{to_int, CBytes, CInt};
@@ -109,7 +107,10 @@ impl CassandraCodec {
         )
     }
 
-    pub fn build_cassandra_response_frame(resp: QueryResponse, query_frame: CassandraFrame) -> CassandraFrame {
+    pub fn build_cassandra_response_frame(
+        resp: QueryResponse,
+        query_frame: CassandraFrame,
+    ) -> CassandraFrame {
         if let Some(Value::Rows(rows)) = resp.result {
             if let Some(ref query) = resp.matching_query {
                 if let Some(ref proj) = query.projection {
@@ -518,7 +519,10 @@ impl CassandraCodec {
         }
     }
 
-    fn build_response_message(frame: CassandraFrame, matching_query: Option<QueryMessage>) -> Messages {
+    fn build_response_message(
+        frame: CassandraFrame,
+        matching_query: Option<QueryMessage>,
+    ) -> Messages {
         let mut result: Option<Value> = None;
         let mut error: Option<Value> = None;
         match frame.response_body().unwrap() {
@@ -738,9 +742,9 @@ mod cassandra_protocol_tests {
         ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
     };
     use crate::protocols::cassandra_codec::CassandraCodec;
+    use crate::protocols::CassandraFrame;
     use crate::protocols::RawFrame;
     use bytes::BytesMut;
-    use crate::protocols::CassandraFrame;
     use cassandra_protocol::frame::{Direction, Flags, Opcode, Version};
     use hex_literal::hex;
     use sqlparser::ast::Expr::BinaryOp;

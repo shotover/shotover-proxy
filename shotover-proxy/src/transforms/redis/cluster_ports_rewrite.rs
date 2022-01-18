@@ -1,6 +1,6 @@
+use crate::protocols::RedisFrame;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
-use crate::protocols::RedisFrame;
 use serde::Deserialize;
 
 use crate::error::ChainResponse;
@@ -230,7 +230,9 @@ mod test {
         let cluster_messages = [b"cluster", b"CLUSTER"];
 
         for msg in cluster_messages {
-            let frame = RawFrame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(msg.to_vec())]));
+            let frame = RawFrame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
+                msg.to_vec(),
+            )]));
             assert!(is_cluster_message(&frame));
         }
 

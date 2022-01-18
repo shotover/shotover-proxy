@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 
+use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
 use metrics::{counter, register_counter, Unit};
-use crate::protocols::RedisFrame;
 use serde::Deserialize;
 use std::pin::Pin;
 use tokio::net::TcpStream;

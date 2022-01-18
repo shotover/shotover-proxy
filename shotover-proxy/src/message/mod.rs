@@ -1,7 +1,8 @@
+use crate::protocols::CassandraFrame;
 use crate::protocols::RawFrame;
+use crate::protocols::RedisFrame;
 use bigdecimal::BigDecimal;
 use bytes::Bytes;
-use crate::protocols::CassandraFrame;
 use cassandra_protocol::{
     frame::{
         frame_error::{AdditionalErrorInfo, ErrorBody},
@@ -15,7 +16,6 @@ use cassandra_protocol::{
 };
 use num::BigInt;
 use ordered_float::OrderedFloat;
-use crate::protocols::RedisFrame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::{BTreeMap, BTreeSet};
@@ -391,10 +391,14 @@ impl From<Value> for RedisFrame {
             Value::Boolean(b) => RedisFrame::Integer(i64::from(b)),
             Value::Inet(i) => RedisFrame::SimpleString(i.to_string()),
             Value::List(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
-            Value::Rows(r) => RedisFrame::Array(r.into_iter().map(|v| Value::List(v).into()).collect()),
+            Value::Rows(r) => {
+                RedisFrame::Array(r.into_iter().map(|v| Value::List(v).into()).collect())
+            }
             Value::NamedRows(_) => todo!(),
             Value::Document(_) => todo!(),
-            Value::FragmentedResponse(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
+            Value::FragmentedResponse(l) => {
+                RedisFrame::Array(l.into_iter().map(|v| v.into()).collect())
+            }
             Value::Ascii(_a) => todo!(),
             Value::Double(_d) => todo!(),
             Value::Set(_s) => todo!(),

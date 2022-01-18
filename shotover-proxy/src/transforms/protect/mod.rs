@@ -252,8 +252,8 @@ mod protect_transform_tests {
 
     use anyhow::{anyhow, Result};
 
-    use cassandra_protocol::consistency::Consistency;
     use crate::protocols::CassandraFrame;
+    use cassandra_protocol::consistency::Consistency;
     use cassandra_protocol::frame::{Flags, Version};
     use sodiumoxide::crypto::secretbox;
 
