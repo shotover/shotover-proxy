@@ -299,6 +299,10 @@ mod collections {
 
     use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
 
+    fn get_map_example(value: &str) -> String {
+        format!("{{0 : {}}}", value)
+    }
+
     const NATIVE_COL_TYPES: [ColType; 18] = [
         ColType::Ascii,
         ColType::Bigint,
@@ -444,14 +448,27 @@ mod collections {
 
             // create lists of maps
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                run_query(session, format!("CREATE TABLE test_collections_keyspace.test_list_table_map_{} (id int PRIMARY KEY, my_list frozen<list<frozen<map<int, {}>>>>);", i, get_type_str(*col_type)).as_str());
+                run_query(
+                    session,
+                    format!(
+                        "CREATE TABLE test_collections_keyspace.test_list_table_map_{} (id int PRIMARY KEY, my_list frozen<list<frozen<map<int, {}>>>>);",
+                        i,
+                        get_type_str(*col_type)
+                    )
+                    .as_str()
+                );
             }
         }
 
         fn insert(session: &Session) {
             // insert lists of native types
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                let query = format!("INSERT INTO test_collections_keyspace.test_list_table_{} (id, my_list) VALUES ({}, [{}]);", i, i, get_type_example(*col_type));
+                let query = format!(
+                    "INSERT INTO test_collections_keyspace.test_list_table_{} (id, my_list) VALUES ({}, [{}]);",
+                    i,
+                    i,
+                    get_type_example(*col_type)
+                );
                 run_query(session, query.as_str());
             }
 
@@ -482,11 +499,6 @@ mod collections {
                     .as_str(),
                 );
             }
-
-            fn get_map_example(value: &str) -> String {
-                format!("{{0 : {}}}", value)
-            }
-
             // test inserting list of maps
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 run_query(
@@ -594,15 +606,15 @@ mod collections {
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 for (j, collection_col_type) in COLLECTION_COL_TYPES.iter().enumerate() {
                     run_query(
-                    session,
-                    format!(
-                        "CREATE TABLE test_collections_keyspace.test_set_table_{}_{} (id int PRIMARY KEY, my_set frozen<set<{}<{}>>>);",
-                        i,
-                        j,
-                        get_type_str(*collection_col_type),
-                        get_type_str(*native_col_type)
-                    )
-                    .as_str(),
+                        session,
+                        format!(
+                            "CREATE TABLE test_collections_keyspace.test_set_table_{}_{} (id int PRIMARY KEY, my_set frozen<set<{}<{}>>>);",
+                            i,
+                            j,
+                            get_type_str(*collection_col_type),
+                            get_type_str(*native_col_type)
+                        )
+                        .as_str(),
                 );
                 }
             }
@@ -614,9 +626,14 @@ mod collections {
         }
 
         fn insert(session: &Session) {
-            // insert lists of native types
+            // insert sets of native types
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                let query = format!("INSERT INTO test_collections_keyspace.test_set_table_{} (id, my_set) VALUES ({}, {{{}}});", i, i, get_type_example(*col_type));
+                let query = format!(
+                    "INSERT INTO test_collections_keyspace.test_set_table_{} (id, my_set) VALUES ({}, {{{}}});",
+                    i,
+                    i,
+                    get_type_example(*col_type)
+                );
                 run_query(session, query.as_str());
             }
 
@@ -648,10 +665,6 @@ mod collections {
                 );
             }
 
-            fn get_map_example(_key: usize, value: &str) -> String {
-                format!("{{0 : {}}}", value)
-            }
-
             // test inserting set of maps
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 run_query(
@@ -660,7 +673,7 @@ mod collections {
                         "INSERT INTO test_collections_keyspace.test_set_table_map_{} (id, my_set) VALUES ({}, {{{}}});",
                         i,
                         i,
-                        get_map_example(i, get_type_example(*native_col_type))
+                        get_map_example(get_type_example(*native_col_type))
                     )
                     .as_str(),
                 );
@@ -714,7 +727,7 @@ mod collections {
                 );
             }
 
-            // test selecting set  of maps
+            // test selecting set of maps
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 assert_query_result(
                     session,
