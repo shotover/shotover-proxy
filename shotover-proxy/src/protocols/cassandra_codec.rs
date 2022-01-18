@@ -335,7 +335,7 @@ impl CassandraCodec {
             ..
         } = message
         {
-            *query_string = format!("{}", ast);
+            *query_string = format!("{ast}");
         }
     }
 

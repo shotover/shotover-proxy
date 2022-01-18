@@ -435,9 +435,10 @@ pub fn process_redis_frame_query(frame: &RedisFrame) -> Result<QueryMessage> {
             query_type: QueryType::ReadWrite,
             ast: None,
         }),
+
         RedisFrame::Array(frames) => handle_redis_array_query(frames),
         RedisFrame::Integer(integer) => Ok(QueryMessage {
-            query_string: format!("{}", integer),
+            query_string: integer.to_string(),
             namespace: vec![],
             primary_key: Default::default(),
             query_values: None,

@@ -634,7 +634,7 @@ fn build_slot_to_server(
         bail!("unexpected type for port");
     };
 
-    slot_entries.push((format!("{}:{}", ip, port), start, end));
+    slot_entries.push((format!("{ip}:{port}"), start, end));
 
     Ok(())
 }
@@ -695,8 +695,7 @@ async fn get_topology_from_node(
             message.as_str(),
         ))),
         frame => Err(TransformError::Protocol(format!(
-            "unexpected response for cluster slots: {:?}",
-            frame
+            "unexpected response for cluster slots: {frame:?}"
         ))),
     }
 }
@@ -797,7 +796,7 @@ impl Transform for RedisSinkCluster {
                 Ok(response) => response,
                 Err(e) => {
                     let (one_tx, one_rx) = immediate_responder();
-                    self.send_error_response(one_tx, &format!("ERR {}", e))?;
+                    self.send_error_response(one_tx, &format!("ERR {e}"))?;
                     Box::pin(one_rx)
                 }
             });
@@ -896,13 +895,11 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
                 Ok(())
             }
             Frame::SimpleString(s) => Err(TransformError::Protocol(format!(
-                "expected OK but got: {}",
-                s
+                "expected OK but got: {s}"
             ))),
             Frame::Error(e) => Err(TransformError::Upstream(RedisError::from_message(&e))),
             f => Err(TransformError::Protocol(format!(
-                "unexpected response type: {:?}",
-                f
+                "unexpected response type: {f:?}"
             ))),
         }
     }
@@ -930,7 +927,7 @@ mod test {
         let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame {
             frames
         } else {
-            panic!("bad input: {:?}", raw_frame)
+            panic!("bad input: {raw_frame:?}")
         };
 
         let slots = parse_slots(&slots_frames).unwrap();

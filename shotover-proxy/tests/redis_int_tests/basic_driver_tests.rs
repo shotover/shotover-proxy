@@ -868,9 +868,9 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
 
     // Create users with only access to their own key, and test their permissions using new connections.
     for i in 1..=100 {
-        let user = format!("user-{}", i);
-        let pass = format!("pass-{}", i);
-        let key = format!("key-{}", i);
+        let user = format!("user-{i}");
+        let pass = format!("pass-{i}");
+        let key = format!("key-{i}");
 
         redis::cmd("ACL")
             .arg(&[
@@ -879,8 +879,8 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
                 "+@read",
                 "+cluster|slots",
                 "on",
-                &format!(">{}", pass),
-                &format!("~{}", key),
+                &format!(">{pass}"),
+                &format!("~{key}"),
             ])
             .query_async::<_, ()>(connection)
             .await
@@ -1079,8 +1079,8 @@ async fn test_cluster_pipe(connection: &mut Connection) {
     //do this a few times to be sure we are not hitting a single master
     for i in 0..100 * STRESS_TEST_MULTIPLIER {
         // make sure there are no overlaps etc
-        let key1 = format!("key{}", i);
-        let key2 = format!("{}key", i);
+        let key1 = format!("key{i}");
+        let key2 = format!("{i}key");
 
         let (k1, k2): (i32, i32) = redis::pipe()
             .cmd("SET")
@@ -1107,7 +1107,7 @@ async fn test_cluster_pipe(connection: &mut Connection) {
     for _ in 0..2 * STRESS_TEST_MULTIPLIER {
         let mut pipe = redis::pipe();
         for i in 0..100 {
-            let key1 = format!("{}kaey", i);
+            let key1 = format!("{i}kaey");
             pipe.cmd("SET").arg(&key1).arg(i);
         }
 
@@ -1116,7 +1116,7 @@ async fn test_cluster_pipe(connection: &mut Connection) {
         let mut pipe = redis::pipe();
 
         for i in 0..100 {
-            let key1 = format!("{}kaey", i);
+            let key1 = format!("{i}kaey");
             pipe.cmd("GET").arg(&key1);
         }
 

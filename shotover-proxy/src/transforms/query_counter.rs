@@ -48,7 +48,7 @@ impl Transform for QueryCounter {
                     }
                     ASTHolder::Commands(List(commands)) => {
                         if let Some(v) = commands.get(0) {
-                            let command = format!("{:?}", v);
+                            let command = format!("{v:?}");
                             counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => command.to_ascii_uppercase(), "type" => "redis");
                         } else {
                             counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "empty", "type" => "redis");
