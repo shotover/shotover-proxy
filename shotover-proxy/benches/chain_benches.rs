@@ -51,7 +51,6 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         use shotover_proxy::protocols::RedisFrame;
-        //use redis_protocol::resp2::prelude::*;
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
@@ -83,7 +82,6 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         use shotover_proxy::protocols::RedisFrame;
-        //use redis_protocol::resp2::prelude::*;
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
