@@ -50,7 +50,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use crate::protocols::RedisFrame;
+        use shotover_proxy::protocols::RedisFrame;
         //use redis_protocol::resp2::prelude::*;
         let chain = TransformChain::new_no_shared_state(
             vec![
@@ -82,7 +82,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use crate::protocols::RedisFrame;
+        use shotover_proxy::protocols::RedisFrame;
         //use redis_protocol::resp2::prelude::*;
         let chain = TransformChain::new_no_shared_state(
             vec![
