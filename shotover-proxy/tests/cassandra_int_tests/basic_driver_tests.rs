@@ -772,16 +772,16 @@ mod collections {
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
                 for (j, collection_col_type) in COLLECTION_COL_TYPES.iter().enumerate() {
                     run_query(
-                    session,
-                    format!(
-                        "CREATE TABLE test_collections_keyspace.test_map_table_{}_{} (id int PRIMARY KEY, my_map frozen<map<int, {}<{}>>>);",
-                        i,
-                        j,
-                        get_type_str(*collection_col_type),
-                        get_type_str(*native_col_type)
-                    )
-                    .as_str(),
-                );
+                        session,
+                        format!(
+                            "CREATE TABLE test_collections_keyspace.test_map_table_{}_{} (id int PRIMARY KEY, my_map frozen<map<int, {}<{}>>>);",
+                            i,
+                            j,
+                            get_type_str(*collection_col_type),
+                            get_type_str(*native_col_type)
+                        )
+                        .as_str(),
+                    );
                 }
             }
 
