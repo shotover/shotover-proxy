@@ -11,7 +11,7 @@ mod keyspace {
         assert_query_result, assert_query_result_contains_row, run_query, ResultValue,
     };
 
-    fn test_create_keyspace(session: &Session) {
+    fn create_keyspace(session: &Session) {
         run_query(session, "CREATE KEYSPACE keyspace_tests_create WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         assert_query_result(
             session,
@@ -26,7 +26,7 @@ mod keyspace {
         );
     }
 
-    fn test_use_keyspace(session: &Session) {
+    fn use_keyspace(session: &Session) {
         run_query(session, "USE system");
 
         assert_query_result(
@@ -36,21 +36,21 @@ mod keyspace {
         );
     }
 
-    fn test_drop_keyspace(session: &Session) {
+    fn drop_keyspace(session: &Session) {
         run_query(session, "CREATE KEYSPACE keyspace_tests_delete_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         assert_query_result(
             session,
             "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name='keyspace_tests_delete_me';",
             &[&[ResultValue::Varchar("keyspace_tests_delete_me".into())]],
         );
-        run_query(session, "DROP KEYSPACE keyspace_tests_delete_me");
+        run_query(session, "DROP KEYSPACE keyspace_tests_delete_me;");
         run_query(
             session,
             "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name='keyspace_tests_delete_me';",
         );
     }
 
-    fn test_alter_keyspace(session: &Session) {
+    fn alter_keyspace(session: &Session) {
         run_query(session, "CREATE KEYSPACE keyspace_tests_alter_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 } AND DURABLE_WRITES = false;");
         run_query(
             session,
@@ -64,10 +64,10 @@ mod keyspace {
     }
 
     pub fn test(session: &Session) {
-        test_create_keyspace(session);
-        test_use_keyspace(session);
-        test_drop_keyspace(session);
-        test_alter_keyspace(session);
+        create_keyspace(session);
+        use_keyspace(session);
+        drop_keyspace(session);
+        alter_keyspace(session);
     }
 }
 
@@ -79,7 +79,7 @@ mod table {
         assert_query_result_not_contains_row, run_query, ResultValue,
     };
 
-    fn test_create_table(session: &Session) {
+    fn create_table(session: &Session) {
         run_query(
             session,
             "CREATE TABLE test_table_keyspace.my_table (id UUID PRIMARY KEY, name text, age int);",
@@ -91,7 +91,7 @@ mod table {
         );
     }
 
-    fn test_drop_table(session: &Session) {
+    fn drop_table(session: &Session) {
         run_query(
             session,
             "CREATE TABLE test_table_keyspace.delete_me (id UUID PRIMARY KEY, name text, age int);",
@@ -110,7 +110,7 @@ mod table {
         );
     }
 
-    fn test_alter_table(session: &Session) {
+    fn alter_table(session: &Session) {
         run_query(
             session,
             "CREATE TABLE test_table_keyspace.alter_me (id UUID PRIMARY KEY, name text, age int);",
@@ -126,9 +126,9 @@ mod table {
 
     pub fn test(session: &Session) {
         run_query(session, "CREATE KEYSPACE test_table_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
-        test_create_table(session);
-        test_drop_table(session);
-        test_alter_table(session);
+        create_table(session);
+        drop_table(session);
+        alter_table(session);
     }
 }
 
@@ -137,7 +137,7 @@ mod udt {
 
     use crate::cassandra_int_tests::run_query;
 
-    fn test_create_udt(session: &Session) {
+    fn create_udt(session: &Session) {
         run_query(
             session,
             "CREATE TYPE test_udt_keyspace.test_type_name (foo text, bar int)",
@@ -152,7 +152,7 @@ mod udt {
         );
     }
 
-    fn test_drop_udt(session: &Session) {
+    fn drop_udt(session: &Session) {
         run_query(
             session,
             "CREATE TYPE test_udt_keyspace.test_type_drop_me (foo text, bar int)",
@@ -167,8 +167,8 @@ mod udt {
 
     pub fn test(session: &Session) {
         run_query(session, "CREATE KEYSPACE test_udt_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
-        test_create_udt(session);
-        test_drop_udt(session);
+        create_udt(session);
+        drop_udt(session);
     }
 }
 
@@ -810,11 +810,13 @@ mod cache {
     use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
 
     pub fn test(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
-        test_batch_insert(cassandra_session, redis_connection);
-        test_simple(cassandra_session, redis_connection);
+        run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+
+        batch_insert(cassandra_session, redis_connection);
+        simple(cassandra_session, redis_connection);
     }
 
-    fn test_batch_insert(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
+    fn batch_insert(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
         run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_batch_insert WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -876,7 +878,7 @@ mod cache {
         assert_eq!(result, ["dummy_key".to_string()]);
     }
 
-    fn test_simple(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
+    fn simple(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
         run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
