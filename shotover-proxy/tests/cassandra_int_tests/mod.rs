@@ -11,6 +11,7 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.set_contact_points(contact_points).unwrap();
     cluster.set_port(port).ok();
     cluster.set_load_balance_round_robin();
+    cluster.set_request_timeout(std::time::Duration::from_secs(60));
     cluster.connect().unwrap()
 }
 

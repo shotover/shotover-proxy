@@ -78,6 +78,7 @@ if [ "$1" = 'cassandra' ]; then
 		start_rpc \
 		enable_user_defined_functions \
 		enable_scripted_user_defined_functions \
+		auto_snapshot \
 	; do
 		var="CASSANDRA_${yaml^^}"
 		val="${!var}"
