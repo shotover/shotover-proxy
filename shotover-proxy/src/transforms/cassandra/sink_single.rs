@@ -11,7 +11,7 @@ use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::frame::Frame;
-use metrics::{counter, register_counter, Unit};
+use metrics::{counter, register_counter};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -62,7 +62,7 @@ impl CassandraSinkSingle {
             chain_name: chain_name.clone(),
         };
 
-        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => sink_single.get_name());
+        register_counter!("failed_requests", "chain" => chain_name, "transform" => sink_single.get_name());
 
         sink_single
     }

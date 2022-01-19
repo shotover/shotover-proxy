@@ -77,7 +77,7 @@ impl Runner {
     }
 
     pub fn with_observability_interface(self) -> Result<Self> {
-        let recorder = PrometheusBuilder::new().build();
+        let recorder = PrometheusBuilder::new().build_recorder();
         let handle = recorder.handle();
         metrics::set_boxed_recorder(Box::new(recorder))?;
 

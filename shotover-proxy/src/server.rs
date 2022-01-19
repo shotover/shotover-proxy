@@ -4,7 +4,7 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
-use metrics::{gauge, register_gauge, Unit};
+use metrics::{gauge, register_gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -113,7 +113,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
     ) -> Self {
-        register_gauge!("shotover_available_connections", Unit::Count, "source" => source_name.clone());
+        register_gauge!("shotover_available_connections", "source" => source_name.clone());
         gauge!("shotover_available_connections", limit_connections.available_permits() as f64, "source" => source_name.clone());
 
         TcpCodecListener {

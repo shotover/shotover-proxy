@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use futures::TryFutureExt;
 
 use itertools::Itertools;
-use metrics::{counter, histogram, register_counter, register_histogram, Unit};
+use metrics::{counter, histogram, register_counter, register_histogram};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::time::Duration;
@@ -189,14 +189,14 @@ impl TransformChain {
     }
 
     pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
-        register_counter!("shotover_chain_total", Unit::Count, "chain" => name.clone());
-        register_counter!("shotover_chain_failures", Unit::Count, "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", Unit::Seconds, "chain" => name.clone());
+        register_counter!("shotover_chain_total", "chain" => name.clone());
+        register_counter!("shotover_chain_failures", "chain" => name.clone());
+        register_histogram!("shotover_chain_latency", "chain" => name.clone());
 
         for transform in &transform_list {
-            register_counter!("shotover_transform_total", Unit::Count, "transform" => transform.get_name());
-            register_counter!("shotover_transform_failures", Unit::Count, "transform" => transform.get_name());
-            register_histogram!("shotover_transform_latency", Unit::Seconds, "transform" => transform.get_name());
+            register_counter!("shotover_transform_total", "transform" => transform.get_name());
+            register_counter!("shotover_transform_failures", "transform" => transform.get_name());
+            register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
         }
 
         TransformChain {
