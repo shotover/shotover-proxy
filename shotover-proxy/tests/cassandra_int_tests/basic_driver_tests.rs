@@ -810,7 +810,7 @@ mod collections {
 
             // test inserting map of maps
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                run_query(session, format!("INSERT INTO test_collections_keyspace.test_map_table_map_{} (id, my_map) VALUES ({}, {{0: {}}});", i, i, get_map_example(format!("{}", get_type_example(*native_col_type)).as_str())).as_str());
+                run_query(session, format!("INSERT INTO test_collections_keyspace.test_map_table_map_{} (id, my_map) VALUES ({}, {{0: {}}});", i, i, get_map_example(get_type_example(*native_col_type))).as_str());
             }
         }
 
