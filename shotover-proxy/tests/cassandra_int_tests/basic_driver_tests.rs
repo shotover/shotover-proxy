@@ -787,30 +787,70 @@ mod collections {
 
             // create maps of maps
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                run_query(session, format!("CREATE TABLE test_collections_keyspace.test_map_table_map_{} (id int PRIMARY KEY, my_map frozen<map<int, frozen<map<int, {}>>>>);", i, get_type_str(*col_type)).as_str());
+                run_query(
+                    session,
+                    format!(
+                        "CREATE TABLE test_collections_keyspace.test_map_table_map_{} (id int PRIMARY KEY, my_map frozen<map<int, frozen<map<int, {}>>>>);",
+                        i,
+                        get_type_str(*col_type)
+                    )
+                    .as_str()
+                );
             }
         }
 
         fn insert(session: &Session) {
             // insert maps of native types
             for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                let query = format!("INSERT INTO test_collections_keyspace.test_map_table_{} (id, my_map) VALUES ({}, {});", i, i, get_map_example( get_type_example(*col_type)));
+                let query = format!(
+                    "INSERT INTO test_collections_keyspace.test_map_table_{} (id, my_map) VALUES ({}, {});",
+                    i,
+                    i,
+                    get_map_example(get_type_example(*col_type))
+                );
                 run_query(session, query.as_str());
             }
 
             // test inserting map of sets
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                run_query(session, format!("INSERT INTO test_collections_keyspace.test_map_table_{}_0 (id, my_map) VALUES ({}, {});", i, i, get_map_example(format!("{{{}}}", get_type_example(*native_col_type)).as_str())).as_str());
+                run_query(
+                    session,
+                    format!(
+                        "INSERT INTO test_collections_keyspace.test_map_table_{}_0 (id, my_map) VALUES ({}, {});",
+                        i,
+                        i,
+                        get_map_example(format!("{{{}}}", get_type_example(*native_col_type)).as_str())
+                    )
+                    .as_str()
+                );
             }
 
             // test inserting map of lists
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                run_query(session, format!("INSERT INTO test_collections_keyspace.test_map_table_{}_1 (id, my_map) VALUES ({}, {});", i, i, get_map_example(format!("[{}]", get_type_example(*native_col_type)).as_str())).as_str());
+                run_query(
+                    session,
+                    format!(
+                        "INSERT INTO test_collections_keyspace.test_map_table_{}_1 (id, my_map) VALUES ({}, {});",
+                        i,
+                        i,
+                        get_map_example(format!("[{}]", get_type_example(*native_col_type)).as_str())
+                    )
+                    .as_str()
+                );
             }
 
             // test inserting map of maps
             for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-                run_query(session, format!("INSERT INTO test_collections_keyspace.test_map_table_map_{} (id, my_map) VALUES ({}, {{0: {}}});", i, i, get_map_example(get_type_example(*native_col_type))).as_str());
+                run_query(
+                    session,
+                    format!(
+                        "INSERT INTO test_collections_keyspace.test_map_table_map_{} (id, my_map) VALUES ({}, {{0: {}}});",
+                        i,
+                        i,
+                        get_map_example(get_type_example(*native_col_type))
+                    )
+                    .as_str()
+                );
             }
         }
 
