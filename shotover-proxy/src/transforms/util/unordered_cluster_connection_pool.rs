@@ -121,11 +121,11 @@ async fn rx_process<C: CodecReadHalf>(
     loop {
         tokio::select! {
             Some(maybe_req) = in_r.next() => {
+                if return_message_map.len() > 1 || return_channel_map.len() > 1 {
+                    info!("message map {:?}", return_message_map);
+                    info!("channel map {:?}", return_channel_map);
+                }
 
-                        if return_message_map.len() > 1 || return_channel_map.len() > 1 {
-                info!("message map {:?}", return_message_map);
-                info!("channel map {:?}", return_channel_map);
-            }
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
@@ -143,18 +143,16 @@ async fn rx_process<C: CodecReadHalf>(
                     }
                     Err(e) => {
                         info!("Couldn't decode message from upstream host {:?}", e);
-                        return Err(anyhow!(
-                                "Couldn't decode message from upstream host {:?}",
-                                e
-                            ));
+                        return Err(anyhow!("Couldn't decode message from upstream host {:?}", e));
                     }
                 }
             },
             Some(original_request) = return_rx.recv() => {
-            if return_message_map.len() > 1 || return_channel_map.len() > 1 {
-                info!("message map {:?}", return_message_map);
-                info!("channel map {:?}", return_channel_map);
-            }
+                if return_message_map.len() > 1 || return_channel_map.len() > 1 {
+                    info!("message map {:?}", return_message_map);
+                    info!("channel map {:?}", return_channel_map);
+                }
+
                 if let Request { messages: orig , return_chan: Some(chan), message_id: Some(id) } = original_request {
                     match return_message_map.remove(&id) {
                         None => {
