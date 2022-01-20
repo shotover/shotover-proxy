@@ -2,6 +2,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::ops::DerefMut;
 
+use crate::protocols::CassandraFrame;
 use anyhow::{anyhow, Result};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
@@ -14,9 +15,7 @@ use cassandra_protocol::frame::frame_result::{
     BodyResResultRows, ColSpec, ColType, ColTypeOption, ResResultBody, RowsMetadata,
     RowsMetadataFlags, TableSpec,
 };
-use cassandra_protocol::frame::{
-    Direction, Flags, Frame, Opcode, ParseFrameError, Serialize, Version,
-};
+use cassandra_protocol::frame::{Direction, Flags, Opcode, ParseFrameError, Serialize, Version};
 use cassandra_protocol::query::QueryValues;
 use cassandra_protocol::types::value::Value as CValue;
 use cassandra_protocol::types::{to_int, CBytes, CInt};
@@ -73,7 +72,7 @@ impl CassandraCodec {
     pub fn build_cassandra_query_frame(
         mut query: QueryMessage,
         default_consistency: Consistency,
-    ) -> Frame {
+    ) -> CassandraFrame {
         CassandraCodec::rebuild_ast_in_message(&mut query);
         CassandraCodec::rebuild_query_string_from_ast(&mut query);
         let QueryMessage {
@@ -94,7 +93,7 @@ impl CassandraCodec {
         let paging_state = None;
         let serial_consistency = None;
         let timestamp = None;
-        Frame::new_req_query(
+        CassandraFrame::new_req_query(
             query_string,
             default_consistency,
             values,
@@ -108,7 +107,10 @@ impl CassandraCodec {
         )
     }
 
-    pub fn build_cassandra_response_frame(resp: QueryResponse, query_frame: Frame) -> Frame {
+    pub fn build_cassandra_response_frame(
+        resp: QueryResponse,
+        query_frame: CassandraFrame,
+    ) -> CassandraFrame {
         if let Some(Value::Rows(rows)) = resp.result {
             if let Some(ref query) = resp.matching_query {
                 if let Some(ref proj) = query.projection {
@@ -212,7 +214,7 @@ impl CassandraCodec {
                         rows_content: result_bytes,
                     });
 
-                    return Frame {
+                    return CassandraFrame {
                         version: Version::V4,
                         direction: Direction::Response,
                         flags: query_frame.flags,
@@ -517,7 +519,10 @@ impl CassandraCodec {
         }
     }
 
-    fn build_response_message(frame: Frame, matching_query: Option<QueryMessage>) -> Messages {
+    fn build_response_message(
+        frame: CassandraFrame,
+        matching_query: Option<QueryMessage>,
+    ) -> Messages {
         let mut result: Option<Value> = None;
         let mut error: Option<Value> = None;
         match frame.response_body().unwrap() {
@@ -556,7 +561,7 @@ impl CassandraCodec {
         )]
     }
 
-    pub fn process_cassandra_frame(&self, frame: Frame) -> Messages {
+    pub fn process_cassandra_frame(&self, frame: CassandraFrame) -> Messages {
         if self.bypass {
             return vec![Message::new_raw(RawFrame::Cassandra(frame))];
         }
@@ -608,7 +613,7 @@ impl CassandraCodec {
         }
     }
 
-    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) {
+    fn encode_raw(&mut self, item: CassandraFrame, dst: &mut BytesMut) {
         let buffer = item.encode_with(self.compressor).unwrap();
         if buffer.is_empty() {
             info!("trying to send 0 length frame");
@@ -631,7 +636,7 @@ impl Decoder for CassandraCodec {
             return Err(anyhow!(result));
         }
 
-        match Frame::from_buffer(src, self.compressor) {
+        match CassandraFrame::from_buffer(src, self.compressor) {
             Ok(parsed_frame) => {
                 // Clear the read bytes from the FramedReader
                 let _ = src.split_to(parsed_frame.frame_len);
@@ -653,7 +658,7 @@ impl Decoder for CassandraCodec {
                 let message = Message::new(
                     MessageDetails::ReturnToSender,
                     false,
-                    RawFrame::Cassandra(Frame {
+                    RawFrame::Cassandra(CassandraFrame {
                         version: Version::V4,
                         direction: Direction::Response,
                         flags: Flags::empty(),
@@ -676,7 +681,7 @@ impl Decoder for CassandraCodec {
     }
 }
 
-fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
+fn get_cassandra_frame(rf: RawFrame) -> Result<CassandraFrame> {
     if let RawFrame::Cassandra(frame) = rf {
         Ok(frame)
     } else {
@@ -686,7 +691,7 @@ fn get_cassandra_frame(rf: RawFrame) -> Result<Frame> {
 }
 
 impl CassandraCodec {
-    fn encode_message(&mut self, item: Message) -> Result<Frame> {
+    fn encode_message(&mut self, item: Message) -> Result<CassandraFrame> {
         let frame = if !item.modified {
             get_cassandra_frame(item.original)?
         } else {
@@ -737,9 +742,10 @@ mod cassandra_protocol_tests {
         ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
     };
     use crate::protocols::cassandra_codec::CassandraCodec;
+    use crate::protocols::CassandraFrame;
     use crate::protocols::RawFrame;
     use bytes::BytesMut;
-    use cassandra_protocol::frame::{Direction, Flags, Frame, Opcode, Version};
+    use cassandra_protocol::frame::{Direction, Flags, Opcode, Version};
     use hex_literal::hex;
     use sqlparser::ast::Expr::BinaryOp;
     use sqlparser::ast::{
@@ -784,7 +790,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(Frame {
+            original: RawFrame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -805,7 +811,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(Frame {
+            original: RawFrame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -826,7 +832,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(Frame {
+            original: RawFrame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Response,
                 flags: Flags::empty(),
@@ -850,7 +856,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(Frame {
+            original: RawFrame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -885,7 +891,7 @@ mod cassandra_protocol_tests {
                 response_meta: None,
             }),
             modified: false,
-            original: RawFrame::Cassandra(Frame {
+            original: RawFrame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Response,
                 flags: Flags::empty(),
@@ -972,7 +978,7 @@ mod cassandra_protocol_tests {
                 ))))),
             }),
             modified: false,
-            original: RawFrame::Cassandra(Frame {
+            original: RawFrame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),

@@ -252,8 +252,9 @@ mod protect_transform_tests {
 
     use anyhow::{anyhow, Result};
 
+    use crate::protocols::CassandraFrame;
     use cassandra_protocol::consistency::Consistency;
-    use cassandra_protocol::frame::{Flags, Frame, Version};
+    use cassandra_protocol::frame::{Flags, Version};
     use sodiumoxide::crypto::secretbox;
 
     use crate::message::{
@@ -348,7 +349,7 @@ mod protect_transform_tests {
                         .as_str()
                     ));
 
-                    let cframe = Frame::new_req_query(
+                    let cframe = CassandraFrame::new_req_query(
                         "SELECT col1 FROM keyspace.old WHERE pk = 'pk1' AND cluster = 'cluster';"
                             .to_string(),
                         Consistency::LocalQuorum,
@@ -514,7 +515,7 @@ mod protect_transform_tests {
                     .as_str()
                 ));
 
-                let cframe = Frame::new_req_query(
+                let cframe = CassandraFrame::new_req_query(
                     "SELECT col1 FROM keyspace.old WHERE pk = 'pk1' AND cluster = 'cluster';"
                         .to_string(),
                     Consistency::LocalQuorum,

@@ -8,9 +8,9 @@ use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedCo
 use crate::transforms::util::Request;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
+use crate::protocols::CassandraFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use cassandra_protocol::frame::Frame;
 use metrics::{counter, register_counter, Unit};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -125,7 +125,7 @@ impl CassandraSinkSingle {
                                 match prelim? {
                                     (_, Ok(mut resp)) => {
                                         for message in &resp {
-                                            if let RawFrame::Cassandra(Frame {
+                                            if let RawFrame::Cassandra(CassandraFrame {
                                                 opcode: cassandra_protocol::frame::Opcode::Error,
                                                 ..
                                             }) = &message.original

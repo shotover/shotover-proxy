@@ -1,11 +1,13 @@
+use crate::protocols::CassandraFrame;
 use crate::protocols::RawFrame;
+use crate::protocols::RedisFrame;
 use bigdecimal::BigDecimal;
 use bytes::Bytes;
 use cassandra_protocol::{
     frame::{
         frame_error::{AdditionalErrorInfo, ErrorBody},
         frame_result::{ColSpec, ColTypeOption},
-        Direction, Flags, Frame as CassandraFrame, Opcode, Serialize as CassandraSerialize,
+        Direction, Flags, Opcode, Serialize as CassandraSerialize,
     },
     types::{
         cassandra_type::{wrapper_fn, CassandraType},
@@ -14,7 +16,6 @@ use cassandra_protocol::{
 };
 use num::BigInt;
 use ordered_float::OrderedFloat;
-use redis_protocol::resp2::prelude::Frame;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use std::collections::{BTreeMap, BTreeSet};
@@ -87,7 +88,7 @@ impl Message {
             details: MessageDetails::Unknown,
             modified: true,
             original: match &self.original {
-                RawFrame::Redis(_) => RawFrame::Redis(Frame::Error(
+                RawFrame::Redis(_) => RawFrame::Redis(RedisFrame::Error(
                     "ERR Message was filtered out by shotover".into(),
                 )),
                 RawFrame::Cassandra(frame) => RawFrame::Cassandra(CassandraFrame {
@@ -353,47 +354,51 @@ pub enum IntSize {
     I8,  // Tinyint
 }
 
-impl From<Frame> for Value {
-    fn from(f: Frame) -> Self {
+impl From<RedisFrame> for Value {
+    fn from(f: RedisFrame) -> Self {
         match f {
-            Frame::SimpleString(s) => Value::Strings(s),
-            Frame::Error(e) => Value::Strings(e),
-            Frame::Integer(i) => Value::Integer(i, IntSize::I64),
-            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
-            Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Null => Value::NULL,
+            RedisFrame::SimpleString(s) => Value::Strings(s),
+            RedisFrame::Error(e) => Value::Strings(e),
+            RedisFrame::Integer(i) => Value::Integer(i, IntSize::I64),
+            RedisFrame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            RedisFrame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
+            RedisFrame::Null => Value::NULL,
         }
     }
 }
-impl From<&Frame> for Value {
-    fn from(f: &Frame) -> Self {
+impl From<&RedisFrame> for Value {
+    fn from(f: &RedisFrame) -> Self {
         match f.clone() {
-            Frame::SimpleString(s) => Value::Strings(s),
-            Frame::Error(e) => Value::Strings(e),
-            Frame::Integer(i) => Value::Integer(i, IntSize::I64),
-            Frame::BulkString(b) => Value::Bytes(Bytes::from(b)),
-            Frame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            Frame::Null => Value::NULL,
+            RedisFrame::SimpleString(s) => Value::Strings(s),
+            RedisFrame::Error(e) => Value::Strings(e),
+            RedisFrame::Integer(i) => Value::Integer(i, IntSize::I64),
+            RedisFrame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            RedisFrame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
+            RedisFrame::Null => Value::NULL,
         }
     }
 }
 
-impl From<Value> for Frame {
-    fn from(value: Value) -> Frame {
+impl From<Value> for RedisFrame {
+    fn from(value: Value) -> RedisFrame {
         match value {
-            Value::NULL => Frame::Null,
+            Value::NULL => RedisFrame::Null,
             Value::None => todo!(),
-            Value::Bytes(b) => Frame::BulkString(b.to_vec()),
-            Value::Strings(s) => Frame::SimpleString(s),
-            Value::Integer(i, _) => Frame::Integer(i),
-            Value::Float(f) => Frame::SimpleString(f.to_string()),
-            Value::Boolean(b) => Frame::Integer(i64::from(b)),
-            Value::Inet(i) => Frame::SimpleString(i.to_string()),
-            Value::List(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
-            Value::Rows(r) => Frame::Array(r.into_iter().map(|v| Value::List(v).into()).collect()),
+            Value::Bytes(b) => RedisFrame::BulkString(b.to_vec()),
+            Value::Strings(s) => RedisFrame::SimpleString(s),
+            Value::Integer(i, _) => RedisFrame::Integer(i),
+            Value::Float(f) => RedisFrame::SimpleString(f.to_string()),
+            Value::Boolean(b) => RedisFrame::Integer(i64::from(b)),
+            Value::Inet(i) => RedisFrame::SimpleString(i.to_string()),
+            Value::List(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
+            Value::Rows(r) => {
+                RedisFrame::Array(r.into_iter().map(|v| Value::List(v).into()).collect())
+            }
             Value::NamedRows(_) => todo!(),
             Value::Document(_) => todo!(),
-            Value::FragmentedResponse(l) => Frame::Array(l.into_iter().map(|v| v.into()).collect()),
+            Value::FragmentedResponse(l) => {
+                RedisFrame::Array(l.into_iter().map(|v| v.into()).collect())
+            }
             Value::Ascii(_a) => todo!(),
             Value::Double(_d) => todo!(),
             Value::Set(_s) => todo!(),
