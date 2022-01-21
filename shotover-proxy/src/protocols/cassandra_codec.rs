@@ -233,32 +233,9 @@ impl CassandraCodec {
 }
 
 impl CassandraCodec {
-    fn value_to_expr(v: &Value) -> SQLValue {
-        match v {
-            Value::NULL => SQLValue::Null,
-            Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // TODO: this is definitely wrong
-            Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            Value::Integer(i, _) => SQLValue::Number(i.to_string(), false),
-            Value::Float(f) => SQLValue::Number(f.to_string(), false),
-            Value::Boolean(b) => SQLValue::Boolean(*b),
-            _ => SQLValue::Null,
-        }
-    }
-
     fn value_to_bind(_v: &Value) -> SQLValue {
         //TODO fix bind handling
         SQLValue::SingleQuotedString("XYz-1-zYX".to_string())
-    }
-
-    fn expr_to_value(v: &SQLValue) -> Value {
-        match v {
-            SQLValue::Number(v, false)
-            | SQLValue::SingleQuotedString(v)
-            | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
-            SQLValue::HexStringLiteral(v) => Value::Strings(v.to_string()),
-            SQLValue::Boolean(v) => Value::Boolean(*v),
-            _ => Value::Strings("NULL".to_string()),
-        }
     }
 
     fn expr_to_string(v: &SQLValue) -> String {
@@ -286,7 +263,7 @@ impl CassandraCodec {
                                 *v = if use_bind {
                                     CassandraCodec::value_to_bind(new_v)
                                 } else {
-                                    CassandraCodec::value_to_expr(new_v)
+                                    new_v.into()
                                 };
                             }
                         }
@@ -307,7 +284,7 @@ impl CassandraCodec {
                 BinaryOperator::Eq => {
                     if let Identifier(i) = left.borrow() {
                         if let Expr::Value(v) = right.borrow() {
-                            map.insert(i.to_string(), CassandraCodec::expr_to_value(v));
+                            map.insert(i.to_string(), v.into());
                         }
                     }
                 }
@@ -481,7 +458,7 @@ impl CassandraCodec {
                         };
                             for assignment in assignments {
                                 if let Expr::Value(v) = assignment.clone().value {
-                                    let converted_value = CassandraCodec::expr_to_value(&v);
+                                    let converted_value = (&v).into();
                                     colmap.insert(
                                         assignment.id.iter().map(|x| &x.value).join("."),
                                         converted_value,

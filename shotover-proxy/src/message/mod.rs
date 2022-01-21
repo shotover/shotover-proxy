@@ -18,6 +18,7 @@ use num::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
+use sqlparser::ast::Value as SQLValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{collections::HashMap, net::IpAddr};
 use uuid::Uuid;
@@ -352,6 +353,33 @@ pub enum IntSize {
     I32, // Int
     I16, // Smallint
     I8,  // Tinyint
+}
+
+impl From<&Value> for SQLValue {
+    fn from(v: &Value) -> Self {
+        match v {
+            Value::NULL => SQLValue::Null,
+            Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // TODO: this is definitely wrong
+            Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
+            Value::Integer(i, _) => SQLValue::Number(i.to_string(), false),
+            Value::Float(f) => SQLValue::Number(f.to_string(), false),
+            Value::Boolean(b) => SQLValue::Boolean(*b),
+            _ => SQLValue::Null,
+        }
+    }
+}
+
+impl From<&SQLValue> for Value {
+    fn from(v: &SQLValue) -> Self {
+        match v {
+            SQLValue::Number(v, false)
+            | SQLValue::SingleQuotedString(v)
+            | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
+            SQLValue::HexStringLiteral(v) => Value::Strings(v.to_string()),
+            SQLValue::Boolean(v) => Value::Boolean(*v),
+            _ => Value::Strings("NULL".to_string()),
+        }
+    }
 }
 
 impl From<RedisFrame> for Value {
