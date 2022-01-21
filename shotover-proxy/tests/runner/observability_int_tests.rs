@@ -9,7 +9,7 @@ async fn http_request_metrics() -> String {
 fn assert_array_elems(expected: &[&str], result: String) {
     for s in expected {
         if !result.contains(s) {
-            panic!("{} missing from response: \n{}", s, result);
+            panic!("{s} missing from response: \n{result}");
         }
     }
 }

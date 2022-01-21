@@ -4,7 +4,7 @@ use crate::message::{ASTHolder, MessageDetails, QueryMessage};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use metrics::{counter, register_counter, Unit};
+use metrics::{counter, register_counter};
 use serde::Deserialize;
 use sqlparser::ast::Statement;
 
@@ -20,7 +20,7 @@ pub struct QueryCounterConfig {
 
 impl QueryCounter {
     pub fn new(counter_name: String) -> Self {
-        register_counter!("query_count", Unit::Count, "name" => counter_name.clone());
+        register_counter!("query_count", "name" => counter_name.clone());
 
         QueryCounter { counter_name }
     }
@@ -48,7 +48,7 @@ impl Transform for QueryCounter {
                     }
                     ASTHolder::Commands(List(commands)) => {
                         if let Some(v) = commands.get(0) {
-                            let command = format!("{:?}", v);
+                            let command = format!("{v:?}");
                             counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => command.to_ascii_uppercase(), "type" => "redis");
                         } else {
                             counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "empty", "type" => "redis");

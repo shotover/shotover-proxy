@@ -1,11 +1,11 @@
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages};
 use crate::protocols::RawFrame;
+use crate::protocols::RedisFrame;
 use crate::transforms::Transforms;
 use crate::transforms::{Transform, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use redis_protocol::resp2::prelude::Frame;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -52,7 +52,7 @@ impl Transform for DebugReturner {
                 .map(|_| Message {
                     details: MessageDetails::Unknown,
                     modified: false,
-                    original: RawFrame::Redis(Frame::BulkString(string.clone().into_bytes())),
+                    original: RawFrame::Redis(RedisFrame::BulkString(string.clone().into_bytes())),
                 })
                 .collect()),
             Response::Fail => Err(anyhow!("Intentional Fail")),

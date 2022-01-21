@@ -5,6 +5,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use shotover_proxy::message::{Message, QueryMessage, QueryType};
 use shotover_proxy::protocols::RawFrame;
 use shotover_proxy::transforms::chain::TransformChain;
+use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::null::Null;
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
@@ -50,19 +51,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use redis_protocol::resp2::prelude::*;
+        use shotover_proxy::protocols::RedisFrame;
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
-                Transforms::Null(Null::default()),
+                Transforms::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
             ],
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
-                Frame::BulkString(b"SET".to_vec()),
-                Frame::BulkString(b"foo".to_vec()),
-                Frame::BulkString(b"bar".to_vec()),
+            vec![Message::new_raw(RawFrame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(b"SET".to_vec()),
+                RedisFrame::BulkString(b"foo".to_vec()),
+                RedisFrame::BulkString(b"bar".to_vec()),
             ])))],
             chain.name.clone(),
         );
@@ -81,7 +82,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use redis_protocol::resp2::prelude::*;
+        use shotover_proxy::protocols::RedisFrame;
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
@@ -90,10 +91,10 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::new_raw(RawFrame::Redis(Frame::Array(vec![
-                Frame::BulkString(b"SET".to_vec()),
-                Frame::BulkString(b"foo".to_vec()),
-                Frame::BulkString(b"bar".to_vec()),
+            vec![Message::new_raw(RawFrame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(b"SET".to_vec()),
+                RedisFrame::BulkString(b"foo".to_vec()),
+                RedisFrame::BulkString(b"bar".to_vec()),
             ])))],
             chain.name.clone(),
         );

@@ -8,10 +8,10 @@ use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedCo
 use crate::transforms::util::Request;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
+use crate::protocols::CassandraFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use cassandra_protocol::frame::Frame;
-use metrics::{counter, register_counter, Unit};
+use metrics::{counter, register_counter};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -62,7 +62,7 @@ impl CassandraSinkSingle {
             chain_name: chain_name.clone(),
         };
 
-        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => sink_single.get_name());
+        register_counter!("failed_requests", "chain" => chain_name, "transform" => sink_single.get_name());
 
         sink_single
     }
@@ -125,7 +125,7 @@ impl CassandraSinkSingle {
                                 match prelim? {
                                     (_, Ok(mut resp)) => {
                                         for message in &resp {
-                                            if let RawFrame::Cassandra(Frame {
+                                            if let RawFrame::Cassandra(CassandraFrame {
                                                 opcode: cassandra_protocol::frame::Opcode::Error,
                                                 ..
                                             }) = &message.original
@@ -138,7 +138,7 @@ impl CassandraSinkSingle {
                                     (m, Err(err)) => {
                                         responses.push(Message::new_response(
                                             QueryResponse::empty_with_error(Some(
-                                                message::Value::Strings(format!("{}", err)),
+                                                message::Value::Strings(format!("{err}")),
                                             )),
                                             true,
                                             m.original,

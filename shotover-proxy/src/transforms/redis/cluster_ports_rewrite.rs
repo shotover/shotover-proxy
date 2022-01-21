@@ -1,6 +1,6 @@
+use crate::protocols::RedisFrame;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
-use redis_protocol::resp2::prelude::Frame;
 use serde::Deserialize;
 
 use crate::error::ChainResponse;
@@ -79,14 +79,14 @@ impl Transform for RedisClusterPortsRewrite {
 
 /// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
 fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
-    if let RawFrame::Redis(Frame::Array(ref mut array)) = frame {
+    if let RawFrame::Redis(RedisFrame::Array(ref mut array)) = frame {
         for elem in array.iter_mut() {
-            if let Frame::Array(slot) = elem {
+            if let RedisFrame::Array(slot) = elem {
                 for (index, mut frame) in slot.iter_mut().enumerate() {
                     match (index, &mut frame) {
                         (0..=1, _) => {}
-                        (_, Frame::Array(target)) => match target.as_mut_slice() {
-                            [Frame::BulkString(_ip), Frame::Integer(port), ..] => {
+                        (_, RedisFrame::Array(target)) => match target.as_mut_slice() {
+                            [RedisFrame::BulkString(_ip), RedisFrame::Integer(port), ..] => {
                                 *port = new_port.into();
                             }
                             _ => bail!("expected host-port in slot map but was: {:?}", frame),
@@ -105,14 +105,14 @@ fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
 /// Get a mutable reference to the CSV string inside a response to CLUSTER NODES or REPLICAS
 fn get_buffer(frame: &mut RawFrame) -> Result<&mut Vec<u8>> {
     // CLUSTER NODES
-    if let RawFrame::Redis(Frame::BulkString(ref mut buf)) = frame {
+    if let RawFrame::Redis(RedisFrame::BulkString(ref mut buf)) = frame {
         return Ok(buf);
     }
 
     // CLUSTER REPLICAS
-    if let RawFrame::Redis(Frame::Array(array)) = frame {
+    if let RawFrame::Redis(RedisFrame::Array(array)) = frame {
         for item in array.iter_mut() {
-            if let Frame::BulkString(ref mut buf) = item {
+            if let RedisFrame::BulkString(ref mut buf) = item {
                 return Ok(buf);
             }
         }
@@ -172,8 +172,8 @@ fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
 }
 
 fn is_cluster_message(frame: &RawFrame) -> bool {
-    if let RawFrame::Redis(Frame::Array(array)) = frame {
-        if let Frame::BulkString(b) = &array[0] {
+    if let RawFrame::Redis(RedisFrame::Array(array)) = frame {
+        if let RedisFrame::BulkString(b) = &array[0] {
             return b.to_ascii_uppercase() == b"CLUSTER";
         }
     }
@@ -183,11 +183,11 @@ fn is_cluster_message(frame: &RawFrame) -> bool {
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
 /// or `CLUSTER REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &RawFrame) -> bool {
-    let args = if let RawFrame::Redis(Frame::Array(array)) = frame {
+    let args = if let RawFrame::Redis(RedisFrame::Array(array)) = frame {
         array
             .iter()
             .map(|f| match f {
-                Frame::BulkString(b) => Some(b.to_ascii_uppercase()),
+                RedisFrame::BulkString(b) => Some(b.to_ascii_uppercase()),
                 _ => None,
             })
             .take_while(Option::is_some)
@@ -202,11 +202,11 @@ fn is_cluster_nodes(frame: &RawFrame) -> bool {
 
 /// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
 fn is_cluster_slots(frame: &RawFrame) -> bool {
-    let args = if let RawFrame::Redis(Frame::Array(array)) = frame {
+    let args = if let RawFrame::Redis(RedisFrame::Array(array)) = frame {
         array
             .iter()
             .map(|f| match f {
-                Frame::BulkString(b) => Some(b.to_ascii_uppercase()),
+                RedisFrame::BulkString(b) => Some(b.to_ascii_uppercase()),
                 _ => None,
             })
             .take_while(Option::is_some)
@@ -230,11 +230,13 @@ mod test {
         let cluster_messages = [b"cluster", b"CLUSTER"];
 
         for msg in cluster_messages {
-            let frame = RawFrame::Redis(Frame::Array(vec![Frame::BulkString(msg.to_vec())]));
+            let frame = RawFrame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
+                msg.to_vec(),
+            )]));
             assert!(is_cluster_message(&frame));
         }
 
-        let frame = RawFrame::Redis(Frame::Array(vec![Frame::BulkString(
+        let frame = RawFrame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
             b"notcluster".to_vec(),
         )]));
         assert!(!is_cluster_message(&frame));
@@ -250,16 +252,16 @@ mod test {
         ];
 
         for combo in combos {
-            let frame = RawFrame::Redis(Frame::Array(vec![
-                Frame::BulkString(combo.0.to_vec()),
-                Frame::BulkString(combo.1.to_vec()),
+            let frame = RawFrame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(combo.0.to_vec()),
+                RedisFrame::BulkString(combo.1.to_vec()),
             ]));
             assert!(is_cluster_slots(&frame));
         }
 
-        let frame = RawFrame::Redis(Frame::Array(vec![
-            Frame::BulkString(b"GET".to_vec()),
-            Frame::BulkString(b"key1".to_vec()),
+        let frame = RawFrame::Redis(RedisFrame::Array(vec![
+            RedisFrame::BulkString(b"GET".to_vec()),
+            RedisFrame::BulkString(b"key1".to_vec()),
         ]));
 
         assert!(!is_cluster_slots(&frame));
@@ -281,16 +283,16 @@ mod test {
         ];
 
         for combo in combos {
-            let frame = RawFrame::Redis(Frame::Array(vec![
-                Frame::BulkString(combo.0.to_vec()),
-                Frame::BulkString(combo.1.to_vec()),
+            let frame = RawFrame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(combo.0.to_vec()),
+                RedisFrame::BulkString(combo.1.to_vec()),
             ]));
             assert!(is_cluster_nodes(&frame));
         }
 
-        let frame = RawFrame::Redis(Frame::Array(vec![
-            Frame::BulkString(b"GET".to_vec()),
-            Frame::BulkString(b"key1".to_vec()),
+        let frame = RawFrame::Redis(RedisFrame::Array(vec![
+            RedisFrame::BulkString(b"GET".to_vec()),
+            RedisFrame::BulkString(b"key1".to_vec()),
         ]));
 
         assert!(!is_cluster_nodes(&frame));
@@ -310,10 +312,10 @@ mod test {
 
         rewrite_port_slot(&mut raw_frame, 6380).unwrap();
 
-        let slots_frames = if let RawFrame::Redis(Frame::Array(frames)) = raw_frame {
+        let slots_frames = if let RawFrame::Redis(RedisFrame::Array(frames)) = raw_frame {
             frames
         } else {
-            panic!("bad input: {:?}", raw_frame)
+            panic!("bad input: {raw_frame:?}")
         };
 
         let slots = parse_slots(&slots_frames).unwrap();
@@ -366,13 +368,13 @@ c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:1234@16379 myself,master - 0
 f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534e6866456c1f2002fc442d9 1634273478445 1634273478445 3 disconnected
 ";
 
-        let mut raw_frame = RawFrame::Redis(Frame::BulkString(bulk_string.to_vec()));
+        let mut raw_frame = RawFrame::Redis(RedisFrame::BulkString(bulk_string.to_vec()));
         rewrite_port_node(&mut raw_frame, 1234).unwrap();
 
-        let rewritten = if let RawFrame::Redis(Frame::BulkString(string)) = raw_frame.clone() {
+        let rewritten = if let RawFrame::Redis(RedisFrame::BulkString(string)) = raw_frame.clone() {
             string
         } else {
-            panic!("bad input: {:?}", raw_frame)
+            panic!("bad input: {raw_frame:?}")
         };
 
         assert_eq!(rewritten, expected_string);

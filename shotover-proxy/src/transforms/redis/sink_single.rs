@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 
+use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
-use metrics::{counter, register_counter, Unit};
-use redis_protocol::resp2::prelude::Frame;
+use metrics::{counter, register_counter};
 use serde::Deserialize;
 use std::pin::Pin;
 use tokio::net::TcpStream;
@@ -60,7 +60,7 @@ impl RedisSinkSingle {
             outbound: None,
             chain_name: chain_name.clone(),
         };
-        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => redis_sink.get_name());
+        register_counter!("failed_requests", "chain" => chain_name, "transform" => redis_sink.get_name());
 
         redis_sink
     }
@@ -108,7 +108,7 @@ impl Transform for RedisSinkSingle {
             Some(a) => {
                 if let Ok(ref messages) = a {
                     for message in messages {
-                        if let RawFrame::Redis(Frame::Error(_)) = message.original {
+                        if let RawFrame::Redis(RedisFrame::Error(_)) = message.original {
                             counter!("failed_requests", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
                         }
                     }

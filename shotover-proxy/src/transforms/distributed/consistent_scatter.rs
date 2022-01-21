@@ -216,7 +216,7 @@ impl Transform for ConsistentScatter {
                     .original_chain
                     .validate()
                     .into_iter()
-                    .map(|x| format!("  {}", x))
+                    .map(|x| format!("  {x}"))
             })
             .collect::<Vec<String>>();
 

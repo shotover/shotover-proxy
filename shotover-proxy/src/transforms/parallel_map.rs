@@ -130,7 +130,7 @@ impl Transform for ParallelMap {
                 chain
                     .validate()
                     .iter()
-                    .map(|x| format!("  {}", x))
+                    .map(|x| format!("  {x}"))
                     .collect::<Vec<String>>()
             })
             .collect::<Vec<String>>();

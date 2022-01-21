@@ -73,10 +73,10 @@ fn wrap_command(qm: &mut QueryMessage) -> Result<()> {
                 })
                 .join(",");
 
-            let original_pcall = format!(r###"redis.call({})"###, original_command);
+            let original_pcall = format!(r###"redis.call({original_command})"###);
             let last_used_pcall = r###"redis.call('OBJECT', 'IDLETIME', KEYS[1])"###;
 
-            let script = format!("return {{{},{}}}", original_pcall, last_used_pcall);
+            let script = format!("return {{{original_pcall},{last_used_pcall}}}");
             debug!("\n\nGenerated eval script for timestamp: {}\n\n", script);
             let commands = vec![
                 Value::Bytes(Bytes::from_static(b"EVAL")),

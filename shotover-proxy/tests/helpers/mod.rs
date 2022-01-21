@@ -39,9 +39,9 @@ impl ShotoverManager {
             ..ConfigOpts::default()
         };
         let spawn = Runner::new(opts)
-            .unwrap_or_else(|x| panic!("{} occurred processing {:?}", x, topology_path))
+            .unwrap_or_else(|x| panic!("{x} occurred processing {topology_path:?}"))
             .with_observability_interface()
-            .unwrap_or_else(|x| panic!("{} occurred processing {:?}", x, topology_path))
+            .unwrap_or_else(|x| panic!("{x} occurred processing {topology_path:?}"))
             .run_spawn();
 
         // If we allow the tracing_guard to be dropped then the following tests in the same file will not get tracing so we mem::forget it.
@@ -64,7 +64,7 @@ impl ShotoverManager {
             ..ConfigOpts::default()
         };
         let spawn = Runner::new(opts)
-            .unwrap_or_else(|x| panic!("{} occurred processing {:?}", x, topology_path))
+            .unwrap_or_else(|x| panic!("{x} occurred processing {topology_path:?}"))
             .run_spawn();
 
         // If we allow the tracing_guard to be dropped then the following tests in the same file will not get tracing so we mem::forget it.
@@ -155,7 +155,7 @@ impl Drop for ShotoverManager {
         if std::thread::panicking() {
             // If already panicking do not panic while attempting to shutdown shotover in order to avoid a double panic.
             if let Err(err) = self.shutdown_shotover() {
-                println!("Failed to shutdown shotover: {}", err)
+                println!("Failed to shutdown shotover: {err}")
             }
         } else {
             self.shutdown_shotover().unwrap();
@@ -174,7 +174,7 @@ impl Drop for ShotoverProcess {
             if let Err(err) =
                 nix::sys::signal::kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL)
             {
-                println!("Failed to shutdown ShotoverProcess {}", err);
+                println!("Failed to shutdown ShotoverProcess {err}");
             }
         }
     }

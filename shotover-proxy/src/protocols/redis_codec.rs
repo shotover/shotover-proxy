@@ -3,10 +3,12 @@ use crate::message::{
     Value,
 };
 use crate::protocols::RawFrame;
+use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
-use redis_protocol::resp2::prelude::*;
+use redis_protocol::resp2::prelude::decode;
+use redis_protocol::resp2::prelude::encode_bytes;
 use std::collections::{BTreeMap, HashMap};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info, trace, warn};
@@ -22,14 +24,14 @@ pub enum DecodeType {
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
     decode_type: DecodeType,
-    current_frames: Vec<Frame>,
+    current_frames: Vec<RedisFrame>,
     enable_metadata: bool,
 }
 
 #[inline]
-pub fn redis_query_type(frame: &Frame) -> QueryType {
-    if let Frame::Array(frames) = frame {
-        if let Some(Frame::BulkString(bytes)) = frames.get(0) {
+pub fn redis_query_type(frame: &RedisFrame) -> QueryType {
+    if let RedisFrame::Array(frames) = frame {
+        if let Some(RedisFrame::BulkString(bytes)) = frames.get(0) {
             return match bytes.to_ascii_uppercase().as_slice() {
                 b"APPEND" | b"BITCOUNT" | b"STRLEN" | b"GET" | b"GETRANGE" | b"MGET"
                 | b"LRANGE" | b"LINDEX" | b"LLEN" | b"SCARD" | b"SISMEMBER" | b"SMEMBERS"
@@ -46,13 +48,13 @@ pub fn redis_query_type(frame: &Frame) -> QueryType {
 fn get_keys(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    frames: Vec<Frame>,
+    frames: Vec<RedisFrame>,
 ) -> Result<()> {
     let mut keys_storage = vec![];
     for frame in frames {
-        if let Frame::BulkString(v) = frame {
+        if let RedisFrame::BulkString(v) = frame {
             fields.insert(String::from_utf8(v.clone())?, Value::None);
-            keys_storage.push(Frame::BulkString(v).into());
+            keys_storage.push(RedisFrame::BulkString(v).into());
         }
     }
     keys.insert("key".to_string(), Value::List(keys_storage));
@@ -62,16 +64,16 @@ fn get_keys(
 fn get_key_multi_values(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    mut frames: Vec<Frame>,
+    mut frames: Vec<RedisFrame>,
 ) -> Result<()> {
-    if let Some(Frame::BulkString(v)) = frames.pop() {
+    if let Some(RedisFrame::BulkString(v)) = frames.pop() {
         fields.insert(
             String::from_utf8(v.clone())?,
             Value::List(frames.into_iter().map(|x| x.into()).collect()),
         );
         keys.insert(
             "key".to_string(),
-            Value::List(vec![Frame::BulkString(v).into()]),
+            Value::List(vec![RedisFrame::BulkString(v).into()]),
         );
     }
     Ok(())
@@ -80,12 +82,12 @@ fn get_key_multi_values(
 fn get_key_map(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    mut frames: Vec<Frame>,
+    mut frames: Vec<RedisFrame>,
 ) -> Result<()> {
-    if let Some(Frame::BulkString(v)) = frames.pop() {
+    if let Some(RedisFrame::BulkString(v)) = frames.pop() {
         let mut values = BTreeMap::new();
         while !frames.is_empty() {
-            if let Some(Frame::BulkString(field)) = frames.pop() {
+            if let Some(RedisFrame::BulkString(field)) = frames.pop() {
                 if let Some(frame) = frames.pop() {
                     values.insert(String::from_utf8(field)?, frame.into());
                 }
@@ -94,7 +96,7 @@ fn get_key_map(
         fields.insert(String::from_utf8(v.clone())?, Value::Document(values));
         keys.insert(
             "key".to_string(),
-            Value::List(vec![Frame::BulkString(v).into()]),
+            Value::List(vec![RedisFrame::BulkString(v).into()]),
         );
     }
     Ok(())
@@ -103,12 +105,12 @@ fn get_key_map(
 fn get_key_values(
     fields: &mut HashMap<String, Value>,
     keys: &mut HashMap<String, Value>,
-    mut frames: Vec<Frame>,
+    mut frames: Vec<RedisFrame>,
 ) -> Result<()> {
     let mut keys_storage: Vec<Value> = vec![];
     while !frames.is_empty() {
-        if let Some(Frame::BulkString(k)) = frames.pop() {
-            keys_storage.push(Frame::BulkString(k.clone()).into());
+        if let Some(RedisFrame::BulkString(k)) = frames.pop() {
+            keys_storage.push(RedisFrame::BulkString(k.clone()).into());
             if let Some(frame) = frames.pop() {
                 fields.insert(String::from_utf8(k)?, frame.into());
             }
@@ -118,17 +120,17 @@ fn get_key_values(
     Ok(())
 }
 
-fn handle_redis_array_query(commands_vec: Vec<Frame>) -> Result<QueryMessage> {
+fn handle_redis_array_query(commands_vec: Vec<RedisFrame>) -> Result<QueryMessage> {
     let mut primary_key = HashMap::new();
     let mut query_values = HashMap::new();
     let mut query_type = QueryType::Write;
-    let mut commands: Vec<Frame> = commands_vec.iter().cloned().rev().collect_vec();
+    let mut commands: Vec<RedisFrame> = commands_vec.iter().cloned().rev().collect_vec();
 
     // This should be a command from the server
     // Behaviour cribbed from:
     // https://redis.io/commands and
     // https://gist.github.com/LeCoupa/1596b8f359ad8812c7271b5322c30946
-    if let Some(Frame::BulkString(command)) = commands.pop() {
+    if let Some(RedisFrame::BulkString(command)) = commands.pop() {
         match command.to_ascii_uppercase().as_slice() {
             b"APPEND" => {
                 get_key_values(&mut query_values, &mut primary_key, commands)?;
@@ -377,45 +379,45 @@ fn handle_redis_array_query(commands_vec: Vec<Frame>) -> Result<QueryMessage> {
     }
 }
 
-pub fn process_redis_frame_response(frame: &Frame) -> Result<QueryResponse> {
+pub fn process_redis_frame_response(frame: &RedisFrame) -> Result<QueryResponse> {
     match frame.clone() {
-        Frame::SimpleString(string) => Ok(QueryResponse {
+        RedisFrame::SimpleString(string) => Ok(QueryResponse {
             matching_query: None,
             result: Some(Value::Strings(string)),
             error: None,
             response_meta: None,
         }),
-        Frame::BulkString(bulkstring) => Ok(QueryResponse {
+        RedisFrame::BulkString(bulkstring) => Ok(QueryResponse {
             matching_query: None,
             result: Some(Value::Bytes(Bytes::from(bulkstring))),
             error: None,
             response_meta: None,
         }),
-        Frame::Array(frames) => Ok(QueryResponse {
+        RedisFrame::Array(frames) => Ok(QueryResponse {
             matching_query: None,
             result: Some(Value::List(frames.into_iter().map(|f| f.into()).collect())),
             error: None,
             response_meta: None,
         }),
-        Frame::Integer(integer) => Ok(QueryResponse {
+        RedisFrame::Integer(integer) => Ok(QueryResponse {
             matching_query: None,
             result: Some(Value::Integer(integer, IntSize::I32)),
             error: None,
             response_meta: None,
         }),
-        Frame::Error(error) => Ok(QueryResponse {
+        RedisFrame::Error(error) => Ok(QueryResponse {
             matching_query: None,
             result: None,
             error: Some(Value::Strings(error)),
             response_meta: None,
         }),
-        Frame::Null => Ok(QueryResponse::empty()),
+        RedisFrame::Null => Ok(QueryResponse::empty()),
     }
 }
 
-pub fn process_redis_frame_query(frame: &Frame) -> Result<QueryMessage> {
+pub fn process_redis_frame_query(frame: &RedisFrame) -> Result<QueryMessage> {
     match frame.clone() {
-        Frame::SimpleString(string) => Ok(QueryMessage {
+        RedisFrame::SimpleString(string) => Ok(QueryMessage {
             query_string: string,
             namespace: vec![],
             primary_key: Default::default(),
@@ -424,7 +426,7 @@ pub fn process_redis_frame_query(frame: &Frame) -> Result<QueryMessage> {
             query_type: QueryType::ReadWrite,
             ast: None,
         }),
-        Frame::BulkString(bulkstring) => Ok(QueryMessage {
+        RedisFrame::BulkString(bulkstring) => Ok(QueryMessage {
             query_string: String::from_utf8_lossy(bulkstring.as_ref()).to_string(),
             namespace: vec![],
             primary_key: Default::default(),
@@ -433,9 +435,10 @@ pub fn process_redis_frame_query(frame: &Frame) -> Result<QueryMessage> {
             query_type: QueryType::ReadWrite,
             ast: None,
         }),
-        Frame::Array(frames) => handle_redis_array_query(frames),
-        Frame::Integer(integer) => Ok(QueryMessage {
-            query_string: format!("{}", integer),
+
+        RedisFrame::Array(frames) => handle_redis_array_query(frames),
+        RedisFrame::Integer(integer) => Ok(QueryMessage {
+            query_string: integer.to_string(),
             namespace: vec![],
             primary_key: Default::default(),
             query_values: None,
@@ -443,7 +446,7 @@ pub fn process_redis_frame_query(frame: &Frame) -> Result<QueryMessage> {
             query_type: QueryType::ReadWrite,
             ast: None,
         }),
-        Frame::Error(error) => Ok(QueryMessage {
+        RedisFrame::Error(error) => Ok(QueryMessage {
             query_string: error,
             namespace: vec![],
             primary_key: Default::default(),
@@ -452,12 +455,12 @@ pub fn process_redis_frame_query(frame: &Frame) -> Result<QueryMessage> {
             query_type: QueryType::ReadWrite,
             ast: None,
         }),
-        Frame::Null => Ok(QueryMessage::empty()),
+        RedisFrame::Null => Ok(QueryMessage::empty()),
     }
 }
 
 #[inline]
-fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
+fn get_redis_frame(rf: RawFrame) -> Result<RedisFrame> {
     if let RawFrame::Redis(frame) = rf {
         Ok(frame)
     } else {
@@ -467,7 +470,7 @@ fn get_redis_frame(rf: RawFrame) -> Result<Frame> {
 }
 
 impl RedisCodec {
-    fn encode_message(&mut self, item: Message) -> Result<Frame> {
+    fn encode_message(&mut self, item: Message) -> Result<RedisFrame> {
         let frame = if !item.modified {
             get_redis_frame(item.original)?
         } else {
@@ -489,7 +492,7 @@ impl RedisCodec {
         }
     }
 
-    pub fn process_redis_bulk(&self, frames: Vec<Frame>) -> Result<Messages> {
+    pub fn process_redis_bulk(&self, frames: Vec<RedisFrame>) -> Result<Messages> {
         trace!("processing bulk response {:?}", frames);
         frames
             .into_iter()
@@ -518,28 +521,28 @@ impl RedisCodec {
             .collect()
     }
 
-    fn build_redis_response_frame(resp: QueryResponse) -> Frame {
+    fn build_redis_response_frame(resp: QueryResponse) -> RedisFrame {
         if let Some(result) = resp.result {
             return result.into();
         }
         if let Some(Value::Strings(s)) = resp.error {
-            return Frame::Error(s);
+            return RedisFrame::Error(s);
         }
 
         debug!("{:?}", resp);
-        Frame::SimpleString("OK".to_string())
+        RedisFrame::SimpleString("OK".to_string())
     }
 
-    fn build_redis_query_frame(query: QueryMessage) -> Frame {
+    fn build_redis_query_frame(query: QueryMessage) -> RedisFrame {
         match query.ast {
             Some(ASTHolder::Commands(Value::List(ast))) => {
-                Frame::Array(ast.into_iter().map(|v| v.into()).collect())
+                RedisFrame::Array(ast.into_iter().map(|v| v.into()).collect())
             }
-            _ => Frame::SimpleString(query.query_string),
+            _ => RedisFrame::SimpleString(query.query_string),
         }
     }
 
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<Frame>>> {
+    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<RedisFrame>>> {
         while src.remaining() != 0 {
             trace!("remaining {}", src.remaining());
 
@@ -574,7 +577,7 @@ impl RedisCodec {
         }
     }
 
-    fn encode_raw(&mut self, item: Frame, dst: &mut BytesMut) -> Result<()> {
+    fn encode_raw(&mut self, item: RedisFrame, dst: &mut BytesMut) -> Result<()> {
         encode_bytes(dst, &item)
             .map(|_| ())
             .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))

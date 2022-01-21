@@ -364,7 +364,7 @@ impl Transform for SimpleRedisCache {
             .cache_chain
             .validate()
             .iter()
-            .map(|x| format!("  {}", x))
+            .map(|x| format!("  {x}"))
             .collect::<Vec<String>>();
 
         if !errors.is_empty() {
@@ -375,23 +375,24 @@ impl Transform for SimpleRedisCache {
     }
 
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut updates = 0_i32;
-        {
-            for m in &mut message_wrapper.messages {
-                if let RawFrame::Cassandra(Frame {
-                    opcode: Opcode::Query,
-                    ..
-                }) = &m.original
-                {
-                    m.generate_message_details_query();
-                    if m.get_query_type() == QueryType::Write {
-                        updates += 1;
-                    }
+        let mut updates = false;
+
+        for m in &mut message_wrapper.messages {
+            if let RawFrame::Cassandra(Frame {
+                opcode: Opcode::Query,
+                ..
+            }) = &m.original
+            {
+                m.generate_message_details_query();
+                if m.get_query_type() == QueryType::Write {
+                    updates = true;
+                    break;
                 }
             }
         }
 
-        if updates == 0 {
+        // If there are no write queries (all queries are reads) we can use the cache
+        if !updates {
             match self
                 .get_or_update_from_cache(message_wrapper.messages.clone())
                 .await
@@ -464,7 +465,7 @@ mod test {
 
         for token in tokens {
             command_buffer.push_str(&format!("${}\r\n", token.len()));
-            command_buffer.push_str(&format!("{}\r\n", token));
+            command_buffer.push_str(&format!("{token}\r\n"));
         }
 
         command_buffer

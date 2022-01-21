@@ -8,7 +8,7 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use metrics::{counter, register_counter, Unit};
+use metrics::{counter, register_counter};
 use serde::Deserialize;
 use tracing::trace;
 
@@ -93,7 +93,7 @@ impl Tee {
             timeout_micros,
         };
 
-        register_counter!("tee_dropped_messages", Unit::Count, "chain" => tee.get_name());
+        register_counter!("tee_dropped_messages", "chain" => tee.get_name());
 
         tee
     }
@@ -113,7 +113,7 @@ impl Transform for Tee {
                 .original_chain
                 .validate()
                 .iter()
-                .map(|x| format!("  {}", x))
+                .map(|x| format!("  {x}"))
                 .collect::<Vec<String>>();
 
             if !errors.is_empty() {
