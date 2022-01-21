@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt, TryFutureExt};
-use metrics::{counter, register_counter, Unit};
+use metrics::{counter, register_counter};
 use rand::prelude::SmallRng;
 use rand::SeedableRng;
 use redis_protocol::types::Redirection;
@@ -109,7 +109,7 @@ impl RedisSinkCluster {
             token: None,
         };
 
-        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => sink_cluster.get_name());
+        register_counter!("failed_requests", "chain" => chain_name, "transform" => sink_cluster.get_name());
 
         Ok(sink_cluster)
     }

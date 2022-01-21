@@ -130,6 +130,7 @@ impl CassandraCodec {
                             }
                         })
                         .collect();
+
                     let count = rows.get(0).unwrap().len() as i32;
                     let metadata = RowsMetadata {
                         flags: RowsMetadataFlags::empty(),

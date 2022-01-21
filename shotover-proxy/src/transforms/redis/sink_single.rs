@@ -4,7 +4,7 @@ use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
-use metrics::{counter, register_counter, Unit};
+use metrics::{counter, register_counter};
 use serde::Deserialize;
 use std::pin::Pin;
 use tokio::net::TcpStream;
@@ -60,7 +60,7 @@ impl RedisSinkSingle {
             outbound: None,
             chain_name: chain_name.clone(),
         };
-        register_counter!("failed_requests", Unit::Count, "chain" => chain_name, "transform" => redis_sink.get_name());
+        register_counter!("failed_requests", "chain" => chain_name, "transform" => redis_sink.get_name());
 
         redis_sink
     }

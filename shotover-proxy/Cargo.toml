@@ -43,8 +43,8 @@ uuid = { version = "0.8.2", features = ["serde"]}
 bigdecimal = {version ="0.3.0", features = ["serde"]}
 
 #Observability
-metrics = "0.17.0"
-metrics-exporter-prometheus = "0.7.0"
+metrics = "0.18.0"
+metrics-exporter-prometheus = "0.8.0"
 tracing = { version = "0.1.15", features = ["release_max_level_info"] }
 tracing-subscriber = { version = "0.3.1", features = ["env-filter"] }
 tracing-log = { version = "0.1.1", features = ["env_logger"] }
