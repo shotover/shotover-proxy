@@ -1,11 +1,7 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::sources::cassandra_source::CassandraConfig;
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::cassandra::sink_single::CassandraSinkSingleConfig;
 use crate::transforms::chain::TransformChain;
-use crate::transforms::kafka_sink::KafkaSinkConfig;
-use crate::transforms::tee::TeeConfig;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
@@ -191,70 +187,6 @@ impl Topology {
             chain_config: config.chain_config,
             named_topics: built_topics,
             source_to_chain_mapping: config.source_to_chain_mapping,
-        }
-    }
-
-    pub fn get_demo_config() -> Topology {
-        let kafka_transform_config_obj = TransformsConfig::KafkaSink(KafkaSinkConfig {
-            keys: [
-                ("bootstrap.servers", "127.0.0.1:9092"),
-                ("message.timeout.ms", "5000"),
-            ]
-            .iter()
-            .map(|(x, y)| (String::from(*x), String::from(*y)))
-            .collect(),
-            topic: "test_topic".to_string(),
-        });
-
-        let listen_addr = "127.0.0.1:9043".to_string();
-
-        let server_addr = "127.0.0.1:9042".to_string();
-
-        let codec_config = TransformsConfig::CassandraSinkSingle(CassandraSinkSingleConfig {
-            address: server_addr,
-            result_processing: true,
-        });
-
-        let mut cassandra_ks: HashMap<String, Vec<String>> = HashMap::new();
-        cassandra_ks.insert("system.local".to_string(), vec!["key".to_string()]);
-        cassandra_ks.insert("test.simple".to_string(), vec!["pk".to_string()]);
-        cassandra_ks.insert(
-            "test.clustering".to_string(),
-            vec!["pk".to_string(), "clustering".to_string()],
-        );
-
-        let cassandra_source = SourcesConfig::Cassandra(CassandraConfig {
-            listen_addr,
-            cassandra_ks,
-            query_processing: Some(true),
-            connection_limit: None,
-            hard_connection_limit: None,
-        });
-
-        let tee_conf = TransformsConfig::Tee(TeeConfig {
-            behavior: None,
-            timeout_micros: None,
-            chain: vec![kafka_transform_config_obj],
-            buffer_size: None,
-        });
-
-        let mut sources: HashMap<String, SourcesConfig> = HashMap::new();
-        sources.insert(String::from("cassandra_prod"), cassandra_source);
-
-        let mut chain_config: HashMap<String, Vec<TransformsConfig>> = HashMap::new();
-        chain_config.insert(String::from("main_chain"), vec![tee_conf, codec_config]);
-
-        let mut named_topics: HashMap<String, usize> = HashMap::new();
-        named_topics.insert(String::from("test_topic"), 1);
-
-        let mut source_to_chain_mapping: HashMap<String, String> = HashMap::new();
-        source_to_chain_mapping.insert(String::from("cassandra_prod"), String::from("main_chain"));
-
-        Topology {
-            sources,
-            chain_config,
-            named_topics,
-            source_to_chain_mapping,
         }
     }
 }
