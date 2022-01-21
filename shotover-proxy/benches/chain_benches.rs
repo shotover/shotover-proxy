@@ -5,6 +5,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use shotover_proxy::message::{Message, QueryMessage, QueryType};
 use shotover_proxy::protocols::RawFrame;
 use shotover_proxy::transforms::chain::TransformChain;
+use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::null::Null;
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
@@ -54,7 +55,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChain::new_no_shared_state(
             vec![
                 Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
-                Transforms::Null(Null::default()),
+                Transforms::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
             ],
             "bench".to_string(),
         );
