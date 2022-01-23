@@ -52,16 +52,16 @@ impl Transform for QueryTypeFilter {
 
 #[cfg(test)]
 mod test {
-    use crate::message::{Message, MessageDetails, QueryMessage, QueryType};
+    use crate::message::{Message, QueryMessage, QueryType};
     use crate::protocols::RawFrame;
+    use crate::protocols::RedisFrame;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Transforms, Wrapper};
-    use anyhow::Result;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_filter() -> Result<()> {
-        let mut coalesce = QueryTypeFilter {
+    async fn test_filter() {
+        let mut filter_transform = QueryTypeFilter {
             filter: QueryType::Read,
         };
 
@@ -69,7 +69,7 @@ mod test {
 
         let messages: Vec<_> = (0..26)
             .map(|i| {
-                let qt = if i % 2 == 0 {
+                let query_type = if i % 2 == 0 {
                     QueryType::Read
                 } else {
                     QueryType::Write
@@ -82,31 +82,32 @@ mod test {
                         primary_key: Default::default(),
                         query_values: None,
                         projection: None,
-                        query_type: qt,
+                        query_type,
                         ast: None,
                     },
                     true,
-                    RawFrame::None,
+                    RawFrame::Redis(RedisFrame::BulkString("FOO".into())),
                 )
             })
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages);
         message_wrapper.transforms = vec![&mut loopback];
-        let result = coalesce.transform(message_wrapper).await?;
+        let result = filter_transform.transform(message_wrapper).await.unwrap();
+
         assert_eq!(result.len(), 26);
-        let any = result.iter().find(|m| {
-            if let MessageDetails::Response(qr) = &m.details {
-                if let Some(qm) = &qr.matching_query {
-                    return qm.query_type == QueryType::Read;
-                }
+        for (i, message) in result.iter().enumerate() {
+            if i % 2 == 0 {
+                assert_eq!(
+                    message.original,
+                    RawFrame::Redis(RedisFrame::Error(
+                        "ERR Message was filtered out by shotover".into()
+                    )),
+                )
+            } else {
+                // Turned into RawFrame::None by the loopback transform
+                assert_eq!(message.original, RawFrame::None)
             }
-
-            false
-        });
-
-        assert_eq!(any, None);
-
-        Ok(())
+        }
     }
 }
