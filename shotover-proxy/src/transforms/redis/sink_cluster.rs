@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
+use bytes::Bytes;
+use bytes_utils::string::Str;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt, TryFutureExt};
@@ -170,8 +172,10 @@ impl RedisSinkCluster {
                                         }
                                     }))
                                 }
-                                Ok((_, Err(e))) => acc.push(RedisFrame::Error(e.to_string())),
-                                Err(e) => acc.push(RedisFrame::Error(e.to_string())),
+                                Ok((_, Err(e))) => {
+                                    acc.push(RedisFrame::Error(e.to_string().into()))
+                                }
+                                Err(e) => acc.push(RedisFrame::Error(e.to_string().into())),
                             }
                             acc
                         })
@@ -464,7 +468,7 @@ impl RedisSinkCluster {
     }) {
         error!("failed to count failed request - missing chain name: {}", e);
     }
-        send_frame_response(one_tx, RedisFrame::Error(message.to_string()))
+        send_frame_response(one_tx, RedisFrame::Error(message.to_string().into()))
             .map_err(|_| anyhow!("failed to send error: {}", message))
     }
 
@@ -683,8 +687,8 @@ async fn get_topology_from_node(
     let return_chan_rx = send_frame_request(
         &sender,
         RedisFrame::Array(vec![
-            RedisFrame::BulkString(b"CLUSTER".to_vec()),
-            RedisFrame::BulkString(b"SLOTS".to_vec()),
+            RedisFrame::BulkString("CLUSTER".into()),
+            RedisFrame::BulkString("SLOTS".into()),
         ]),
     )?;
 
@@ -692,9 +696,9 @@ async fn get_topology_from_node(
         RedisFrame::Array(results) => {
             parse_slots(&results).map_err(|e| TransformError::Protocol(e.to_string()))
         }
-        RedisFrame::Error(message) => Err(TransformError::Upstream(RedisError::from_message(
-            message.as_str(),
-        ))),
+        RedisFrame::Error(message) => {
+            Err(TransformError::Upstream(RedisError::from_message(&message)))
+        }
         frame => Err(TransformError::Protocol(format!(
             "unexpected response for cluster slots: {frame:?}"
         ))),
@@ -716,7 +720,7 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 
 #[inline(always)]
 fn send_simple_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
-    send_frame_response(one_tx, RedisFrame::SimpleString(message.to_string()))
+    send_frame_response(one_tx, RedisFrame::SimpleString(message.to_string().into()))
         .map_err(|_| anyhow!("failed to send simple: {}", message))
 }
 
@@ -818,7 +822,8 @@ impl Transform for RedisSinkCluster {
                         MessageDetails::Response(QueryResponse::empty()),
                         false,
                         RawFrame::Redis(RedisFrame::Error(
-                            "ERR Could not route request".to_string(),
+                            Str::from_inner(Bytes::from_static(b"ERR Could not route request"))
+                                .unwrap(),
                         )),
                     )]),
                 ))
@@ -865,11 +870,11 @@ impl Transform for RedisSinkCluster {
 #[derive(Clone, PartialEq, Eq, Hash, Derivative)]
 #[derivative(Debug)]
 pub struct UsernamePasswordToken {
-    pub username: Option<Vec<u8>>,
+    pub username: Option<Bytes>,
 
     // Reduce risk of logging passwords.
     #[derivative(Debug = "ignore")]
-    pub password: Vec<u8>,
+    pub password: Bytes,
 }
 
 #[derive(Clone)]
@@ -884,7 +889,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
         sender: &mut UnboundedSender<Request>,
         token: &UsernamePasswordToken,
     ) -> Result<(), TransformError> {
-        let mut auth_args = vec![RedisFrame::BulkString(b"AUTH".to_vec())];
+        let mut auth_args = vec![RedisFrame::BulkString(Bytes::from_static(b"AUTH"))];
 
         // Support non-ACL / username-less.
         if let Some(username) = &token.username {
@@ -901,7 +906,7 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
                 Ok(())
             }
             RedisFrame::SimpleString(s) => Err(TransformError::Protocol(format!(
-                "expected OK but got: {s}"
+                "expected OK but got: {s:?}"
             ))),
             RedisFrame::Error(e) => Err(TransformError::Upstream(RedisError::from_message(&e))),
             f => Err(TransformError::Protocol(format!(
