@@ -40,8 +40,6 @@ pub struct RedisSinkSingle {
     tls: Option<TlsConnector>,
     outbound: Option<Framed<Pin<Box<dyn AsyncStream + Send + Sync>>, RedisCodec>>,
     chain_name: String,
-
-    /// Metric recording failed requests
     failed_requests: Counter,
 }
 

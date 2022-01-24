@@ -100,7 +100,6 @@ pub struct TcpCodecListener<C: Codec> {
     /// Keep track of how many messages we have received so we can use it as a request id.
     message_count: u64,
 
-    /// Metric recording shotover available connections
     available_connections_gauge: Gauge,
 }
 
