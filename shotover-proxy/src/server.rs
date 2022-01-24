@@ -101,7 +101,7 @@ pub struct TcpCodecListener<C: Codec> {
     message_count: u64,
 
     /// Metric recording shotover available connections
-    gauge: Gauge,
+    available_connections_gauge: Gauge,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -116,9 +116,9 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
     ) -> Self {
-        let gauge =
+        let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
-        gauge.set(limit_connections.available_permits() as f64);
+        available_connections_gauge.set(limit_connections.available_permits() as f64);
 
         TcpCodecListener {
             chain,
@@ -131,7 +131,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             trigger_shutdown_rx,
             tls,
             message_count: 0,
-            gauge,
+            available_connections_gauge,
         }
     }
 
@@ -194,7 +194,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             let socket = self.accept().await?;
 
             debug!("got socket");
-            self.gauge
+            self.available_connections_gauge
                 .set(self.limit_connections.available_permits() as f64);
 
             let peer = socket

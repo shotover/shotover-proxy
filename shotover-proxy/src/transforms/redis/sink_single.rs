@@ -42,7 +42,7 @@ pub struct RedisSinkSingle {
     chain_name: String,
 
     /// Metric recording failed requests
-    counter: Counter,
+    failed_requests: Counter,
 }
 
 impl Clone for RedisSinkSingle {
@@ -57,14 +57,14 @@ impl Clone for RedisSinkSingle {
 
 impl RedisSinkSingle {
     pub fn new(address: String, tls: Option<TlsConnector>, chain_name: String) -> RedisSinkSingle {
-        let counter = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "RedisSinkSingle");
+        let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "RedisSinkSingle");
 
         RedisSinkSingle {
             address,
             tls,
             outbound: None,
             chain_name,
-            counter,
+            failed_requests,
         }
     }
 }
@@ -108,7 +108,7 @@ impl Transform for RedisSinkSingle {
                 if let Ok(ref messages) = a {
                     for message in messages {
                         if let RawFrame::Redis(RedisFrame::Error(_)) = message.original {
-                            self.counter.increment(1);
+                            self.failed_requests.increment(1);
                         }
                     }
                 }

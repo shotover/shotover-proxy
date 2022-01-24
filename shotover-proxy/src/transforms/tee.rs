@@ -18,9 +18,7 @@ pub struct Tee {
     pub buffer_size: usize,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
-
-    /// Metric recording dropped messages
-    counter: Counter,
+    dropped_messages: Counter,
 }
 
 impl Clone for Tee {
@@ -34,7 +32,7 @@ impl Clone for Tee {
             buffer_size: self.buffer_size,
             behavior: self.behavior.clone(),
             timeout_micros: self.timeout_micros,
-            counter: self.counter.clone(),
+            dropped_messages: self.dropped_messages.clone(),
         }
     }
 }
@@ -88,7 +86,7 @@ impl Tee {
         behavior: ConsistencyBehavior,
         timeout_micros: Option<u64>,
     ) -> Self {
-        let counter = register_counter!("tee_dropped_messages", "chain" => "Tee");
+        let dropped_messages = register_counter!("tee_dropped_messages", "chain" => "Tee");
 
         Tee {
             tx,
@@ -96,7 +94,7 @@ impl Tee {
             buffer_size,
             behavior,
             timeout_micros,
-            counter,
+            dropped_messages,
         }
     }
 }
@@ -139,7 +137,7 @@ impl Transform for Tee {
                 match tee_result {
                     Ok(_) => {}
                     Err(e) => {
-                        self.counter.increment(1);
+                        self.dropped_messages.increment(1);
                         trace!("MPSC error {}", e);
                     }
                 }

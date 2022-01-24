@@ -43,9 +43,7 @@ pub struct CassandraSinkSingle {
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
     chain_name: String,
-
-    /// Metric recording failed requests
-    counter: Counter,
+    failed_requests: Counter,
 }
 
 impl Clone for CassandraSinkSingle {
@@ -56,7 +54,7 @@ impl Clone for CassandraSinkSingle {
 
 impl CassandraSinkSingle {
     pub fn new(address: String, bypass: bool, chain_name: String) -> CassandraSinkSingle {
-        let counter = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
+        let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
 
         CassandraSinkSingle {
             address,
@@ -64,7 +62,7 @@ impl CassandraSinkSingle {
             cassandra_ks: HashMap::new(),
             bypass,
             chain_name,
-            counter,
+            failed_requests,
         }
     }
 }
@@ -127,7 +125,7 @@ impl CassandraSinkSingle {
                                                 ..
                                             }) = &message.original
                                             {
-                                                self.counter.increment(1);
+                                                self.failed_requests.increment(1);
                                             }
                                         }
                                         responses.append(&mut resp);
