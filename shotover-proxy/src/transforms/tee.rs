@@ -150,20 +150,21 @@ impl Transform for Tee {
                     message_wrapper.call_next_transform()
                 );
                 let tee_response = tee_result?;
-                let chain_response = chain_result?;
+                let mut chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
-                    Ok(vec!(Message::new_response(
-                        QueryResponse::empty_with_error(Some(Value::Strings(
-                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch"
-                                .to_string(),
-                        ))),
-                        true,
-                        RawFrame::None,
-                    )))
-                } else {
-                    Ok(chain_response)
+                    for message in &mut chain_response {
+                        *message = Message::new_response(
+                            QueryResponse::empty_with_error(Some(Value::Strings(
+                                "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch"
+                                    .to_string(),
+                            ))),
+                            true,
+                            RawFrame::None,
+                        );
+                    }
                 }
+                Ok(chain_response)
             }
             ConsistencyBehavior::SubchainOnMismatch(_) => {
                 let failed_message = message_wrapper.clone();
