@@ -15,32 +15,6 @@ use tracing::{debug, error, info, trace, Instrument};
 
 type InnerChain = Vec<Transforms>;
 
-/// Stores metrics for this transform chain. `histogram` metrics cannot be stored in this because they cannot be registered without knowing the client details
-#[derive(Clone)]
-struct TransformChainMetrics {
-    chain_total: Counter,
-    chain_failures: Counter,
-}
-
-impl TransformChainMetrics {
-    pub fn new(chain_name: String) -> Self {
-        TransformChainMetrics {
-            chain_total: register_counter!("shotover_chain_total", "chain" => chain_name.clone()),
-            chain_failures: register_counter!("shotover_chain_failures", "chain" => chain_name),
-        }
-    }
-
-    /// Increment the chain_total metric
-    pub fn increment_chain_total(&self, value: u64) {
-        self.chain_total.increment(value);
-    }
-
-    /// Increment the chain_failures metric
-    pub fn increment_chain_failures(&self, value: u64) {
-        self.chain_failures.increment(value);
-    }
-}
-
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
 
