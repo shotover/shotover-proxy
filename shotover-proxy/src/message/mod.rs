@@ -83,6 +83,7 @@ impl Message {
         }
     }
 
+    #[must_use]
     pub fn to_filtered_reply(&self) -> Message {
         Message {
             details: MessageDetails::Unknown,
