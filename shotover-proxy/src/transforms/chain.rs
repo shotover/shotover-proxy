@@ -4,8 +4,9 @@ use crate::transforms::{Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use futures::TryFutureExt;
 
+use derivative::Derivative;
 use itertools::Itertools;
-use metrics::{counter, histogram, register_counter, register_histogram};
+use metrics::{histogram, register_counter, register_histogram, Counter};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver as OneReceiver;
 use tokio::time::Duration;
@@ -13,6 +14,32 @@ use tokio::time::Instant;
 use tracing::{debug, error, info, trace, Instrument};
 
 type InnerChain = Vec<Transforms>;
+
+/// Stores metrics for this transform chain. `histogram` metrics cannot be stored in this because they cannot be registered without knowing the client details
+#[derive(Clone)]
+struct TransformChainMetrics {
+    chain_total: Counter,
+    chain_failures: Counter,
+}
+
+impl TransformChainMetrics {
+    pub fn new(chain_name: String) -> Self {
+        TransformChainMetrics {
+            chain_total: register_counter!("shotover_chain_total", "chain" => chain_name.clone()),
+            chain_failures: register_counter!("shotover_chain_failures", "chain" => chain_name),
+        }
+    }
+
+    /// Increment the chain_total metric
+    pub fn increment_chain_total(&self, value: u64) {
+        self.chain_total.increment(value);
+    }
+
+    /// Increment the chain_failures metric
+    pub fn increment_chain_failures(&self, value: u64) {
+        self.chain_failures.increment(value);
+    }
+}
 
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
@@ -22,10 +49,14 @@ type InnerChain = Vec<Transforms>;
 /// Transform chains are defined by the user in Shotover's configuration file and are linked to sources.
 ///
 /// The transform chain is a vector of mutable references to the enum [Transforms] (which is an enum dispatch wrapper around the various transform types).
-#[derive(Debug, Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct TransformChain {
     pub name: String,
     pub chain: InnerChain,
+
+    #[derivative(Debug = "ignore")]
+    metrics: TransformChainMetrics,
 }
 
 #[derive(Debug, Clone)]
@@ -182,26 +213,29 @@ impl TransformChain {
     }
 
     pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
+        let transform_metrics = TransformChainMetrics::new(name.clone());
+
         TransformChain {
             name,
             chain: transform_list,
+            metrics: transform_metrics,
         }
     }
 
     pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
-        register_counter!("shotover_chain_total", "chain" => name.clone());
-        register_counter!("shotover_chain_failures", "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", "chain" => name.clone());
-
         for transform in &transform_list {
             register_counter!("shotover_transform_total", "transform" => transform.get_name());
             register_counter!("shotover_transform_failures", "transform" => transform.get_name());
             register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
         }
 
+        let transform_metrics = TransformChainMetrics::new(name.clone());
+        register_histogram!("shotover_chain_latency", "chain" => name.clone());
+
         TransformChain {
             name,
             chain: transform_list,
+            metrics: transform_metrics,
         }
     }
 
@@ -261,10 +295,11 @@ impl TransformChain {
         wrapper.reset(iter);
 
         let result = wrapper.call_next_transform().await;
-        counter!("shotover_chain_total", 1, "chain" => self.name.clone());
+        self.metrics.increment_chain_total(1);
         if result.is_err() {
-            counter!("shotover_chain_failures", 1, "chain" => self.name.clone())
+            self.metrics.increment_chain_failures(1);
         }
+
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
     }
