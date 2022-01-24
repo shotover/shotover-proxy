@@ -11,7 +11,7 @@ use crate::transforms::{Transform, Transforms, Wrapper};
 use crate::protocols::CassandraFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use metrics::{counter, register_counter};
+use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -37,13 +37,15 @@ impl CassandraSinkSingleConfig {
     }
 }
 
-#[derive(Debug)]
 pub struct CassandraSinkSingle {
     address: String,
     outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
     chain_name: String,
+
+    /// Metric recording failed requests
+    counter: Counter,
 }
 
 impl Clone for CassandraSinkSingle {
@@ -54,21 +56,16 @@ impl Clone for CassandraSinkSingle {
 
 impl CassandraSinkSingle {
     pub fn new(address: String, bypass: bool, chain_name: String) -> CassandraSinkSingle {
-        let sink_single = CassandraSinkSingle {
+        let counter = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
+
+        CassandraSinkSingle {
             address,
             outbound: None,
             cassandra_ks: HashMap::new(),
             bypass,
-            chain_name: chain_name.clone(),
-        };
-
-        register_counter!("failed_requests", "chain" => chain_name, "transform" => sink_single.get_name());
-
-        sink_single
-    }
-
-    fn get_name(&self) -> &'static str {
-        "CassandraSinkSingle"
+            chain_name,
+            counter,
+        }
     }
 }
 
@@ -130,7 +127,7 @@ impl CassandraSinkSingle {
                                                 ..
                                             }) = &message.original
                                             {
-                                                counter!("failed_requests", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
+                                                self.counter.increment(1);
                                             }
                                         }
                                         responses.append(&mut resp);

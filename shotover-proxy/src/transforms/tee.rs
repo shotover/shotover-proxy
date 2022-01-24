@@ -8,17 +8,19 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use metrics::{counter, register_counter};
+use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use tracing::trace;
 
-#[derive(Debug)]
 pub struct Tee {
     pub tx: BufferedChain,
     pub mismatch_chain: Option<BufferedChain>,
     pub buffer_size: usize,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
+
+    /// Metric recording dropped messages
+    counter: Counter,
 }
 
 impl Clone for Tee {
@@ -32,6 +34,7 @@ impl Clone for Tee {
             buffer_size: self.buffer_size,
             behavior: self.behavior.clone(),
             timeout_micros: self.timeout_micros,
+            counter: self.counter.clone(),
         }
     }
 }
@@ -85,17 +88,16 @@ impl Tee {
         behavior: ConsistencyBehavior,
         timeout_micros: Option<u64>,
     ) -> Self {
-        let tee = Tee {
+        let counter = register_counter!("tee_dropped_messages", "chain" => "Tee");
+
+        Tee {
             tx,
             mismatch_chain,
             buffer_size,
             behavior,
             timeout_micros,
-        };
-
-        register_counter!("tee_dropped_messages", "chain" => tee.get_name());
-
-        tee
+            counter,
+        }
     }
 }
 
@@ -137,7 +139,7 @@ impl Transform for Tee {
                 match tee_result {
                     Ok(_) => {}
                     Err(e) => {
-                        counter!("tee_dropped_messages", 1, "chain" => self.get_name());
+                        self.counter.increment(1);
                         trace!("MPSC error {}", e);
                     }
                 }

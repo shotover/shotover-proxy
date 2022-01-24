@@ -4,7 +4,7 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
-use metrics::{gauge, register_gauge};
+use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -99,6 +99,9 @@ pub struct TcpCodecListener<C: Codec> {
 
     /// Keep track of how many messages we have received so we can use it as a request id.
     message_count: u64,
+
+    /// Metric recording shotover available connections
+    gauge: Gauge,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -113,8 +116,9 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
     ) -> Self {
-        register_gauge!("shotover_available_connections", "source" => source_name.clone());
-        gauge!("shotover_available_connections", limit_connections.available_permits() as f64, "source" => source_name.clone());
+        let gauge =
+            register_gauge!("shotover_available_connections", "source" => source_name.clone());
+        gauge.set(limit_connections.available_permits() as f64);
 
         TcpCodecListener {
             chain,
@@ -127,6 +131,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             trigger_shutdown_rx,
             tls,
             message_count: 0,
+            gauge,
         }
     }
 
@@ -189,7 +194,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             let socket = self.accept().await?;
 
             debug!("got socket");
-            gauge!("shotover_available_connections", self.limit_connections.available_permits() as f64, "source" => self.source_name.clone());
+            self.gauge
+                .set(self.limit_connections.available_permits() as f64);
 
             let peer = socket
                 .peer_addr()

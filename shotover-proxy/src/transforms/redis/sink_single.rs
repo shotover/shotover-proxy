@@ -4,7 +4,7 @@ use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
-use metrics::{counter, register_counter};
+use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::pin::Pin;
 use tokio::net::TcpStream;
@@ -40,6 +40,9 @@ pub struct RedisSinkSingle {
     tls: Option<TlsConnector>,
     outbound: Option<Framed<Pin<Box<dyn AsyncStream + Send + Sync>>, RedisCodec>>,
     chain_name: String,
+
+    /// Metric recording failed requests
+    counter: Counter,
 }
 
 impl Clone for RedisSinkSingle {
@@ -54,19 +57,15 @@ impl Clone for RedisSinkSingle {
 
 impl RedisSinkSingle {
     pub fn new(address: String, tls: Option<TlsConnector>, chain_name: String) -> RedisSinkSingle {
-        let redis_sink = RedisSinkSingle {
+        let counter = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "RedisSinkSingle");
+
+        RedisSinkSingle {
             address,
             tls,
             outbound: None,
-            chain_name: chain_name.clone(),
-        };
-        register_counter!("failed_requests", "chain" => chain_name, "transform" => redis_sink.get_name());
-
-        redis_sink
-    }
-
-    fn get_name(&self) -> &'static str {
-        "RedisSinkSingle"
+            chain_name,
+            counter,
+        }
     }
 }
 
@@ -109,7 +108,7 @@ impl Transform for RedisSinkSingle {
                 if let Ok(ref messages) = a {
                     for message in messages {
                         if let RawFrame::Redis(RedisFrame::Error(_)) = message.original {
-                            counter!("failed_requests", 1, "chain" => self.chain_name.clone(), "transform" => self.get_name());
+                            self.counter.increment(1);
                         }
                     }
                 }
