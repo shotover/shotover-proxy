@@ -98,7 +98,7 @@ fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
         }
         Ok(())
     } else {
-        bail!("ClusterTopologyRewrite intercepted an incorrect message")
+        bail!("RedisClusterPortsRewrite intercepted an incorrect message")
     }
 }
 
@@ -118,7 +118,7 @@ fn get_buffer(frame: &mut RawFrame) -> Result<&mut Vec<u8>> {
         }
     }
 
-    bail!("RedisClusterTopologyRewrite intercepted an incorrect message");
+    bail!("RedisClusterPortsRewrite intercepted an incorrect message");
 }
 
 /// Rewrites the ports of a response to a CLUSTER NODES message to `new_port`
