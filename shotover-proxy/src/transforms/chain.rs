@@ -15,32 +15,6 @@ use tracing::{debug, error, info, trace, Instrument};
 
 type InnerChain = Vec<Transforms>;
 
-/// Stores metrics for this transform chain. `histogram` metrics cannot be stored in this because they cannot be registered without knowing the client details
-#[derive(Clone)]
-struct TransformChainMetrics {
-    chain_total: Counter,
-    chain_failures: Counter,
-}
-
-impl TransformChainMetrics {
-    pub fn new(chain_name: String) -> Self {
-        TransformChainMetrics {
-            chain_total: register_counter!("shotover_chain_total", "chain" => chain_name.clone()),
-            chain_failures: register_counter!("shotover_chain_failures", "chain" => chain_name),
-        }
-    }
-
-    /// Increment the chain_total metric
-    pub fn increment_chain_total(&self, value: u64) {
-        self.chain_total.increment(value);
-    }
-
-    /// Increment the chain_failures metric
-    pub fn increment_chain_failures(&self, value: u64) {
-        self.chain_failures.increment(value);
-    }
-}
-
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
 
@@ -56,7 +30,9 @@ pub struct TransformChain {
     pub chain: InnerChain,
 
     #[derivative(Debug = "ignore")]
-    metrics: TransformChainMetrics,
+    chain_total: Counter,
+    #[derivative(Debug = "ignore")]
+    chain_failures: Counter,
 }
 
 #[derive(Debug, Clone)]
@@ -213,12 +189,21 @@ impl TransformChain {
     }
 
     pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
-        let transform_metrics = TransformChainMetrics::new(name.clone());
+        for transform in &transform_list {
+            register_counter!("shotover_transform_total", "transform" => transform.get_name());
+            register_counter!("shotover_transform_failures", "transform" => transform.get_name());
+            register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
+        }
+
+        let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
+        let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
+        register_histogram!("shotover_chain_latency", "chain" => name.clone());
 
         TransformChain {
             name,
             chain: transform_list,
-            metrics: transform_metrics,
+            chain_total,
+            chain_failures,
         }
     }
 
@@ -229,13 +214,15 @@ impl TransformChain {
             register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
         }
 
-        let transform_metrics = TransformChainMetrics::new(name.clone());
+        let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
+        let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
         register_histogram!("shotover_chain_latency", "chain" => name.clone());
 
         TransformChain {
             name,
             chain: transform_list,
-            metrics: transform_metrics,
+            chain_total,
+            chain_failures,
         }
     }
 
@@ -295,9 +282,9 @@ impl TransformChain {
         wrapper.reset(iter);
 
         let result = wrapper.call_next_transform().await;
-        self.metrics.increment_chain_total(1);
+        self.chain_total.increment(1);
         if result.is_err() {
-            self.metrics.increment_chain_failures(1);
+            self.chain_failures.increment(1);
         }
 
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
