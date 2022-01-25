@@ -11,7 +11,7 @@ name: Create Comment
 
 on:
   workflow_run:
-    workflows: [ "Benchmark Run" ]
+    workflows: [ "Benchmarks" ]
 
 # Cancel already running jobs
 concurrency:
