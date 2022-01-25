@@ -3,12 +3,12 @@ use crate::error::ChainResponse;
 use crate::message;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_codec::CassandraCodec;
+use crate::protocols::CassandraFrame;
 use crate::protocols::Frame;
 use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
-use crate::protocols::CassandraFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
@@ -87,6 +87,7 @@ impl CassandraSinkSingle {
                         .connections
                         .get_mut(0)
                         .expect("No connections found");
+
                     let expected_size = messages.len();
                     let results: Result<FuturesOrdered<Receiver<(Message, ChainResponse)>>> =
                         messages

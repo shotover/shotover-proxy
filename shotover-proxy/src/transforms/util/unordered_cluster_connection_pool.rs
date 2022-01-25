@@ -3,9 +3,10 @@ use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::transforms::util::{Request, Response};
 use crate::{message::Message, server::Codec};
+
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
-use halfbrown::HashMap;
+use multimap::MultiMap;
 use std::fmt;
 use std::fmt::Formatter;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -113,10 +114,10 @@ async fn rx_process<C: CodecReadHalf>(
     codec: C,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec);
-    let mut return_channel_map: HashMap<i16, (tokio::sync::oneshot::Sender<Response>, Message)> =
-        HashMap::new();
+    let mut return_channel_map: MultiMap<i16, (tokio::sync::oneshot::Sender<Response>, Message)> =
+        MultiMap::new();
 
-    let mut return_message_map: HashMap<i16, Message> = HashMap::new();
+    let mut return_message_map: MultiMap<i16, Message> = MultiMap::new();
 
     loop {
         tokio::select! {
@@ -130,7 +131,7 @@ async fn rx_process<C: CodecReadHalf>(
                     Ok(req) => {
                         for m in req {
                             if let Frame::Cassandra(frame) = &m.original {
-                                match return_channel_map.remove(&frame.stream_id) {
+                                match return_channel_map.remove_first(&frame.stream_id) {
                                     None => {
                                         return_message_map.insert(frame.stream_id, m);
                                     },
@@ -154,7 +155,7 @@ async fn rx_process<C: CodecReadHalf>(
                 }
 
                 if let Request { messages: orig , return_chan: Some(chan), message_id: Some(id) } = original_request {
-                    match return_message_map.remove(&id) {
+                    match return_message_map.remove_first(&id) {
                         None => {
                             return_channel_map.insert(id, (chan, orig));
                         }

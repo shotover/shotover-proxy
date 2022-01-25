@@ -28,6 +28,7 @@ pin-project-lite = "0.2"
 tokio-openssl = "0.6.2"
 openssl = { version = "0.10.36", features = ["vendored"] }
 async-recursion = "1.0"
+multimap = { git = "https://github.com/conorbros/multimap", branch = "remove-methods" }
 
 # Error handling
 thiserror = "1.0"
@@ -51,7 +52,6 @@ tracing-subscriber = { version = "0.3.1", features = ["env-filter"] }
 tracing-log = { version = "0.1.1", features = ["env_logger"] }
 tracing-appender = "0.2.0"
 hyper = { version = "0.14.14", features = ["server"] }
-halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
