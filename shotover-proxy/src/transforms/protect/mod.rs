@@ -421,9 +421,9 @@ mod protect_transform_tests {
         panic!()
     }
 
-    //#[tokio::test(flavor = "multi_thread")]
+    #[tokio::test(flavor = "multi_thread")]
     //#[ignore] // reason: requires AWS credentials
-    #[allow(unused)]
+    //#[allow(unused)]
     // Had to disable this when the repo went public as we dont have access to github secrets anymore
     async fn test_protect_kms_transform() -> Result<()> {
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
@@ -436,13 +436,13 @@ mod protect_transform_tests {
         protection_table_map.insert("old".to_string(), vec!["col1".to_string()]);
         protection_map.insert("keyspace".to_string(), protection_table_map);
 
+        env::set_var("AWS_ACCESS_KEY_ID","dummy-access-key" );
+        env::set_var( "AWS_SECRET_ACCESS_KEY","dummy-access-key-secret");
+
         let aws_config = KeyManagerConfig::AWSKms {
-            region: env::var("CMK_REGION")
-                .or_else::<String, _>(|_| Ok("US-EAST-1".to_string()))
-                .map_err(|e| anyhow!(e))?,
-            cmk_id: env::var("CMK_ID")
-                .or_else::<String, _>(|_| Ok("alias/InstaProxyDev".to_string()))
-                .map_err(|e| anyhow!(e))?,
+            endpoint : Some("http://localhost:5000".to_string()),
+            region: "us-east-1".to_string(),
+            cmk_id: "alias/testing".to_string(),
             encryption_context: None,
             key_spec: None,
             number_of_bytes: Some(32), // 256-bit (it's specified in bytes)
