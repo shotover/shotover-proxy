@@ -60,7 +60,7 @@ jobs:
       # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
       run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_profile }} -- -D warnings
     - name: Ensure that tests pass
-      run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output
+      run: cargo test ${{ matrix.cargo_profile }} -- --include-ignored --show-output --test-threads 1
       # can not run tests if cpp driver not installed
       if: ${{ matrix.runner == 'ubuntu-18.04' }}
     - name: License Check
