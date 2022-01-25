@@ -17,10 +17,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("transform");
 
     {
-        let chain = TransformChain::new_no_shared_state(
-            vec![Transforms::Null(Null::default())],
-            "bench".to_string(),
-        );
+        let chain =
+            TransformChain::new(vec![Transforms::Null(Null::default())], "bench".to_string());
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::new_query(
                 QueryMessage {
@@ -53,7 +51,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         use shotover_proxy::protocols::RedisFrame;
-        let chain = TransformChain::new_no_shared_state(
+        let chain = TransformChain::new(
             vec![
                 Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
                 Transforms::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
@@ -84,7 +82,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         use shotover_proxy::protocols::RedisFrame;
-        let chain = TransformChain::new_no_shared_state(
+        let chain = TransformChain::new(
             vec![
                 Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
                 Transforms::Null(Null::default()),

@@ -781,7 +781,7 @@ mod test {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
+        let chain = TransformChain::new(vec![], "test-chain".to_string());
         let transform = SimpleRedisCache {
             cache_chain: chain,
             caching_schema: HashMap::new(),
@@ -799,7 +799,7 @@ mod test {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let chain = TransformChain::new_no_shared_state(
+        let chain = TransformChain::new(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::DebugPrinter(DebugPrinter::new()),
