@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
 use shotover_proxy::message::{Message, QueryMessage, QueryType};
@@ -61,9 +62,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::new_raw(RawFrame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(b"SET".to_vec()),
-                RedisFrame::BulkString(b"foo".to_vec()),
-                RedisFrame::BulkString(b"bar".to_vec()),
+                RedisFrame::BulkString(Bytes::from_static(b"SET")),
+                RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                RedisFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
             chain.name.clone(),
         );
@@ -92,9 +93,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::new_raw(RawFrame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(b"SET".to_vec()),
-                RedisFrame::BulkString(b"foo".to_vec()),
-                RedisFrame::BulkString(b"bar".to_vec()),
+                RedisFrame::BulkString(Bytes::from_static(b"SET")),
+                RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                RedisFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
             chain.name.clone(),
         );

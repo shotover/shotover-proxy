@@ -18,6 +18,7 @@ use num::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
+use sqlparser::ast::Value as SQLValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{collections::HashMap, net::IpAddr};
 use uuid::Uuid;
@@ -83,6 +84,7 @@ impl Message {
         }
     }
 
+    #[must_use]
     pub fn to_filtered_reply(&self) -> Message {
         Message {
             details: MessageDetails::Unknown,
@@ -354,13 +356,40 @@ pub enum IntSize {
     I8,  // Tinyint
 }
 
+impl From<&Value> for SQLValue {
+    fn from(v: &Value) -> Self {
+        match v {
+            Value::NULL => SQLValue::Null,
+            Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // TODO: this is definitely wrong
+            Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
+            Value::Integer(i, _) => SQLValue::Number(i.to_string(), false),
+            Value::Float(f) => SQLValue::Number(f.to_string(), false),
+            Value::Boolean(b) => SQLValue::Boolean(*b),
+            _ => SQLValue::Null,
+        }
+    }
+}
+
+impl From<&SQLValue> for Value {
+    fn from(v: &SQLValue) -> Self {
+        match v {
+            SQLValue::Number(v, false)
+            | SQLValue::SingleQuotedString(v)
+            | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
+            SQLValue::HexStringLiteral(v) => Value::Strings(v.to_string()),
+            SQLValue::Boolean(v) => Value::Boolean(*v),
+            _ => Value::Strings("NULL".to_string()),
+        }
+    }
+}
+
 impl From<RedisFrame> for Value {
     fn from(f: RedisFrame) -> Self {
         match f {
-            RedisFrame::SimpleString(s) => Value::Strings(s),
-            RedisFrame::Error(e) => Value::Strings(e),
+            RedisFrame::SimpleString(s) => Value::Strings(String::from_utf8_lossy(&s).to_string()),
+            RedisFrame::Error(e) => Value::Strings(e.to_string()),
             RedisFrame::Integer(i) => Value::Integer(i, IntSize::I64),
-            RedisFrame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            RedisFrame::BulkString(b) => Value::Bytes(b),
             RedisFrame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             RedisFrame::Null => Value::NULL,
         }
@@ -369,10 +398,12 @@ impl From<RedisFrame> for Value {
 impl From<&RedisFrame> for Value {
     fn from(f: &RedisFrame) -> Self {
         match f.clone() {
-            RedisFrame::SimpleString(s) => Value::Strings(s),
-            RedisFrame::Error(e) => Value::Strings(e),
+            RedisFrame::SimpleString(s) => {
+                Value::Strings(String::from_utf8_lossy(s.as_ref()).to_string())
+            }
+            RedisFrame::Error(e) => Value::Strings(e.to_string()),
             RedisFrame::Integer(i) => Value::Integer(i, IntSize::I64),
-            RedisFrame::BulkString(b) => Value::Bytes(Bytes::from(b)),
+            RedisFrame::BulkString(b) => Value::Bytes(b),
             RedisFrame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
             RedisFrame::Null => Value::NULL,
         }
@@ -384,12 +415,12 @@ impl From<Value> for RedisFrame {
         match value {
             Value::NULL => RedisFrame::Null,
             Value::None => todo!(),
-            Value::Bytes(b) => RedisFrame::BulkString(b.to_vec()),
-            Value::Strings(s) => RedisFrame::SimpleString(s),
+            Value::Bytes(b) => RedisFrame::BulkString(b),
+            Value::Strings(s) => RedisFrame::SimpleString(s.into()),
             Value::Integer(i, _) => RedisFrame::Integer(i),
-            Value::Float(f) => RedisFrame::SimpleString(f.to_string()),
+            Value::Float(f) => RedisFrame::SimpleString(f.to_string().into()),
             Value::Boolean(b) => RedisFrame::Integer(i64::from(b)),
-            Value::Inet(i) => RedisFrame::SimpleString(i.to_string()),
+            Value::Inet(i) => RedisFrame::SimpleString(i.to_string().into()),
             Value::List(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
             Value::Rows(r) => {
                 RedisFrame::Array(r.into_iter().map(|v| Value::List(v).into()).collect())

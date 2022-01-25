@@ -1,6 +1,7 @@
 use crate::protocols::RedisFrame;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
+use bytes::{BufMut, Bytes, BytesMut};
 use serde::Deserialize;
 
 use crate::error::ChainResponse;
@@ -98,12 +99,12 @@ fn rewrite_port_slot(frame: &mut RawFrame, new_port: u16) -> Result<()> {
         }
         Ok(())
     } else {
-        bail!("ClusterTopologyRewrite intercepted an incorrect message")
+        bail!("RedisClusterPortsRewrite intercepted an incorrect message")
     }
 }
 
 /// Get a mutable reference to the CSV string inside a response to CLUSTER NODES or REPLICAS
-fn get_buffer(frame: &mut RawFrame) -> Result<&mut Vec<u8>> {
+fn get_buffer(frame: &mut RawFrame) -> Result<&mut Bytes> {
     // CLUSTER NODES
     if let RawFrame::Redis(RedisFrame::BulkString(ref mut buf)) = frame {
         return Ok(buf);
@@ -118,55 +119,57 @@ fn get_buffer(frame: &mut RawFrame) -> Result<&mut Vec<u8>> {
         }
     }
 
-    bail!("RedisClusterTopologyRewrite intercepted an incorrect message");
+    bail!("RedisClusterPortsRewrite intercepted an incorrect message");
 }
 
 /// Rewrites the ports of a response to a CLUSTER NODES message to `new_port`
 fn rewrite_port_node(frame: &mut RawFrame, new_port: u16) -> Result<()> {
     let buf = get_buffer(frame)?;
 
-    let read_cursor = std::io::Cursor::new(buf.clone());
+    let mut bytes_writer = BytesMut::new().writer();
 
-    buf.clear();
-    let write_cursor = std::io::Cursor::new(buf);
+    {
+        let read_cursor = std::io::Cursor::new(&buf);
 
-    let mut reader = csv::ReaderBuilder::new()
-        .delimiter(b' ')
-        .has_headers(false)
-        .flexible(true) // flexible because the last fields is an arbitrary number of tokens
-        .from_reader(read_cursor);
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(b' ')
+            .has_headers(false)
+            .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+            .from_reader(read_cursor);
 
-    let mut writer = csv::WriterBuilder::new()
-        .delimiter(b' ')
-        .flexible(true)
-        .from_writer(write_cursor);
+        let mut writer = csv::WriterBuilder::new()
+            .delimiter(b' ')
+            .flexible(true)
+            .from_writer(&mut bytes_writer);
 
-    for result in reader.records() {
-        let record = result?;
-        let mut record_iter = record.into_iter();
+        for result in reader.records() {
+            let record = result?;
+            let mut record_iter = record.into_iter();
 
-        // Write the id field
-        let id = record_iter
-            .next()
-            .ok_or_else(|| anyhow!("CLUSTER NODES response missing id field"))?;
-        writer.write_field(id)?;
+            // Write the id field
+            let id = record_iter
+                .next()
+                .ok_or_else(|| anyhow!("CLUSTER NODES response missing id field"))?;
+            writer.write_field(id)?;
 
-        // Modify and rewrite the port field
-        let ip = record_iter
-            .next()
-            .ok_or_else(|| anyhow!("CLUSTER NODES response missing address field"))?;
+            // Modify and rewrite the port field
+            let ip = record_iter
+                .next()
+                .ok_or_else(|| anyhow!("CLUSTER NODES response missing address field"))?;
 
-        let split = ip.split(|c| c == ':' || c == '@').collect::<Vec<&str>>();
+            let split = ip.split(|c| c == ':' || c == '@').collect::<Vec<&str>>();
 
-        let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
+            let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
 
-        writer.write_field(&*new_ip)?;
+            writer.write_field(&*new_ip)?;
 
-        // Write the last of the record
-        writer.write_record(record_iter)?;
+            // Write the last of the record
+            writer.write_record(record_iter)?;
+        }
+        writer.flush()?;
     }
 
-    writer.flush()?;
+    *buf = bytes_writer.into_inner().freeze();
 
     Ok(())
 }
@@ -231,13 +234,13 @@ mod test {
 
         for msg in cluster_messages {
             let frame = RawFrame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
-                msg.to_vec(),
+                Bytes::from_static(msg),
             )]));
             assert!(is_cluster_message(&frame));
         }
 
         let frame = RawFrame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
-            b"notcluster".to_vec(),
+            Bytes::from_static(b"notcluster"),
         )]));
         assert!(!is_cluster_message(&frame));
     }
@@ -253,15 +256,15 @@ mod test {
 
         for combo in combos {
             let frame = RawFrame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(combo.0.to_vec()),
-                RedisFrame::BulkString(combo.1.to_vec()),
+                RedisFrame::BulkString(Bytes::from_static(combo.0)),
+                RedisFrame::BulkString(Bytes::from_static(combo.1)),
             ]));
             assert!(is_cluster_slots(&frame));
         }
 
         let frame = RawFrame::Redis(RedisFrame::Array(vec![
-            RedisFrame::BulkString(b"GET".to_vec()),
-            RedisFrame::BulkString(b"key1".to_vec()),
+            RedisFrame::BulkString(Bytes::from_static(b"GET")),
+            RedisFrame::BulkString(Bytes::from_static(b"key1")),
         ]));
 
         assert!(!is_cluster_slots(&frame));
@@ -284,15 +287,15 @@ mod test {
 
         for combo in combos {
             let frame = RawFrame::Redis(RedisFrame::Array(vec![
-                RedisFrame::BulkString(combo.0.to_vec()),
-                RedisFrame::BulkString(combo.1.to_vec()),
+                RedisFrame::BulkString(Bytes::from_static(combo.0)),
+                RedisFrame::BulkString(Bytes::from_static(combo.1)),
             ]));
             assert!(is_cluster_nodes(&frame));
         }
 
         let frame = RawFrame::Redis(RedisFrame::Array(vec![
-            RedisFrame::BulkString(b"GET".to_vec()),
-            RedisFrame::BulkString(b"key1".to_vec()),
+            RedisFrame::BulkString(Bytes::from_static(b"GET")),
+            RedisFrame::BulkString(Bytes::from_static(b"key1")),
         ]));
 
         assert!(!is_cluster_nodes(&frame));
@@ -368,7 +371,8 @@ c852007a1c3b726534e6866456c1f2002fc442d9 172.31.0.6:1234@16379 myself,master - 0
 f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534e6866456c1f2002fc442d9 1634273478445 1634273478445 3 disconnected
 ";
 
-        let mut raw_frame = RawFrame::Redis(RedisFrame::BulkString(bulk_string.to_vec()));
+        let mut raw_frame =
+            RawFrame::Redis(RedisFrame::BulkString(Bytes::from_static(bulk_string)));
         rewrite_port_node(&mut raw_frame, 1234).unwrap();
 
         let rewritten = if let RawFrame::Redis(RedisFrame::BulkString(string)) = raw_frame.clone() {
@@ -377,6 +381,6 @@ f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534
             panic!("bad input: {raw_frame:?}")
         };
 
-        assert_eq!(rewritten, expected_string);
+        assert_eq!(rewritten, Bytes::from_static(expected_string));
     }
 }

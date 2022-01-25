@@ -52,7 +52,7 @@ impl Transform for DebugReturner {
                 .map(|_| Message {
                     details: MessageDetails::Unknown,
                     modified: false,
-                    original: RawFrame::Redis(RedisFrame::BulkString(string.clone().into_bytes())),
+                    original: RawFrame::Redis(RedisFrame::BulkString(string.to_string().into())),
                 })
                 .collect()),
             Response::Fail => Err(anyhow!("Intentional Fail")),
