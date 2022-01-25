@@ -35,7 +35,7 @@ use crate::message::{
     ASTHolder, IntSize, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType,
     Value,
 };
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec {
@@ -535,13 +535,13 @@ impl CassandraCodec {
                 response_meta: None,
             },
             false,
-            RawFrame::Cassandra(frame),
+            Frame::Cassandra(frame),
         )]
     }
 
     pub fn process_cassandra_frame(&self, frame: CassandraFrame) -> Messages {
         if self.bypass {
-            return vec![Message::new_raw(RawFrame::Cassandra(frame))];
+            return vec![Message::new_raw(Frame::Cassandra(frame))];
         }
 
         match frame.opcode {
@@ -552,7 +552,7 @@ impl CassandraCodec {
                     if parsed_query.ast.is_none() {
                         // TODO: Currently this will probably catch schema changes that don't match
                         // what the SQL parser expects
-                        return vec![Message::new_raw(RawFrame::Cassandra(frame))];
+                        return vec![Message::new_raw(Frame::Cassandra(frame))];
                     }
                     return vec![Message::new(
                         MessageDetails::Query(QueryMessage {
@@ -571,10 +571,10 @@ impl CassandraCodec {
                             ast: parsed_query.ast.map(|x| ASTHolder::SQL(Box::new(x))),
                         }),
                         false,
-                        RawFrame::Cassandra(frame),
+                        Frame::Cassandra(frame),
                     )];
                 }
-                vec![Message::new_raw(RawFrame::Cassandra(frame))]
+                vec![Message::new_raw(Frame::Cassandra(frame))]
             }
             Opcode::Result => CassandraCodec::build_response_message(frame, None),
             Opcode::Error => {
@@ -587,13 +587,13 @@ impl CassandraCodec {
                             response_meta: None,
                         },
                         false,
-                        RawFrame::Cassandra(frame),
+                        Frame::Cassandra(frame),
                     )];
                 }
 
-                vec![Message::new_raw(RawFrame::Cassandra(frame))]
+                vec![Message::new_raw(Frame::Cassandra(frame))]
             }
-            _ => vec![Message::new_raw(RawFrame::Cassandra(frame))],
+            _ => vec![Message::new_raw(Frame::Cassandra(frame))],
         }
     }
 
@@ -642,7 +642,7 @@ impl Decoder for CassandraCodec {
                 let message = Message::new(
                     MessageDetails::ReturnToSender,
                     false,
-                    RawFrame::Cassandra(CassandraFrame {
+                    Frame::Cassandra(CassandraFrame {
                         version: Version::V4,
                         direction: Direction::Response,
                         flags: Flags::empty(),
@@ -665,8 +665,8 @@ impl Decoder for CassandraCodec {
     }
 }
 
-fn get_cassandra_frame(rf: RawFrame) -> Result<CassandraFrame> {
-    if let RawFrame::Cassandra(frame) = rf {
+fn get_cassandra_frame(rf: Frame) -> Result<CassandraFrame> {
+    if let Frame::Cassandra(frame) = rf {
         Ok(frame)
     } else {
         warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
@@ -727,7 +727,7 @@ mod cassandra_protocol_tests {
     };
     use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::CassandraFrame;
-    use crate::protocols::RawFrame;
+    use crate::protocols::Frame;
     use bytes::BytesMut;
     use cassandra_protocol::frame::{Direction, Flags, Opcode, Version};
     use hex_literal::hex;
@@ -775,7 +775,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(CassandraFrame {
+            original: Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -796,7 +796,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(CassandraFrame {
+            original: Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -817,7 +817,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(CassandraFrame {
+            original: Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Response,
                 flags: Flags::empty(),
@@ -841,7 +841,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Cassandra(CassandraFrame {
+            original: Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -876,7 +876,7 @@ mod cassandra_protocol_tests {
                 response_meta: None,
             }),
             modified: false,
-            original: RawFrame::Cassandra(CassandraFrame {
+            original: Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Response,
                 flags: Flags::empty(),
@@ -964,7 +964,7 @@ mod cassandra_protocol_tests {
                 ))))),
             }),
             modified: false,
-            original: RawFrame::Cassandra(CassandraFrame {
+            original: Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -1035,7 +1035,7 @@ mod cassandra_protocol_tests {
                 }))),
             }),
             modified: false,
-            original: RawFrame::Cassandra(CassandraFrame {
+            original: Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),

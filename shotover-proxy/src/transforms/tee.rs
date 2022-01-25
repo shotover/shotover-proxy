@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, QueryResponse, Value};
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -160,7 +160,7 @@ impl Transform for Tee {
                                     .to_string(),
                             ))),
                             true,
-                            RawFrame::None,
+                            Frame::None,
                         );
                     }
                 }

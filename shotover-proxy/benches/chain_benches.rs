@@ -4,7 +4,7 @@ use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
 use shotover_proxy::message::{Message, QueryMessage, QueryType};
-use shotover_proxy::protocols::RawFrame;
+use shotover_proxy::protocols::Frame;
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::null::Null;
@@ -31,7 +31,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     ast: None,
                 },
                 true,
-                RawFrame::None,
+                Frame::None,
             )],
             chain.name.clone(),
         );
@@ -59,7 +59,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::new_raw(RawFrame::Redis(RedisFrame::Array(vec![
+            vec![Message::new_raw(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 RedisFrame::BulkString(Bytes::from_static(b"bar")),
@@ -90,7 +90,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::new_raw(RawFrame::Redis(RedisFrame::Array(vec![
+            vec![Message::new_raw(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
                 RedisFrame::BulkString(Bytes::from_static(b"bar")),
