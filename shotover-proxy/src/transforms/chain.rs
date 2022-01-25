@@ -37,6 +37,7 @@ pub struct BufferedChain {
 }
 
 impl BufferedChain {
+    #[must_use]
     pub fn to_new_instance(&self, buffer_size: usize) -> Self {
         self.original_chain.clone().into_buffered_chain(buffer_size)
     }
