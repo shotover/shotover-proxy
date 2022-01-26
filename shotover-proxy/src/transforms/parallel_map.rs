@@ -152,7 +152,7 @@ mod parallel_map_tests {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain_1 = TransformChain::new_no_shared_state(
+        let chain_1 = TransformChain::new(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::DebugPrinter(DebugPrinter::new()),
@@ -160,7 +160,7 @@ mod parallel_map_tests {
             ],
             "test-chain-1".to_string(),
         );
-        let chain_2 = TransformChain::new_no_shared_state(vec![], "test-chain-2".to_string());
+        let chain_2 = TransformChain::new(vec![], "test-chain-2".to_string());
 
         let transform = ParallelMap {
             chains: vec![chain_1, chain_2],
@@ -179,7 +179,7 @@ mod parallel_map_tests {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let chain_1 = TransformChain::new_no_shared_state(
+        let chain_1 = TransformChain::new(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::DebugPrinter(DebugPrinter::new()),
@@ -187,7 +187,7 @@ mod parallel_map_tests {
             ],
             "test-chain-1".to_string(),
         );
-        let chain_2 = TransformChain::new_no_shared_state(
+        let chain_2 = TransformChain::new(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::DebugPrinter(DebugPrinter::new()),
