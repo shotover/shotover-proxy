@@ -1035,7 +1035,7 @@ mod cassandra_protocol_tests {
                 }))),
             }),
             modified: false,
-            original: RawFrame::Cassandra(Frame {
+            original: RawFrame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
