@@ -456,7 +456,7 @@ mod protect_transform_tests {
         "Origin": "AWS_KMS",
         "SigningAlgorithms": null
         }} "#;
-                let parsed :Value= serde_json::from_str( result.as_str() )?;
+        let parsed :Value= serde_json::from_str( result2.as_str() )?;
 
         */
 
