@@ -246,6 +246,7 @@ impl Transform for Protect {
 
 #[cfg(test)]
 mod protect_transform_tests {
+    use json;
     use std::collections::HashMap;
     use std::env;
     use std::error::Error;
@@ -421,11 +422,56 @@ mod protect_transform_tests {
         panic!()
     }
 
+    /// Creates a new AWS key and returns the key ARN
+    async fn create_aws_key() -> Result<String> {
+        let client = reqwest::Client::new();
+
+        let res = client.post("http://localhost:5000")
+            .body( "{ \"Description\":\"Testing Key\", \
+                               \"KeyUsage\":\"ENCRYPT_DECRYPT\", \
+                               \"CustomerMasterKeySpec\":\"SYMMETRIC_DEFAULT\"}")
+            .header( "Accept-Encoding", "identity" )
+            .header( "Accept", "text/plain")
+            .header( "X-Amz-Target","TrentService.CreateKey")
+            .header( "Content-Type","application/x-amz-json-1.1")
+            .header( "X-Amz-Date","20220126T133630Z")
+            .header( "X-Amz-Security-Token","testing")
+            .header( "Authorization","AWS4-HMAC-SHA256 Credential=testing/20220126/us-east-1/kms/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token;x-amz-target, Signature=7983d06364243f7d9a2a3353d65c724e79bffd7381a10753725a04727a9d8c07")
+            .send().await?;
+
+        let result = res.text().await?;
+
+        /* let result2 = r#"{"KeyMetadata": {
+        "AWSAccountId": "123456789012",
+        "Arn": "arn:aws:kms:us-east-1:123456789012:key/badf3706-3861-4a72-b1ab-441e31b98cce",
+        "CreationDate": 1643206827.544442,
+        "CustomerMasterKeySpec": "SYMMETRIC_DEFAULT",
+        "Description": "Testing Key",
+        "Enabled": true,
+        "EncryptionAlgorithms": ["SYMMETRIC_DEFAULT"],
+        "KeyId": "badf3706-3861-4a72-b1ab-441e31b98cce",
+        "KeyManager": "CUSTOMER",
+        "KeyUsage": "ENCRYPT_DECRYPT",
+        "KeyState": "Enabled",
+        "Origin": "AWS_KMS",
+        "SigningAlgorithms": null
+        }} "#;
+                let parsed :Value= serde_json::from_str( result.as_str() )?;
+
+        */
+
+        let parsed = json::parse(result.as_str())?;
+
+        Ok(parsed["KeyMetadata"]["Arn"].as_str().unwrap().to_string())
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     //#[ignore] // reason: requires AWS credentials
     //#[allow(unused)]
     // Had to disable this when the repo went public as we dont have access to github secrets anymore
     async fn test_protect_kms_transform() -> Result<()> {
+        let key_id = create_aws_key().await.unwrap();
+
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
             .iter()
             .map(|&x| String::from(x))
@@ -436,13 +482,13 @@ mod protect_transform_tests {
         protection_table_map.insert("old".to_string(), vec!["col1".to_string()]);
         protection_map.insert("keyspace".to_string(), protection_table_map);
 
-        env::set_var("AWS_ACCESS_KEY_ID","dummy-access-key" );
-        env::set_var( "AWS_SECRET_ACCESS_KEY","dummy-access-key-secret");
+        env::set_var("AWS_ACCESS_KEY_ID", "dummy-access-key");
+        env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
 
         let aws_config = KeyManagerConfig::AWSKms {
-            endpoint : Some("http://localhost:5000".to_string()),
+            endpoint: Some("http://localhost:5000".to_string()),
             region: "us-east-1".to_string(),
-            cmk_id: "alias/testing".to_string(),
+            cmk_id: key_id,
             encryption_context: None,
             key_spec: None,
             number_of_bytes: Some(32), // 256-bit (it's specified in bytes)
@@ -474,14 +520,14 @@ mod protect_transform_tests {
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
         let mut wrapper = Wrapper::new(vec!(Message::new(MessageDetails::Query(QueryMessage {
-            query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
-            namespace: vec![String::from("keyspace"), String::from("old")],
-            primary_key,
-            query_values: Some(query_values),
-            projection: Some(projection),
-            query_type: QueryType::Write,
-            ast: None,
-        }), true, RawFrame::None)));
+                    query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
+                    namespace: vec![String::from("keyspace"), String::from("old")],
+                    primary_key,
+                    query_values: Some(query_values),
+                    projection: Some(projection),
+                    query_type: QueryType::Write,
+                    ast: None,
+                }), true, RawFrame::None)));
 
         let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
