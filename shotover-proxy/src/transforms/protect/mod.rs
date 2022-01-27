@@ -508,7 +508,6 @@ mod protect_transform_tests {
             ast: None,
         }), true, Frame::None)));
 
-
         let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
         let mut chain = TransformChain::new(transforms, String::from("test_chain"));
