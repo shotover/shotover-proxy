@@ -1,5 +1,7 @@
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, IntSize, MessageDetails, QueryMessage, QueryResponse, Value};
+use crate::message::{
+    ASTHolder, IntSize, MessageDetails, MessageValue, QueryMessage, QueryResponse,
+};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -36,16 +38,16 @@ impl RedisTimestampTaggerConfig {
 // update keys where update freq < 20 seconds, will not be terribly consistent
 
 fn wrap_command(qm: &mut QueryMessage) -> Result<()> {
-    if let Some(Value::List(keys)) = qm.primary_key.get_mut("key") {
+    if let Some(MessageValue::List(keys)) = qm.primary_key.get_mut("key") {
         if keys.is_empty() {
             bail!("primary key `key` contained no keys");
         }
         let first = keys.swap_remove(0);
-        if let Some(ASTHolder::Commands(Value::List(com))) = &qm.ast {
+        if let Some(ASTHolder::Commands(MessageValue::List(com))) = &qm.ast {
             let original_command = com
                 .iter()
                 .map(|v| {
-                    if let Value::Bytes(b) = v {
+                    if let MessageValue::Bytes(b) = v {
                         let mut literal = String::with_capacity(2 + b.len() * 4);
                         literal.push('\'');
                         for value in b {
@@ -79,12 +81,12 @@ fn wrap_command(qm: &mut QueryMessage) -> Result<()> {
             let script = format!("return {{{original_pcall},{last_used_pcall}}}");
             debug!("\n\nGenerated eval script for timestamp: {}\n\n", script);
             let commands = vec![
-                Value::Bytes(Bytes::from_static(b"EVAL")),
-                Value::Bytes(Bytes::from(script)),
-                Value::Bytes(Bytes::from_static(b"1")),
+                MessageValue::Bytes(Bytes::from_static(b"EVAL")),
+                MessageValue::Bytes(Bytes::from(script)),
+                MessageValue::Bytes(Bytes::from_static(b"1")),
                 first,
             ];
-            qm.ast = Some(ASTHolder::Commands(Value::List(commands)));
+            qm.ast = Some(ASTHolder::Commands(MessageValue::List(commands)));
         } else {
             bail!("Ast is not a command with a list");
         }
@@ -96,16 +98,16 @@ fn wrap_command(qm: &mut QueryMessage) -> Result<()> {
 }
 
 fn unwrap_response(qr: &mut QueryResponse) {
-    if let Some(Value::List(mut values)) = qr.result.take() {
-        let all_lists = values.iter().all(|v| matches!(v, Value::List(_)));
+    if let Some(MessageValue::List(mut values)) = qr.result.take() {
+        let all_lists = values.iter().all(|v| matches!(v, MessageValue::List(_)));
         qr.result = if all_lists && values.len() > 1 {
             // This means the result is likely from a transaction or something that returns
             // lots of things
 
-            let mut timestamps: Vec<Value> = vec![];
-            let mut results: Vec<Value> = vec![];
+            let mut timestamps: Vec<MessageValue> = vec![];
+            let mut results: Vec<MessageValue> = vec![];
             for v_u in values {
-                if let Value::List(mut v) = v_u {
+                if let MessageValue::List(mut v) = v_u {
                     if v.len() == 2 {
                         let timestamp = v.pop().unwrap();
                         let actual = v.pop().unwrap();
@@ -115,15 +117,15 @@ fn unwrap_response(qr: &mut QueryResponse) {
                 }
             }
 
-            qr.response_meta = Some(Value::Document(BTreeMap::from([(
+            qr.response_meta = Some(MessageValue::Document(BTreeMap::from([(
                 "timestamp".to_string(),
-                Value::List(timestamps),
+                MessageValue::List(timestamps),
             )])));
-            Some(Value::List(results))
+            Some(MessageValue::List(results))
         } else if values.len() == 2 {
             qr.response_meta = values.pop().map(|v| {
                 let processed_value = match v {
-                    Value::Integer(i, _) => {
+                    MessageValue::Integer(i, _) => {
                         let start = SystemTime::now();
                         let since_the_epoch = start
                             .duration_since(UNIX_EPOCH)
@@ -132,15 +134,15 @@ fn unwrap_response(qr: &mut QueryResponse) {
                         if seconds.leading_ones() > 1 {
                             panic!("Cannot convert u64 to i64 without overflow");
                         }
-                        Value::Integer(seconds as i64 - i, IntSize::I64)
+                        MessageValue::Integer(seconds as i64 - i, IntSize::I64)
                     }
                     v => v,
                 };
-                Value::Document(BTreeMap::from([("timestamp".to_string(), processed_value)]))
+                MessageValue::Document(BTreeMap::from([("timestamp".to_string(), processed_value)]))
             });
             values.pop()
         } else {
-            Some(Value::List(values))
+            Some(MessageValue::List(values))
         };
     }
 }

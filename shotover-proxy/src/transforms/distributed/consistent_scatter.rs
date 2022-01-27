@@ -9,7 +9,7 @@ use tracing::{debug, error, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, QueryResponse, QueryType, Value};
+use crate::message::{Message, MessageDetails, MessageValue, QueryResponse, QueryType};
 use crate::protocols::Frame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
@@ -54,9 +54,9 @@ impl ConsistentScatterConfig {
 
 fn get_timestamp(frag: &QueryResponse) -> i64 {
     debug!("\n\n {:#?} \n\n", frag.response_meta);
-    if let Some(Value::Document(meta)) = frag.response_meta.as_ref() {
+    if let Some(MessageValue::Document(meta)) = frag.response_meta.as_ref() {
         if let Some(t) = meta.get("timestamp") {
-            if let Value::Integer(i, _) = t {
+            if let MessageValue::Integer(i, _) = t {
                 return *i;
             }
             return 0;
@@ -174,7 +174,7 @@ impl Transform for ConsistentScatter {
                 .iter()
                 .map(|_| {
                     Message::new_response(
-                        QueryResponse::empty_with_error(Some(Value::Strings(
+                        QueryResponse::empty_with_error(Some(MessageValue::Strings(
                             "Not enough responses".to_string(),
                         ))),
                         true,
@@ -236,14 +236,14 @@ mod scatter_transform_tests {
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
 
     use crate::message::{
-        Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
+        Message, MessageDetails, MessageValue, Messages, QueryMessage, QueryResponse, QueryType,
     };
     use crate::protocols::Frame;
     use crate::transforms::null::Null;
     use crate::transforms::{Transform, Transforms, Wrapper};
     use std::collections::HashMap;
 
-    fn check_ok_responses(mut messages: Messages, expected_ok: &Value) {
+    fn check_ok_responses(mut messages: Messages, expected_ok: &MessageValue) {
         let test_message_details = messages.pop().unwrap().details;
         if let MessageDetails::Response(QueryResponse {
             result: Some(r), ..
@@ -255,7 +255,7 @@ mod scatter_transform_tests {
         }
     }
 
-    fn check_err_responses(mut messages: Messages, expected_err: &Value) {
+    fn check_err_responses(mut messages: Messages, expected_err: &MessageValue) {
         if let MessageDetails::Response(QueryResponse {
             error: Some(err), ..
         }) = messages.pop().unwrap().details
@@ -276,7 +276,9 @@ mod scatter_transform_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_scatter_success() {
         let response = vec![Message::new(
-            MessageDetails::Response(QueryResponse::just_result(Value::Strings("OK".to_string()))),
+            MessageDetails::Response(QueryResponse::just_result(MessageValue::Strings(
+                "OK".to_string(),
+            ))),
             true,
             Frame::None,
         )];
@@ -319,7 +321,7 @@ mod scatter_transform_tests {
             read_consistency: 2,
         });
 
-        let expected_ok = Value::Strings("OK".to_string());
+        let expected_ok = MessageValue::Strings("OK".to_string());
 
         let test = tuneable_success_consistency
             .transform(wrapper.clone())
@@ -353,7 +355,7 @@ mod scatter_transform_tests {
             .await
             .unwrap();
 
-        let expected_err = Value::Strings("Not enough responses".to_string());
+        let expected_err = MessageValue::Strings("Not enough responses".to_string());
 
         check_err_responses(response_fail, &expected_err);
     }

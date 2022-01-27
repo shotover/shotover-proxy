@@ -7,7 +7,7 @@ use tracing::info;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{ASTHolder, MessageDetails, Messages, QueryType, Value as ShotoverValue};
+use crate::message::{ASTHolder, MessageDetails, MessageValue, Messages, QueryType};
 use crate::protocols::{CassandraFrame, Frame};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
@@ -252,9 +252,9 @@ fn build_zrangebylex_min_max_from_sql(
 
 fn build_redis_ast_from_sql(
     mut ast: ASTHolder,
-    primary_key_values: &HashMap<String, ShotoverValue>,
+    primary_key_values: &HashMap<String, MessageValue>,
     table_cache_schema: &TableCacheSchema,
-    query_values: &Option<HashMap<String, ShotoverValue>>,
+    query_values: &Option<HashMap<String, MessageValue>>,
 ) -> Result<ASTHolder> {
     match &mut ast {
         ASTHolder::SQL(sql) => match &mut **sql {
@@ -292,18 +292,18 @@ fn build_redis_ast_from_sql(
                         });
 
                     let commands_buffer = vec![
-                        ShotoverValue::Bytes("ZRANGEBYLEX".into()),
-                        ShotoverValue::Bytes(pk.freeze()),
-                        ShotoverValue::Bytes(min),
-                        ShotoverValue::Bytes(max),
+                        MessageValue::Bytes("ZRANGEBYLEX".into()),
+                        MessageValue::Bytes(pk.freeze()),
+                        MessageValue::Bytes(min),
+                        MessageValue::Bytes(max),
                     ];
-                    Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
+                    Ok(ASTHolder::Commands(MessageValue::List(commands_buffer)))
                 }
                 expr => Err(anyhow!("Can't build query from expr: {}", expr)),
             },
             Statement::Insert { .. } | Statement::Update { .. } => {
-                let mut commands_buffer: Vec<ShotoverValue> =
-                    vec![ShotoverValue::Bytes("ZADD".into())];
+                let mut commands_buffer: Vec<MessageValue> =
+                    vec![MessageValue::Bytes("ZADD".into())];
 
                 let pk = table_cache_schema
                     .partition_key
@@ -313,7 +313,7 @@ fn build_redis_ast_from_sql(
                         acc.extend(v.clone().into_str_bytes());
                         acc
                     });
-                commands_buffer.push(ShotoverValue::Bytes(pk.freeze()));
+                commands_buffer.push(MessageValue::Bytes(pk.freeze()));
 
                 let clustering = table_cache_schema
                     .range_key
@@ -340,16 +340,16 @@ fn build_redis_ast_from_sql(
                     .collect_vec();
 
                 for v in values {
-                    commands_buffer.push(ShotoverValue::Bytes(Bytes::from("0")));
+                    commands_buffer.push(MessageValue::Bytes(Bytes::from("0")));
                     let mut value = clustering.clone();
                     if !value.is_empty() {
                         value.put_u8(b':');
                     }
                     value.extend(v.clone().into_str_bytes());
-                    commands_buffer.push(ShotoverValue::Bytes(value.freeze()));
+                    commands_buffer.push(MessageValue::Bytes(value.freeze()));
                 }
 
-                Ok(ASTHolder::Commands(ShotoverValue::List(commands_buffer)))
+                Ok(ASTHolder::Commands(MessageValue::List(commands_buffer)))
             }
             statement => Err(anyhow!("Cant build query from statement: {}", statement)),
         },
@@ -416,7 +416,7 @@ impl Transform for SimpleRedisCache {
 #[cfg(test)]
 mod test {
     use crate::message::{ASTHolder, MessageDetails};
-    use crate::message::{IntSize as ShotoverValueIntSize, Value as ShotoverValue};
+    use crate::message::{IntSize as MessageIntSize, MessageValue};
     use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::chain::TransformChain;
@@ -434,7 +434,7 @@ mod test {
     fn build_query(
         query_string: &str,
         pk_col_map: &HashMap<String, Vec<String>>,
-    ) -> (ASTHolder, Option<HashMap<String, ShotoverValue>>) {
+    ) -> (ASTHolder, Option<HashMap<String, MessageValue>>) {
         let res = CassandraCodec::parse_query_string(query_string, pk_col_map);
         (ASTHolder::SQL(Box::new(res.ast.unwrap())), res.colmap)
     }
@@ -484,7 +484,7 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
 
         let table_cache_schema = TableCacheSchema {
@@ -513,7 +513,7 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
 
         let table_cache_schema = TableCacheSchema {
@@ -540,9 +540,9 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
-        pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
+        pks.insert("c".to_string(), MessageValue::Strings("yo".to_string()));
 
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -570,9 +570,9 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
-        pks.insert("c".to_string(), ShotoverValue::Strings("yo".to_string()));
+        pks.insert("c".to_string(), MessageValue::Strings("yo".to_string()));
 
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -598,7 +598,7 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -634,7 +634,7 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -662,7 +662,7 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -690,7 +690,7 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
@@ -715,11 +715,11 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
         pks.insert(
             "y".to_string(),
-            ShotoverValue::Integer(2, ShotoverValueIntSize::I32),
+            MessageValue::Integer(2, MessageIntSize::I32),
         );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string(), "y".to_string()],
@@ -745,7 +745,7 @@ mod test {
         let mut pks = HashMap::new();
         pks.insert(
             "z".to_string(),
-            ShotoverValue::Integer(1, ShotoverValueIntSize::I32),
+            MessageValue::Integer(1, MessageIntSize::I32),
         );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
