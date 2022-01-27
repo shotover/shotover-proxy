@@ -1,15 +1,14 @@
+use crate::cassandra_int_tests::{assert_rows, cassandra_connection, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
+use cassandra_cpp::Session;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
-use crate::cassandra_int_tests::cassandra_connection;
-
 mod keyspace {
-    use cassandra_cpp::Session;
-
     use crate::cassandra_int_tests::{
         assert_query_result, assert_query_result_contains_row, run_query, ResultValue,
     };
+    use cassandra_cpp::Session;
 
     fn test_create_keyspace(session: &Session) {
         run_query(session, "CREATE KEYSPACE keyspace_tests_create WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -72,12 +71,11 @@ mod keyspace {
 }
 
 mod table {
-    use cassandra_cpp::Session;
-
     use crate::cassandra_int_tests::{
         assert_query_result, assert_query_result_contains_row,
         assert_query_result_not_contains_row, run_query, ResultValue,
     };
+    use cassandra_cpp::Session;
 
     fn test_create_table(session: &Session) {
         run_query(
@@ -133,9 +131,8 @@ mod table {
 }
 
 mod udt {
-    use cassandra_cpp::{stmt, Session};
-
     use crate::cassandra_int_tests::run_query;
+    use cassandra_cpp::{stmt, Session};
 
     fn test_create_udt(session: &Session) {
         run_query(
@@ -173,9 +170,8 @@ mod udt {
 }
 
 mod native_types {
-    use cassandra_cpp::Session;
-
     use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+    use cassandra_cpp::Session;
 
     fn select(session: &Session) {
         assert_query_result(
@@ -294,10 +290,9 @@ date_test date,
 }
 
 mod collections {
+    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
     use cassandra_cpp::Session;
     use cassandra_protocol::frame::frame_result::ColType;
-
-    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
 
     fn get_map_example(value: &str) -> String {
         format!("{{0 : {}}}", value)
@@ -941,9 +936,8 @@ mod collections {
 }
 
 mod functions {
-    use cassandra_cpp::{stmt, Session};
-
     use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+    use cassandra_cpp::{stmt, Session};
 
     fn drop_function(session: &Session) {
         assert_query_result(session, "SELECT test_function_keyspace.my_function(x, y) FROM test_function_keyspace.test_function_table WHERE id=1;", &[&[ResultValue::Int(4)]]);
@@ -983,12 +977,54 @@ APPLY BATCH;"#,
     }
 }
 
+fn prepared_statements(session: &Session) {
+    run_query(session, "CREATE KEYSPACE test_prepare_statements WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+    run_query(
+        session,
+        "CREATE TABLE test_prepare_statements.table_1 (id int PRIMARY KEY, x int, name varchar);",
+    );
+
+    run_query(
+        session,
+        r#"BEGIN BATCH
+                INSERT INTO test_prepare_statements.table_1 (id, x, name) VALUES (1, 11, 'foo');
+                INSERT INTO test_prepare_statements.table_1 (id, x, name) VALUES (2, 12, 'bar');
+                INSERT INTO test_prepare_statements.table_1 (id, x, name) VALUES (3, 13, 'baz');
+            APPLY BATCH;"#,
+    );
+
+    let prepared = session
+        .prepare("SELECT id, x, name FROM test_prepare_statements.table_1 WHERE id = ?")
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    let mut statement = prepared.bind();
+    statement.bind_int32(0, 1).unwrap();
+
+    let result_rows = session
+        .execute(&statement)
+        .wait()
+        .unwrap()
+        .into_iter()
+        .map(|x| x.into_iter().map(ResultValue::new).collect())
+        .collect();
+
+    assert_rows(
+        result_rows,
+        &[&[
+            ResultValue::Int(1),
+            ResultValue::Int(11),
+            ResultValue::Varchar("foo".into()),
+        ]],
+    );
+}
+
 mod cache {
+    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
     use cassandra_cpp::Session;
     use redis::Commands;
     use std::collections::HashSet;
-
-    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
 
     pub fn test(cassandra_session: &Session, redis_connection: &mut redis::Connection) {
         test_batch_insert(cassandra_session, redis_connection);
@@ -1182,6 +1218,7 @@ fn test_passthrough() {
     native_types::test(&connection);
     collections::test(&connection);
     functions::test(&connection);
+    prepared_statements(&connection);
 }
 
 #[test]
@@ -1201,4 +1238,5 @@ fn test_cassandra_redis_cache() {
     udt::test(&connection);
     functions::test(&connection);
     cache::test(&connection, &mut redis_connection);
+    prepared_statements(&connection);
 }
