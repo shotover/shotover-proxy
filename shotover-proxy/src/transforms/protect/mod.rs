@@ -262,7 +262,7 @@ mod protect_transform_tests {
         IntSize, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
     };
     use crate::protocols::cassandra_codec::CassandraCodec;
-    use crate::protocols::RawFrame;
+    use crate::protocols::Frame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::loopback::Loopback;
@@ -317,7 +317,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }), true, RawFrame::None)));
+        }), true, Frame::None)));
 
         let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
@@ -389,7 +389,7 @@ mod protect_transform_tests {
                             DebugReturner::new(Response::Message(vec![Message::new(
                                 MessageDetails::Response(returner_message.clone()),
                                 true,
-                                RawFrame::None,
+                                Frame::None,
                             )])),
                         )];
 
@@ -399,7 +399,7 @@ mod protect_transform_tests {
                         let mut new_wrapper = Wrapper::new(vec![Message::new(
                             MessageDetails::Query(qm),
                             true,
-                            RawFrame::None,
+                            Frame::None,
                         )]);
 
                         new_wrapper.reset(ret_chain.get_inner_chain_refs());
@@ -499,14 +499,15 @@ mod protect_transform_tests {
         query_values.insert(String::from("col3"), Value::Boolean(true));
 
         let mut wrapper = Wrapper::new(vec!(Message::new(MessageDetails::Query(QueryMessage {
-                    query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
-                    namespace: vec![String::from("keyspace"), String::from("old")],
-                    primary_key,
-                    query_values: Some(query_values),
-                    projection: Some(projection),
-                    query_type: QueryType::Write,
-                    ast: None,
-                }), true, RawFrame::None)));
+            query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
+            namespace: vec![String::from("keyspace"), String::from("old")],
+            primary_key,
+            query_values: Some(query_values),
+            projection: Some(projection),
+            query_type: QueryType::Write,
+            ast: None,
+        }), true, Frame::None)));
+
 
         let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
@@ -579,7 +580,7 @@ mod protect_transform_tests {
                         DebugReturner::new(Response::Message(vec![Message::new(
                             MessageDetails::Response(returner_message.clone()),
                             true,
-                            RawFrame::None,
+                            Frame::None,
                         )])),
                     )];
 
@@ -589,7 +590,7 @@ mod protect_transform_tests {
                     let mut new_wrapper = Wrapper::new(vec![Message::new(
                         MessageDetails::Query(qm.clone()),
                         true,
-                        RawFrame::None,
+                        Frame::None,
                     )]);
 
                     new_wrapper.reset(ret_chain.get_inner_chain_refs());

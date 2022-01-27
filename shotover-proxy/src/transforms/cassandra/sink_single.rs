@@ -3,7 +3,7 @@ use crate::error::ChainResponse;
 use crate::message;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_codec::CassandraCodec;
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -94,7 +94,7 @@ impl CassandraSinkSingle {
                             .map(|m| {
                                 let (return_chan_tx, return_chan_rx) =
                                     tokio::sync::oneshot::channel();
-                                let stream = if let RawFrame::Cassandra(frame) = &m.original {
+                                let stream = if let Frame::Cassandra(frame) = &m.original {
                                     frame.stream_id
                                 } else {
                                     info!("no cassandra frame found");
@@ -120,7 +120,7 @@ impl CassandraSinkSingle {
                                 match prelim? {
                                     (_, Ok(mut resp)) => {
                                         for message in &resp {
-                                            if let RawFrame::Cassandra(CassandraFrame {
+                                            if let Frame::Cassandra(CassandraFrame {
                                                 opcode: cassandra_protocol::frame::Opcode::Error,
                                                 ..
                                             }) = &message.original

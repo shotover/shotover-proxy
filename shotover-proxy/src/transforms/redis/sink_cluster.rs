@@ -22,7 +22,7 @@ use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
 use crate::protocols::redis_codec::{DecodeType, RedisCodec};
-use crate::protocols::{RawFrame, RedisFrame};
+use crate::protocols::{Frame, RedisFrame};
 use crate::tls::TlsConfig;
 use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
@@ -123,7 +123,7 @@ impl RedisSinkCluster {
     #[inline]
     async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
         let command = match message.original {
-            RawFrame::Redis(RedisFrame::Array(ref command)) => command,
+            Frame::Redis(RedisFrame::Array(ref command)) => command,
             _ => bail!("syntax error: bad command"),
         };
 
@@ -167,7 +167,7 @@ impl RedisSinkCluster {
                                 Ok((_, Ok(mut messages))) => {
                                     acc.push(messages.pop().map_or(RedisFrame::Null, |message| {
                                         match message.original {
-                                            RawFrame::Redis(frame) => frame,
+                                            Frame::Redis(frame) => frame,
                                             _ => unreachable!(),
                                         }
                                     }))
@@ -186,7 +186,7 @@ impl RedisSinkCluster {
                         ChainResponse::Ok(vec![Message {
                             details: MessageDetails::Unknown,
                             modified: false,
-                            original: RawFrame::Redis(RedisFrame::Array(response)),
+                            original: Frame::Redis(RedisFrame::Array(response)),
                         }]),
                     ))
                 })
@@ -735,7 +735,7 @@ fn send_frame_request(
         messages: Message {
             details: MessageDetails::Unknown,
             modified: false,
-            original: RawFrame::Redis(frame),
+            original: Frame::Redis(frame),
         },
         return_chan: Some(return_chan_tx),
         message_id: None,
@@ -754,7 +754,7 @@ async fn receive_frame_response(
     let message = result?.pop().unwrap().original;
 
     match message {
-        RawFrame::Redis(frame) => Ok(frame),
+        Frame::Redis(frame) => Ok(frame),
         _ => unreachable!(),
     }
 }
@@ -765,11 +765,11 @@ fn send_frame_response(
     frame: RedisFrame,
 ) -> Result<(), Response> {
     one_tx.send((
-        Message::new_raw(RawFrame::None),
+        Message::new_raw(Frame::None),
         Ok(vec![Message::new(
             MessageDetails::Response(QueryResponse::empty()),
             false,
-            RawFrame::Redis(frame),
+            Frame::Redis(frame),
         )]),
     ))
 }
@@ -817,11 +817,11 @@ impl Transform for RedisSinkCluster {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 Ok((
-                    Message::new_raw(RawFrame::None),
+                    Message::new_raw(Frame::None),
                     Ok(vec![Message::new(
                         MessageDetails::Response(QueryResponse::empty()),
                         false,
-                        RawFrame::Redis(RedisFrame::Error(
+                        Frame::Redis(RedisFrame::Error(
                             Str::from_inner(Bytes::from_static(b"ERR Could not route request"))
                                 .unwrap(),
                         )),
@@ -832,7 +832,7 @@ impl Transform for RedisSinkCluster {
             assert_eq!(response.len(), 1);
             let response_m = response.remove(0);
             match &response_m.original {
-                RawFrame::Redis(frame) => {
+                Frame::Redis(frame) => {
                     match frame.to_redirection() {
                         Some(Redirection::Moved { slot, server }) => {
                             debug!("Got MOVE {} {}", slot, server);
@@ -935,7 +935,7 @@ mod test {
             .unwrap()
             .original;
 
-        let slots_frames = if let RawFrame::Redis(RedisFrame::Array(frames)) = raw_frame {
+        let slots_frames = if let Frame::Redis(RedisFrame::Array(frames)) = raw_frame {
             frames
         } else {
             panic!("bad input: {raw_frame:?}")

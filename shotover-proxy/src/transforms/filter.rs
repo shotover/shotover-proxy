@@ -53,7 +53,7 @@ impl Transform for QueryTypeFilter {
 #[cfg(test)]
 mod test {
     use crate::message::{Message, QueryMessage, QueryType};
-    use crate::protocols::RawFrame;
+    use crate::protocols::Frame;
     use crate::protocols::RedisFrame;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
@@ -86,7 +86,7 @@ mod test {
                         ast: None,
                     },
                     true,
-                    RawFrame::Redis(RedisFrame::BulkString("FOO".into())),
+                    Frame::Redis(RedisFrame::BulkString("FOO".into())),
                 )
             })
             .collect();
@@ -100,13 +100,13 @@ mod test {
             if i % 2 == 0 {
                 assert_eq!(
                     message.original,
-                    RawFrame::Redis(RedisFrame::Error(
+                    Frame::Redis(RedisFrame::Error(
                         "ERR Message was filtered out by shotover".into()
                     )),
                 )
             } else {
                 // Turned into RawFrame::None by the loopback transform
-                assert_eq!(message.original, RawFrame::None)
+                assert_eq!(message.original, Frame::None)
             }
         }
     }

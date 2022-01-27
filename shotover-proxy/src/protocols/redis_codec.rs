@@ -2,7 +2,7 @@ use crate::message::{
     ASTHolder, IntSize, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType,
     Value,
 };
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
@@ -460,8 +460,8 @@ pub fn process_redis_frame_query(frame: &RedisFrame) -> Result<QueryMessage> {
 }
 
 #[inline]
-fn get_redis_frame(rf: RawFrame) -> Result<RedisFrame> {
-    if let RawFrame::Redis(frame) = rf {
+fn get_redis_frame(rf: Frame) -> Result<RedisFrame> {
+    if let Frame::Redis(frame) = rf {
         Ok(frame)
     } else {
         warn!("Unsupported Frame detected - Dropping Frame {:?}", rf);
@@ -508,13 +508,13 @@ impl RedisCodec {
                             }
                         },
                         modified: false,
-                        original: RawFrame::Redis(frame),
+                        original: Frame::Redis(frame),
                     })
                 } else {
                     Ok(Message {
                         details: MessageDetails::Unknown,
                         modified: false,
-                        original: RawFrame::Redis(frame),
+                        original: Frame::Redis(frame),
                     })
                 }
             })
