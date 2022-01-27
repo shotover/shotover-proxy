@@ -1,5 +1,5 @@
 use crate::protocols::CassandraFrame;
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::protocols::RedisFrame;
 use bigdecimal::BigDecimal;
 use bytes::Bytes;
@@ -30,7 +30,7 @@ pub struct Message {
     pub details: MessageDetails,
     pub modified: bool,
     /// The frame in the format defined by the protocol.
-    pub original: RawFrame,
+    pub original: Frame,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -44,7 +44,7 @@ pub enum MessageDetails {
 }
 
 impl Message {
-    pub fn new(details: MessageDetails, modified: bool, original: RawFrame) -> Self {
+    pub fn new(details: MessageDetails, modified: bool, original: Frame) -> Self {
         Message {
             details,
             modified,
@@ -64,15 +64,15 @@ impl Message {
         }
     }
 
-    pub fn new_query(qm: QueryMessage, modified: bool, original: RawFrame) -> Self {
+    pub fn new_query(qm: QueryMessage, modified: bool, original: Frame) -> Self {
         Self::new(MessageDetails::Query(qm), modified, original)
     }
 
-    pub fn new_response(qr: QueryResponse, modified: bool, original: RawFrame) -> Self {
+    pub fn new_response(qr: QueryResponse, modified: bool, original: Frame) -> Self {
         Self::new(MessageDetails::Response(qr), modified, original)
     }
 
-    pub fn new_raw(raw_frame: RawFrame) -> Self {
+    pub fn new_raw(raw_frame: Frame) -> Self {
         Self::new(MessageDetails::Unknown, false, raw_frame)
     }
 
@@ -80,7 +80,7 @@ impl Message {
         Message {
             details,
             modified,
-            original: RawFrame::None,
+            original: Frame::None,
         }
     }
 
@@ -90,10 +90,10 @@ impl Message {
             details: MessageDetails::Unknown,
             modified: true,
             original: match &self.original {
-                RawFrame::Redis(_) => RawFrame::Redis(RedisFrame::Error(
+                Frame::Redis(_) => Frame::Redis(RedisFrame::Error(
                     "ERR Message was filtered out by shotover".into(),
                 )),
-                RawFrame::Cassandra(frame) => RawFrame::Cassandra(CassandraFrame {
+                Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
                     version: frame.version,
                     direction: Direction::Response,
                     flags: Flags::empty(),
@@ -108,7 +108,7 @@ impl Message {
                     tracing_id: None,
                     warnings: vec![],
                 }),
-                RawFrame::None => RawFrame::None,
+                Frame::None => Frame::None,
             },
         }
     }
@@ -126,7 +126,7 @@ impl Message {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct RawMessage {
-    pub original: RawFrame,
+    pub original: Frame,
 }
 
 // Transforms should not try to directly serialize the AST - it's purely an in-memory representation

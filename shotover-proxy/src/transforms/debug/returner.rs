@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages};
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::protocols::RedisFrame;
 use crate::transforms::Transforms;
 use crate::transforms::{Transform, Wrapper};
@@ -52,7 +52,7 @@ impl Transform for DebugReturner {
                 .map(|_| Message {
                     details: MessageDetails::Unknown,
                     modified: false,
-                    original: RawFrame::Redis(RedisFrame::BulkString(string.to_string().into())),
+                    original: Frame::Redis(RedisFrame::BulkString(string.to_string().into())),
                 })
                 .collect()),
             Response::Fail => Err(anyhow!("Intentional Fail")),

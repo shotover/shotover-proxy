@@ -1,4 +1,4 @@
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::transforms::util::{Request, Response};
@@ -129,7 +129,7 @@ async fn rx_process<C: CodecReadHalf>(
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
-                            if let RawFrame::Cassandra(frame) = &m.original {
+                            if let Frame::Cassandra(frame) = &m.original {
                                 match return_channel_map.remove(&frame.stream_id) {
                                     None => {
                                         return_message_map.insert(frame.stream_id, m);

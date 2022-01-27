@@ -8,13 +8,13 @@ use tracing::info;
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{ASTHolder, MessageDetails, Messages, QueryType, Value as ShotoverValue};
-use crate::protocols::RawFrame;
+use crate::protocols::{CassandraFrame, Frame};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use bytes::{BufMut, Bytes, BytesMut};
-use cassandra_protocol::frame::{Direction, Flags, Frame, Opcode, Version};
+use cassandra_protocol::frame::{Direction, Flags, Opcode, Version};
 use itertools::Itertools;
 use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
@@ -65,7 +65,7 @@ impl SimpleRedisCache {
     async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
         let mut stream_ids = Vec::with_capacity(messages.len());
         for message in &mut messages {
-            if let RawFrame::Cassandra(frame) = &message.original {
+            if let Frame::Cassandra(frame) = &message.original {
                 stream_ids.push(frame.stream_id);
             }
             match &mut message.details {
@@ -104,7 +104,7 @@ impl SimpleRedisCache {
         for message in &mut messages {
             info!("Received reply from redis cache {:?}", message);
             // TODO: Translate the redis reply into cassandra
-            message.original = RawFrame::Cassandra(Frame {
+            message.original = Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Response,
                 flags: Flags::empty(),
@@ -378,7 +378,7 @@ impl Transform for SimpleRedisCache {
         let mut updates = false;
 
         for m in &mut message_wrapper.messages {
-            if let RawFrame::Cassandra(Frame {
+            if let Frame::Cassandra(CassandraFrame {
                 opcode: Opcode::Query,
                 ..
             }) = &m.original

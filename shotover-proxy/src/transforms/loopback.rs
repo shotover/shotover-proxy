@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, QueryResponse};
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
 
@@ -18,7 +18,7 @@ impl Transform for Loopback {
                     Some(Message::new_response(
                         QueryResponse::empty_with_matching(qm),
                         true,
-                        RawFrame::None,
+                        Frame::None,
                     ))
                 } else {
                     None

@@ -10,7 +10,7 @@ use tracing::{debug, error, trace, warn};
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, QueryResponse, QueryType, Value};
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -178,7 +178,7 @@ impl Transform for ConsistentScatter {
                             "Not enough responses".to_string(),
                         ))),
                         true,
-                        RawFrame::None,
+                        Frame::None,
                     )
                 })
                 .collect()
@@ -195,7 +195,7 @@ impl Transform for ConsistentScatter {
                         }
                     }
                     resolve_fragments(&mut collated_results)
-                        .map(|qr| Message::new_response(qr, true, RawFrame::None))
+                        .map(|qr| Message::new_response(qr, true, Frame::None))
                 })
                 // We do this as we are pop'ing from the end of the results in the filter_map above
                 .rev()
@@ -238,7 +238,7 @@ mod scatter_transform_tests {
     use crate::message::{
         Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType, Value,
     };
-    use crate::protocols::RawFrame;
+    use crate::protocols::Frame;
     use crate::transforms::null::Null;
     use crate::transforms::{Transform, Transforms, Wrapper};
     use std::collections::HashMap;
@@ -278,7 +278,7 @@ mod scatter_transform_tests {
         let response = vec![Message::new(
             MessageDetails::Response(QueryResponse::just_result(Value::Strings("OK".to_string()))),
             true,
-            RawFrame::None,
+            Frame::None,
         )];
 
         let wrapper = Wrapper::new(vec![Message::new(
@@ -292,7 +292,7 @@ mod scatter_transform_tests {
                 ast: None,
             }),
             true,
-            RawFrame::None,
+            Frame::None,
         )]);
 
         let ok_repeat =

@@ -261,7 +261,7 @@ mod protect_transform_tests {
         IntSize, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
     };
     use crate::protocols::cassandra_codec::CassandraCodec;
-    use crate::protocols::RawFrame;
+    use crate::protocols::Frame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::loopback::Loopback;
@@ -316,7 +316,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }), true, RawFrame::None)));
+        }), true, Frame::None)));
 
         let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
@@ -388,7 +388,7 @@ mod protect_transform_tests {
                             DebugReturner::new(Response::Message(vec![Message::new(
                                 MessageDetails::Response(returner_message.clone()),
                                 true,
-                                RawFrame::None,
+                                Frame::None,
                             )])),
                         )];
 
@@ -398,7 +398,7 @@ mod protect_transform_tests {
                         let mut new_wrapper = Wrapper::new(vec![Message::new(
                             MessageDetails::Query(qm),
                             true,
-                            RawFrame::None,
+                            Frame::None,
                         )]);
 
                         new_wrapper.reset(ret_chain.get_inner_chain_refs());
@@ -481,7 +481,7 @@ mod protect_transform_tests {
             projection: Some(projection),
             query_type: QueryType::Write,
             ast: None,
-        }), true, RawFrame::None)));
+        }), true, Frame::None)));
 
         let transforms: Vec<Transforms> = vec![Transforms::Loopback(Loopback::default())];
 
@@ -554,7 +554,7 @@ mod protect_transform_tests {
                         DebugReturner::new(Response::Message(vec![Message::new(
                             MessageDetails::Response(returner_message.clone()),
                             true,
-                            RawFrame::None,
+                            Frame::None,
                         )])),
                     )];
 
@@ -564,7 +564,7 @@ mod protect_transform_tests {
                     let mut new_wrapper = Wrapper::new(vec![Message::new(
                         MessageDetails::Query(qm.clone()),
                         true,
-                        RawFrame::None,
+                        Frame::None,
                     )]);
 
                     new_wrapper.reset(ret_chain.get_inner_chain_refs());
