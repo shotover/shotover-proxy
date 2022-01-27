@@ -1,7 +1,7 @@
 use crate::protocols::Frame;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
-use crate::transforms::util::{Request, Response};
+use crate::transforms::util::Response;
 use crate::{message::Message, server::Codec};
 
 use anyhow::{anyhow, Result};
@@ -10,16 +10,24 @@ use futures::StreamExt;
 use halfbrown::HashMap;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, Instrument};
+
+#[derive(Debug)]
+struct Request {
+    message: Message,
+    return_chan: oneshot::Sender<Response>,
+    message_id: i16,
+}
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct CassandraConnection<C: Codec> {
     host: String,
-    pub connection: Option<UnboundedSender<Request>>,
+    connection: Option<mpsc::UnboundedSender<Request>>,
     #[derivative(Debug = "ignore")]
     codec: C,
 }
@@ -36,8 +44,8 @@ impl<C: Codec + 'static> CassandraConnection<C> {
     pub async fn connect(&mut self) -> Result<()> {
         let socket: TcpStream = TcpStream::connect(self.host.clone()).await?;
         let (read, write) = socket.into_split();
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
-        let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+        let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
+        let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();
 
         tokio::spawn(tx_process(write, out_rx, return_tx, self.codec.clone()).in_current_span());
 
@@ -45,17 +53,34 @@ impl<C: Codec + 'static> CassandraConnection<C> {
         self.connection = Some(out_tx);
         Ok(())
     }
+
+    pub fn send(&self, message: Message, return_chan: oneshot::Sender<Response>) -> Result<()> {
+        let message_id = if let Frame::Cassandra(frame) = &message.original {
+            frame.stream_id
+        } else {
+            info!("no cassandra frame found");
+            return Err(anyhow!("no cassandra frame found"));
+        };
+
+        let connection = self.connection.as_ref().expect("No connection found");
+
+        Ok(connection.send(Request {
+            message,
+            return_chan,
+            message_id,
+        })?)
+    }
 }
 
 async fn tx_process<C: CodecWriteHalf>(
     write: OwnedWriteHalf,
-    out_rx: UnboundedReceiver<Request>,
-    return_tx: UnboundedSender<Request>,
+    out_rx: mpsc::UnboundedReceiver<Request>,
+    return_tx: mpsc::UnboundedSender<Request>,
     codec: C,
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
-        let ret = Ok(vec![x.messages.clone()]);
+        let ret = Ok(vec![x.message.clone()]);
         return_tx.send(x)?;
         ret
     });
@@ -65,12 +90,11 @@ async fn tx_process<C: CodecWriteHalf>(
 
 async fn rx_process<C: CodecReadHalf>(
     read: OwnedReadHalf,
-    mut return_rx: UnboundedReceiver<Request>,
+    mut return_rx: mpsc::UnboundedReceiver<Request>,
     codec: C,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec);
-    let mut return_channel_map: HashMap<i16, (tokio::sync::oneshot::Sender<Response>, Message)> =
-        HashMap::new();
+    let mut return_channel_map: HashMap<i16, (oneshot::Sender<Response>, Message)> = HashMap::new();
 
     let mut return_message_map: HashMap<i16, Message> = HashMap::new();
 
@@ -85,8 +109,8 @@ async fn rx_process<C: CodecReadHalf>(
                                     None => {
                                         return_message_map.insert(frame.stream_id, m);
                                     },
-                                    Some((ret, orig)) => {
-                                        ret.send((orig, Ok(vec![m] ))).map_err(|_| anyhow!("couldn't send message"))?;
+                                    Some((return_tx, original)) => {
+                                        return_tx.send(Response {original, response: Ok(vec![m]) }).map_err(|_| anyhow!("couldn't send message"))?;
                                     }
                                 };
                             }
@@ -99,19 +123,15 @@ async fn rx_process<C: CodecReadHalf>(
                 }
             },
             Some(original_request) = return_rx.recv() => {
-                if let Request { messages: orig , return_chan: Some(chan), message_id: Some(id) } = original_request {
-                    match return_message_map.remove(&id) {
-                        None => {
-                            return_channel_map.insert(id, (chan, orig));
-                        }
-                        Some(m) => {
-                            chan.send((orig, Ok(vec![m])))
-                                .map_err(|_| anyhow!("couldn't send message"))?;
-                        }
-                    };
-                } else {
-                   panic!("Couldn't get a valid cassandra stream id");
-                }
+                let Request { message, return_chan, message_id} = original_request;
+                match return_message_map.remove(&message_id) {
+                    None => {
+                        return_channel_map.insert(message_id, (return_chan, message));
+                    }
+                    Some(m) => {
+                        return_chan.send(Response{ original: message, response: Ok(vec![m]) }).map_err(|_| anyhow!("couldn't send message"))?;
+                    }
+                };
             },
             else => {
                 break
