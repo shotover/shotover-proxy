@@ -427,9 +427,9 @@ mod protect_transform_tests {
         let client = reqwest::Client::new();
 
         let res = client.post("http://localhost:5000")
-            .body( "{ \"Description\":\"Testing Key\", \
-                               \"KeyUsage\":\"ENCRYPT_DECRYPT\", \
-                               \"CustomerMasterKeySpec\":\"SYMMETRIC_DEFAULT\"}")
+            .body( r#"{ "Description":"Testing Key",
+                               "KeyUsage":"ENCRYPT_DECRYPT",
+                               "CustomerMasterKeySpec":"SYMMETRIC_DEFAULT"}"#)
             .header( "Accept-Encoding", "identity" )
             .header( "Accept", "text/plain")
             .header( "X-Amz-Target","TrentService.CreateKey")
@@ -445,12 +445,9 @@ mod protect_transform_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    //#[ignore] // reason: requires AWS credentials
-    //#[allow(unused)]
-    // Had to disable this when the repo went public as we dont have access to github secrets anymore
     async fn test_protect_kms_transform() -> Result<()> {
         let _compose = DockerCompose::new("tests/transforms/docker-compose-moto.yml")
-            .wait_for("Press CTRL\\+C to quit");
+            .wait_for(r#"Press CTRL\+C to quit"#);
 
         let key_id = create_aws_key().await.unwrap();
 

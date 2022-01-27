@@ -54,10 +54,10 @@ impl KeyManagerConfig {
                 client: {
                     let region_obj = match endpoint {
                         Some(x) => Region::Custom {
-                            name: Region::from_str(&*region)?.name().to_string(),
+                            name: Region::from_str(&region)?.name().to_string(),
                             endpoint: x,
                         },
-                        _ => Region::from_str(&*region)?,
+                        _ => Region::from_str(&region)?,
                     };
                     KmsClient::new(region_obj)
                 },
