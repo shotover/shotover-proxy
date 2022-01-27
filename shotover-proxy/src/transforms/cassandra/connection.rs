@@ -3,11 +3,11 @@ use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::transforms::util::{Request, Response};
 use crate::{message::Message, server::Codec};
+
 use anyhow::{anyhow, Result};
+use derivative::Derivative;
 use futures::StreamExt;
 use halfbrown::HashMap;
-use std::fmt;
-use std::fmt::Formatter;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -15,20 +15,13 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, Instrument};
 
-#[derive(Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct CassandraConnection<C: Codec> {
     host: String,
     pub connection: Option<UnboundedSender<Request>>,
+    #[derivative(Debug = "ignore")]
     codec: C,
-}
-
-impl<C: Codec> fmt::Debug for CassandraConnection<C> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ConnectionPool")
-            .field("host", &self.host)
-            .field("connection", &self.connection)
-            .finish()
-    }
 }
 
 impl<C: Codec + 'static> CassandraConnection<C> {
@@ -117,7 +110,7 @@ async fn rx_process<C: CodecReadHalf>(
                         }
                     };
                 } else {
-                   panic!("Couldn't get valid cassandra stream id");
+                   panic!("Couldn't get a valid cassandra stream id");
                 }
             },
             else => {
