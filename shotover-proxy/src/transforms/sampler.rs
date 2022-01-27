@@ -24,7 +24,7 @@ impl Sampler {
         Sampler {
             numerator: 1,
             denominator: 100,
-            sample_chain: TransformChain::new_no_shared_state(vec![], "dummy".to_string()),
+            sample_chain: TransformChain::new(vec![], "dummy".to_string()),
         }
     }
 

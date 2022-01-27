@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -57,7 +57,7 @@ impl Transform for Coalesce {
             Ok(vec![Message::new(
                 MessageDetails::Response(QueryResponse::empty()),
                 true,
-                RawFrame::None,
+                Frame::None,
             )])
         }
     }
@@ -85,7 +85,7 @@ impl Transform for Coalesce {
 #[cfg(test)]
 mod test {
     use crate::message::{Message, QueryMessage};
-    use crate::protocols::RawFrame;
+    use crate::protocols::Frame;
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Transforms, Wrapper};
@@ -104,7 +104,7 @@ mod test {
         let mut loopback = Transforms::Loopback(Loopback::default());
 
         let messages: Vec<_> = (0..25)
-            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
+            .map(|_| Message::new_query(QueryMessage::empty(), true, Frame::None))
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
@@ -142,7 +142,7 @@ mod test {
         let mut loopback = Transforms::Loopback(Loopback::default());
 
         let messages: Vec<_> = (0..25)
-            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
+            .map(|_| Message::new_query(QueryMessage::empty(), true, Frame::None))
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
@@ -180,7 +180,7 @@ mod test {
         let mut loopback = Transforms::Loopback(Loopback::default());
 
         let messages: Vec<_> = (0..25)
-            .map(|_| Message::new_query(QueryMessage::empty(), true, RawFrame::None))
+            .map(|_| Message::new_query(QueryMessage::empty(), true, Frame::None))
             .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());

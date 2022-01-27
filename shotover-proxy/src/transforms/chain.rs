@@ -189,25 +189,6 @@ impl TransformChain {
         }
     }
 
-    pub fn new_no_shared_state(transform_list: Vec<Transforms>, name: String) -> Self {
-        for transform in &transform_list {
-            register_counter!("shotover_transform_total", "transform" => transform.get_name());
-            register_counter!("shotover_transform_failures", "transform" => transform.get_name());
-            register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
-        }
-
-        let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
-        let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", "chain" => name.clone());
-
-        TransformChain {
-            name,
-            chain: transform_list,
-            chain_total,
-            chain_failures,
-        }
-    }
-
     pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
         for transform in &transform_list {
             register_counter!("shotover_transform_total", "transform" => transform.get_name());
@@ -302,7 +283,7 @@ mod chain_tests {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain = TransformChain::new_no_shared_state(vec![], "test-chain".to_string());
+        let chain = TransformChain::new(vec![], "test-chain".to_string());
         assert_eq!(
             chain.validate(),
             vec!["test-chain:", "  Chain cannot be empty"]
@@ -311,7 +292,7 @@ mod chain_tests {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let chain = TransformChain::new_no_shared_state(
+        let chain = TransformChain::new(
             vec![
                 Transforms::DebugPrinter(DebugPrinter::new()),
                 Transforms::DebugPrinter(DebugPrinter::new()),

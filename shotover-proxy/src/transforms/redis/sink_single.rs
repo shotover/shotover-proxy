@@ -13,7 +13,7 @@ use tokio_util::codec::Framed;
 
 use crate::error::ChainResponse;
 use crate::protocols::redis_codec::{DecodeType, RedisCodec};
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, Wrapper};
 
@@ -105,7 +105,7 @@ impl Transform for RedisSinkSingle {
             Some(a) => {
                 if let Ok(ref messages) = a {
                     for message in messages {
-                        if let RawFrame::Redis(RedisFrame::Error(_)) = message.original {
+                        if let Frame::Redis(RedisFrame::Error(_)) = message.original {
                             self.failed_requests.increment(1);
                         }
                     }

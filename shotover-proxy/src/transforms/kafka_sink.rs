@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::error::ChainResponse;
 use crate::message::{Message, MessageDetails, QueryResponse};
-use crate::protocols::RawFrame;
+use crate::protocols::Frame;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Clone)]
@@ -95,7 +95,7 @@ impl Transform for KafkaSink {
             responses.push(Message::new_response(
                 QueryResponse::empty(),
                 true,
-                RawFrame::None,
+                Frame::None,
             ))
         }
         Ok(responses)
