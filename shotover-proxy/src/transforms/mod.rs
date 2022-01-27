@@ -25,6 +25,7 @@ use crate::transforms::distributed::consistent_scatter::{
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 use crate::transforms::kafka_sink::{KafkaSink, KafkaSinkConfig};
 use crate::transforms::load_balance::ConnectionBalanceAndPool;
+#[cfg(test)]
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
@@ -74,6 +75,7 @@ pub enum Transforms {
     RedisCache(SimpleRedisCache),
     Tee(Tee),
     Null(Null),
+    #[cfg(test)]
     Loopback(Loopback),
     Protect(Protect),
     ConsistentScatter(ConsistentScatter),
@@ -105,6 +107,7 @@ impl Transforms {
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
             Transforms::Null(n) => n.transform(message_wrapper).await,
+            #[cfg(test)]
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
             Transforms::DebugReturner(p) => p.transform(message_wrapper).await,
@@ -135,6 +138,7 @@ impl Transforms {
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
+            #[cfg(test)]
             Transforms::Loopback(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
             Transforms::ConsistentScatter(a) => a.prep_transform_chain(t).await,
@@ -169,6 +173,7 @@ impl Transforms {
             Transforms::Coalesce(s) => s.validate(),
             Transforms::QueryTypeFilter(s) => s.validate(),
             Transforms::QueryCounter(s) => s.validate(),
+            #[cfg(test)]
             Transforms::Loopback(l) => l.validate(),
             Transforms::Protect(p) => p.validate(),
             Transforms::DebugReturner(d) => d.validate(),
@@ -194,6 +199,7 @@ impl Transforms {
             Transforms::Coalesce(s) => s.is_terminating(),
             Transforms::QueryTypeFilter(s) => s.is_terminating(),
             Transforms::QueryCounter(s) => s.is_terminating(),
+            #[cfg(test)]
             Transforms::Loopback(l) => l.is_terminating(),
             Transforms::Protect(p) => p.is_terminating(),
             Transforms::DebugReturner(d) => d.is_terminating(),
@@ -218,6 +224,7 @@ pub enum TransformsConfig {
     DebugPrinter,
     DebugReturner(DebugReturnerConfig),
     Null,
+    #[cfg(test)]
     Loopback,
     ParallelMap(ParallelMapConfig),
     //PoolConnections(ConnectionBalanceAndPoolConfig),
@@ -248,6 +255,7 @@ impl TransformsConfig {
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
             TransformsConfig::DebugReturner(d) => d.get_source().await,
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
+            #[cfg(test)]
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
             TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,

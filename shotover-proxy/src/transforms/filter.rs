@@ -105,8 +105,10 @@ mod test {
                     )),
                 )
             } else {
-                // Turned into RawFrame::None by the loopback transform
-                assert_eq!(message.original, Frame::None)
+                assert_eq!(
+                    message.original,
+                    Frame::Redis(RedisFrame::BulkString("FOO".into()))
+                )
             }
         }
     }
