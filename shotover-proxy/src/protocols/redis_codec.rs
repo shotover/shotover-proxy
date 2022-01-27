@@ -478,7 +478,6 @@ impl RedisCodec {
                 MessageDetails::Query(qm) => RedisCodec::build_redis_query_frame(qm),
                 MessageDetails::Response(qr) => RedisCodec::build_redis_response_frame(qr),
                 MessageDetails::Unknown => get_redis_frame(item.original)?,
-                MessageDetails::ReturnToSender => get_redis_frame(item.original)?,
             }
         };
         Ok(frame)
@@ -498,8 +497,8 @@ impl RedisCodec {
             .into_iter()
             .map(|frame| {
                 if self.enable_metadata {
-                    Ok(Message {
-                        details: match self.decode_type {
+                    Ok(Message::new(
+                        match self.decode_type {
                             DecodeType::Response => {
                                 MessageDetails::Response(process_redis_frame_response(&frame)?)
                             }
@@ -507,15 +506,15 @@ impl RedisCodec {
                                 MessageDetails::Query(process_redis_frame_query(&frame)?)
                             }
                         },
-                        modified: false,
-                        original: Frame::Redis(frame),
-                    })
+                        false,
+                        Frame::Redis(frame),
+                    ))
                 } else {
-                    Ok(Message {
-                        details: MessageDetails::Unknown,
-                        modified: false,
-                        original: Frame::Redis(frame),
-                    })
+                    Ok(Message::new(
+                        MessageDetails::Unknown,
+                        false,
+                        Frame::Redis(frame),
+                    ))
                 }
             })
             .collect()

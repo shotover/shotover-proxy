@@ -31,15 +31,14 @@ pub struct Message {
     pub modified: bool,
     /// The frame in the format defined by the protocol.
     pub original: Frame,
+    /// identifies a message that is to be returned to the sender.  Message is stored in the `original` frame.
+    pub return_to_sender: bool,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum MessageDetails {
     Query(QueryMessage),
     Response(QueryResponse),
-    // identifies a message that is to be returned to the sender.  Message is stored in the
-    // `original` frame.
-    ReturnToSender,
     Unknown,
 }
 
@@ -49,6 +48,7 @@ impl Message {
             details,
             modified,
             original,
+            return_to_sender: false,
         }
     }
 
@@ -81,6 +81,7 @@ impl Message {
             details,
             modified,
             original: Frame::None,
+            return_to_sender: false,
         }
     }
 
@@ -110,6 +111,7 @@ impl Message {
                 }),
                 Frame::None => Frame::None,
             },
+            return_to_sender: false,
         }
     }
 
