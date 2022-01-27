@@ -1,0 +1,6 @@
+version: "3.3"
+services:
+  moto:
+    image: "motoserver/moto"
+    ports:
+      - "5000:5000"

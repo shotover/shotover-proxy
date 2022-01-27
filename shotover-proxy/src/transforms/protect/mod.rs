@@ -246,7 +246,6 @@ impl Transform for Protect {
 
 #[cfg(test)]
 mod protect_transform_tests {
-    use json;
     use std::collections::HashMap;
     use std::env;
     use std::error::Error;
@@ -257,6 +256,7 @@ mod protect_transform_tests {
     use cassandra_protocol::consistency::Consistency;
     use cassandra_protocol::frame::{Flags, Version};
     use sodiumoxide::crypto::secretbox;
+    use test_helpers::docker_compose::DockerCompose;
 
     use crate::message::{
         IntSize, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
@@ -440,28 +440,7 @@ mod protect_transform_tests {
             .send().await?;
 
         let result = res.text().await?;
-
-        /* let result2 = r#"{"KeyMetadata": {
-        "AWSAccountId": "123456789012",
-        "Arn": "arn:aws:kms:us-east-1:123456789012:key/badf3706-3861-4a72-b1ab-441e31b98cce",
-        "CreationDate": 1643206827.544442,
-        "CustomerMasterKeySpec": "SYMMETRIC_DEFAULT",
-        "Description": "Testing Key",
-        "Enabled": true,
-        "EncryptionAlgorithms": ["SYMMETRIC_DEFAULT"],
-        "KeyId": "badf3706-3861-4a72-b1ab-441e31b98cce",
-        "KeyManager": "CUSTOMER",
-        "KeyUsage": "ENCRYPT_DECRYPT",
-        "KeyState": "Enabled",
-        "Origin": "AWS_KMS",
-        "SigningAlgorithms": null
-        }} "#;
-        let parsed :Value= serde_json::from_str( result2.as_str() )?;
-
-        */
-
-        let parsed = json::parse(result.as_str())?;
-
+        let parsed: serde_json::Value = serde_json::from_str(result.as_str())?;
         Ok(parsed["KeyMetadata"]["Arn"].as_str().unwrap().to_string())
     }
 
@@ -470,6 +449,9 @@ mod protect_transform_tests {
     //#[allow(unused)]
     // Had to disable this when the repo went public as we dont have access to github secrets anymore
     async fn test_protect_kms_transform() -> Result<()> {
+        let _compose = DockerCompose::new("tests/transforms/docker-compose-moto.yml")
+            .wait_for("Press CTRL\\+C to quit");
+
         let key_id = create_aws_key().await.unwrap();
 
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
