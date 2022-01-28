@@ -31,6 +31,7 @@ pub enum KeyManagerConfig {
         key_spec: Option<String>,
         number_of_bytes: Option<i64>,
         grant_tokens: Option<Vec<String>>,
+        endpoint: Option<String>,
     },
     Local {
         kek: Key,
@@ -48,8 +49,18 @@ impl KeyManagerConfig {
                 key_spec,
                 number_of_bytes,
                 grant_tokens,
+                endpoint,
             } => Ok(KeyManager::AWSKms(AWSKeyManagement {
-                client: KmsClient::new(Region::from_str(region.as_str())?),
+                client: {
+                    let region_obj = match endpoint {
+                        Some(x) => Region::Custom {
+                            name: Region::from_str(&region)?.name().to_string(),
+                            endpoint: x,
+                        },
+                        _ => Region::from_str(&region)?,
+                    };
+                    KmsClient::new(region_obj)
+                },
                 cmk_id,
                 encryption_context,
                 key_spec,

@@ -256,6 +256,7 @@ mod protect_transform_tests {
     use cassandra_protocol::consistency::Consistency;
     use cassandra_protocol::frame::{Flags, Version};
     use sodiumoxide::crypto::secretbox;
+    use test_helpers::docker_compose::DockerCompose;
 
     use crate::message::{
         IntSize, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
@@ -421,11 +422,35 @@ mod protect_transform_tests {
         panic!()
     }
 
-    //#[tokio::test(flavor = "multi_thread")]
-    //#[ignore] // reason: requires AWS credentials
-    #[allow(unused)]
-    // Had to disable this when the repo went public as we dont have access to github secrets anymore
+    /// Creates a new AWS key and returns the key ARN
+    async fn create_aws_key() -> Result<String> {
+        let client = reqwest::Client::new();
+
+        let res = client.post("http://localhost:5000")
+            .body( r#"{ "Description":"Testing Key",
+                               "KeyUsage":"ENCRYPT_DECRYPT",
+                               "CustomerMasterKeySpec":"SYMMETRIC_DEFAULT"}"#)
+            .header( "Accept-Encoding", "identity" )
+            .header( "Accept", "text/plain")
+            .header( "X-Amz-Target","TrentService.CreateKey")
+            .header( "Content-Type","application/x-amz-json-1.1")
+            .header( "X-Amz-Date","20220126T133630Z")
+            .header( "X-Amz-Security-Token","testing")
+            .header( "Authorization","AWS4-HMAC-SHA256 Credential=testing/20220126/us-east-1/kms/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token;x-amz-target, Signature=7983d06364243f7d9a2a3353d65c724e79bffd7381a10753725a04727a9d8c07")
+            .send().await?;
+
+        let result = res.text().await?;
+        let parsed: serde_json::Value = serde_json::from_str(result.as_str())?;
+        Ok(parsed["KeyMetadata"]["Arn"].as_str().unwrap().to_string())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_kms_transform() -> Result<()> {
+        let _compose = DockerCompose::new("tests/transforms/docker-compose-moto.yml")
+            .wait_for(r#"Press CTRL\+C to quit"#);
+
+        let key_id = create_aws_key().await.unwrap();
+
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
             .iter()
             .map(|&x| String::from(x))
@@ -436,13 +461,13 @@ mod protect_transform_tests {
         protection_table_map.insert("old".to_string(), vec!["col1".to_string()]);
         protection_map.insert("keyspace".to_string(), protection_table_map);
 
+        env::set_var("AWS_ACCESS_KEY_ID", "dummy-access-key");
+        env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
+
         let aws_config = KeyManagerConfig::AWSKms {
-            region: env::var("CMK_REGION")
-                .or_else::<String, _>(|_| Ok("US-EAST-1".to_string()))
-                .map_err(|e| anyhow!(e))?,
-            cmk_id: env::var("CMK_ID")
-                .or_else::<String, _>(|_| Ok("alias/InstaProxyDev".to_string()))
-                .map_err(|e| anyhow!(e))?,
+            endpoint: Some("http://localhost:5000".to_string()),
+            region: "us-east-1".to_string(),
+            cmk_id: key_id,
             encryption_context: None,
             key_spec: None,
             number_of_bytes: Some(32), // 256-bit (it's specified in bytes)
