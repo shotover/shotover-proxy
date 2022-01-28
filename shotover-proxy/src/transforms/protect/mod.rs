@@ -10,8 +10,8 @@ use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use tracing::warn;
 
 use crate::error::ChainResponse;
-use crate::message::Value;
-use crate::message::Value::Rows;
+use crate::message::MessageValue;
+use crate::message::MessageValue::Rows;
 use crate::message::{MessageDetails, QueryMessage, QueryResponse, QueryType};
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -49,7 +49,7 @@ pub struct ProtectConfig {
 // all padding, copying and timing issues associated with crypto
 #[derive(Serialize, Deserialize)]
 pub enum Protected {
-    Plaintext(Value),
+    Plaintext(MessageValue),
     Ciphertext {
         cipher: Vec<u8>,
         nonce: Nonce,
@@ -64,19 +64,19 @@ fn encrypt(plaintext: Vec<u8>, sym_key: &Key) -> (Vec<u8>, Nonce) {
     (ciphertext, nonce)
 }
 
-fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<Value> {
+fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<MessageValue> {
     let decrypted_bytes =
         secretbox::open(&ciphertext, &nonce, sym_key).map_err(|_| anyhow!("couldn't open box"))?;
     //TODO make error handing better here - failure here indicates a authenticity failure
     // let decrypted_value: Value =
     //     serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
-    let decrypted_value: Value =
+    let decrypted_value: MessageValue =
         bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't open box"))?;
     Ok(decrypted_value)
 }
 
 // TODO: Switch to something smaller/more efficient like bincode
-impl From<Protected> for Value {
+impl From<Protected> for MessageValue {
     fn from(p: Protected) -> Self {
         match p {
             Protected::Plaintext(_) => panic!(
@@ -84,16 +84,16 @@ impl From<Protected> for Value {
             ),
             Protected::Ciphertext { .. } => {
                 // Value::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
-                Value::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
+                MessageValue::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
             }
         }
     }
 }
 
 impl Protected {
-    pub async fn from_encrypted_bytes_value(value: &Value) -> Result<Protected> {
+    pub async fn from_encrypted_bytes_value(value: &MessageValue) -> Result<Protected> {
         match value {
-            Value::Bytes(b) => {
+            MessageValue::Bytes(b) => {
                 // let protected_something: Protected = serde_json::from_slice(b.bytes())?;
                 let protected_something: Protected = bincode::deserialize(b)?;
                 Ok(protected_something)
@@ -124,7 +124,11 @@ impl Protected {
         }
     }
 
-    pub async fn unprotect(self, key_management: &KeyManager, key_id: &str) -> Result<Value> {
+    pub async fn unprotect(
+        self,
+        key_management: &KeyManager,
+        key_id: &str,
+    ) -> Result<MessageValue> {
         match self {
             Protected::Plaintext(p) => Ok(p),
             Protected::Ciphertext {
@@ -212,11 +216,11 @@ impl Transform for Protect {
                                 for row in rows {
                                     for index in &positions {
                                         if let Some(v) = row.get_mut(*index) {
-                                            if let Value::Bytes(_) = v {
+                                            if let MessageValue::Bytes(_) = v {
                                                 let protected =
                                                     Protected::from_encrypted_bytes_value(v)
                                                         .await?;
-                                                let new_value: Value = protected
+                                                let new_value: MessageValue = protected
                                                     .unprotect(&self.key_source, &self.key_id)
                                                     .await?;
                                                 *v = new_value;
@@ -254,7 +258,7 @@ mod protect_transform_tests {
     use test_helpers::docker_compose::DockerCompose;
 
     use crate::message::{
-        IntSize, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
+        IntSize, Message, MessageDetails, MessageValue, QueryMessage, QueryResponse, QueryType,
     };
     use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::Frame;
@@ -287,22 +291,34 @@ mod protect_transform_tests {
 
         let secret_data: String = String::from("I am gonna get encrypted!!");
 
-        let mut query_values: HashMap<String, Value> = HashMap::new();
-        let mut primary_key: HashMap<String, Value> = HashMap::new();
+        let mut query_values: HashMap<String, MessageValue> = HashMap::new();
+        let mut primary_key: HashMap<String, MessageValue> = HashMap::new();
 
-        query_values.insert(String::from("pk"), Value::Strings(String::from("pk1")));
-        primary_key.insert(String::from("pk"), Value::Strings(String::from("pk1")));
+        query_values.insert(
+            String::from("pk"),
+            MessageValue::Strings(String::from("pk1")),
+        );
+        primary_key.insert(
+            String::from("pk"),
+            MessageValue::Strings(String::from("pk1")),
+        );
         query_values.insert(
             String::from("cluster"),
-            Value::Strings(String::from("cluster")),
+            MessageValue::Strings(String::from("cluster")),
         );
         primary_key.insert(
             String::from("cluster"),
-            Value::Strings(String::from("cluster")),
+            MessageValue::Strings(String::from("cluster")),
         );
-        query_values.insert(String::from("col1"), Value::Strings(secret_data.clone()));
-        query_values.insert(String::from("col2"), Value::Integer(42, IntSize::I32));
-        query_values.insert(String::from("col3"), Value::Boolean(true));
+        query_values.insert(
+            String::from("col1"),
+            MessageValue::Strings(secret_data.clone()),
+        );
+        query_values.insert(
+            String::from("col2"),
+            MessageValue::Integer(42, IntSize::I32),
+        );
+        query_values.insert(String::from("col3"), MessageValue::Boolean(true));
 
         let mut wrapper = Wrapper::new(vec!(Message::new(MessageDetails::Query(QueryMessage {
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
@@ -333,7 +349,7 @@ mod protect_transform_tests {
                 }) = &mut m.pop().unwrap().details
                 {
                     let encrypted_val = query_values.remove("col1").unwrap();
-                    assert_ne!(encrypted_val, Value::Strings(secret_data.clone()));
+                    assert_ne!(encrypted_val, MessageValue::Strings(secret_data.clone()));
 
                     // Let's make sure the plain text is not in the encrypted value when actually formated the same way!!!!!!!
                     let encrypted_payload = format!("encrypted: {:?}", encrypted_val.clone());
@@ -375,7 +391,7 @@ mod protect_transform_tests {
                     {
                         let returner_message = QueryResponse {
                             matching_query: Some(qm.clone()),
-                            result: Some(Value::Rows(vec![vec![encrypted_val]])),
+                            result: Some(MessageValue::Rows(vec![vec![encrypted_val]])),
                             error: None,
                             response_meta: None,
                         };
@@ -401,11 +417,11 @@ mod protect_transform_tests {
 
                         let result = protect.transform(new_wrapper).await;
                         if let MessageDetails::Response(QueryResponse {
-                            result: Some(Value::Rows(r)),
+                            result: Some(MessageValue::Rows(r)),
                             ..
                         }) = result.unwrap().pop().unwrap().details
                         {
-                            if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
+                            if let MessageValue::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
                                 assert_eq!(s, &secret_data);
                                 return Ok(());
                             }
@@ -476,22 +492,34 @@ mod protect_transform_tests {
 
         let secret_data: String = String::from("I am gonna get encrypted!!");
 
-        let mut query_values: HashMap<String, Value> = HashMap::new();
-        let mut primary_key: HashMap<String, Value> = HashMap::new();
+        let mut query_values: HashMap<String, MessageValue> = HashMap::new();
+        let mut primary_key: HashMap<String, MessageValue> = HashMap::new();
 
-        query_values.insert(String::from("pk"), Value::Strings(String::from("pk1")));
-        primary_key.insert(String::from("pk"), Value::Strings(String::from("pk1")));
+        query_values.insert(
+            String::from("pk"),
+            MessageValue::Strings(String::from("pk1")),
+        );
+        primary_key.insert(
+            String::from("pk"),
+            MessageValue::Strings(String::from("pk1")),
+        );
         query_values.insert(
             String::from("cluster"),
-            Value::Strings(String::from("cluster")),
+            MessageValue::Strings(String::from("cluster")),
         );
         primary_key.insert(
             String::from("cluster"),
-            Value::Strings(String::from("cluster")),
+            MessageValue::Strings(String::from("cluster")),
         );
-        query_values.insert(String::from("col1"), Value::Strings(secret_data.clone()));
-        query_values.insert(String::from("col2"), Value::Integer(42, IntSize::I32));
-        query_values.insert(String::from("col3"), Value::Boolean(true));
+        query_values.insert(
+            String::from("col1"),
+            MessageValue::Strings(secret_data.clone()),
+        );
+        query_values.insert(
+            String::from("col2"),
+            MessageValue::Integer(42, IntSize::I32),
+        );
+        query_values.insert(String::from("col3"), MessageValue::Boolean(true));
 
         let mut wrapper = Wrapper::new(vec!(Message::new(MessageDetails::Query(QueryMessage {
             query_string: "INSERT INTO keyspace.old (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);".to_string(),
@@ -523,7 +551,10 @@ mod protect_transform_tests {
             }) = &mut details
             {
                 let encrypted_val = query_values.remove("col1").unwrap();
-                assert_ne!(encrypted_val.clone(), Value::Strings(secret_data.clone()));
+                assert_ne!(
+                    encrypted_val.clone(),
+                    MessageValue::Strings(secret_data.clone())
+                );
 
                 // Let's make sure the plain text is not in the encrypted value when actually formated the same way!!!!!!!
                 let encrypted_payload = format!("encrypted: {:?}", encrypted_val.clone());
@@ -565,7 +596,7 @@ mod protect_transform_tests {
                 {
                     let returner_message = QueryResponse {
                         matching_query: Some(qm.clone()),
-                        result: Some(Value::Rows(vec![vec![encrypted_val]])),
+                        result: Some(MessageValue::Rows(vec![vec![encrypted_val]])),
                         error: None,
                         response_meta: None,
                     };
@@ -591,11 +622,11 @@ mod protect_transform_tests {
 
                     let result = protect.transform(new_wrapper).await;
                     if let MessageDetails::Response(QueryResponse {
-                        result: Some(Value::Rows(r)),
+                        result: Some(MessageValue::Rows(r)),
                         ..
                     }) = result.unwrap().pop().unwrap().details
                     {
-                        return if let Value::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
+                        return if let MessageValue::Strings(s) = r.get(0).unwrap().get(0).unwrap() {
                             assert_eq!(s.clone(), secret_data);
                             Ok(())
                         } else {

@@ -32,8 +32,8 @@ use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, error, info, warn};
 
 use crate::message::{
-    ASTHolder, IntSize, Message, MessageDetails, Messages, QueryMessage, QueryResponse, QueryType,
-    Value,
+    ASTHolder, IntSize, Message, MessageDetails, MessageValue, Messages, QueryMessage,
+    QueryResponse, QueryType,
 };
 use crate::protocols::Frame;
 
@@ -53,9 +53,9 @@ pub struct CassandraCodec {
 
 pub(crate) struct ParsedCassandraQueryString {
     namespace: Option<Vec<String>>,
-    pub(crate) colmap: Option<HashMap<String, Value>>,
+    pub(crate) colmap: Option<HashMap<String, MessageValue>>,
     projection: Option<Vec<String>>,
-    primary_key: HashMap<String, Value>,
+    primary_key: HashMap<String, MessageValue>,
     pub(crate) ast: Option<Statement>,
 }
 
@@ -111,7 +111,7 @@ impl CassandraCodec {
         resp: QueryResponse,
         query_frame: CassandraFrame,
     ) -> CassandraFrame {
-        if let Some(Value::Rows(rows)) = resp.result {
+        if let Some(MessageValue::Rows(rows)) = resp.result {
             if let Some(ref query) = resp.matching_query {
                 if let Some(ref proj) = query.projection {
                     let col_spec = proj
@@ -146,10 +146,10 @@ impl CassandraCodec {
                             row.iter()
                                 .map(|value| {
                                     CBytes::new(match value {
-                                        Value::NULL => to_int(-1_i32),
-                                        Value::Bytes(x) => x.to_vec(),
-                                        Value::Strings(x) => Vec::from(x.as_bytes()),
-                                        Value::Integer(x, size) => {
+                                        MessageValue::NULL => to_int(-1_i32),
+                                        MessageValue::Bytes(x) => x.to_vec(),
+                                        MessageValue::Strings(x) => Vec::from(x.as_bytes()),
+                                        MessageValue::Integer(x, size) => {
                                             let mut temp: Vec<u8> = Vec::new();
 
                                             match size {
@@ -169,40 +169,40 @@ impl CassandraCodec {
 
                                             temp
                                         }
-                                        Value::Float(x) => {
+                                        MessageValue::Float(x) => {
                                             let mut temp: Vec<u8> = Vec::new();
                                             let _ = temp
                                                 .write_f32::<BigEndian>(x.into_inner())
                                                 .unwrap();
                                             temp
                                         }
-                                        Value::Boolean(x) => {
+                                        MessageValue::Boolean(x) => {
                                             let mut temp: Vec<u8> = Vec::new();
                                             let _ = temp.write_i32::<BigEndian>(*x as i32).unwrap();
                                             temp
                                         }
-                                        Value::None => unimplemented!(),
-                                        Value::Inet(_) => unimplemented!(),
-                                        Value::FragmentedResponse(_) => unimplemented!(),
-                                        Value::Document(_) => unimplemented!(),
-                                        Value::NamedRows(_) => unimplemented!(),
-                                        Value::List(_) => unimplemented!(),
-                                        Value::Rows(_) => unimplemented!(),
-                                        Value::Ascii(_) => unimplemented!(),
-                                        Value::Double(_) => unimplemented!(),
-                                        Value::Set(_) => unimplemented!(),
-                                        Value::Map(_) => unimplemented!(),
-                                        Value::Varint(_) => unimplemented!(),
-                                        Value::Decimal(_) => unimplemented!(),
-                                        Value::Date(_) => unimplemented!(),
-                                        Value::Timestamp(_) => unimplemented!(),
-                                        Value::Timeuuid(_) => unimplemented!(),
-                                        Value::Varchar(_) => unimplemented!(),
-                                        Value::Uuid(_) => unimplemented!(),
-                                        Value::Time(_) => unimplemented!(),
-                                        Value::Counter(_) => unimplemented!(),
-                                        Value::Tuple(_) => unimplemented!(),
-                                        Value::Udt(_) => unimplemented!(),
+                                        MessageValue::None => unimplemented!(),
+                                        MessageValue::Inet(_) => unimplemented!(),
+                                        MessageValue::FragmentedResponse(_) => unimplemented!(),
+                                        MessageValue::Document(_) => unimplemented!(),
+                                        MessageValue::NamedRows(_) => unimplemented!(),
+                                        MessageValue::List(_) => unimplemented!(),
+                                        MessageValue::Rows(_) => unimplemented!(),
+                                        MessageValue::Ascii(_) => unimplemented!(),
+                                        MessageValue::Double(_) => unimplemented!(),
+                                        MessageValue::Set(_) => unimplemented!(),
+                                        MessageValue::Map(_) => unimplemented!(),
+                                        MessageValue::Varint(_) => unimplemented!(),
+                                        MessageValue::Decimal(_) => unimplemented!(),
+                                        MessageValue::Date(_) => unimplemented!(),
+                                        MessageValue::Timestamp(_) => unimplemented!(),
+                                        MessageValue::Timeuuid(_) => unimplemented!(),
+                                        MessageValue::Varchar(_) => unimplemented!(),
+                                        MessageValue::Uuid(_) => unimplemented!(),
+                                        MessageValue::Time(_) => unimplemented!(),
+                                        MessageValue::Counter(_) => unimplemented!(),
+                                        MessageValue::Tuple(_) => unimplemented!(),
+                                        MessageValue::Udt(_) => unimplemented!(),
                                     })
                                 })
                                 .collect()
@@ -233,7 +233,7 @@ impl CassandraCodec {
 }
 
 impl CassandraCodec {
-    fn value_to_bind(_v: &Value) -> SQLValue {
+    fn value_to_bind(_v: &MessageValue) -> SQLValue {
         //TODO fix bind handling
         SQLValue::SingleQuotedString("XYz-1-zYX".to_string())
     }
@@ -249,7 +249,11 @@ impl CassandraCodec {
         }
     }
 
-    fn rebuild_binops_tree(node: &mut Expr, map: &mut HashMap<String, Value>, use_bind: bool) {
+    fn rebuild_binops_tree(
+        node: &mut Expr,
+        map: &mut HashMap<String, MessageValue>,
+        use_bind: bool,
+    ) {
         if let BinaryOp { left, op, right } = node {
             match op {
                 BinaryOperator::And => {
@@ -274,7 +278,7 @@ impl CassandraCodec {
         }
     }
 
-    fn binary_ops_to_hashmap(node: &Expr, map: &mut HashMap<String, Value>) {
+    fn binary_ops_to_hashmap(node: &Expr, map: &mut HashMap<String, MessageValue>) {
         if let BinaryOp { left, op, right } = node {
             match op {
                 BinaryOperator::And => {
@@ -381,9 +385,9 @@ impl CassandraCodec {
     ) -> ParsedCassandraQueryString {
         let dialect = GenericDialect {}; //TODO write CQL dialect
         let mut namespace: Vec<String> = Vec::new();
-        let mut colmap: HashMap<String, Value> = HashMap::new();
+        let mut colmap: HashMap<String, MessageValue> = HashMap::new();
         let mut projection: Vec<String> = Vec::new();
-        let mut primary_key: HashMap<String, Value> = HashMap::new();
+        let mut primary_key: HashMap<String, MessageValue> = HashMap::new();
         let mut ast: Option<Statement> = None;
         let parsed_sql = Parser::parse_sql(&dialect, query_string);
 
@@ -411,7 +415,8 @@ impl CassandraCodec {
                                         if let Some(value) = colmap.get(pk_component) {
                                             primary_key.insert(pk_component.clone(), value.clone());
                                         } else {
-                                            primary_key.insert(pk_component.clone(), Value::NULL);
+                                            primary_key
+                                                .insert(pk_component.clone(), MessageValue::NULL);
                                         }
                                     }
                                 }
@@ -428,7 +433,7 @@ impl CassandraCodec {
                             for (i, c) in columns.iter().enumerate() {
                                 projection.push(c.value.clone());
                                 if let Some(v) = values.get(i) {
-                                    colmap.insert(c.to_string(), Value::Strings(v.clone()));
+                                    colmap.insert(c.to_string(), MessageValue::Strings(v.clone()));
                                 }
                             }
 
@@ -437,7 +442,8 @@ impl CassandraCodec {
                                     if let Some(value) = colmap.get(pk_component) {
                                         primary_key.insert(pk_component.clone(), value.clone());
                                     } else {
-                                        primary_key.insert(pk_component.clone(), Value::NULL);
+                                        primary_key
+                                            .insert(pk_component.clone(), MessageValue::NULL);
                                     }
                                 }
                             }
@@ -501,10 +507,10 @@ impl CassandraCodec {
         frame: CassandraFrame,
         matching_query: Option<QueryMessage>,
     ) -> Messages {
-        let mut result: Option<Value> = None;
-        let mut error: Option<Value> = None;
+        let mut result: Option<MessageValue> = None;
+        let mut error: Option<MessageValue> = None;
         match frame.response_body().unwrap() {
-            ResponseBody::Error(e) => error = Some(Value::Strings(e.message)),
+            ResponseBody::Error(e) => error = Some(MessageValue::Strings(e.message)),
             ResponseBody::Result(ResResultBody::Rows(rows)) => {
                 let converted_rows = rows
                     .rows_content
@@ -514,15 +520,17 @@ impl CassandraCodec {
                             .enumerate()
                             .map(|(i, row_content)| {
                                 let col_spec = &rows.metadata.col_specs[i];
-                                let data =
-                                    Value::build_value_from_cstar_col_type(col_spec, &row_content);
+                                let data = MessageValue::build_value_from_cstar_col_type(
+                                    col_spec,
+                                    &row_content,
+                                );
 
                                 (col_spec.name.clone(), data)
                             })
                             .collect()
                     })
                     .collect();
-                result = Some(Value::NamedRows(converted_rows));
+                result = Some(MessageValue::NamedRows(converted_rows));
             }
             _ => {}
         }
@@ -583,7 +591,7 @@ impl CassandraCodec {
                         QueryResponse {
                             matching_query: None,
                             result: None,
-                            error: Some(Value::Strings(body.message)),
+                            error: Some(MessageValue::Strings(body.message)),
                             response_meta: None,
                         },
                         false,
@@ -723,7 +731,7 @@ impl Encoder<Messages> for CassandraCodec {
 #[cfg(test)]
 mod cassandra_protocol_tests {
     use crate::message::{
-        ASTHolder, Message, MessageDetails, QueryMessage, QueryResponse, QueryType, Value,
+        ASTHolder, Message, MessageDetails, MessageValue, QueryMessage, QueryResponse, QueryType,
     };
     use crate::protocols::cassandra_codec::CassandraCodec;
     use crate::protocols::CassandraFrame;
@@ -871,7 +879,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message::new(
             MessageDetails::Response(QueryResponse {
                 matching_query: None,
-                result: Some(Value::NamedRows(vec![])),
+                result: Some(MessageValue::NamedRows(vec![])),
                 error: None,
                 response_meta: None,
             }),
@@ -910,7 +918,7 @@ mod cassandra_protocol_tests {
                 primary_key: HashMap::new(),
                 query_values: Some(HashMap::from([(
                     "key".into(),
-                    Value::Strings("local".into()),
+                    MessageValue::Strings("local".into()),
                 )])),
                 projection: Some(vec!["*".into()]),
                 query_type: QueryType::Read,
@@ -997,7 +1005,7 @@ mod cassandra_protocol_tests {
                 primary_key: HashMap::new(),
                 query_values: Some(HashMap::from([(
                     "bar".into(),
-                    Value::Strings("bar2".into()),
+                    MessageValue::Strings("bar2".into()),
                 )])),
                 projection: Some(vec!["bar".into()]),
                 query_type: QueryType::Write,
@@ -1064,15 +1072,15 @@ mod cassandra_protocol_tests {
         assert_eq!(colmap.len(), 3);
         assert_eq!(
             colmap.get("col1").unwrap(),
-            &Value::Strings("one".to_string())
+            &MessageValue::Strings("one".to_string())
         );
         assert_eq!(
             colmap.get("col2").unwrap(),
-            &Value::Strings("2".to_string())
+            &MessageValue::Strings("2".to_string())
         );
         assert_eq!(
             colmap.get("col3").unwrap(),
-            &Value::Strings("3".to_string())
+            &MessageValue::Strings("3".to_string())
         );
         assert_eq!(namespace.len(), 1);
         assert_eq!(namespace[0], "tbl");
@@ -1093,11 +1101,11 @@ mod cassandra_protocol_tests {
         assert_eq!(colmap.len(), 2);
         assert_eq!(
             colmap.get("col1").unwrap(),
-            &Value::Strings("one".to_string())
+            &MessageValue::Strings("one".to_string())
         );
         assert_eq!(
             colmap.get("col2").unwrap(),
-            &Value::Strings("2".to_string())
+            &MessageValue::Strings("2".to_string())
         );
         assert_eq!(namespace.len(), 2);
         assert_eq!(namespace[0], "keyspace");
@@ -1125,7 +1133,7 @@ mod cassandra_protocol_tests {
         assert_eq!(primary_key.len(), 1);
         assert_eq!(
             primary_key.get("col3").unwrap(),
-            &Value::Strings("3".to_string())
+            &MessageValue::Strings("3".to_string())
         );
         assert_eq!(colmap.len(), 0);
         assert_eq!(namespace.len(), 2);

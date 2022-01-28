@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, QueryResponse, Value};
+use crate::message::{Message, MessageValue, QueryResponse};
 use crate::protocols::Frame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
@@ -155,7 +155,7 @@ impl Transform for Tee {
                 if !chain_response.eq(&tee_response) {
                     for message in &mut chain_response {
                         *message = Message::new_response(
-                            QueryResponse::empty_with_error(Some(Value::Strings(
+                            QueryResponse::empty_with_error(Some(MessageValue::Strings(
                                 "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch"
                                     .to_string(),
                             ))),

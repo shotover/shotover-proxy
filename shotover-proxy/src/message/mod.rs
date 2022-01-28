@@ -141,7 +141,7 @@ pub struct RawMessage {
 pub enum ASTHolder {
     // Statement is boxed because Statement takes up a lot more stack space than Value.
     SQL(Box<Statement>),
-    Commands(Value), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
+    Commands(MessageValue), // A flexible representation of a structured query that will naturally convert into the required type via into/from traits
 }
 
 impl ASTHolder {
@@ -160,8 +160,8 @@ impl ASTHolder {
             }
             .to_string(),
             ASTHolder::Commands(commands) => {
-                if let Value::List(coms) = commands {
-                    if let Some(Value::Bytes(b)) = coms.get(0) {
+                if let MessageValue::List(coms) = commands {
+                    if let Some(MessageValue::Bytes(b)) = coms.get(0) {
                         String::from_utf8(b.to_vec())
                             .unwrap_or_else(|_| "couldn't decode".to_string())
                     } else {
@@ -179,8 +179,8 @@ impl ASTHolder {
 pub struct QueryMessage {
     pub query_string: String,
     pub namespace: Vec<String>,
-    pub primary_key: HashMap<String, Value>,
-    pub query_values: Option<HashMap<String, Value>>,
+    pub primary_key: HashMap<String, MessageValue>,
+    pub query_values: Option<HashMap<String, MessageValue>>,
     pub projection: Option<Vec<String>>,
     pub query_type: QueryType,
     pub ast: Option<ASTHolder>,
@@ -233,9 +233,9 @@ impl QueryMessage {
 #[derive(PartialEq, Debug, Clone)]
 pub struct QueryResponse {
     pub matching_query: Option<QueryMessage>,
-    pub result: Option<Value>,
-    pub error: Option<Value>,
-    pub response_meta: Option<Value>,
+    pub result: Option<MessageValue>,
+    pub error: Option<MessageValue>,
+    pub response_meta: Option<MessageValue>,
 }
 
 //TODO this could use a Builder
@@ -249,7 +249,7 @@ impl QueryResponse {
         }
     }
 
-    pub fn empty_with_error(error: Option<Value>) -> Self {
+    pub fn empty_with_error(error: Option<MessageValue>) -> Self {
         QueryResponse {
             matching_query: None,
             result: None,
@@ -258,7 +258,7 @@ impl QueryResponse {
         }
     }
 
-    pub fn just_result(result: Value) -> Self {
+    pub fn just_result(result: MessageValue) -> Self {
         QueryResponse {
             matching_query: None,
             result: Some(result),
@@ -267,7 +267,7 @@ impl QueryResponse {
         }
     }
 
-    pub fn result_with_matching(matching: Option<QueryMessage>, result: Value) -> Self {
+    pub fn result_with_matching(matching: Option<QueryMessage>, result: MessageValue) -> Self {
         QueryResponse {
             matching_query: matching,
             result: Some(result),
@@ -278,8 +278,8 @@ impl QueryResponse {
 
     pub fn result_error_with_matching(
         matching: Option<QueryMessage>,
-        result: Option<Value>,
-        error: Option<Value>,
+        result: Option<MessageValue>,
+        error: Option<MessageValue>,
     ) -> Self {
         QueryResponse {
             matching_query: matching,
@@ -289,7 +289,7 @@ impl QueryResponse {
         }
     }
 
-    pub fn error_with_matching(matching: Option<QueryMessage>, error: Value) -> Self {
+    pub fn error_with_matching(matching: Option<QueryMessage>, error: MessageValue) -> Self {
         QueryResponse {
             matching_query: matching,
             result: None,
@@ -318,7 +318,7 @@ pub enum QueryType {
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
-pub enum Value {
+pub enum MessageValue {
     NULL,
     None,
     #[serde(with = "my_bytes")]
@@ -330,13 +330,13 @@ pub enum Value {
     Float(OrderedFloat<f32>),
     Boolean(bool),
     Inet(IpAddr),
-    List(Vec<Value>),
-    Rows(Vec<Vec<Value>>),
-    NamedRows(Vec<BTreeMap<String, Value>>),
-    Document(BTreeMap<String, Value>),
-    FragmentedResponse(Vec<Value>),
-    Set(BTreeSet<Value>),
-    Map(BTreeMap<Value, Value>),
+    List(Vec<MessageValue>),
+    Rows(Vec<Vec<MessageValue>>),
+    NamedRows(Vec<BTreeMap<String, MessageValue>>),
+    Document(BTreeMap<String, MessageValue>),
+    FragmentedResponse(Vec<MessageValue>),
+    Set(BTreeSet<MessageValue>),
+    Map(BTreeMap<MessageValue, MessageValue>),
     Varint(BigInt),
     Decimal(BigDecimal),
     Date(i32),
@@ -346,8 +346,8 @@ pub enum Value {
     Uuid(Uuid),
     Time(i64),
     Counter(i64),
-    Tuple(Vec<Value>),
-    Udt(BTreeMap<String, Value>),
+    Tuple(Vec<MessageValue>),
+    Udt(BTreeMap<String, MessageValue>),
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
@@ -358,111 +358,121 @@ pub enum IntSize {
     I8,  // Tinyint
 }
 
-impl From<&Value> for SQLValue {
-    fn from(v: &Value) -> Self {
+impl From<&MessageValue> for SQLValue {
+    fn from(v: &MessageValue) -> Self {
         match v {
-            Value::NULL => SQLValue::Null,
-            Value::Bytes(b) => SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap()), // TODO: this is definitely wrong
-            Value::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            Value::Integer(i, _) => SQLValue::Number(i.to_string(), false),
-            Value::Float(f) => SQLValue::Number(f.to_string(), false),
-            Value::Boolean(b) => SQLValue::Boolean(*b),
+            MessageValue::NULL => SQLValue::Null,
+            MessageValue::Bytes(b) => {
+                SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap())
+            } // TODO: this is definitely wrong
+            MessageValue::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
+            MessageValue::Integer(i, _) => SQLValue::Number(i.to_string(), false),
+            MessageValue::Float(f) => SQLValue::Number(f.to_string(), false),
+            MessageValue::Boolean(b) => SQLValue::Boolean(*b),
             _ => SQLValue::Null,
         }
     }
 }
 
-impl From<&SQLValue> for Value {
+impl From<&SQLValue> for MessageValue {
     fn from(v: &SQLValue) -> Self {
         match v {
             SQLValue::Number(v, false)
             | SQLValue::SingleQuotedString(v)
-            | SQLValue::NationalStringLiteral(v) => Value::Strings(v.clone()),
-            SQLValue::HexStringLiteral(v) => Value::Strings(v.to_string()),
-            SQLValue::Boolean(v) => Value::Boolean(*v),
-            _ => Value::Strings("NULL".to_string()),
+            | SQLValue::NationalStringLiteral(v) => MessageValue::Strings(v.clone()),
+            SQLValue::HexStringLiteral(v) => MessageValue::Strings(v.to_string()),
+            SQLValue::Boolean(v) => MessageValue::Boolean(*v),
+            _ => MessageValue::Strings("NULL".to_string()),
         }
     }
 }
 
-impl From<RedisFrame> for Value {
+impl From<RedisFrame> for MessageValue {
     fn from(f: RedisFrame) -> Self {
         match f {
-            RedisFrame::SimpleString(s) => Value::Strings(String::from_utf8_lossy(&s).to_string()),
-            RedisFrame::Error(e) => Value::Strings(e.to_string()),
-            RedisFrame::Integer(i) => Value::Integer(i, IntSize::I64),
-            RedisFrame::BulkString(b) => Value::Bytes(b),
-            RedisFrame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            RedisFrame::Null => Value::NULL,
+            RedisFrame::SimpleString(s) => {
+                MessageValue::Strings(String::from_utf8_lossy(&s).to_string())
+            }
+            RedisFrame::Error(e) => MessageValue::Strings(e.to_string()),
+            RedisFrame::Integer(i) => MessageValue::Integer(i, IntSize::I64),
+            RedisFrame::BulkString(b) => MessageValue::Bytes(b),
+            RedisFrame::Array(a) => {
+                MessageValue::List(a.iter().cloned().map(MessageValue::from).collect())
+            }
+            RedisFrame::Null => MessageValue::NULL,
         }
     }
 }
-impl From<&RedisFrame> for Value {
+impl From<&RedisFrame> for MessageValue {
     fn from(f: &RedisFrame) -> Self {
         match f.clone() {
             RedisFrame::SimpleString(s) => {
-                Value::Strings(String::from_utf8_lossy(s.as_ref()).to_string())
+                MessageValue::Strings(String::from_utf8_lossy(s.as_ref()).to_string())
             }
-            RedisFrame::Error(e) => Value::Strings(e.to_string()),
-            RedisFrame::Integer(i) => Value::Integer(i, IntSize::I64),
-            RedisFrame::BulkString(b) => Value::Bytes(b),
-            RedisFrame::Array(a) => Value::List(a.iter().cloned().map(Value::from).collect()),
-            RedisFrame::Null => Value::NULL,
+            RedisFrame::Error(e) => MessageValue::Strings(e.to_string()),
+            RedisFrame::Integer(i) => MessageValue::Integer(i, IntSize::I64),
+            RedisFrame::BulkString(b) => MessageValue::Bytes(b),
+            RedisFrame::Array(a) => {
+                MessageValue::List(a.iter().cloned().map(MessageValue::from).collect())
+            }
+            RedisFrame::Null => MessageValue::NULL,
         }
     }
 }
 
-impl From<Value> for RedisFrame {
-    fn from(value: Value) -> RedisFrame {
+impl From<MessageValue> for RedisFrame {
+    fn from(value: MessageValue) -> RedisFrame {
         match value {
-            Value::NULL => RedisFrame::Null,
-            Value::None => todo!(),
-            Value::Bytes(b) => RedisFrame::BulkString(b),
-            Value::Strings(s) => RedisFrame::SimpleString(s.into()),
-            Value::Integer(i, _) => RedisFrame::Integer(i),
-            Value::Float(f) => RedisFrame::SimpleString(f.to_string().into()),
-            Value::Boolean(b) => RedisFrame::Integer(i64::from(b)),
-            Value::Inet(i) => RedisFrame::SimpleString(i.to_string().into()),
-            Value::List(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
-            Value::Rows(r) => {
-                RedisFrame::Array(r.into_iter().map(|v| Value::List(v).into()).collect())
-            }
-            Value::NamedRows(_) => todo!(),
-            Value::Document(_) => todo!(),
-            Value::FragmentedResponse(l) => {
+            MessageValue::NULL => RedisFrame::Null,
+            MessageValue::None => todo!(),
+            MessageValue::Bytes(b) => RedisFrame::BulkString(b),
+            MessageValue::Strings(s) => RedisFrame::SimpleString(s.into()),
+            MessageValue::Integer(i, _) => RedisFrame::Integer(i),
+            MessageValue::Float(f) => RedisFrame::SimpleString(f.to_string().into()),
+            MessageValue::Boolean(b) => RedisFrame::Integer(i64::from(b)),
+            MessageValue::Inet(i) => RedisFrame::SimpleString(i.to_string().into()),
+            MessageValue::List(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
+            MessageValue::Rows(r) => RedisFrame::Array(
+                r.into_iter()
+                    .map(|v| MessageValue::List(v).into())
+                    .collect(),
+            ),
+            MessageValue::NamedRows(_) => todo!(),
+            MessageValue::Document(_) => todo!(),
+            MessageValue::FragmentedResponse(l) => {
                 RedisFrame::Array(l.into_iter().map(|v| v.into()).collect())
             }
-            Value::Ascii(_a) => todo!(),
-            Value::Double(_d) => todo!(),
-            Value::Set(_s) => todo!(),
-            Value::Map(_) => todo!(),
-            Value::Varint(_v) => todo!(),
-            Value::Decimal(_d) => todo!(),
-            Value::Date(_date) => todo!(),
-            Value::Timestamp(_timestamp) => todo!(),
-            Value::Timeuuid(_timeuuid) => todo!(),
-            Value::Varchar(_v) => todo!(),
-            Value::Uuid(_uuid) => todo!(),
-            Value::Time(_t) => todo!(),
-            Value::Counter(_c) => todo!(),
-            Value::Tuple(_) => todo!(),
-            Value::Udt(_) => todo!(),
+            MessageValue::Ascii(_a) => todo!(),
+            MessageValue::Double(_d) => todo!(),
+            MessageValue::Set(_s) => todo!(),
+            MessageValue::Map(_) => todo!(),
+            MessageValue::Varint(_v) => todo!(),
+            MessageValue::Decimal(_d) => todo!(),
+            MessageValue::Date(_date) => todo!(),
+            MessageValue::Timestamp(_timestamp) => todo!(),
+            MessageValue::Timeuuid(_timeuuid) => todo!(),
+            MessageValue::Varchar(_v) => todo!(),
+            MessageValue::Uuid(_uuid) => todo!(),
+            MessageValue::Time(_t) => todo!(),
+            MessageValue::Counter(_c) => todo!(),
+            MessageValue::Tuple(_) => todo!(),
+            MessageValue::Udt(_) => todo!(),
         }
     }
 }
 
-impl Value {
-    pub fn value_byte_string(string: String) -> Value {
-        Value::Bytes(Bytes::from(string))
+impl MessageValue {
+    pub fn value_byte_string(string: String) -> MessageValue {
+        MessageValue::Bytes(Bytes::from(string))
     }
 
-    pub fn value_byte_str(str: &'static str) -> Value {
-        Value::Bytes(Bytes::from(str))
+    pub fn value_byte_str(str: &'static str) -> MessageValue {
+        MessageValue::Bytes(Bytes::from(str))
     }
 
-    pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> Value {
-        let cassandra_type = Value::into_cassandra_type(&spec.col_type, data);
-        Value::create_element(cassandra_type)
+    pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> MessageValue {
+        let cassandra_type = MessageValue::into_cassandra_type(&spec.col_type, data);
+        MessageValue::create_element(cassandra_type)
     }
 
     fn into_cassandra_type(col_type: &ColTypeOption, data: &CBytes) -> CassandraType {
@@ -470,122 +480,130 @@ impl Value {
         wrapper(data, col_type).unwrap()
     }
 
-    fn create_element(element: CassandraType) -> Value {
+    fn create_element(element: CassandraType) -> MessageValue {
         match element {
-            CassandraType::Ascii(a) => Value::Ascii(a),
-            CassandraType::Bigint(b) => Value::Integer(b, IntSize::I64),
-            CassandraType::Blob(b) => Value::Bytes(b.into_vec().into()),
-            CassandraType::Boolean(b) => Value::Boolean(b),
-            CassandraType::Counter(c) => Value::Counter(c),
+            CassandraType::Ascii(a) => MessageValue::Ascii(a),
+            CassandraType::Bigint(b) => MessageValue::Integer(b, IntSize::I64),
+            CassandraType::Blob(b) => MessageValue::Bytes(b.into_vec().into()),
+            CassandraType::Boolean(b) => MessageValue::Boolean(b),
+            CassandraType::Counter(c) => MessageValue::Counter(c),
             CassandraType::Decimal(d) => {
                 let big_decimal = BigDecimal::new(d.unscaled, d.scale.into());
-                Value::Decimal(big_decimal)
+                MessageValue::Decimal(big_decimal)
             }
-            CassandraType::Double(d) => Value::Double(d.into()),
-            CassandraType::Float(f) => Value::Float(f.into()),
-            CassandraType::Int(c) => Value::Integer(c as i64, IntSize::I64),
-            CassandraType::Timestamp(t) => Value::Timestamp(t),
-            CassandraType::Uuid(u) => Value::Uuid(u),
-            CassandraType::Varchar(v) => Value::Varchar(v),
-            CassandraType::Varint(v) => Value::Varint(v),
-            CassandraType::Timeuuid(t) => Value::Timeuuid(t),
-            CassandraType::Inet(i) => Value::Inet(i),
-            CassandraType::Date(d) => Value::Date(d),
-            CassandraType::Time(d) => Value::Time(d),
-            CassandraType::Smallint(d) => Value::Integer(d.into(), IntSize::I16),
-            CassandraType::Tinyint(d) => Value::Integer(d.into(), IntSize::I8),
+            CassandraType::Double(d) => MessageValue::Double(d.into()),
+            CassandraType::Float(f) => MessageValue::Float(f.into()),
+            CassandraType::Int(c) => MessageValue::Integer(c as i64, IntSize::I64),
+            CassandraType::Timestamp(t) => MessageValue::Timestamp(t),
+            CassandraType::Uuid(u) => MessageValue::Uuid(u),
+            CassandraType::Varchar(v) => MessageValue::Varchar(v),
+            CassandraType::Varint(v) => MessageValue::Varint(v),
+            CassandraType::Timeuuid(t) => MessageValue::Timeuuid(t),
+            CassandraType::Inet(i) => MessageValue::Inet(i),
+            CassandraType::Date(d) => MessageValue::Date(d),
+            CassandraType::Time(d) => MessageValue::Time(d),
+            CassandraType::Smallint(d) => MessageValue::Integer(d.into(), IntSize::I16),
+            CassandraType::Tinyint(d) => MessageValue::Integer(d.into(), IntSize::I8),
             CassandraType::List(list) => {
-                let value_list = list.into_iter().map(Value::create_element).collect();
-                Value::List(value_list)
+                let value_list = list.into_iter().map(MessageValue::create_element).collect();
+                MessageValue::List(value_list)
             }
-            CassandraType::Map(map) => Value::Map(
+            CassandraType::Map(map) => MessageValue::Map(
                 map.into_iter()
-                    .map(|(key, value)| (Value::create_element(key), Value::create_element(value)))
+                    .map(|(key, value)| {
+                        (
+                            MessageValue::create_element(key),
+                            MessageValue::create_element(value),
+                        )
+                    })
                     .collect(),
             ),
             CassandraType::Set(set) => {
-                Value::Set(set.into_iter().map(Value::create_element).collect())
+                MessageValue::Set(set.into_iter().map(MessageValue::create_element).collect())
             }
             CassandraType::Udt(udt) => {
                 let values = udt
                     .into_iter()
-                    .map(|(key, element)| (key, Value::create_element(element)))
+                    .map(|(key, element)| (key, MessageValue::create_element(element)))
                     .collect();
-                Value::Udt(values)
+                MessageValue::Udt(values)
             }
             CassandraType::Tuple(tuple) => {
-                let value_list = tuple.into_iter().map(Value::create_element).collect();
-                Value::Tuple(value_list)
+                let value_list = tuple
+                    .into_iter()
+                    .map(MessageValue::create_element)
+                    .collect();
+                MessageValue::Tuple(value_list)
             }
-            CassandraType::Null => Value::NULL,
+            CassandraType::Null => MessageValue::NULL,
         }
     }
 
     pub fn into_str_bytes(self) -> Bytes {
         match self {
-            Value::NULL => Bytes::from("".to_string()),
-            Value::None => Bytes::from("".to_string()),
-            Value::Bytes(b) => b,
-            Value::Strings(s) => Bytes::from(s),
-            Value::Integer(i, _) => Bytes::from(format!("{i}")),
-            Value::Float(f) => Bytes::from(format!("{f}")),
-            Value::Boolean(b) => Bytes::from(format!("{b}")),
-            Value::Inet(i) => Bytes::from(format!("{i}")),
-            Value::FragmentedResponse(_) => unimplemented!(),
-            Value::Document(_) => unimplemented!(),
-            Value::NamedRows(_) => unimplemented!(),
-            Value::List(_) => unimplemented!(),
-            Value::Rows(_) => unimplemented!(),
-            Value::Ascii(_) => unimplemented!(),
-            Value::Double(_) => unimplemented!(),
-            Value::Set(_) => unimplemented!(),
-            Value::Map(_) => unimplemented!(),
-            Value::Varint(_) => unimplemented!(),
-            Value::Decimal(_) => unimplemented!(),
-            Value::Date(_) => unimplemented!(),
-            Value::Timestamp(_) => unimplemented!(),
-            Value::Timeuuid(_) => unimplemented!(),
-            Value::Varchar(_) => unimplemented!(),
-            Value::Uuid(_) => unimplemented!(),
-            Value::Time(_) => unimplemented!(),
-            Value::Counter(_) => unimplemented!(),
-            Value::Tuple(_) => unimplemented!(),
-            Value::Udt(_) => unimplemented!(),
+            MessageValue::NULL => Bytes::from("".to_string()),
+            MessageValue::None => Bytes::from("".to_string()),
+            MessageValue::Bytes(b) => b,
+            MessageValue::Strings(s) => Bytes::from(s),
+            MessageValue::Integer(i, _) => Bytes::from(format!("{i}")),
+            MessageValue::Float(f) => Bytes::from(format!("{f}")),
+            MessageValue::Boolean(b) => Bytes::from(format!("{b}")),
+            MessageValue::Inet(i) => Bytes::from(format!("{i}")),
+            MessageValue::FragmentedResponse(_) => unimplemented!(),
+            MessageValue::Document(_) => unimplemented!(),
+            MessageValue::NamedRows(_) => unimplemented!(),
+            MessageValue::List(_) => unimplemented!(),
+            MessageValue::Rows(_) => unimplemented!(),
+            MessageValue::Ascii(_) => unimplemented!(),
+            MessageValue::Double(_) => unimplemented!(),
+            MessageValue::Set(_) => unimplemented!(),
+            MessageValue::Map(_) => unimplemented!(),
+            MessageValue::Varint(_) => unimplemented!(),
+            MessageValue::Decimal(_) => unimplemented!(),
+            MessageValue::Date(_) => unimplemented!(),
+            MessageValue::Timestamp(_) => unimplemented!(),
+            MessageValue::Timeuuid(_) => unimplemented!(),
+            MessageValue::Varchar(_) => unimplemented!(),
+            MessageValue::Uuid(_) => unimplemented!(),
+            MessageValue::Time(_) => unimplemented!(),
+            MessageValue::Counter(_) => unimplemented!(),
+            MessageValue::Tuple(_) => unimplemented!(),
+            MessageValue::Udt(_) => unimplemented!(),
         }
     }
 }
 
-impl From<Value> for cassandra_protocol::types::value::Bytes {
-    fn from(value: Value) -> cassandra_protocol::types::value::Bytes {
+impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
+    fn from(value: MessageValue) -> cassandra_protocol::types::value::Bytes {
         match value {
-            Value::NULL => (-1).into(),
-            Value::None => cassandra_protocol::types::value::Bytes::new(vec![]),
-            Value::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
-            Value::Strings(s) => s.into(),
-            Value::Integer(i, _) => i.into(),
-            Value::Float(f) => f.into_inner().into(),
-            Value::Boolean(b) => b.into(),
-            Value::List(l) => cassandra_protocol::types::value::Bytes::from(l),
-            Value::Rows(r) => cassandra_protocol::types::value::Bytes::from(r),
-            Value::NamedRows(n) => cassandra_protocol::types::value::Bytes::from(n),
-            Value::Document(d) => cassandra_protocol::types::value::Bytes::from(d),
-            Value::Inet(i) => i.into(),
-            Value::FragmentedResponse(l) => cassandra_protocol::types::value::Bytes::from(l),
-            Value::Ascii(_) => unimplemented!(),
-            Value::Double(_) => unimplemented!(),
-            Value::Set(_) => unimplemented!(),
-            Value::Map(_) => unimplemented!(),
-            Value::Varint(_) => unimplemented!(),
-            Value::Decimal(_) => unimplemented!(),
-            Value::Date(_) => unimplemented!(),
-            Value::Timestamp(_) => unimplemented!(),
-            Value::Timeuuid(_) => unimplemented!(),
-            Value::Varchar(_) => unimplemented!(),
-            Value::Uuid(_) => unimplemented!(),
-            Value::Time(_) => unimplemented!(),
-            Value::Counter(_) => unimplemented!(),
-            Value::Tuple(_) => unimplemented!(),
-            Value::Udt(_) => unimplemented!(),
+            MessageValue::NULL => (-1).into(),
+            MessageValue::None => cassandra_protocol::types::value::Bytes::new(vec![]),
+            MessageValue::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
+            MessageValue::Strings(s) => s.into(),
+            MessageValue::Integer(i, _) => i.into(),
+            MessageValue::Float(f) => f.into_inner().into(),
+            MessageValue::Boolean(b) => b.into(),
+            MessageValue::List(l) => cassandra_protocol::types::value::Bytes::from(l),
+            MessageValue::Rows(r) => cassandra_protocol::types::value::Bytes::from(r),
+            MessageValue::NamedRows(n) => cassandra_protocol::types::value::Bytes::from(n),
+            MessageValue::Document(d) => cassandra_protocol::types::value::Bytes::from(d),
+            MessageValue::Inet(i) => i.into(),
+            MessageValue::FragmentedResponse(l) => cassandra_protocol::types::value::Bytes::from(l),
+            MessageValue::Ascii(_) => unimplemented!(),
+            MessageValue::Double(_) => unimplemented!(),
+            MessageValue::Set(_) => unimplemented!(),
+            MessageValue::Map(_) => unimplemented!(),
+            MessageValue::Varint(_) => unimplemented!(),
+            MessageValue::Decimal(_) => unimplemented!(),
+            MessageValue::Date(_) => unimplemented!(),
+            MessageValue::Timestamp(_) => unimplemented!(),
+            MessageValue::Timeuuid(_) => unimplemented!(),
+            MessageValue::Varchar(_) => unimplemented!(),
+            MessageValue::Uuid(_) => unimplemented!(),
+            MessageValue::Time(_) => unimplemented!(),
+            MessageValue::Counter(_) => unimplemented!(),
+            MessageValue::Tuple(_) => unimplemented!(),
+            MessageValue::Udt(_) => unimplemented!(),
         }
     }
 }

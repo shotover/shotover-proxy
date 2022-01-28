@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::message::Value::List;
+use crate::message::MessageValue::List;
 use crate::message::{ASTHolder, MessageDetails, QueryMessage};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
