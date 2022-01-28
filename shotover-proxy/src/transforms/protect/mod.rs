@@ -1,4 +1,3 @@
-use core::mem;
 use std::collections::HashMap;
 
 use anyhow::anyhow;
@@ -160,13 +159,10 @@ impl Transform for Protect {
             if let MessageDetails::Query(qm) = &mut message.details {
                 // Encrypt the writes
                 if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
-                    if let Some((_, tables)) = self
-                        .keyspace_table_columns
-                        .get_key_value(qm.namespace.get(0).unwrap())
+                    if let Some((_, tables)) =
+                        self.keyspace_table_columns.get_key_value(&qm.namespace[0])
                     {
-                        if let Some((_, columns)) =
-                            tables.get_key_value(qm.namespace.get(1).unwrap())
-                        {
+                        if let Some((_, columns)) = tables.get_key_value(&qm.namespace[1]) {
                             if let Some(query_values) = &mut qm.query_values {
                                 for col in columns {
                                     if let Some(value) = query_values.get_mut(col) {
@@ -174,7 +170,7 @@ impl Transform for Protect {
                                         protected = protected
                                             .protect(&self.key_source, &self.key_id)
                                             .await?;
-                                        let _ = mem::replace(value, protected.into());
+                                        *value = protected.into();
                                     }
                                 }
                             }
@@ -201,12 +197,11 @@ impl Transform for Protect {
                 }) = &request.details
                 {
                     if namespace.len() == 2 {
-                        if let Some((_keyspace, tables)) = self
-                            .keyspace_table_columns
-                            .get_key_value(namespace.get(0).unwrap())
+                        if let Some((_keyspace, tables)) =
+                            self.keyspace_table_columns.get_key_value(&namespace[0])
                         {
                             if let Some((_table, protect_columns)) =
-                                tables.get_key_value(namespace.get(1).unwrap())
+                                tables.get_key_value(&namespace[1])
                             {
                                 let mut positions: Vec<usize> = Vec::new();
                                 for (i, p) in projection.iter().enumerate() {
@@ -224,7 +219,7 @@ impl Transform for Protect {
                                                 let new_value: Value = protected
                                                     .unprotect(&self.key_source, &self.key_id)
                                                     .await?;
-                                                let _ = mem::replace(v, new_value);
+                                                *v = new_value;
                                             } else {
                                                 warn!("Tried decrypting non-blob column")
                                             }
