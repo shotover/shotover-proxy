@@ -1,14 +1,14 @@
+use super::connection::CassandraConnection;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::message;
 use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_codec::CassandraCodec;
+use crate::protocols::CassandraFrame;
 use crate::protocols::Frame;
-use crate::transforms::util::unordered_cluster_connection_pool::OwnedUnorderedConnectionPool;
 use crate::transforms::util::Request;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
-use crate::protocols::CassandraFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
@@ -39,7 +39,7 @@ impl CassandraSinkSingleConfig {
 
 pub struct CassandraSinkSingle {
     address: String,
-    outbound: Option<OwnedUnorderedConnectionPool<CassandraCodec>>,
+    outbound: Option<CassandraConnection<CassandraCodec>>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
     chain_name: String,
@@ -73,20 +73,21 @@ impl CassandraSinkSingle {
             match self.outbound {
                 None => {
                     trace!("creating outbound connection {:?}", self.address);
-                    let mut conn_pool = OwnedUnorderedConnectionPool::new(
+                    let mut conn_pool = CassandraConnection::new(
                         self.address.clone(),
                         CassandraCodec::new(self.cassandra_ks.clone(), self.bypass),
                     );
                     // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
-                    conn_pool.connect(1).await?;
+                    conn_pool.connect().await?;
                     self.outbound = Some(conn_pool);
                 }
                 Some(ref mut outbound_framed_codec) => {
                     trace!("sending frame upstream");
                     let sender = outbound_framed_codec
-                        .connections
-                        .get_mut(0)
-                        .expect("No connections found");
+                        .connection
+                        .as_ref()
+                        .expect("No connection found.");
+
                     let expected_size = messages.len();
                     let results: Result<FuturesOrdered<Receiver<(Message, ChainResponse)>>> =
                         messages

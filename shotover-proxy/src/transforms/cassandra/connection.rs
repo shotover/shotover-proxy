@@ -3,11 +3,11 @@ use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::transforms::util::{Request, Response};
 use crate::{message::Message, server::Codec};
+
 use anyhow::{anyhow, Result};
+use derivative::Derivative;
 use futures::StreamExt;
 use halfbrown::HashMap;
-use std::fmt;
-use std::fmt::Formatter;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -15,79 +15,35 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, Instrument};
 
-#[derive(Clone)]
-pub struct OwnedUnorderedConnectionPool<C: Codec> {
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub struct CassandraConnection<C: Codec> {
     host: String,
-    pub connections: Vec<UnboundedSender<Request>>,
+    pub connection: Option<UnboundedSender<Request>>,
+    #[derivative(Debug = "ignore")]
     codec: C,
-    auth_func: fn(&OwnedUnorderedConnectionPool<C>, &mut UnboundedSender<Request>) -> Result<()>,
 }
 
-impl<C: Codec> fmt::Debug for OwnedUnorderedConnectionPool<C> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ConnectionPool")
-            .field("host_set", &self.host)
-            .field("queue_map", &self.connections)
-            .finish()
-    }
-}
-
-impl<C: Codec + 'static> OwnedUnorderedConnectionPool<C> {
+impl<C: Codec + 'static> CassandraConnection<C> {
     pub fn new(host: String, codec: C) -> Self {
-        OwnedUnorderedConnectionPool {
+        CassandraConnection {
             host,
-            connections: Vec::new(),
+            connection: None,
             codec,
-            auth_func: |_, _| Ok(()),
         }
     }
 
-    pub fn new_with_auth(
-        host: String,
-        codec: C,
-        auth_func: fn(
-            &OwnedUnorderedConnectionPool<C>,
-            &mut UnboundedSender<Request>,
-        ) -> Result<()>,
-    ) -> Self {
-        OwnedUnorderedConnectionPool {
-            host,
-            connections: Vec::new(),
-            codec,
-            auth_func,
-        }
-    }
+    pub async fn connect(&mut self) -> Result<()> {
+        let socket: TcpStream = TcpStream::connect(self.host.clone()).await?;
+        let (read, write) = socket.into_split();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
+        let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
 
-    pub async fn connect(&mut self, connection_count: i32) -> Result<()> {
-        let mut connection_pool: Vec<UnboundedSender<Request>> = Vec::new();
+        tokio::spawn(tx_process(write, out_rx, return_tx, self.codec.clone()).in_current_span());
 
-        for _i in 0..connection_count {
-            let socket: TcpStream = TcpStream::connect(self.host.clone()).await?;
-            let (read, write) = socket.into_split();
-            let (mut out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
-            let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
-
-            tokio::spawn(
-                tx_process(write, out_rx, return_tx, self.codec.clone()).in_current_span(),
-            );
-
-            tokio::spawn(rx_process(read, return_rx, self.codec.clone()).in_current_span());
-            match (self.auth_func)(self, &mut out_tx) {
-                Ok(_) => {
-                    connection_pool.push(out_tx);
-                }
-                Err(e) => {
-                    info!("Could not authenticate to upstream TCP service - {}", e);
-                }
-            }
-        }
-
-        if connection_pool.is_empty() {
-            Err(anyhow!("Couldn't connect to upstream TCP service"))
-        } else {
-            self.connections = connection_pool;
-            Ok(())
-        }
+        tokio::spawn(rx_process(read, return_rx, self.codec.clone()).in_current_span());
+        self.connection = Some(out_tx);
+        Ok(())
     }
 }
 
@@ -121,11 +77,6 @@ async fn rx_process<C: CodecReadHalf>(
     loop {
         tokio::select! {
             Some(maybe_req) = in_r.next() => {
-
-                        if return_message_map.len() > 1 || return_channel_map.len() > 1 {
-                info!("message map {:?}", return_message_map);
-                info!("channel map {:?}", return_channel_map);
-            }
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
@@ -143,18 +94,11 @@ async fn rx_process<C: CodecReadHalf>(
                     }
                     Err(e) => {
                         info!("Couldn't decode message from upstream host {:?}", e);
-                        return Err(anyhow!(
-                                "Couldn't decode message from upstream host {:?}",
-                                e
-                            ));
+                        return Err(anyhow!("Couldn't decode message from upstream host {:?}", e));
                     }
                 }
             },
             Some(original_request) = return_rx.recv() => {
-            if return_message_map.len() > 1 || return_channel_map.len() > 1 {
-                info!("message map {:?}", return_message_map);
-                info!("channel map {:?}", return_channel_map);
-            }
                 if let Request { messages: orig , return_chan: Some(chan), message_id: Some(id) } = original_request {
                     match return_message_map.remove(&id) {
                         None => {
@@ -166,7 +110,7 @@ async fn rx_process<C: CodecReadHalf>(
                         }
                     };
                 } else {
-                   panic!("Couldn't get valid cassandra stream id");
+                   panic!("Couldn't get a valid cassandra stream id");
                 }
             },
             else => {

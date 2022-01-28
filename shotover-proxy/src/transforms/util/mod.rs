@@ -6,7 +6,6 @@ use crate::error::ChainResponse;
 use crate::message::Message;
 
 pub mod cluster_connection_pool;
-pub mod unordered_cluster_connection_pool;
 
 #[derive(Debug)]
 pub struct Request {
