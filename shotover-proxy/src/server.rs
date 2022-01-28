@@ -1,4 +1,5 @@
 use crate::message::{Message, MessageDetails, Messages};
+use crate::protocols::Frame;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
@@ -36,17 +37,22 @@ fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages
         .map(|m| {
             // if there is a protocol error handle it and return a new ReturnToSender message
             // it will be filtered out in the next step.
-            if m.details == MessageDetails::ReturnToSender {
+            if m.return_to_sender {
                 debug!("processing ReturnToSender: {:?}", &m);
                 if let Err(err) = tx_out.send(vec![m]) {
                     error!("Failed to send return to sender message: {:?}", err);
                 }
-                Message::new_no_original(MessageDetails::ReturnToSender, true)
+                Message {
+                    details: MessageDetails::Unknown,
+                    modified: true,
+                    return_to_sender: true,
+                    original: Frame::None,
+                }
             } else {
                 m
             }
         })
-        .filter(|m| m.details != MessageDetails::ReturnToSender)
+        .filter(|m| !m.return_to_sender)
         .collect();
     debug!("perform_custom_handling returning: {:?}", &result);
     result

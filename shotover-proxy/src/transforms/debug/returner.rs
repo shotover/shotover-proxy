@@ -49,10 +49,12 @@ impl Transform for DebugReturner {
             Response::Redis(string) => Ok(message_wrapper
                 .messages
                 .iter()
-                .map(|_| Message {
-                    details: MessageDetails::Unknown,
-                    modified: false,
-                    original: Frame::Redis(RedisFrame::BulkString(string.to_string().into())),
+                .map(|_| {
+                    Message::new(
+                        MessageDetails::Unknown,
+                        false,
+                        Frame::Redis(RedisFrame::BulkString(string.to_string().into())),
+                    )
                 })
                 .collect()),
             Response::Fail => Err(anyhow!("Intentional Fail")),

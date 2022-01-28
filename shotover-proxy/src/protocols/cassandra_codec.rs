@@ -639,10 +639,10 @@ impl Decoder for CassandraCodec {
                     version
                 ));
 
-                let message = Message::new(
-                    MessageDetails::ReturnToSender,
-                    false,
-                    Frame::Cassandra(CassandraFrame {
+                let message = Message {
+                    details: MessageDetails::Unknown,
+                    modified: false,
+                    original: Frame::Cassandra(CassandraFrame {
                         version: Version::V4,
                         direction: Direction::Response,
                         flags: Flags::empty(),
@@ -657,7 +657,8 @@ impl Decoder for CassandraCodec {
                         tracing_id: None,
                         warnings: vec![],
                     }),
-                );
+                    return_to_sender: true,
+                };
                 Ok(Some(vec![message]))
             }
             err => Err(anyhow!("Failed to parse frame {:?}", err)),
@@ -688,7 +689,6 @@ impl CassandraCodec {
                     get_cassandra_frame(item.original)?,
                 ),
                 MessageDetails::Unknown => get_cassandra_frame(item.original)?,
-                MessageDetails::ReturnToSender => get_cassandra_frame(item.original)?,
             }
         };
         debug!("Encoded message as {:?}", &frame);
@@ -772,10 +772,10 @@ mod cassandra_protocol_tests {
     fn test_codec_startup() {
         let mut codec = new_codec();
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
-        let messages = vec![Message {
-            details: MessageDetails::Unknown,
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::new(
+            MessageDetails::Unknown,
+            false,
+            Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -785,7 +785,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
             }),
-        }];
+        )];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -793,10 +793,10 @@ mod cassandra_protocol_tests {
     fn test_codec_options() {
         let mut codec = new_codec();
         let bytes = hex!("040000000500000000");
-        let messages = vec![Message {
-            details: MessageDetails::Unknown,
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::new(
+            MessageDetails::Unknown,
+            false,
+            Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -806,7 +806,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
             }),
-        }];
+        )];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -814,10 +814,10 @@ mod cassandra_protocol_tests {
     fn test_codec_ready() {
         let mut codec = new_codec();
         let bytes = hex!("840000000200000000");
-        let messages = vec![Message {
-            details: MessageDetails::Unknown,
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::new(
+            MessageDetails::Unknown,
+            false,
+            Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Response,
                 flags: Flags::empty(),
@@ -827,7 +827,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
             }),
-        }];
+        )];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -838,10 +838,10 @@ mod cassandra_protocol_tests {
             "040000010b000000310003000f544f504f4c4f47595f4348414e4745
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
-        let messages = vec![Message {
-            details: MessageDetails::Unknown,
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame {
+        let messages = vec![Message::new(
+            MessageDetails::Unknown,
+            false,
+            Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -855,7 +855,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
             }),
-        }];
+        )];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -868,15 +868,15 @@ mod cassandra_protocol_tests {
             65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
             573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
         );
-        let messages = vec![Message {
-            details: MessageDetails::Response(QueryResponse {
+        let messages = vec![Message::new(
+            MessageDetails::Response(QueryResponse {
                 matching_query: None,
                 result: Some(Value::NamedRows(vec![])),
                 error: None,
                 response_meta: None,
             }),
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame {
+            false,
+            Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Response,
                 flags: Flags::empty(),
@@ -891,7 +891,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
             }),
-        }];
+        )];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -903,8 +903,8 @@ mod cassandra_protocol_tests {
             74656d2e6c6f63616c205748455245206b65793d276c6f63616c27000100"
         );
 
-        let messages = vec![Message {
-            details: MessageDetails::Query(QueryMessage {
+        let messages = vec![Message::new(
+            MessageDetails::Query(QueryMessage {
                 query_string: "SELECT * FROM system.local WHERE key='local'".into(),
                 namespace: vec!["system".into(), "local".into()],
                 primary_key: HashMap::new(),
@@ -963,8 +963,8 @@ mod cassandra_protocol_tests {
                     },
                 ))))),
             }),
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame {
+            false,
+            Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -978,7 +978,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
             }),
-        }];
+        )];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -990,8 +990,8 @@ mod cassandra_protocol_tests {
             6d2e666f6f2028626172292076616c756573202827626172322729000100"
         );
 
-        let messages = vec![Message {
-            details: MessageDetails::Query(QueryMessage {
+        let messages = vec![Message::new(
+            MessageDetails::Query(QueryMessage {
                 query_string: "Insert Into system.foo (bar) values ('bar2')".into(),
                 namespace: vec!["system".into(), "foo".into()],
                 primary_key: HashMap::new(),
@@ -1034,8 +1034,8 @@ mod cassandra_protocol_tests {
                     on: None,
                 }))),
             }),
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame {
+            false,
+            Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 direction: Direction::Request,
                 flags: Flags::empty(),
@@ -1049,7 +1049,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
             }),
-        }];
+        )];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 

@@ -183,11 +183,11 @@ impl RedisSinkCluster {
 
                     Ok((
                         message,
-                        ChainResponse::Ok(vec![Message {
-                            details: MessageDetails::Unknown,
-                            modified: false,
-                            original: Frame::Redis(RedisFrame::Array(response)),
-                        }]),
+                        ChainResponse::Ok(vec![Message::new(
+                            MessageDetails::Unknown,
+                            false,
+                            Frame::Redis(RedisFrame::Array(response)),
+                        )]),
                     ))
                 })
             }
@@ -732,11 +732,7 @@ fn send_frame_request(
     let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
     sender.send(Request {
-        messages: Message {
-            details: MessageDetails::Unknown,
-            modified: false,
-            original: Frame::Redis(frame),
-        },
+        messages: Message::new(MessageDetails::Unknown, false, Frame::Redis(frame)),
         return_chan: Some(return_chan_tx),
         message_id: None,
     })?;
