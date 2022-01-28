@@ -1,4 +1,5 @@
 use crate::message::{Message, MessageDetails, Messages};
+use crate::protocols::Frame;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
@@ -41,7 +42,12 @@ fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages
                 if let Err(err) = tx_out.send(vec![m]) {
                     error!("Failed to send return to sender message: {:?}", err);
                 }
-                Message::new_no_original(MessageDetails::Unknown, true)
+                Message {
+                    details: MessageDetails::Unknown,
+                    modified: true,
+                    return_to_sender: true,
+                    original: Frame::None,
+                }
             } else {
                 m
             }
