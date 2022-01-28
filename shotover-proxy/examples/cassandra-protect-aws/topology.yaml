@@ -1,0 +1,34 @@
+---
+sources:
+  cassandra_prod:
+    Cassandra:
+      query_processing: true
+      listen_addr: "127.0.0.1:9042"
+      cassandra_ks:
+        system.local:
+          - key
+        test.simple:
+          - pk
+        test.clustering:
+          - pk
+          - clustering
+chain_config:
+  main_chain:
+    - Protect:
+        key_manager:
+          AWSKms:
+            endpoint: "http://localhost:5000"
+            region: "us-east-1"
+            cmk_id: "alias/aws/secretsmanager"
+            number_of_bytes: 32
+        keyspace_table_columns:
+          test_protect_keyspace:
+            test_table:
+              - col1
+    - CassandraSinkSingle:
+        result_processing: true
+        remote_address: "127.0.0.1:9043"
+named_topics:
+  testtopic: 5
+source_to_chain_mapping:
+  cassandra_prod: main_chain

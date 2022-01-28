@@ -8,6 +8,10 @@ license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+# Include WIP alpha transforms in the public API
+alpha-transforms = []
+
 [dependencies]
 tokio = { version = "1.14.0", features = ["full", "macros"] }
 tokio-util = { version = "0.6.1", features = ["full"] }

@@ -37,7 +37,7 @@ pub struct KeyMaterial {
     pub plaintext: Key,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ProtectConfig {
     pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
     pub key_manager: KeyManagerConfig,
