@@ -32,7 +32,6 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [DebugPrinter](#debugprinter)                         | ❌          | Alpha                 |
 | [DebugReturner](#debugreturner)                       | ✅          | Alpha                 |
 | [KafkaSink](#kafkasink)                               | ✅          | Alpha                 |
-| [Loopback](#loopback)                                 | ✅          | Beta                  |
 | [Null](#null)                                         | ✅          | Beta                  |
 | [ParallelMap](#parallelmap)                           | ✅          | Alpha                 |
 | [Protect](#protect)                                   | ❌          | Alpha                 |
@@ -139,14 +138,6 @@ Delay the transform chain at the position that this transform sits at.
   distribution: 500
 ```
 -->
-
-### Loopback
-
-This transform will drop any messages it receives and return the same message back as a response.
-
-```yaml
-- Loopback
-```
 
 ### Null
 

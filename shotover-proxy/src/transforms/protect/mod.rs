@@ -339,12 +339,8 @@ mod protect_transform_tests {
         if let Transforms::Protect(mut protect) = protect_t.get_source().await? {
             let result = protect.transform(wrapper).await;
             if let Ok(mut m) = result {
-                if let MessageDetails::Response(QueryResponse {
-                    matching_query:
-                        Some(QueryMessage {
-                            query_values: Some(query_values),
-                            ..
-                        }),
+                if let MessageDetails::Query(QueryMessage {
+                    query_values: Some(query_values),
                     ..
                 }) = &mut m.pop().unwrap().details
                 {
@@ -541,12 +537,9 @@ mod protect_transform_tests {
         if let Transforms::Protect(mut protect) = t {
             let mut m = protect.transform(wrapper).await?;
             let mut details = m.pop().unwrap().details;
-            if let MessageDetails::Response(QueryResponse {
-                matching_query:
-                    Some(QueryMessage {
-                        query_values: Some(query_values),
-                        ..
-                    }),
+
+            if let MessageDetails::Query(QueryMessage {
+                query_values: Some(query_values),
                 ..
             }) = &mut details
             {
