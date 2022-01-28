@@ -5,7 +5,7 @@ use crate::message::{
 use crate::protocols::Frame;
 use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
-use bytes::{Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
 use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
@@ -25,6 +25,7 @@ pub enum DecodeType {
 pub struct RedisCodec {
     decode_type: DecodeType,
     enable_metadata: bool,
+    messages: Messages,
 }
 
 #[inline]
@@ -493,6 +494,7 @@ impl RedisCodec {
         RedisCodec {
             decode_type,
             enable_metadata: false,
+            messages: vec![],
         }
     }
 
@@ -551,17 +553,16 @@ impl Decoder for RedisCodec {
     type Error = anyhow::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
-        let mut messages = vec![];
         loop {
             match decode_mut(src).map_err(|e| anyhow!("Error decoding redis frame {}", e))? {
                 Some((frame, _size, _bytes)) => {
-                    messages.push(self.frame_to_message(frame)?);
+                    self.messages.push(self.frame_to_message(frame)?);
                 }
                 None => {
-                    if messages.is_empty() {
+                    if self.messages.is_empty() || src.remaining() != 0 {
                         return Ok(None);
                     } else {
-                        return Ok(Some(messages));
+                        return Ok(Some(std::mem::take(&mut self.messages)));
                     }
                 }
             }
