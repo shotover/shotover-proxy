@@ -15,6 +15,7 @@ use shotover_proxy::transforms::{Transforms, Wrapper};
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("transform");
+    group.noise_threshold(0.2);
 
     {
         let chain =
