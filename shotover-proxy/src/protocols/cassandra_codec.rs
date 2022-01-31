@@ -512,25 +512,42 @@ impl CassandraCodec {
         match frame.response_body().unwrap() {
             ResponseBody::Error(e) => error = Some(MessageValue::Strings(e.message)),
             ResponseBody::Result(ResResultBody::Rows(rows)) => {
-                let converted_rows = rows
-                    .rows_content
-                    .into_iter()
-                    .map(|row| {
-                        row.into_iter()
-                            .enumerate()
-                            .map(|(i, row_content)| {
-                                let col_spec = &rows.metadata.col_specs[i];
-                                let data = MessageValue::build_value_from_cstar_col_type(
-                                    col_spec,
-                                    &row_content,
-                                );
+                if rows.metadata.flags.contains(RowsMetadataFlags::NO_METADATA) {
+                    let converted_rows = rows
+                        .rows_content
+                        .into_iter()
+                        .map(|row| {
+                            row.into_iter()
+                                .map(|row_content| {
+                                    MessageValue::Bytes(row_content.into_bytes().unwrap().into())
+                                })
+                                .collect()
+                        })
+                        .collect();
 
-                                (col_spec.name.clone(), data)
-                            })
-                            .collect()
-                    })
-                    .collect();
-                result = Some(MessageValue::NamedRows(converted_rows));
+                    result = Some(MessageValue::Rows(converted_rows));
+                } else {
+                    let converted_rows = rows
+                        .rows_content
+                        .into_iter()
+                        .map(|row| {
+                            row.into_iter()
+                                .enumerate()
+                                .map(|(i, row_content)| {
+                                    let col_spec = &rows.metadata.col_specs[i];
+                                    let data = MessageValue::build_value_from_cstar_col_type(
+                                        col_spec,
+                                        &row_content,
+                                    );
+
+                                    (col_spec.name.clone(), data)
+                                })
+                                .collect()
+                        })
+                        .collect();
+
+                    result = Some(MessageValue::NamedRows(converted_rows));
+                }
             }
             _ => {}
         }
