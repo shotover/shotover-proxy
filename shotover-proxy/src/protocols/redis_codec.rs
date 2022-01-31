@@ -11,7 +11,7 @@ use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
 use std::collections::{BTreeMap, HashMap};
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 /// Redis doesn't have an explicit "Response" type as part of the protocol.
 /// So it is up to the code to know whether it is processing queries or responses.
@@ -24,8 +24,8 @@ pub enum DecodeType {
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
     decode_type: DecodeType,
-    current_frames: Vec<RedisFrame>,
     enable_metadata: bool,
+    messages: Messages,
 }
 
 #[inline]
@@ -493,38 +493,31 @@ impl RedisCodec {
     pub fn new(decode_type: DecodeType) -> RedisCodec {
         RedisCodec {
             decode_type,
-            current_frames: vec![],
             enable_metadata: false,
+            messages: vec![],
         }
     }
 
-    pub fn process_redis_bulk(&self, frames: Vec<RedisFrame>) -> Result<Messages> {
-        trace!("processing bulk response {:?}", frames);
-        frames
-            .into_iter()
-            .map(|frame| {
-                if self.enable_metadata {
-                    Ok(Message::new(
-                        match self.decode_type {
-                            DecodeType::Response => {
-                                MessageDetails::Response(process_redis_frame_response(&frame)?)
-                            }
-                            DecodeType::Query => {
-                                MessageDetails::Query(process_redis_frame_query(&frame)?)
-                            }
-                        },
-                        false,
-                        Frame::Redis(frame),
-                    ))
-                } else {
-                    Ok(Message::new(
-                        MessageDetails::Unknown,
-                        false,
-                        Frame::Redis(frame),
-                    ))
-                }
-            })
-            .collect()
+    pub fn frame_to_message(&self, frame: RedisFrame) -> Result<Message> {
+        trace!("processing bulk response {:?}", frame);
+        if self.enable_metadata {
+            Ok(Message::new(
+                match self.decode_type {
+                    DecodeType::Response => {
+                        MessageDetails::Response(process_redis_frame_response(&frame)?)
+                    }
+                    DecodeType::Query => MessageDetails::Query(process_redis_frame_query(&frame)?),
+                },
+                false,
+                Frame::Redis(frame),
+            ))
+        } else {
+            Ok(Message::new(
+                MessageDetails::Unknown,
+                false,
+                Frame::Redis(frame),
+            ))
+        }
     }
 
     fn build_redis_response_frame(resp: QueryResponse) -> RedisFrame {
@@ -548,40 +541,6 @@ impl RedisCodec {
         }
     }
 
-    fn decode_raw(&mut self, src: &mut BytesMut) -> Result<Option<Vec<RedisFrame>>> {
-        while src.remaining() != 0 {
-            trace!("remaining {}", src.remaining());
-
-            match decode_mut(src).map_err(|e| {
-                info!("Error decoding redis frame {:?}", e);
-                anyhow!("Error decoding redis frame {}", e)
-            })? {
-                Some((frame, size, _bytes)) => {
-                    trace!("Got frame {:?} of {}", frame, size);
-                    self.current_frames.push(frame);
-                }
-                None => {
-                    if src.remaining() == 0 {
-                        break;
-                    } else {
-                        return Ok(None);
-                    }
-                }
-            }
-        }
-        trace!(
-            "frames {:?} - remaining {}",
-            self.current_frames,
-            src.remaining()
-        );
-
-        if self.current_frames.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(std::mem::take(&mut self.current_frames)))
-        }
-    }
-
     fn encode_raw(&mut self, item: RedisFrame, dst: &mut BytesMut) -> Result<()> {
         encode_bytes(dst, &item)
             .map(|_| ())
@@ -593,26 +552,29 @@ impl Decoder for RedisCodec {
     type Item = Messages;
     type Error = anyhow::Error;
 
-    fn decode(
-        &mut self,
-        src: &mut BytesMut,
-    ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        Ok(match self.decode_raw(src)? {
-            None => None,
-            Some(f) => Some(self.process_redis_bulk(f)?),
-        })
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        loop {
+            match decode_mut(src).map_err(|e| anyhow!("Error decoding redis frame {}", e))? {
+                Some((frame, _size, _bytes)) => {
+                    self.messages.push(self.frame_to_message(frame)?);
+                }
+                None => {
+                    if self.messages.is_empty() || src.remaining() != 0 {
+                        return Ok(None);
+                    } else {
+                        return Ok(Some(std::mem::take(&mut self.messages)));
+                    }
+                }
+            }
+        }
     }
 }
 
 impl Encoder<Messages> for RedisCodec {
     type Error = anyhow::Error;
 
-    fn encode(
-        &mut self,
-        item: Messages,
-        dst: &mut BytesMut,
-    ) -> std::result::Result<(), Self::Error> {
-        item.into_iter().try_for_each(|m: Message| {
+    fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<()> {
+        item.into_iter().try_for_each(|m| {
             let frame = self.encode_message(m)?;
             self.encode_raw(frame, dst)
         })
