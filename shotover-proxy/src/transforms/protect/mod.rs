@@ -246,6 +246,7 @@ impl Transform for Protect {
 #[cfg(test)]
 mod protect_transform_tests {
     use std::collections::HashMap;
+    use std::env;
 
     use crate::protocols::CassandraFrame;
     use cassandra_protocol::consistency::Consistency;
@@ -425,44 +426,10 @@ mod protect_transform_tests {
         panic!()
     }
 
-    async fn create_aws_key_and_alias() {
-        let client = reqwest::Client::new();
-
-        let res = client.post("http://localhost:5000")
-            .body(r#"{ "Description":"Testing Key",
-                       "KeyUsage":"ENCRYPT_DECRYPT",
-                       "CustomerMasterKeySpec":"SYMMETRIC_DEFAULT"}"#)
-            .header("Accept-Encoding", "identity")
-            .header("Accept", "text/plain")
-            .header("X-Amz-Target","TrentService.CreateKey")
-            .header("Content-Type","application/x-amz-json-1.1")
-            .header("X-Amz-Date","20220126T133630Z")
-            .header("X-Amz-Security-Token","testing")
-            .header("Authorization","AWS4-HMAC-SHA256 Credential=testing/20220126/us-east-1/kms/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token;x-amz-target, Signature=7983d06364243f7d9a2a3353d65c724e79bffd7381a10753725a04727a9d8c07")
-            .send().await.unwrap();
-
-        let result = res.text().await.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(result.as_str()).unwrap();
-        let key = parsed["KeyMetadata"]["KeyId"].as_str().unwrap().to_string();
-
-        client.post("http://localhost:5000")
-            .body(format!("{{ \"AliasName\":\"alias/KeyAlias\", \"TargetKeyId\":\"{}\"}}", key))
-            .header("Accept-Encoding", "identity" )
-            .header("Accept", "text/plain")
-            .header("X-Amz-Target","TrentService.CreateAlias")
-            .header("Content-Type","application/x-amz-json-1.1")
-            .header("X-Amz-Date","20220126T133630Z")
-            .header("X-Amz-Security-Token","testing")
-            .header("Authorization","AWS4-HMAC-SHA256 Credential=testing/20220126/us-east-1/kms/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token;x-amz-target, Signature=7983d06364243f7d9a2a3353d65c724e79bffd7381a10753725a04727a9d8c07")
-            .send().await.unwrap();
-    }
-
     #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_kms_transform() {
         let _compose = DockerCompose::new("tests/transforms/docker-compose-moto.yml")
             .wait_for(r#"Press CTRL\+C to quit"#);
-
-        create_aws_key_and_alias().await;
 
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
             .iter()
@@ -474,10 +441,15 @@ mod protect_transform_tests {
         protection_table_map.insert("old".to_string(), vec!["col1".to_string()]);
         protection_map.insert("keyspace".to_string(), protection_table_map);
 
+        // Overwrite any existing AWS credential env vars belonging to the user with dummy values to be sure that
+        // we wont hit their real AWS account in the case of a bug in shotover or the test
+        env::set_var("AWS_ACCESS_KEY_ID", "dummy-access-key");
+        env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
+
         let aws_config = KeyManagerConfig::AWSKms {
             endpoint: Some("http://localhost:5000".to_string()),
             region: "us-east-1".to_string(),
-            cmk_id: "alias/KeyAlias".to_string(),
+            cmk_id: "alias/aws/secretsmanager".to_string(),
             encryption_context: None,
             key_spec: None,
             number_of_bytes: Some(32), // 256-bit (it's specified in bytes)
