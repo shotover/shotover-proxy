@@ -16,6 +16,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, Instrument};
 
+/// Represents a `Request` to a `CassandraConnection`
 #[derive(Debug)]
 struct Request {
     message: Message,
@@ -54,6 +55,7 @@ impl<C: Codec + 'static> CassandraConnection<C> {
         Ok(())
     }
 
+    /// Send a `Message` to this `CassandraConnection` and expect a response on `return_chan`
     pub fn send(&self, message: Message, return_chan: oneshot::Sender<Response>) -> Result<()> {
         let message_id = if let Frame::Cassandra(frame) = &message.original {
             frame.stream_id
@@ -64,6 +66,7 @@ impl<C: Codec + 'static> CassandraConnection<C> {
 
         let connection = self.connection.as_ref().expect("No connection found");
 
+        // Convert the message to `Request` and send upstream
         Ok(connection.send(Request {
             message,
             return_chan,
