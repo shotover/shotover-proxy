@@ -1,18 +1,15 @@
 use crate::error::ChainResponse;
-use crate::message::{
-    ASTHolder, IntSize, MessageDetails, MessageValue, QueryMessage, QueryResponse,
-};
+use crate::message::Message;
+use crate::protocols::{Frame, RedisFrame};
 use crate::transforms::{Transform, Transforms, Wrapper};
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use serde::Deserialize;
-use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
-
 #[derive(Clone, Default)]
 pub struct RedisTimestampTagger {}
 
@@ -36,115 +33,128 @@ impl RedisTimestampTaggerConfig {
 // or noeviction and maxmemory is set.
 // Unfortunately REDIS only provides a 10 second resolution on this, so high
 // update keys where update freq < 20 seconds, will not be terribly consistent
-
-fn wrap_command(qm: &mut QueryMessage) -> Result<()> {
-    if let Some(MessageValue::List(keys)) = qm.primary_key.get_mut("key") {
-        if keys.is_empty() {
-            bail!("primary key `key` contained no keys");
+fn wrap_command(frame: &mut RedisFrame) -> Result<RedisFrame> {
+    if let RedisFrame::Array(com) = frame {
+        if let Some(RedisFrame::BulkString(first)) = com.first() {
+            if first.eq_ignore_ascii_case(b"EVAL")
+                || first.eq_ignore_ascii_case(b"EVALSHA")
+                || first.eq_ignore_ascii_case(b"SCRIPT")
+                || first.eq_ignore_ascii_case(b"FLUSHDB")
+            {
+                return Err(anyhow!("cannot wrap command {:?}", first));
+            }
         }
-        let first = keys.swap_remove(0);
-        if let Some(ASTHolder::Commands(MessageValue::List(com))) = &qm.ast {
-            let original_command = com
-                .iter()
-                .map(|v| {
-                    if let MessageValue::Bytes(b) = v {
-                        let mut literal = String::with_capacity(2 + b.len() * 4);
-                        literal.push('\'');
-                        for value in b {
-                            // Here we encode an arbitrary sequence of bytes into a lua string.
-                            // lua, unlike rust, is quite happy to store whatever in its strings as long as you give it the relevant escape sequence https://www.lua.org/pil/2.4.html
-                            //
-                            // We could just write every value as a \ddd escape sequence but its probably faster and definitely more readable to someone inspecting traffic to just use the actual value when we can
-                            if *value == b'\'' {
-                                // despite being printable we cant include this without escaping it
-                                literal.push_str("\\\'");
-                            } else if *value == b'\\' {
-                                // despite being printable we cant include this without escaping it
-                                literal.push_str("\\\\");
-                            } else if value.is_ascii_graphic() {
-                                literal.push(*value as char);
-                            } else {
-                                write!(literal, "\\{}", value).unwrap();
-                            }
+
+        let original_command = com
+            .iter()
+            .map(|v| {
+                if let RedisFrame::BulkString(b) = v {
+                    let mut literal = String::with_capacity(2 + b.len() * 4);
+                    literal.push('\'');
+                    for value in b {
+                        // Here we encode an arbitrary sequence of bytes into a lua string.
+                        // lua, unlike rust, is quite happy to store whatever in its strings as long as you give it the relevant escape sequence https://www.lua.org/pil/2.4.html
+                        //
+                        // We could just write every value as a \ddd escape sequence but its probably faster and definitely more readable to someone inspecting traffic to just use the actual value when we can
+                        if *value == b'\'' {
+                            // despite being printable we cant include this without escaping it
+                            literal.push_str("\\\'");
+                        } else if *value == b'\\' {
+                            // despite being printable we cant include this without escaping it
+                            literal.push_str("\\\\");
+                        } else if value.is_ascii_graphic() {
+                            literal.push(*value as char);
+                        } else {
+                            write!(literal, "\\{}", value).unwrap();
                         }
-                        literal.push('\'');
-                        literal
-                    } else {
-                        todo!("this might not be right... but we should only be dealing with bytes")
                     }
-                })
-                .join(",");
+                    literal.push('\'');
+                    literal
+                } else {
+                    todo!("this might not be right... but we should only be dealing with bytes")
+                }
+            })
+            .join(",");
 
-            let original_pcall = format!(r###"redis.call({original_command})"###);
-            let last_used_pcall = r###"redis.call('OBJECT', 'IDLETIME', KEYS[1])"###;
+        let original_pcall = format!(r###"redis.call({original_command})"###);
+        let last_used_pcall = r###"redis.call('OBJECT', 'IDLETIME', KEYS[1])"###;
 
-            let script = format!("return {{{original_pcall},{last_used_pcall}}}");
-            debug!("\n\nGenerated eval script for timestamp: {}\n\n", script);
-            let commands = vec![
-                MessageValue::Bytes(Bytes::from_static(b"EVAL")),
-                MessageValue::Bytes(Bytes::from(script)),
-                MessageValue::Bytes(Bytes::from_static(b"1")),
-                first,
-            ];
-            qm.ast = Some(ASTHolder::Commands(MessageValue::List(commands)));
-        } else {
-            bail!("Ast is not a command with a list");
-        }
+        let script = format!("return {{{original_pcall},{last_used_pcall}}}");
+        debug!("\n\nGenerated eval script for timestamp: {}\n\n", script);
+        let commands = vec![
+            RedisFrame::BulkString(Bytes::from_static(b"EVAL")),
+            RedisFrame::BulkString(Bytes::from(script)),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            // Key is always the 2nd element of a redis command
+            com.swap_remove(1),
+        ];
+        Ok(RedisFrame::Array(commands))
     } else {
-        bail!("Primary key `key` does not exist or is not a list");
+        Err(anyhow!("redis frame is not an array"))
     }
-
-    Ok(())
 }
 
-fn unwrap_response(qr: &mut QueryResponse) {
-    if let Some(MessageValue::List(mut values)) = qr.result.take() {
-        let all_lists = values.iter().all(|v| matches!(v, MessageValue::List(_)));
-        qr.result = if all_lists && values.len() > 1 {
-            // This means the result is likely from a transaction or something that returns
-            // lots of things
+fn unwrap_response(message: &mut Message) -> Result<()> {
+    struct ToWrite {
+        meta_timestamp: i64,
+        frame: RedisFrame,
+    }
 
-            let mut timestamps: Vec<MessageValue> = vec![];
-            let mut results: Vec<MessageValue> = vec![];
-            for v_u in values {
-                if let MessageValue::List(mut v) = v_u {
-                    if v.len() == 2 {
-                        let timestamp = v.pop().unwrap();
-                        let actual = v.pop().unwrap();
-                        timestamps.push(timestamp);
-                        results.push(actual);
+    if let Frame::Redis(ref mut redis_frame) = message.original {
+        let to_write = if let RedisFrame::Array(ref mut values) = redis_frame {
+            let all_arrays = values.iter().all(|v| matches!(v, RedisFrame::Array(_)));
+            if all_arrays && values.len() > 1 {
+                // This means the result is likely from a transaction or something that returns
+                // lots of things
+
+                let mut timestamps: Vec<RedisFrame> = vec![];
+                let mut results: Vec<RedisFrame> = vec![];
+                for v_u in values {
+                    if let RedisFrame::Array(v) = v_u {
+                        if v.len() == 2 {
+                            let timestamp = v.pop().unwrap();
+                            let actual = v.pop().unwrap();
+                            timestamps.push(timestamp);
+                            results.push(actual);
+                        }
                     }
                 }
-            }
 
-            qr.response_meta = Some(MessageValue::Document(BTreeMap::from([(
-                "timestamp".to_string(),
-                MessageValue::List(timestamps),
-            )])));
-            Some(MessageValue::List(results))
-        } else if values.len() == 2 {
-            qr.response_meta = values.pop().map(|v| {
-                let processed_value = match v {
-                    MessageValue::Integer(i, _) => {
-                        let start = SystemTime::now();
-                        let since_the_epoch = start
-                            .duration_since(UNIX_EPOCH)
-                            .expect("Time went backwards");
-                        let seconds = since_the_epoch.as_secs();
-                        if seconds.leading_ones() > 1 {
-                            panic!("Cannot convert u64 to i64 without overflow");
-                        }
-                        MessageValue::Integer(seconds as i64 - i, IntSize::I64)
-                    }
-                    v => v,
+                todo!("ConsistentScatter isnt built to handle multiple timestamps yet: {timestamps:?} {results:?}",)
+            } else if values.len() == 2 {
+                let timestamp = values.pop().unwrap();
+                let frame = values.pop().unwrap();
+
+                let timestamp = match timestamp {
+                    RedisFrame::Integer(i) => i,
+                    _ => 0,
                 };
-                MessageValue::Document(BTreeMap::from([("timestamp".to_string(), processed_value)]))
-            });
-            values.pop()
+
+                let since_the_epoch = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards");
+                let seconds_since_the_epoch = since_the_epoch.as_secs();
+                if seconds_since_the_epoch.leading_ones() > 1 {
+                    panic!("Cannot convert u64 to i64 without overflow");
+                }
+                let meta_timestamp = seconds_since_the_epoch as i64 - timestamp;
+                Some(ToWrite {
+                    meta_timestamp,
+                    frame,
+                })
+            } else {
+                None
+            }
         } else {
-            Some(MessageValue::List(values))
+            None
         };
+
+        if let Some(write) = to_write {
+            *redis_frame = write.frame;
+            message.meta_timestamp = Some(write.meta_timestamp);
+        }
     }
+    Ok(())
 }
 
 #[async_trait]
@@ -156,19 +166,25 @@ impl Transform for RedisTimestampTagger {
         let mut exec_block = false;
 
         for message in message_wrapper.messages.iter_mut() {
-            message.generate_message_details_query();
-            if let MessageDetails::Query(ref mut qm) = message.details {
-                if let Some(a) = &qm.ast {
-                    if a.get_command() == *"EXEC" {
+            if let Frame::Redis(ref mut frame) = message.original {
+                if let RedisFrame::Array(array) = frame {
+                    if array
+                        .get(0)
+                        .map(|x| x == &RedisFrame::BulkString("EXEC".into()))
+                        .unwrap_or(false)
+                    {
                         exec_block = true;
                     }
                 }
-
-                if let Err(err) = wrap_command(qm) {
-                    trace!("Couldn't wrap command with timestamp tagger: {}", err);
-                    tagged_success = false;
+                match wrap_command(frame) {
+                    Ok(result) => {
+                        *frame = result;
+                    }
+                    Err(err) => {
+                        trace!("Couldn't wrap command with timestamp tagger: {}", err);
+                        tagged_success = false;
+                    }
                 }
-                message.modified = true;
             }
         }
 
@@ -177,11 +193,7 @@ impl Transform for RedisTimestampTagger {
         if let Ok(messages) = &mut response {
             if tagged_success || exec_block {
                 for message in messages.iter_mut() {
-                    message.generate_message_details_response();
-                    if let MessageDetails::Response(qr) = &mut message.details {
-                        unwrap_response(qr);
-                        message.modified = true;
-                    }
+                    unwrap_response(message)?;
                 }
             }
         }

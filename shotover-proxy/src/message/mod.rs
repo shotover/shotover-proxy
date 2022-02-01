@@ -35,6 +35,10 @@ pub struct Message {
     pub original: Frame,
     /// identifies a message that is to be returned to the sender.  Message is stored in the `original` frame.
     pub return_to_sender: bool,
+
+    // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of ConsistentScatter
+    // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
+    pub meta_timestamp: Option<i64>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -51,6 +55,7 @@ impl Message {
             modified,
             original,
             return_to_sender: false,
+            meta_timestamp: None,
         }
     }
 
@@ -84,6 +89,7 @@ impl Message {
             modified,
             original: Frame::None,
             return_to_sender: false,
+            meta_timestamp: None,
         }
     }
 
@@ -110,6 +116,7 @@ impl Message {
                 Frame::None => Frame::None,
             },
             return_to_sender: false,
+            meta_timestamp: None,
         }
     }
 

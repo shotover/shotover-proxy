@@ -1,9 +1,17 @@
-use std::collections::HashMap;
-
+use crate::config::topology::TopicHolder;
+use crate::error::ChainResponse;
+use crate::message::{Message, QueryType};
+use crate::protocols::{Frame, RedisFrame};
+use crate::transforms::chain::BufferedChain;
+use crate::transforms::{
+    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
+};
 use anyhow::Result;
 use async_trait::async_trait;
+use bytes_utils::Str;
 use futures::stream::FuturesUnordered;
 use serde::Deserialize;
+use std::collections::HashMap;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
 
@@ -52,49 +60,36 @@ impl ConsistentScatterConfig {
     }
 }
 
-fn get_timestamp(frag: &QueryResponse) -> i64 {
-    debug!("\n\n {:#?} \n\n", frag.response_meta);
-    if let Some(MessageValue::Document(meta)) = frag.response_meta.as_ref() {
-        if let Some(t) = meta.get("timestamp") {
-            if let MessageValue::Integer(i, _) = t {
-                return *i;
-            }
-            return 0;
-        }
-    }
-    0
+fn get_size(_message: &mut Message) -> usize {
+    4 // TODO: Implement. Old impl was just removed because it was broken anyway
 }
 
-fn get_size(frag: &QueryResponse) -> usize {
-    frag.result.as_ref().map_or(0, std::mem::size_of_val)
-}
-
-fn resolve_fragments(fragments: &mut Vec<QueryResponse>) -> Option<QueryResponse> {
-    let mut newest_fragment: Option<QueryResponse> = None;
-    let mut biggest_fragment: Option<QueryResponse> = None;
+fn resolve_fragments(fragments: &mut Vec<Message>) -> Option<Message> {
+    let mut newest_fragment: Option<Message> = None;
+    let mut biggest_fragment: Option<Message> = None;
 
     // Check the age of the response, store most recent
     // If we don't have an age, store the biggest one.
     // Return newest, otherwise biggest. Returns newest, even
     // if we have a bigger response.
     while !fragments.is_empty() {
-        if let Some(fragment) = fragments.pop() {
-            let candidate = get_timestamp(&fragment);
+        if let Some(mut fragment) = fragments.pop() {
+            let candidate = fragment.meta_timestamp.unwrap_or(0);
             if candidate > 0 {
-                match newest_fragment {
+                match &mut newest_fragment {
                     None => newest_fragment = Some(fragment),
-                    Some(ref frag) => {
-                        let current = get_timestamp(frag);
+                    Some(frag) => {
+                        let current = frag.meta_timestamp.unwrap_or(0);
                         if candidate > current {
                             newest_fragment = Some(fragment);
                         }
                     }
                 }
             } else {
-                let candidate = get_size(&fragment);
-                match newest_fragment {
+                let candidate = get_size(&mut fragment);
+                match &mut newest_fragment {
                     None => newest_fragment = Some(fragment),
-                    Some(ref frag) => {
+                    Some(frag) => {
                         let current = get_size(frag);
                         if candidate > current {
                             biggest_fragment = Some(fragment);
@@ -126,8 +121,6 @@ impl Transform for ConsistentScatter {
             .messages
             .iter_mut()
             .map(|m| {
-                m.generate_message_details_query();
-
                 if m.get_query_type() == QueryType::Read {
                     self.read_consistency
                 } else {
@@ -151,11 +144,8 @@ impl Transform for ConsistentScatter {
         let mut results = Vec::new();
         while let Some(res) = rec_fu.next().await {
             match res {
-                Ok(mut messages) => {
+                Ok(messages) => {
                     debug!("{:#?}", messages);
-                    for message in &mut messages {
-                        message.generate_message_details_response();
-                    }
                     results.push(messages);
                 }
                 Err(e) => {
@@ -170,18 +160,13 @@ impl Transform for ConsistentScatter {
         drop(rec_fu);
 
         Ok(if results.len() < max_required_successes as usize {
-            required_successes
-                .iter()
-                .map(|_| {
-                    Message::new_response(
-                        QueryResponse::empty_with_error(Some(MessageValue::Strings(
-                            "Not enough responses".to_string(),
-                        ))),
-                        true,
-                        Frame::None,
-                    )
-                })
-                .collect()
+            let mut messages = message_wrapper.messages;
+            for message in &mut messages {
+                message.original = Frame::Redis(RedisFrame::Error(
+                    Str::from_inner("Not enough responses".into()).unwrap(),
+                ));
+            }
+            messages
         } else {
             required_successes
                 .into_iter()
@@ -189,13 +174,10 @@ impl Transform for ConsistentScatter {
                     let mut collated_results = vec![];
                     for res in &mut results {
                         if let Some(m) = res.pop() {
-                            if let MessageDetails::Response(qm) = m.details {
-                                collated_results.push(qm);
-                            }
+                            collated_results.push(m);
                         }
                     }
                     resolve_fragments(&mut collated_results)
-                        .map(|qr| Message::new_response(qr, true, Frame::None))
                 })
                 // We do this as we are pop'ing from the end of the results in the filter_map above
                 .rev()
@@ -230,6 +212,8 @@ impl Transform for ConsistentScatter {
 
 #[cfg(test)]
 mod scatter_transform_tests {
+    use crate::message::{Message, Messages};
+    use crate::protocols::{Frame, RedisFrame};
     use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::debug::returner::{DebugReturner, Response};
@@ -241,29 +225,20 @@ mod scatter_transform_tests {
     };
     use crate::transforms::null::Null;
     use crate::transforms::{Transform, Transforms, Wrapper};
+
+    use bytes::Bytes;
     use std::collections::HashMap;
 
-    fn check_ok_responses(mut messages: Messages, expected_ok: &MessageValue) {
-        let test_message_details = messages.pop().unwrap().details;
-        if let MessageDetails::Response(QueryResponse {
-            result: Some(r), ..
-        }) = test_message_details
-        {
-            assert_eq!(expected_ok, &r);
-        } else {
-            panic!("Couldn't destructure message");
-        }
+    fn check_ok_responses(mut messages: Messages) {
+        let message = messages.pop().unwrap();
+        let expected = Frame::Redis(RedisFrame::BulkString("OK".into()));
+        assert_eq!(message.original, expected);
     }
 
-    fn check_err_responses(mut messages: Messages, expected_err: &MessageValue) {
-        if let MessageDetails::Response(QueryResponse {
-            error: Some(err), ..
-        }) = messages.pop().unwrap().details
-        {
-            assert_eq!(expected_err, &err);
-        } else {
-            panic!("Couldn't destructure message");
-        }
+    fn check_err_responses(mut messages: Messages, expected_err: &str) {
+        let message = messages.pop().unwrap();
+        let expected = Frame::Redis(RedisFrame::Error(expected_err.into()));
+        assert_eq!(message.original, expected);
     }
 
     async fn build_chains(route_map: HashMap<String, TransformChain>) -> Vec<BufferedChain> {
@@ -275,27 +250,13 @@ mod scatter_transform_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_scatter_success() {
-        let response = vec![Message::new(
-            MessageDetails::Response(QueryResponse::just_result(MessageValue::Strings(
-                "OK".to_string(),
-            ))),
-            true,
-            Frame::None,
-        )];
+        let response = vec![Message::from_frame(Frame::Redis(RedisFrame::BulkString(
+            "OK".into(),
+        )))];
 
-        let wrapper = Wrapper::new(vec![Message::new(
-            MessageDetails::Query(QueryMessage {
-                query_string: "".to_string(),
-                namespace: vec![String::from("keyspace"), String::from("old")],
-                primary_key: Default::default(),
-                query_values: None,
-                projection: None,
-                query_type: QueryType::Read,
-                ast: None,
-            }),
-            true,
-            Frame::None,
-        )]);
+        let wrapper = Wrapper::new(vec![Message::from_frame(Frame::Redis(
+            RedisFrame::BulkString(Bytes::from_static(b"foo")),
+        ))]);
 
         let ok_repeat =
             Transforms::DebugReturner(DebugReturner::new(Response::Message(response.clone())));
@@ -321,14 +282,12 @@ mod scatter_transform_tests {
             read_consistency: 2,
         });
 
-        let expected_ok = MessageValue::Strings("OK".to_string());
-
         let test = tuneable_success_consistency
             .transform(wrapper.clone())
             .await
             .unwrap();
 
-        check_ok_responses(test, &expected_ok);
+        check_ok_responses(test);
 
         let mut one_of_three = HashMap::new();
         one_of_three.insert(
@@ -355,9 +314,7 @@ mod scatter_transform_tests {
             .await
             .unwrap();
 
-        let expected_err = MessageValue::Strings("Not enough responses".to_string());
-
-        check_err_responses(response_fail, &expected_err);
+        check_err_responses(response_fail, "Not enough responses");
     }
 
     #[tokio::test]

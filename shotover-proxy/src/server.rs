@@ -47,6 +47,7 @@ fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages
                     modified: true,
                     return_to_sender: true,
                     original: Frame::None,
+                    meta_timestamp: None,
                 }
             } else {
                 m
