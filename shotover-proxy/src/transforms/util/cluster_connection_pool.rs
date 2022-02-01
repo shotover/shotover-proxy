@@ -16,6 +16,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, trace, warn, Instrument};
 
+use super::Response;
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
@@ -250,7 +251,7 @@ async fn tx_process<C: CodecWriteHalf, W: AsyncWrite + Unpin + Send + 'static>(
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
-        let ret = Ok(vec![x.messages.clone()]);
+        let ret = Ok(vec![x.message.clone()]);
         return_tx.send(x)?;
         ret
     });
@@ -269,13 +270,16 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
             Ok(req) => {
                 for m in req {
                     if let Some(Request {
-                        messages,
+                        message,
                         return_chan: Some(ret),
                         ..
                     }) = return_rx.recv().await
                     {
                         // If the receiver hangs up, just silently ignore
-                        let _ = ret.send((messages, Ok(vec![m])));
+                        let _ = ret.send(Response {
+                            original: message,
+                            response: Ok(vec![m]),
+                        });
                     }
                 }
             }

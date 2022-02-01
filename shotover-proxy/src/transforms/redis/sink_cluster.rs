@@ -20,7 +20,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
-use crate::message::{Message, MessageDetails, Messages, QueryResponse};
+use crate::message::{Message, MessageDetails, QueryResponse};
 use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::protocols::{Frame, RedisFrame};
 use crate::tls::TlsConfig;
@@ -164,7 +164,10 @@ impl RedisSinkCluster {
                     let response = responses
                         .fold(vec![], |mut acc, response| async move {
                             match response {
-                                Ok((_, Ok(mut messages))) => {
+                                Ok(Response {
+                                    response: Ok(mut messages),
+                                    ..
+                                }) => {
                                     acc.push(messages.pop().map_or(RedisFrame::Null, |message| {
                                         match message.original {
                                             Frame::Redis(frame) => frame,
@@ -172,23 +175,23 @@ impl RedisSinkCluster {
                                         }
                                     }))
                                 }
-                                Ok((_, Err(e))) => {
-                                    acc.push(RedisFrame::Error(e.to_string().into()))
-                                }
+                                Ok(Response {
+                                    response: Err(e), ..
+                                }) => acc.push(RedisFrame::Error(e.to_string().into())),
                                 Err(e) => acc.push(RedisFrame::Error(e.to_string().into())),
                             }
                             acc
                         })
                         .await;
 
-                    Ok((
-                        message,
-                        ChainResponse::Ok(vec![Message::new(
+                    Ok(Response {
+                        original: message,
+                        response: ChainResponse::Ok(vec![Message::new(
                             MessageDetails::Unknown,
                             false,
                             Frame::Redis(RedisFrame::Array(response)),
                         )]),
-                    ))
+                    })
                 })
             }
         })
@@ -310,7 +313,7 @@ impl RedisSinkCluster {
         &mut self,
         host: &str,
         message: Message,
-    ) -> Result<oneshot::Receiver<(Message, ChainResponse)>> {
+    ) -> Result<oneshot::Receiver<Response>> {
         let (one_tx, one_rx) = oneshot::channel::<Response>();
 
         let channel = match self.channels.get_mut(host) {
@@ -376,9 +379,8 @@ impl RedisSinkCluster {
         };
 
         if let Err(e) = channel.send(Request {
-            messages: message,
+            message,
             return_chan: Some(one_tx),
-            message_id: None,
         }) {
             if let Some(error_return) = e.0.return_chan {
                 self.rebuild_connections = true;
@@ -728,26 +730,23 @@ fn send_simple_response(one_tx: oneshot::Sender<Response>, message: &str) -> Res
 fn send_frame_request(
     sender: &UnboundedSender<Request>,
     frame: RedisFrame,
-) -> Result<oneshot::Receiver<(Message, Result<Messages>)>> {
+) -> Result<oneshot::Receiver<Response>> {
     let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
     sender.send(Request {
-        messages: Message::new(MessageDetails::Unknown, false, Frame::Redis(frame)),
+        message: Message::new(MessageDetails::Unknown, false, Frame::Redis(frame)),
         return_chan: Some(return_chan_tx),
-        message_id: None,
     })?;
 
     Ok(return_chan_rx)
 }
 
 #[inline(always)]
-async fn receive_frame_response(
-    receiver: oneshot::Receiver<(Message, Result<Messages>)>,
-) -> Result<RedisFrame> {
-    let (_, result) = receiver.await?;
+async fn receive_frame_response(receiver: oneshot::Receiver<Response>) -> Result<RedisFrame> {
+    let Response { response, .. } = receiver.await?;
 
     // Exactly one Redis response is guaranteed by the codec on success.
-    let message = result?.pop().unwrap().original;
+    let message = response?.pop().unwrap().original;
 
     match message {
         Frame::Redis(frame) => Ok(frame),
@@ -760,14 +759,14 @@ fn send_frame_response(
     one_tx: oneshot::Sender<Response>,
     frame: RedisFrame,
 ) -> Result<(), Response> {
-    one_tx.send((
-        Message::from_frame(Frame::None),
-        Ok(vec![Message::new(
+    one_tx.send(Response {
+        original: Message::from_frame(Frame::None),
+        response: Ok(vec![Message::new(
             MessageDetails::Response(QueryResponse::empty()),
             false,
             Frame::Redis(frame),
         )]),
-    ))
+    })
 }
 
 fn immediate_responder() -> (
@@ -811,10 +810,11 @@ impl Transform for RedisSinkCluster {
 
         while let Some(s) = responses.next().await {
             trace!("Got resp {:?}", s);
-            let (original, response) = s.or_else(|_| -> Result<(_, _)> {
-                Ok((
-                    Message::from_frame(Frame::None),
-                    Ok(vec![Message::new(
+
+            let Response { original, response } = s.or_else(|_| -> Result<Response> {
+                Ok(Response {
+                    original: Message::from_frame(Frame::None),
+                    response: Ok(vec![Message::new(
                         MessageDetails::Response(QueryResponse::empty()),
                         false,
                         Frame::Redis(RedisFrame::Error(
@@ -822,8 +822,9 @@ impl Transform for RedisSinkCluster {
                                 .unwrap(),
                         )),
                     )]),
-                ))
+                })
             })?;
+
             let mut response = response?;
             assert_eq!(response.len(), 1);
             let response_m = response.remove(0);

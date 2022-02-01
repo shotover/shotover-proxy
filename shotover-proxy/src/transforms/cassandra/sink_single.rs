@@ -6,15 +6,16 @@ use crate::message::{Message, Messages, QueryResponse};
 use crate::protocols::cassandra_codec::CassandraCodec;
 use crate::protocols::CassandraFrame;
 use crate::protocols::Frame;
-use crate::transforms::util::Request;
+use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
+use tokio::sync::oneshot;
 use tokio::sync::oneshot::Receiver;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
@@ -83,34 +84,18 @@ impl CassandraSinkSingle {
                 }
                 Some(ref mut outbound_framed_codec) => {
                     trace!("sending frame upstream");
-                    let sender = outbound_framed_codec
-                        .connection
-                        .as_ref()
-                        .expect("No connection found.");
 
                     let expected_size = messages.len();
-                    let results: Result<FuturesOrdered<Receiver<(Message, ChainResponse)>>> =
-                        messages
-                            .into_iter()
-                            .map(|m| {
-                                let (return_chan_tx, return_chan_rx) =
-                                    tokio::sync::oneshot::channel();
-                                let stream = if let Frame::Cassandra(frame) = &m.original {
-                                    frame.stream_id
-                                } else {
-                                    info!("no cassandra frame found");
-                                    return Err(anyhow!("no cassandra frame found"));
-                                };
+                    let results: Result<FuturesOrdered<Receiver<Response>>> = messages
+                        .into_iter()
+                        .map(|m| {
+                            let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
-                                sender.send(Request {
-                                    messages: m,
-                                    return_chan: Some(return_chan_tx),
-                                    message_id: Some(stream),
-                                })?;
+                            outbound_framed_codec.send(m, return_chan_tx)?;
 
-                                Ok(return_chan_rx)
-                            })
-                            .collect();
+                            Ok(return_chan_rx)
+                        })
+                        .collect();
 
                     let mut responses = Vec::with_capacity(expected_size);
                     let mut results = results?;
@@ -119,7 +104,10 @@ impl CassandraSinkSingle {
                         match timeout(Duration::from_secs(5), results.next()).await {
                             Ok(Some(prelim)) => {
                                 match prelim? {
-                                    (_, Ok(mut resp)) => {
+                                    Response {
+                                        response: Ok(mut resp),
+                                        ..
+                                    } => {
                                         for message in &resp {
                                             if let Frame::Cassandra(CassandraFrame {
                                                 opcode: cassandra_protocol::frame::Opcode::Error,
@@ -131,13 +119,16 @@ impl CassandraSinkSingle {
                                         }
                                         responses.append(&mut resp);
                                     }
-                                    (m, Err(err)) => {
+                                    Response {
+                                        original,
+                                        response: Err(err),
+                                    } => {
                                         responses.push(Message::new_response(
                                             QueryResponse::empty_with_error(Some(
                                                 message::MessageValue::Strings(format!("{err}")),
                                             )),
                                             true,
-                                            m.original,
+                                            original.original,
                                         ));
                                     }
                                 };

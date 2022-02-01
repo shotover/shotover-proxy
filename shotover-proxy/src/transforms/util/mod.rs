@@ -7,14 +7,19 @@ use crate::message::Message;
 
 pub mod cluster_connection_pool;
 
+/// Represents a `Request` to a connection within Shotover
 #[derive(Debug)]
 pub struct Request {
-    pub messages: Message,
-    pub return_chan: Option<tokio::sync::oneshot::Sender<Response>>,
-    pub message_id: Option<i16>,
+    pub message: Message, // Message to send upstream to connection
+    pub return_chan: Option<tokio::sync::oneshot::Sender<Response>>, // Channel to return the response to
 }
 
-pub type Response = (Message, ChainResponse);
+/// Represents a `Response` to a `Request`
+#[derive(Debug)]
+pub struct Response {
+    pub original: Message,       // Original `Message` that this `Response` is to
+    pub response: ChainResponse, // Response to the original `Message`
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConnectionError<E: fmt::Debug + fmt::Display> {

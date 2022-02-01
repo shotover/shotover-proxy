@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use metrics::{counter, histogram};
 
@@ -518,5 +518,4 @@ pub trait Transform: Send {
     }
 }
 
-pub type ResponseFuture =
-    Pin<Box<dyn Future<Output = Result<(Message, Result<Messages>)>> + std::marker::Send>>;
+pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + std::marker::Send>>;
