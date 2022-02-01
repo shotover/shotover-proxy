@@ -566,7 +566,7 @@ impl CassandraCodec {
 
     pub fn process_cassandra_frame(&self, frame: CassandraFrame) -> Messages {
         if self.bypass {
-            return vec![Message::new_raw(Frame::Cassandra(frame))];
+            return vec![Message::from_frame(Frame::Cassandra(frame))];
         }
 
         match frame.opcode {
@@ -577,7 +577,7 @@ impl CassandraCodec {
                     if parsed_query.ast.is_none() {
                         // TODO: Currently this will probably catch schema changes that don't match
                         // what the SQL parser expects
-                        return vec![Message::new_raw(Frame::Cassandra(frame))];
+                        return vec![Message::from_frame(Frame::Cassandra(frame))];
                     }
                     return vec![Message::new(
                         MessageDetails::Query(QueryMessage {
@@ -599,7 +599,7 @@ impl CassandraCodec {
                         Frame::Cassandra(frame),
                     )];
                 }
-                vec![Message::new_raw(Frame::Cassandra(frame))]
+                vec![Message::from_frame(Frame::Cassandra(frame))]
             }
             Opcode::Result => CassandraCodec::build_response_message(frame, None),
             Opcode::Error => {
@@ -616,9 +616,9 @@ impl CassandraCodec {
                     )];
                 }
 
-                vec![Message::new_raw(Frame::Cassandra(frame))]
+                vec![Message::from_frame(Frame::Cassandra(frame))]
             }
-            _ => vec![Message::new_raw(Frame::Cassandra(frame))],
+            _ => vec![Message::from_frame(Frame::Cassandra(frame))],
         }
     }
 

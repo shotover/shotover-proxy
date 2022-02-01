@@ -761,7 +761,7 @@ fn send_frame_response(
     frame: RedisFrame,
 ) -> Result<(), Response> {
     one_tx.send((
-        Message::new_raw(Frame::None),
+        Message::from_frame(Frame::None),
         Ok(vec![Message::new(
             MessageDetails::Response(QueryResponse::empty()),
             false,
@@ -813,7 +813,7 @@ impl Transform for RedisSinkCluster {
             trace!("Got resp {:?}", s);
             let (original, response) = s.or_else(|_| -> Result<(_, _)> {
                 Ok((
-                    Message::new_raw(Frame::None),
+                    Message::from_frame(Frame::None),
                     Ok(vec![Message::new(
                         MessageDetails::Response(QueryResponse::empty()),
                         false,
