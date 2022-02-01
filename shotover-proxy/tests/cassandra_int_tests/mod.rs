@@ -115,7 +115,11 @@ fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
 fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
     let mut result_rows = execute_query(session, query);
     result_rows.sort();
+    assert_rows(result_rows, expected_rows);
+}
 
+/// Assert that the results from an integration test match the expected rows
+fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[ResultValue]]) {
     let mut expected_rows: Vec<_> = expected_rows.iter().map(|x| x.to_vec()).collect();
     expected_rows.sort();
 

@@ -72,7 +72,7 @@ impl Message {
         Self::new(MessageDetails::Response(qr), modified, original)
     }
 
-    pub fn new_raw(raw_frame: Frame) -> Self {
+    pub fn from_frame(raw_frame: Frame) -> Self {
         Self::new(MessageDetails::Unknown, false, raw_frame)
     }
 
