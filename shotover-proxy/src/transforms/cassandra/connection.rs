@@ -60,7 +60,6 @@ impl<C: Codec + 'static> CassandraConnection<C> {
         let message_id = if let Frame::Cassandra(frame) = &message.original {
             frame.stream_id
         } else {
-            info!("no cassandra frame found");
             return Err(anyhow!("no cassandra frame found"));
         };
 
