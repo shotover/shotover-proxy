@@ -1343,6 +1343,12 @@ fn test_cassandra_protect_transform_local() {
     let shotover_connection = cassandra_connection("127.0.0.1", 9042);
     let direct_connection = cassandra_connection("127.0.0.1", 9043);
 
+    keyspace::test(&shotover_connection);
+    table::test(&shotover_connection);
+    udt::test(&shotover_connection);
+    native_types::test(&shotover_connection);
+    collections::test(&shotover_connection);
+    functions::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
 }
 
@@ -1360,5 +1366,11 @@ fn test_cassandra_protect_transform_aws() {
     let shotover_connection = cassandra_connection("127.0.0.1", 9042);
     let direct_connection = cassandra_connection("127.0.0.1", 9043);
 
+    keyspace::test(&shotover_connection);
+    table::test(&shotover_connection);
+    udt::test(&shotover_connection);
+    native_types::test(&shotover_connection);
+    collections::test(&shotover_connection);
+    functions::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
 }
