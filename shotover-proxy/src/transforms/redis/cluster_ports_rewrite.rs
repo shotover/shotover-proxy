@@ -1,11 +1,11 @@
-use crate::protocols::RedisFrame;
+use crate::frame::RedisFrame;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Deserialize;
 
 use crate::error::ChainResponse;
-use crate::protocols::Frame;
+use crate::frame::Frame;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
@@ -224,7 +224,7 @@ fn is_cluster_slots(frame: &Frame) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
+    use crate::codec::redis::{DecodeType, RedisCodec};
     use crate::transforms::redis::sink_cluster::parse_slots;
     use tokio_util::codec::Decoder;
 

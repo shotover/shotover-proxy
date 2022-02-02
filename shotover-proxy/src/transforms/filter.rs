@@ -52,9 +52,9 @@ impl Transform for QueryTypeFilter {
 
 #[cfg(test)]
 mod test {
+    use crate::frame::Frame;
+    use crate::frame::RedisFrame;
     use crate::message::{Message, QueryMessage, QueryType};
-    use crate::protocols::Frame;
-    use crate::protocols::RedisFrame;
     use crate::transforms::filter::QueryTypeFilter;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Transforms, Wrapper};

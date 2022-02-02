@@ -1,9 +1,6 @@
-use crate::error::ChainResponse;
+use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, MessageDetails, Messages};
-use crate::protocols::Frame;
-use crate::protocols::RedisFrame;
-use crate::transforms::Transforms;
-use crate::transforms::{Transform, Wrapper};
+use crate::transforms::{ChainResponse, Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;

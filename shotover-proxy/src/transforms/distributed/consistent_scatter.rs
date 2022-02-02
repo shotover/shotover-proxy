@@ -9,8 +9,8 @@ use tracing::{debug, error, trace, warn};
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
+use crate::frame::Frame;
 use crate::message::{Message, MessageDetails, MessageValue, QueryResponse, QueryType};
-use crate::protocols::Frame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -235,10 +235,10 @@ mod scatter_transform_tests {
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
 
+    use crate::frame::Frame;
     use crate::message::{
         Message, MessageDetails, MessageValue, Messages, QueryMessage, QueryResponse, QueryType,
     };
-    use crate::protocols::Frame;
     use crate::transforms::null::Null;
     use crate::transforms::{Transform, Transforms, Wrapper};
     use std::collections::HashMap;

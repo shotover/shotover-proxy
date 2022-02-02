@@ -1,11 +1,11 @@
 use super::connection::CassandraConnection;
+use crate::codec::cassandra::CassandraCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
+use crate::frame::CassandraFrame;
+use crate::frame::Frame;
 use crate::message;
 use crate::message::{Message, Messages, QueryResponse};
-use crate::protocols::cassandra_codec::CassandraCodec;
-use crate::protocols::CassandraFrame;
-use crate::protocols::Frame;
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 

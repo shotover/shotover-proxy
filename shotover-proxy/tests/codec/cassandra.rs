@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::SinkExt;
-use shotover_proxy::protocols::cassandra_codec::CassandraCodec;
+use shotover_proxy::codec::cassandra::CassandraCodec;
 use std::collections::HashMap;
 use tokio::io::BufWriter;
 use tokio_stream::StreamExt;

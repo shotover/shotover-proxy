@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
+use shotover_proxy::frame::Frame;
 use shotover_proxy::message::{Message, QueryMessage, QueryType};
-use shotover_proxy::protocols::Frame;
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::null::Null;
@@ -51,7 +51,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use shotover_proxy::protocols::RedisFrame;
+        use shotover_proxy::frame::RedisFrame;
         let chain = TransformChain::new(
             vec![
                 Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
@@ -82,7 +82,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use shotover_proxy::protocols::RedisFrame;
+        use shotover_proxy::frame::RedisFrame;
         let chain = TransformChain::new(
             vec![
                 Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),

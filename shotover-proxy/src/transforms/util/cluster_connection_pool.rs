@@ -307,7 +307,7 @@ mod test {
     use tokio::time::timeout;
 
     use super::spawn_read_write_tasks;
-    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
+    use crate::codec::redis::{DecodeType, RedisCodec};
 
     #[tokio::test]
     async fn test_remote_shutdown() {

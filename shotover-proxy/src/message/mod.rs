@@ -1,6 +1,6 @@
-use crate::protocols::CassandraFrame;
-use crate::protocols::Frame;
-use crate::protocols::RedisFrame;
+use crate::frame::CassandraFrame;
+use crate::frame::Frame;
+use crate::frame::RedisFrame;
 use bigdecimal::BigDecimal;
 use bytes::Bytes;
 use cassandra_protocol::{

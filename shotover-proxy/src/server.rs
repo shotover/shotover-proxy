@@ -1,5 +1,5 @@
+use crate::frame::Frame;
 use crate::message::{Message, MessageDetails, Messages};
-use crate::protocols::Frame;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;

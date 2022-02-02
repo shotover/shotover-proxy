@@ -19,11 +19,12 @@
 //! * [`transforms::TransformsConfig`], the enum to register with (add a variant) for configuring your own transform.
 
 mod admin;
+pub mod codec;
 mod concurrency;
 pub mod config;
 pub mod error;
+pub mod frame;
 pub mod message;
-pub mod protocols;
 pub mod runner;
 mod server;
 pub mod sources;

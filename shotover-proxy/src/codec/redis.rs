@@ -1,9 +1,9 @@
+use crate::frame::Frame;
+use crate::frame::RedisFrame;
 use crate::message::{
     ASTHolder, IntSize, Message, MessageDetails, MessageValue, Messages, QueryMessage,
     QueryResponse, QueryType,
 };
-use crate::protocols::Frame;
-use crate::protocols::RedisFrame;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes, BytesMut};
 use itertools::Itertools;
@@ -583,7 +583,7 @@ impl Encoder<Messages> for RedisCodec {
 
 #[cfg(test)]
 mod redis_tests {
-    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
+    use crate::codec::redis::{DecodeType, RedisCodec};
     use bytes::BytesMut;
     use hex_literal::hex;
     use tokio_util::codec::{Decoder, Encoder};

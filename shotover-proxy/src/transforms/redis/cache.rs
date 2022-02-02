@@ -7,8 +7,8 @@ use tracing::info;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
+use crate::frame::{CassandraFrame, Frame};
 use crate::message::{ASTHolder, MessageDetails, MessageValue, Messages, QueryType};
-use crate::protocols::{CassandraFrame, Frame};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -415,10 +415,10 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
+    use crate::codec::cassandra::CassandraCodec;
+    use crate::codec::redis::{DecodeType, RedisCodec};
     use crate::message::{ASTHolder, MessageDetails};
     use crate::message::{IntSize as MessageIntSize, MessageValue};
-    use crate::protocols::cassandra_codec::CassandraCodec;
-    use crate::protocols::redis_codec::{DecodeType, RedisCodec};
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;

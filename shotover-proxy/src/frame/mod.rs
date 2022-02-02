@@ -1,6 +1,3 @@
-pub mod cassandra_codec;
-pub mod redis_codec;
-
 pub use cassandra_protocol::frame::Frame as CassandraFrame;
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
 
@@ -19,9 +16,8 @@ impl Frame {
     pub fn build_message_response(&self) -> Result<MessageDetails> {
         match self {
             Frame::Cassandra(_c) => Ok(MessageDetails::Unknown),
-            Frame::Redis(frame) => {
-                redis_codec::process_redis_frame_response(frame).map(MessageDetails::Response)
-            }
+            Frame::Redis(frame) => crate::codec::redis::process_redis_frame_response(frame)
+                .map(MessageDetails::Response),
             Frame::None => Ok(MessageDetails::Unknown),
         }
     }
@@ -30,7 +26,7 @@ impl Frame {
         match self {
             Frame::Cassandra(_c) => Ok(MessageDetails::Unknown),
             Frame::Redis(frame) => {
-                redis_codec::process_redis_frame_query(frame).map(MessageDetails::Query)
+                crate::codec::redis::process_redis_frame_query(frame).map(MessageDetails::Query)
             }
             Frame::None => Ok(MessageDetails::Unknown),
         }
@@ -40,7 +36,7 @@ impl Frame {
     pub fn get_query_type(&self) -> QueryType {
         match self {
             Frame::Cassandra(_) => QueryType::ReadWrite,
-            Frame::Redis(frame) => redis_codec::redis_query_type(frame),
+            Frame::Redis(frame) => crate::codec::redis::redis_query_type(frame),
             Frame::None => QueryType::ReadWrite,
         }
     }

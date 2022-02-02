@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
+use crate::frame::Frame;
 use crate::message::{Message, MessageValue, QueryResponse};
-use crate::protocols::Frame;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,

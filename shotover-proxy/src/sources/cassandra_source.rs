@@ -9,8 +9,8 @@ use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
+use crate::codec::cassandra::CassandraCodec;
 use crate::config::topology::TopicHolder;
-use crate::protocols::cassandra_codec::CassandraCodec;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::transforms::chain::TransformChain;

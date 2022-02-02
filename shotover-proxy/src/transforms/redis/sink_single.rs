@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::protocols::RedisFrame;
+use crate::frame::RedisFrame;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
@@ -11,9 +11,9 @@ use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 
+use crate::codec::redis::{DecodeType, RedisCodec};
 use crate::error::ChainResponse;
-use crate::protocols::redis_codec::{DecodeType, RedisCodec};
-use crate::protocols::Frame;
+use crate::frame::Frame;
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, Wrapper};
 

@@ -8,8 +8,8 @@ use rdkafka::util::Timeout;
 use serde::Deserialize;
 
 use crate::error::ChainResponse;
+use crate::frame::Frame;
 use crate::message::{Message, MessageDetails, QueryResponse};
-use crate::protocols::Frame;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Clone)]

@@ -18,11 +18,11 @@ use tokio::time::timeout;
 use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
+use crate::codec::redis::{DecodeType, RedisCodec};
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
+use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, MessageDetails, QueryResponse};
-use crate::protocols::redis_codec::{DecodeType, RedisCodec};
-use crate::protocols::{Frame, RedisFrame};
 use crate::tls::TlsConfig;
 use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
