@@ -1352,8 +1352,7 @@ fn test_cassandra_protect_transform_local() {
 fn test_cassandra_protect_transform_aws() {
     let _compose = DockerCompose::new("examples/cassandra-protect-aws/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
-    let _compose_aws = DockerCompose::new("tests/transforms/docker-compose-moto.yml")
-        .wait_for(r#"Press CTRL\+C to quit"#);
+    let _compose_aws = DockerCompose::new_moto();
 
     let _shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-protect-aws/topology.yaml");

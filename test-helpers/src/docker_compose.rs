@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use regex::Regex;
+use std::env;
 use std::io::ErrorKind;
 use std::process::Command;
 use std::thread;
@@ -70,6 +71,17 @@ impl DockerCompose {
         DockerCompose {
             file_path: file_path.to_string(),
         }
+    }
+
+    /// Creates a new DockerCompose running an instance of moto the AWS mocking server
+    pub fn new_moto() -> Self {
+        // Overwrite any existing AWS credential env vars belonging to the user with dummy values to be sure that
+        // we wont hit their real AWS account in the case of a bug in shotover or the test
+        env::set_var("AWS_ACCESS_KEY_ID", "dummy-access-key");
+        env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
+
+        DockerCompose::new("tests/transforms/docker-compose-moto.yml")
+            .wait_for(r#"Press CTRL\+C to quit"#)
     }
 
     /// Waits for a string to appear in the docker-compose log output.
