@@ -734,7 +734,7 @@ fn send_frame_request(
     let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
     sender.send(Request {
-        message: Message::new(MessageDetails::Unknown, false, Frame::Redis(frame)),
+        message: Message::from_frame(Frame::Redis(frame)),
         return_chan: Some(return_chan_tx),
     })?;
 

@@ -1,5 +1,5 @@
 use crate::frame::{Frame, RedisFrame};
-use crate::message::{Message, MessageDetails, Messages};
+use crate::message::{Message, Messages};
 use crate::transforms::{ChainResponse, Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -47,11 +47,9 @@ impl Transform for DebugReturner {
                 .messages
                 .iter()
                 .map(|_| {
-                    Message::new(
-                        MessageDetails::Unknown,
-                        false,
-                        Frame::Redis(RedisFrame::BulkString(string.to_string().into())),
-                    )
+                    Message::from_frame(Frame::Redis(RedisFrame::BulkString(
+                        string.to_string().into(),
+                    )))
                 })
                 .collect()),
             Response::Fail => Err(anyhow!("Intentional Fail")),
