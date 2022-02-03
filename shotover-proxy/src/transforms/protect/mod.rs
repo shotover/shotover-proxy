@@ -248,17 +248,17 @@ mod protect_transform_tests {
     use std::collections::HashMap;
     use std::env;
 
-    use crate::protocols::CassandraFrame;
+    use crate::frame::CassandraFrame;
     use cassandra_protocol::consistency::Consistency;
     use cassandra_protocol::frame::{Flags, Version};
     use sodiumoxide::crypto::secretbox;
     use test_helpers::docker_compose::DockerCompose;
 
+    use crate::codec::cassandra::CassandraCodec;
+    use crate::frame::Frame;
     use crate::message::{
         IntSize, Message, MessageDetails, MessageValue, QueryMessage, QueryResponse, QueryType,
     };
-    use crate::protocols::cassandra_codec::CassandraCodec;
-    use crate::protocols::Frame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::loopback::Loopback;

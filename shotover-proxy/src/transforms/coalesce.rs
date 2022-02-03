@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
+use crate::frame::Frame;
 use crate::message::{Message, MessageDetails, Messages, QueryResponse};
-use crate::protocols::Frame;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -84,8 +84,8 @@ impl Transform for Coalesce {
 
 #[cfg(test)]
 mod test {
+    use crate::frame::Frame;
     use crate::message::{Message, QueryMessage};
-    use crate::protocols::Frame;
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
     use crate::transforms::{Transform, Transforms, Wrapper};

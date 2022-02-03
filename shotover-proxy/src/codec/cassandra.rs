@@ -2,7 +2,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::ops::DerefMut;
 
-use crate::protocols::CassandraFrame;
+use crate::frame::CassandraFrame;
 use anyhow::{anyhow, Result};
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
@@ -31,11 +31,11 @@ use sqlparser::parser::Parser;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, error, info, warn};
 
+use crate::frame::Frame;
 use crate::message::{
     ASTHolder, IntSize, Message, MessageDetails, MessageValue, Messages, QueryMessage,
     QueryResponse, QueryType,
 };
-use crate::protocols::Frame;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec {
@@ -747,12 +747,12 @@ impl Encoder<Messages> for CassandraCodec {
 
 #[cfg(test)]
 mod cassandra_protocol_tests {
+    use crate::codec::cassandra::CassandraCodec;
+    use crate::frame::CassandraFrame;
+    use crate::frame::Frame;
     use crate::message::{
         ASTHolder, Message, MessageDetails, MessageValue, QueryMessage, QueryResponse, QueryType,
     };
-    use crate::protocols::cassandra_codec::CassandraCodec;
-    use crate::protocols::CassandraFrame;
-    use crate::protocols::Frame;
     use bytes::BytesMut;
     use cassandra_protocol::frame::{Direction, Flags, Opcode, Version};
     use hex_literal::hex;

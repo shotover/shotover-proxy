@@ -1,4 +1,4 @@
-use crate::protocols::Frame;
+use crate::frame::Frame;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::transforms::util::Response;

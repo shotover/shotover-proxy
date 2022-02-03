@@ -1,5 +1,5 @@
+use crate::codec::redis::{DecodeType, RedisCodec};
 use crate::config::topology::TopicHolder;
-use crate::protocols::redis_codec::{DecodeType, RedisCodec};
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
 use crate::tls::{TlsAcceptor, TlsConfig};
