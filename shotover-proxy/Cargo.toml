@@ -63,6 +63,7 @@ cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio" }
 rdkafka = "0.28"
 crc16 = "0.4.0"
 ordered-float = { version = "2.8.0", features = ["serde"] }
+regex = "1"
 
 #Crypto
 sodiumoxide = "0.2.5"

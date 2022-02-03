@@ -1,24 +1,10 @@
-use core::fmt;
-use std::fmt::{Debug, Formatter};
-use std::pin::Pin;
-
-use anyhow::Result;
-use async_recursion::async_recursion;
-use async_trait::async_trait;
-use futures::Future;
-use serde::Deserialize;
-
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::transforms::cassandra::{
     peers_rewrite::{CassandraPeersRewrite, CassandraPeersRewriteConfig},
     sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig},
 };
-use crate::message::Messages;
-use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
-use metrics::{counter, histogram};
-
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::printer::DebugPrinter;
@@ -46,7 +32,16 @@ use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterC
 use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::tee::{Tee, TeeConfig};
+use anyhow::Result;
+use async_recursion::async_recursion;
+use async_trait::async_trait;
+use core::fmt;
 use core::fmt::Display;
+use futures::Future;
+use metrics::{counter, histogram};
+use serde::Deserialize;
+use std::fmt::{Debug, Formatter};
+use std::pin::Pin;
 use strum_macros::IntoStaticStr;
 use tokio::time::Instant;
 
