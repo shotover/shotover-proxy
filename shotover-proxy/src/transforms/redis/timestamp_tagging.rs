@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
+use crate::frame::{Frame, RedisFrame};
 use crate::message::Message;
-use crate::protocols::{Frame, RedisFrame};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;

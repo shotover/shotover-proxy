@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
+use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, QueryType};
-use crate::protocols::{Frame, RedisFrame};
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -14,15 +14,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
-
-use crate::config::topology::TopicHolder;
-use crate::error::ChainResponse;
-use crate::frame::Frame;
-use crate::message::{Message, MessageDetails, MessageValue, QueryResponse, QueryType};
-use crate::transforms::chain::BufferedChain;
-use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
-};
 
 #[derive(Clone)]
 pub struct ConsistentScatter {
@@ -212,20 +203,14 @@ impl Transform for ConsistentScatter {
 
 #[cfg(test)]
 mod scatter_transform_tests {
+    use crate::frame::{Frame, RedisFrame};
     use crate::message::{Message, Messages};
-    use crate::protocols::{Frame, RedisFrame};
     use crate::transforms::chain::{BufferedChain, TransformChain};
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
-
-    use crate::frame::Frame;
-    use crate::message::{
-        Message, MessageDetails, MessageValue, Messages, QueryMessage, QueryResponse, QueryType,
-    };
     use crate::transforms::null::Null;
     use crate::transforms::{Transform, Transforms, Wrapper};
-
     use bytes::Bytes;
     use std::collections::HashMap;
 
