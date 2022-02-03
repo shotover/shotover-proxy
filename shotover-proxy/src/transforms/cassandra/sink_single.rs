@@ -109,8 +109,9 @@ impl CassandraSinkSingle {
                                         ..
                                     } => {
                                         for message in &resp {
+                                            use crate::frame::cassandra::CassandraOperation;
                                             if let Frame::Cassandra(CassandraFrame {
-                                                opcode: cassandra_protocol::frame::Opcode::Error,
+                                                operation: CassandraOperation::Error(_),
                                                 ..
                                             }) = &message.original
                                             {

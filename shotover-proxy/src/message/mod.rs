@@ -1,3 +1,4 @@
+use crate::frame::cassandra::CassandraOperation;
 use crate::frame::CassandraFrame;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
@@ -7,20 +8,20 @@ use cassandra_protocol::{
     frame::{
         frame_error::{AdditionalErrorInfo, ErrorBody},
         frame_result::{ColSpec, ColTypeOption},
-        Direction, Flags, Opcode, Serialize as CassandraSerialize,
     },
     types::{
         cassandra_type::{wrapper_fn, CassandraType},
         CBytes,
     },
 };
+use itertools::Itertools;
 use num::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use sqlparser::ast::Value as SQLValue;
-use std::collections::{BTreeMap, BTreeSet};
-use std::{collections::HashMap, net::IpAddr};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::net::IpAddr;
 use uuid::Uuid;
 
 pub type Messages = Vec<Message>;
@@ -96,16 +97,12 @@ impl Message {
                 )),
                 Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
                     version: frame.version,
-                    direction: Direction::Response,
-                    flags: Flags::empty(),
-                    opcode: Opcode::Error,
                     stream_id: frame.stream_id,
-                    body: ErrorBody {
+                    operation: CassandraOperation::Error(ErrorBody {
                         error_code: 0,
                         message: "Message was filtered out by shotover".into(),
                         additional_info: AdditionalErrorInfo::Server,
-                    }
-                    .serialize_to_vec(),
+                    }),
                     tracing_id: None,
                     warnings: vec![],
                 }),
@@ -589,21 +586,28 @@ impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
             MessageValue::Document(d) => cassandra_protocol::types::value::Bytes::from(d),
             MessageValue::Inet(i) => i.into(),
             MessageValue::FragmentedResponse(l) => cassandra_protocol::types::value::Bytes::from(l),
-            MessageValue::Ascii(_) => unimplemented!(),
-            MessageValue::Double(_) => unimplemented!(),
-            MessageValue::Set(_) => unimplemented!(),
-            MessageValue::Map(_) => unimplemented!(),
-            MessageValue::Varint(_) => unimplemented!(),
-            MessageValue::Decimal(_) => unimplemented!(),
-            MessageValue::Date(_) => unimplemented!(),
-            MessageValue::Timestamp(_) => unimplemented!(),
-            MessageValue::Timeuuid(_) => unimplemented!(),
-            MessageValue::Varchar(_) => unimplemented!(),
-            MessageValue::Uuid(_) => unimplemented!(),
-            MessageValue::Time(_) => unimplemented!(),
-            MessageValue::Counter(_) => unimplemented!(),
-            MessageValue::Tuple(_) => unimplemented!(),
-            MessageValue::Udt(_) => unimplemented!(),
+            MessageValue::Ascii(a) => a.into(),
+            MessageValue::Double(d) => d.into_inner().into(),
+            MessageValue::Set(s) => s.into_iter().collect_vec().into(),
+            MessageValue::Map(m) => m.into(),
+            MessageValue::Varint(v) => v.into(),
+            MessageValue::Decimal(d) => {
+                let (unscaled, scale) = d.into_bigint_and_exponent();
+                cassandra_protocol::types::decimal::Decimal {
+                    unscaled,
+                    scale: scale as i32,
+                }
+                .into()
+            }
+            MessageValue::Date(d) => d.into(),
+            MessageValue::Timestamp(t) => t.into(),
+            MessageValue::Timeuuid(t) => t.into(),
+            MessageValue::Varchar(v) => v.into(),
+            MessageValue::Uuid(u) => u.into(),
+            MessageValue::Time(t) => t.into(),
+            MessageValue::Counter(c) => c.into(),
+            MessageValue::Tuple(t) => t.into(),
+            MessageValue::Udt(u) => u.into(),
         }
     }
 }
