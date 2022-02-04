@@ -11,5 +11,6 @@ title = "Shotover"
 # Should we check links on the internet? Enabling this option adds a
 # non-negligible performance impact
 follow-web-links = false
+optional = true
 
 warning-policy = "error"
