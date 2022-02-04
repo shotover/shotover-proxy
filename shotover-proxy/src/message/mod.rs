@@ -3,6 +3,7 @@ use crate::frame::CassandraFrame;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use bigdecimal::BigDecimal;
+use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Bytes;
 use cassandra_protocol::{
     frame::{
@@ -490,7 +491,7 @@ impl MessageValue {
             }
             CassandraType::Double(d) => MessageValue::Double(d.into()),
             CassandraType::Float(f) => MessageValue::Float(f.into()),
-            CassandraType::Int(c) => MessageValue::Integer(c as i64, IntSize::I64),
+            CassandraType::Int(c) => MessageValue::Integer(c.into(), IntSize::I32),
             CassandraType::Timestamp(t) => MessageValue::Timestamp(t),
             CassandraType::Uuid(u) => MessageValue::Uuid(u),
             CassandraType::Varchar(v) => MessageValue::Varchar(v),
@@ -573,14 +574,33 @@ impl MessageValue {
 impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
     fn from(value: MessageValue) -> cassandra_protocol::types::value::Bytes {
         match value {
-            MessageValue::NULL => (-1).into(),
+            MessageValue::NULL => (-1_i32).into(),
             MessageValue::None => cassandra_protocol::types::value::Bytes::new(vec![]),
             MessageValue::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
             MessageValue::Strings(s) => s.into(),
-            MessageValue::Integer(i, _) => i.into(),
+            MessageValue::Integer(x, size) => {
+                let mut temp: Vec<u8> = Vec::new();
+
+                match size {
+                    IntSize::I64 => {
+                        temp.write_i64::<BigEndian>(x).unwrap();
+                    }
+                    IntSize::I32 => {
+                        temp.write_i32::<BigEndian>(x as i32).unwrap();
+                    }
+                    IntSize::I16 => {
+                        temp.write_i16::<BigEndian>(x as i16).unwrap();
+                    }
+                    IntSize::I8 => {
+                        temp.write_i8(x as i8).unwrap();
+                    }
+                }
+
+                cassandra_protocol::types::value::Bytes::new(temp)
+            }
             MessageValue::Float(f) => f.into_inner().into(),
             MessageValue::Boolean(b) => b.into(),
-            MessageValue::List(l) => cassandra_protocol::types::value::Bytes::from(l),
+            MessageValue::List(l) => l.into(),
             MessageValue::Rows(r) => cassandra_protocol::types::value::Bytes::from(r),
             MessageValue::NamedRows(n) => cassandra_protocol::types::value::Bytes::from(n),
             MessageValue::Document(d) => cassandra_protocol::types::value::Bytes::from(d),

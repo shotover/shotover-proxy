@@ -16,12 +16,12 @@ use cassandra_protocol::frame::{
 use cassandra_protocol::query::QueryParams;
 use cassandra_protocol::types::{CBytes, CInt};
 use itertools::Itertools;
-use sqlparser::ast::{SetExpr, Statement, TableFactor};
+use sqlparser::ast::Statement;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use uuid::Uuid;
 
-use crate::message::{MessageValue, QueryType};
+use crate::message::MessageValue;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
@@ -34,56 +34,6 @@ pub struct CassandraFrame {
 }
 
 impl CassandraFrame {
-    pub fn get_query_type(&self) -> QueryType {
-        match &self.operation {
-            CassandraOperation::Query { query, .. } => match query.get(0) {
-                Some(Statement::Query(_x)) => QueryType::Read,
-                Some(Statement::Insert { .. }) => QueryType::Write,
-                Some(Statement::Update { .. }) => QueryType::Write,
-                Some(Statement::Delete { .. }) => QueryType::Write,
-                _ => QueryType::Read,
-            },
-            _ => QueryType::Read,
-        }
-    }
-
-    pub fn namespace(&self) -> Vec<String> {
-        match &self.operation {
-            CassandraOperation::Query { query, .. } => match query.first() {
-                Some(Statement::Query(query)) => match &query.body {
-                    SetExpr::Select(select) => {
-                        if let TableFactor::Table { name, .. } =
-                            &select.from.get(0).unwrap().relation
-                        {
-                            name.0.iter().map(|a| a.value.clone()).collect()
-                        } else {
-                            vec![]
-                        }
-                    }
-                    _ => vec![],
-                },
-                Some(Statement::Insert { table_name, .. })
-                | Some(Statement::Delete { table_name, .. }) => {
-                    table_name.0.iter().map(|a| a.value.clone()).collect()
-                }
-                Some(Statement::Update { table, .. }) => match &table.relation {
-                    TableFactor::Table { name, .. } => {
-                        name.0.iter().map(|a| a.value.clone()).collect()
-                    }
-                    _ => {
-                        tracing::error!(
-                            "The cassandra query language does not support `update`s with table of {:?}",
-                            table
-                        );
-                        vec![]
-                    }
-                },
-                _ => vec![],
-            },
-            _ => vec![],
-        }
-    }
-
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {
         let frame = RawCassandraFrame::from_buffer(&bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
@@ -92,7 +42,26 @@ impl CassandraFrame {
             Opcode::Query => {
                 if let RequestBody::Query(body) = frame.request_body()? {
                     CassandraOperation::Query {
-                        query: Parser::parse_sql(&GenericDialect, body.query.as_str())?,
+                        query: match Parser::parse_sql(&GenericDialect, body.query.as_str()) {
+                            _ if body.query.contains("ALTER TABLE")
+                                || body.query.contains("CREATE TABLE") =>
+                            {
+                                tracing::error!(
+                                    "Failed to parse CQL for frame {:?}\nError: Blacklisted query as sqlparser crate cant round trip it",
+                                    body.query.as_str()
+                                );
+                                CQL::FailedToParse(body.query)
+                            }
+                            Ok(ast) => CQL::Parsed(ast),
+                            Err(err) => {
+                                tracing::error!(
+                                    "Failed to parse CQL for frame {:?}\nError: {:?}",
+                                    body.query.as_str(),
+                                    err
+                                );
+                                CQL::FailedToParse(body.query)
+                            }
+                        },
                         params: body.query_params,
                     }
                 } else {
@@ -103,53 +72,51 @@ impl CassandraFrame {
                 if let ResponseBody::Result(result) = frame.response_body()? {
                     match result {
                         ResResultBody::Rows(rows) => {
-                            if rows.metadata.flags.contains(RowsMetadataFlags::NO_METADATA) {
-                                let converted_rows = rows
-                                    .rows_content
-                                    .into_iter()
-                                    .map(|row| {
-                                        row.into_iter()
-                                            .map(|row_content| {
-                                                MessageValue::Bytes(
-                                                    row_content.into_bytes().unwrap().into(),
-                                                )
-                                            })
-                                            .collect()
-                                    })
-                                    .collect();
-                                CassandraOperation::Result(CassandraResult::Rows {
-                                    value: MessageValue::Rows(converted_rows),
-                                    metadata: rows.metadata,
-                                })
-                            } else {
-                                let converted_rows = rows
-                                    .rows_content
-                                    .into_iter()
-                                    .map(|row| {
-                                        row.into_iter()
-                                            .enumerate()
-                                            .map(|(i, row_content)| {
-                                                let col_spec = &rows.metadata.col_specs[i];
-                                                MessageValue::build_value_from_cstar_col_type(
-                                                    col_spec,
-                                                    &row_content,
-                                                )
-                                            })
-                                            .collect()
-                                    })
-                                    .collect();
-                                CassandraOperation::Result(CassandraResult::Rows {
-                                    value: MessageValue::Rows(converted_rows),
-                                    metadata: rows.metadata,
-                                })
-                            }
+                            let converted_rows =
+                                if rows.metadata.flags.contains(RowsMetadataFlags::NO_METADATA) {
+                                    rows.rows_content
+                                        .into_iter()
+                                        .map(|row| {
+                                            row.into_iter()
+                                                .map(|row_content| {
+                                                    MessageValue::Bytes(
+                                                        row_content.into_bytes().unwrap().into(),
+                                                    )
+                                                })
+                                                .collect()
+                                        })
+                                        .collect()
+                                } else {
+                                    rows.rows_content
+                                        .into_iter()
+                                        .map(|row| {
+                                            row.into_iter()
+                                                .enumerate()
+                                                .map(|(i, row_content)| {
+                                                    let col_spec = &rows.metadata.col_specs[i];
+                                                    MessageValue::build_value_from_cstar_col_type(
+                                                        col_spec,
+                                                        &row_content,
+                                                    )
+                                                })
+                                                .collect()
+                                        })
+                                        .collect()
+                                };
+                            CassandraOperation::Result(CassandraResult::Rows {
+                                value: MessageValue::Rows(converted_rows),
+                                metadata: rows.metadata,
+                            })
                         }
                         ResResultBody::SetKeyspace(set_keyspace) => CassandraOperation::Result(
                             CassandraResult::SetKeyspace(Box::new(set_keyspace)),
                         ),
-                        ResResultBody::Prepared(prepared) => CassandraOperation::Result(
-                            CassandraResult::Prepared(Box::new(prepared)),
-                        ),
+                        ResResultBody::Prepared(prepared) => {
+                            tracing::error!("prepared: {:#?}", prepared);
+                            CassandraOperation::Result(CassandraResult::Prepared(Box::new(
+                                prepared,
+                            )))
+                        }
                         ResResultBody::SchemaChange(schema_change) => {
                             CassandraOperation::Result(CassandraResult::SchemaChange(schema_change))
                         }
@@ -206,10 +173,7 @@ impl CassandraFrame {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum CassandraOperation {
-    Query {
-        query: Vec<Statement>,
-        params: QueryParams,
-    },
+    Query { query: CQL, params: QueryParams },
     Result(CassandraResult),
     Error(ErrorBody),
     // operations for protocol negotiation, should be ignored by transforms
@@ -273,23 +237,24 @@ impl CassandraOperation {
     fn into_body(self) -> Vec<u8> {
         match self {
             CassandraOperation::Query { query, params } => BodyReqQuery {
-                query: query.iter().map(|x| x.to_string()).join(""),
+                query: query.to_query_string(),
                 query_params: params,
             }
             .serialize_to_vec(),
-            CassandraOperation::Result(CassandraResult::Rows { value, metadata }) => {
-                Self::build_cassandra_result_body(value, metadata)
+            CassandraOperation::Result(result) => match result {
+                CassandraResult::Rows { value, metadata } => {
+                    Self::build_cassandra_result_body(value, metadata)
+                }
+                CassandraResult::SetKeyspace(set_keyspace) => {
+                    ResResultBody::SetKeyspace(*set_keyspace)
+                }
+                CassandraResult::Prepared(prepared) => ResResultBody::Prepared(*prepared),
+                CassandraResult::SchemaChange(schema_change) => {
+                    ResResultBody::SchemaChange(schema_change)
+                }
+                CassandraResult::Void => ResResultBody::Void,
             }
-            CassandraOperation::Result(CassandraResult::SetKeyspace(set_keyspace)) => {
-                set_keyspace.serialize_to_vec()
-            }
-            CassandraOperation::Result(CassandraResult::Prepared(prepared)) => {
-                prepared.serialize_to_vec()
-            }
-            CassandraOperation::Result(CassandraResult::SchemaChange(schema_change)) => {
-                schema_change.serialize_to_vec()
-            }
-            CassandraOperation::Result(CassandraResult::Void) => vec![0, 0, 0, 1],
+            .serialize_to_vec(),
             CassandraOperation::Error(error) => error.serialize_to_vec(),
             CassandraOperation::Startup(bytes) => bytes.to_vec(),
             CassandraOperation::Ready(bytes) => bytes.to_vec(),
@@ -307,7 +272,10 @@ impl CassandraOperation {
         }
     }
 
-    pub fn build_cassandra_result_body(result: MessageValue, metadata: RowsMetadata) -> Vec<u8> {
+    pub fn build_cassandra_result_body(
+        result: MessageValue,
+        metadata: RowsMetadata,
+    ) -> ResResultBody {
         if let MessageValue::Rows(rows) = result {
             let rows_count = rows.len() as CInt;
             let rows_content = rows
@@ -323,15 +291,28 @@ impl CassandraOperation {
                 })
                 .collect();
 
-            let response = ResResultBody::Rows(BodyResResultRows {
+            return ResResultBody::Rows(BodyResResultRows {
                 metadata,
                 rows_count,
                 rows_content,
             });
-
-            return response.serialize_to_vec();
         }
         unreachable!()
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum CQL {
+    Parsed(Vec<Statement>),
+    FailedToParse(String),
+}
+
+impl CQL {
+    pub fn to_query_string(&self) -> String {
+        match self {
+            CQL::Parsed(ast) => ast.iter().map(|x| x.to_string()).join(""),
+            CQL::FailedToParse(str) => str.clone(),
+        }
     }
 }
 

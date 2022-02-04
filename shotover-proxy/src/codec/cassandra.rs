@@ -29,7 +29,7 @@ use sqlparser::parser::Parser;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, error, info, warn};
 
-use crate::frame::cassandra::{CassandraOperation, CassandraResult};
+use crate::frame::cassandra::{CassandraOperation, CassandraResult, CQL};
 use crate::frame::Frame;
 use crate::message::{
     ASTHolder, Message, MessageDetails, MessageValue, Messages, QueryMessage, QueryResponse,
@@ -95,13 +95,15 @@ impl CassandraCodec {
         CassandraFrame {
             version: Version::V4,
             operation: CassandraOperation::Query {
-                query: query
-                    .ast
-                    .map(|ast| match ast {
-                        ASTHolder::SQL(ast) => vec![*ast],
-                        _ => unreachable!("Must be cassandra message"),
-                    })
-                    .unwrap_or_default(),
+                query: CQL::Parsed(
+                    query
+                        .ast
+                        .map(|ast| match ast {
+                            ASTHolder::SQL(ast) => vec![*ast],
+                            _ => unreachable!("Must be cassandra message"),
+                        })
+                        .unwrap_or_default(),
+                ),
                 params,
             },
             stream_id: 0,
@@ -320,10 +322,10 @@ impl CassandraCodec {
         let parsed_sql = Parser::parse_sql(&dialect, query_string);
 
         //TODO handle pks
-        //TODO: We absolutely don't handle multiple statements despite this loop indicating otherwise
-        // for statement in ast_list.iter() {
         match parsed_sql {
             Ok(ast_list) => {
+                //TODO: We absolutely don't handle multiple statements despite this loop indicating otherwise
+                // for statement in ast_list.iter() {
                 if let Some(statement) = ast_list.get(0) {
                     ast = Some(statement.clone());
                     match statement {
@@ -418,7 +420,10 @@ impl CassandraCodec {
             }
             Err(err) => {
                 // TODO: We should handle this error better but for now we can at least log it
-                error!("Failed to parse csql: {}\nError: {:?}", query_string, err)
+                error!(
+                    "Failed to parse cql for message details: {:?}\nError: {:?}",
+                    query_string, err
+                )
             }
         }
 
@@ -462,7 +467,7 @@ impl CassandraCodec {
         if let Frame::Cassandra(cassandra) = &mut message.original {
             match &mut cassandra.operation {
                 CassandraOperation::Query { query, .. } => {
-                    let query_string = query[0].to_string();
+                    let query_string = query.to_query_string();
                     let parsed_query =
                         CassandraCodec::parse_query_string(&query_string, &self.pk_col_map);
                     if parsed_query.ast.is_none() {
@@ -531,7 +536,7 @@ impl Decoder for CassandraCodec {
                 let bytes = src.split_to(parsed_frame.frame_len);
 
                 let mut message = Message::from_frame(Frame::Cassandra(
-                    CassandraFrame::from_bytes(bytes.freeze()).unwrap(), // TODO: to fix this unwrap I probably need to make parsing ast fallible. We can make it non fallible in later PR.
+                    CassandraFrame::from_bytes(bytes.freeze()).unwrap(),
                 ));
                 self.process_cassandra_frame(&mut message);
                 Ok(Some(vec![message]))
@@ -628,7 +633,7 @@ impl Encoder<Messages> for CassandraCodec {
 #[cfg(test)]
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodec;
-    use crate::frame::cassandra::{CassandraOperation, CassandraResult};
+    use crate::frame::cassandra::{CassandraOperation, CassandraResult, CQL};
     use crate::frame::CassandraFrame;
     use crate::frame::Frame;
     use crate::message::{
@@ -926,7 +931,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
                 operation: CassandraOperation::Query {
-                    query: vec![Statement::Query(Box::new(Query {
+                    query: CQL::Parsed(vec![Statement::Query(Box::new(Query {
                         with: None,
                         body: SetExpr::Select(Box::new(Select {
                             distinct: false,
@@ -971,7 +976,7 @@ mod cassandra_protocol_tests {
                         limit: None,
                         offset: None,
                         fetch: None,
-                    }))],
+                    }))]),
                     params: QueryParams::default(),
                 },
             }),
@@ -1037,7 +1042,7 @@ mod cassandra_protocol_tests {
                 tracing_id: None,
                 warnings: vec![],
                 operation: CassandraOperation::Query {
-                    query: vec![Statement::Insert {
+                    query: CQL::Parsed(vec![Statement::Insert {
                         or: None,
                         table_name: ObjectName(vec![
                             Ident {
@@ -1068,7 +1073,7 @@ mod cassandra_protocol_tests {
                         after_columns: (vec![]),
                         table: false,
                         on: None,
-                    }],
+                    }]),
                     params: QueryParams::default(),
                 },
             }),
