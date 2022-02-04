@@ -509,6 +509,10 @@ impl CassandraCodec {
 
     fn encode_raw(&mut self, item: CassandraFrame, dst: &mut BytesMut) {
         let buffer = item.encode().encode_with(self.compressor).unwrap();
+        tracing::debug!(
+            "outgoing cassandra message:\n{}",
+            pretty_hex::pretty_hex(&buffer)
+        );
         if buffer.is_empty() {
             info!("trying to send 0 length frame");
         }
@@ -534,6 +538,10 @@ impl Decoder for CassandraCodec {
             Ok(parsed_frame) => {
                 // Clear the read bytes from the FramedReader
                 let bytes = src.split_to(parsed_frame.frame_len);
+                tracing::debug!(
+                    "incoming cassandra message:\n{}",
+                    pretty_hex::pretty_hex(&bytes)
+                );
 
                 let mut message = Message::from_frame(Frame::Cassandra(
                     CassandraFrame::from_bytes(bytes.freeze()).unwrap(),
