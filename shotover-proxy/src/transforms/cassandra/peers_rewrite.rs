@@ -105,6 +105,7 @@ impl CassandraPeersRewrite {
     }
 }
 
+/// Emulate a single node by removing the rows from a query to system.peers(_v2)
 fn emulate_single_node(original: &mut Frame) {
     if let Frame::Cassandra(ref mut frame) = original {
         if let Ok(ResponseBody::Result(ResResultBody::Rows(rows))) = frame.response_body() {
