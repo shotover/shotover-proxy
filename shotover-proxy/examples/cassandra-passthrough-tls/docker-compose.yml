@@ -13,4 +13,4 @@ services:
     volumes:
       - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
       - ./cassandra.yaml:/etc/cassandra/cassandra.yaml
-      # - ./certs/:/security/
+      - ./certs/:/security/

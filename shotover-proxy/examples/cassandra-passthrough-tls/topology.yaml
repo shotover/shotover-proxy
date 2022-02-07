@@ -22,6 +22,11 @@ chain_config:
     - CassandraSinkSingle:
         result_processing: true
         remote_address: "127.0.0.1:9042"
+        tls:
+          certificate_authority_path: "examples/cassandra-passthrough-tls/certs/db.crt"
+          certificate_path: "examples/cassandra-passthrough-tls/certs/cadb.pem"
+          private_key_path: "examples/cassandra-passthrough-tls/certs/cadb.key"
+
 named_topics:
   testtopic: 5
 source_to_chain_mapping:
