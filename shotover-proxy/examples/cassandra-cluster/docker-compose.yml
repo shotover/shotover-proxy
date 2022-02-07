@@ -31,7 +31,7 @@ services:
       CASSANDRA_ENABLE_SCRIPTED_USER_DEFINED_FUNCTIONS: "true"
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
     volumes:
-      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      - ../cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
 
   cassandra-two:
     image: library/cassandra:3.11.10
@@ -44,7 +44,7 @@ services:
     depends_on:
       - cassandra-one
     volumes:
-      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      - ../cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
 
   cassandra-three:
     image: library/cassandra:3.11.10
@@ -57,4 +57,4 @@ services:
     depends_on:
       - cassandra-two
     volumes:
-      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      - ../cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
