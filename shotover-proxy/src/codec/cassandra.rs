@@ -797,20 +797,16 @@ mod cassandra_protocol_tests {
     fn test_codec_startup() {
         let mut codec = new_codec();
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
-        let messages = vec![Message::new(
-            MessageDetails::Unknown,
-            false,
-            Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
-                direction: Direction::Request,
-                flags: Flags::empty(),
-                opcode: Opcode::Startup,
-                stream_id: 0,
-                body: hex!("0001000b43514c5f56455253494f4e0005332e302e30").to_vec(),
-                tracing_id: None,
-                warnings: vec![],
-            }),
-        )];
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            direction: Direction::Request,
+            flags: Flags::empty(),
+            opcode: Opcode::Startup,
+            stream_id: 0,
+            body: hex!("0001000b43514c5f56455253494f4e0005332e302e30").to_vec(),
+            tracing_id: None,
+            warnings: vec![],
+        }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -818,20 +814,16 @@ mod cassandra_protocol_tests {
     fn test_codec_options() {
         let mut codec = new_codec();
         let bytes = hex!("040000000500000000");
-        let messages = vec![Message::new(
-            MessageDetails::Unknown,
-            false,
-            Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
-                direction: Direction::Request,
-                flags: Flags::empty(),
-                opcode: Opcode::Options,
-                stream_id: 0,
-                body: vec![],
-                tracing_id: None,
-                warnings: vec![],
-            }),
-        )];
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            direction: Direction::Request,
+            flags: Flags::empty(),
+            opcode: Opcode::Options,
+            stream_id: 0,
+            body: vec![],
+            tracing_id: None,
+            warnings: vec![],
+        }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -839,20 +831,16 @@ mod cassandra_protocol_tests {
     fn test_codec_ready() {
         let mut codec = new_codec();
         let bytes = hex!("840000000200000000");
-        let messages = vec![Message::new(
-            MessageDetails::Unknown,
-            false,
-            Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
-                direction: Direction::Response,
-                flags: Flags::empty(),
-                opcode: Opcode::Ready,
-                stream_id: 0,
-                body: vec![],
-                tracing_id: None,
-                warnings: vec![],
-            }),
-        )];
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            direction: Direction::Response,
+            flags: Flags::empty(),
+            opcode: Opcode::Ready,
+            stream_id: 0,
+            body: vec![],
+            tracing_id: None,
+            warnings: vec![],
+        }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -863,24 +851,20 @@ mod cassandra_protocol_tests {
             "040000010b000000310003000f544f504f4c4f47595f4348414e4745
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
-        let messages = vec![Message::new(
-            MessageDetails::Unknown,
-            false,
-            Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
-                direction: Direction::Request,
-                flags: Flags::empty(),
-                opcode: Opcode::Register,
-                stream_id: 1,
-                body: hex!(
-                    "0003000f544f504f4c4f47595f4348414e4745
-                    000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
-                )
-                .to_vec(),
-                tracing_id: None,
-                warnings: vec![],
-            }),
-        )];
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            direction: Direction::Request,
+            flags: Flags::empty(),
+            opcode: Opcode::Register,
+            stream_id: 1,
+            body: hex!(
+                "0003000f544f504f4c4f47595f4348414e4745
+                000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
+            )
+            .to_vec(),
+            tracing_id: None,
+            warnings: vec![],
+        }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
