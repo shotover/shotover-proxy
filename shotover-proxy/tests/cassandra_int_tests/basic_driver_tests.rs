@@ -1336,7 +1336,7 @@ fn test_cassandra_protect_transform_local() {
     let _compose = DockerCompose::new("examples/cassandra-protect-local/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
-    let _shotover_manager =
+    let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-protect-local/topology.yaml");
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
@@ -1359,7 +1359,7 @@ fn test_cassandra_protect_transform_aws() {
         .wait_for_n_t("Startup complete", 1, 90);
     let _compose_aws = DockerCompose::new_moto();
 
-    let _shotover_manager =
+    let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-protect-aws/topology.yaml");
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
