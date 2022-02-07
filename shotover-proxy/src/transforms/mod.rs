@@ -30,6 +30,8 @@ use crate::transforms::loopback::Loopback;
 use crate::transforms::null::Null;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
 use crate::transforms::protect::Protect;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::protect::ProtectConfig;
 use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
 use crate::transforms::redis::cache::{RedisConfig, SimpleRedisCache};
 use crate::transforms::redis::cluster_ports_rewrite::{
@@ -226,6 +228,8 @@ pub enum TransformsConfig {
     Null,
     #[cfg(test)]
     Loopback,
+    #[cfg(feature = "alpha-transforms")]
+    Protect(ProtectConfig),
     ParallelMap(ParallelMapConfig),
     //PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
@@ -257,6 +261,8 @@ impl TransformsConfig {
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             #[cfg(test)]
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
+            #[cfg(feature = "alpha-transforms")]
+            TransformsConfig::Protect(p) => p.get_source().await,
             TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
             //TransformsConfig::PoolConnections(s) => s.get_source(topics).await,

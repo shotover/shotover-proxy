@@ -37,7 +37,7 @@ pub struct KeyMaterial {
     pub plaintext: Key,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ProtectConfig {
     pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
     pub key_manager: KeyManagerConfig,
@@ -246,7 +246,6 @@ impl Transform for Protect {
 #[cfg(test)]
 mod protect_transform_tests {
     use std::collections::HashMap;
-    use std::env;
 
     use crate::frame::CassandraFrame;
     use cassandra_protocol::consistency::Consistency;
@@ -428,8 +427,7 @@ mod protect_transform_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_protect_kms_transform() {
-        let _compose = DockerCompose::new("tests/transforms/docker-compose-moto.yml")
-            .wait_for(r#"Press CTRL\+C to quit"#);
+        let _compose = DockerCompose::new_moto();
 
         let projection: Vec<String> = vec!["pk", "cluster", "col1", "col2", "col3"]
             .iter()
@@ -440,11 +438,6 @@ mod protect_transform_tests {
         let mut protection_table_map: HashMap<String, Vec<String>> = HashMap::new();
         protection_table_map.insert("old".to_string(), vec!["col1".to_string()]);
         protection_map.insert("keyspace".to_string(), protection_table_map);
-
-        // Overwrite any existing AWS credential env vars belonging to the user with dummy values to be sure that
-        // we wont hit their real AWS account in the case of a bug in shotover or the test
-        env::set_var("AWS_ACCESS_KEY_ID", "dummy-access-key");
-        env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
 
         let aws_config = KeyManagerConfig::AWSKms {
             endpoint: Some("http://localhost:5000".to_string()),
