@@ -3,11 +3,11 @@ sources:
   cassandra_prod:
     Cassandra:
       query_processing: true
-      listen_addr: "127.0.0.1:9042"
+      listen_addr: "127.0.0.1:9043"
       tls:
-        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/my-cluster.cer"
-        certificate_path: "examples/cassandra-passthrough-tls/certs/my-cluster.cer.pem"
-        private_key_path: "examples/cassandra-passthrough-tls/certs/my-cluster.key.pem"
+        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/db.crt"
+        certificate_path: "examples/cassandra-passthrough-tls/certs/cadb.pem"
+        private_key_path: "examples/cassandra-passthrough-tls/certs/cadb.key"
 
       cassandra_ks:
         system.local:
@@ -21,7 +21,7 @@ chain_config:
   main_chain:
     - CassandraSinkSingle:
         result_processing: true
-        remote_address: "127.0.0.1:9043"
+        remote_address: "127.0.0.1:9042"
 named_topics:
   testtopic: 5
 source_to_chain_mapping:

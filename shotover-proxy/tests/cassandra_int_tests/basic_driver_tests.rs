@@ -1331,14 +1331,13 @@ fn test_passthrough_tls() {
     let _compose = DockerCompose::new("examples/cassandra-passthrough-tls/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
-    // let _shotover_manager =
-    //     ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
 
     let tls_config = TlsConfig {
-        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/my-cluster.cer"
-            .into(),
-        certificate_path: "examples/cassandra-passthrough-tls/certs/my-cluster.cer.pem".into(),
-        private_key_path: "examples/cassandra-passthrough-tls/certs/my-cluster.key.pem".into(),
+        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/db.crt".into(),
+        certificate_path: "examples/cassandra-passthrough-tls/certs/cadb.pem".into(),
+        private_key_path: "examples/cassandra-passthrough-tls/certs/cadb.key".into(),
     };
 
     let connection = cassandra_connection_tls("127.0.0.1", 9043, tls_config);
@@ -1346,7 +1345,10 @@ fn test_passthrough_tls() {
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
+    native_types::test(&connection);
+    collections::test(&connection);
     functions::test(&connection);
+    prepared_statements::test(&connection);
 }
 
 #[test]

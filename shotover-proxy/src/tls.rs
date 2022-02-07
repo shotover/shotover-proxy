@@ -26,7 +26,7 @@ pub struct TlsAcceptor {
 
 impl TlsAcceptor {
     pub fn new(tls_config: TlsConfig) -> Result<TlsAcceptor> {
-        let mut builder = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
+        let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
         builder.set_ca_file(tls_config.certificate_authority_path)?;
         builder.set_private_key_file(tls_config.private_key_path, SslFiletype::PEM)?;
         builder.set_certificate_chain_file(tls_config.certificate_path)?;
