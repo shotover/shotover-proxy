@@ -1,9 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use test_helpers::docker_compose::DockerCompose;
+//use test_helpers::docker_compose::DockerCompose;
 
-#[path = "../tests/helpers/mod.rs"]
-mod helpers;
-use helpers::ShotoverManager;
+#[path = "./mod.rs"]
+mod benches;
+use benches::{BenchResources, DockerCompose, ShotoverManager};
 
 fn redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
@@ -59,10 +59,7 @@ fn redis(c: &mut Criterion) {
         },
         move |b, state| {
             b.iter(|| {
-                redis::cmd("SET")
-                    .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
+                redis::cmd("SET").arg("foo").arg(42).execute(state.redis());
             })
         },
     );
@@ -108,22 +105,3 @@ fn redis(c: &mut Criterion) {
 
 criterion_group!(benches, redis);
 criterion_main!(benches);
-
-struct BenchResources {
-    _compose: DockerCompose,
-    _shotover_manager: ShotoverManager,
-    connection: redis::Connection,
-}
-
-impl BenchResources {
-    fn new(shotover_manager: ShotoverManager, compose: DockerCompose) -> Self {
-        let mut connection = shotover_manager.redis_connection(6379);
-        redis::cmd("FLUSHDB").execute(&mut connection);
-
-        Self {
-            _compose: compose,
-            _shotover_manager: shotover_manager,
-            connection,
-        }
-    }
-}
