@@ -1,6 +1,5 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, QueryType};
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
@@ -8,7 +7,6 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes_utils::Str;
 use futures::stream::FuturesUnordered;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -153,9 +151,7 @@ impl Transform for ConsistentScatter {
         Ok(if results.len() < max_required_successes as usize {
             let mut messages = message_wrapper.messages;
             for message in &mut messages {
-                message.original = Frame::Redis(RedisFrame::Error(
-                    Str::from_inner("Not enough responses".into()).unwrap(),
-                ));
+                message.set_error("Not enough responses".into());
             }
             messages
         } else {

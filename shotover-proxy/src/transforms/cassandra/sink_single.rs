@@ -4,11 +4,9 @@ use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::CassandraFrame;
 use crate::frame::Frame;
-use crate::message;
-use crate::message::{Message, Messages, QueryResponse};
+use crate::message::{Message, Messages};
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
-
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
@@ -124,13 +122,9 @@ impl CassandraSinkSingle {
                                         original,
                                         response: Err(err),
                                     } => {
-                                        responses.push(Message::new_response(
-                                            QueryResponse::empty_with_error(Some(
-                                                message::MessageValue::Strings(format!("{err}")),
-                                            )),
-                                            true,
-                                            original.original,
-                                        ));
+                                        let mut message = Message::from_frame(original.original);
+                                        message.set_error(err.to_string());
+                                        responses.push(message);
                                     }
                                 };
                             }

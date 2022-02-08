@@ -5,6 +5,7 @@ use crate::frame::RedisFrame;
 use bigdecimal::BigDecimal;
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Bytes;
+use bytes_utils::Str;
 use cassandra_protocol::{
     frame::{
         frame_error::{AdditionalErrorInfo, ErrorBody},
@@ -94,7 +95,7 @@ impl Message {
     }
 
     #[must_use]
-    pub fn to_filtered_reply(&self) -> Message {
+    pub fn to_filtered_reply(&self) -> Self {
         Message {
             details: MessageDetails::Unknown,
             modified: true,
@@ -128,6 +129,33 @@ impl Message {
         } else {
             self.original.get_query_type()
         }
+    }
+
+    pub fn set_error(&mut self, error: String) {
+        *self = Message::from_frame(match &self.original {
+            Frame::Redis(_) => {
+                Frame::Redis(RedisFrame::Error(Str::from_inner(error.into()).unwrap()))
+            }
+            Frame::Cassandra(frame) => {
+                let body = ErrorBody {
+                    error_code: 0,
+                    message: error,
+                    additional_info: AdditionalErrorInfo::Server,
+                };
+
+                Frame::Cassandra(CassandraFrame {
+                    version: frame.version,
+                    stream_id: frame.stream_id,
+                    direction: Direction::Response,
+                    opcode: Opcode::Error,
+                    tracing_id: None,
+                    flags: Flags::default(),
+                    warnings: frame.warnings.clone(),
+                    body: body.serialize_to_vec(),
+                })
+            }
+            Frame::None => Frame::None,
+        })
     }
 }
 
@@ -250,15 +278,6 @@ impl QueryResponse {
             matching_query: None,
             result: None,
             error: None,
-            response_meta: None,
-        }
-    }
-
-    pub fn empty_with_error(error: Option<MessageValue>) -> Self {
-        QueryResponse {
-            matching_query: None,
-            result: None,
-            error,
             response_meta: None,
         }
     }
