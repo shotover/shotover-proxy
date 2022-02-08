@@ -1331,7 +1331,7 @@ fn test_passthrough_tls() {
     let _compose = DockerCompose::new("examples/cassandra-passthrough-tls/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
-    let _shotover_manager =
+    let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
 
     let tls_config = TlsConfig {
@@ -1340,14 +1340,20 @@ fn test_passthrough_tls() {
         private_key_path: "examples/cassandra-passthrough-tls/certs/cadb.key".into(),
     };
 
-    let connection = cassandra_connection_tls("127.0.0.1", 9043, tls_config);
+    let connection = shotover_manager.cassandra_connection_tls(
+        "127.0.0.1",
+        9043,
+        tls_config,
+        "cassandra",
+        "cassandra",
+    );
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    //functions::test(&connection); // TODO disabled until bitnami merges the PR adding enable_scripted_user_defined_functions
     prepared_statements::test(&connection);
 }
 

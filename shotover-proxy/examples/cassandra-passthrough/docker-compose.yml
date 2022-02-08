@@ -12,5 +12,3 @@ services:
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
     volumes:
       - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
-      - ./cassandra.yaml:/etc/cassandra/cassandra.yaml
-      - ./certs/:/security/
