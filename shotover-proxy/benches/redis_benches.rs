@@ -8,7 +8,7 @@ use helpers::ShotoverManager;
 fn redis_multi(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
     group.throughput(criterion::Throughput::Elements(1));
-    group.noise_threshold(2.0);
+    group.noise_threshold(0.2);
 
     {
         let mut state = {
@@ -33,7 +33,7 @@ fn redis_multi(c: &mut Criterion) {
 fn redis_cluster(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
     group.throughput(criterion::Throughput::Elements(1));
-    group.noise_threshold(2.0);
+    group.noise_threshold(0.2);
 
     {
         let mut state = {
@@ -59,7 +59,7 @@ fn redis_passthrough(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("redis");
         group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(2.0);
+        group.noise_threshold(0.2);
 
         let mut state = {
             let compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
@@ -84,7 +84,7 @@ fn redis_tls(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("redis");
         group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(2.0);
+        group.noise_threshold(0.2);
 
         let mut state = {
             let compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
@@ -109,7 +109,7 @@ fn redis_cluster_tls(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("redis");
         group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(2.0);
+        group.noise_threshold(0.2);
 
         let mut state = {
             let compose = DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
