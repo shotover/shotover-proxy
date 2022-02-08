@@ -94,3 +94,7 @@ harness = false
 [[bench]]
 name = "chain_benches"
 harness = false
+
+[[bench]]
+name = "cassandra_benches"
+harness = false
