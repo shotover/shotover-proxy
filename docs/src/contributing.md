@@ -15,7 +15,7 @@ Shotover requires the following in order to build:
 * libssl-dev
 * pkg-config (Linux)
 
-On Ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-dev pkg-config
+On Ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-dev pkg-config`.
 
 ### Installing Optional Tools and Libraries
 
@@ -39,7 +39,7 @@ The Cassandra tests require the Cassandra CPP driver.
 
 ### Installing Cassandra CPP Driver
 
-Installation information and dependencies for the Cassandra CPP driver can be found at https://docs.datastax.com/en/developer/cpp-driver/2.4/
+Installation information and dependencies for the Cassandra CPP driver can be found [here](https://docs.datastax.com/en/developer/cpp-driver/2.4/).
 
 #### Ubuntu 18.04
 
@@ -84,5 +84,5 @@ Before submitting a PR you can run the following to ensure it will pass CI:
 
 * Run `cargo fmt`
 * Run `cargo clippy` - Ensure you haven't introduced any warnings.
-* Run `cargo build --all-targets` - Ensure everything still builds and you havent introduced any warnings.
+* Run `cargo build --all-targets` - Ensure everything still builds and you haven't introduced any warnings.
 * Run `cargo test` - All tests pass.
