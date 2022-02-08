@@ -5,10 +5,10 @@ use test_helpers::docker_compose::DockerCompose;
 mod helpers;
 use helpers::ShotoverManager;
 
-fn redis_multi(c: &mut Criterion) {
+fn redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
     group.throughput(criterion::Throughput::Elements(1));
-    group.noise_threshold(0.2);
+    group.noise_threshold(2.0);
 
     {
         let mut state = {
@@ -28,12 +28,6 @@ fn redis_multi(c: &mut Criterion) {
             })
         });
     }
-}
-
-fn redis_cluster(c: &mut Criterion) {
-    let mut group = c.benchmark_group("redis");
-    group.throughput(criterion::Throughput::Elements(1));
-    group.noise_threshold(0.2);
 
     {
         let mut state = {
@@ -53,14 +47,8 @@ fn redis_cluster(c: &mut Criterion) {
             })
         });
     }
-}
 
-fn redis_passthrough(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group("redis");
-        group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(0.2);
-
         let mut state = {
             let compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
                 .wait_for("Ready to accept connections");
@@ -78,14 +66,8 @@ fn redis_passthrough(c: &mut Criterion) {
             })
         });
     }
-}
 
-fn redis_tls(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group("redis");
-        group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(0.2);
-
         let mut state = {
             let compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
                 .wait_for("Ready to accept connections");
@@ -103,14 +85,8 @@ fn redis_tls(c: &mut Criterion) {
             })
         });
     }
-}
 
-fn redis_cluster_tls(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group("redis");
-        group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(0.2);
-
         let mut state = {
             let compose = DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
                 .wait_for_n("Cluster state changed", 6);
@@ -130,15 +106,8 @@ fn redis_cluster_tls(c: &mut Criterion) {
     }
 }
 
-criterion_group!(
-    redis,
-    redis_multi,
-    redis_cluster,
-    redis_passthrough,
-    redis_tls,
-    redis_cluster_tls
-);
-criterion_main!(redis);
+criterion_group!(benches, redis);
+criterion_main!(benches);
 
 struct BenchResources {
     _compose: DockerCompose,
