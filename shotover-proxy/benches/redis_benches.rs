@@ -5,140 +5,111 @@ use test_helpers::docker_compose::DockerCompose;
 mod helpers;
 use helpers::ShotoverManager;
 
-fn redis_multi(c: &mut Criterion) {
+fn redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
     group.throughput(criterion::Throughput::Elements(1));
     group.noise_threshold(2.0);
 
     {
-        let mut state = {
-            let compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
-                .wait_for_n("Ready to accept connections", 3);
-            let shotover_manager =
-                ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
-        };
-
+        let mut state = None;
         group.bench_function("active", move |b| {
             b.iter(|| {
+                let state = state.get_or_insert_with(|| {
+                    let compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
+                        .wait_for_n("Ready to accept connections", 3);
+                    let shotover_manager =
+                        ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
+                    BenchResources::new(shotover_manager, compose)
+                });
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg::<i32>(42)
+                    .arg(42)
                     .execute(&mut state.connection);
             })
         });
     }
-}
-
-fn redis_cluster(c: &mut Criterion) {
-    let mut group = c.benchmark_group("redis");
-    group.throughput(criterion::Throughput::Elements(1));
-    group.noise_threshold(2.0);
 
     {
-        let mut state = {
-            let compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
-                .wait_for_n("Cluster state changed", 6);
-            let shotover_manager =
-                ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
-        };
-
+        let mut state = None;
         group.bench_function("cluster", move |b| {
             b.iter(|| {
+                let state = state.get_or_insert_with(|| {
+                    let compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
+                        .wait_for_n("Cluster state changed", 6);
+                    let shotover_manager =
+                        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
+                    BenchResources::new(shotover_manager, compose)
+                });
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg::<i32>(42)
+                    .arg(42)
                     .execute(&mut state.connection);
             })
         });
     }
-}
 
-fn redis_passthrough(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group("redis");
-        group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(2.0);
-
-        let mut state = {
-            let compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
-                .wait_for("Ready to accept connections");
-            let shotover_manager =
-                ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
-        };
-
+        let mut state = None;
         group.bench_function("passthrough", move |b| {
+            let state = state.get_or_insert_with(|| {
+                let compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+                    .wait_for("Ready to accept connections");
+                let shotover_manager =
+                    ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
+                BenchResources::new(shotover_manager, compose)
+            });
             b.iter(|| {
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg::<i32>(42)
+                    .arg(42)
                     .execute(&mut state.connection);
             })
         });
     }
-}
 
-fn redis_tls(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group("redis");
-        group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(2.0);
-
-        let mut state = {
-            let compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
-                .wait_for("Ready to accept connections");
-            let shotover_manager =
-                ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
-        };
-
+        let mut state = None;
         group.bench_function("single_tls", move |b| {
             b.iter(|| {
+                let state = state.get_or_insert_with(|| {
+                    let compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
+                        .wait_for("Ready to accept connections");
+                    let shotover_manager =
+                        ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
+                    BenchResources::new(shotover_manager, compose)
+                });
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg::<i32>(42)
+                    .arg(42)
                     .execute(&mut state.connection);
             })
         });
     }
-}
 
-fn redis_cluster_tls(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group("redis");
-        group.throughput(criterion::Throughput::Elements(1));
-        group.noise_threshold(2.0);
-
-        let mut state = {
-            let compose = DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
-                .wait_for_n("Cluster state changed", 6);
-            let shotover_manager =
-                ShotoverManager::from_topology_file("examples/redis-cluster-tls/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
-        };
-
+        let mut state = None;
         group.bench_function("cluster_tls", move |b| {
             b.iter(|| {
+                let state = state.get_or_insert_with(|| {
+                    let compose =
+                        DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
+                            .wait_for_n("Cluster state changed", 6);
+                    let shotover_manager = ShotoverManager::from_topology_file(
+                        "examples/redis-cluster-tls/topology.yaml",
+                    );
+                    BenchResources::new(shotover_manager, compose)
+                });
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg::<i32>(42)
+                    .arg(42)
                     .execute(&mut state.connection);
             })
         });
     }
 }
 
-criterion_group!(
-    redis,
-    redis_multi,
-    redis_cluster,
-    redis_passthrough,
-    redis_tls,
-    redis_cluster_tls
-);
-criterion_main!(redis);
+criterion_group!(benches, redis);
+criterion_main!(benches);
 
 struct BenchResources {
     _compose: DockerCompose,
