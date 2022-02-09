@@ -49,7 +49,7 @@ impl ConsistentScatterConfig {
     }
 }
 
-fn get_size(_message: &mut Message) -> usize {
+fn get_size(_message: &Message) -> usize {
     4 // TODO: Implement. Old impl was just removed because it was broken anyway
 }
 
@@ -62,10 +62,10 @@ fn resolve_fragments(fragments: &mut Vec<Message>) -> Option<Message> {
     // Return newest, otherwise biggest. Returns newest, even
     // if we have a bigger response.
     while !fragments.is_empty() {
-        if let Some(mut fragment) = fragments.pop() {
+        if let Some(fragment) = fragments.pop() {
             let candidate = fragment.meta_timestamp.unwrap_or(0);
             if candidate > 0 {
-                match &mut newest_fragment {
+                match &newest_fragment {
                     None => newest_fragment = Some(fragment),
                     Some(frag) => {
                         let current = frag.meta_timestamp.unwrap_or(0);
@@ -75,8 +75,8 @@ fn resolve_fragments(fragments: &mut Vec<Message>) -> Option<Message> {
                     }
                 }
             } else {
-                let candidate = get_size(&mut fragment);
-                match &mut newest_fragment {
+                let candidate = get_size(&fragment);
+                match &newest_fragment {
                     None => newest_fragment = Some(fragment),
                     Some(frag) => {
                         let current = get_size(frag);
@@ -110,6 +110,7 @@ impl Transform for ConsistentScatter {
             .messages
             .iter_mut()
             .map(|m| {
+                m.generate_message_details_query();
                 if m.get_query_type() == QueryType::Read {
                     self.read_consistency
                 } else {
