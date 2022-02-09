@@ -90,14 +90,13 @@ impl CassandraSinkSingle {
             match self.outbound {
                 None => {
                     trace!("creating outbound connection {:?}", self.address);
+                    // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
                     let conn_pool = CassandraConnection::new(
                         self.address.clone(),
                         CassandraCodec::new(self.cassandra_ks.clone(), self.bypass),
                         self.tls.clone(),
                     )
                     .await?;
-                    // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
-                    //conn_pool.connect().await?;
                     self.outbound = Some(conn_pool);
                 }
                 Some(ref mut outbound_framed_codec) => {

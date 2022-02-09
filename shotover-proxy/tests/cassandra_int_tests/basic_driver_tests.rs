@@ -945,7 +945,6 @@ mod functions {
 
         let statement = stmt!("SELECT test_function_keyspace.my_function(x) FROM test_function_keyspace.test_function_table WHERE id=1;");
         let result = session.execute(&statement).wait().unwrap_err().to_string();
-        println!("{:?}", result);
 
         assert_eq!(result, "Cassandra detailed error SERVER_INVALID_QUERY: Unknown function 'test_function_keyspace.my_function'");
     }
@@ -1353,7 +1352,7 @@ fn test_passthrough_tls() {
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    //functions::test(&connection); // TODO disabled until bitnami merges the PR adding enable_scripted_user_defined_functions
+    functions::test(&connection);
     prepared_statements::test(&connection);
 }
 
