@@ -7,6 +7,7 @@ use tracing::info;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
+use crate::frame::cassandra::{CassandraOperation, CassandraResult};
 use crate::frame::{CassandraFrame, Frame};
 use crate::message::{ASTHolder, MessageDetails, MessageValue, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
@@ -14,7 +15,7 @@ use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
 use bytes::{BufMut, Bytes, BytesMut};
-use cassandra_protocol::frame::{Direction, Flags, Opcode, Version};
+use cassandra_protocol::frame::Version;
 use itertools::Itertools;
 use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, Value};
 use std::borrow::Borrow;
@@ -106,11 +107,8 @@ impl SimpleRedisCache {
             // TODO: Translate the redis reply into cassandra
             message.original = Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
-                direction: Direction::Response,
-                flags: Flags::empty(),
-                opcode: Opcode::Result,
+                operation: CassandraOperation::Result(CassandraResult::Void),
                 stream_id: stream_ids.remove(0),
-                body: vec![0x00, 0x00, 0x00, 0x01], // void result
                 tracing_id: None,
                 warnings: vec![],
             });
@@ -379,7 +377,7 @@ impl Transform for SimpleRedisCache {
 
         for m in &mut message_wrapper.messages {
             if let Frame::Cassandra(CassandraFrame {
-                opcode: Opcode::Query,
+                operation: CassandraOperation::Query { .. },
                 ..
             }) = &m.original
             {
