@@ -15,7 +15,7 @@ env:
 
 jobs:
   benchmarks:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-18.04
     name: Benchmarks
     steps:
     - uses: actions/checkout@v2
@@ -30,11 +30,9 @@ jobs:
     - uses: Swatinem/rust-cache@v1
       with:
         # Unique key is used to avoid collisions with the Testing workflow
-        key: 'Benchmark'
+        key: 'ubuntu-18.04-benchmark'
     - name: Install ubuntu packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gnuplot libpcap-dev
+      run: shotover-proxy/build/install_ubuntu_packages.sh
     - name: Run benchmarks
       run: shotover-proxy/tests/scripts/bench_against_master.sh ${{ github.event.number }}
     - name: Upload comment artifact

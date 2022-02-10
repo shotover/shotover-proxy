@@ -17,14 +17,14 @@ fn redis(c: &mut Criterion) {
                 .wait_for_n("Ready to accept connections", 3);
             let shotover_manager =
                 ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
+            BenchResources::new_redis(shotover_manager, compose)
         },
-        move |b, state| {
+        |b, state| {
             b.iter(|| {
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
+                    .arg::<i32>(42)
+                    .execute(state.redis());
             })
         },
     );
@@ -36,14 +36,14 @@ fn redis(c: &mut Criterion) {
                 .wait_for_n("Cluster state changed", 6);
             let shotover_manager =
                 ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
+            BenchResources::new_redis(shotover_manager, compose)
         },
-        move |b, state| {
+        |b, state| {
             b.iter(|| {
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
+                    .arg::<i32>(42)
+                    .execute(state.redis());
             })
         },
     );
@@ -55,11 +55,14 @@ fn redis(c: &mut Criterion) {
                 .wait_for("Ready to accept connections");
             let shotover_manager =
                 ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
+            BenchResources::new_redis(shotover_manager, compose)
         },
-        move |b, state| {
+        |b, state| {
             b.iter(|| {
-                redis::cmd("SET").arg("foo").arg(42).execute(state.redis());
+                redis::cmd("SET")
+                    .arg("foo")
+                    .arg::<i32>(42)
+                    .execute(state.redis());
             })
         },
     );
@@ -71,14 +74,14 @@ fn redis(c: &mut Criterion) {
                 .wait_for("Ready to accept connections");
             let shotover_manager =
                 ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
+            BenchResources::new_redis(shotover_manager, compose)
         },
-        move |b, state| {
+        |b, state| {
             b.iter(|| {
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
+                    .arg::<i32>(42)
+                    .execute(state.redis());
             })
         },
     );
@@ -90,14 +93,14 @@ fn redis(c: &mut Criterion) {
                 .wait_for_n("Cluster state changed", 6);
             let shotover_manager =
                 ShotoverManager::from_topology_file("examples/redis-cluster-tls/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
+            BenchResources::new_redis(shotover_manager, compose)
         },
-        move |b, state| {
+        |b, state| {
             b.iter(|| {
                 redis::cmd("SET")
                     .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
+                    .arg::<i32>(42)
+                    .execute(state.redis());
             })
         },
     );
