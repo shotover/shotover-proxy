@@ -1,9 +1,10 @@
-use cassandra_cpp::stmt;
+use cassandra_cpp::{stmt, Session};
 use criterion::{criterion_group, criterion_main, Criterion};
+use test_helpers::docker_compose::DockerCompose;
 
-#[path = "./mod.rs"]
-mod benches;
-use benches::{BenchResources, DockerCompose, ShotoverManager};
+#[path = "../tests/helpers/mod.rs"]
+mod helpers;
+use helpers::ShotoverManager;
 
 fn cassandra(c: &mut Criterion) {
     let mut group = c.benchmark_group("cassandra");
@@ -23,11 +24,11 @@ fn cassandra(c: &mut Criterion) {
                 let shotover_manager = ShotoverManager::from_topology_file(
                     "examples/cassandra-passthrough/topology.yaml",
                 );
-                BenchResources::new_cassandra(shotover_manager, compose)
+                BenchResources::new(shotover_manager, compose)
             },
             |b, state| {
                 b.iter(|| {
-                    state.cassandra().execute(&statement).wait().unwrap();
+                    state.connection.execute(&statement).wait().unwrap();
                 })
             },
         );
@@ -36,3 +37,30 @@ fn cassandra(c: &mut Criterion) {
 
 criterion_group!(benches, cassandra);
 criterion_main!(benches);
+
+pub struct BenchResources {
+    _compose: DockerCompose,
+    _shotover_manager: ShotoverManager,
+    connection: Session,
+}
+
+impl BenchResources {
+    #[allow(unused)]
+    pub fn new(shotover_manager: ShotoverManager, compose: DockerCompose) -> Self {
+        let connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+
+        let mut statement = stmt!("CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        connection.execute(&statement).wait().unwrap();
+
+        statement = stmt!(
+            "CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);"
+        );
+        connection.execute(&statement).wait().unwrap();
+
+        Self {
+            _compose: compose,
+            _shotover_manager: shotover_manager,
+            connection,
+        }
+    }
+}
