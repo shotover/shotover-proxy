@@ -1,0 +1,65 @@
+---
+sources:
+  cassandra_prod_1:
+    Cassandra:
+      query_processing: false
+      listen_addr: "127.0.0.1:9043"
+      cassandra_ks:
+        system.local:
+          - key
+        test.simple:
+          - pk
+        test.clustering:
+          - pk
+          - clustering
+  cassandra_prod_2:
+    Cassandra:
+      query_processing: false
+      listen_addr: "127.0.0.1:9044"
+      cassandra_ks:
+        system.local:
+          - key
+        test.simple:
+          - pk
+        test.clustering:
+          - pk
+          - clustering
+
+  cassandra_prod_3:
+    Cassandra:
+      query_processing: false
+      listen_addr: "127.0.0.1:9045"
+      cassandra_ks:
+        system.local:
+          - key
+        test.simple:
+          - pk
+        test.clustering:
+          - pk
+          - clustering
+
+chain_config:
+  main_chain:
+    - CassandraSinkSingle:
+        result_processing: false
+        remote_address: "172.16.1.2:9042"
+  peers_rewrite_port:
+    - CassandraPeersRewrite:
+        emulate_single_node: false
+        new_port: 9044
+    - CassandraSinkSingle:
+        result_processing: false
+        remote_address: "172.16.1.2:9042"
+  peers_rewrite_emulate_single_node:
+    - CassandraPeersRewrite:
+        emulate_single_node: true
+    - CassandraSinkSingle:
+        result_processing: false
+        remote_address: "172.16.1.2:9042"
+
+named_topics:
+  testtopic: 5
+source_to_chain_mapping:
+  cassandra_prod_1: main_chain
+  cassandra_prod_2: peers_rewrite_port
+  cassandra_prod_3: peers_rewrite_emulate_single_node
