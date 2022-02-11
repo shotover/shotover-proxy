@@ -92,12 +92,9 @@ impl CassandraFrame {
                         ResResultBody::SetKeyspace(set_keyspace) => CassandraOperation::Result(
                             CassandraResult::SetKeyspace(Box::new(set_keyspace)),
                         ),
-                        ResResultBody::Prepared(prepared) => {
-                            tracing::error!("prepared: {:#?}", prepared);
-                            CassandraOperation::Result(CassandraResult::Prepared(Box::new(
-                                prepared,
-                            )))
-                        }
+                        ResResultBody::Prepared(prepared) => CassandraOperation::Result(
+                            CassandraResult::Prepared(Box::new(prepared)),
+                        ),
                         ResResultBody::SchemaChange(schema_change) => {
                             CassandraOperation::Result(CassandraResult::SchemaChange(schema_change))
                         }

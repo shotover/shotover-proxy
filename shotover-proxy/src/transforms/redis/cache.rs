@@ -1,24 +1,24 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
+use bytes::{BufMut, Bytes, BytesMut};
+use cassandra_protocol::frame::Version;
+use itertools::Itertools;
 use serde::Deserialize;
+use sqlparser::ast::{Assignment, BinaryOperator, Expr, Ident, Query, SetExpr, Statement, Value};
 use tracing::info;
 
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::cassandra::{CassandraOperation, CassandraResult};
-use crate::frame::{CassandraFrame, Frame};
-use crate::message::{ASTHolder, MessageDetails, MessageValue, Messages, QueryType};
+use crate::frame::cassandra::{CassandraOperation, CassandraResult, CQL};
+use crate::frame::{CassandraFrame, Frame, RedisFrame};
+use crate::message::{Message, MessageValue, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
-use bytes::{BufMut, Bytes, BytesMut};
-use cassandra_protocol::frame::Version;
-use itertools::Itertools;
-use sqlparser::ast::{BinaryOperator, Expr, SetExpr, Statement, Value};
-use std::borrow::Borrow;
 
 const TRUE: [u8; 1] = [0x1];
 const FALSE: [u8; 1] = [0x0];
@@ -33,13 +33,6 @@ pub struct RedisConfig {
 pub struct TableCacheSchema {
     partition_key: Vec<String>,
     range_key: Vec<String>,
-}
-
-impl TableCacheSchema {
-    #[cfg(test)]
-    fn get_compound_key(&self) -> Vec<String> {
-        [self.partition_key.as_slice(), self.range_key.as_slice()].concat()
-    }
 }
 
 impl RedisConfig {
@@ -68,31 +61,31 @@ impl SimpleRedisCache {
         for message in &mut messages {
             if let Frame::Cassandra(frame) = &message.original {
                 stream_ids.push(frame.stream_id);
+            } else {
+                bail!("Failed to parse cassandra message");
             }
-            match &mut message.details {
-                MessageDetails::Query(ref mut qm) => {
-                    let table_name = qm.namespace.join(".");
-                    let table_cache_schema = self
-                        .caching_schema
-                        .get(&table_name)
-                        .ok_or_else(|| anyhow!("{} not a caching table", table_name))?;
+            if let Some(table_name) = message.namespace().map(|x| x.join(".")) {
+                *message = match &message.original {
+                    Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Query { query, .. },
+                        ..
+                    }) => {
+                        let table_cache_schema = self
+                            .caching_schema
+                            .get(&table_name)
+                            .ok_or_else(|| anyhow!("{} not a caching table", table_name))?;
 
-                    let ast = qm
-                        .ast
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("No AST to convert query to cache query"))?
-                        .clone();
-
-                    qm.ast = Some(build_redis_ast_from_sql(
-                        ast,
-                        &qm.primary_key,
-                        table_cache_schema,
-                        &qm.query_values,
-                    )?);
-                }
-                details => return Err(anyhow!("cannot fetch {:?} from cache", details)),
-            };
-            message.modified = true;
+                        Message::from_frame(Frame::Redis(build_redis_ast_from_sql(
+                            query,
+                            table_cache_schema,
+                        )?))
+                    }
+                    message => bail!("cannot fetch {message:?} from cache"),
+                };
+                message.invalidate_cache();
+            } else {
+                bail!("Failed to get message namespace");
+            }
         }
 
         let mut messages = self
@@ -105,14 +98,13 @@ impl SimpleRedisCache {
         for message in &mut messages {
             info!("Received reply from redis cache {:?}", message);
             // TODO: Translate the redis reply into cassandra
-            message.original = Frame::Cassandra(CassandraFrame {
+            *message = Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 operation: CassandraOperation::Result(CassandraResult::Void),
                 stream_id: stream_ids.remove(0),
                 tracing_id: None,
                 warnings: vec![],
-            });
-            message.modified = true;
+            }));
         }
         Ok(messages)
     }
@@ -249,16 +241,14 @@ fn build_zrangebylex_min_max_from_sql(
 }
 
 fn build_redis_ast_from_sql(
-    mut ast: ASTHolder,
-    primary_key_values: &HashMap<String, MessageValue>,
+    ast: &CQL,
     table_cache_schema: &TableCacheSchema,
-    query_values: &Option<HashMap<String, MessageValue>>,
-) -> Result<ASTHolder> {
-    match &mut ast {
-        ASTHolder::SQL(sql) => match &mut **sql {
-            Statement::Query(q) => match &mut q.body {
+) -> Result<RedisFrame> {
+    if let CQL::Parsed(ast) = ast {
+        match &ast[0] {
+            Statement::Query(q) => match &q.body {
                 SetExpr::Select(s) if s.selection.is_some() => {
-                    let expr = s.selection.as_mut().unwrap();
+                    let expr = s.selection.as_ref().unwrap();
                     let mut min: Vec<u8> = Vec::new();
                     let mut max: Vec<u8> = Vec::new();
 
@@ -283,75 +273,165 @@ fn build_redis_ast_from_sql(
                     let pk = table_cache_schema
                         .partition_key
                         .iter()
-                        .map(|k| primary_key_values.get(k).unwrap())
+                        .map(|k| get_equal_value_from_expr(expr, k))
                         .fold(BytesMut::new(), |mut acc, v| {
-                            acc.extend(v.clone().into_str_bytes());
+                            if let Some(v) = v {
+                                acc.extend(MessageValue::from(v).into_str_bytes());
+                            }
                             acc
                         });
 
                     let commands_buffer = vec![
-                        MessageValue::Bytes("ZRANGEBYLEX".into()),
-                        MessageValue::Bytes(pk.freeze()),
-                        MessageValue::Bytes(min),
-                        MessageValue::Bytes(max),
+                        RedisFrame::BulkString("ZRANGEBYLEX".into()),
+                        RedisFrame::BulkString(pk.freeze()),
+                        RedisFrame::BulkString(min),
+                        RedisFrame::BulkString(max),
                     ];
-                    Ok(ASTHolder::Commands(MessageValue::List(commands_buffer)))
+                    Ok(RedisFrame::Array(commands_buffer))
                 }
                 expr => Err(anyhow!("Can't build query from expr: {}", expr)),
             },
-            Statement::Insert { .. } | Statement::Update { .. } => {
-                let mut commands_buffer: Vec<MessageValue> =
-                    vec![MessageValue::Bytes("ZADD".into())];
+            Statement::Insert {
+                source, columns, ..
+            } => {
+                let query_values = get_values_from_insert(columns, source);
 
                 let pk = table_cache_schema
                     .partition_key
                     .iter()
-                    .map(|k| primary_key_values.get(k).unwrap())
+                    .map(|k| query_values.get(k.as_str()).unwrap())
                     .fold(BytesMut::new(), |mut acc, v| {
-                        acc.extend(v.clone().into_str_bytes());
-                        acc
-                    });
-                commands_buffer.push(MessageValue::Bytes(pk.freeze()));
-
-                let clustering = table_cache_schema
-                    .range_key
-                    .iter()
-                    .map(|k| primary_key_values.get(k).unwrap())
-                    .fold(BytesMut::new(), |mut acc, v| {
-                        acc.extend(v.clone().into_str_bytes());
+                        acc.extend(MessageValue::from(*v).into_str_bytes());
                         acc
                     });
 
-                let values = query_values
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("query_values is None"))?
+                insert_or_update(table_cache_schema, query_values, pk)
+            }
+            Statement::Update {
+                assignments,
+                selection,
+                ..
+            } => {
+                let query_values = get_values_from_update(assignments);
+
+                let pk = table_cache_schema
+                    .partition_key
                     .iter()
-                    .filter_map(|(p, v)| {
-                        if !table_cache_schema.partition_key.contains(p)
-                            && !table_cache_schema.range_key.contains(p)
-                        {
+                    .map(|k| get_equal_value_from_expr(selection.as_ref().unwrap(), k).unwrap())
+                    .fold(BytesMut::new(), |mut acc, v| {
+                        acc.extend(MessageValue::from(v).into_str_bytes());
+                        acc
+                    });
+
+                insert_or_update(table_cache_schema, query_values, pk)
+            }
+            statement => Err(anyhow!("Cant build query from statement: {}", statement)),
+        }
+    } else {
+        Err(anyhow!("cannot use unparsed CQL"))
+    }
+}
+
+fn insert_or_update(
+    table_cache_schema: &TableCacheSchema,
+    query_values: HashMap<String, &Value>,
+    pk: BytesMut,
+) -> Result<RedisFrame> {
+    let mut commands_buffer: Vec<RedisFrame> = vec![
+        RedisFrame::BulkString("ZADD".into()),
+        RedisFrame::BulkString(pk.freeze()),
+    ];
+
+    let clustering = table_cache_schema
+        .range_key
+        .iter()
+        .map(|k| query_values.get(k.as_str()).unwrap())
+        .fold(BytesMut::new(), |mut acc, v| {
+            acc.extend(MessageValue::from(*v).into_str_bytes());
+            acc
+        });
+
+    let values = query_values
+        .iter()
+        .filter_map(|(p, v)| {
+            if table_cache_schema.partition_key.iter().all(|x| x != p)
+                && table_cache_schema.range_key.iter().all(|x| x != p)
+            {
+                Some(MessageValue::from(*v))
+            } else {
+                None
+            }
+        })
+        .collect_vec();
+
+    for v in values {
+        commands_buffer.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
+        let mut value = clustering.clone();
+        if !value.is_empty() {
+            value.put_u8(b':');
+        }
+        value.extend(v.clone().into_str_bytes());
+        commands_buffer.push(RedisFrame::BulkString(value.freeze()));
+    }
+
+    Ok(RedisFrame::Array(commands_buffer))
+}
+
+fn get_values_from_insert<'a>(
+    columns: &'a [Ident],
+    source: &'a Query,
+) -> HashMap<String, &'a Value> {
+    let mut map = HashMap::new();
+    let mut columns_iter = columns.iter();
+    if let SetExpr::Values(v) = &source.body {
+        for value in &v.0 {
+            for ex in value {
+                if let Expr::Value(v) = ex {
+                    if let Some(c) = columns_iter.next() {
+                        // TODO: We should be able to avoid allocation here
+                        map.insert(c.value.to_string(), v);
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
+fn get_values_from_update(assignments: &[Assignment]) -> HashMap<String, &Value> {
+    let mut map = HashMap::new();
+    for assignment in assignments {
+        if let Expr::Value(v) = &assignment.value {
+            map.insert(assignment.id.iter().map(|x| &x.value).join("."), v);
+        }
+    }
+    map
+}
+
+fn get_equal_value_from_expr<'a>(expr: &'a Expr, find_identifier: &str) -> Option<&'a Value> {
+    if let Expr::BinaryOp { left, op, right } = expr {
+        match op {
+            BinaryOperator::And => get_equal_value_from_expr(left, find_identifier)
+                .or_else(|| get_equal_value_from_expr(right, find_identifier)),
+            BinaryOperator::Eq => {
+                if let Expr::Identifier(i) = left.borrow() {
+                    if i.value == find_identifier {
+                        if let Expr::Value(v) = right.borrow() {
                             Some(v)
                         } else {
                             None
                         }
-                    })
-                    .collect_vec();
-
-                for v in values {
-                    commands_buffer.push(MessageValue::Bytes(Bytes::from("0")));
-                    let mut value = clustering.clone();
-                    if !value.is_empty() {
-                        value.put_u8(b':');
+                    } else {
+                        None
                     }
-                    value.extend(v.clone().into_str_bytes());
-                    commands_buffer.push(MessageValue::Bytes(value.freeze()));
+                } else {
+                    None
                 }
-
-                Ok(ASTHolder::Commands(MessageValue::List(commands_buffer)))
             }
-            statement => Err(anyhow!("Cant build query from statement: {}", statement)),
-        },
-        ASTHolder::Commands(_) => Ok(ast),
+            _ => None,
+        }
+    } else {
+        None
     }
 }
 
@@ -381,7 +461,6 @@ impl Transform for SimpleRedisCache {
                 ..
             }) = &m.original
             {
-                m.generate_message_details_query();
                 if m.get_query_type() == QueryType::Write {
                     updates = true;
                     break;
@@ -413,10 +492,13 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::codec::cassandra::CassandraCodec;
-    use crate::codec::redis::{DecodeType, RedisCodec};
-    use crate::message::{ASTHolder, MessageDetails};
-    use crate::message::{IntSize as MessageIntSize, MessageValue};
+    use bytes::Bytes;
+    use sqlparser::dialect::GenericDialect;
+    use sqlparser::parser::Parser;
+    use std::collections::HashMap;
+
+    use crate::frame::cassandra::CQL;
+    use crate::frame::RedisFrame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
@@ -424,203 +506,108 @@ mod test {
         build_redis_ast_from_sql, SimpleRedisCache, TableCacheSchema,
     };
     use crate::transforms::{Transform, Transforms};
-    use bytes::BytesMut;
-    use itertools::Itertools;
-    use std::collections::HashMap;
-    use tokio_util::codec::Decoder;
 
-    fn build_query(
-        query_string: &str,
-        pk_col_map: &HashMap<String, Vec<String>>,
-    ) -> (ASTHolder, Option<HashMap<String, MessageValue>>) {
-        let res = CassandraCodec::parse_query_string(query_string, pk_col_map);
-        (ASTHolder::SQL(Box::new(res.ast.unwrap())), res.colmap)
-    }
-
-    fn build_redis_query_frame(query: &str) -> ASTHolder {
-        let mut codec = RedisCodec::new(DecodeType::Query);
-
-        let mut final_command_bytes: BytesMut = build_redis_string(query).as_str().into();
-        let mut messages = codec.decode(&mut final_command_bytes).unwrap().unwrap();
-        for message in &mut messages {
-            message.generate_message_details_query();
-        }
-
-        match messages.remove(0).details {
-            MessageDetails::Query(qm) => qm.ast.unwrap(),
-            details => panic!(
-                "Exepected message details to be a query but was: {:?}",
-                details
-            ),
-        }
-    }
-
-    fn build_redis_string(query: &str) -> String {
-        let mut command_buffer = String::new();
-
-        let tokens = query.split_ascii_whitespace().collect_vec();
-        command_buffer.push_str(&format!("*{}\r\n", tokens.len()));
-
-        for token in tokens {
-            command_buffer.push_str(&format!("${}\r\n", token.len()));
-            command_buffer.push_str(&format!("{token}\r\n"));
-        }
-
-        command_buffer
-    }
-
-    #[test]
-    fn test_build_redis_query_string() {
-        assert_eq!(
-            "*2\r\n$4\r\nLLEN\r\n$6\r\nmylist\r\n".to_string(),
-            build_redis_string("LLEN mylist")
-        );
+    fn build_query(query_string: &str) -> CQL {
+        CQL::Parsed(Parser::parse_sql(&GenericDialect {}, query_string).unwrap())
     }
 
     #[test]
     fn equal_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
-
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
 
-        let (ast, query_values) = build_query(
-            "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
-            &pk_col_map,
-        );
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123:965 ]123:965");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"[123:965")),
+            RedisFrame::BulkString(Bytes::from_static(b"]123:965")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn insert_simple_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
-
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("INSERT INTO foo (z, v) VALUES (1, 123)");
 
-        let (ast, query_values) =
-            build_query("INSERT INTO foo (z, v) VALUES (1, 123)", &pk_col_map);
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZADD 1 0 123");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"0")),
+            RedisFrame::BulkString(Bytes::from_static(b"123")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn insert_simple_clustering_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
-        pks.insert("c".to_string(), MessageValue::Strings("yo".to_string()));
-
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec!["c".to_string()],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)");
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let (ast, query_values) = build_query(
-            "INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)",
-            &pk_col_map,
-        );
-
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZADD 1 0 yo:123");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"0")),
+            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn update_simple_clustering_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
-        pks.insert("c".to_string(), MessageValue::Strings("yo".to_string()));
-
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec!["c".to_string()],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1");
 
-        let (ast, query_values) =
-            build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1", &pk_col_map);
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZADD 1 0 yo:123");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"0")),
+            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn check_deterministic_order_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
 
-        let (ast, query_values) = build_query(
-            "SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965",
-            &pk_col_map,
-        );
+        let query_one = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query_one =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
+        let ast = build_query("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123");
 
-        let (ast, query_values) = build_query(
-            "SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123",
-            &pk_col_map,
-        );
-
-        let query_two =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
+        let query_two = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
@@ -629,150 +616,118 @@ mod test {
 
     #[test]
     fn range_exclusive_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999");
 
-        let (ast, query_values) = build_query(
-            "SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999",
-            &pk_col_map,
-        );
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [124 ]998");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"[124")),
+            RedisFrame::BulkString(Bytes::from_static(b"]998")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn range_inclusive_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999");
 
-        let (ast, query_values) = build_query(
-            "SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999",
-            &pk_col_map,
-        );
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 ]999");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"[123")),
+            RedisFrame::BulkString(Bytes::from_static(b"]999")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn single_pk_only_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1");
 
-        let (ast, query_values) = build_query("SELECT * FROM foo WHERE z = 1", &pk_col_map);
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - +");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"-")),
+            RedisFrame::BulkString(Bytes::from_static(b"+")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn compound_pk_only_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
-        pks.insert(
-            "y".to_string(),
-            MessageValue::Integer(2, MessageIntSize::I32),
-        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string(), "y".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND y = 2");
 
-        let (ast, query_values) =
-            build_query("SELECT * FROM foo WHERE z = 1 AND y = 2", &pk_col_map);
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZRANGEBYLEX 12 - +");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
+            RedisFrame::BulkString(Bytes::from_static(b"12")),
+            RedisFrame::BulkString(Bytes::from_static(b"-")),
+            RedisFrame::BulkString(Bytes::from_static(b"+")),
+        ]);
 
         assert_eq!(expected, query);
     }
 
     #[test]
     fn open_range_test() {
-        let mut pks = HashMap::new();
-        pks.insert(
-            "z".to_string(),
-            MessageValue::Integer(1, MessageIntSize::I32),
-        );
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
             range_key: vec![],
         };
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123");
 
-        let (ast, query_values) =
-            build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123", &pk_col_map);
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 [123 +");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"[123")),
+            RedisFrame::BulkString(Bytes::from_static(b"+")),
+        ]);
 
         assert_eq!(expected, query);
 
-        let mut pk_col_map = HashMap::new();
-        pk_col_map.insert("foo".to_string(), table_cache_schema.get_compound_key());
+        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123");
 
-        let (ast, query_values) =
-            build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123", &pk_col_map);
+        let query = build_redis_ast_from_sql(&ast, &table_cache_schema).unwrap();
 
-        let query =
-            build_redis_ast_from_sql(ast, &pks, &table_cache_schema, &query_values).unwrap();
-
-        let expected = build_redis_query_frame("ZRANGEBYLEX 1 - ]123");
+        let expected = RedisFrame::Array(vec![
+            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
+            RedisFrame::BulkString(Bytes::from_static(b"1")),
+            RedisFrame::BulkString(Bytes::from_static(b"-")),
+            RedisFrame::BulkString(Bytes::from_static(b"]123")),
+        ]);
 
         assert_eq!(expected, query);
     }
