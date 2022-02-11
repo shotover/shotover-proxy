@@ -87,6 +87,14 @@ impl Message {
         }
     }
 
+    pub fn namespace(&self) -> Option<Vec<String>> {
+        match &self.original {
+            Frame::Cassandra(cassandra) => Some(cassandra.namespace()),
+            Frame::Redis(_) => Some(vec![]),
+            Frame::None => Some(vec![]),
+        }
+    }
+
     #[must_use]
     pub fn to_filtered_reply(&self) -> Message {
         Message {

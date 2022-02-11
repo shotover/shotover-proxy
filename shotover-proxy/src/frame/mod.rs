@@ -1,6 +1,6 @@
 pub mod cassandra;
 
-pub use cassandra::CassandraFrame;
+pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult, CQL};
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
 
 use anyhow::Result;
