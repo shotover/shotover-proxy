@@ -7,6 +7,7 @@ use shotover_proxy::frame::Frame;
 use shotover_proxy::message::{Message, QueryMessage, QueryType};
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
+use shotover_proxy::transforms::filter::QueryTypeFilter;
 use shotover_proxy::transforms::null::Null;
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
@@ -38,6 +39,45 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
 
         group.bench_function("null", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput {
+                    chain: chain.clone(),
+                    wrapper: wrapper.clone(),
+                    client_details: "".into(),
+                },
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
+    {
+        use shotover_proxy::frame::RedisFrame;
+        let chain = TransformChain::new(
+            vec![
+                Transforms::QueryTypeFilter(QueryTypeFilter {
+                    filter: QueryType::Read,
+                }),
+                Transforms::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
+            ],
+            "bench".to_string(),
+        );
+        let wrapper = Wrapper::new_with_chain_name(
+            vec![
+                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                    RedisFrame::BulkString(Bytes::from_static(b"SET")),
+                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                    RedisFrame::BulkString(Bytes::from_static(b"bar")),
+                ]))),
+                Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                    RedisFrame::BulkString(Bytes::from_static(b"GET")),
+                    RedisFrame::BulkString(Bytes::from_static(b"foo")),
+                ]))),
+            ],
+            chain.name.clone(),
+        );
+
+        group.bench_function("redis_filter", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.clone(),
