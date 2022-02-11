@@ -8,7 +8,7 @@ use benches::{BenchResources, DockerCompose, ShotoverManager};
 fn cassandra(c: &mut Criterion) {
     let mut group = c.benchmark_group("cassandra");
     group.throughput(criterion::Throughput::Elements(1));
-    group.noise_threshold(2.0);
+    group.noise_threshold(0.2);
 
     let statement =
         stmt!("INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (1, 11, 'foo');");
