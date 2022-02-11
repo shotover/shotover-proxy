@@ -137,21 +137,18 @@ impl Message {
                 Frame::Redis(RedisFrame::Error(Str::from_inner(error.into()).unwrap()))
             }
             Frame::Cassandra(frame) => {
-                let body = ErrorBody {
+                let body = CassandraOperation::Error(ErrorBody {
                     error_code: 0,
                     message: error,
                     additional_info: AdditionalErrorInfo::Server,
-                };
+                });
 
                 Frame::Cassandra(CassandraFrame {
                     version: frame.version,
                     stream_id: frame.stream_id,
-                    direction: Direction::Response,
-                    opcode: Opcode::Error,
                     tracing_id: None,
-                    flags: Flags::default(),
                     warnings: frame.warnings.clone(),
-                    body: body.serialize_to_vec(),
+                    operation: body,
                 })
             }
             Frame::None => Frame::None,
