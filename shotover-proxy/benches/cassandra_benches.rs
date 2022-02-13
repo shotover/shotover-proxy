@@ -47,7 +47,7 @@ pub struct BenchResources {
 impl BenchResources {
     #[allow(unused)]
     pub fn new(shotover_manager: ShotoverManager, compose: DockerCompose) -> Self {
-        let connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+        let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
         let mut statement = stmt!("CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         connection.execute(&statement).wait().unwrap();
