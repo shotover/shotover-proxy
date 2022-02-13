@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
-    filter: QueryType,
+    pub filter: QueryType,
 }
 
 #[derive(Deserialize, Debug, Clone)]
