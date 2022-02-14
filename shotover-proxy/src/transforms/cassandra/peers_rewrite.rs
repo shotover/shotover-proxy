@@ -1,4 +1,4 @@
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue};
 use crate::{
     config::topology::TopicHolder,
@@ -72,20 +72,13 @@ fn is_system_peers(message: &Message) -> bool {
 }
 
 /// Emulate a single node by removing the rows from a query to system.peers(_v2)
+/// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
 fn emulate_single_node(message: &mut Message) {
-    if let Frame::Cassandra(frame) = &message.original {
-        if let CassandraOperation::Result(CassandraResult::Rows { metadata, .. }) = &frame.operation
+    if let Frame::Cassandra(ref mut frame) = message.original {
+        if let CassandraOperation::Result(CassandraResult::Rows { ref mut value, .. }) =
+            frame.operation
         {
-            message.original = Frame::Cassandra(CassandraFrame {
-                version: frame.version,
-                stream_id: frame.stream_id,
-                tracing_id: frame.tracing_id,
-                warnings: frame.warnings.clone(),
-                operation: CassandraOperation::Result(CassandraResult::Rows {
-                    value: MessageValue::Rows(vec![]),
-                    metadata: metadata.clone(),
-                }),
-            });
+            *value = MessageValue::Rows(vec![]);
         } else {
             panic!(
                 "Expected CassandraOperation::Result(CassandraResult::Rows), got {:?}",
@@ -97,6 +90,8 @@ fn emulate_single_node(message: &mut Message) {
     }
 }
 
+/// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
+/// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
 fn rewrite_port(message: &mut Message, new_port: u32) {
     if let Frame::Cassandra(ref mut frame) = message.original {
         if let CassandraOperation::Result(CassandraResult::Rows {
@@ -130,6 +125,7 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::frame::CassandraFrame;
     use crate::message::MessageDetails;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::{
