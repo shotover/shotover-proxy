@@ -348,6 +348,7 @@ pub enum CassandraResult {
         value: MessageValue,
         metadata: RowsMetadata,
     },
+    // SetKeyspace and Prepared are boxed because they take up a lot more stack space than Void.
     SetKeyspace(Box<BodyResResultSetKeyspace>),
     Prepared(Box<BodyResResultPrepared>),
     SchemaChange(SchemaChange),

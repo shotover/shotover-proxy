@@ -1,15 +1,3 @@
-use std::borrow::Borrow;
-use std::collections::HashMap;
-
-use anyhow::{anyhow, bail, Result};
-use async_trait::async_trait;
-use bytes::{BufMut, Bytes, BytesMut};
-use cassandra_protocol::frame::Version;
-use itertools::Itertools;
-use serde::Deserialize;
-use sqlparser::ast::{Assignment, BinaryOperator, Expr, Ident, Query, SetExpr, Statement, Value};
-use tracing::info;
-
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::frame::cassandra::{CassandraOperation, CassandraResult, CQL};
@@ -19,6 +7,16 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
 };
+use anyhow::{anyhow, bail, Result};
+use async_trait::async_trait;
+use bytes::{BufMut, Bytes, BytesMut};
+use cassandra_protocol::frame::Version;
+use itertools::Itertools;
+use serde::Deserialize;
+use sqlparser::ast::{Assignment, BinaryOperator, Expr, Ident, Query, SetExpr, Statement, Value};
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use tracing::info;
 
 const TRUE: [u8; 1] = [0x1];
 const FALSE: [u8; 1] = [0x0];
@@ -73,7 +71,7 @@ impl SimpleRedisCache {
                         let table_cache_schema = self
                             .caching_schema
                             .get(&table_name)
-                            .ok_or_else(|| anyhow!("{} not a caching table", table_name))?;
+                            .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
 
                         Message::from_frame(Frame::Redis(build_redis_ast_from_sql(
                             query,
@@ -492,11 +490,6 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use bytes::Bytes;
-    use sqlparser::dialect::GenericDialect;
-    use sqlparser::parser::Parser;
-    use std::collections::HashMap;
-
     use crate::frame::cassandra::CQL;
     use crate::frame::RedisFrame;
     use crate::transforms::chain::TransformChain;
@@ -506,6 +499,10 @@ mod test {
         build_redis_ast_from_sql, SimpleRedisCache, TableCacheSchema,
     };
     use crate::transforms::{Transform, Transforms};
+    use bytes::Bytes;
+    use sqlparser::dialect::GenericDialect;
+    use sqlparser::parser::Parser;
+    use std::collections::HashMap;
 
     fn build_query(query_string: &str) -> CQL {
         CQL::Parsed(Parser::parse_sql(&GenericDialect {}, query_string).unwrap())
