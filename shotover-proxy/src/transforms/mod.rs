@@ -1,13 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::cassandra::{
-    peers_rewrite::{CassandraPeersRewrite, CassandraPeersRewriteConfig},
-    sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig},
-};
-use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::TransformChain;

@@ -103,7 +103,6 @@ mod test {
     use crate::frame::{CassandraFrame, CQL};
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::{
-        compression::Compression,
         consistency::Consistency,
         frame::{
             frame_result::{

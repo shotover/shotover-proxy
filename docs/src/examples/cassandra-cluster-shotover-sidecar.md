@@ -36,17 +36,16 @@ cassandra-two:
     volumes:
       - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
 
-cassandra-three:
-  image: library/cassandra:4.0
-  networks:
-    cassandra_subnet:
-      ipv4_address: 172.16.1.4
-    healthcheck: *healthcheck
-    environment: *environment
+  shotover-2:
+    restart: always
     depends_on:
-      - cassandra-two
+      - cassandra-three
+    image: shotover-proxy
+    network_mode: "service:cassandra-three"
     volumes:
-      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      - type: bind
+        source: $PWD
+        target: /config
 ```
 
 In this example we will use `cqlsh` to connect to our cluster.
@@ -84,7 +83,13 @@ docker-compose up -d
 
 With everything now up and running, we can test it out with our client. Let's start it up!
 
-First we will run `cqlsh` directly on our cluster with the command `cqlsh 172.16.1.2 9042`, and check the `system.peers_v2` table with the following query: 
+First we will run `cqlsh` directly on our cluster with the command:
+
+```console
+cqlsh 172.16.1.2 9042 -u cassandra -p cassandra
+``` 
+
+and check the `system.peers_v2` table with the following query: 
 
 ```sql
 SELECT peer, native_port FROM system.peers_v2;
@@ -99,7 +104,13 @@ You should see the following results returned:
  172.16.1.4 |        9042
 ```
 
-Now run it again but on the Shotover port this time, run `cqlsh 172.16.1.2 9043` and use the same query again. You should see the following results returned, notice how the `native_port` column is now the Shotover port of `9043`:
+Now run it again but on the Shotover port this time, run:
+
+```console
+cqlsh 172.16.1.2 9043 -u cassandra -p cassandra
+```
+
+and use the same query again. You should see the following results returned, notice how the `native_port` column is now the Shotover port of `9043`:
 
 ```
  peer       | native_port
@@ -110,82 +121,3 @@ Now run it again but on the Shotover port this time, run `cqlsh 172.16.1.2 9043`
 
 
 If everything has worked, you will be able to use Cassandra, with your connection going through Shotover!
-
-
-### Emulating a single node
-
-In this next example, Shotover will also be deployed as a sidecar to each node in the Cassandra cluster, but we instead want it to act as a single Cassandra node and hide the existence of the rest of the nodes in the Cluster.
-
-The same `docker-compose.yml` as above can be used.
-
-
-#### Configuration
-
-We should modify the `topology.yaml` from the previous example to enable the `emulate_single_node` option.
-
-```YAML
-sources:
-  cassandra_prod:
-    Cassandra:
-      query_processing: false
-      listen_addr: "0.0.0.0:9043"
-      cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
-chain_config:
-  main_chain:
-    - CassandraPeersRewrite:
-        new_port: 9043
-        emulate_single_node: true
-    - CassandraSinkSingle:
-        result_processing: false
-        remote_address: "127.0.0.1:9042"
-named_topics:
-  testtopic: 5
-source_to_chain_mapping:
-  cassandra_prod: main_chain
-```
-
-The `config.yaml` from the previous example can be reused.
-
-#### Starting
-
-We can now restart the services with:
-
-```console
-docker-compose up -d
-```
-
-#### Testing
-
-With everything now up and running again, we can test it out with our client.
-
-
-First we will run `cqlsh` directly on our cluster with the command `cqlsh 172.16.1.2 9042`, and check the `system.peers_v2` table with the following query: 
-
-
-```sql
-SELECT peer, native_port FROM system.peers_v2;
-```
-
-You should see the following results returned: 
-
-```
- peer       | native_port
-------------+-------------
- 172.16.1.3 |        9042
- 172.16.1.4 |        9042
-```
-
-Now run it again but on the Shotover port this time, run `cqlsh 172.16.1.2 9043` and use the same query again. You should see the following results returned, notice how the client is unaware of the existence of the peers. You can try this on the other nodes (`172.16.1.3` and `172.16.1.4`) and the same results will be returned.
-
-```
- peer | native_port
-------+-------------
-```
-
