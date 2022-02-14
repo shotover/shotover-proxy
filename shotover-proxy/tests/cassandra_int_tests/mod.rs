@@ -4,7 +4,7 @@ use ordered_float::OrderedFloat;
 mod basic_driver_tests;
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
-pub enum ResultValue {
+enum ResultValue {
     Text(String),
     Varchar(String),
     Int(i32),

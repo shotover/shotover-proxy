@@ -79,8 +79,8 @@ fn is_system_peers(message: &Message) -> bool {
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
 fn emulate_single_node(message: &mut Message) {
     if let Frame::Cassandra(frame) = &mut message.original {
-        if let CassandraOperation::Result(CassandraResult::Rows { ref mut value, .. }) =
-            frame.operation
+        if let CassandraOperation::Result(CassandraResult::Rows { value, .. }) =
+            &mut frame.operation
         {
             *value = MessageValue::Rows(vec![]);
         } else {
@@ -98,10 +98,8 @@ fn emulate_single_node(message: &mut Message) {
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
 fn rewrite_port(message: &mut Message, new_port: u32) {
     if let Frame::Cassandra(frame) = &mut message.original {
-        if let CassandraOperation::Result(CassandraResult::Rows {
-            ref mut value,
-            ref metadata,
-        }) = frame.operation
+        if let CassandraOperation::Result(CassandraResult::Rows { value, metadata }) =
+            &mut frame.operation
         {
             let port_column_index = metadata
                 .col_specs
@@ -109,7 +107,7 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
                 .position(|col| col.name.as_str() == "native_port");
 
             if let Some(i) = port_column_index {
-                if let MessageValue::Rows(ref mut rows) = *value {
+                if let MessageValue::Rows(rows) = &mut *value {
                     for row in rows.iter_mut() {
                         row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
                     }
