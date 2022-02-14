@@ -45,14 +45,15 @@ chain_config:
         remote_address: "172.16.1.2:9042"
   peers_rewrite_port:
     - CassandraPeersRewrite:
-        emulate_single_node: false
-        new_port: 9044
+        rewrite:
+          Port: 9044
     - CassandraSinkSingle:
         result_processing: false
         remote_address: "172.16.1.2:9042"
   peers_rewrite_emulate_single_node:
     - CassandraPeersRewrite:
-        emulate_single_node: true
+        rewrite:
+          EmulateSingleNode
     - CassandraSinkSingle:
         result_processing: false
         remote_address: "172.16.1.2:9042"

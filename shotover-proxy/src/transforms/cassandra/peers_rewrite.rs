@@ -9,25 +9,28 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+#[derive(Deserialize, Debug, Clone, Copy)]
+pub enum RewriteConfig {
+    Port(u32),
+    EmulateSingleNode,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraPeersRewriteConfig {
-    pub emulate_single_node: bool,
-    pub new_port: Option<u32>,
+    pub rewrite: RewriteConfig,
 }
 
 impl CassandraPeersRewriteConfig {
     pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
-            emulate_single_node: self.emulate_single_node,
-            port: self.new_port,
+            rewrite: self.rewrite,
         }))
     }
 }
 
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
-    emulate_single_node: bool,
-    port: Option<u32>,
+    rewrite: RewriteConfig,
 }
 
 #[async_trait]
@@ -45,12 +48,13 @@ impl Transform for CassandraPeersRewrite {
         let mut response = message_wrapper.call_next_transform().await?;
 
         for i in system_peers {
-            if let Some(new_port) = self.port {
-                rewrite_port(&mut response[i], new_port);
-            }
-
-            if self.emulate_single_node {
-                emulate_single_node(&mut response[i]);
+            match self.rewrite {
+                RewriteConfig::Port(new_port) => {
+                    rewrite_port(&mut response[i], new_port);
+                }
+                RewriteConfig::EmulateSingleNode => {
+                    emulate_single_node(&mut response[i]);
+                }
             }
         }
 
