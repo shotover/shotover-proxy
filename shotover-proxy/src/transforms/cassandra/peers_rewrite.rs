@@ -78,7 +78,7 @@ fn is_system_peers(message: &Message) -> bool {
 /// Emulate a single node by removing the rows from a query to system.peers(_v2)
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
 fn emulate_single_node(message: &mut Message) {
-    if let Frame::Cassandra(ref mut frame) = message.original {
+    if let Frame::Cassandra(frame) = &mut message.original {
         if let CassandraOperation::Result(CassandraResult::Rows { ref mut value, .. }) =
             frame.operation
         {
@@ -97,7 +97,7 @@ fn emulate_single_node(message: &mut Message) {
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
 fn rewrite_port(message: &mut Message, new_port: u32) {
-    if let Frame::Cassandra(ref mut frame) = message.original {
+    if let Frame::Cassandra(frame) = &mut message.original {
         if let CassandraOperation::Result(CassandraResult::Rows {
             ref mut value,
             ref metadata,

@@ -1,3 +1,4 @@
+#[cfg(feature = "alpha-transforms")]
 use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
@@ -1377,6 +1378,7 @@ fn test_cassandra_protect_transform_aws() {
 
 #[test]
 #[serial]
+#[cfg(feature = "alpha-transforms")]
 fn test_cassandra_peers_rewrite() {
     let _docker_compose =
         DockerCompose::new("tests/test-topologies/cassandra-peers-rewrite/docker-compose.yml")
@@ -1393,19 +1395,29 @@ fn test_cassandra_peers_rewrite() {
 
     assert_query_result(
         &normal_connection,
-        "SELECT native_port FROM system.peers_v2;",
-        &[&[ResultValue::Int(9042)]],
+        "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+        &[&[
+            ResultValue::Inet("172.16.1.3".parse().unwrap()),
+            ResultValue::Varchar("Mars".into()),
+            ResultValue::Int(9042),
+            ResultValue::Varchar("West".into()),
+        ]],
     );
 
     assert_query_result(
         &rewrite_port_connection,
-        "SELECT native_port FROM system.peers_v2;",
-        &[&[ResultValue::Int(9044)]],
+        "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+        &[&[
+            ResultValue::Inet("172.16.1.3".parse().unwrap()),
+            ResultValue::Varchar("Mars".into()),
+            ResultValue::Int(9044),
+            ResultValue::Varchar("West".into()),
+        ]],
     );
 
     assert_query_result(
         &emulate_single_node_port_connection,
-        "SELECT native_port FROM system.peers_v2;",
+        "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
         &[],
     );
 }

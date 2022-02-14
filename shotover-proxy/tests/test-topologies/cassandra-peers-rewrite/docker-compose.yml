@@ -21,7 +21,7 @@ services:
       timeout: 5s
       retries: 60
     environment: &environment
-      CASSANDRA_SEEDS: "cassandra-one,cassandra-two"    # The first two nodes will be seeds
+      CASSANDRA_SEEDS: "cassandra-one,cassandra-two"
       CASSANDRA_CLUSTER_NAME: SolarSystem
       CASSANDRA_DC: Mars
       CASSANDRA_RACK: West

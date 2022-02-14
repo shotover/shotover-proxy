@@ -12,6 +12,7 @@ sources:
         test.clustering:
           - pk
           - clustering
+
   cassandra_prod_2:
     Cassandra:
       query_processing: false

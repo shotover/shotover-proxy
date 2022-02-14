@@ -101,7 +101,7 @@ fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
 }
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
-pub fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
+fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
     let mut result_rows = execute_query(session, query);
     result_rows.sort();
     assert_rows(result_rows, expected_rows);
