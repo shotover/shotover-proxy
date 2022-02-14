@@ -1,4 +1,3 @@
-use crate::cassandra_int_tests::cassandra_connection;
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
@@ -1270,7 +1269,7 @@ fn test_cluster() {
     let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
         .wait_for_n_t("Startup complete", 3, 90);
 
-    let _handles: Vec<_> = [
+    let handles: Vec<_> = [
         "examples/cassandra-cluster/topology1.yaml",
         "examples/cassandra-cluster/topology2.yaml",
         "examples/cassandra-cluster/topology3.yaml",
@@ -1279,7 +1278,7 @@ fn test_cluster() {
     .map(ShotoverManager::from_topology_file_without_observability)
     .collect();
 
-    let connection = cassandra_connection("127.0.0.1", 9042);
+    let connection = handles[0].cassandra_connection("127.0.0.1", 9042);
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1296,10 +1295,10 @@ fn test_passthrough() {
     let _compose = DockerCompose::new("examples/cassandra-passthrough/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
-    let _shotover_manager =
+    let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-passthrough/topology.yaml");
 
-    let connection = cassandra_connection("127.0.0.1", 9042);
+    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1320,7 +1319,7 @@ fn test_cassandra_redis_cache() {
         ShotoverManager::from_topology_file("examples/cassandra-redis-cache/topology.yaml");
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
-    let connection = cassandra_connection("127.0.0.1", 9042);
+    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1337,11 +1336,11 @@ fn test_cassandra_protect_transform_local() {
     let _compose = DockerCompose::new("examples/cassandra-protect-local/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
-    let _shotover_manager =
+    let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-protect-local/topology.yaml");
 
-    let shotover_connection = cassandra_connection("127.0.0.1", 9042);
-    let direct_connection = cassandra_connection("127.0.0.1", 9043);
+    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
@@ -1360,11 +1359,11 @@ fn test_cassandra_protect_transform_aws() {
         .wait_for_n_t("Startup complete", 1, 90);
     let _compose_aws = DockerCompose::new_moto();
 
-    let _shotover_manager =
+    let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-protect-aws/topology.yaml");
 
-    let shotover_connection = cassandra_connection("127.0.0.1", 9042);
-    let direct_connection = cassandra_connection("127.0.0.1", 9043);
+    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);

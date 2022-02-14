@@ -1,4 +1,5 @@
 use anyhow::Result;
+use cassandra_cpp::{Cluster, Session};
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use redis::aio::AsyncStream;
@@ -137,6 +138,18 @@ impl ShotoverManager {
         )
         .await
         .unwrap()
+    }
+
+    #[allow(unused)]
+    pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> Session {
+        for contact_point in contact_points.split(',') {
+            wait_for_socket_to_open(contact_point, port);
+        }
+        let mut cluster = Cluster::default();
+        cluster.set_contact_points(contact_points).unwrap();
+        cluster.set_port(port).ok();
+        cluster.set_load_balance_round_robin();
+        cluster.connect().unwrap()
     }
 
     fn shutdown_shotover(&mut self) -> Result<()> {
