@@ -1,4 +1,4 @@
-use crate::cassandra_int_tests::{assert_query_result, cassandra_connection, ResultValue};
+use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
@@ -1382,13 +1382,14 @@ fn test_cassandra_peers_rewrite() {
         DockerCompose::new("tests/test-topologies/cassandra-peers-rewrite/docker-compose.yml")
             .wait_for_n_t("Startup complete", 2, 90);
 
-    let _shotover_proxy = ShotoverManager::from_topology_file(
+    let shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-topologies/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let normal_connection = cassandra_connection("127.0.0.1", 9043);
-    let rewrite_port_connection = cassandra_connection("127.0.0.1", 9044);
-    let emulate_single_node_port_connection = cassandra_connection("127.0.0.1", 9045);
+    let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+    let emulate_single_node_port_connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9045);
 
     assert_query_result(
         &normal_connection,
