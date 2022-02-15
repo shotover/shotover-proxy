@@ -62,7 +62,7 @@ fn is_system_peers(message: &Message) -> bool {
 }
 
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
-/// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
+/// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
 fn rewrite_port(message: &mut Message, new_port: u32) {
     if let Frame::Cassandra(frame) = &mut message.original {
         if let CassandraOperation::Result(CassandraResult::Rows { value, metadata }) =
