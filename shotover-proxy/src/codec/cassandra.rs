@@ -576,6 +576,7 @@ impl Decoder for CassandraCodec {
                         warnings: vec![],
                     }),
                     return_to_sender: true,
+                    meta_timestamp: None,
                 };
                 Ok(Some(vec![message]))
             }

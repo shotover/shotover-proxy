@@ -5,6 +5,7 @@ use crate::frame::RedisFrame;
 use bigdecimal::BigDecimal;
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Bytes;
+use bytes_utils::Str;
 use cassandra_protocol::{
     frame::{
         frame_error::{AdditionalErrorInfo, ErrorBody},
@@ -35,6 +36,10 @@ pub struct Message {
     pub original: Frame,
     /// identifies a message that is to be returned to the sender.  Message is stored in the `original` frame.
     pub return_to_sender: bool,
+
+    // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of ConsistentScatter
+    // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
+    pub meta_timestamp: Option<i64>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -51,6 +56,7 @@ impl Message {
             modified,
             original,
             return_to_sender: false,
+            meta_timestamp: None,
         }
     }
 
@@ -84,11 +90,12 @@ impl Message {
             modified,
             original: Frame::None,
             return_to_sender: false,
+            meta_timestamp: None,
         }
     }
 
     #[must_use]
-    pub fn to_filtered_reply(&self) -> Message {
+    pub fn to_filtered_reply(&self) -> Self {
         Message {
             details: MessageDetails::Unknown,
             modified: true,
@@ -110,6 +117,7 @@ impl Message {
                 Frame::None => Frame::None,
             },
             return_to_sender: false,
+            meta_timestamp: None,
         }
     }
 
@@ -121,6 +129,30 @@ impl Message {
         } else {
             self.original.get_query_type()
         }
+    }
+
+    pub fn set_error(&mut self, error: String) {
+        *self = Message::from_frame(match &self.original {
+            Frame::Redis(_) => {
+                Frame::Redis(RedisFrame::Error(Str::from_inner(error.into()).unwrap()))
+            }
+            Frame::Cassandra(frame) => {
+                let body = CassandraOperation::Error(ErrorBody {
+                    error_code: 0,
+                    message: error,
+                    additional_info: AdditionalErrorInfo::Server,
+                });
+
+                Frame::Cassandra(CassandraFrame {
+                    version: frame.version,
+                    stream_id: frame.stream_id,
+                    tracing_id: None,
+                    warnings: frame.warnings.clone(),
+                    operation: body,
+                })
+            }
+            Frame::None => Frame::None,
+        })
     }
 }
 
@@ -243,15 +275,6 @@ impl QueryResponse {
             matching_query: None,
             result: None,
             error: None,
-            response_meta: None,
-        }
-    }
-
-    pub fn empty_with_error(error: Option<MessageValue>) -> Self {
-        QueryResponse {
-            matching_query: None,
-            result: None,
-            error,
             response_meta: None,
         }
     }
