@@ -95,7 +95,6 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
 mod test {
     use super::*;
     use crate::frame::{CassandraFrame, CQL};
-    use crate::message::MessageDetails;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::{
         consistency::Consistency,
@@ -227,12 +226,7 @@ mod test {
                 }),
             });
 
-            let mut original = Message {
-                details: MessageDetails::Unknown,
-                return_to_sender: false,
-                modified: false,
-                original: frame,
-            };
+            let mut original = Message::from_frame(frame);
 
             let expected = original.clone();
 
