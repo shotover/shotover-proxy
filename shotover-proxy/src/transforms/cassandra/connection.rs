@@ -1,4 +1,3 @@
-use crate::frame::Frame;
 use crate::message::Message;
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
@@ -62,18 +61,18 @@ impl CassandraConnection {
 
     /// Send a `Message` to this `CassandraConnection` and expect a response on `return_chan`
     pub fn send(&self, message: Message, return_chan: oneshot::Sender<Response>) -> Result<()> {
-        let message_id = if let Frame::Cassandra(frame) = &message.original {
-            frame.stream_id
-        } else {
-            return Err(anyhow!("no cassandra frame found"));
-        };
-
         // Convert the message to `Request` and send upstream
-        Ok(self.connection.send(Request {
-            message,
-            return_chan,
-            message_id,
-        })?)
+        if let Some(message_id) = message.stream_id() {
+            self.connection
+                .send(Request {
+                    message,
+                    return_chan,
+                    message_id,
+                })
+                .map_err(|x| x.into())
+        } else {
+            Err(anyhow!("no cassandra frame found"))
+        }
     }
 }
 
@@ -109,15 +108,16 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
-                            if let Frame::Cassandra(frame) = &m.original {
-                                match return_channel_map.remove(&frame.stream_id) {
+                            if let Some(stream_id) = m.stream_id() {
+                                match return_channel_map.remove(&stream_id) {
                                     None => {
-                                        return_message_map.insert(frame.stream_id, m);
+                                        return_message_map.insert(stream_id, m);
                                     },
                                     Some((return_tx, original)) => {
-                                        return_tx.send(Response {original, response: Ok(vec![m]) }).map_err(|_| anyhow!("couldn't send message"))?;
+                                        return_tx.send(Response {original, response: Ok(vec![m]) })
+                                        .map_err(|_| anyhow!("couldn't send message"))?;
                                     }
-                                };
+                                }
                             }
                         }
                     }
@@ -134,7 +134,8 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                         return_channel_map.insert(message_id, (return_chan, message));
                     }
                     Some(m) => {
-                        return_chan.send(Response{ original: message, response: Ok(vec![m]) }).map_err(|_| anyhow!("couldn't send message"))?;
+                        return_chan.send(Response { original: message, response: Ok(vec![m]) })
+                            .map_err(|_| anyhow!("couldn't send message"))?;
                     }
                 };
             },

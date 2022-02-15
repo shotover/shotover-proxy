@@ -61,14 +61,6 @@ sources:
     # This will generally include a listen address and port
     Cassandra:
       listen_addr: "127.0.0.1:9042"
-      cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
   
   # The spcial mpsc_chan source, it will receive messages from a named topic
   mpsc_chan:

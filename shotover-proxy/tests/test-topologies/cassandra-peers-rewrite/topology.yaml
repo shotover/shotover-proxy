@@ -4,27 +4,11 @@ sources:
     Cassandra:
       query_processing: false
       listen_addr: "127.0.0.1:9043"
-      cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
 
   cassandra_prod_2:
     Cassandra:
       query_processing: false
       listen_addr: "127.0.0.1:9044"
-      cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
 
 chain_config:
   main_chain:

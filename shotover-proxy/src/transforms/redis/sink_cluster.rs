@@ -18,11 +18,11 @@ use tokio::time::timeout;
 use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::codec::redis::{DecodeType, RedisCodec};
+use crate::codec::redis::RedisCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
-use crate::message::{Message, MessageDetails, QueryResponse};
+use crate::message::Message;
 use crate::tls::TlsConfig;
 use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
@@ -92,11 +92,7 @@ impl RedisSinkCluster {
     ) -> Result<Self> {
         let authenticator = RedisAuthenticator {};
 
-        let connection_pool = ConnectionPool::new_with_auth(
-            RedisCodec::new(DecodeType::Response),
-            authenticator,
-            tls,
-        )?;
+        let connection_pool = ConnectionPool::new_with_auth(RedisCodec::new(), authenticator, tls)?;
 
         let sink_cluster = RedisSinkCluster {
             slots: SlotMap::new(),
@@ -121,10 +117,11 @@ impl RedisSinkCluster {
     }
 
     #[inline]
-    async fn dispatch_message(&mut self, message: Message) -> Result<ResponseFuture> {
-        let command = match message.original {
-            Frame::Redis(RedisFrame::Array(ref command)) => command,
-            _ => bail!("syntax error: bad command"),
+    async fn dispatch_message(&mut self, mut message: Message) -> Result<ResponseFuture> {
+        let command = match message.frame() {
+            Some(Frame::Redis(RedisFrame::Array(ref command))) => command,
+            None => bail!("Failed to parse redis frame"),
+            message => bail!("syntax error: bad command: {message:?}"),
         };
 
         let channels = match self.get_channels(command).await? {
@@ -167,14 +164,13 @@ impl RedisSinkCluster {
                                 Ok(Response {
                                     response: Ok(mut messages),
                                     ..
-                                }) => {
-                                    acc.push(messages.pop().map_or(RedisFrame::Null, |message| {
-                                        match message.original {
-                                            Frame::Redis(frame) => frame,
-                                            _ => unreachable!(),
-                                        }
-                                    }))
-                                }
+                                }) => acc.push(messages.pop().map_or(
+                                    RedisFrame::Null,
+                                    |mut message| match message.frame().unwrap() {
+                                        Frame::Redis(frame) => frame.take(),
+                                        _ => unreachable!(),
+                                    },
+                                )),
                                 Ok(Response {
                                     response: Err(e), ..
                                 }) => acc.push(RedisFrame::Error(e.to_string().into())),
@@ -186,11 +182,9 @@ impl RedisSinkCluster {
 
                     Ok(Response {
                         original: message,
-                        response: ChainResponse::Ok(vec![Message::new(
-                            MessageDetails::Unknown,
-                            false,
-                            Frame::Redis(RedisFrame::Array(response)),
-                        )]),
+                        response: ChainResponse::Ok(vec![Message::from_frame(Frame::Redis(
+                            RedisFrame::Array(response),
+                        ))]),
                     })
                 })
             }
@@ -746,11 +740,12 @@ async fn receive_frame_response(receiver: oneshot::Receiver<Response>) -> Result
     let Response { response, .. } = receiver.await?;
 
     // Exactly one Redis response is guaranteed by the codec on success.
-    let message = response?.pop().unwrap().original;
+    let mut message = response?.pop().unwrap();
 
-    match message {
-        Frame::Redis(frame) => Ok(frame),
-        _ => unreachable!(),
+    match message.frame() {
+        Some(Frame::Redis(frame)) => Ok(frame.take()),
+        None => Err(anyhow!("Failed to parse redis frame")),
+        response => Err(anyhow!("Unexpected redis response: {response:?}")),
     }
 }
 
@@ -761,11 +756,7 @@ fn send_frame_response(
 ) -> Result<(), Response> {
     one_tx.send(Response {
         original: Message::from_frame(Frame::None),
-        response: Ok(vec![Message::new(
-            MessageDetails::Response(QueryResponse::empty()),
-            false,
-            Frame::Redis(frame),
-        )]),
+        response: Ok(vec![Message::from_frame(Frame::Redis(frame))]),
     })
 }
 
@@ -810,26 +801,21 @@ impl Transform for RedisSinkCluster {
 
         while let Some(s) = responses.next().await {
             trace!("Got resp {:?}", s);
-
             let Response { original, response } = s.or_else(|_| -> Result<Response> {
                 Ok(Response {
                     original: Message::from_frame(Frame::None),
-                    response: Ok(vec![Message::new(
-                        MessageDetails::Response(QueryResponse::empty()),
-                        false,
-                        Frame::Redis(RedisFrame::Error(
-                            Str::from_inner(Bytes::from_static(b"ERR Could not route request"))
-                                .unwrap(),
-                        )),
-                    )]),
+                    response: Ok(vec![Message::from_frame(Frame::Redis(RedisFrame::Error(
+                        Str::from_inner(Bytes::from_static(b"ERR Could not route request"))
+                            .unwrap(),
+                    )))]),
                 })
             })?;
 
             let mut response = response?;
             assert_eq!(response.len(), 1);
-            let response_m = response.remove(0);
-            match &response_m.original {
-                Frame::Redis(frame) => {
+            let mut response_m = response.remove(0);
+            match response_m.frame() {
+                Some(Frame::Redis(frame)) => {
                     match frame.to_redirection() {
                         Some(Redirection::Moved { slot, server }) => {
                             debug!("Got MOVE {} {}", slot, server);
@@ -922,23 +908,21 @@ mod test {
         // Wireshark capture from a Redis cluster with 3 masters and 3 replicas.
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
 
-        let mut codec = RedisCodec::new(DecodeType::Response);
+        let mut codec = RedisCodec::new();
 
-        let raw_frame = codec
+        let mut message = codec
             .decode(&mut slots_pcap.into())
             .unwrap()
             .unwrap()
             .pop()
-            .unwrap()
-            .original;
+            .unwrap();
 
-        let slots_frames = if let Frame::Redis(RedisFrame::Array(frames)) = raw_frame {
-            frames
-        } else {
-            panic!("bad input: {raw_frame:?}")
+        let slots_frames = match message.frame().unwrap() {
+            Frame::Redis(RedisFrame::Array(frames)) => frames,
+            frame => panic!("bad input: {frame:?}"),
         };
 
-        let slots = parse_slots(&slots_frames).unwrap();
+        let slots = parse_slots(slots_frames).unwrap();
 
         let nodes = vec![
             "192.168.80.2:6379",

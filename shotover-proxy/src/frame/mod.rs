@@ -3,9 +3,14 @@ pub mod cassandra;
 pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult, CQL};
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use bytes::Bytes;
 
-use crate::message::{MessageDetails, QueryType};
+#[derive(PartialEq, Debug, Clone)]
+pub enum MessageType {
+    Redis,
+    Cassandra,
+}
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Frame {
@@ -15,31 +20,51 @@ pub enum Frame {
 }
 
 impl Frame {
-    pub fn build_message_response(&self) -> Result<MessageDetails> {
-        match self {
-            Frame::Cassandra(_c) => Ok(MessageDetails::Unknown),
-            Frame::Redis(frame) => crate::codec::redis::process_redis_frame_response(frame)
-                .map(MessageDetails::Response),
-            Frame::None => Ok(MessageDetails::Unknown),
+    pub fn from_bytes(bytes: Bytes, message_type: MessageType) -> Result<Self> {
+        match message_type {
+            MessageType::Cassandra => CassandraFrame::from_bytes(bytes).map(Frame::Cassandra),
+            MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
+                .map(|x| Frame::Redis(x.unwrap().0))
+                .map_err(|e| anyhow!("{e:?}")),
         }
     }
 
-    pub fn build_message_query(&self) -> Result<MessageDetails> {
+    fn name(&self) -> &'static str {
         match self {
-            Frame::Cassandra(_c) => Ok(MessageDetails::Unknown),
-            Frame::Redis(frame) => {
-                crate::codec::redis::process_redis_frame_query(frame).map(MessageDetails::Query)
-            }
-            Frame::None => Ok(MessageDetails::Unknown),
+            Frame::Redis(_) => "Redis",
+            Frame::Cassandra(_) => "Cassandra",
+            Frame::None => "None",
         }
     }
 
-    #[inline]
-    pub fn get_query_type(&self) -> QueryType {
+    pub fn redis(&mut self) -> Result<&mut RedisFrame> {
         match self {
-            Frame::Cassandra(_) => QueryType::ReadWrite,
-            Frame::Redis(frame) => crate::codec::redis::redis_query_type(frame),
-            Frame::None => QueryType::ReadWrite,
+            Frame::Redis(frame) => Ok(frame),
+            frame => Err(anyhow!(
+                "Expected redis frame but received {} frame",
+                frame.name()
+            )),
+        }
+    }
+
+    pub fn into_redis(self) -> Result<RedisFrame> {
+        match self {
+            Frame::Redis(frame) => Ok(frame),
+            Frame::None => Ok(RedisFrame::Null),
+            frame => Err(anyhow!(
+                "Expected redis frame but received {} frame",
+                frame.name()
+            )),
+        }
+    }
+
+    pub fn into_cassandra(self) -> Result<CassandraFrame> {
+        match self {
+            Frame::Cassandra(frame) => Ok(frame),
+            frame => Err(anyhow!(
+                "Expected cassandra frame but received {} frame",
+                frame.name()
+            )),
         }
     }
 }

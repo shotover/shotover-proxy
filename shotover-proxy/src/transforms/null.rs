@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::frame::Frame;
-use crate::message::{Message, MessageDetails, QueryResponse};
+use crate::message::Message;
 use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
 
@@ -14,10 +14,6 @@ impl Transform for Null {
     }
 
     async fn transform<'a>(&'a mut self, _message_wrapper: Wrapper<'a>) -> ChainResponse {
-        Ok(vec![Message::new(
-            MessageDetails::Response(QueryResponse::empty()),
-            true,
-            Frame::None,
-        )])
+        Ok(vec![Message::from_frame(Frame::None)])
     }
 }

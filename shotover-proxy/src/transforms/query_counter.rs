@@ -31,15 +31,15 @@ impl QueryCounter {
 impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         for m in &mut message_wrapper.messages {
-            match &m.original {
-                Frame::Cassandra(CassandraFrame {
+            match m.frame() {
+                Some(Frame::Cassandra(CassandraFrame {
                     operation:
                         CassandraOperation::Query {
                             query: CQL::Parsed(query),
                             ..
                         },
                     ..
-                }) => {
+                })) => {
                     for statement in query {
                         let query_type = match statement {
                             Statement::Query(_) => "SELECT",
@@ -55,17 +55,17 @@ impl Transform for QueryCounter {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "cassandra");
                     }
                 }
-                Frame::Cassandra(_) => {
+                Some(Frame::Cassandra(_)) => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "cassandra")
                 }
-                Frame::Redis(frame) => {
+                Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = get_redis_query_type(frame) {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
                     } else {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
                     }
                 }
-                Frame::None => {
+                Some(Frame::None) | None => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }
             }
