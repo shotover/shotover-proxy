@@ -13,6 +13,7 @@ license = "Apache-2.0"
 alpha-transforms = []
 
 [dependencies]
+pretty-hex = "0.2.1"
 tokio = { version = "1.14.0", features = ["full", "macros"] }
 tokio-util = { version = "0.7.0", features = ["full"] }
 tokio-stream = "0.1.2"
