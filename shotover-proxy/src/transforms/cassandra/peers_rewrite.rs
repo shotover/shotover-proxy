@@ -9,28 +9,22 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug, Clone, Copy)]
-pub enum RewriteConfig {
-    Port(u32),
-    EmulateSingleNode,
-}
-
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraPeersRewriteConfig {
-    pub rewrite: RewriteConfig,
+    pub port: u32,
 }
 
 impl CassandraPeersRewriteConfig {
     pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
         Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
-            rewrite: self.rewrite,
+            port: self.port,
         }))
     }
 }
 
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
-    rewrite: RewriteConfig,
+    port: u32,
 }
 
 #[async_trait]
@@ -48,14 +42,7 @@ impl Transform for CassandraPeersRewrite {
         let mut response = message_wrapper.call_next_transform().await?;
 
         for i in system_peers {
-            match self.rewrite {
-                RewriteConfig::Port(new_port) => {
-                    rewrite_port(&mut response[i], new_port);
-                }
-                RewriteConfig::EmulateSingleNode => {
-                    emulate_single_node(&mut response[i]);
-                }
-            }
+            rewrite_port(&mut response[i], self.port);
         }
 
         Ok(response)
@@ -66,32 +53,12 @@ fn is_system_peers(message: &Message) -> bool {
     if let Frame::Cassandra(_) = message.original {
         if let Some(namespace) = message.namespace() {
             if namespace.len() > 1 {
-                return namespace[0] == "system"
-                    && (namespace[1] == "peers" || namespace[1] == "peers_v2");
+                return namespace[0] == "system" && namespace[1] == "peers_v2";
             }
         }
     }
 
     false
-}
-
-/// Emulate a single node by removing the rows from a query to system.peers(_v2)
-/// Only Cassandra queries to the `system.peers` table found via the `is_system_peers(_v2)` functions should be passed to this
-fn emulate_single_node(message: &mut Message) {
-    if let Frame::Cassandra(frame) = &mut message.original {
-        if let CassandraOperation::Result(CassandraResult::Rows { value, .. }) =
-            &mut frame.operation
-        {
-            *value = MessageValue::Rows(vec![]);
-        } else {
-            panic!(
-                "Expected CassandraOperation::Result(CassandraResult::Rows), got {:?}",
-                frame
-            );
-        }
-    } else {
-        panic!("Expected Frame::Cassandra, got {:?}", message.original);
-    }
 }
 
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
@@ -198,19 +165,6 @@ mod test {
     }
 
     #[test]
-    fn test_is_system_peers() {
-        assert!(is_system_peers(&create_query_message(
-            "SELECT * FROM system.peers;".into()
-        )));
-
-        assert!(!is_system_peers(&create_query_message(
-            "SELECT * FROM not_system.peers;".into()
-        )));
-
-        assert!(!is_system_peers(&create_query_message("".into())));
-    }
-
-    #[test]
     fn test_is_system_peers_v2() {
         assert!(is_system_peers(&create_query_message(
             "SELECT * FROM system.peers_v2;".into()
@@ -221,18 +175,6 @@ mod test {
         )));
 
         assert!(!is_system_peers(&create_query_message("".into())));
-    }
-
-    #[test]
-    fn test_emulate_single_node() {
-        let mut message = create_response_message(vec![
-            vec![MessageValue::Integer(9042, IntSize::I32)],
-            vec![MessageValue::Integer(9042, IntSize::I32)],
-        ]);
-
-        emulate_single_node(&mut message);
-        let expected = create_response_message(vec![]);
-        assert_eq!(message, expected);
     }
 
     #[test]

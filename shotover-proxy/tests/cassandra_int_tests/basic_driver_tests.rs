@@ -1390,11 +1390,7 @@ fn test_cassandra_peers_rewrite() {
     let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
 
     let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
-    keyspace::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
-
-    let emulate_single_node_port_connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9045);
-    table::test(&emulate_single_node_port_connection); // run some basic tests to confirm it works as normal
+    table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
 
     {
         assert_query_result(
@@ -1432,10 +1428,4 @@ fn test_cassandra_peers_rewrite() {
             &[&[ResultValue::Int(9044)]],
         );
     }
-
-    assert_query_result(
-        &emulate_single_node_port_connection,
-        "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
-        &[],
-    );
 }
