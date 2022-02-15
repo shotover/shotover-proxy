@@ -16,8 +16,6 @@ Cassandra:
   cassandra_ks:
     foo: "bar"
 
-  query_processing: false
-
   # The number of concurrent connections the source will accept.
   connection_limit: 1000
 

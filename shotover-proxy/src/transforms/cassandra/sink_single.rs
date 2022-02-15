@@ -2,8 +2,8 @@ use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
-use crate::frame::CassandraFrame;
-use crate::frame::Frame;
+use crate::frame::cassandra::CassandraOperation;
+use crate::frame::{CassandraFrame, Frame};
 use crate::message::Messages;
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -11,7 +11,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Receiver;
@@ -23,14 +22,12 @@ use tracing::{info, trace};
 pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
-    pub result_processing: bool,
 }
 
 impl CassandraSinkSingleConfig {
     pub async fn get_source(&self, chain_name: String) -> Result<Transforms> {
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
-            self.result_processing,
             chain_name,
         )))
     }
@@ -39,27 +36,23 @@ impl CassandraSinkSingleConfig {
 pub struct CassandraSinkSingle {
     address: String,
     outbound: Option<CassandraConnection<CassandraCodec>>,
-    cassandra_ks: HashMap<String, Vec<String>>,
-    bypass: bool,
     chain_name: String,
     failed_requests: Counter,
 }
 
 impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
-        CassandraSinkSingle::new(self.address.clone(), self.bypass, self.chain_name.clone())
+        CassandraSinkSingle::new(self.address.clone(), self.chain_name.clone())
     }
 }
 
 impl CassandraSinkSingle {
-    pub fn new(address: String, bypass: bool, chain_name: String) -> CassandraSinkSingle {
+    pub fn new(address: String, chain_name: String) -> CassandraSinkSingle {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
 
         CassandraSinkSingle {
             address,
             outbound: None,
-            cassandra_ks: HashMap::new(),
-            bypass,
             chain_name,
             failed_requests,
         }
@@ -72,10 +65,8 @@ impl CassandraSinkSingle {
             match self.outbound {
                 None => {
                     trace!("creating outbound connection {:?}", self.address);
-                    let mut conn_pool = CassandraConnection::new(
-                        self.address.clone(),
-                        CassandraCodec::new(self.cassandra_ks.clone(), self.bypass),
-                    );
+                    let mut conn_pool =
+                        CassandraConnection::new(self.address.clone(), CassandraCodec::new());
                     // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
                     conn_pool.connect().await?;
                     self.outbound = Some(conn_pool);
@@ -88,7 +79,6 @@ impl CassandraSinkSingle {
                         .into_iter()
                         .map(|m| {
                             let (return_chan_tx, return_chan_rx) = oneshot::channel();
-
                             outbound_framed_codec.send(m, return_chan_tx)?;
 
                             Ok(return_chan_rx)
@@ -106,12 +96,11 @@ impl CassandraSinkSingle {
                                         response: Ok(mut resp),
                                         ..
                                     } => {
-                                        for message in &resp {
-                                            use crate::frame::cassandra::CassandraOperation;
-                                            if let Frame::Cassandra(CassandraFrame {
+                                        for message in &mut resp {
+                                            if let Some(Frame::Cassandra(CassandraFrame {
                                                 operation: CassandraOperation::Error(_),
                                                 ..
-                                            }) = &message.original
+                                            })) = message.frame()
                                             {
                                                 self.failed_requests.increment(1);
                                             }
@@ -122,6 +111,7 @@ impl CassandraSinkSingle {
                                         mut original,
                                         response: Err(err),
                                     } => {
+                                        // TODO: This is wrong: need to have a response for each incoming message
                                         original.set_error(err.to_string());
                                         responses.push(original);
                                     }

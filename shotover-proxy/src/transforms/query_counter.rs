@@ -1,6 +1,7 @@
 use crate::error::ChainResponse;
-use crate::message::MessageValue::List;
-use crate::message::{ASTHolder, MessageDetails, QueryMessage};
+use crate::frame::cassandra::{CassandraFrame, CassandraOperation};
+use crate::frame::Frame;
+use crate::frame::RedisFrame;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -28,12 +29,15 @@ impl QueryCounter {
 
 #[async_trait]
 impl Transform for QueryCounter {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        for m in &message_wrapper.messages {
-            if let MessageDetails::Query(QueryMessage { ast: Some(ast), .. }) = &m.details {
-                match ast {
-                    ASTHolder::SQL(statement) => {
-                        let query_type = match **statement {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        for m in &mut message_wrapper.messages {
+            match m.frame() {
+                Some(Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Query { query, .. },
+                    ..
+                })) => {
+                    for statement in query {
+                        let query_type = match statement {
                             Statement::Query(_) => "SELECT",
                             Statement::Insert { .. } => "INSERT",
                             Statement::Copy { .. } => "COPY",
@@ -46,18 +50,25 @@ impl Transform for QueryCounter {
                         };
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "cassandra");
                     }
-                    ASTHolder::Commands(List(commands)) => {
-                        if let Some(v) = commands.get(0) {
-                            let command = format!("{v:?}");
-                            counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => command.to_ascii_uppercase(), "type" => "redis");
-                        } else {
-                            counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "empty", "type" => "redis");
-                        }
-                    }
-                    _ => {
-                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "unknown");
+                }
+                Some(Frame::Cassandra(_)) => {
+                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "unknown")
+                }
+                Some(Frame::Redis(RedisFrame::Array(array))) => {
+                    if let Some(v) = array.get(0) {
+                        let command = format!("{v:?}");
+                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => command.to_ascii_uppercase(), "type" => "redis");
+                    } else {
+                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "empty", "type" => "redis");
                     }
                 }
+                Some(Frame::Redis(_)) => {
+                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "unknown")
+                }
+                Some(Frame::None) => {
+                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "unknown")
+                }
+                None => {}
             }
         }
 

@@ -40,7 +40,6 @@ chain_config:
           - Null
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
-        result_processing: false
   async_chain:
     - KafkaSink:
         topic: testtopic

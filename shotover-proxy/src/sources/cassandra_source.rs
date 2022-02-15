@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -18,8 +17,6 @@ use crate::transforms::chain::TransformChain;
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraConfig {
     pub listen_addr: String,
-    pub cassandra_ks: HashMap<String, Vec<String>>,
-    pub query_processing: Option<bool>,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
 }
@@ -36,9 +33,7 @@ impl SourcesFromConfig for CassandraConfig {
             CassandraSource::new(
                 chain,
                 self.listen_addr.clone(),
-                self.cassandra_ks.clone(),
                 trigger_shutdown_rx,
-                self.query_processing.unwrap_or(false),
                 self.connection_limit,
                 self.hard_connection_limit,
             )
@@ -59,9 +54,7 @@ impl CassandraSource {
     pub async fn new(
         chain: &TransformChain,
         listen_addr: String,
-        cassandra_ks: HashMap<String, Vec<String>>,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
-        query_processing: bool,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
     ) -> CassandraSource {
@@ -74,7 +67,7 @@ impl CassandraSource {
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            CassandraCodec::new(cassandra_ks, !query_processing),
+            CassandraCodec::new(),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             None,

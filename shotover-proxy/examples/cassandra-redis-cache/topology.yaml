@@ -2,7 +2,6 @@
 sources:
   cassandra_prod:
     Cassandra:
-      query_processing: true
       listen_addr: "127.0.0.1:9042"
       cassandra_ks:
         test_cache_keyspace_batch_insert.test_table:
@@ -24,7 +23,6 @@ chain_config:
               remote_address: "127.0.0.1:6379"
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
-        result_processing: false
 named_topics:
   testtopic: 5
 source_to_chain_mapping:

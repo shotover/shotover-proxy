@@ -100,6 +100,8 @@ async fn test_metrics() {
     // due to the randomized order of the labels. Will need to parse the prometheus output
 
     let new_lines = vec![
+        r#"query_count{type="redis",name="redis-chain",query="BULKSTRING([71, 69, 84])"} 1"#,
+        r#"query_count{type="redis",name="redis-chain",query="BULKSTRING([83, 69, 84])"} 2"#,
         r#"shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0"}"#,
         r#"shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0.5"}"#,
         r#"shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0.9"}"#,

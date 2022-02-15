@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, CQL};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -156,19 +156,15 @@ impl ProtectConfig {
     }
 }
 
-pub fn get_values_from_insert_or_update_mut(ast: &mut CQL) -> HashMap<String, &mut SQLValue> {
-    if let CQL::Parsed(ast) = ast {
-        match &mut ast[0] {
-            Statement::Insert {
-                source, columns, ..
-            } => get_values_from_insert_mut(columns.as_mut(), source.borrow_mut()),
-            Statement::Update { assignments, .. } => {
-                get_values_from_update_mut(assignments.as_mut())
-            }
-            _ => HashMap::new(),
-        }
-    } else {
-        HashMap::new()
+pub fn get_values_from_insert_or_update_mut(
+    ast: &mut [Statement],
+) -> HashMap<String, &mut SQLValue> {
+    match &mut ast[0] {
+        Statement::Insert {
+            source, columns, ..
+        } => get_values_from_insert_mut(columns.as_mut(), source.borrow_mut()),
+        Statement::Update { assignments, .. } => get_values_from_update_mut(assignments.as_mut()),
+        _ => HashMap::new(),
     }
 }
 
@@ -209,10 +205,10 @@ impl Transform for Protect {
         for message in message_wrapper.messages.iter_mut() {
             if let Some(namespace) = message.namespace() {
                 if namespace.len() == 2 {
-                    if let Frame::Cassandra(CassandraFrame {
+                    if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
-                    }) = &mut message.original
+                    })) = &mut message.frame()
                     {
                         if let Some((_, tables)) =
                             self.keyspace_table_columns.get_key_value(&namespace[0])
@@ -240,20 +236,20 @@ impl Transform for Protect {
         let mut result = message_wrapper.call_next_transform().await?;
 
         for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {
-            if let Frame::Cassandra(CassandraFrame {
+            if let Some(Frame::Cassandra(CassandraFrame {
                 operation:
                     CassandraOperation::Result(CassandraResult::Rows {
                         value: MessageValue::Rows(rows),
                         ..
                     }),
                 ..
-            }) = &mut response.original
+            })) = response.frame()
             {
                 if let Some(namespace) = request.namespace() {
-                    if let Frame::Cassandra(CassandraFrame {
+                    if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
-                    }) = &mut request.original
+                    })) = &mut request.frame()
                     {
                         let projection: Vec<String> = get_values_from_insert_or_update_mut(query)
                             .into_keys()

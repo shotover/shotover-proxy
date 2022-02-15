@@ -29,14 +29,13 @@ pub struct CassandraPeersRewrite {
 
 #[async_trait]
 impl Transform for CassandraPeersRewrite {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of queries to system.peers & system.peers_v2
         let system_peers = message_wrapper
             .messages
-            .iter()
+            .iter_mut()
             .enumerate()
-            .filter(|(_, m)| is_system_peers(*m))
-            .map(|(i, _)| i)
+            .filter_map(|(i, m)| if is_system_peers(m) { Some(i) } else { None })
             .collect::<Vec<_>>();
 
         let mut response = message_wrapper.call_next_transform().await?;
@@ -49,8 +48,8 @@ impl Transform for CassandraPeersRewrite {
     }
 }
 
-fn is_system_peers(message: &Message) -> bool {
-    if let Frame::Cassandra(_) = message.original {
+fn is_system_peers(message: &mut Message) -> bool {
+    if let Some(Frame::Cassandra(_)) = message.frame() {
         if let Some(namespace) = message.namespace() {
             if namespace.len() > 1 {
                 return namespace[0] == "system" && namespace[1] == "peers_v2";
@@ -64,7 +63,7 @@ fn is_system_peers(message: &Message) -> bool {
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
 fn rewrite_port(message: &mut Message, new_port: u32) {
-    if let Frame::Cassandra(frame) = &mut message.original {
+    if let Some(Frame::Cassandra(frame)) = &mut message.frame() {
         if let CassandraOperation::Result(CassandraResult::Rows { value, metadata }) =
             &mut frame.operation
         {
@@ -78,6 +77,7 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
                     for row in rows.iter_mut() {
                         row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
                     }
+                    message.invalidate_cache();
                 }
             }
         } else {
@@ -86,15 +86,13 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
                 frame
             );
         }
-    } else {
-        panic!("Expected Frame::Cassandra, got {:?}", message.original);
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::{CassandraFrame, CQL};
+    use crate::frame::CassandraFrame;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::{
         consistency::Consistency,
@@ -108,6 +106,8 @@ mod test {
         },
         query::QueryParams,
     };
+    use sqlparser::dialect::GenericDialect;
+    use sqlparser::parser::Parser;
 
     fn create_query_message(query: String) -> Message {
         let original = Frame::Cassandra(CassandraFrame {
@@ -116,7 +116,7 @@ mod test {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::parse_from_string(query),
+                query: Parser::parse_sql(&GenericDialect, &query).unwrap(),
                 params: QueryParams {
                     consistency: Consistency::One,
                     with_names: false,
@@ -165,15 +165,15 @@ mod test {
 
     #[test]
     fn test_is_system_peers_v2() {
-        assert!(is_system_peers(&create_query_message(
+        assert!(is_system_peers(&mut create_query_message(
             "SELECT * FROM system.peers_v2;".into()
         )));
 
-        assert!(!is_system_peers(&create_query_message(
+        assert!(!is_system_peers(&mut create_query_message(
             "SELECT * FROM not_system.peers_v2;".into()
         )));
 
-        assert!(!is_system_peers(&create_query_message("".into())));
+        assert!(!is_system_peers(&mut create_query_message("".into())));
     }
 
     #[test]
