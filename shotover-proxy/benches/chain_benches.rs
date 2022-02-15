@@ -1,10 +1,7 @@
-use std::collections::HashMap;
-
 use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-
 use shotover_proxy::frame::Frame;
-use shotover_proxy::message::{Message, QueryMessage, QueryType};
+use shotover_proxy::message::{Message, QueryType};
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::filter::QueryTypeFilter;
@@ -22,19 +19,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain =
             TransformChain::new(vec![Transforms::Null(Null::default())], "bench".to_string());
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::new_query(
-                QueryMessage {
-                    query_string: "".to_string(),
-                    namespace: vec![],
-                    primary_key: HashMap::new(),
-                    query_values: None,
-                    projection: None,
-                    query_type: QueryType::Write,
-                    ast: None,
-                },
-                true,
-                Frame::None,
-            )],
+            vec![Message::from_frame(Frame::None)],
             chain.name.clone(),
         );
 
