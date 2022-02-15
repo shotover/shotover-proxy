@@ -101,6 +101,11 @@ impl Message {
             Frame::None => Some(vec![]),
         }
     }
+
+    pub fn invalidate_cache(&mut self) {
+        // TODO: invalidate cache when we have a cache to invalidate
+    }
+
     #[must_use]
     pub fn to_filtered_reply(&self) -> Self {
         Message {
