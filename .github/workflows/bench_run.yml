@@ -19,14 +19,6 @@ jobs:
     name: Benchmarks
     steps:
     - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
-      with:
-          # `toolchain: stable` results in the latest stable toolchain being installed.
-          # However as soon as we use cargo the real version specified in rust-toolchain.toml replaces the stable toolchain.
-          #
-          # When something like https://github.com/actions-rs/toolchain/pull/184 lands we can delete this line and get a nice speedup
-          profile: minimal
-          toolchain: stable
     - uses: Swatinem/rust-cache@v1
       with:
         # Unique key is used to avoid collisions with the Testing workflow
