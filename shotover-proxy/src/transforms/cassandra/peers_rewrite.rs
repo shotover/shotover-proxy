@@ -127,11 +127,10 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::CassandraFrame;
+    use crate::frame::{CassandraFrame, CQL};
     use crate::message::MessageDetails;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::{
-        compression::Compression,
         consistency::Consistency,
         frame::{
             frame_result::{
@@ -139,45 +138,32 @@ mod test {
                 ColType::{Inet, Int},
                 ColTypeOption, RowsMetadata, RowsMetadataFlags, TableSpec,
             },
-            Direction, Frame as CassandraProtocolFrame, Opcode, Serialize,
-            {frame_query::BodyReqQuery, Flags, Version},
+            Version,
         },
         query::QueryParams,
     };
 
     fn create_query_message(query: String) -> Message {
-        let body = BodyReqQuery {
-            query,
-            query_params: QueryParams {
-                consistency: Consistency::One,
-                with_names: false,
-                values: None,
-                page_size: Some(5000),
-                paging_state: None,
-                serial_consistency: None,
-                timestamp: Some(1643855761086585),
-            },
-        };
-
-        let frame = CassandraProtocolFrame {
+        let original = Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            direction: Direction::Request,
-            flags: Flags::default(),
             stream_id: 0,
-            opcode: Opcode::Query,
             tracing_id: None,
-            body: body.serialize_to_vec(),
             warnings: vec![],
-        };
+            operation: CassandraOperation::Query {
+                query: CQL::parse_from_string(query),
+                params: QueryParams {
+                    consistency: Consistency::One,
+                    with_names: false,
+                    values: None,
+                    page_size: Some(5000),
+                    paging_state: None,
+                    serial_consistency: None,
+                    timestamp: Some(1643855761086585),
+                },
+            },
+        });
 
-        let bytes = frame.encode_with(Compression::None).unwrap();
-
-        Message {
-            details: MessageDetails::Unknown,
-            return_to_sender: false,
-            modified: false,
-            original: Frame::Cassandra(CassandraFrame::from_bytes(bytes.into()).unwrap()),
-        }
+        Message::from_frame(original)
     }
 
     fn create_response_message(rows: Vec<Vec<MessageValue>>) -> Message {
@@ -208,16 +194,11 @@ mod test {
             }),
         });
 
-        Message {
-            details: MessageDetails::Unknown,
-            return_to_sender: false,
-            modified: false,
-            original,
-        }
+        Message::from_frame(original)
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_is_system_peers() {
+    #[test]
+    fn test_is_system_peers() {
         assert!(is_system_peers(&create_query_message(
             "SELECT * FROM system.peers;".into()
         )));
@@ -229,8 +210,8 @@ mod test {
         assert!(!is_system_peers(&create_query_message("".into())));
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_is_system_peers_v2() {
+    #[test]
+    fn test_is_system_peers_v2() {
         assert!(is_system_peers(&create_query_message(
             "SELECT * FROM system.peers_v2;".into()
         )));
