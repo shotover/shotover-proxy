@@ -1,6 +1,7 @@
 use crate::error::ChainResponse;
-use crate::message::MessageValue::List;
-use crate::message::{ASTHolder, MessageDetails, QueryMessage};
+use crate::frame::cassandra::{CassandraFrame, CassandraOperation, CQL};
+use crate::frame::Frame;
+use crate::frame::RedisFrame;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -28,12 +29,19 @@ impl QueryCounter {
 
 #[async_trait]
 impl Transform for QueryCounter {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        for m in &message_wrapper.messages {
-            if let MessageDetails::Query(QueryMessage { ast: Some(ast), .. }) = &m.details {
-                match ast {
-                    ASTHolder::SQL(statement) => {
-                        let query_type = match **statement {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        for m in &mut message_wrapper.messages {
+            match &m.original {
+                Frame::Cassandra(CassandraFrame {
+                    operation:
+                        CassandraOperation::Query {
+                            query: CQL::Parsed(query),
+                            ..
+                        },
+                    ..
+                }) => {
+                    for statement in query {
+                        let query_type = match statement {
                             Statement::Query(_) => "SELECT",
                             Statement::Insert { .. } => "INSERT",
                             Statement::Copy { .. } => "COPY",
@@ -46,23 +54,44 @@ impl Transform for QueryCounter {
                         };
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "cassandra");
                     }
-                    ASTHolder::Commands(List(commands)) => {
-                        if let Some(v) = commands.get(0) {
-                            let command = format!("{v:?}");
-                            counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => command.to_ascii_uppercase(), "type" => "redis");
-                        } else {
-                            counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "empty", "type" => "redis");
-                        }
+                }
+                Frame::Cassandra(_) => {
+                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "cassandra")
+                }
+                Frame::Redis(frame) => {
+                    if let Some(query_type) = get_redis_query_type(frame) {
+                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
+                    } else {
+                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
                     }
-                    _ => {
-                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "unknown");
-                    }
+                }
+                Frame::None => {
+                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }
             }
         }
 
         message_wrapper.call_next_transform().await
     }
+}
+fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
+    if let RedisFrame::Array(array) = frame {
+        if let Some(RedisFrame::BulkString(v)) = array.get(0) {
+            let upper_bytes = v.to_ascii_uppercase();
+            match String::from_utf8(upper_bytes) {
+                Ok(query_type) => {
+                    return Some(query_type);
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to convert redis bulkstring to string, err: {:?}",
+                        err
+                    )
+                }
+            }
+        }
+    }
+    None
 }
 
 impl QueryCounterConfig {
