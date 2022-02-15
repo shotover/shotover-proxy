@@ -1,3 +1,5 @@
+#[cfg(feature = "alpha-transforms")]
+use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
@@ -12,10 +14,9 @@ mod keyspace {
         run_query(session, "CREATE KEYSPACE keyspace_tests_create WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
         assert_query_result(
             session,
-            "SELECT release_version FROM system.local",
-            &[&[ResultValue::Varchar("3.11.10".into())]],
+            "SELECT bootstrapped FROM system.local",
+            &[&[ResultValue::Varchar("COMPLETED".into())]],
         );
-
         assert_query_result_contains_row(
             session,
             "SELECT keyspace_name FROM system_schema.keyspaces;",
@@ -28,8 +29,8 @@ mod keyspace {
 
         assert_query_result(
             session,
-            "SELECT release_version FROM local",
-            &[&[ResultValue::Varchar("3.11.10".into())]],
+            "SELECT bootstrapped FROM local",
+            &[&[ResultValue::Varchar("COMPLETED".into())]],
         );
     }
 
@@ -1372,4 +1373,59 @@ fn test_cassandra_protect_transform_aws() {
     collections::test(&shotover_connection);
     functions::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
+}
+
+#[test]
+#[serial]
+#[cfg(feature = "alpha-transforms")]
+fn test_cassandra_peers_rewrite() {
+    let _docker_compose =
+        DockerCompose::new("tests/test-topologies/cassandra-peers-rewrite/docker-compose.yml")
+            .wait_for_n_t("Startup complete", 2, 90);
+
+    let shotover_manager = ShotoverManager::from_topology_file(
+        "tests/test-topologies/cassandra-peers-rewrite/topology.yaml",
+    );
+
+    let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+
+    let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+    table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
+
+    {
+        assert_query_result(
+            &normal_connection,
+            "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+            &[&[
+                ResultValue::Inet("172.16.1.3".parse().unwrap()),
+                ResultValue::Varchar("Mars".into()),
+                ResultValue::Int(9042),
+                ResultValue::Varchar("West".into()),
+            ]],
+        );
+        assert_query_result(
+            &normal_connection,
+            "SELECT native_port FROM system.peers_v2;",
+            &[&[ResultValue::Int(9042)]],
+        );
+    }
+
+    {
+        assert_query_result(
+            &rewrite_port_connection,
+            "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+            &[&[
+                ResultValue::Inet("172.16.1.3".parse().unwrap()),
+                ResultValue::Varchar("Mars".into()),
+                ResultValue::Int(9044),
+                ResultValue::Varchar("West".into()),
+            ]],
+        );
+
+        assert_query_result(
+            &rewrite_port_connection,
+            "SELECT native_port FROM system.peers_v2;",
+            &[&[ResultValue::Int(9044)]],
+        );
+    }
 }

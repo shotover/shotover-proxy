@@ -1,0 +1,48 @@
+version: "3.3"
+networks:
+  cluster_subnet:
+    name: cluster_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
+
+services:
+  cassandra-one:
+    image: library/cassandra:4.0
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.2
+    healthcheck: &healthcheck
+      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    environment: &environment
+      CASSANDRA_SEEDS: "cassandra-one,cassandra-two"
+      CASSANDRA_CLUSTER_NAME: SolarSystem
+      CASSANDRA_DC: Mars
+      CASSANDRA_RACK: West
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      CASSANDRA_NUM_TOKENS: 128
+      MAX_HEAP_SIZE: "400M"
+      MIN_HEAP_SIZE: "400M"
+      HEAP_NEWSIZE: "48M"
+      CASSANDRA_ENABLE_SCRIPTED_USER_DEFINED_FUNCTIONS: "true"
+      CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
+    volumes:
+      - ../../../examples/cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+
+  cassandra-two:
+    image: library/cassandra:4.0
+    networks:
+      cluster_subnet:
+        ipv4_address: 172.16.1.3
+    healthcheck: *healthcheck
+    environment: *environment
+    depends_on:
+      - cassandra-one
+    volumes:
+      - ../../../examples/cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh

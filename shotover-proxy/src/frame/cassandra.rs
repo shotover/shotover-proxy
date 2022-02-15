@@ -16,7 +16,7 @@ use cassandra_protocol::frame::{
 use cassandra_protocol::query::QueryParams;
 use cassandra_protocol::types::{CBytes, CInt};
 use itertools::Itertools;
-use sqlparser::ast::Statement;
+use sqlparser::ast::{SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use uuid::Uuid;
@@ -42,26 +42,7 @@ impl CassandraFrame {
             Opcode::Query => {
                 if let RequestBody::Query(body) = frame.request_body()? {
                     CassandraOperation::Query {
-                        query: match Parser::parse_sql(&GenericDialect, body.query.as_str()) {
-                            _ if body.query.contains("ALTER TABLE")
-                                || body.query.contains("CREATE TABLE") =>
-                            {
-                                tracing::error!(
-                                    "Failed to parse CQL for frame {:?}\nError: Blacklisted query as sqlparser crate cant round trip it",
-                                    body.query.as_str()
-                                );
-                                CQL::FailedToParse(body.query)
-                            }
-                            Ok(ast) => CQL::Parsed(ast),
-                            Err(err) => {
-                                tracing::error!(
-                                    "Failed to parse CQL for frame {:?}\nError: {:?}",
-                                    body.query.as_str(),
-                                    err
-                                );
-                                CQL::FailedToParse(body.query)
-                            }
-                        },
+                        query: CQL::parse_from_string(body.query),
                         params: body.query_params,
                     }
                 } else {
@@ -155,6 +136,40 @@ impl CassandraFrame {
             warnings: frame.warnings,
             operation,
         })
+    }
+
+    pub fn namespace(&self) -> Vec<String> {
+        match &self.operation {
+            CassandraOperation::Query {
+                query: CQL::Parsed(query),
+                ..
+            } => match query.first() {
+                Some(Statement::Query(query)) => match &query.body {
+                    SetExpr::Select(select) => {
+                        if let TableFactor::Table { name, .. } =
+                            &select.from.get(0).unwrap().relation
+                        {
+                            name.0.iter().map(|a| a.value.clone()).collect()
+                        } else {
+                            vec![]
+                        }
+                    }
+                    _ => vec![],
+                },
+                Some(Statement::Insert { table_name, .. })
+                | Some(Statement::Delete { table_name, .. }) => {
+                    table_name.0.iter().map(|a| a.value.clone()).collect()
+                }
+                Some(Statement::Update { table, .. }) => match &table.relation {
+                    TableFactor::Table { name, .. } => {
+                        name.0.iter().map(|a| a.value.clone()).collect()
+                    }
+                    _ => vec![],
+                },
+                _ => vec![],
+            },
+            _ => vec![],
+        }
     }
 
     pub fn encode(self) -> RawCassandraFrame {
@@ -312,6 +327,20 @@ impl CQL {
         match self {
             CQL::Parsed(ast) => ast.iter().map(|x| x.to_string()).join(""),
             CQL::FailedToParse(str) => str.clone(),
+        }
+    }
+
+    pub fn parse_from_string(sql: String) -> Self {
+        match Parser::parse_sql(&GenericDialect, &sql) {
+            _ if sql.contains("ALTER TABLE") || sql.contains("CREATE TABLE") => {
+                tracing::error!("Failed to parse CQL for frame {:?}\nError: Blacklisted query as sqlparser crate cant round trip it", sql);
+                CQL::FailedToParse(sql)
+            }
+            Ok(ast) => CQL::Parsed(ast),
+            Err(err) => {
+                tracing::error!("Failed to parse CQL for frame {:?}\nError: {:?}", sql, err);
+                CQL::FailedToParse(sql)
+            }
         }
     }
 }

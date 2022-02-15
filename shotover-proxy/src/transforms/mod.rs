@@ -1,19 +1,10 @@
-use core::fmt;
-use std::fmt::{Debug, Formatter};
-use std::pin::Pin;
-
-use anyhow::Result;
-use async_recursion::async_recursion;
-use async_trait::async_trait;
-use futures::Future;
-use serde::Deserialize;
-
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
+use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
-use metrics::{counter, histogram};
-
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::printer::DebugPrinter;
@@ -41,7 +32,16 @@ use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterC
 use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::tee::{Tee, TeeConfig};
+use anyhow::Result;
+use async_recursion::async_recursion;
+use async_trait::async_trait;
+use core::fmt;
 use core::fmt::Display;
+use futures::Future;
+use metrics::{counter, histogram};
+use serde::Deserialize;
+use std::fmt::{Debug, Formatter};
+use std::pin::Pin;
 use strum_macros::IntoStaticStr;
 use tokio::time::Instant;
 
@@ -74,6 +74,7 @@ pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
     RedisSinkSingle(RedisSinkSingle),
     KafkaSink(KafkaSink),
+    CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),
     Tee(Tee),
     Null(Null),
@@ -104,6 +105,7 @@ impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
+            Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
             Transforms::KafkaSink(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
@@ -134,6 +136,7 @@ impl Transforms {
     async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         match self {
             Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
+            Transforms::CassandraPeersRewrite(c) => c.prep_transform_chain(t).await,
             Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
             Transforms::KafkaSink(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
@@ -160,6 +163,7 @@ impl Transforms {
     fn validate(&self) -> Vec<String> {
         match self {
             Transforms::CassandraSinkSingle(c) => c.validate(),
+            Transforms::CassandraPeersRewrite(c) => c.validate(),
             Transforms::KafkaSink(k) => k.validate(),
             Transforms::RedisCache(r) => r.validate(),
             Transforms::Tee(t) => t.validate(),
@@ -186,6 +190,7 @@ impl Transforms {
     fn is_terminating(&self) -> bool {
         match self {
             Transforms::CassandraSinkSingle(c) => c.is_terminating(),
+            Transforms::CassandraPeersRewrite(c) => c.is_terminating(),
             Transforms::KafkaSink(k) => k.is_terminating(),
             Transforms::RedisCache(r) => r.is_terminating(),
             Transforms::Tee(t) => t.is_terminating(),
@@ -217,6 +222,8 @@ pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
     KafkaSink(KafkaSinkConfig),
+    #[cfg(feature = "alpha-transforms")]
+    CassandraPeersRewrite(CassandraPeersRewriteConfig),
     RedisCache(RedisConfig),
     Tee(TeeConfig),
     ConsistentScatter(ConsistentScatterConfig),
@@ -248,6 +255,8 @@ impl TransformsConfig {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source(chain_name).await,
             TransformsConfig::KafkaSink(k) => k.get_source().await,
+            #[cfg(feature = "alpha-transforms")]
+            TransformsConfig::CassandraPeersRewrite(c) => c.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,
             TransformsConfig::RedisSinkSingle(r) => r.get_source(chain_name).await,
