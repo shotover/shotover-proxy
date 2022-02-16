@@ -9,12 +9,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug, Clone, Copy)]
-pub enum RewriteConfig {
-    Port(u32),
-    EmulateSingleNode,
-}
-
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraPeersRewriteConfig {
     pub port: u32,
