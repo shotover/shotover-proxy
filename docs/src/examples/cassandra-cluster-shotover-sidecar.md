@@ -97,7 +97,7 @@ SELECT peer, native_port FROM system.peers_v2;
 
 You should see the following results returned: 
 
-```
+```console
  peer       | native_port
 ------------+-------------
  172.16.1.3 |        9042
@@ -112,7 +112,7 @@ cqlsh 172.16.1.2 9043 -u cassandra -p cassandra
 
 and use the same query again. You should see the following results returned, notice how the `native_port` column is now the Shotover port of `9043`:
 
-```
+```console
  peer       | native_port
 ------------+-------------
  172.16.1.3 |        9043
