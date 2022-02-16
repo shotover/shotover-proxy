@@ -44,7 +44,7 @@ impl CassandraConnection {
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();
 
         if let Some(tls) = tls.as_mut() {
-            let tls_stream = tls.connect(tcp_stream).await.unwrap();
+            let tls_stream = tls.connect(tcp_stream, true).await.unwrap();
             let (read, write) = split(tls_stream);
             tokio::spawn(tx_process(write, out_rx, return_tx, codec.clone()).in_current_span());
             tokio::spawn(rx_process(read, return_rx, codec.clone()).in_current_span());

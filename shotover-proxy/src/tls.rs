@@ -67,12 +67,16 @@ impl TlsConnector {
         })
     }
 
-    pub async fn connect(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>> {
+    pub async fn connect(
+        &self,
+        tcp_stream: TcpStream,
+        verify_hostname: bool,
+    ) -> Result<SslStream<TcpStream>> {
         warn!("Disabling TLS hostname verification for compatibility with redis, this needs to be investigated properly");
         let ssl = self
             .connector
             .configure()?
-            .verify_hostname(false)
+            .verify_hostname(verify_hostname)
             .into_ssl("localhost")?;
 
         let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;

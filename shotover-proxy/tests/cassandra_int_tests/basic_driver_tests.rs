@@ -1,4 +1,3 @@
-#[cfg(feature = "alpha-transforms")]
 use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
@@ -1334,10 +1333,27 @@ fn test_passthrough_tls() {
         ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
 
     let tls_config = TlsConfig {
-        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/db.crt".into(),
-        certificate_path: "examples/cassandra-passthrough-tls/certs/cadb.pem".into(),
-        private_key_path: "examples/cassandra-passthrough-tls/certs/cadb.key".into(),
+        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/localhost_CA.crt"
+            .into(),
+        certificate_path: "examples/cassandra-passthrough-tls/certs/localhost.crt".into(),
+        private_key_path: "examples/cassandra-passthrough-tls/certs/localhost.key".into(),
     };
+
+    {
+        // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
+        let direct_connection = shotover_manager.cassandra_connection_tls(
+            "127.0.0.1",
+            9042,
+            tls_config.clone(),
+            "cassandra",
+            "cassandra",
+        );
+        assert_query_result(
+            &direct_connection,
+            "SELECT bootstrapped FROM system.local",
+            &[&[ResultValue::Varchar("COMPLETED".into())]],
+        );
+    }
 
     let connection = shotover_manager.cassandra_connection_tls(
         "127.0.0.1",

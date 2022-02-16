@@ -1,5 +1,5 @@
 use anyhow::Result;
-use cassandra_cpp::{Cluster, Session};
+use cassandra_cpp::{Cluster, Session, Ssl};
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use redis::aio::AsyncStream;
@@ -130,7 +130,7 @@ impl ShotoverManager {
             .await
             .unwrap();
         let connector = TlsConnector::new(config).unwrap();
-        let tls_stream = connector.connect(tcp_stream).await.unwrap();
+        let tls_stream = connector.connect(tcp_stream, false).await.unwrap();
 
         let connection_info = Default::default();
         redis::aio::Connection::new(
@@ -162,7 +162,7 @@ impl ShotoverManager {
         username: &str,
         password: &str,
     ) -> Session {
-        let ca_cert = read_to_string(tls_config.certificate_path).unwrap();
+        let ca_cert = read_to_string(tls_config.certificate_authority_path).unwrap();
         let mut ssl = Ssl::default();
         Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
 

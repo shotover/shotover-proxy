@@ -83,7 +83,7 @@ impl Transform for RedisSinkSingle {
         if self.outbound.is_none() {
             let tcp_stream = TcpStream::connect(self.address.clone()).await.unwrap();
             let generic_stream = if let Some(tls) = self.tls.as_mut() {
-                let tls_stream = tls.connect(tcp_stream).await.unwrap();
+                let tls_stream = tls.connect(tcp_stream, false).await.unwrap();
                 Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             } else {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
