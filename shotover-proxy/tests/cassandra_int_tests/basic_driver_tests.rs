@@ -1284,7 +1284,8 @@ fn test_passthrough() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1349,7 +1350,8 @@ fn test_cassandra_redis_cache() {
         ShotoverManager::from_topology_file("example-configs/cassandra-redis-cache/topology.yaml");
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1369,8 +1371,10 @@ fn test_cassandra_protect_transform_local() {
         "example-configs/cassandra-protect-local/topology.yaml",
     );
 
-    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let shotover_connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
+    let direct_connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9043, "cassandra", "cassandra");
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
@@ -1391,8 +1395,10 @@ fn test_cassandra_protect_transform_aws() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-protect-aws/topology.yaml");
 
-    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let shotover_connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
+    let direct_connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9043, "cassandra", "cassandra");
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
@@ -1413,9 +1419,11 @@ fn test_cassandra_peers_rewrite() {
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let normal_connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9043, "cassandra", "cassandra");
 
-    let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+    let rewrite_port_connection =
+        shotover_manager.cassandra_connection("127.0.0.1", 9044, "cassandra", "cassandra");
     table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
 
     {
@@ -1424,9 +1432,9 @@ fn test_cassandra_peers_rewrite() {
             "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
             &[&[
                 ResultValue::Inet("172.16.1.3".parse().unwrap()),
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("datacenter1".into()),
                 ResultValue::Int(9042),
-                ResultValue::Varchar("West".into()),
+                ResultValue::Varchar("rack1".into()),
             ]],
         );
         assert_query_result(
@@ -1442,9 +1450,9 @@ fn test_cassandra_peers_rewrite() {
             "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
             &[&[
                 ResultValue::Inet("172.16.1.3".parse().unwrap()),
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("datacenter1".into()),
                 ResultValue::Int(9044),
-                ResultValue::Varchar("West".into()),
+                ResultValue::Varchar("rack1".into()),
             ]],
         );
 

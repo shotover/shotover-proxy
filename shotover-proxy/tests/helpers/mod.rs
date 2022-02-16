@@ -132,12 +132,19 @@ impl ShotoverManager {
     }
 
     #[allow(unused)]
-    pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> Session {
+    pub fn cassandra_connection(
+        &self,
+        contact_points: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+    ) -> Session {
         for contact_point in contact_points.split(',') {
             test_helpers::wait_for_socket_to_open(contact_point, port);
         }
         let mut cluster = Cluster::default();
         cluster.set_contact_points(contact_points).unwrap();
+        cluster.set_credentials(username, password).unwrap();
         cluster.set_port(port).ok();
         cluster.set_load_balance_round_robin();
         cluster.connect().unwrap()
