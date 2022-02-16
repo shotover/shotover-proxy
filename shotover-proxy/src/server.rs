@@ -1,5 +1,4 @@
-use crate::frame::Frame;
-use crate::message::{Message, MessageDetails, Messages};
+use crate::message::Messages;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
@@ -28,35 +27,24 @@ impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecRea
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
 
-fn perform_custom_handling(messages: Messages, tx_out: &UnboundedSender<Messages>) -> Messages {
-    // this code creates a new Vec and uses an iterator with mapping and filtering to
-    // populate it from the original Messages.message Vec.  Any messages that require special
-    // handling are processed here.  Specifically messages with ReturnToSender details.
-    let result = messages
+fn process_return_to_sender_messages(
+    messages: Messages,
+    tx_out: &UnboundedSender<Messages>,
+) -> Messages {
+    #[allow(clippy::unnecessary_filter_map)]
+    messages
         .into_iter()
-        .map(|m| {
-            // if there is a protocol error handle it and return a new ReturnToSender message
-            // it will be filtered out in the next step.
+        .filter_map(|m| {
             if m.return_to_sender {
-                debug!("processing ReturnToSender: {:?}", &m);
                 if let Err(err) = tx_out.send(vec![m]) {
                     error!("Failed to send return to sender message: {:?}", err);
                 }
-                Message {
-                    details: MessageDetails::Unknown,
-                    modified: true,
-                    return_to_sender: true,
-                    original: Frame::None,
-                    meta_timestamp: None,
-                }
+                None
             } else {
-                m
+                Some(m)
             }
         })
-        .filter(|m| !m.return_to_sender)
-        .collect();
-    debug!("perform_custom_handling returning: {:?}", &result);
-    result
+        .collect()
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
@@ -375,10 +363,10 @@ fn spawn_read_write_tasks<
             while let Some(message) = reader.next().await {
                 match message {
                     Ok(message) => {
-                        let filtered_messages = perform_custom_handling(message, &out_tx);
-                        debug!("filtered_messages: {:?}", filtered_messages);
-                        if !filtered_messages.is_empty() {
-                            if let Err(error) = in_tx.send(filtered_messages) {
+                        let remaining_messages =
+                            process_return_to_sender_messages(message, &out_tx);
+                        if !remaining_messages.is_empty() {
+                            if let Err(error) = in_tx.send(remaining_messages) {
                                 warn!("failed to send message: {}", error);
                                 return;
                             }
