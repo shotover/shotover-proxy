@@ -1,20 +1,20 @@
-use std::collections::HashMap;
-
+use crate::error::ChainResponse;
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, CQL};
+use crate::message::MessageValue;
+use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
+use sqlparser::ast::{Assignment, Expr, Ident, Query, SetExpr, Statement, Value as SQLValue};
+use std::borrow::BorrowMut;
+use std::collections::HashMap;
 use tracing::warn;
-
-use crate::error::ChainResponse;
-use crate::message::MessageValue;
-use crate::message::MessageValue::Rows;
-use crate::message::{MessageDetails, QueryMessage, QueryResponse, QueryType};
-use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
-use crate::transforms::{Transform, Transforms, Wrapper};
 
 mod aws_kms;
 mod key_management;
@@ -68,14 +68,14 @@ fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<MessageVa
     let decrypted_bytes =
         secretbox::open(&ciphertext, &nonce, sym_key).map_err(|_| anyhow!("couldn't open box"))?;
     //TODO make error handing better here - failure here indicates a authenticity failure
-    // let decrypted_value: Value =
-    //     serde_json::from_slice(decrypted_bytes.as_slice()).map_err(|_| anyhow!("couldn't open box"))?;
-    let decrypted_value: MessageValue =
-        bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't open box"))?;
+    let decrypted_value: MessageValue = serde_json::from_slice(decrypted_bytes.as_slice())
+        .map_err(|_| anyhow!("couldn't open box"))?;
+    // let decrypted_value: MessageValue =
+    //     bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't open box"))?;
     Ok(decrypted_value)
 }
 
-// TODO: Switch to something smaller/more efficient like bincode
+// TODO: Switch to something smaller/more efficient like bincode - Need the new cassandra AST first so we can create Blob's in the ast
 impl From<Protected> for MessageValue {
     fn from(p: Protected) -> Self {
         match p {
@@ -83,8 +83,8 @@ impl From<Protected> for MessageValue {
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
             Protected::Ciphertext { .. } => {
-                // Value::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
-                MessageValue::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
+                MessageValue::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
+                //MessageValue::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
             }
         }
     }
@@ -156,25 +156,77 @@ impl ProtectConfig {
     }
 }
 
+pub fn get_values_from_insert_or_update_mut(ast: &mut CQL) -> HashMap<String, &mut SQLValue> {
+    if let CQL::Parsed(ast) = ast {
+        match &mut ast[0] {
+            Statement::Insert {
+                source, columns, ..
+            } => get_values_from_insert_mut(columns.as_mut(), source.borrow_mut()),
+            Statement::Update { assignments, .. } => {
+                get_values_from_update_mut(assignments.as_mut())
+            }
+            _ => HashMap::new(),
+        }
+    } else {
+        HashMap::new()
+    }
+}
+
+fn get_values_from_insert_mut<'a>(
+    columns: &'a mut [Ident],
+    source: &'a mut Query,
+) -> HashMap<String, &'a mut SQLValue> {
+    let mut map = HashMap::new();
+    let mut columns_iter = columns.iter();
+    if let SetExpr::Values(v) = &mut source.body {
+        for value in &mut v.0 {
+            for ex in value {
+                if let Expr::Value(v) = ex {
+                    if let Some(c) = columns_iter.next() {
+                        map.insert(c.value.to_string(), v);
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
+fn get_values_from_update_mut(assignments: &mut [Assignment]) -> HashMap<String, &mut SQLValue> {
+    let mut map = HashMap::new();
+    for assignment in assignments {
+        if let Expr::Value(v) = &mut assignment.value {
+            map.insert(assignment.id.iter().map(|x| &x.value).join("."), v);
+        }
+    }
+    map
+}
+
 #[async_trait]
 impl Transform for Protect {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        // encrypt the values included in any INSERT or UPDATE queries
         for message in message_wrapper.messages.iter_mut() {
-            if let MessageDetails::Query(qm) = &mut message.details {
-                // Encrypt the writes
-                if QueryType::Write == qm.query_type && qm.namespace.len() == 2 {
-                    if let Some((_, tables)) =
-                        self.keyspace_table_columns.get_key_value(&qm.namespace[0])
+            if let Some(namespace) = message.namespace() {
+                if namespace.len() == 2 {
+                    if let Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Query { query, .. },
+                        ..
+                    }) = &mut message.original
                     {
-                        if let Some((_, columns)) = tables.get_key_value(&qm.namespace[1]) {
-                            if let Some(query_values) = &mut qm.query_values {
+                        if let Some((_, tables)) =
+                            self.keyspace_table_columns.get_key_value(&namespace[0])
+                        {
+                            if let Some((_, columns)) = tables.get_key_value(&namespace[1]) {
+                                let mut values = get_values_from_insert_or_update_mut(query);
                                 for col in columns {
-                                    if let Some(value) = query_values.get_mut(col) {
-                                        let mut protected = Protected::Plaintext(value.clone());
+                                    if let Some(value) = values.get_mut(col) {
+                                        let mut protected =
+                                            Protected::Plaintext(MessageValue::from(&**value));
                                         protected = protected
                                             .protect(&self.key_source, &self.key_id)
                                             .await?;
-                                        *value = protected.into();
+                                        **value = SQLValue::from(&MessageValue::from(protected));
                                     }
                                 }
                             }
@@ -188,44 +240,51 @@ impl Transform for Protect {
         let mut result = message_wrapper.call_next_transform().await?;
 
         for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {
-            if let MessageDetails::Response(QueryResponse {
-                result: Some(Rows(rows)),
-                error: None,
+            if let Frame::Cassandra(CassandraFrame {
+                operation:
+                    CassandraOperation::Result(CassandraResult::Rows {
+                        value: MessageValue::Rows(rows),
+                        ..
+                    }),
                 ..
-            }) = &mut response.details
+            }) = &mut response.original
             {
-                if let MessageDetails::Query(QueryMessage {
-                    namespace,
-                    projection: Some(projection),
-                    ..
-                }) = &request.details
-                {
-                    if namespace.len() == 2 {
-                        if let Some((_keyspace, tables)) =
-                            self.keyspace_table_columns.get_key_value(&namespace[0])
-                        {
-                            if let Some((_table, protect_columns)) =
-                                tables.get_key_value(&namespace[1])
+                if let Some(namespace) = request.namespace() {
+                    if let Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Query { query, .. },
+                        ..
+                    }) = &mut request.original
+                    {
+                        let projection: Vec<String> = get_values_from_insert_or_update_mut(query)
+                            .into_keys()
+                            .collect();
+                        if namespace.len() == 2 {
+                            if let Some((_keyspace, tables)) =
+                                self.keyspace_table_columns.get_key_value(&namespace[0])
                             {
-                                let mut positions: Vec<usize> = Vec::new();
-                                for (i, p) in projection.iter().enumerate() {
-                                    if protect_columns.contains(p) {
-                                        positions.push(i);
+                                if let Some((_table, protect_columns)) =
+                                    tables.get_key_value(&namespace[1])
+                                {
+                                    let mut positions: Vec<usize> = Vec::new();
+                                    for (i, p) in projection.iter().enumerate() {
+                                        if protect_columns.contains(p) {
+                                            positions.push(i);
+                                        }
                                     }
-                                }
-                                for row in rows {
-                                    for index in &positions {
-                                        if let Some(v) = row.get_mut(*index) {
-                                            if let MessageValue::Bytes(_) = v {
-                                                let protected =
-                                                    Protected::from_encrypted_bytes_value(v)
+                                    for row in rows {
+                                        for index in &mut positions {
+                                            if let Some(v) = row.get_mut(*index) {
+                                                if let MessageValue::Bytes(_) = v {
+                                                    let protected =
+                                                        Protected::from_encrypted_bytes_value(v)
+                                                            .await?;
+                                                    let new_value: MessageValue = protected
+                                                        .unprotect(&self.key_source, &self.key_id)
                                                         .await?;
-                                                let new_value: MessageValue = protected
-                                                    .unprotect(&self.key_source, &self.key_id)
-                                                    .await?;
-                                                *v = new_value;
-                                            } else {
-                                                warn!("Tried decrypting non-blob column")
+                                                    *v = new_value;
+                                                } else {
+                                                    warn!("Tried decrypting non-blob column")
+                                                }
                                             }
                                         }
                                     }
