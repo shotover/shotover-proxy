@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::error::ChainResponse;
 use crate::frame::Frame;
-use crate::message::{Message, MessageDetails, QueryResponse};
+use crate::message::Message;
 use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Clone)]
@@ -73,29 +73,19 @@ impl Transform for KafkaSink {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut responses = vec![];
         for message in message_wrapper.messages {
-            match message.details {
-                MessageDetails::Query(qm) => {
-                    if let Some(ref key) = qm.get_namespaced_primary_key() {
-                        if let Some(values) = qm.query_values {
-                            let message = serde_json::to_string(&values)?;
-                            let a = FutureRecord::to(self.topic.as_str())
-                                .payload(&message)
-                                .key(&key);
-                            self.producer
-                                .send(a, Timeout::Never)
-                                .await
-                                .map_err(|(e, _o)| anyhow!("Couldn't send kafka message {}", e))?;
-                        }
-                    }
+            if let Some(ref key) = message.get_namespaced_primary_key() {
+                if let Some(values) = message.query_values() {
+                    let message = serde_json::to_string(&values)?;
+                    let a = FutureRecord::to(self.topic.as_str())
+                        .payload(&message)
+                        .key(&key);
+                    self.producer
+                        .send(a, Timeout::Never)
+                        .await
+                        .map_err(|(e, _o)| anyhow!("Couldn't send kafka message {}", e))?;
                 }
-                MessageDetails::Response(_) => {}
-                MessageDetails::Unknown => {}
             }
-            responses.push(Message::new_response(
-                QueryResponse::empty(),
-                true,
-                Frame::None,
-            ))
+            responses.push(Message::from_frame(Frame::None));
         }
         Ok(responses)
     }

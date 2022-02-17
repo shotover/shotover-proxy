@@ -102,6 +102,19 @@ impl Message {
         }
     }
 
+    pub fn get_namespaced_primary_key(&self) -> Option<String> {
+        // TODO: Previously implemented as: https://github.com/shotover/shotover-proxy/blob/a282fb62312aa983d752bd7a57032b217723734c/shotover-proxy/src/message/mod.rs#L263
+        unimplemented!()
+    }
+
+    pub fn query_values(&self) -> Option<Vec<String>> {
+        // TODO: Previously a message details field populated by the redis/cassandra codec: https://github.com/shotover/shotover-proxy/blob/a282fb62312aa983d752bd7a57032b217723734c/shotover-proxy/src/message/mod.rs#L225
+        // It contained:
+        // * redis - the keys queried against in for example `GET key`
+        // * cassandra - the fields queried against in for example `SELECT field from table`
+        unimplemented!()
+    }
+
     pub fn invalidate_cache(&mut self) {
         // TODO: invalidate cache when we have a cache to invalidate
     }
