@@ -29,7 +29,7 @@ struct Request {
 #[derivative(Debug)]
 pub struct CassandraConnection {
     host: String,
-    connection: Option<mpsc::UnboundedSender<Request>>,
+    connection: mpsc::UnboundedSender<Request>,
 }
 
 impl CassandraConnection {
@@ -38,13 +38,13 @@ impl CassandraConnection {
         codec: C,
         mut tls: Option<TlsConnector>,
     ) -> Result<Self> {
-        let tcp_stream: TcpStream = TcpStream::connect(host.clone()).await?;
+        let tcp_stream: TcpStream = TcpStream::connect(&host).await?;
 
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();
 
         if let Some(tls) = tls.as_mut() {
-            let tls_stream = tls.connect(tcp_stream, true).await.unwrap();
+            let tls_stream = tls.connect(tcp_stream).await.unwrap();
             let (read, write) = split(tls_stream);
             tokio::spawn(tx_process(write, out_rx, return_tx, codec.clone()).in_current_span());
             tokio::spawn(rx_process(read, return_rx, codec.clone()).in_current_span());
@@ -54,9 +54,10 @@ impl CassandraConnection {
             tokio::spawn(rx_process(read, return_rx, codec.clone()).in_current_span());
         };
 
-        let connection = Some(out_tx);
-
-        Ok(CassandraConnection { host, connection })
+        Ok(CassandraConnection {
+            host,
+            connection: out_tx,
+        })
     }
 
     /// Send a `Message` to this `CassandraConnection` and expect a response on `return_chan`
@@ -67,10 +68,8 @@ impl CassandraConnection {
             return Err(anyhow!("no cassandra frame found"));
         };
 
-        let connection = self.connection.as_ref().expect("No connection found");
-
         // Convert the message to `Request` and send upstream
-        Ok(connection.send(Request {
+        Ok(self.connection.send(Request {
             message,
             return_chan,
             message_id,

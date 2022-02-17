@@ -178,7 +178,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
 
         let mut connection = if let Some(tls) = &self.tls {
             let tls_stream = tls
-                .connect(stream, false)
+                .connect_unverified_hostname(stream)
                 .await
                 .map_err(ConnectionError::TLS)?;
             let (rx, tx) = tokio::io::split(tls_stream);

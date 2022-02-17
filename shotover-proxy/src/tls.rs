@@ -7,7 +7,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_openssl::SslStream;
-use tracing::warn;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TlsConfig {
@@ -67,17 +66,24 @@ impl TlsConnector {
         })
     }
 
-    pub async fn connect(
+    pub async fn connect_unverified_hostname(
         &self,
         tcp_stream: TcpStream,
-        verify_hostname: bool,
     ) -> Result<SslStream<TcpStream>> {
-        warn!("Disabling TLS hostname verification for compatibility with redis, this needs to be investigated properly");
         let ssl = self
             .connector
             .configure()?
-            .verify_hostname(verify_hostname)
+            .verify_hostname(false)
             .into_ssl("localhost")?;
+
+        let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
+        Pin::new(&mut ssl_stream).connect().await?;
+
+        Ok(ssl_stream)
+    }
+
+    pub async fn connect(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>> {
+        let ssl = self.connector.configure()?.into_ssl("localhost")?;
 
         let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
         Pin::new(&mut ssl_stream).connect().await?;

@@ -1,7 +1,6 @@
 use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
-use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
 
 mod keyspace {
@@ -1332,19 +1331,14 @@ fn test_passthrough_tls() {
     let shotover_manager =
         ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
 
-    let tls_config = TlsConfig {
-        certificate_authority_path: "examples/cassandra-passthrough-tls/certs/localhost_CA.crt"
-            .into(),
-        certificate_path: "examples/cassandra-passthrough-tls/certs/localhost.crt".into(),
-        private_key_path: "examples/cassandra-passthrough-tls/certs/localhost.key".into(),
-    };
+    let ca_cert = "examples/cassandra-passthrough-tls/certs/localhost_CA.crt";
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
         let direct_connection = shotover_manager.cassandra_connection_tls(
             "127.0.0.1",
             9042,
-            tls_config.clone(),
+            ca_cert,
             "cassandra",
             "cassandra",
         );
@@ -1358,7 +1352,7 @@ fn test_passthrough_tls() {
     let connection = shotover_manager.cassandra_connection_tls(
         "127.0.0.1",
         9043,
-        tls_config,
+        ca_cert,
         "cassandra",
         "cassandra",
     );
