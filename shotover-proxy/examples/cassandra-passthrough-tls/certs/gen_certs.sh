@@ -1,3 +1,4 @@
+#!/bin/bash
 
 # Generate localhost_CA and localhost certs/keys
 openssl genrsa -out localhost_CA.key 4096
