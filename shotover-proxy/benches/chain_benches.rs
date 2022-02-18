@@ -80,11 +80,16 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChain::new(
             vec![
                 Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
-                Transforms::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
+                Transforms::DebugReturner(DebugReturner::new(Response::Message(vec![
+                    Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                        RedisFrame::BulkString(Bytes::from_static(b"1")), // real frame
+                        RedisFrame::BulkString(Bytes::from_static(b"1")), // timestamp
+                    ]))),
+                ]))),
             ],
             "bench".to_string(),
         );
-        let wrapper = Wrapper::new_with_chain_name(
+        let wrapper_set = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
@@ -93,11 +98,31 @@ fn criterion_benchmark(c: &mut Criterion) {
             chain.name.clone(),
         );
 
-        group.bench_function("redis_timestamp_tagger", |b| {
+        group.bench_function("redis_timestamp_tagger_untagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.clone(),
-                    wrapper: wrapper.clone(),
+                    wrapper: wrapper_set.clone(),
+                    client_details: "".into(),
+                },
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+
+        let wrapper_get = Wrapper::new_with_chain_name(
+            vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+                RedisFrame::BulkString(Bytes::from_static(b"GET")),
+                RedisFrame::BulkString(Bytes::from_static(b"foo")),
+            ])))],
+            chain.name.clone(),
+        );
+
+        group.bench_function("redis_timestamp_tagger_tagged", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput {
+                    chain: chain.clone(),
+                    wrapper: wrapper_get.clone(),
                     client_details: "".into(),
                 },
                 BenchInput::bench,

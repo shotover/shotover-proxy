@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
-use crate::message::Message;
+use crate::message::{Message, QueryType};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -34,14 +34,22 @@ impl RedisTimestampTaggerConfig {
 // Unfortunately REDIS only provides a 10 second resolution on this, so high
 // update keys where update freq < 20 seconds, will not be terribly consistent
 fn wrap_command(frame: &mut RedisFrame) -> Result<RedisFrame> {
+    let query_type = crate::codec::redis::redis_query_type(frame);
     if let RedisFrame::Array(com) = frame {
         if let Some(RedisFrame::BulkString(first)) = com.first() {
-            if first.eq_ignore_ascii_case(b"EVAL")
-                || first.eq_ignore_ascii_case(b"EVALSHA")
-                || first.eq_ignore_ascii_case(b"SCRIPT")
-                || first.eq_ignore_ascii_case(b"FLUSHDB")
-            {
-                return Err(anyhow!("cannot wrap command {:?}", first));
+            if let QueryType::Read | QueryType::ReadWrite = query_type {
+                // Continue onto the wrapping logic.
+            } else {
+                return Err(anyhow!(
+                    "cannot wrap command {:?}, command is not read or read/write",
+                    first
+                ));
+            }
+            if com.len() < 2 {
+                return Err(anyhow!(
+                    "cannot wrap command {:?}, command does not contain key",
+                    first
+                ));
             }
         }
 
