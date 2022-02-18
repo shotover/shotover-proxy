@@ -2,7 +2,6 @@
 sources:
   cassandra_prod:
     Cassandra:
-      query_processing: true
       listen_addr: "127.0.0.1:9042"
 chain_config:
   main_chain:
@@ -48,7 +47,6 @@ chain_config:
             test_table:
               - col1
     - CassandraSinkSingle:
-        result_processing: true
         remote_address: "127.0.0.1:9043"
 named_topics:
   testtopic: 5

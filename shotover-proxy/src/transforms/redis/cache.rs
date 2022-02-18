@@ -456,7 +456,7 @@ impl Transform for SimpleRedisCache {
             if let Some(Frame::Cassandra(CassandraFrame {
                 operation: CassandraOperation::Query { .. },
                 ..
-            })) = &m.frame()
+            })) = m.frame()
             {
                 if m.get_query_type() == QueryType::Write {
                     updates = true;

@@ -95,7 +95,7 @@ impl Decoder for CassandraCodec {
                     version: Version::V4,
                     stream_id: 0,
                     operation: CassandraOperation::Error(ErrorBody {
-                        error_code: 0xA,
+                        error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
                         message: "Invalid or unsupported protocol version".into(),
                         additional_info: AdditionalErrorInfo::Server,
                     }),
@@ -120,7 +120,7 @@ impl Encoder<Messages> for CassandraCodec {
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
             // TODO: always check if cassandra message
-            match m.into_encodable() {
+            match m.into_encodable(MessageType::Cassandra)? {
                 Encodable::Bytes(bytes) => dst.extend_from_slice(&bytes),
                 Encodable::Frame(frame) => self.encode_raw(frame.into_cassandra().unwrap(), dst),
             }

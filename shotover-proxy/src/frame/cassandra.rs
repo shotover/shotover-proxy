@@ -145,6 +145,7 @@ impl CassandraFrame {
                 Some(Statement::Insert { .. }) => QueryType::Write,
                 Some(Statement::Update { .. }) => QueryType::Write,
                 Some(Statement::Delete { .. }) => QueryType::Write,
+                // TODO: handle prepared, execute and schema change query types
                 _ => QueryType::Read,
             },
             _ => QueryType::Read,

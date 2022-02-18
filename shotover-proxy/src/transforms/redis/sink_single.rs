@@ -1,21 +1,19 @@
-use std::fmt::Debug;
-
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
-use futures::{FutureExt, SinkExt};
-use metrics::{register_counter, Counter};
-use serde::Deserialize;
-use std::pin::Pin;
-use tokio::net::TcpStream;
-use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
-
 use crate::codec::redis::RedisCodec;
 use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, Wrapper};
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
+use futures::{FutureExt, SinkExt};
+use metrics::{register_counter, Counter};
+use serde::Deserialize;
+use std::fmt::Debug;
+use std::pin::Pin;
+use tokio::net::TcpStream;
+use tokio_stream::StreamExt;
+use tokio_util::codec::Framed;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisSinkSingleConfig {

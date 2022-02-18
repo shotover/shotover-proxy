@@ -1,23 +1,3 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
-
-use anyhow::{anyhow, bail, ensure, Context, Result};
-use async_trait::async_trait;
-use bytes::Bytes;
-use bytes_utils::string::Str;
-use derivative::Derivative;
-use futures::stream::FuturesUnordered;
-use futures::{Future, StreamExt, TryFutureExt};
-use metrics::{counter, register_counter};
-use rand::prelude::SmallRng;
-use rand::SeedableRng;
-use redis_protocol::types::Redirection;
-use serde::Deserialize;
-use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::oneshot;
-use tokio::time::timeout;
-use tokio::time::Duration;
-use tracing::{debug, error, info, trace, warn};
-
 use crate::codec::redis::RedisCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
@@ -31,6 +11,24 @@ use crate::transforms::util::{Request, Response};
 use crate::transforms::ResponseFuture;
 use crate::transforms::CONTEXT_CHAIN_NAME;
 use crate::transforms::{Transform, Transforms, Wrapper};
+use anyhow::{anyhow, bail, ensure, Context, Result};
+use async_trait::async_trait;
+use bytes::Bytes;
+use bytes_utils::string::Str;
+use derivative::Derivative;
+use futures::stream::FuturesUnordered;
+use futures::{Future, StreamExt, TryFutureExt};
+use metrics::{counter, register_counter};
+use rand::prelude::SmallRng;
+use rand::SeedableRng;
+use redis_protocol::types::Redirection;
+use serde::Deserialize;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
+use tokio::time::timeout;
+use tokio::time::Duration;
+use tracing::{debug, error, info, trace, warn};
 
 const SLOT_SIZE: usize = 16384;
 

@@ -2,24 +2,20 @@
 sources:
   cassandra_prod_1:
     Cassandra:
-      query_processing: false
       listen_addr: "127.0.0.1:9043"
 
   cassandra_prod_2:
     Cassandra:
-      query_processing: false
       listen_addr: "127.0.0.1:9044"
 
 chain_config:
   main_chain:
     - CassandraSinkSingle:
-        result_processing: false
         remote_address: "172.16.1.2:9042"
   peers_rewrite_port:
     - CassandraPeersRewrite:
         port: 9044
     - CassandraSinkSingle:
-        result_processing: false
         remote_address: "172.16.1.2:9042"
 
 named_topics:

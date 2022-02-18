@@ -1,4 +1,7 @@
-use anyhow::Result;
+use crate::codec::redis::redis_query_type;
+use crate::frame::cassandra::CassandraOperation;
+use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
+use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{Buf, Bytes};
@@ -21,9 +24,6 @@ use sqlparser::ast::Value as SQLValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use uuid::Uuid;
-
-use crate::frame::cassandra::CassandraOperation;
-use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 
 pub type Messages = Vec<Message>;
 
@@ -77,17 +77,54 @@ impl Message {
         }
 
         match self.inner.as_mut().unwrap() {
-            MessageInner::RawBytes { .. } => unreachable!(),
+            MessageInner::RawBytes { .. } => {
+                unreachable!("Cannot be RawBytes because ensure_parsed was called")
+            }
             MessageInner::Parsed { frame, .. } => Some(frame),
             MessageInner::Modified { frame } => Some(frame),
         }
     }
 
-    pub fn into_encodable(self) -> Encodable {
+    // TODO: Considering we already have the expected message type here maybe we should perform any required conversions and return a Result<Bytes> here.
+    // I've left it as is to keep the PR simpler and there could be a need for codecs to control this process that I havent investigated.
+    pub fn into_encodable(self, expected_message_type: MessageType) -> Result<Encodable> {
         match self.inner.unwrap() {
-            MessageInner::RawBytes { bytes, .. } => Encodable::Bytes(bytes),
-            MessageInner::Parsed { bytes, .. } => Encodable::Bytes(bytes),
-            MessageInner::Modified { frame } => Encodable::Frame(frame),
+            MessageInner::RawBytes {
+                bytes,
+                message_type,
+            } => {
+                if message_type == expected_message_type {
+                    Ok(Encodable::Bytes(bytes))
+                } else {
+                    Err(anyhow!(
+                        "Expected message of type {:?} but was of type {:?}",
+                        expected_message_type,
+                        message_type
+                    ))
+                }
+            }
+            MessageInner::Parsed { bytes, frame } => {
+                if frame.get_type() == expected_message_type {
+                    Ok(Encodable::Bytes(bytes))
+                } else {
+                    Err(anyhow!(
+                        "Expected message of type {:?} but was of type {:?}",
+                        expected_message_type,
+                        frame.name()
+                    ))
+                }
+            }
+            MessageInner::Modified { frame } => {
+                if frame.get_type() == expected_message_type {
+                    Ok(Encodable::Frame(frame))
+                } else {
+                    Err(anyhow!(
+                        "Expected message of type {:?} but was of type {:?}",
+                        expected_message_type,
+                        frame.name()
+                    ))
+                }
+            }
         }
     }
 
@@ -108,7 +145,6 @@ impl Message {
 
     // TODO: this could be optimized to avoid parsing the cassandra sql
     pub fn to_filtered_reply(&mut self) -> Message {
-        // TODO: set_filtered_reply
         Message::from_frame(match self.frame().unwrap() {
             Frame::Redis(_) => Frame::Redis(RedisFrame::Error(
                 "ERR Message was filtered out by shotover".into(),
@@ -117,11 +153,11 @@ impl Message {
                 version: frame.version,
                 stream_id: frame.stream_id,
                 operation: CassandraOperation::Error(ErrorBody {
-                    error_code: 0,
+                    error_code: 0x0,
                     message: "Message was filtered out by shotover".into(),
                     additional_info: AdditionalErrorInfo::Server,
                 }),
-                tracing_id: None,
+                tracing_id: frame.tracing_id,
                 warnings: vec![],
             }),
             Frame::None => Frame::None,
@@ -131,12 +167,13 @@ impl Message {
     pub fn get_query_type(&mut self) -> QueryType {
         match self.frame() {
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
-            Some(Frame::Redis(redis)) => crate::codec::redis::redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
+            Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
             Some(Frame::None) => QueryType::ReadWrite,
             None => QueryType::ReadWrite,
         }
     }
 
+    // TODO: replace with a to_error_reply, should be easier to reason about
     pub fn set_error(&mut self, error: String) {
         *self = Message::from_frame(match self.frame().unwrap() {
             Frame::Redis(_) => {
@@ -146,15 +183,16 @@ impl Message {
                 version: frame.version,
                 stream_id: frame.stream_id,
                 operation: CassandraOperation::Error(ErrorBody {
-                    error_code: 0,
+                    error_code: 0x0,
                     message: error,
                     additional_info: AdditionalErrorInfo::Server,
                 }),
-                tracing_id: None,
+                tracing_id: frame.tracing_id,
                 warnings: vec![],
             }),
             Frame::None => Frame::None,
-        })
+        });
+        self.invalidate_cache();
     }
 
     // Retrieves the stream_id without parsing the rest of the frame.
@@ -174,10 +212,7 @@ impl Message {
                     None
                 }
             }
-            Some(MessageInner::RawBytes {
-                message_type: MessageType::Redis,
-                ..
-            }) => None,
+            Some(MessageInner::RawBytes { .. }) => None,
             Some(MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame }) => {
                 match frame {
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
@@ -216,7 +251,7 @@ impl MessageInner {
             MessageInner::RawBytes {
                 bytes,
                 message_type,
-            } => match Frame::from_bytes(bytes.clone(), message_type.clone()) {
+            } => match Frame::from_bytes(bytes.clone(), message_type) {
                 Ok(frame) => (MessageInner::Parsed { bytes, frame }, Ok(())),
                 Err(err) => (
                     MessageInner::RawBytes {

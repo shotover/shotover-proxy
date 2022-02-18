@@ -6,10 +6,11 @@ pub use redis_protocol::resp2::types::Frame as RedisFrame;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MessageType {
     Redis,
     Cassandra,
+    None,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -26,14 +27,23 @@ impl Frame {
             MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
+            MessageType::None => Ok(Frame::None),
         }
     }
 
-    fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
             Frame::Redis(_) => "Redis",
             Frame::Cassandra(_) => "Cassandra",
             Frame::None => "None",
+        }
+    }
+
+    pub fn get_type(&self) -> MessageType {
+        match self {
+            Frame::Cassandra(_) => MessageType::Cassandra,
+            Frame::Redis(_) => MessageType::Redis,
+            Frame::None => MessageType::None,
         }
     }
 

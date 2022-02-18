@@ -2,25 +2,14 @@
 sources:
   cassandra_prod:
     Cassandra:
-      query_processing: true
       listen_addr: "127.0.0.1:9043"
       tls:
         certificate_authority_path: "examples/cassandra-passthrough-tls/certs/localhost_CA.crt"
         certificate_path: "examples/cassandra-passthrough-tls/certs/localhost.crt"
         private_key_path: "examples/cassandra-passthrough-tls/certs/localhost.key"
-
-      cassandra_ks:
-        system.local:
-          - key
-        test.simple:
-          - pk
-        test.clustering:
-          - pk
-          - clustering
 chain_config:
   main_chain:
     - CassandraSinkSingle:
-        result_processing: true
         remote_address: "127.0.0.1:9042"
         tls:
           certificate_authority_path: "examples/cassandra-passthrough-tls/certs/localhost_CA.crt"

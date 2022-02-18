@@ -1,5 +1,5 @@
-use crate::frame::Frame;
 use crate::frame::RedisFrame;
+use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, QueryType};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
@@ -68,18 +68,19 @@ impl Encoder<Messages> for RedisCodec {
     type Error = anyhow::Error;
 
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<()> {
-        item.into_iter().try_for_each(|m| match m.into_encodable() {
-            Encodable::Bytes(bytes) => {
-                dst.extend_from_slice(&bytes);
-                Ok(())
-            }
-            Encodable::Frame(frame) => {
-                let item = frame.into_redis().unwrap();
-                encode_bytes(dst, &item)
-                    .map(|_| ())
-                    .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
-            }
-        })
+        item.into_iter()
+            .try_for_each(|m| match m.into_encodable(MessageType::Redis)? {
+                Encodable::Bytes(bytes) => {
+                    dst.extend_from_slice(&bytes);
+                    Ok(())
+                }
+                Encodable::Frame(frame) => {
+                    let item = frame.into_redis().unwrap();
+                    encode_bytes(dst, &item)
+                        .map(|_| ())
+                        .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
+                }
+            })
     }
 }
 

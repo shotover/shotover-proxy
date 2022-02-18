@@ -79,20 +79,20 @@ async fn test_metrics() {
         .arg(42)
         .query_async::<_, ()>(&mut connection)
         .await
-        .unwrap();
+        .unwrap_err();
 
     redis::cmd("SET")
         .arg("the_key")
         .arg(43)
         .query_async::<_, ()>(&mut connection)
         .await
-        .unwrap();
+        .unwrap_err();
 
     redis::cmd("GET")
         .arg("the_key")
         .query_async::<_, ()>(&mut connection)
         .await
-        .unwrap();
+        .unwrap_err();
 
     body = http_request_metrics().await;
 

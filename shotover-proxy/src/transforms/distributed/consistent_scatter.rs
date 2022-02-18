@@ -1,6 +1,5 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-
 use crate::message::{Message, QueryType};
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{

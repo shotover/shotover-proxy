@@ -213,7 +213,7 @@ impl Transform for Protect {
                     if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
-                    })) = &mut message.frame()
+                    })) = message.frame()
                     {
                         if let Some((_, tables)) =
                             self.keyspace_table_columns.get_key_value(&namespace[0])
@@ -259,7 +259,7 @@ impl Transform for Protect {
                     if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
-                    })) = &mut request.frame()
+                    })) = request.frame()
                     {
                         let projection: Vec<String> = get_values_from_insert_or_update_mut(query)
                             .into_keys()
