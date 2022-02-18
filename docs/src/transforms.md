@@ -31,7 +31,6 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [ConsistentScatter](#consistentscatter)               | ✅          | Alpha                 |
 | [DebugPrinter](#debugprinter)                         | ❌          | Alpha                 |
 | [DebugReturner](#debugreturner)                       | ✅          | Alpha                 |
-| [KafkaSink](#kafkasink)                               | ✅          | Alpha                 |
 | [Null](#null)                                         | ✅          | Beta                  |
 | [ParallelMap](#parallelmap)                           | ✅          | Alpha                 |
 | [Protect](#protect)                                   | ❌          | Alpha                 |
@@ -171,21 +170,6 @@ If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C
           name: "DR chain"
       - RedisSinkSingle:
           remote_address: "127.0.0.1:6379"
-```
-
-### KafkaSink
-
-This transform will take a query and push it to a given Kafka topic.
-
-```yaml
-- KafkaSink:
-    # A map of configuration options for the Kafka driver. Supports all flags as supported by the librdkafka driver.
-    # See https://docs.confluent.io/5.5.0/clients/librdkafka/md_CONFIGURATION.html for details.
-    config_values:
-      bootstrap.servers: "127.0.0.1:9092"
-      message.timeout.ms: "5000"
-    # The name of the kafka topic
-    topic: "my_kafka_topic"
 ```
 
 ### Protect

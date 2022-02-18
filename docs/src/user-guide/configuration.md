@@ -111,7 +111,6 @@ The following example `chain_config` has three chains:
 
 * `redis_chain` - Consists of a Tee, a transform that will copy the query to the named topic and *also* pass the query down-chain to a terminating transform `RedisSinkSingle` which sends to the query to a Redis server. Very similar to the `tee` linux program.
 * `main_chain` - Also consists of a Tee that will copy queries to the same topic as the `redis_chain` before sending the query onto caching layer that will try to resolve the query from a redis cache before ending up finally sending the query to the destination Cassandra cluster via a `CassandraSinkSingle`
-* `KafkaSink` - A single transform chain that will serialise and forward any queries to a given Kafka topic.
 
 ```yaml
 # This example will replicate all commands to the DR datacenter on a best effort basis

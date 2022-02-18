@@ -14,7 +14,6 @@ use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::kafka_sink::{KafkaSink, KafkaSinkConfig};
 use crate::transforms::load_balance::ConnectionBalanceAndPool;
 #[cfg(test)]
 use crate::transforms::loopback::Loopback;
@@ -51,7 +50,6 @@ pub mod coalesce;
 pub mod debug;
 pub mod distributed;
 pub mod filter;
-pub mod kafka_sink;
 pub mod load_balance;
 pub mod loopback;
 pub mod noop;
@@ -73,7 +71,6 @@ pub mod util;
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
     RedisSinkSingle(RedisSinkSingle),
-    KafkaSink(KafkaSink),
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),
     Tee(Tee),
@@ -106,7 +103,6 @@ impl Transforms {
         match self {
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
-            Transforms::KafkaSink(k) => k.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
@@ -138,7 +134,6 @@ impl Transforms {
             Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
             Transforms::CassandraPeersRewrite(c) => c.prep_transform_chain(t).await,
             Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
-            Transforms::KafkaSink(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
@@ -164,7 +159,6 @@ impl Transforms {
         match self {
             Transforms::CassandraSinkSingle(c) => c.validate(),
             Transforms::CassandraPeersRewrite(c) => c.validate(),
-            Transforms::KafkaSink(k) => k.validate(),
             Transforms::RedisCache(r) => r.validate(),
             Transforms::Tee(t) => t.validate(),
             Transforms::RedisSinkSingle(r) => r.validate(),
@@ -191,7 +185,6 @@ impl Transforms {
         match self {
             Transforms::CassandraSinkSingle(c) => c.is_terminating(),
             Transforms::CassandraPeersRewrite(c) => c.is_terminating(),
-            Transforms::KafkaSink(k) => k.is_terminating(),
             Transforms::RedisCache(r) => r.is_terminating(),
             Transforms::Tee(t) => t.is_terminating(),
             Transforms::RedisSinkSingle(r) => r.is_terminating(),
@@ -221,7 +214,6 @@ impl Transforms {
 pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
-    KafkaSink(KafkaSinkConfig),
     #[cfg(feature = "alpha-transforms")]
     CassandraPeersRewrite(CassandraPeersRewriteConfig),
     RedisCache(RedisConfig),
@@ -254,7 +246,6 @@ impl TransformsConfig {
     ) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source(chain_name).await,
-            TransformsConfig::KafkaSink(k) => k.get_source().await,
             #[cfg(feature = "alpha-transforms")]
             TransformsConfig::CassandraPeersRewrite(c) => c.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
@@ -474,7 +465,7 @@ pub trait Transform: Send {
     /// * Transforms that don't call subsequent chains via `message_wrapper.call_next_transform()` are called terminating transforms.
     /// * Transforms that do call subsquent chains via `message_wrapper.call_next_transform()` are non-terminating transforms.
     ///
-    /// You can have have a transforms that is both non-terminating and a sink (see [`crate::transforms::kafka_sink::KafkaSink`]).
+    /// You can have have a transforms that is both non-terminating and a sink.
     ///
     /// A basic transform that logs query data and counts the number requests it sees could be defined like so:
     /// ```
