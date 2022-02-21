@@ -34,13 +34,10 @@ fn cassandra(c: &mut Criterion) {
         group.bench_with_input(
             format!("protect_local_{}_unencrypted", query.name),
             || {
-                let compose =
-                    DockerCompose::new("examples/cassandra-protect-local/docker-compose.yml")
-                        .wait_for_n_t("Startup complete", 1, 90);
-                let shotover_manager = ShotoverManager::from_topology_file(
+                BenchResources::new(
                     "examples/cassandra-protect-local/topology.yaml",
-                );
-                BenchResources::new(shotover_manager, compose)
+                    "examples/cassandra-protect-local/docker-compose.yml",
+                )
             },
             |b, state| {
                 b.iter(|| {
@@ -53,13 +50,10 @@ fn cassandra(c: &mut Criterion) {
         group.bench_with_input(
             format!("redis_cache_{}_uncached", query.name),
             || {
-                let compose =
-                    DockerCompose::new("examples/cassandra-redis-cache/docker-compose.yml")
-                        .wait_for_n_t("Startup complete", 1, 90);
-                let shotover_manager = ShotoverManager::from_topology_file(
+                BenchResources::new(
                     "examples/cassandra-redis-cache/topology.yaml",
-                );
-                BenchResources::new(shotover_manager, compose)
+                    "examples/cassandra-redis-cache/docker-compose.yml",
+                )
             },
             |b, state| {
                 b.iter(|| {
@@ -71,13 +65,25 @@ fn cassandra(c: &mut Criterion) {
         group.bench_with_input(
             format!("passthrough_{}", query.name),
             || {
-                let compose =
-                    DockerCompose::new("examples/cassandra-passthrough/docker-compose.yml")
-                        .wait_for_n_t("Startup complete", 1, 90);
-                let shotover_manager = ShotoverManager::from_topology_file(
+                BenchResources::new(
                     "examples/cassandra-passthrough/topology.yaml",
-                );
-                BenchResources::new(shotover_manager, compose)
+                    "examples/cassandra-passthrough/docker-compose.yml",
+                )
+            },
+            |b, state| {
+                b.iter(|| {
+                    state.connection.execute(&query.statement).wait().unwrap();
+                })
+            },
+        );
+
+        group.bench_with_input(
+            format!("passthrough_tls_{}", query.name),
+            || {
+                BenchResources::new_tls(
+                    "examples/cassandra-passthrough-tls/topology.yaml",
+                    "examples/cassandra-passthrough-tls/docker-compose.yml",
+                )
             },
             |b, state| {
                 b.iter(|| {
@@ -104,14 +110,10 @@ fn cassandra(c: &mut Criterion) {
             group.bench_with_input(
                 format!("protect_local_{}_encrypted", query.name),
                 || {
-                    let compose =
-                        DockerCompose::new("examples/cassandra-protect-local/docker-compose.yml")
-                            .wait_for_n_t("Startup complete", 1, 90);
-                    let shotover_manager = ShotoverManager::from_topology_file(
+                    let resources = BenchResources::new(
                         "examples/cassandra-protect-local/topology.yaml",
+                        "examples/cassandra-protect-local/docker-compose.yml"
                     );
-
-                    let resources = BenchResources::new(shotover_manager, compose);
 
                     resources
                         .connection
@@ -158,32 +160,64 @@ pub struct BenchResources {
 
 impl BenchResources {
     #[allow(unused)]
-    pub fn new(shotover_manager: ShotoverManager, compose: DockerCompose) -> Self {
+    pub fn new(shotover_topology: &str, compose_file: &str) -> Self {
+        let compose = DockerCompose::new(compose_file).wait_for_n_t("Startup complete", 1, 90);
+        let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
+
         let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
-        connection
+        let bench_resources = Self {
+            _compose: compose,
+            _shotover_manager: shotover_manager,
+            connection,
+        };
+        bench_resources.setup();
+        bench_resources
+    }
+
+    #[allow(unused)]
+    pub fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
+        let compose = DockerCompose::new(compose_file).wait_for_n_t("Startup complete", 1, 90);
+        let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
+
+        let ca_cert = "examples/cassandra-passthrough-tls/certs/localhost_CA.crt";
+
+        let connection = shotover_manager.cassandra_connection_tls(
+            "127.0.0.1",
+            9042,
+            ca_cert,
+            "cassandra",
+            "cassandra",
+        );
+
+        let bench_resources = Self {
+            _compose: compose,
+            _shotover_manager: shotover_manager,
+            connection,
+        };
+        bench_resources.setup();
+        bench_resources
+    }
+
+    fn setup(&self) {
+        self.connection
             .execute(&stmt!(
                 "CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
             ))
-            .wait()
-            .unwrap();
-        connection
+            .wait().unwrap();
+
+        self.connection
             .execute(&stmt!(
                 "CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);"
             ))
             .wait()
             .unwrap();
-        connection
+
+        self.connection
             .execute(&stmt!(
                 "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'initial value');"
             ))
             .wait()
             .unwrap();
-
-        Self {
-            _compose: compose,
-            _shotover_manager: shotover_manager,
-            connection,
-        }
     }
 }
