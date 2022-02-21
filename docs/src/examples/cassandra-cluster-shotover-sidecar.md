@@ -31,12 +31,12 @@ Below we can see an example of a Cassandra node and it's Shotover sidecar, notic
     depends_on:
       - cassandra-one
 
-  shotover-2:
+  shotover-one:
     restart: always
     depends_on:
       - cassandra-two
     image: shotover-proxy
-    network_mode: "service:cassandra-three"
+    network_mode: "service:cassandra-two"
     volumes:
       - type: bind
         source: $PWD

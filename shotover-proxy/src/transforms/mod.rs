@@ -213,7 +213,6 @@ impl Transforms {
 pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
-    #[cfg(feature = "alpha-transforms")]
     CassandraPeersRewrite(CassandraPeersRewriteConfig),
     RedisCache(RedisConfig),
     Tee(TeeConfig),
@@ -245,7 +244,6 @@ impl TransformsConfig {
     ) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source(chain_name).await,
-            #[cfg(feature = "alpha-transforms")]
             TransformsConfig::CassandraPeersRewrite(c) => c.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,

@@ -47,7 +47,7 @@ services:
     depends_on:
       - cassandra-two
 
-  shotover-1:
+  shotover-one:
     restart: always
     depends_on:
       - cassandra-one
@@ -58,7 +58,7 @@ services:
         source: $PWD
         target: /config
 
-  shotover-2:
+  shotover-two:
     restart: always
     depends_on:
       - cassandra-two
@@ -69,7 +69,7 @@ services:
         source: $PWD
         target: /config
 
-  shotover-3:
+  shotover-three:
     restart: always
     depends_on:
       - cassandra-three
