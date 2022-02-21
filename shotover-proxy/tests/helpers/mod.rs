@@ -1,11 +1,12 @@
 use anyhow::Result;
-use cassandra_cpp::{Cluster, Session};
+use cassandra_cpp::{Cluster, Session, Ssl};
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use redis::aio::AsyncStream;
 use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use shotover_proxy::tls::{TlsConfig, TlsConnector};
+use std::fs::read_to_string;
 use std::pin::Pin;
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -129,7 +130,10 @@ impl ShotoverManager {
             .await
             .unwrap();
         let connector = TlsConnector::new(config).unwrap();
-        let tls_stream = connector.connect(tcp_stream).await.unwrap();
+        let tls_stream = connector
+            .connect_unverified_hostname(tcp_stream)
+            .await
+            .unwrap();
 
         let connection_info = Default::default();
         redis::aio::Connection::new(
@@ -149,6 +153,32 @@ impl ShotoverManager {
         cluster.set_contact_points(contact_points).unwrap();
         cluster.set_port(port).ok();
         cluster.set_load_balance_round_robin();
+        cluster.connect().unwrap()
+    }
+
+    #[allow(unused)]
+    pub fn cassandra_connection_tls(
+        &self,
+        contact_points: &str,
+        port: u16,
+        ca_cert_path: &str,
+        username: &str,
+        password: &str,
+    ) -> Session {
+        let ca_cert = read_to_string(ca_cert_path).unwrap();
+        let mut ssl = Ssl::default();
+        Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
+
+        for contact_point in contact_points.split(',') {
+            crate::helpers::wait_for_socket_to_open(contact_point, port);
+        }
+
+        let mut cluster = Cluster::default();
+        cluster.set_credentials(username, password).unwrap();
+        cluster.set_contact_points(contact_points).unwrap();
+        cluster.set_port(port).ok();
+        cluster.set_load_balance_round_robin();
+        cluster.set_ssl(&mut ssl);
         cluster.connect().unwrap()
     }
 

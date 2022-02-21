@@ -1,14 +1,15 @@
 use crate::frame::Frame;
+use crate::message::Message;
+use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
+use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
-use crate::{message::Message, server::Codec};
-
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::StreamExt;
 use halfbrown::HashMap;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -26,33 +27,37 @@ struct Request {
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
-pub struct CassandraConnection<C: Codec> {
+pub struct CassandraConnection {
     host: String,
-    connection: Option<mpsc::UnboundedSender<Request>>,
-    #[derivative(Debug = "ignore")]
-    codec: C,
+    connection: mpsc::UnboundedSender<Request>,
 }
 
-impl<C: Codec + 'static> CassandraConnection<C> {
-    pub fn new(host: String, codec: C) -> Self {
-        CassandraConnection {
-            host,
-            connection: None,
-            codec,
-        }
-    }
+impl CassandraConnection {
+    pub async fn new<C: Codec + 'static>(
+        host: String,
+        codec: C,
+        mut tls: Option<TlsConnector>,
+    ) -> Result<Self> {
+        let tcp_stream: TcpStream = TcpStream::connect(&host).await?;
 
-    pub async fn connect(&mut self) -> Result<()> {
-        let socket: TcpStream = TcpStream::connect(self.host.clone()).await?;
-        let (read, write) = socket.into_split();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();
 
-        tokio::spawn(tx_process(write, out_rx, return_tx, self.codec.clone()).in_current_span());
+        if let Some(tls) = tls.as_mut() {
+            let tls_stream = tls.connect(tcp_stream).await?;
+            let (read, write) = split(tls_stream);
+            tokio::spawn(tx_process(write, out_rx, return_tx, codec.clone()).in_current_span());
+            tokio::spawn(rx_process(read, return_rx, codec.clone()).in_current_span());
+        } else {
+            let (read, write) = split(tcp_stream);
+            tokio::spawn(tx_process(write, out_rx, return_tx, codec.clone()).in_current_span());
+            tokio::spawn(rx_process(read, return_rx, codec.clone()).in_current_span());
+        };
 
-        tokio::spawn(rx_process(read, return_rx, self.codec.clone()).in_current_span());
-        self.connection = Some(out_tx);
-        Ok(())
+        Ok(CassandraConnection {
+            host,
+            connection: out_tx,
+        })
     }
 
     /// Send a `Message` to this `CassandraConnection` and expect a response on `return_chan`
@@ -63,10 +68,8 @@ impl<C: Codec + 'static> CassandraConnection<C> {
             return Err(anyhow!("no cassandra frame found"));
         };
 
-        let connection = self.connection.as_ref().expect("No connection found");
-
         // Convert the message to `Request` and send upstream
-        Ok(connection.send(Request {
+        Ok(self.connection.send(Request {
             message,
             return_chan,
             message_id,
@@ -74,8 +77,8 @@ impl<C: Codec + 'static> CassandraConnection<C> {
     }
 }
 
-async fn tx_process<C: CodecWriteHalf>(
-    write: OwnedWriteHalf,
+async fn tx_process<C: CodecWriteHalf, T: AsyncWrite>(
+    write: WriteHalf<T>,
     out_rx: mpsc::UnboundedReceiver<Request>,
     return_tx: mpsc::UnboundedSender<Request>,
     codec: C,
@@ -90,8 +93,8 @@ async fn tx_process<C: CodecWriteHalf>(
     Ok(())
 }
 
-async fn rx_process<C: CodecReadHalf>(
-    read: OwnedReadHalf,
+async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
+    read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<Request>,
     codec: C,
 ) -> Result<()> {

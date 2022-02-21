@@ -13,6 +13,7 @@ use crate::codec::cassandra::CassandraCodec;
 use crate::config::topology::TopicHolder;
 use crate::server::TcpCodecListener;
 use crate::sources::{Sources, SourcesFromConfig};
+use crate::tls::{TlsAcceptor, TlsConfig};
 use crate::transforms::chain::TransformChain;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -22,6 +23,7 @@ pub struct CassandraConfig {
     pub query_processing: Option<bool>,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
+    pub tls: Option<TlsConfig>,
 }
 
 #[async_trait]
@@ -41,8 +43,9 @@ impl SourcesFromConfig for CassandraConfig {
                 self.query_processing.unwrap_or(false),
                 self.connection_limit,
                 self.hard_connection_limit,
+                self.tls.clone(),
             )
-            .await,
+            .await?,
         )])
     }
 }
@@ -64,7 +67,8 @@ impl CassandraSource {
         query_processing: bool,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
-    ) -> CassandraSource {
+        tls: Option<TlsConfig>,
+    ) -> Result<CassandraSource> {
         let name = "CassandraSource";
 
         info!("Starting Cassandra source on [{}]", listen_addr);
@@ -77,7 +81,7 @@ impl CassandraSource {
             CassandraCodec::new(cassandra_ks, !query_processing),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
-            None,
+            tls.map(TlsAcceptor::new).transpose()?,
         );
 
         let join_handle = Handle::current().spawn(async move {
@@ -98,10 +102,10 @@ impl CassandraSource {
             Ok(())
         });
 
-        CassandraSource {
+        Ok(CassandraSource {
             name,
             join_handle,
             listen_addr,
-        }
+        })
     }
 }

@@ -7,7 +7,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_openssl::SslStream;
-use tracing::warn;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TlsConfig {
@@ -26,7 +25,7 @@ pub struct TlsAcceptor {
 
 impl TlsAcceptor {
     pub fn new(tls_config: TlsConfig) -> Result<TlsAcceptor> {
-        let mut builder = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
+        let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
         builder.set_ca_file(tls_config.certificate_authority_path)?;
         builder.set_private_key_file(tls_config.private_key_path, SslFiletype::PEM)?;
         builder.set_certificate_chain_file(tls_config.certificate_path)?;
@@ -67,13 +66,24 @@ impl TlsConnector {
         })
     }
 
-    pub async fn connect(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>> {
-        warn!("Disabling TLS hostname verification for compatibility with redis, this needs to be investigated properly");
+    pub async fn connect_unverified_hostname(
+        &self,
+        tcp_stream: TcpStream,
+    ) -> Result<SslStream<TcpStream>> {
         let ssl = self
             .connector
             .configure()?
             .verify_hostname(false)
             .into_ssl("localhost")?;
+
+        let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
+        Pin::new(&mut ssl_stream).connect().await?;
+
+        Ok(ssl_stream)
+    }
+
+    pub async fn connect(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>> {
+        let ssl = self.connector.configure()?.into_ssl("localhost")?;
 
         let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
         Pin::new(&mut ssl_stream).connect().await?;

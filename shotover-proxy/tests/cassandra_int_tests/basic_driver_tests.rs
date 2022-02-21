@@ -1,4 +1,3 @@
-#[cfg(feature = "alpha-transforms")]
 use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
@@ -1313,6 +1312,50 @@ fn test_passthrough() {
         ShotoverManager::from_topology_file("examples/cassandra-passthrough/topology.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+
+    keyspace::test(&connection);
+    table::test(&connection);
+    udt::test(&connection);
+    native_types::test(&connection);
+    collections::test(&connection);
+    functions::test(&connection);
+    prepared_statements::test(&connection);
+}
+
+#[test]
+#[serial]
+fn test_passthrough_tls() {
+    let _compose = DockerCompose::new("examples/cassandra-passthrough-tls/docker-compose.yml")
+        .wait_for_n_t("Startup complete", 1, 90);
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
+
+    let ca_cert = "examples/cassandra-passthrough-tls/certs/localhost_CA.crt";
+
+    {
+        // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
+        let direct_connection = shotover_manager.cassandra_connection_tls(
+            "127.0.0.1",
+            9042,
+            ca_cert,
+            "cassandra",
+            "cassandra",
+        );
+        assert_query_result(
+            &direct_connection,
+            "SELECT bootstrapped FROM system.local",
+            &[&[ResultValue::Varchar("COMPLETED".into())]],
+        );
+    }
+
+    let connection = shotover_manager.cassandra_connection_tls(
+        "127.0.0.1",
+        9043,
+        ca_cert,
+        "cassandra",
+        "cassandra",
+    );
 
     keyspace::test(&connection);
     table::test(&connection);

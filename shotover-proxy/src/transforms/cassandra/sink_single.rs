@@ -5,6 +5,8 @@ use crate::error::ChainResponse;
 use crate::frame::CassandraFrame;
 use crate::frame::Frame;
 use crate::message::Messages;
+use crate::tls::TlsConfig;
+use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
@@ -24,35 +26,49 @@ pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub result_processing: bool,
+    pub tls: Option<TlsConfig>,
 }
 
 impl CassandraSinkSingleConfig {
     pub async fn get_source(&self, chain_name: String) -> Result<Transforms> {
+        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
             self.result_processing,
             chain_name,
+            tls,
         )))
     }
 }
 
 pub struct CassandraSinkSingle {
     address: String,
-    outbound: Option<CassandraConnection<CassandraCodec>>,
+    outbound: Option<CassandraConnection>,
     cassandra_ks: HashMap<String, Vec<String>>,
     bypass: bool,
     chain_name: String,
     failed_requests: Counter,
+    tls: Option<TlsConnector>,
 }
 
 impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
-        CassandraSinkSingle::new(self.address.clone(), self.bypass, self.chain_name.clone())
+        CassandraSinkSingle::new(
+            self.address.clone(),
+            self.bypass,
+            self.chain_name.clone(),
+            self.tls.clone(),
+        )
     }
 }
 
 impl CassandraSinkSingle {
-    pub fn new(address: String, bypass: bool, chain_name: String) -> CassandraSinkSingle {
+    pub fn new(
+        address: String,
+        bypass: bool,
+        chain_name: String,
+        tls: Option<TlsConnector>,
+    ) -> CassandraSinkSingle {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
 
         CassandraSinkSingle {
@@ -62,6 +78,7 @@ impl CassandraSinkSingle {
             bypass,
             chain_name,
             failed_requests,
+            tls,
         }
     }
 }
@@ -72,12 +89,13 @@ impl CassandraSinkSingle {
             match self.outbound {
                 None => {
                     trace!("creating outbound connection {:?}", self.address);
-                    let mut conn_pool = CassandraConnection::new(
+                    // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
+                    let conn_pool = CassandraConnection::new(
                         self.address.clone(),
                         CassandraCodec::new(self.cassandra_ks.clone(), self.bypass),
-                    );
-                    // we should either connect and set the value of outbound, or return an error... so we shouldn't loop more than 2 times
-                    conn_pool.connect().await?;
+                        self.tls.clone(),
+                    )
+                    .await?;
                     self.outbound = Some(conn_pool);
                 }
                 Some(ref mut outbound_framed_codec) => {
