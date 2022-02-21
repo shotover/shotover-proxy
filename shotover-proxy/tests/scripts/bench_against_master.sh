@@ -42,13 +42,13 @@ if [[ "$COUNT_REGRESS" != "0" || "$COUNT_IMPROVE" != "0" ]]; then
   if [[ "$COUNT_REGRESS" != "0" ]]; then
     echo "\`\`\`" >> comment_info/message.txt
     # Kind of brittle but -B5 includes the 5 lines prior which always happens to includes the bench name + results
-    grep -B5 "Performance has regressed." benches_log.txt >> comment_info/message.txt
+    grep -B6 "Performance has regressed." benches_log.txt >> comment_info/message.txt
     echo "\`\`\`" >> comment_info/message.txt
   fi
 
   if [[ "$COUNT_IMPROVE" != "0" ]]; then
     echo "\`\`\`" >> comment_info/message.txt
-    grep -B5 "Performance has improved." benches_log.txt >> comment_info/message.txt
+    grep -B6 "Performance has improved." benches_log.txt >> comment_info/message.txt
     echo "\`\`\`" >> comment_info/message.txt
   fi
 
