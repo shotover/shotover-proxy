@@ -1429,32 +1429,31 @@ async fn run_all_active_safe(connection: &mut Connection) {
                                            // test_cluster_pipeline(); // we do support pipelining!!
     test_getset(connection).await;
     test_incr(connection).await;
-    // test_info().await;
-    // test_hash_ops().await;
+    test_info(connection).await;
+    // test_hash_ops(connection).await;
     test_set_ops(connection).await;
     test_scan(connection).await;
-    // test_optionals().await;
-    // test_scanning().await; // TODO scanning doesnt work
-    // test_filtered_scanning().await;
-    // test_pipeline(connection).await; // NGET Issues
-    // test_empty_pipeline(connection).await;
+    test_optionals(connection).await;
+    // test_scanning(connection).await;
+    // test_filtered_scanning(connection).await;
+    // test_pipeline(connection).await;
+    test_empty_pipeline(connection).await;
     // TODO: Pipeline transactions currently don't work (though it tries very hard)
     // Current each cmd in a pipeline is treated as a single request, which means on a cluster
     // basis they end up getting routed to different masters. This results in very occasionally will
     // the transaction resolve (the exec and the multi both go to the right server).
-    // test_pipeline_transaction().await;
-    // test_pipeline_reuse_query().await;
-    // test_pipeline_reuse_query_clear().await;
-    // test_real_transaction().await;
+    // test_pipeline_transaction(connection).await;
+    // test_pipeline_reuse_query(connection).await;
+    // test_pipeline_reuse_query_clear(connection).await;
+    // test_real_transaction(connection).await;
     test_script(connection).await;
     test_tuple_args(connection).await;
-    // test_nice_api().await;
-    // test_auto_m_versions().await;
+    // test_nice_api(connection).await;
+    test_auto_m_versions(connection).await;
     test_nice_hash_api(connection).await;
     test_nice_list_api(connection).await;
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
-    // test_invalid_protocol().await;
 }
 
 async fn run_all_cluster_safe(connection: &mut Connection) {
@@ -1494,7 +1493,6 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_nice_list_api(connection).await;
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
-    // test_invalid_protocol().await;
 }
 
 async fn run_all(connection: &mut Connection) {
@@ -1528,5 +1526,4 @@ async fn run_all(connection: &mut Connection) {
     test_nice_list_api(connection).await;
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
-    // test_invalid_protocol().await;
 }
