@@ -182,13 +182,7 @@ impl BenchResources {
 
         let ca_cert = "example-configs/cassandra-passthrough-tls/certs/localhost_CA.crt";
 
-        let connection = shotover_manager.cassandra_connection_tls(
-            "127.0.0.1",
-            9042,
-            ca_cert,
-            "cassandra",
-            "cassandra",
-        );
+        let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
 
         let bench_resources = Self {
             _compose: compose,
