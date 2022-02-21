@@ -1407,7 +1407,6 @@ fn test_cassandra_protect_transform_aws() {
 
 #[test]
 #[serial]
-#[cfg(feature = "alpha-transforms")]
 fn test_cassandra_peers_rewrite() {
     let _docker_compose =
         DockerCompose::new("tests/test-topologies/cassandra-peers-rewrite/docker-compose.yml")

@@ -12,4 +12,6 @@
   - [Redis Cluster]()
     - [Unaware client](./examples/redis-clustering-unaware.md)
     - [Aware client](./examples/redis-clustering-aware.md)
+  - [Cassandra Cluster]()
+    - [Shotover sidecars](./examples/cassandra-cluster-shotover-sidecar.md)
 - [Contributing](./contributing.md)

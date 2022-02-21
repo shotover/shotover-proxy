@@ -52,7 +52,7 @@ In this example we will use `redis-benchmark` with cluster mode enabled as our R
 
 First we will modify our `topology.yaml` file to have a single Redis source. This will:
 
-* Define how Shotover listens for incoming connection from our client application (`redis-benchmark`).
+* Define how Shotover listens for incoming connections from our client application (`redis-benchmark`).
 * Configure Shotover to connect to the Redis node via our defined remote address.
 * Configure Shotover to rewrite all Redis ports with our Shotover port when the cluster aware driver is talking to the cluster, through Shotover.
 * Connect our Redis Source to our Redis cluster sink (transform).
@@ -61,7 +61,7 @@ First we will modify our `topology.yaml` file to have a single Redis source. Thi
 {{#include ../../../shotover-proxy/examples/redis-cluster-ports-rewrite/topology.yaml}}
 ```
 
-Modify an existing `topology.yaml` or create a new one and place the above example as the files contents.
+Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.
 
 You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml) to run Shotover.
 

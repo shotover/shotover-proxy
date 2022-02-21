@@ -1,0 +1,81 @@
+version: "3.3"
+
+networks:
+  cassandra_subnet:
+    name: cassandra_subnet
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.1.0/24
+          gateway: 172.16.1.1
+
+services:
+  cassandra-one:
+    image: bitnami/cassandra:4.0
+    networks:
+      cassandra_subnet:
+        ipv4_address: 172.16.1.2
+    healthcheck: &healthcheck
+      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    environment: &environment
+      CASSANDRA_SEEDS: "cassandra-one,cassandra-two"
+      MAX_HEAP_SIZE: "400M"
+      MIN_HEAP_SIZE: "400M"
+      HEAP_NEWSIZE: "48M"
+
+  cassandra-two:
+    image: bitnami/cassandra:4.0
+    networks:
+      cassandra_subnet:
+        ipv4_address: 172.16.1.3
+    healthcheck: *healthcheck
+    environment: *environment
+    depends_on:
+      - cassandra-one
+
+  cassandra-three:
+    image: bitnami/cassandra:4.0
+    networks:
+      cassandra_subnet:
+        ipv4_address: 172.16.1.4
+    healthcheck: *healthcheck
+    environment: *environment
+    depends_on:
+      - cassandra-two
+
+  shotover-one:
+    restart: always
+    depends_on:
+      - cassandra-one
+    image: shotover-proxy
+    network_mode: "service:cassandra-one"
+    volumes:
+      - type: bind
+        source: $PWD
+        target: /config
+
+  shotover-two:
+    restart: always
+    depends_on:
+      - cassandra-two
+    image: shotover-proxy
+    network_mode: "service:cassandra-two"
+    volumes:
+      - type: bind
+        source: $PWD
+        target: /config
+
+  shotover-three:
+    restart: always
+    depends_on:
+      - cassandra-three
+    image: shotover-proxy
+    network_mode: "service:cassandra-three"
+    volumes:
+      - type: bind
+        source: $PWD
+        target: /config

@@ -2,7 +2,6 @@ use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::TransformChain;
@@ -214,7 +213,6 @@ impl Transforms {
 pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
-    #[cfg(feature = "alpha-transforms")]
     CassandraPeersRewrite(CassandraPeersRewriteConfig),
     RedisCache(RedisConfig),
     Tee(TeeConfig),
@@ -246,7 +244,6 @@ impl TransformsConfig {
     ) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source(chain_name).await,
-            #[cfg(feature = "alpha-transforms")]
             TransformsConfig::CassandraPeersRewrite(c) => c.get_source(topics).await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,

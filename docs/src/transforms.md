@@ -27,6 +27,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | Transform                                             | Terminating | Implementation Status |
 |-------------------------------------------------------|-------------|-----------------------|
 | [CassandraSinkSingle](#cassandrasinksingle)           | ✅          | Alpha                 |
+| [CassandraPeersRewrite](#cassandrapeersrewrite)       | ❌          | Alpha                 |
 | [Coalesce](#coalesce)                                 | ❌          | Alpha                 |
 | [ConsistentScatter](#consistentscatter)               | ✅          | Alpha                 |
 | [DebugPrinter](#debugprinter)                         | ❌          | Alpha                 |
@@ -58,6 +59,18 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
+
+
+### CassandraPeersRewrite
+
+This transform should be used with the `CassandraSinkSingle` transform. It will write over the ports of the peers returned by queries to the `system.peers_v2` table in Cassandra with a user supplied value (typically the port that Shotover is listening on so Cassandra drivers will connect to Shotover instead of the Cassandra nodes themselves).
+
+
+```yaml
+- CassandraPeersRewrite:
+    # rewrite the peer ports to 9043
+    port: 9043
+```
 
 ### Coalesce
 
