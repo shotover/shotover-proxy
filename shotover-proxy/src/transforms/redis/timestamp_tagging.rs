@@ -1,3 +1,4 @@
+use crate::codec::redis::redis_query_type;
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, QueryType};
@@ -34,7 +35,7 @@ impl RedisTimestampTaggerConfig {
 // Unfortunately REDIS only provides a 10 second resolution on this, so high
 // update keys where update freq < 20 seconds, will not be terribly consistent
 fn wrap_command(frame: &mut RedisFrame) -> Result<RedisFrame> {
-    let query_type = crate::codec::redis::redis_query_type(frame);
+    let query_type = redis_query_type(frame);
     if let RedisFrame::Array(com) = frame {
         if let Some(RedisFrame::BulkString(first)) = com.first() {
             if let QueryType::Read | QueryType::ReadWrite = query_type {
