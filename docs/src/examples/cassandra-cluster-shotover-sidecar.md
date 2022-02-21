@@ -1,6 +1,6 @@
 # Cassandra Cluster
   
-The following guide shows you how to configure Shotover with support to proxying to a Cassandra Cluster.
+The following guide shows you how to configure Shotover with support for proxying to a Cassandra Cluster.
 
 ## Overview
 
@@ -9,9 +9,6 @@ In this example, we will be connecting to a Cassandra cluster that has the follo
 * `172.16.1.2:9042`
 * `172.16.1.3:9042`
 * `172.16.1.4:9042`
-* `172.16.1.5:9042`
-* `172.16.1.6:9042`
-* `172.16.1.7:9042`
 
 ### Rewriting the peer ports
 
@@ -21,11 +18,11 @@ Shotover will be deployed as a sidecar to each node in the Cassandra cluster, li
 curl -L https://raw.githubusercontent.com/conorbros/shotover-proxy/cassandra-docs/shotover-proxy/examples/cassandra-rewrite-peers/docker-compose.yml --output docker-compose.yml
 ```
 
-Below we can see an example of a Cassandra node and it's Shotover sidecar, notice that they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover and access the config and topology files.
+Below we can see an example of a Cassandra node and it's Shotover sidecar, notice that they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
 
 ```YAML
-cassandra-two:
-  image: library/cassandra:4.0
+  cassandra-two:
+    image: bitnami/cassandra:4.0
     networks:
       cassandra_subnet:
         ipv4_address: 172.16.1.3
@@ -33,13 +30,11 @@ cassandra-two:
     environment: *environment
     depends_on:
       - cassandra-one
-    volumes:
-      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
 
   shotover-2:
     restart: always
     depends_on:
-      - cassandra-three
+      - cassandra-two
     image: shotover-proxy
     network_mode: "service:cassandra-three"
     volumes:
@@ -68,7 +63,7 @@ Modify an existing `topology.yaml` or create a new one and place the above examp
 You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml) to run Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/conorbros/shotover-proxy/cassandra-docs/shotover-proxy/examples/cassandra-rewrite-peers/config.yaml --output config.yaml
+curl -L https://raw.githubusercontent.com/conorbros/shotover-proxy/cassandra-docs/shotover-proxy/config/config.yaml --output config.yaml
 ```
 
 #### Starting
