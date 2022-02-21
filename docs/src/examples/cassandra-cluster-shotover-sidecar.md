@@ -15,7 +15,7 @@ In this example, we will be connecting to a Cassandra cluster that has the follo
 Shotover will be deployed as a sidecar to each node in the Cassandra cluster, listening on `9043`. Use the following [docker-compose.yml](https://raw.githubusercontent.com/conorbros/shotover-proxy/cassandra-docs/shotover-proxy/examples/cassandra-rewrite-peers/docker-compose.yml) to run the Cassandra cluster and Shotover sidecars. In this example we want to ensure that all our traffic to Cassandra goes through Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/conorbros/shotover-proxy/cassandra-docs/shotover-proxy/examples/cassandra-rewrite-peers/docker-compose.yml --output docker-compose.yml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/examples/cassandra-rewrite-peers/docker-compose.yml --output docker-compose.yml
 ```
 
 Below we can see an example of a Cassandra node and it's Shotover sidecar, notice that they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
@@ -63,7 +63,7 @@ Modify an existing `topology.yaml` or create a new one and place the above examp
 You will also need a [config.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml) to run Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/conorbros/shotover-proxy/cassandra-docs/shotover-proxy/config/config.yaml --output config.yaml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/config/config.yaml --output config.yaml
 ```
 
 #### Starting
