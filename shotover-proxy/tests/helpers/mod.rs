@@ -132,19 +132,13 @@ impl ShotoverManager {
     }
 
     #[allow(unused)]
-    pub fn cassandra_connection(
-        &self,
-        contact_points: &str,
-        port: u16,
-        username: &str,
-        password: &str,
-    ) -> Session {
+    pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> Session {
         for contact_point in contact_points.split(',') {
             test_helpers::wait_for_socket_to_open(contact_point, port);
         }
         let mut cluster = Cluster::default();
         cluster.set_contact_points(contact_points).unwrap();
-        cluster.set_credentials(username, password).unwrap();
+        cluster.set_credentials("cassandra", "cassandra").unwrap();
         cluster.set_port(port).ok();
         cluster.set_load_balance_round_robin();
         cluster.connect().unwrap()
@@ -156,8 +150,6 @@ impl ShotoverManager {
         contact_points: &str,
         port: u16,
         ca_cert_path: &str,
-        username: &str,
-        password: &str,
     ) -> Session {
         let ca_cert = read_to_string(ca_cert_path).unwrap();
         let mut ssl = Ssl::default();
@@ -168,7 +160,7 @@ impl ShotoverManager {
         }
 
         let mut cluster = Cluster::default();
-        cluster.set_credentials(username, password).unwrap();
+        cluster.set_credentials("cassandra", "cassandra").unwrap();
         cluster.set_contact_points(contact_points).unwrap();
         cluster.set_port(port).ok();
         cluster.set_load_balance_round_robin();

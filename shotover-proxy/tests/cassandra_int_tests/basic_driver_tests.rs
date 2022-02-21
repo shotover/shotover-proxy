@@ -1284,8 +1284,7 @@ fn test_passthrough() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
-    let connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
+    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1310,13 +1309,8 @@ fn test_passthrough_tls() {
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-        let direct_connection = shotover_manager.cassandra_connection_tls(
-            "127.0.0.1",
-            9042,
-            ca_cert,
-            "cassandra",
-            "cassandra",
-        );
+        let direct_connection =
+            shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
         assert_query_result(
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
@@ -1324,13 +1318,7 @@ fn test_passthrough_tls() {
         );
     }
 
-    let connection = shotover_manager.cassandra_connection_tls(
-        "127.0.0.1",
-        9043,
-        ca_cert,
-        "cassandra",
-        "cassandra",
-    );
+    let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9043, ca_cert);
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1350,8 +1338,7 @@ fn test_cassandra_redis_cache() {
         ShotoverManager::from_topology_file("example-configs/cassandra-redis-cache/topology.yaml");
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
-    let connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
+    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1371,10 +1358,8 @@ fn test_cassandra_protect_transform_local() {
         "example-configs/cassandra-protect-local/topology.yaml",
     );
 
-    let shotover_connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
-    let direct_connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9043, "cassandra", "cassandra");
+    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
@@ -1395,10 +1380,8 @@ fn test_cassandra_protect_transform_aws() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-protect-aws/topology.yaml");
 
-    let shotover_connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9042, "cassandra", "cassandra");
-    let direct_connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9043, "cassandra", "cassandra");
+    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
@@ -1419,11 +1402,9 @@ fn test_cassandra_peers_rewrite() {
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let normal_connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9043, "cassandra", "cassandra");
+    let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
 
-    let rewrite_port_connection =
-        shotover_manager.cassandra_connection("127.0.0.1", 9044, "cassandra", "cassandra");
+    let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
     table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
 
     {
