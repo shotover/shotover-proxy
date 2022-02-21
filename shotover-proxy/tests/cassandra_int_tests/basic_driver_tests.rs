@@ -1278,32 +1278,6 @@ mod protect {
 
 #[test]
 #[serial]
-fn test_cluster() {
-    let _compose = DockerCompose::new("examples/cassandra-cluster/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 3, 90);
-
-    let handles: Vec<_> = [
-        "examples/cassandra-cluster/topology1.yaml",
-        "examples/cassandra-cluster/topology2.yaml",
-        "examples/cassandra-cluster/topology3.yaml",
-    ]
-    .into_iter()
-    .map(ShotoverManager::from_topology_file_without_observability)
-    .collect();
-
-    let connection = handles[0].cassandra_connection("127.0.0.1", 9042);
-
-    keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
-    native_types::test(&connection);
-    collections::test(&connection);
-    functions::test(&connection);
-    prepared_statements::test(&connection);
-}
-
-#[test]
-#[serial]
 fn test_passthrough() {
     let _compose = DockerCompose::new("examples/cassandra-passthrough/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
