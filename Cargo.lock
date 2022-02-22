@@ -447,6 +447,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cqlparser"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "nom 7.1.0",
+]
+
+[[package]]
 name = "crc16"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
