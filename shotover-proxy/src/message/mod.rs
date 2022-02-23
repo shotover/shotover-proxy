@@ -27,8 +27,20 @@ use uuid::Uuid;
 
 pub type Messages = Vec<Message>;
 
+/// The Message type is designed to effeciently abstract over the message being in various states of processing.
+///
+/// Usually a message is received and starts off containing just raw bytes (or possibly raw bytes + frame)
+/// This can be immediately sent off to the destination without any processing cost.
+///
+/// However if a transform wants to query the contents of the message it must call `Message::frame()q which will cause the raw bytes to be processed into a raw bytes + Frame.
+/// The first call to frame has an expensive one time cost.
+///
+/// The transform may also go one step further and modify the message's Frame + call `Message::invalidate_cache()`.
+/// This results in an expensive cost to reassemble the message bytes when the message is sent to the destination.
 #[derive(PartialEq, Debug, Clone)]
 pub struct Message {
+    /// It is an invariant that this field must remain Some at all times.
+    /// The only reason it is an Option is to allow temporarily taking ownership of the value from an &mut T
     inner: Option<MessageInner>,
     pub return_to_sender: bool,
 
@@ -38,6 +50,9 @@ pub struct Message {
 }
 
 impl Message {
+    /// This method should be called when you have have just the raw bytes of a message.
+    /// This is expected to be used only by codecs that are decoding a protocol where the length of the message is provided in the header. e.g. cassandra
+    /// Providing just the bytes results in better performance when only the raw bytes are available.
     pub fn from_bytes(bytes: Bytes, message_type: MessageType) -> Self {
         Message {
             inner: Some(MessageInner::RawBytes {
@@ -49,6 +64,9 @@ impl Message {
         }
     }
 
+    /// This method should be called when you have both a Frame and matching raw bytes of a message.
+    /// This is expected to be used only by codecs that are decoding a protocol that does not include length of the message in the header. e.g. redis
+    /// Providing both the raw bytes and Frame results in better performance if they are both already available.
     pub fn from_bytes_and_frame(bytes: Bytes, frame: Frame) -> Self {
         Message {
             inner: Some(MessageInner::Parsed { bytes, frame }),
@@ -57,6 +75,9 @@ impl Message {
         }
     }
 
+    /// This method should be called when you have just a Frame of a message.
+    /// This is expected to be used by transforms that are generating custom messages.
+    /// Providing just the Frame results in better performance when only the Frame is available.
     pub fn from_frame(frame: Frame) -> Self {
         Message {
             inner: Some(MessageInner::Modified { frame }),
@@ -65,8 +86,17 @@ impl Message {
         }
     }
 
-    /// Returns None when fails to parse the message.
-    /// Internally logs the failure to parse.
+    /// Returns a `&mut Frame` which contains the processed contents of the message.
+    /// A transform may choose to modify the contents of the `&mut Frame` in order to modify the message that is sent to the DB.
+    /// Any future calls to `frame()` in the same or future transforms will return the same modified `&mut Frame`.
+    /// If a transform chooses to modify the `&mut Frame` then they must also call `Frame::invalidate_cache()` after the modification.
+    ///
+    /// Returns `None` when fails to parse the message.
+    /// This failure to parse the message is internally logged as an error.
+    ///
+    /// ## Performance implications
+    /// Calling frame for the first time on a message may be an expensive operation as the raw bytes might not yet be parsed into a Frame.
+    /// Calling frame again is free as the parsed message is cached.
     pub fn frame(&mut self) -> Option<&mut Frame> {
         let (inner, result) = self.inner.take().unwrap().ensure_parsed();
         self.inner = Some(inner);
@@ -137,6 +167,13 @@ impl Message {
         }
     }
 
+    /// Invalidates all internal caches.
+    /// This must be called after any modifications to the return value of `Message::frame()`.
+    /// Otherwise values returned by getter methods and the message sent to the DB will be outdated.
+    ///
+    /// ## Performance implications
+    /// * Clears caches used by getter methods
+    /// * If `Message::frame()` has been called the message bytes must be regenerated from the `Frame` when sent to the DB
     pub fn invalidate_cache(&mut self) {
         // TODO: clear message details cache fields if we ever add any
 
@@ -224,8 +261,6 @@ impl Message {
         }
     }
 }
-
-// TODO: When im finished, evaluate if MessageInner as an enum brings value over just a struct of Options
 
 /// There are 3 levels of processing the message can be in.
 /// RawBytes -> Parsed -> Modified
