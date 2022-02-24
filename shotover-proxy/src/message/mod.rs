@@ -232,6 +232,33 @@ impl Message {
         self.invalidate_cache();
     }
 
+    pub fn set_backpressure(&mut self) {
+        *self = Message::from_frame(match &self.original {
+            Frame::Redis(_) => {
+                unimplemented!();
+            }
+            Frame::Cassandra(frame) => {
+                let body = CassandraOperation::Error(ErrorBody {
+                    error_code: 0x1001,
+                    message: "".into(),
+                    additional_info: AdditionalErrorInfo::Overloaded,
+                });
+
+                Frame::Cassandra(CassandraFrame {
+                    version: frame.version,
+                    stream_id: frame.stream_id,
+                    tracing_id: None,
+                    warnings: frame.warnings.clone(),
+                    operation: body,
+                })
+            }
+            Frame::None => Frame::None,
+        });
+
+        self.return_to_sender = true;
+    }
+}
+
     // Retrieves the stream_id without parsing the rest of the frame.
     // Used for ordering out of order messages without parsing their contents.
     // TODO: We will have a better idea of how to make this generic once we have multiple out of order protocols

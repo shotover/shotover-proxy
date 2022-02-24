@@ -4,7 +4,14 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
+use governor::{
+    clock::DefaultClock,
+    middleware::NoOpMiddleware,
+    state::{InMemoryState, NotKeyed},
+    Quota, RateLimiter,
+};
 use metrics::{register_gauge, Gauge};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -96,6 +103,8 @@ pub struct TcpCodecListener<C: Codec> {
     message_count: u64,
 
     available_connections_gauge: Gauge,
+
+    max_requests_per_second: Option<NonZeroU32>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -109,6 +118,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         limit_connections: Arc<Semaphore>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
+        max_requests_per_second: Option<NonZeroU32>,
     ) -> Self {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
@@ -126,6 +136,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             tls,
             message_count: 0,
             available_connections_gauge,
+            max_requests_per_second,
         }
     }
 
@@ -204,6 +215,10 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // Create the necessary per-connection handler state.
             socket.set_nodelay(true)?;
 
+            let limiter = self
+                .max_requests_per_second
+                .map(|max| RateLimiter::direct(Quota::per_second(max)));
+
             let mut handler = Handler {
                 chain: self.chain.clone(),
                 client_details: peer,
@@ -220,6 +235,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
                 tls: self.tls.clone(),
+
+                limiter,
             };
 
             self.message_count = self.message_count.wrapping_add(1);
@@ -341,6 +358,8 @@ pub struct Handler<C: Codec> {
     shutdown: Shutdown,
 
     tls: Option<TlsAcceptor>,
+
+    limiter: Option<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
 }
 
 fn spawn_read_write_tasks<
@@ -353,23 +372,18 @@ fn spawn_read_write_tasks<
     tx: W,
     in_tx: UnboundedSender<Messages>,
     out_rx: UnboundedReceiver<Messages>,
-    out_tx: UnboundedSender<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
     let writer = FramedWrite::new(tx, codec);
 
     tokio::spawn(
         async move {
-            while let Some(message) = reader.next().await {
-                match message {
-                    Ok(message) => {
-                        let remaining_messages =
-                            process_return_to_sender_messages(message, &out_tx);
-                        if !remaining_messages.is_empty() {
-                            if let Err(error) = in_tx.send(remaining_messages) {
-                                warn!("failed to send message: {}", error);
-                                return;
-                            }
+            while let Some(messages) = reader.next().await {
+                match messages {
+                    Ok(messages) => {
+                        if let Err(error) = in_tx.send(messages) {
+                            warn!("failed to send message: {}", error);
+                            return;
                         }
                     }
                     Err(error) => {
@@ -413,16 +427,16 @@ impl<C: Codec + 'static> Handler<C> {
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
         };
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
             debug!("Waiting for message");
-            let messages = tokio::select! {
+            let mut messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
@@ -460,6 +474,27 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("Received raw message {:?}", messages);
 
             debug!("client details: {:?}", &self.client_details);
+
+            if let Some(limiter) = &self.limiter {
+                tracing::info!("checking limiter");
+
+                messages = messages
+                    .into_iter()
+                    .map(move |mut message| match limiter.check() {
+                        Ok(_) => {
+                            tracing::info!("yes");
+                            message
+                        }
+                        Err(_) => {
+                            tracing::info!("no");
+                            message.set_backpressure();
+                            message
+                        }
+                    })
+                    .collect::<Messages>();
+            }
+
+            messages = process_return_to_sender_messages(messages, &out_tx);
 
             match self
                 .chain

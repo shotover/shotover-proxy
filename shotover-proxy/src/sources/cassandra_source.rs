@@ -1,11 +1,22 @@
 use crate::codec::cassandra::CassandraCodec;
 use crate::config::topology::TopicHolder;
 use crate::server::TcpCodecListener;
+use crate::sources::{Sources, SourcesFromConfig};
+use crate::tls::{TlsAcceptor, TlsConfig};
+use crate::transforms::chain::TransformChain;
+use std::sync::Arc;
+
+use crate::codec::cassandra::CassandraCodec;
+use crate::config::topology::TopicHolder;
+use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsConfig};
 use crate::transforms::chain::TransformChain;
 use anyhow::Result;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{watch, Semaphore};
@@ -18,6 +29,7 @@ pub struct CassandraConfig {
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
     pub tls: Option<TlsConfig>,
+    pub max_requests_per_second: Option<NonZeroU32>,
 }
 
 impl CassandraConfig {
@@ -35,6 +47,7 @@ impl CassandraConfig {
                 self.connection_limit,
                 self.hard_connection_limit,
                 self.tls.clone(),
+                self.max_requests_per_second,
             )
             .await?,
         )])
@@ -57,6 +70,7 @@ impl CassandraSource {
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
         tls: Option<TlsConfig>,
+        max_requests_per_second: Option<NonZeroU32>,
     ) -> Result<CassandraSource> {
         let name = "CassandraSource";
 
@@ -71,6 +85,7 @@ impl CassandraSource {
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
+            max_requests_per_second,
         );
 
         let join_handle = Handle::current().spawn(async move {
