@@ -2495,7 +2495,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "nix",
- "nonzero_ext",
  "num",
  "num_cpus",
  "openssl",
