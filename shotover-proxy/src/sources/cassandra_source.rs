@@ -14,7 +14,6 @@ use crate::tls::{TlsAcceptor, TlsConfig};
 use crate::transforms::chain::TransformChain;
 use anyhow::Result;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::Arc;

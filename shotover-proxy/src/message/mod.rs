@@ -233,7 +233,7 @@ impl Message {
     }
 
     pub fn set_backpressure(&mut self) {
-        *self = Message::from_frame(match &self.original {
+        *self = Message::from_frame(match &self.frame().unwrap() {
             Frame::Redis(_) => {
                 unimplemented!();
             }
@@ -257,7 +257,6 @@ impl Message {
 
         self.return_to_sender = true;
     }
-}
 
     // Retrieves the stream_id without parsing the rest of the frame.
     // Used for ordering out of order messages without parsing their contents.
