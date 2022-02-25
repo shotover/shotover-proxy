@@ -1,7 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::cassandra::{CassandraOperation, CassandraResult, CQL};
-use crate::frame::{CassandraFrame, Frame, RedisFrame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame, CQL};
 use crate::message::{Message, MessageValue, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
@@ -57,17 +56,17 @@ impl SimpleRedisCache {
     async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
         let mut stream_ids = Vec::with_capacity(messages.len());
         for message in &mut messages {
-            if let Frame::Cassandra(frame) = &message.original {
+            if let Some(Frame::Cassandra(frame)) = message.frame() {
                 stream_ids.push(frame.stream_id);
             } else {
                 bail!("Failed to parse cassandra message");
             }
             if let Some(table_name) = message.namespace().map(|x| x.join(".")) {
-                *message = match &message.original {
-                    Frame::Cassandra(CassandraFrame {
+                *message = match message.frame() {
+                    Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
-                    }) => {
+                    })) => {
                         let table_cache_schema = self
                             .caching_schema
                             .get(&table_name)
@@ -454,10 +453,10 @@ impl Transform for SimpleRedisCache {
         let mut updates = false;
 
         for m in &mut message_wrapper.messages {
-            if let Frame::Cassandra(CassandraFrame {
+            if let Some(Frame::Cassandra(CassandraFrame {
                 operation: CassandraOperation::Query { .. },
                 ..
-            }) = &m.original
+            })) = m.frame()
             {
                 if m.get_query_type() == QueryType::Write {
                     updates = true;

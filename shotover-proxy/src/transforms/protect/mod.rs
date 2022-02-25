@@ -207,12 +207,13 @@ impl Transform for Protect {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in message_wrapper.messages.iter_mut() {
+            let mut invalidate_cache = false;
             if let Some(namespace) = message.namespace() {
                 if namespace.len() == 2 {
-                    if let Frame::Cassandra(CassandraFrame {
+                    if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
-                    }) = &mut message.original
+                    })) = message.frame()
                     {
                         if let Some((_, tables)) =
                             self.keyspace_table_columns.get_key_value(&namespace[0])
@@ -227,6 +228,7 @@ impl Transform for Protect {
                                             .protect(&self.key_source, &self.key_id)
                                             .await?;
                                         **value = SQLValue::from(&MessageValue::from(protected));
+                                        invalidate_cache = true;
                                     }
                                 }
                             }
@@ -234,26 +236,30 @@ impl Transform for Protect {
                     }
                 }
             }
+            if invalidate_cache {
+                message.invalidate_cache();
+            }
         }
 
         let mut original_messages = message_wrapper.messages.clone();
         let mut result = message_wrapper.call_next_transform().await?;
 
         for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {
-            if let Frame::Cassandra(CassandraFrame {
+            let mut invalidate_cache = false;
+            if let Some(Frame::Cassandra(CassandraFrame {
                 operation:
                     CassandraOperation::Result(CassandraResult::Rows {
                         value: MessageValue::Rows(rows),
                         ..
                     }),
                 ..
-            }) = &mut response.original
+            })) = response.frame()
             {
                 if let Some(namespace) = request.namespace() {
-                    if let Frame::Cassandra(CassandraFrame {
+                    if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
-                    }) = &mut request.original
+                    })) = request.frame()
                     {
                         let projection: Vec<String> = get_values_from_insert_or_update_mut(query)
                             .into_keys()
@@ -282,6 +288,7 @@ impl Transform for Protect {
                                                         .unprotect(&self.key_source, &self.key_id)
                                                         .await?;
                                                     *v = new_value;
+                                                    invalidate_cache = true;
                                                 } else {
                                                     warn!("Tried decrypting non-blob column")
                                                 }
@@ -293,6 +300,9 @@ impl Transform for Protect {
                         }
                     }
                 }
+            }
+            if invalidate_cache {
+                response.invalidate_cache();
             }
         }
 

@@ -21,7 +21,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use uuid::Uuid;
 
-use crate::message::MessageValue;
+use crate::message::{MessageValue, QueryType};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
@@ -133,6 +133,23 @@ impl CassandraFrame {
             warnings: frame.warnings,
             operation,
         })
+    }
+
+    pub fn get_query_type(&self) -> QueryType {
+        match &self.operation {
+            CassandraOperation::Query {
+                query: CQL::Parsed(query),
+                ..
+            } => match query.get(0) {
+                Some(Statement::Query(_x)) => QueryType::Read,
+                Some(Statement::Insert { .. }) => QueryType::Write,
+                Some(Statement::Update { .. }) => QueryType::Write,
+                Some(Statement::Delete { .. }) => QueryType::Write,
+                // TODO: handle prepared, execute and schema change query types
+                _ => QueryType::Read,
+            },
+            _ => QueryType::Read,
+        }
     }
 
     pub fn namespace(&self) -> Vec<String> {
@@ -284,10 +301,7 @@ impl CassandraOperation {
         }
     }
 
-    pub fn build_cassandra_result_body(
-        result: MessageValue,
-        metadata: RowsMetadata,
-    ) -> ResResultBody {
+    fn build_cassandra_result_body(result: MessageValue, metadata: RowsMetadata) -> ResResultBody {
         if let MessageValue::Rows(rows) = result {
             let rows_count = rows.len() as CInt;
             let rows_content = rows

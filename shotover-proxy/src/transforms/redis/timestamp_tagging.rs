@@ -109,8 +109,8 @@ fn unwrap_response(message: &mut Message) -> Result<()> {
         frame: RedisFrame,
     }
 
-    if let Frame::Redis(ref mut redis_frame) = message.original {
-        let to_write = if let RedisFrame::Array(ref mut values) = redis_frame {
+    if let Some(redis_frame) = message.frame().map(|frame| frame.redis()).transpose()? {
+        let to_write = if let RedisFrame::Array(values) = redis_frame {
             let all_arrays = values.iter().all(|v| matches!(v, RedisFrame::Array(_)));
             if all_arrays && values.len() > 1 {
                 // This means the result is likely from a transaction or something that returns
@@ -158,9 +158,10 @@ fn unwrap_response(message: &mut Message) -> Result<()> {
             None
         };
 
-        if let Some(write) = to_write {
-            *redis_frame = write.frame;
-            message.meta_timestamp = Some(write.meta_timestamp);
+        if let Some(to_write) = to_write {
+            *redis_frame = to_write.frame;
+            message.meta_timestamp = Some(to_write.meta_timestamp);
+            message.invalidate_cache();
         }
     }
     Ok(())
@@ -175,7 +176,7 @@ impl Transform for RedisTimestampTagger {
         let mut exec_block = false;
 
         for message in message_wrapper.messages.iter_mut() {
-            if let Frame::Redis(ref mut frame) = message.original {
+            if let Some(Frame::Redis(frame)) = message.frame() {
                 if let RedisFrame::Array(array) = frame {
                     if array
                         .get(0)
@@ -188,6 +189,7 @@ impl Transform for RedisTimestampTagger {
                 match wrap_command(frame) {
                     Ok(result) => {
                         *frame = result;
+                        message.invalidate_cache();
                     }
                     Err(err) => {
                         trace!("Couldn't wrap command with timestamp tagger: {}", err);

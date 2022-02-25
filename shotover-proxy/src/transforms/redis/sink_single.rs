@@ -1,21 +1,19 @@
-use std::fmt::Debug;
-
+use crate::codec::redis::RedisCodec;
+use crate::error::ChainResponse;
+use crate::frame::Frame;
 use crate::frame::RedisFrame;
+use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
+use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, SinkExt};
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
+use std::fmt::Debug;
 use std::pin::Pin;
 use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
-
-use crate::codec::redis::{DecodeType, RedisCodec};
-use crate::error::ChainResponse;
-use crate::frame::Frame;
-use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
-use crate::transforms::{Transform, Transforms, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisSinkSingleConfig {
@@ -88,10 +86,7 @@ impl Transform for RedisSinkSingle {
             } else {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             };
-            self.outbound = Some(Framed::new(
-                generic_stream,
-                RedisCodec::new(DecodeType::Response),
-            ));
+            self.outbound = Some(Framed::new(generic_stream, RedisCodec::new()));
         }
 
         // self.outbound is gauranteed to be Some by the previous block
@@ -102,10 +97,10 @@ impl Transform for RedisSinkSingle {
             .ok();
 
         match outbound_framed_codec.next().fuse().await {
-            Some(a) => {
-                if let Ok(ref messages) = a {
+            Some(mut a) => {
+                if let Ok(messages) = &mut a {
                     for message in messages {
-                        if let Frame::Redis(RedisFrame::Error(_)) = message.original {
+                        if let Some(Frame::Redis(RedisFrame::Error(_))) = message.frame() {
                             self.failed_requests.increment(1);
                         }
                     }

@@ -36,12 +36,12 @@ impl RedisClusterPortsRewrite {
 
 #[async_trait]
 impl Transform for RedisClusterPortsRewrite {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Optimization for when messages are not cluster messages (e.g. SET key, or GET key)
         if message_wrapper
             .messages
-            .iter()
-            .all(|m| !is_cluster_message(&m.original))
+            .iter_mut()
+            .all(|m| m.frame().map(|f| !is_cluster_message(f)).unwrap_or(true))
         {
             return message_wrapper.call_next_transform().await;
         }
@@ -50,13 +50,15 @@ impl Transform for RedisClusterPortsRewrite {
         let mut cluster_slots_indices = vec![];
         let mut cluster_nodes_indices = vec![];
 
-        for (i, message) in message_wrapper.messages.iter().enumerate() {
-            if is_cluster_slots(&message.original) {
-                cluster_slots_indices.push(i);
-            }
+        for (i, message) in message_wrapper.messages.iter_mut().enumerate() {
+            if let Some(frame) = message.frame() {
+                if is_cluster_slots(frame) {
+                    cluster_slots_indices.push(i);
+                }
 
-            if is_cluster_nodes(&message.original) {
-                cluster_nodes_indices.push(i);
+                if is_cluster_nodes(frame) {
+                    cluster_nodes_indices.push(i);
+                }
             }
         }
 
@@ -64,14 +66,20 @@ impl Transform for RedisClusterPortsRewrite {
 
         // Rewrite the ports in the cluster slots responses
         for i in cluster_slots_indices {
-            rewrite_port_slot(&mut response[i].original, self.new_port)
-                .context("failed to rewrite CLUSTER SLOTS port")?;
+            if let Some(frame) = response[i].frame() {
+                rewrite_port_slot(frame, self.new_port)
+                    .context("failed to rewrite CLUSTER SLOTS port")?;
+            }
+            response[i].invalidate_cache();
         }
 
         // Rewrite the ports in the cluster nodes responses
         for i in cluster_nodes_indices {
-            rewrite_port_node(&mut response[i].original, self.new_port)
-                .context("failed to rewrite CLUSTER NODES port")?;
+            if let Some(frame) = response[i].frame() {
+                rewrite_port_node(frame, self.new_port)
+                    .context("failed to rewrite CLUSTER NODES port")?;
+            }
+            response[i].invalidate_cache();
         }
 
         Ok(response)
@@ -224,7 +232,7 @@ fn is_cluster_slots(frame: &Frame) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::redis::{DecodeType, RedisCodec};
+    use crate::codec::redis::RedisCodec;
     use crate::transforms::redis::sink_cluster::parse_slots;
     use tokio_util::codec::Decoder;
 
@@ -304,24 +312,22 @@ mod test {
     #[test]
     fn test_rewrite_port_slots() {
         let slots_pcap: &[u8] = b"*3\r\n*4\r\n:10923\r\n:16383\r\n*3\r\n$12\r\n192.168.80.6\r\n:6379\r\n$40\r\n3a7c357ed75d2aa01fca1e14ef3735a2b2b8ffac\r\n*3\r\n$12\r\n192.168.80.3\r\n:6379\r\n$40\r\n77c01b0ddd8668fff05e3f6a8aaf5f3ccd454a79\r\n*4\r\n:5461\r\n:10922\r\n*3\r\n$12\r\n192.168.80.5\r\n:6379\r\n$40\r\n969c6215d064e68593d384541ceeb57e9520dbed\r\n*3\r\n$12\r\n192.168.80.2\r\n:6379\r\n$40\r\n3929f69990a75be7b2d49594c57fe620862e6fd6\r\n*4\r\n:0\r\n:5460\r\n*3\r\n$12\r\n192.168.80.7\r\n:6379\r\n$40\r\n15d52a65d1fc7a53e34bf9193415aa39136882b2\r\n*3\r\n$12\r\n192.168.80.4\r\n:6379\r\n$40\r\ncd023916a3528fae7e606a10d8289a665d6c47b0\r\n";
-        let mut codec = RedisCodec::new(DecodeType::Response);
-        let mut raw_frame = codec
+        let mut codec = RedisCodec::new();
+        let mut message = codec
             .decode(&mut slots_pcap.into())
             .unwrap()
             .unwrap()
             .pop()
-            .unwrap()
-            .original;
+            .unwrap();
 
-        rewrite_port_slot(&mut raw_frame, 6380).unwrap();
+        rewrite_port_slot(message.frame().unwrap(), 6380).unwrap();
 
-        let slots_frames = if let Frame::Redis(RedisFrame::Array(frames)) = raw_frame {
-            frames
-        } else {
-            panic!("bad input: {raw_frame:?}")
+        let slots_frames = match message.frame().unwrap() {
+            Frame::Redis(RedisFrame::Array(frames)) => frames,
+            frame => panic!("bad input: {frame:?}"),
         };
 
-        let slots = parse_slots(&slots_frames).unwrap();
+        let slots = parse_slots(slots_frames).unwrap();
 
         let nodes = vec![
             "192.168.80.2:6380",

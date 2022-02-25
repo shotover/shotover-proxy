@@ -10,7 +10,6 @@
 //!
 //! ## Messages
 //! * [`message::Message`], the main struct that carries database queries/frames around in Shotover.
-//! * [`message::MessageDetails`], an enriched struct that contains computed, easy to work with information about the message.
 //!
 //! ## Transform
 //! * [`transforms::Wrapper`], used to wrap messages as they traverse the [`transforms::Transform`] chain.

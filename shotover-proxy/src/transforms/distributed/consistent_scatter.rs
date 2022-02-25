@@ -110,7 +110,6 @@ impl Transform for ConsistentScatter {
             .messages
             .iter_mut()
             .map(|m| {
-                m.generate_message_details_query();
                 if m.get_query_type() == QueryType::Read {
                     self.read_consistency
                 } else {
@@ -212,15 +211,15 @@ mod scatter_transform_tests {
     use std::collections::HashMap;
 
     fn check_ok_responses(mut messages: Messages) {
-        let message = messages.pop().unwrap();
+        let mut message = messages.pop().unwrap();
         let expected = Frame::Redis(RedisFrame::BulkString("OK".into()));
-        assert_eq!(message.original, expected);
+        assert_eq!(message.frame().unwrap(), &expected);
     }
 
     fn check_err_responses(mut messages: Messages, expected_err: &str) {
-        let message = messages.pop().unwrap();
+        let mut message = messages.pop().unwrap();
         let expected = Frame::Redis(RedisFrame::Error(expected_err.into()));
-        assert_eq!(message.original, expected);
+        assert_eq!(message.frame().unwrap(), &expected);
     }
 
     async fn build_chains(route_map: HashMap<String, TransformChain>) -> Vec<BufferedChain> {
