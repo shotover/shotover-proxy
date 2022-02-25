@@ -158,6 +158,11 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     pub async fn run(&mut self) -> Result<()> {
         info!("accepting inbound connections");
 
+        let limiter = Arc::new(
+            self.max_requests_per_second
+                .map(|max| RateLimiter::direct(Quota::per_second(max))),
+        );
+
         loop {
             // Wait for a permit to become available
             //
@@ -215,10 +220,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // Create the necessary per-connection handler state.
             socket.set_nodelay(true)?;
 
-            let limiter = self
-                .max_requests_per_second
-                .map(|max| RateLimiter::direct(Quota::per_second(max)));
-
             let mut handler = Handler {
                 chain: self.chain.clone(),
                 client_details: peer,
@@ -235,11 +236,11 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
                 tls: self.tls.clone(),
-
-                limiter,
             };
 
             self.message_count = self.message_count.wrapping_add(1);
+
+            let limiter = limiter.clone();
 
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
@@ -248,7 +249,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                     tracing::debug!("New connection from {}", handler.conn_details);
 
                     // Process the connection. If an error is encountered, log it.
-                    if let Err(err) = handler.run(socket).await {
+                    if let Err(err) = handler.run(socket, limiter).await {
                         error!(cause = ?err, "connection error");
                     }
                 }
@@ -358,8 +359,6 @@ pub struct Handler<C: Codec> {
     shutdown: Shutdown,
 
     tls: Option<TlsAcceptor>,
-
-    limiter: Option<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
 }
 
 fn spawn_read_write_tasks<
@@ -415,7 +414,11 @@ impl<C: Codec + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
+    pub async fn run(
+        &mut self,
+        stream: TcpStream,
+        limiter: Arc<Option<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
+    ) -> Result<()> {
         debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
@@ -475,18 +478,12 @@ impl<C: Codec + 'static> Handler<C> {
 
             debug!("client details: {:?}", &self.client_details);
 
-            if let Some(limiter) = &self.limiter {
-                tracing::info!("checking limiter");
-
+            if let Some(limiter) = limiter.as_ref() {
                 messages = messages
                     .into_iter()
                     .map(move |mut message| match limiter.check() {
-                        Ok(_) => {
-                            tracing::info!("yes");
-                            message
-                        }
+                        Ok(_) => message,
                         Err(_) => {
-                            tracing::info!("no");
                             message.set_backpressure();
                             message
                         }
