@@ -55,6 +55,9 @@ jobs:
       run: cargo test ${{ matrix.cargo_profile }} --all-features -- --include-ignored --show-output
       # can not run tests if cpp driver not installed
       if: ${{ matrix.runner == 'ubuntu-18.04' }}
+    - name: Ensure that custom benches run
+      run: cargo run --release --example cassandra_bench -- --example-dir cassandra-passthrough --rate 1000
+      if: ${{ matrix.name == 'Ubuntu 18.04 - Release' }}
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |
         if [ -n "$(git status --porcelain)" ]; then
