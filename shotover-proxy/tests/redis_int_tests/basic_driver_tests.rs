@@ -1248,10 +1248,10 @@ async fn test_dr_auth(shotover_manager: &ShotoverManager) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough() {
-    let _compose = DockerCompose::new("examples/redis-passthrough/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml")
         .wait_for("Ready to accept connections");
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-passthrough/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all(&mut connection).await;
@@ -1260,10 +1260,10 @@ async fn test_passthrough() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_tls() {
-    let _compose = DockerCompose::new("examples/redis-cluster-tls/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-tls/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
@@ -1274,14 +1274,15 @@ async fn test_cluster_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_source_tls_and_single_tls() {
-    let _compose = DockerCompose::new("examples/redis-tls/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml")
         .wait_for("Ready to accept connections");
-    let shotover_manager = ShotoverManager::from_topology_file("examples/redis-tls/topology.yaml");
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
     let tls_config = TlsConfig {
-        certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt".into(),
-        certificate_path: "examples/redis-tls/tls_keys/redis.crt".into(),
-        private_key_path: "examples/redis-tls/tls_keys/redis.key".into(),
+        certificate_authority_path: "example-configs/redis-tls/tls_keys/ca.crt".into(),
+        certificate_path: "example-configs/redis-tls/tls_keys/redis.crt".into(),
+        private_key_path: "example-configs/redis-tls/tls_keys/redis.key".into(),
     };
 
     let mut connection = shotover_manager
@@ -1314,10 +1315,10 @@ async fn test_cluster_ports_rewrite() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_active_active_redis() {
-    let _compose = DockerCompose::new("examples/redis-multi/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml")
         .wait_for("Ready to accept connections");
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-multi/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     run_all_active_safe(&mut connection).await;
@@ -1326,10 +1327,10 @@ async fn test_active_active_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_auth_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster-auth/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/redis-cluster-auth/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-auth/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     test_auth(&mut connection).await;
@@ -1339,10 +1340,10 @@ async fn test_cluster_auth_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml")
         .wait_for_n("Cluster state changed", 6);
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/redis-cluster/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
     let connection = &mut connection;
@@ -1355,7 +1356,7 @@ async fn test_cluster_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_dr_redis() {
-    let _compose = DockerCompose::new("examples/redis-cluster-dr/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/redis-cluster-dr/docker-compose.yml")
         .wait_for_n("Cluster state changed", 12);
 
     let nodes = vec![
@@ -1375,7 +1376,7 @@ async fn test_cluster_dr_redis() {
     // test coalesce sends messages on shotover shutdown
     {
         let shotover_manager =
-            ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
+            ShotoverManager::from_topology_file("example-configs/redis-cluster-dr/topology.yaml");
         let mut connection = shotover_manager.redis_connection_async(6379).await;
         redis::cmd("AUTH")
             .arg("default")
@@ -1407,7 +1408,7 @@ async fn test_cluster_dr_redis() {
     );
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/redis-cluster-dr/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/redis-cluster-dr/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
     redis::cmd("AUTH")

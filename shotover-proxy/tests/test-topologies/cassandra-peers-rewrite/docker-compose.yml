@@ -15,12 +15,14 @@ services:
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
-    healthcheck: &healthcheck
+    healthcheck:
+      &healthcheck
       test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
       interval: 5s
       timeout: 5s
       retries: 60
-    environment: &environment
+    environment:
+      &environment
       CASSANDRA_SEEDS: "cassandra-one,cassandra-two"
       CASSANDRA_CLUSTER_NAME: SolarSystem
       CASSANDRA_DC: Mars
@@ -33,7 +35,7 @@ services:
       CASSANDRA_ENABLE_SCRIPTED_USER_DEFINED_FUNCTIONS: "true"
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
     volumes:
-      - ../../../examples/cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      - ../../../example-configs/cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
 
   cassandra-two:
     image: library/cassandra:4.0
@@ -45,4 +47,4 @@ services:
     depends_on:
       - cassandra-one
     volumes:
-      - ../../../examples/cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      - ../../../example-configs/cassandra-docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh

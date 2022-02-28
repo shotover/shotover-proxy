@@ -200,5 +200,4 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 
-
-The file shotover-proxy/examples/cassandra-passthrough/docker-entrypoint.sh originally came from https://github.com/docker-library/cassandra is copyright 2021 Docker, Inc and provided under the Apache v2 license; modified by Instacluster, Inc.
+The file shotover-proxy/example-configs/cassandra-passthrough/docker-entrypoint.sh originally came from <https://github.com/docker-library/cassandra> is copyright 2021 Docker, Inc and provided under the Apache v2 license; modified by Instacluster, Inc.

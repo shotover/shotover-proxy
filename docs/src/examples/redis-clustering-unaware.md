@@ -6,13 +6,13 @@ The following guide shows you how to configure Shotover Proxy to support transpa
 
 First you need to setup a Redis cluster for Shotover to connect to.
 
-The easiest way to do this is with this example [docker-compose.yml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/examples/redis-cluster/docker-compose.yml)
+The easiest way to do this is with this example [docker-compose.yml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/example-configs/redis-cluster/docker-compose.yml)
 You should first inspect the `docker-compose.yml` to understand what the cluster looks like and how its exposed to the network.
 
 Then run:
 
 ```bash
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/examples/redis-cluster/docker-compose.yml --output docker-compose.yml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs/redis-cluster/docker-compose.yml --output docker-compose.yml
 docker-compose -f docker-compose.yml up
 ```
 
@@ -26,7 +26,7 @@ This more accurately reflects a real production use but will take a bit more set
 Modify your `topology.yaml` file like this:
 
 ```yaml
-{{#include ../../../shotover-proxy/examples/redis-cluster/topology.yaml}}
+{{#include ../../../shotover-proxy/example-configs/redis-cluster/topology.yaml}}
 ```
 
 If you didnt use the standard `docker-compose.yml` setup then you will need to change `first_contact_points` to point to the Redis instances you used.

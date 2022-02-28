@@ -1279,11 +1279,11 @@ mod protect {
 #[test]
 #[serial]
 fn test_passthrough() {
-    let _compose = DockerCompose::new("examples/cassandra-passthrough/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/cassandra-passthrough/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
@@ -1299,13 +1299,15 @@ fn test_passthrough() {
 #[test]
 #[serial]
 fn test_passthrough_tls() {
-    let _compose = DockerCompose::new("examples/cassandra-passthrough-tls/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 1, 90);
+    let _compose =
+        DockerCompose::new("example-configs/cassandra-passthrough-tls/docker-compose.yml")
+            .wait_for_n_t("Startup complete", 1, 90);
 
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/cassandra-passthrough-tls/topology.yaml");
+    let shotover_manager = ShotoverManager::from_topology_file(
+        "example-configs/cassandra-passthrough-tls/topology.yaml",
+    );
 
-    let ca_cert = "examples/cassandra-passthrough-tls/certs/localhost_CA.crt";
+    let ca_cert = "example-configs/cassandra-passthrough-tls/certs/localhost_CA.crt";
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
@@ -1343,11 +1345,11 @@ fn test_passthrough_tls() {
 #[test]
 #[serial]
 fn test_cassandra_redis_cache() {
-    let _compose = DockerCompose::new("examples/cassandra-redis-cache/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/cassandra-redis-cache/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/cassandra-redis-cache/topology.yaml");
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
@@ -1364,11 +1366,12 @@ fn test_cassandra_redis_cache() {
 #[serial]
 #[cfg(feature = "alpha-transforms")]
 fn test_cassandra_protect_transform_local() {
-    let _compose = DockerCompose::new("examples/cassandra-protect-local/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
 
-    let shotover_manager =
-        ShotoverManager::from_topology_file("examples/cassandra-protect-local/topology.yaml");
+    let shotover_manager = ShotoverManager::from_topology_file(
+        "example-configs/cassandra-protect-local/topology.yaml",
+    );
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
@@ -1386,12 +1389,12 @@ fn test_cassandra_protect_transform_local() {
 #[serial]
 #[cfg(feature = "alpha-transforms")]
 fn test_cassandra_protect_transform_aws() {
-    let _compose = DockerCompose::new("examples/cassandra-protect-aws/docker-compose.yml")
+    let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yml")
         .wait_for_n_t("Startup complete", 1, 90);
     let _compose_aws = DockerCompose::new_moto();
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("examples/cassandra-protect-aws/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/cassandra-protect-aws/topology.yaml");
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
