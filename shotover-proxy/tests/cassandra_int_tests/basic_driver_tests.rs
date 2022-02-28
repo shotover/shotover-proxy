@@ -1412,11 +1412,11 @@ fn test_cassandra_protect_transform_aws() {
 #[serial]
 fn test_cassandra_peers_rewrite() {
     let _docker_compose =
-        DockerCompose::new("tests/test-topologies/cassandra-peers-rewrite/docker-compose.yml")
+        DockerCompose::new("tests/test-configs/cassandra-peers-rewrite/docker-compose.yml")
             .wait_for_n_t("Startup complete", 2, 90);
 
     let shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-topologies/cassandra-peers-rewrite/topology.yaml",
+        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
     let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);

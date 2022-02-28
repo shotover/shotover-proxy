@@ -614,7 +614,7 @@ redis_chain:
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
         let yaml_contents =
-            fs::read_to_string("tests/test-topologies/invalid_subchains.yaml").unwrap();
+            fs::read_to_string("tests/test-configs/invalid_subchains.yaml").unwrap();
 
         let topology = Topology::new_from_yaml(yaml_contents);
         let error = topology

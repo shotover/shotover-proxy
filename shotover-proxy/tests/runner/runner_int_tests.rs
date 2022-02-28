@@ -71,18 +71,16 @@ fn test_shotover_responds_sigint() {
 #[should_panic]
 #[serial]
 fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
-    let _shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-topologies/invalid_non_terminating_last.yaml",
-    );
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("tests/test-configs/invalid_non_terminating_last.yaml");
 }
 
 #[test]
 #[should_panic]
 #[serial]
 fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
-    let _shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-topologies/invalid_terminating_not_last.yaml",
-    );
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("tests/test-configs/invalid_terminating_not_last.yaml");
 }
 
 #[test]
@@ -90,5 +88,5 @@ fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
 #[serial]
 fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
     let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-topologies/invalid_subchains.yaml");
+        ShotoverManager::from_topology_file("tests/test-configs/invalid_subchains.yaml");
 }
