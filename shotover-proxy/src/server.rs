@@ -158,10 +158,9 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     pub async fn run(&mut self) -> Result<()> {
         info!("accepting inbound connections");
 
-        let limiter = Arc::new(
-            self.max_requests_per_second
-                .map(|max| RateLimiter::direct(Quota::per_second(max))),
-        );
+        let limiter = self
+            .max_requests_per_second
+            .map(|max| Arc::new(RateLimiter::direct(Quota::per_second(max))));
 
         loop {
             // Wait for a permit to become available
@@ -417,7 +416,7 @@ impl<C: Codec + 'static> Handler<C> {
     pub async fn run(
         &mut self,
         stream: TcpStream,
-        limiter: Arc<Option<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
+        limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
     ) -> Result<()> {
         debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
@@ -479,16 +478,11 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("client details: {:?}", &self.client_details);
 
             if let Some(limiter) = limiter.as_ref() {
-                messages = messages
-                    .into_iter()
-                    .map(move |mut message| match limiter.check() {
-                        Ok(_) => message,
-                        Err(_) => {
-                            message.set_backpressure();
-                            message
-                        }
-                    })
-                    .collect::<Messages>();
+                for message in &mut messages {
+                    if limiter.check().is_err() {
+                        message.set_backpressure();
+                    }
+                }
             }
 
             messages = process_return_to_sender_messages(messages, &out_tx);
