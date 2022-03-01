@@ -69,18 +69,18 @@ sodiumoxide = "0.2.5"
 rusoto_kms = "0.47.0"
 rusoto_signature = "0.47.0"
 csv = "1.1.6"
-strum_macros = "0.23"
+strum_macros = "0.24"
 
 [dev-dependencies]
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "version-0.4", version = "0.3", features = ["async_tokio", "html_reports"] }
 redis = { version = "0.21.0", features = ["tokio-comp", "cluster"] }
 pcap = "0.9.0"
-pktparse = {version = "0.7.0", features = ["serde"]}
+pktparse = { version = "0.7.0", features = ["serde"] }
 tls-parser = "0.11.0"
 threadpool = "1.0"
 tokio-io-timeout = "1.1.1"
 num_cpus = "1.0"
-serial_test = "0.5.1"
+serial_test = "0.6.0"
 cassandra-cpp = "0.17.0"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
