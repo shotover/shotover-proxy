@@ -2654,7 +2654,9 @@ name = "test-helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "nix",
  "regex",
+ "serial_test",
  "subprocess",
  "tracing",
 ]

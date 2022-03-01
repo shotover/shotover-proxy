@@ -1,7 +1,8 @@
 use serial_test::serial;
 use std::any::Any;
 
-use crate::helpers::{ShotoverManager, ShotoverProcess};
+use crate::helpers::ShotoverManager;
+use test_helpers::shotover_process::ShotoverProcess;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
