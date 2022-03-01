@@ -46,9 +46,10 @@ impl DockerCompose {
     /// Creates a new DockerCompose object by submitting a file to the underlying docker-compose
     /// system.  Executes `docker-compose -f [file_path] up -d`
     ///
-    /// # Notes:
-    /// * Does not sleep - Calling processes should sleep or use `wait_for()` to delay until the
-    /// containers are ready.
+    /// Will spin until it detects all the containers have started up.
+    /// This logic is implemented internally per docker-compose file.
+    /// If a docker-compose file is used that hasnt had this logic implemented for it yet
+    /// a panic will occur instructing the developer to implement this logic.
     ///
     /// # Arguments
     /// * `file_path` - The path to the docker-compose yaml file.
@@ -68,9 +69,13 @@ impl DockerCompose {
 
         run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
 
-        DockerCompose {
+        let compose = DockerCompose {
             file_path: file_path.to_string(),
-        }
+        };
+
+        compose.wait_for_containers_to_startup();
+
+        compose
     }
 
     /// Creates a new DockerCompose running an instance of moto the AWS mocking server
@@ -81,38 +86,43 @@ impl DockerCompose {
         env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
 
         DockerCompose::new("tests/transforms/docker-compose-moto.yml")
-            .wait_for(r#"Press CTRL\+C to quit"#)
     }
 
-    /// Waits for a string to appear in the docker-compose log output.
-    ///
-    /// This is shorthand for `wait_for_n( log_text, 1 )`
-    ///
-    /// # Arguments
-    /// * `log_text` - A regular expression defining the text to find in the docker-container log
-    /// output.
-    ///
-    /// # Panics
-    /// * If `log_text` is not found within 60 seconds.
-    ///
-    pub fn wait_for(self, log_text: &str) -> Self {
-        self.wait_for_n(log_text, 1)
-    }
-
-    /// Waits for a string to appear in the docker-compose log output `count` times.
-    ///
-    /// Counts the number of items returned by `regex.find_iter`.
-    ///
-    /// # Arguments
-    /// * `log_text` - A regular expression defining the text to find in the docker-container log
-    /// output.
-    /// * `count` - The number of times the regular expression should be found.
-    ///
-    /// # Panics
-    /// * If `count` occurrences of `log_text` is not found in the log within 30 seconds.
-    ///
-    pub fn wait_for_n(self, log_text: &str, count: usize) -> Self {
-        self.wait_for_n_t(log_text, count, 30)
+    fn wait_for_containers_to_startup(&self) {
+        match self.file_path.as_ref() {
+            "tests/transforms/docker-compose-moto.yml" => {
+                self.wait_for_log(r#"Press CTRL\+C to quit"#, 1)
+            }
+            "example-configs/redis-passthrough/docker-compose.yml"
+            | "example-configs/redis-tls/docker-compose.yml" => {
+                self.wait_for_log("Ready to accept connections", 1)
+            }
+            "example-configs/redis-multi/docker-compose.yml" => {
+                self.wait_for_log("Ready to accept connections", 3)
+            }
+            "tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml"
+            | "example-configs/redis-cluster/docker-compose.yml"
+            | "example-configs/redis-cluster-auth/docker-compose.yml"
+            | "example-configs/redis-cluster-tls/docker-compose.yml" => {
+                self.wait_for_log("Cluster state changed", 6)
+            }
+            "example-configs/redis-cluster-dr/docker-compose.yml" => {
+                self.wait_for_log("Cluster state changed", 12)
+            }
+            "example-configs/cassandra-passthrough/docker-compose.yml"
+            | "example-configs/cassandra-passthrough-tls/docker-compose.yml"
+            | "example-configs/cassandra-redis-cache/docker-compose.yml"
+            | "example-configs/cassandra-protect-local/docker-compose.yml"
+            | "example-configs/cassandra-protect-aws/docker-compose.yml" => {
+                self.wait_for_log("Startup complete", 1)
+            }
+            "tests/test-configs/cassandra-peers-rewrite/docker-compose.yml" => {
+                self.wait_for_log("Startup complete", 2)
+            }
+            path => unimplemented!(
+                "Unknown compose file `{path}` Please implement waiting logic for it here.",
+            ),
+        }
     }
 
     /// Waits for a string to appear in the docker-compose log output `count` times within `time` seconds.
@@ -123,39 +133,38 @@ impl DockerCompose {
     /// * `log_text` - A regular expression defining the text to find in the docker-container log
     /// output.
     /// * `count` - The number of times the regular expression should be found.
-    /// * `time` - The number of seconds to wait for the count to be found.
     ///
     /// # Panics
-    /// * If `count` occurrences of `log_text` is not found in the log within `time` seconds.
+    /// * If `count` occurrences of `log_text` is not found in the log within 90 seconds.
     ///
-    pub fn wait_for_n_t(self, log_text: &str, count: usize, time: u64) -> Self {
-        info!("wait_for_n_t: '{}' {} {}", log_text, count, time);
+    fn wait_for_log(&self, log_text: &str, count: usize) {
+        let timeout_seconds = 90;
+        info!("wait_for_log: '{log_text}' {count}");
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::Instant::now();
         let mut result = run_command("docker-compose", &args).unwrap();
         let mut my_count = re.find_iter(&result).count();
         while my_count < count {
-            if sys_time.elapsed().as_secs() > time {
+            if sys_time.elapsed().as_secs() > timeout_seconds {
                 panic!(
-                    "wait_for: {} second timer expired. Found {} instances of '{}' in the log\n{}",
-                    time,
+                    "wait_for_log {} second timer expired. Found {} instances of '{}' in the log\n{}",
+                    timeout_seconds,
                     re.find_iter(&result).count(),
                     log_text,
                     result
                 );
             }
-            debug!("wait_for_n: {:?} looping {}/{}", log_text, my_count, count);
+            debug!("wait_for_log: {log_text:?} looping {my_count}/{count}");
             result = run_command("docker-compose", &args).unwrap();
             my_count = re.find_iter(&result).count();
         }
         debug!(
-            "wait_for_n_t: found '{}' {} times in {:?} seconds",
+            "wait_for_log: found '{}' {} times in {:?} seconds",
             log_text,
             count,
             sys_time.elapsed()
         );
-        self
     }
 
     /// Cleans up the docker-compose by shutting down the running system and removing the images.

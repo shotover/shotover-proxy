@@ -161,7 +161,7 @@ pub struct BenchResources {
 impl BenchResources {
     #[allow(unused)]
     pub fn new(shotover_topology: &str, compose_file: &str) -> Self {
-        let compose = DockerCompose::new(compose_file).wait_for_n_t("Startup complete", 1, 90);
+        let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
         let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
@@ -177,7 +177,7 @@ impl BenchResources {
 
     #[allow(unused)]
     pub fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
-        let compose = DockerCompose::new(compose_file).wait_for_n_t("Startup complete", 1, 90);
+        let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
         let ca_cert = "example-configs/cassandra-passthrough-tls/certs/localhost_CA.crt";

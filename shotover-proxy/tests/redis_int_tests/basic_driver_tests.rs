@@ -1248,8 +1248,7 @@ async fn test_dr_auth(shotover_manager: &ShotoverManager) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough() {
-    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml")
-        .wait_for("Ready to accept connections");
+    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
@@ -1260,8 +1259,7 @@ async fn test_passthrough() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_tls() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
+    let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
 
@@ -1274,8 +1272,7 @@ async fn test_cluster_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_source_tls_and_single_tls() {
-    let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml")
-        .wait_for("Ready to accept connections");
+    let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
@@ -1296,9 +1293,7 @@ async fn test_source_tls_and_single_tls() {
 #[serial]
 async fn test_cluster_ports_rewrite() {
     let _compose =
-        DockerCompose::new("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml")
-            .wait_for_n("Cluster state changed", 6);
-
+        DockerCompose::new("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml");
     let shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-configs/redis-cluster-ports-rewrite/topology.yaml",
     );
@@ -1315,8 +1310,7 @@ async fn test_cluster_ports_rewrite() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_active_active_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml")
-        .wait_for("Ready to accept connections");
+    let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
@@ -1327,8 +1321,7 @@ async fn test_active_active_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_auth_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-auth/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
+    let _compose = DockerCompose::new("example-configs/redis-cluster-auth/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
@@ -1340,8 +1333,7 @@ async fn test_cluster_auth_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 6);
+    let _compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster/topology.yaml");
 
@@ -1356,8 +1348,7 @@ async fn test_cluster_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_dr_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-dr/docker-compose.yml")
-        .wait_for_n("Cluster state changed", 12);
+    let _compose = DockerCompose::new("example-configs/redis-cluster-dr/docker-compose.yml");
 
     let nodes = vec![
         "redis://127.0.0.1:2120/",
