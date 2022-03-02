@@ -1,15 +1,11 @@
 use anyhow::Result;
 use cassandra_cpp::{Cluster, Session, Ssl};
-use nix::sys::signal::Signal;
-use nix::unistd::Pid;
 use redis::aio::AsyncStream;
 use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use shotover_proxy::tls::{TlsConfig, TlsConnector};
 use std::fs::read_to_string;
 use std::pin::Pin;
-use std::process::{Child, Command, Stdio};
-use std::thread;
 use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
 use tokio::sync::watch;
@@ -22,15 +18,6 @@ pub struct ShotoverManager {
     pub runtime_handle: RuntimeHandle,
     pub join_handle: Option<JoinHandle<Result<()>>>,
     pub trigger_shutdown_tx: watch::Sender<bool>,
-}
-
-pub fn wait_for_socket_to_open(address: &str, port: u16) {
-    let mut tries = 0;
-    while std::net::TcpStream::connect((address, port)).is_err() {
-        thread::sleep(Duration::from_millis(100));
-        assert!(tries < 50, "Ran out of retries to connect to the socket");
-        tries += 1;
-    }
 }
 
 impl ShotoverManager {
@@ -85,7 +72,7 @@ impl ShotoverManager {
     #[allow(unused)]
     pub fn redis_connection(&self, port: u16) -> redis::Connection {
         let address = "127.0.0.1";
-        wait_for_socket_to_open(address, port);
+        test_helpers::wait_for_socket_to_open(address, port);
 
         let connection = Client::open((address, port))
             .unwrap()
@@ -98,7 +85,7 @@ impl ShotoverManager {
     #[allow(unused)]
     pub async fn redis_connection_async(&self, port: u16) -> redis::aio::Connection {
         let address = "127.0.0.1";
-        wait_for_socket_to_open(address, port);
+        test_helpers::wait_for_socket_to_open(address, port);
 
         let stream = Box::pin(
             tokio::net::TcpStream::connect((address, port))
@@ -124,7 +111,7 @@ impl ShotoverManager {
         config: TlsConfig,
     ) -> redis::aio::Connection {
         let address = "127.0.0.1";
-        wait_for_socket_to_open(address, port);
+        test_helpers::wait_for_socket_to_open(address, port);
 
         let tcp_stream = tokio::net::TcpStream::connect((address, port))
             .await
@@ -147,7 +134,7 @@ impl ShotoverManager {
     #[allow(unused)]
     pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> Session {
         for contact_point in contact_points.split(',') {
-            wait_for_socket_to_open(contact_point, port);
+            test_helpers::wait_for_socket_to_open(contact_point, port);
         }
         let mut cluster = Cluster::default();
         cluster.set_contact_points(contact_points).unwrap();
@@ -170,7 +157,7 @@ impl ShotoverManager {
         Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
 
         for contact_point in contact_points.split(',') {
-            crate::helpers::wait_for_socket_to_open(contact_point, port);
+            test_helpers::wait_for_socket_to_open(contact_point, port);
         }
 
         let mut cluster = Cluster::default();
@@ -203,80 +190,5 @@ impl Drop for ShotoverManager {
         } else {
             self.shutdown_shotover().unwrap();
         }
-    }
-}
-
-pub struct ShotoverProcess {
-    /// Always Some while ShotoverProcess is owned
-    pub child: Option<Child>,
-}
-
-impl Drop for ShotoverProcess {
-    fn drop(&mut self) {
-        if let Some(child) = &self.child {
-            if let Err(err) =
-                nix::sys::signal::kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL)
-            {
-                println!("Failed to shutdown ShotoverProcess {err}");
-            }
-        }
-    }
-}
-
-impl ShotoverProcess {
-    #[allow(unused)]
-    pub fn new(topology_path: &str) -> ShotoverProcess {
-        // First ensure shotover is fully built so that the potentially lengthy build time is not included in the wait_for_socket_to_open timeout
-        // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
-        let all_args = if env!("PROFILE") == "release" {
-            vec!["build", "--release"]
-        } else {
-            vec!["build"]
-        };
-        assert!(Command::new(env!("CARGO"))
-            .args(&all_args)
-            .stdout(Stdio::piped())
-            .status()
-            .unwrap()
-            .success());
-
-        // Now actually run shotover and keep hold of the child process
-        let all_args = if env!("PROFILE") == "release" {
-            vec!["run", "--release", "--", "-t", topology_path]
-        } else {
-            vec!["run", "--", "-t", topology_path]
-        };
-        let child = Some(
-            Command::new(env!("CARGO"))
-                .env("RUST_LOG", "debug,shotover_proxy=debug")
-                .args(&all_args)
-                .stdout(Stdio::piped())
-                .spawn()
-                .unwrap(),
-        );
-
-        wait_for_socket_to_open("127.0.0.1", 9001); // Wait for observability metrics port to open
-
-        ShotoverProcess { child }
-    }
-
-    #[allow(unused)]
-    fn pid(&self) -> Pid {
-        Pid::from_raw(self.child.as_ref().unwrap().id() as i32)
-    }
-
-    #[allow(unused)]
-    pub fn signal(&self, signal: Signal) {
-        nix::sys::signal::kill(self.pid(), signal).unwrap();
-    }
-
-    #[allow(unused)]
-    pub fn wait(mut self) -> (Option<i32>, String, String) {
-        let output = self.child.take().unwrap().wait_with_output().unwrap();
-
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        let stderr = String::from_utf8(output.stderr).unwrap();
-
-        (output.status.code(), stdout, stderr)
     }
 }
