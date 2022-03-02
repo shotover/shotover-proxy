@@ -13,6 +13,3 @@ subprocess = "0.2.7"
 anyhow = "1.0.42"
 regex = "1.5"
 nix = "0.23.0"
-
-[dev-dependencies]
-serial_test = "0.5.1"

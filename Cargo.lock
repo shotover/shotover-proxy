@@ -2656,7 +2656,6 @@ dependencies = [
  "anyhow",
  "nix",
  "regex",
- "serial_test",
  "subprocess",
  "tracing",
 ]
