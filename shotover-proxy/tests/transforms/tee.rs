@@ -78,9 +78,7 @@ async fn test_fail_with_mismatch() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_matches() {
-    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-
+    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/tee/subchain.yaml");
 
@@ -114,9 +112,7 @@ async fn test_subchain_matches() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_with_mismatch() {
-    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml")
-        .wait_for("Ready to accept connections");
-
+    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/tee/subchain_with_mismatch.yaml");
 

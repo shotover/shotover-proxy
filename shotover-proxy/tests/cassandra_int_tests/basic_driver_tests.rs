@@ -1279,8 +1279,7 @@ mod protect {
 #[test]
 #[serial]
 fn test_passthrough() {
-    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 1, 90);
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
@@ -1300,8 +1299,7 @@ fn test_passthrough() {
 #[serial]
 fn test_passthrough_tls() {
     let _compose =
-        DockerCompose::new("example-configs/cassandra-passthrough-tls/docker-compose.yml")
-            .wait_for_n_t("Startup complete", 1, 90);
+        DockerCompose::new("example-configs/cassandra-passthrough-tls/docker-compose.yml");
 
     let shotover_manager = ShotoverManager::from_topology_file(
         "example-configs/cassandra-passthrough-tls/topology.yaml",
@@ -1345,8 +1343,7 @@ fn test_passthrough_tls() {
 #[test]
 #[serial]
 fn test_cassandra_redis_cache() {
-    let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 1, 90);
+    let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-redis-cache/topology.yaml");
@@ -1366,8 +1363,7 @@ fn test_cassandra_redis_cache() {
 #[serial]
 #[cfg(feature = "alpha-transforms")]
 fn test_cassandra_protect_transform_local() {
-    let _compose = DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 1, 90);
+    let _compose = DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yml");
 
     let shotover_manager = ShotoverManager::from_topology_file(
         "example-configs/cassandra-protect-local/topology.yaml",
@@ -1389,8 +1385,7 @@ fn test_cassandra_protect_transform_local() {
 #[serial]
 #[cfg(feature = "alpha-transforms")]
 fn test_cassandra_protect_transform_aws() {
-    let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 1, 90);
+    let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yml");
     let _compose_aws = DockerCompose::new_moto();
 
     let shotover_manager =
@@ -1412,8 +1407,7 @@ fn test_cassandra_protect_transform_aws() {
 #[serial]
 fn test_cassandra_peers_rewrite() {
     let _docker_compose =
-        DockerCompose::new("tests/test-configs/cassandra-peers-rewrite/docker-compose.yml")
-            .wait_for_n_t("Startup complete", 2, 90);
+        DockerCompose::new("tests/test-configs/cassandra-peers-rewrite/docker-compose.yml");
 
     let shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",

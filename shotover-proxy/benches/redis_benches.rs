@@ -13,8 +13,7 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "active",
         || {
-            let compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml")
-                .wait_for_n("Ready to accept connections", 3);
+            let compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml");
             let shotover_manager =
                 ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
             BenchResources::new(shotover_manager, compose)
@@ -32,8 +31,7 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "cluster",
         || {
-            let compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml")
-                .wait_for_n("Cluster state changed", 6);
+            let compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml");
             let shotover_manager =
                 ShotoverManager::from_topology_file("example-configs/redis-cluster/topology.yaml");
             BenchResources::new(shotover_manager, compose)
@@ -52,8 +50,7 @@ fn redis(c: &mut Criterion) {
         "passthrough",
         || {
             let compose =
-                DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml")
-                    .wait_for("Ready to accept connections");
+                DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
             let shotover_manager = ShotoverManager::from_topology_file(
                 "example-configs/redis-passthrough/topology.yaml",
             );
@@ -72,8 +69,7 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "single_tls",
         || {
-            let compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml")
-                .wait_for("Ready to accept connections");
+            let compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
             let shotover_manager =
                 ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
             BenchResources::new(shotover_manager, compose)
@@ -92,8 +88,7 @@ fn redis(c: &mut Criterion) {
         "cluster_tls",
         || {
             let compose =
-                DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml")
-                    .wait_for_n("Cluster state changed", 6);
+                DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
             let shotover_manager = ShotoverManager::from_topology_file(
                 "example-configs/redis-cluster-tls/topology.yaml",
             );
