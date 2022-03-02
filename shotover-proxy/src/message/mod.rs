@@ -1,5 +1,8 @@
 use crate::codec::redis::redis_query_type;
-use crate::frame::cassandra::CassandraOperation;
+use crate::frame::{
+    cassandra,
+    cassandra::{CassandraMetadata, CassandraOperation},
+};
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
@@ -24,6 +27,12 @@ use sqlparser::ast::Value as SQLValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use uuid::Uuid;
+
+enum Metadata {
+    Cassandra(CassandraMetadata),
+    Redis,
+    Unknown,
+}
 
 pub type Messages = Vec<Message>;
 
@@ -232,12 +241,32 @@ impl Message {
         self.invalidate_cache();
     }
 
-    pub fn set_backpressure(&mut self) {
-        *self = Message::from_frame(match &self.frame().unwrap() {
-            Frame::Redis(_) => {
-                unimplemented!();
-            }
-            Frame::Cassandra(frame) => {
+    /// Get metadata for this `Message`
+    fn metadata(&mut self) -> Result<Metadata> {
+        let inner = self.inner.take().unwrap();
+        match inner {
+            MessageInner::RawBytes {
+                bytes,
+                message_type,
+            } => match message_type {
+                MessageType::Cassandra => Ok(Metadata::Cassandra(cassandra::metadata(bytes)?)),
+                MessageType::Redis => Ok(Metadata::Redis),
+                MessageType::None => Ok(Metadata::Unknown),
+            },
+            MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
+                Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
+                Frame::Redis(_) => Ok(Metadata::Redis),
+                Frame::None => Ok(Metadata::Unknown),
+            },
+        }
+    }
+
+    /// Set this `Message` to a backpressure response
+    pub fn set_backpressure(&mut self) -> Result<()> {
+        let metadata = self.metadata()?;
+
+        *self = Message::from_frame(match metadata {
+            Metadata::Cassandra(metadata) => {
                 let body = CassandraOperation::Error(ErrorBody {
                     error_code: 0x1001,
                     message: "".into(),
@@ -245,17 +274,21 @@ impl Message {
                 });
 
                 Frame::Cassandra(CassandraFrame {
-                    version: frame.version,
-                    stream_id: frame.stream_id,
-                    tracing_id: None,
-                    warnings: frame.warnings.clone(),
+                    version: metadata.version,
+                    stream_id: metadata.stream_id,
+                    tracing_id: metadata.tracing_id,
+                    warnings: metadata.warnings,
                     operation: body,
                 })
             }
-            Frame::None => Frame::None,
+            Metadata::Redis => {
+                unimplemented!()
+            }
+            Metadata::Unknown => Frame::None,
         });
 
         self.return_to_sender = true;
+        Ok(())
     }
 
     // Retrieves the stream_id without parsing the rest of the frame.

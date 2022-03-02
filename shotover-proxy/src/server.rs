@@ -480,7 +480,7 @@ impl<C: Codec + 'static> Handler<C> {
             if let Some(limiter) = limiter.as_ref() {
                 for message in &mut messages {
                     if limiter.check().is_err() {
-                        message.set_backpressure();
+                        message.set_backpressure()?;
                     }
                 }
             }
