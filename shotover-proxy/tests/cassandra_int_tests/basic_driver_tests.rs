@@ -1448,12 +1448,11 @@ fn test_cassandra_peers_rewrite() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_request_throttling() {
-    let _docker_compose = DockerCompose::new("examples/cassandra-passthrough/docker-compose.yml")
-        .wait_for_n_t("Startup complete", 1, 90);
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
-    let shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-topologies/cassandra-request-throttling.yaml",
-    );
+    let shotover_manager =
+        ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     std::thread::sleep(std::time::Duration::from_secs(1));
