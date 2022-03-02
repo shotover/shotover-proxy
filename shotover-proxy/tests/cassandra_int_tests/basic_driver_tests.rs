@@ -1410,12 +1410,11 @@ fn test_cassandra_peers_rewrite() {
     {
         assert_query_result(
             &normal_connection,
-            "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+            "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Inet("172.16.1.3".parse().unwrap()),
-                ResultValue::Varchar("datacenter1".into()),
+                ResultValue::Varchar("dc1".into()),
                 ResultValue::Int(9042),
-                ResultValue::Varchar("rack1".into()),
+                ResultValue::Varchar("West".into()),
             ]],
         );
         assert_query_result(
@@ -1428,12 +1427,11 @@ fn test_cassandra_peers_rewrite() {
     {
         assert_query_result(
             &rewrite_port_connection,
-            "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+            "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Inet("172.16.1.3".parse().unwrap()),
-                ResultValue::Varchar("datacenter1".into()),
+                ResultValue::Varchar("dc1".into()),
                 ResultValue::Int(9044),
-                ResultValue::Varchar("rack1".into()),
+                ResultValue::Varchar("West".into()),
             ]],
         );
 
