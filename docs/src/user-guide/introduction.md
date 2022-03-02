@@ -2,8 +2,8 @@
 
 ## Use Cases
 
-The majority of operational problems associated with databases come down to a mismatch in the suitability of your data 
-model/queries for the workload or a mismatch in behaviour of your chosen database for a given workload. This can manifest 
+The majority of operational problems associated with databases come down to a mismatch in the suitability of your data
+model/queries for the workload or a mismatch in behaviour of your chosen database for a given workload. This can manifest
 in many different ways, but commonly shows up as:
 
 * Some queries are slow for certain keys (customers/tenants etc).
@@ -41,9 +41,9 @@ Shotover provides a set of predefined transforms that can modify, route and cont
 <!--
 You can also implement your own transforms natively with Rust. For concrete examples of what you can achieve with shotover-proxy, see the following examples:
 
-* [Multi-region, active-active redis](../examples/redis-multi)
-* [Cassandra query caching in redis, with a query audit trail sent to kafka](../examples/cass-redis-kafka)
-* [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../examples/cassandra-encryption)
+* [Multi-region, active-active redis](../example-configs/redis-multi)
+* [Cassandra query caching in redis, with a query audit trail sent to kafka](../example-configs/cass-redis-kafka)
+* [Field level, "In Application" encryption for Apache Cassandra with AWS Key Management Service](../example-configs/cassandra-encryption)
 -->
 
 Shotover proxy currently supports the following protocols as sources:

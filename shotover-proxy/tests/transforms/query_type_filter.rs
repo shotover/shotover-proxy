@@ -5,7 +5,7 @@ use serial_test::serial;
 #[serial]
 async fn test_query_type_filter() {
     let shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-topologies/query_type_filter/simple.yaml");
+        ShotoverManager::from_topology_file("tests/test-configs/query_type_filter/simple.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 

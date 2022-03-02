@@ -17,7 +17,8 @@ fn assert_array_elems(expected: &[&str], result: String) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_metrics() {
-    let shotover_manager = ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/null-redis/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     let expected = vec![

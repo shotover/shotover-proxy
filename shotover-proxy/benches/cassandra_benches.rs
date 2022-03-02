@@ -35,8 +35,8 @@ fn cassandra(c: &mut Criterion) {
             format!("protect_local_{}_unencrypted", query.name),
             || {
                 BenchResources::new(
-                    "examples/cassandra-protect-local/topology.yaml",
-                    "examples/cassandra-protect-local/docker-compose.yml",
+                    "example-configs/cassandra-protect-local/topology.yaml",
+                    "example-configs/cassandra-protect-local/docker-compose.yml",
                 )
             },
             |b, state| {
@@ -51,8 +51,8 @@ fn cassandra(c: &mut Criterion) {
             format!("redis_cache_{}_uncached", query.name),
             || {
                 BenchResources::new(
-                    "examples/cassandra-redis-cache/topology.yaml",
-                    "examples/cassandra-redis-cache/docker-compose.yml",
+                    "example-configs/cassandra-redis-cache/topology.yaml",
+                    "example-configs/cassandra-redis-cache/docker-compose.yml",
                 )
             },
             |b, state| {
@@ -66,8 +66,8 @@ fn cassandra(c: &mut Criterion) {
             format!("passthrough_{}", query.name),
             || {
                 BenchResources::new(
-                    "examples/cassandra-passthrough/topology.yaml",
-                    "examples/cassandra-passthrough/docker-compose.yml",
+                    "example-configs/cassandra-passthrough/topology.yaml",
+                    "example-configs/cassandra-passthrough/docker-compose.yml",
                 )
             },
             |b, state| {
@@ -81,8 +81,8 @@ fn cassandra(c: &mut Criterion) {
             format!("passthrough_tls_{}", query.name),
             || {
                 BenchResources::new_tls(
-                    "examples/cassandra-passthrough-tls/topology.yaml",
-                    "examples/cassandra-passthrough-tls/docker-compose.yml",
+                    "example-configs/cassandra-passthrough-tls/topology.yaml",
+                    "example-configs/cassandra-passthrough-tls/docker-compose.yml",
                 )
             },
             |b, state| {
@@ -111,8 +111,8 @@ fn cassandra(c: &mut Criterion) {
                 format!("protect_local_{}_encrypted", query.name),
                 || {
                     let resources = BenchResources::new(
-                        "examples/cassandra-protect-local/topology.yaml",
-                        "examples/cassandra-protect-local/docker-compose.yml"
+                        "example-configs/cassandra-protect-local/topology.yaml",
+                        "example-configs/cassandra-protect-local/docker-compose.yml"
                     );
 
                     resources
@@ -180,7 +180,7 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file).wait_for_n_t("Startup complete", 1, 90);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let ca_cert = "examples/cassandra-passthrough-tls/certs/localhost_CA.crt";
+        let ca_cert = "example-configs/cassandra-passthrough-tls/certs/localhost_CA.crt";
 
         let connection = shotover_manager.cassandra_connection_tls(
             "127.0.0.1",

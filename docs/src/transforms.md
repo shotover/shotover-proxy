@@ -57,11 +57,9 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-
 ### CassandraPeersRewrite
 
 This transform should be used with the `CassandraSinkSingle` transform. It will write over the ports of the peers returned by queries to the `system.peers_v2` table in Cassandra with a user supplied value (typically the port that Shotover is listening on so Cassandra drivers will connect to Shotover instead of the Cassandra nodes themselves).
-
 
 ```yaml
 - CassandraPeersRewrite:
@@ -280,11 +278,11 @@ This transform is a full featured Redis driver that will connect to a Redis clus
     # Removing this field will disable TLS.
     tls:
       # Path to the certificate file, typically named with a .crt extension.
-      certificate_authority_path: "examples/redis-tls/tls_keys/ca.crt"
+      certificate_authority_path: "example-configs/redis-tls/tls_keys/ca.crt"
       # Path to the private key file, typically named with a .key extension.
-      certificate_path: "examples/redis-tls/tls_keys/redis.crt"
+      certificate_path: "example-configs/redis-tls/tls_keys/redis.crt"
       # Path to the certificate authority file typically named ca.crt.
-      private_key_path: "examples/redis-tls/tls_keys/redis.key"
+      private_key_path: "example-configs/redis-tls/tls_keys/redis.key"
 ```
 
 Unlike other Redis cluster drivers, this transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.

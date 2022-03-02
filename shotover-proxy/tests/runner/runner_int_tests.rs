@@ -6,7 +6,8 @@ use crate::helpers::{ShotoverManager, ShotoverProcess};
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_runtime_use_existing() {
-    let shotover_manager = ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/null-redis/topology.yaml");
 
     // Assert that shotover is using the test runtime
     let handle = tokio::runtime::Handle::current();
@@ -19,7 +20,8 @@ async fn test_runtime_use_existing() {
 #[test]
 #[serial]
 fn test_runtime_create() {
-    let shotover_manager = ShotoverManager::from_topology_file("examples/null-redis/topology.yaml");
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/null-redis/topology.yaml");
 
     // Assert that shotover created a runtime for itself
     assert!(shotover_manager.runtime.is_some());
@@ -29,14 +31,14 @@ fn test_runtime_create() {
 #[serial]
 fn test_early_shutdown_cassandra_source() {
     std::mem::drop(ShotoverManager::from_topology_file(
-        "examples/null-cassandra/topology.yaml",
+        "example-configs/null-cassandra/topology.yaml",
     ));
 }
 
 #[test]
 #[serial]
 fn test_shotover_responds_sigterm() {
-    let shotover_process = ShotoverProcess::new("examples/null-redis/topology.yaml");
+    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
     shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
     let (code, stdout, _) = shotover_process.wait();
@@ -52,7 +54,7 @@ fn test_shotover_responds_sigterm() {
 #[test]
 #[serial]
 fn test_shotover_responds_sigint() {
-    let shotover_process = ShotoverProcess::new("examples/null-redis/topology.yaml");
+    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);
 
     let (code, stdout, _) = shotover_process.wait();
@@ -69,18 +71,16 @@ fn test_shotover_responds_sigint() {
 #[should_panic]
 #[serial]
 fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
-    let _shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-topologies/invalid_non_terminating_last.yaml",
-    );
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("tests/test-configs/invalid_non_terminating_last.yaml");
 }
 
 #[test]
 #[should_panic]
 #[serial]
 fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
-    let _shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-topologies/invalid_terminating_not_last.yaml",
-    );
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("tests/test-configs/invalid_terminating_not_last.yaml");
 }
 
 #[test]
@@ -88,5 +88,5 @@ fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
 #[serial]
 fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
     let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-topologies/invalid_subchains.yaml");
+        ShotoverManager::from_topology_file("tests/test-configs/invalid_subchains.yaml");
 }
