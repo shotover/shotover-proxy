@@ -27,12 +27,12 @@ pub(crate) struct CassandraMetadata {
     pub version: Version,
     pub stream_id: StreamId,
     pub tracing_id: Option<Uuid>,
-    pub warnings: Vec<String>,
+    // missing `warnings` field because we are not using it currently
 }
 
 /// Parse metadata only from an unparsed Cassandra frame
-pub(crate) fn metadata(bytes: Bytes) -> Result<CassandraMetadata> {
-    let frame = RawCassandraFrame::from_buffer(&bytes, Compression::None)
+pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
+    let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
         .map_err(|e| anyhow!("{e:?}"))?
         .frame;
 
@@ -40,7 +40,6 @@ pub(crate) fn metadata(bytes: Bytes) -> Result<CassandraMetadata> {
         version: frame.version,
         stream_id: frame.stream_id,
         tracing_id: frame.tracing_id,
-        warnings: frame.warnings,
     })
 }
 
@@ -61,7 +60,6 @@ impl CassandraFrame {
             version: self.version,
             stream_id: self.stream_id,
             tracing_id: self.tracing_id,
-            warnings: self.warnings.clone(),
         }
     }
 

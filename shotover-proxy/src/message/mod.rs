@@ -31,7 +31,7 @@ use uuid::Uuid;
 enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
-    Unknown,
+    None,
 }
 
 pub type Messages = Vec<Message>;
@@ -243,20 +243,19 @@ impl Message {
 
     /// Get metadata for this `Message`
     fn metadata(&mut self) -> Result<Metadata> {
-        let inner = self.inner.take().unwrap();
-        match inner {
+        match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
                 bytes,
                 message_type,
             } => match message_type {
-                MessageType::Cassandra => Ok(Metadata::Cassandra(cassandra::metadata(bytes)?)),
+                MessageType::Cassandra => Ok(Metadata::Cassandra(cassandra::metadata(&*bytes)?)),
                 MessageType::Redis => Ok(Metadata::Redis),
-                MessageType::None => Ok(Metadata::Unknown),
+                MessageType::None => Ok(Metadata::None),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
                 Frame::Redis(_) => Ok(Metadata::Redis),
-                Frame::None => Ok(Metadata::Unknown),
+                Frame::None => Ok(Metadata::None),
             },
         }
     }
@@ -277,14 +276,14 @@ impl Message {
                     version: metadata.version,
                     stream_id: metadata.stream_id,
                     tracing_id: metadata.tracing_id,
-                    warnings: metadata.warnings,
+                    warnings: vec![],
                     operation: body,
                 })
             }
             Metadata::Redis => {
                 unimplemented!()
             }
-            Metadata::Unknown => Frame::None,
+            Metadata::None => Frame::None,
         });
 
         self.return_to_sender = true;
