@@ -1,19 +1,16 @@
-use std::sync::Arc;
-
+use crate::codec::cassandra::CassandraCodec;
+use crate::config::topology::TopicHolder;
+use crate::server::TcpCodecListener;
+use crate::sources::Sources;
+use crate::tls::{TlsAcceptor, TlsConfig};
+use crate::transforms::chain::TransformChain;
 use anyhow::Result;
-use async_trait::async_trait;
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
-
-use crate::codec::cassandra::CassandraCodec;
-use crate::config::topology::TopicHolder;
-use crate::server::TcpCodecListener;
-use crate::sources::{Sources, SourcesFromConfig};
-use crate::tls::{TlsAcceptor, TlsConfig};
-use crate::transforms::chain::TransformChain;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraConfig {
@@ -23,9 +20,8 @@ pub struct CassandraConfig {
     pub tls: Option<TlsConfig>,
 }
 
-#[async_trait]
-impl SourcesFromConfig for CassandraConfig {
-    async fn get_source(
+impl CassandraConfig {
+    pub async fn get_source(
         &self,
         chain: &TransformChain,
         _topics: &mut TopicHolder,

@@ -3,35 +3,14 @@ use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
 use crate::sources::mpsc_source::{AsyncMpsc, AsyncMpscConfig};
 use crate::sources::redis_source::{RedisConfig, RedisSource};
 use crate::transforms::chain::TransformChain;
-use async_trait::async_trait;
+use anyhow::Result;
 use serde::Deserialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use anyhow::Result;
-
 pub mod cassandra_source;
 pub mod mpsc_source;
 pub mod redis_source;
-
-/*
-   notify_shutdown: broadcast::Sender<()>,
-
-   /// Used as part of the graceful shutdown process to wait for client
-   /// connections to complete processing.
-   ///
-   /// Tokio channels are closed once all `Sender` handles go out of scope.
-   /// When a channel is closed, the receiver receives `None`. This is
-   /// leveraged to detect all connection handlers completing. When a
-   /// connection handler is initialized, it is assigned a clone of
-   /// `shutdown_complete_tx`. When the listener shuts down, it drops the
-   /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
-   /// complete, all clones of the `Sender` are also dropped. This results in
-   /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
-   /// is safe to exit the server process.
-   shutdown_complete_rx: mpsc::Receiver<()>,
-   shutdown_complete_tx: mpsc::Sender<()>,
-*/
 
 #[derive(Debug)]
 pub enum Sources {
@@ -70,14 +49,4 @@ impl SourcesConfig {
             SourcesConfig::Redis(r) => r.get_source(chain, topics, trigger_shutdown_rx).await,
         }
     }
-}
-
-#[async_trait]
-pub trait SourcesFromConfig: Send {
-    async fn get_source(
-        &self,
-        chain: &TransformChain,
-        topics: &mut TopicHolder,
-        trigger_shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<Vec<Sources>>;
 }

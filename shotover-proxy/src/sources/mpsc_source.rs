@@ -1,15 +1,13 @@
-use crate::transforms::chain::TransformChain;
-use tokio::sync::mpsc::Receiver;
-
 use crate::config::topology::{ChannelMessage, TopicHolder};
 use crate::server::Shutdown;
-use crate::sources::{Sources, SourcesFromConfig};
+use crate::sources::Sources;
+use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use serde::Deserialize;
 use std::time::Instant;
 use tokio::runtime::Handle;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
@@ -27,9 +25,8 @@ pub struct AsyncMpscConfig {
     pub coalesce_behavior: Option<CoalesceBehavior>,
 }
 
-#[async_trait]
-impl SourcesFromConfig for AsyncMpscConfig {
-    async fn get_source(
+impl AsyncMpscConfig {
+    pub async fn get_source(
         &self,
         chain: &TransformChain,
         topics: &mut TopicHolder,
