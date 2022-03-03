@@ -60,12 +60,15 @@ Note: this will just pass the query to the remote node. No cluster discovery or 
 
 ### CassandraPeersRewrite
 
-This transform should be used with the `CassandraSinkSingle` transform. It will write over the ports of the peers returned by queries to the `system.peers_v2` table in Cassandra with a user supplied value (typically the port that Shotover is listening on so Cassandra drivers will connect to Shotover instead of the Cassandra nodes themselves).
+This transform should be used with the `CassandraSinkSingle` transform. It will write over the IP addresses and ports of the peers returned by queries to the `system.peers` or `system.peers_v2` table in Cassandra with a user supplied value (typically the IP address or port that Shotover is listening on so Cassandra drivers will connect to Shotover instead of the Cassandra nodes themselves).
 
 ```yaml
 - CassandraPeersRewrite:
-    # rewrite the peer ports to 9043
+    # When this field is provided, rewrite the peer ports to 9043
     port: 9043
+    
+    # When this field is provided, rewrite the peer IP addresses to 127.0.0.1
+    ip: "127.0.0.1"
 ```
 
 ### Coalesce
