@@ -13,7 +13,6 @@ use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::load_balance::ConnectionBalanceAndPool;
 #[cfg(test)]
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::Null;
@@ -49,7 +48,6 @@ pub mod coalesce;
 pub mod debug;
 pub mod distributed;
 pub mod filter;
-pub mod load_balance;
 pub mod loopback;
 pub mod noop;
 pub mod null;
@@ -85,7 +83,6 @@ pub enum Transforms {
     DebugRandomDelay(DebugRandomDelay),
     DebugPrinter(DebugPrinter),
     ParallelMap(ParallelMap),
-    PoolConnections(ConnectionBalanceAndPool),
     Coalesce(Coalesce),
     QueryTypeFilter(QueryTypeFilter),
     QueryCounter(QueryCounter),
@@ -117,7 +114,6 @@ impl Transforms {
             Transforms::RedisClusterPortsRewrite(r) => r.transform(message_wrapper).await,
             Transforms::RedisSinkCluster(r) => r.transform(message_wrapper).await,
             Transforms::ParallelMap(s) => s.transform(message_wrapper).await,
-            Transforms::PoolConnections(s) => s.transform(message_wrapper).await,
             Transforms::Coalesce(s) => s.transform(message_wrapper).await,
             Transforms::QueryTypeFilter(s) => s.transform(message_wrapper).await,
             Transforms::QueryCounter(s) => s.transform(message_wrapper).await,
@@ -147,7 +143,6 @@ impl Transforms {
             Transforms::RedisSinkCluster(r) => r.prep_transform_chain(t).await,
             Transforms::RedisClusterPortsRewrite(r) => r.prep_transform_chain(t).await,
             Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
-            Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
             Transforms::Coalesce(s) => s.prep_transform_chain(t).await,
             Transforms::QueryTypeFilter(s) => s.prep_transform_chain(t).await,
             Transforms::QueryCounter(s) => s.prep_transform_chain(t).await,
@@ -168,7 +163,6 @@ impl Transforms {
             Transforms::Null(n) => n.validate(),
             Transforms::RedisSinkCluster(r) => r.validate(),
             Transforms::ParallelMap(s) => s.validate(),
-            Transforms::PoolConnections(s) => s.validate(),
             Transforms::Coalesce(s) => s.validate(),
             Transforms::QueryTypeFilter(s) => s.validate(),
             Transforms::QueryCounter(s) => s.validate(),
@@ -194,7 +188,6 @@ impl Transforms {
             Transforms::Null(n) => n.is_terminating(),
             Transforms::RedisSinkCluster(r) => r.is_terminating(),
             Transforms::ParallelMap(s) => s.is_terminating(),
-            Transforms::PoolConnections(s) => s.is_terminating(),
             Transforms::Coalesce(s) => s.is_terminating(),
             Transforms::QueryTypeFilter(s) => s.is_terminating(),
             Transforms::QueryCounter(s) => s.is_terminating(),
@@ -228,7 +221,6 @@ pub enum TransformsConfig {
     #[cfg(feature = "alpha-transforms")]
     Protect(ProtectConfig),
     ParallelMap(ParallelMapConfig),
-    //PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
     QueryTypeFilter(QueryTypeFilterConfig),
     QueryCounter(QueryCounterConfig),
@@ -262,7 +254,6 @@ impl TransformsConfig {
             TransformsConfig::Protect(p) => p.get_source().await,
             TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
-            //TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
             TransformsConfig::Coalesce(s) => s.get_source().await,
             TransformsConfig::QueryTypeFilter(s) => s.get_source().await,
             TransformsConfig::QueryCounter(s) => s.get_source().await,
