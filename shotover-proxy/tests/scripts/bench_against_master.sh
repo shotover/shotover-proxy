@@ -6,6 +6,8 @@ set -o pipefail # Needed to make the cargo bench fail early on e.g. compiler err
 GITHUB_EVENT_NUMBER=$1
 LOG_PAGE=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
 
+sudo sh -c 'echo 1 >/proc/sys/kernel/perf_event_paranoid'
+
 # The extra complexity allows us to restore back to the original ref in more cases
 ORIGINAL_REF=`git rev-parse --abbrev-ref HEAD`
 if [ "$ORIGINAL_REF" == "HEAD" ]; then

@@ -1,5 +1,9 @@
 use cassandra_cpp::{stmt, Session, Statement};
+use criterion::measurement::Measurement;
 use criterion::{criterion_group, criterion_main, Criterion};
+use criterion_perf_events::Perf;
+use perfcnt::linux::HardwareEventType;
+use perfcnt::linux::PerfCounterBuilderLinux;
 use std::cell::RefCell;
 use std::sync::Arc;
 use test_helpers::docker_compose::DockerCompose;
@@ -13,7 +17,7 @@ struct Query {
     statement: Statement,
 }
 
-fn cassandra(c: &mut Criterion) {
+fn cassandra<T: Measurement>(c: &mut Criterion<T>) {
     let mut group = c.benchmark_group("cassandra");
     group.throughput(criterion::Throughput::Elements(1));
     group.noise_threshold(0.2);
@@ -199,7 +203,15 @@ fn new_lazy_shared<T>(create: impl Fn() -> T) -> impl Fn() -> Arc<RefCell<Option
     }
 }
 
-criterion_group!(benches, cassandra);
+criterion_group!(
+    name = benches;
+    config = Criterion::default().with_measurement(Perf::new({
+        let mut builder = PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions);
+        builder.inherit();
+        builder
+    }));
+    targets = cassandra
+);
 criterion_main!(benches);
 
 pub struct BenchResources {
