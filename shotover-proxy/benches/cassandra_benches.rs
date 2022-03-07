@@ -1,5 +1,7 @@
 use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::cell::RefCell;
+use std::sync::Arc;
 use test_helpers::docker_compose::DockerCompose;
 
 #[path = "../tests/helpers/mod.rs"]
@@ -28,69 +30,96 @@ fn cassandra(c: &mut Criterion) {
             statement: stmt!("SELECT id, x, name FROM benchmark_keyspace.table_1;"),
         },
     ];
-    for query in queries {
-        // Benches the case where the message does not meet the criteria for encryption
-        #[cfg(feature = "alpha-transforms")]
-        group.bench_with_input(
-            format!("protect_local_{}_unencrypted", query.name),
-            || {
-                BenchResources::new(
-                    "example-configs/cassandra-protect-local/topology.yaml",
-                    "example-configs/cassandra-protect-local/docker-compose.yml",
-                )
-            },
-            |b, state| {
-                b.iter(|| {
-                    state.connection.execute(&query.statement).wait().unwrap();
-                })
-            },
-        );
 
+    // Benches the case where the message does not meet the criteria for encryption
+    #[cfg(feature = "alpha-transforms")]
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "example-configs/cassandra-protect-local/topology.yaml",
+                "example-configs/cassandra-protect-local/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("protect_local_{}_unencrypted", query.name),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
+                    })
+                },
+            );
+        }
+    }
+
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "example-configs/cassandra-redis-cache/topology.yaml",
+                "example-configs/cassandra-redis-cache/docker-compose.yml",
+            )
+        });
         // Benches the case where the message does not meet the criteria for caching
-        group.bench_with_input(
-            format!("redis_cache_{}_uncached", query.name),
-            || {
-                BenchResources::new(
-                    "example-configs/cassandra-redis-cache/topology.yaml",
-                    "example-configs/cassandra-redis-cache/docker-compose.yml",
-                )
-            },
-            |b, state| {
-                b.iter(|| {
-                    state.connection.execute(&query.statement).wait().unwrap();
-                })
-            },
-        );
+        for query in &queries {
+            group.bench_with_input(
+                format!("redis_cache_{}_uncached", query.name),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
+                    })
+                },
+            );
+        }
+    }
 
-        group.bench_with_input(
-            format!("passthrough_{}", query.name),
-            || {
-                BenchResources::new(
-                    "example-configs/cassandra-passthrough/topology.yaml",
-                    "example-configs/cassandra-passthrough/docker-compose.yml",
-                )
-            },
-            |b, state| {
-                b.iter(|| {
-                    state.connection.execute(&query.statement).wait().unwrap();
-                })
-            },
-        );
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "example-configs/cassandra-passthrough/topology.yaml",
+                "example-configs/cassandra-passthrough/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_{}", query.name),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
+                    })
+                },
+            );
+        }
+    }
 
-        group.bench_with_input(
-            format!("passthrough_tls_{}", query.name),
-            || {
-                BenchResources::new_tls(
-                    "example-configs/cassandra-passthrough-tls/topology.yaml",
-                    "example-configs/cassandra-passthrough-tls/docker-compose.yml",
-                )
-            },
-            |b, state| {
-                b.iter(|| {
-                    state.connection.execute(&query.statement).wait().unwrap();
-                })
-            },
-        );
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new_tls(
+                "example-configs/cassandra-passthrough-tls/topology.yaml",
+                "example-configs/cassandra-passthrough-tls/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_tls_{}", query.name),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
+                    })
+                },
+            );
+        }
     }
 
     #[cfg(feature = "alpha-transforms")]
@@ -105,47 +134,68 @@ fn cassandra(c: &mut Criterion) {
                 statement: stmt!("SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table"),
             },
         ];
+        let resources = new_lazy_shared(|| {
+            let resources = BenchResources::new(
+                "example-configs/cassandra-protect-local/topology.yaml",
+                "example-configs/cassandra-protect-local/docker-compose.yml",
+            );
+
+            resources
+                .connection
+                .execute(&stmt!(
+                    "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+                ))
+                .wait()
+                .unwrap();
+            resources
+                .connection
+                .execute(&stmt!(
+                    "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 varchar, col2 int, col3 boolean);"
+                ))
+                .wait()
+                .unwrap();
+            resources
+                .connection
+                .execute(&stmt!(
+                    "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'Initial value', 42, true);"
+                ))
+                .wait()
+                .unwrap();
+
+            resources
+        });
         for query in queries {
             // Benches the case where the message meets the criteria for encryption
             group.bench_with_input(
                 format!("protect_local_{}_encrypted", query.name),
-                || {
-                    let resources = BenchResources::new(
-                        "example-configs/cassandra-protect-local/topology.yaml",
-                        "example-configs/cassandra-protect-local/docker-compose.yml"
-                    );
-
-                    resources
-                        .connection
-                        .execute(&stmt!(
-                            "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
-                        ))
-                        .wait()
-                        .unwrap();
-                    resources
-                        .connection
-                        .execute(&stmt!(
-                            "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 varchar, col2 int, col3 boolean);"
-                        ))
-                        .wait()
-                        .unwrap();
-                    resources
-                        .connection
-                        .execute(&stmt!(
-                            "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'Initial value', 42, true);"
-                        ))
-                        .wait()
-                        .unwrap();
-
-                    resources
-                },
-                |b, state| {
+                &resources,
+                |b, resources| {
                     b.iter(|| {
-                        state.connection.execute(&query.statement).wait().unwrap();
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
                     })
                 },
             );
         }
+    }
+}
+
+/// The returned Fn will return the result of the provided Fn Wrapped in an `Arc<RefCell<Option<T>>>`
+/// The reason for this complicated return type is simply for implementation reasons.
+/// Refcell::borrow_mut can always be called on the RefCell (assuming the bench creation logic is single threaded) and the Option will always be Some.
+///
+/// The returned Fn may be called any amount of times but the provided Fn will only be called 0 or 1 times.
+/// The provided Fn is not called until the first time the returned Fn is called.
+///
+/// This function can be easily pulled out and reused by other benchmarks if needed.
+fn new_lazy_shared<T>(create: impl Fn() -> T) -> impl Fn() -> Arc<RefCell<Option<T>>> {
+    let resources = Arc::new(RefCell::new(None));
+    move || {
+        if resources.borrow().is_none() {
+            resources.replace(Some(create()));
+        }
+        resources.clone()
     }
 }
 
@@ -159,8 +209,7 @@ pub struct BenchResources {
 }
 
 impl BenchResources {
-    #[allow(unused)]
-    pub fn new(shotover_topology: &str, compose_file: &str) -> Self {
+    fn new(shotover_topology: &str, compose_file: &str) -> Self {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
@@ -175,8 +224,7 @@ impl BenchResources {
         bench_resources
     }
 
-    #[allow(unused)]
-    pub fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
+    fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
