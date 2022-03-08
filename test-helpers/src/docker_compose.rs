@@ -138,7 +138,7 @@ impl DockerCompose {
     /// * If `count` occurrences of `log_text` is not found in the log within 90 seconds.
     ///
     fn wait_for_log(&self, log_text: &str, count: usize) {
-        let timeout_seconds = 90;
+        let timeout_seconds = 100;
         info!("wait_for_log: '{log_text}' {count}");
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();

@@ -1309,13 +1309,8 @@ fn test_passthrough_tls() {
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-        let direct_connection = shotover_manager.cassandra_connection_tls(
-            "127.0.0.1",
-            9042,
-            ca_cert,
-            "cassandra",
-            "cassandra",
-        );
+        let direct_connection =
+            shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
         assert_query_result(
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
@@ -1323,13 +1318,7 @@ fn test_passthrough_tls() {
         );
     }
 
-    let connection = shotover_manager.cassandra_connection_tls(
-        "127.0.0.1",
-        9043,
-        ca_cert,
-        "cassandra",
-        "cassandra",
-    );
+    let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9043, ca_cert);
 
     keyspace::test(&connection);
     table::test(&connection);
@@ -1421,10 +1410,9 @@ fn test_cassandra_peers_rewrite() {
     {
         assert_query_result(
             &normal_connection,
-            "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+            "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Inet("172.16.1.3".parse().unwrap()),
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("dc1".into()),
                 ResultValue::Int(9042),
                 ResultValue::Varchar("West".into()),
             ]],
@@ -1439,10 +1427,9 @@ fn test_cassandra_peers_rewrite() {
     {
         assert_query_result(
             &rewrite_port_connection,
-            "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
+            "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Inet("172.16.1.3".parse().unwrap()),
-                ResultValue::Varchar("Mars".into()),
+                ResultValue::Varchar("dc1".into()),
                 ResultValue::Int(9044),
                 ResultValue::Varchar("West".into()),
             ]],
