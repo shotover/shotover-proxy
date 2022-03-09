@@ -1559,7 +1559,7 @@ fn test_cassandra_peers_rewrite() {
 
     {
         assert_query_result(
-            &rewrite_port_connection,
+            &rewrite_peers_connection,
             "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
                 ResultValue::Varchar("dc1".into()),
@@ -1574,7 +1574,7 @@ fn test_cassandra_peers_rewrite() {
                 "SELECT peer, data_center, native_port, rack FROM system.peers_v2;",
                 &[&[
                     ResultValue::Inet("127.0.0.1".parse().unwrap()),
-                    ResultValue::Varchar("Mars".into()),
+                    ResultValue::Varchar("dc1".into()),
                     ResultValue::Int(9044),
                     ResultValue::Varchar("West".into()),
                 ]],
