@@ -4,14 +4,7 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
-use governor::{
-    clock::DefaultClock,
-    middleware::NoOpMiddleware,
-    state::{InMemoryState, NotKeyed},
-    Quota, RateLimiter,
-};
 use metrics::{register_gauge, Gauge};
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -103,8 +96,6 @@ pub struct TcpCodecListener<C: Codec> {
     message_count: u64,
 
     available_connections_gauge: Gauge,
-
-    max_requests_per_second: Option<NonZeroU32>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -118,7 +109,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         limit_connections: Arc<Semaphore>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
-        max_requests_per_second: Option<NonZeroU32>,
     ) -> Self {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
@@ -136,7 +126,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             tls,
             message_count: 0,
             available_connections_gauge,
-            max_requests_per_second,
         }
     }
 
@@ -157,10 +146,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
     /// strategy, which is what we do here.
     pub async fn run(&mut self) -> Result<()> {
         info!("accepting inbound connections");
-
-        let limiter = self
-            .max_requests_per_second
-            .map(|max| Arc::new(RateLimiter::direct(Quota::per_second(max))));
 
         loop {
             // Wait for a permit to become available
@@ -239,8 +224,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
             self.message_count = self.message_count.wrapping_add(1);
 
-            let limiter = limiter.clone();
-
             // Spawn a new task to process the connections. Tokio tasks are like
             // asynchronous green threads and are executed concurrently.
             tokio::spawn(
@@ -248,7 +231,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                     tracing::debug!("New connection from {}", handler.conn_details);
 
                     // Process the connection. If an error is encountered, log it.
-                    if let Err(err) = handler.run(socket, limiter).await {
+                    if let Err(err) = handler.run(socket).await {
                         error!(cause = ?err, "connection error");
                     }
                 }
@@ -413,11 +396,7 @@ impl<C: Codec + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(
-        &mut self,
-        stream: TcpStream,
-        limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
-    ) -> Result<()> {
+    pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
         debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
@@ -476,14 +455,6 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("Received raw message {:?}", messages);
 
             debug!("client details: {:?}", &self.client_details);
-
-            if let Some(limiter) = limiter.as_ref() {
-                for message in &mut messages {
-                    if limiter.check().is_err() {
-                        message.set_backpressure()?;
-                    }
-                }
-            }
 
             messages = process_return_to_sender_messages(messages, &out_tx);
 

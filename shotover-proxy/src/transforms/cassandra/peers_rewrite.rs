@@ -1,7 +1,6 @@
 use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue};
 use crate::{
-    config::topology::TopicHolder,
     error::ChainResponse,
     transforms::{Transform, Transforms, Wrapper},
 };
@@ -15,7 +14,7 @@ pub struct CassandraPeersRewriteConfig {
 }
 
 impl CassandraPeersRewriteConfig {
-    pub async fn get_source(&self, _topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_source(&self) -> Result<Transforms> {
         Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
             port: self.port,
         }))

@@ -69,7 +69,6 @@ impl RedisSource {
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
-            None,
         );
 
         let join_handle = Handle::current().spawn(async move {
