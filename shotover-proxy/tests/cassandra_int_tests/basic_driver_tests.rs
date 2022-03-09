@@ -1490,5 +1490,7 @@ async fn test_cassandra_request_throttling() {
             e
         ),
     });
-    assert!(results.len() < 22 && results.len() > 20);
+
+    let len = results.len();
+    assert!(len < 22 && len > 20, "got {len}");
 }
