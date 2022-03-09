@@ -1455,11 +1455,9 @@ async fn test_cassandra_request_throttling() {
         ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window and not trigger the rate limiter with client's startup reqeusts
     let connection_2 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-
-    // sleep to reset the window
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window again
 
     let statement = stmt!("SELECT * FROM system.peers");
 
@@ -1483,20 +1481,14 @@ async fn test_cassandra_request_throttling() {
     let mut results = join_all(futures).await;
     results.retain(|result| match result {
         Ok(_) => true,
-        Err(e) => {
-            if let Error(
-                ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
-                _,
-            ) = e
-            {
-            } else {
-                panic!(
-                    "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
-                    e
-                )
-            }
-            false
-        }
+        Err(Error(
+            ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
+            _,
+        )) => false,
+        Err(e) => panic!(
+            "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
+            e
+        ),
     });
     assert!(results.len() < 22 && results.len() > 18);
 }
