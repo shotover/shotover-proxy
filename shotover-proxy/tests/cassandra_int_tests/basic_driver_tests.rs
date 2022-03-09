@@ -1490,5 +1490,5 @@ async fn test_cassandra_request_throttling() {
             e
         ),
     });
-    assert!(results.len() < 22 && results.len() > 18);
+    assert!(results.len() < 22 && results.len() > 20);
 }
