@@ -1,5 +1,6 @@
 use crate::{
     error::ChainResponse,
+    message::Message,
     transforms::{Transform, Transforms, Wrapper},
 };
 use anyhow::Result;
@@ -21,7 +22,6 @@ pub struct RequestThrottlingConfig {
 
 impl RequestThrottlingConfig {
     pub async fn get_source(&self) -> Result<Transforms> {
-        tracing::info!("here");
         Ok(Transforms::RequestThrottling(RequestThrottling {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
@@ -38,34 +38,25 @@ pub struct RequestThrottling {
 #[async_trait]
 impl Transform for RequestThrottling {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let mut backpressured_messages: Vec<crate::message::Message> = vec![];
-
-        // find indexes of messages that need to be backpressured
-        let remove_indexes = message_wrapper
-            .messages
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, _)| {
-                if self.limiter.check().is_err() {
-                    Some(i)
-                } else {
-                    None
-                }
+        // extract throttled messages from the message_wrapper
+        #[allow(clippy::needless_collect)]
+        let throttled_messages: Vec<(Message, usize)> = (0..message_wrapper.messages.len())
+            .into_iter()
+            .rev()
+            .filter(|_| self.limiter.check().is_err())
+            .map(|i| {
+                let message = message_wrapper.messages.remove(i);
+                (message, i)
             })
-            .collect::<Vec<_>>();
+            .collect();
 
-        // remove messsages and set to backpressure
-        for i in &remove_indexes {
-            let mut message = message_wrapper.messages.remove(*i);
-            message.set_backpressure()?;
-            backpressured_messages.push(message);
-        }
-
+        // send allowed messages to Cassandra
         let mut responses = message_wrapper.call_next_transform().await?;
 
-        // reinsert into responses
-        for i in remove_indexes.into_iter() {
-            responses.insert(i, backpressured_messages.pop().unwrap());
+        // reinsert backpressure error responses back into responses
+        for (mut message, i) in throttled_messages.into_iter().rev() {
+            message.set_backpressure()?;
+            responses.insert(i, message);
         }
 
         Ok(responses)

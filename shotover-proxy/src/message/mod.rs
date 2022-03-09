@@ -242,7 +242,7 @@ impl Message {
     }
 
     /// Get metadata for this `Message`
-    fn metadata(&mut self) -> Result<Metadata> {
+    fn metadata(&self) -> Result<Metadata> {
         match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
                 bytes,
@@ -286,7 +286,6 @@ impl Message {
             Metadata::None => Frame::None,
         });
 
-        self.return_to_sender = true;
         Ok(())
     }
 
