@@ -353,18 +353,23 @@ fn spawn_read_write_tasks<
     tx: W,
     in_tx: UnboundedSender<Messages>,
     out_rx: UnboundedReceiver<Messages>,
+    out_tx: UnboundedSender<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
     let writer = FramedWrite::new(tx, codec);
 
     tokio::spawn(
         async move {
-            while let Some(messages) = reader.next().await {
-                match messages {
-                    Ok(messages) => {
-                        if let Err(error) = in_tx.send(messages) {
-                            warn!("failed to send message: {}", error);
-                            return;
+            while let Some(message) = reader.next().await {
+                match message {
+                    Ok(message) => {
+                        let remaining_messages =
+                            process_return_to_sender_messages(message, &out_tx);
+                        if !remaining_messages.is_empty() {
+                            if let Err(error) = in_tx.send(remaining_messages) {
+                                warn!("failed to send message: {}", error);
+                                return;
+                            }
                         }
                     }
                     Err(error) => {
@@ -408,16 +413,16 @@ impl<C: Codec + 'static> Handler<C> {
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx);
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         };
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
             debug!("Waiting for message");
-            let mut messages = tokio::select! {
+            let messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
@@ -455,8 +460,6 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("Received raw message {:?}", messages);
 
             debug!("client details: {:?}", &self.client_details);
-
-            messages = process_return_to_sender_messages(messages, &out_tx);
 
             match self
                 .chain
