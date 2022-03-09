@@ -61,7 +61,8 @@ fn is_system_peers(message: &mut Message) -> bool {
     if let Some(Frame::Cassandra(_)) = message.frame() {
         if let Some(namespace) = message.namespace() {
             if namespace.len() > 1 {
-                return namespace[0] == "system" && namespace[1] == "peers_v2";
+                return namespace[0] == "system"
+                    && (namespace[1] == "peers" || namespace[1] == "peers_v2");
             }
         }
     }
@@ -89,15 +90,13 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
                 .flatten()
                 .collect::<Vec<_>>();
 
-            if !port_column_indices.is_empty() {
-                if let MessageValue::Rows(rows) = &mut *value {
+            if let MessageValue::Rows(rows) = &mut *value {
+                for i in &port_column_indices {
                     for row in rows.iter_mut() {
-                        for i in &port_column_indices {
-                            row[*i] = MessageValue::Integer(new_port as i64, IntSize::I32);
-                        }
+                        row[*i] = MessageValue::Integer(new_port as i64, IntSize::I32);
                     }
-                    message.invalidate_cache();
                 }
+                message.invalidate_cache();
             }
         } else {
             panic!(
@@ -225,6 +224,19 @@ mod cassandra_peers_rewrite_tests {
         });
 
         Message::from_frame(original)
+    }
+
+    #[test]
+    fn test_is_system_peers() {
+        assert!(is_system_peers(&mut create_query_message(
+            "SELECT * FROM system.peers;".into()
+        )));
+
+        assert!(!is_system_peers(&mut create_query_message(
+            "SELECT * FROM not_system.peers;".into()
+        )));
+
+        assert!(!is_system_peers(&mut create_query_message("".into())));
     }
 
     #[test]
