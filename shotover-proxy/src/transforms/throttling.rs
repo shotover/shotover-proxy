@@ -50,8 +50,13 @@ impl Transform for RequestThrottling {
             })
             .collect();
 
-        // send allowed messages to Cassandra
-        let mut responses = message_wrapper.call_next_transform().await?;
+        // if every message got backpressured we can skip this
+        let mut responses = if !message_wrapper.messages.is_empty() {
+            // send allowed messages to Cassandra
+            message_wrapper.call_next_transform().await?
+        } else {
+            vec![]
+        };
 
         // reinsert backpressure error responses back into responses
         for (mut message, i) in throttled_messages.into_iter().rev() {
