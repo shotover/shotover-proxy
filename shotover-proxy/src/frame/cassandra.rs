@@ -23,6 +23,26 @@ use uuid::Uuid;
 
 use crate::message::{MessageValue, QueryType};
 
+pub(crate) struct CassandraMetadata {
+    pub version: Version,
+    pub stream_id: StreamId,
+    pub tracing_id: Option<Uuid>,
+    // missing `warnings` field because we are not using it currently
+}
+
+/// Parse metadata only from an unparsed Cassandra frame
+pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
+    let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
+        .map_err(|e| anyhow!("{e:?}"))?
+        .frame;
+
+    Ok(CassandraMetadata {
+        version: frame.version,
+        stream_id: frame.stream_id,
+        tracing_id: frame.tracing_id,
+    })
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
     pub version: Version,
@@ -34,6 +54,15 @@ pub struct CassandraFrame {
 }
 
 impl CassandraFrame {
+    /// Return `CassandraMetadata` from this `CassandraFrame`
+    pub(crate) fn metadata(&self) -> CassandraMetadata {
+        CassandraMetadata {
+            version: self.version,
+            stream_id: self.stream_id,
+            tracing_id: self.tracing_id,
+        }
+    }
+
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {
         let frame = RawCassandraFrame::from_buffer(&bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?

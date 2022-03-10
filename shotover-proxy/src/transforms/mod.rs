@@ -30,6 +30,7 @@ use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterC
 use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::tee::{Tee, TeeConfig};
+use crate::transforms::throttling::{RequestThrottling, RequestThrottlingConfig};
 use anyhow::Result;
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -59,6 +60,7 @@ pub mod query_counter;
 pub mod redis;
 pub mod sampler;
 pub mod tee;
+pub mod throttling;
 pub mod util;
 
 //TODO Generate the trait implementation for this passthrough enum via a macro
@@ -89,6 +91,7 @@ pub enum Transforms {
     Coalesce(Coalesce),
     QueryTypeFilter(QueryTypeFilter),
     QueryCounter(QueryCounter),
+    RequestThrottling(RequestThrottling),
 }
 
 impl Debug for Transforms {
@@ -121,6 +124,7 @@ impl Transforms {
             Transforms::Coalesce(s) => s.transform(message_wrapper).await,
             Transforms::QueryTypeFilter(s) => s.transform(message_wrapper).await,
             Transforms::QueryCounter(s) => s.transform(message_wrapper).await,
+            Transforms::RequestThrottling(s) => s.transform(message_wrapper).await,
         }
     }
 
@@ -151,6 +155,7 @@ impl Transforms {
             Transforms::Coalesce(s) => s.prep_transform_chain(t).await,
             Transforms::QueryTypeFilter(s) => s.prep_transform_chain(t).await,
             Transforms::QueryCounter(s) => s.prep_transform_chain(t).await,
+            Transforms::RequestThrottling(s) => s.prep_transform_chain(t).await,
         }
     }
 
@@ -177,6 +182,7 @@ impl Transforms {
             Transforms::Protect(p) => p.validate(),
             Transforms::DebugReturner(d) => d.validate(),
             Transforms::DebugRandomDelay(d) => d.validate(),
+            Transforms::RequestThrottling(d) => d.validate(),
         }
     }
 
@@ -203,6 +209,7 @@ impl Transforms {
             Transforms::Protect(p) => p.is_terminating(),
             Transforms::DebugReturner(d) => d.is_terminating(),
             Transforms::DebugRandomDelay(d) => d.is_terminating(),
+            Transforms::RequestThrottling(d) => d.is_terminating(),
         }
     }
 }
@@ -232,6 +239,7 @@ pub enum TransformsConfig {
     Coalesce(CoalesceConfig),
     QueryTypeFilter(QueryTypeFilterConfig),
     QueryCounter(QueryCounterConfig),
+    RequestThrottling(RequestThrottlingConfig),
 }
 
 impl TransformsConfig {
@@ -244,7 +252,7 @@ impl TransformsConfig {
     ) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_source(chain_name).await,
-            TransformsConfig::CassandraPeersRewrite(c) => c.get_source(topics).await,
+            TransformsConfig::CassandraPeersRewrite(c) => c.get_source().await,
             TransformsConfig::RedisCache(r) => r.get_source(topics).await,
             TransformsConfig::Tee(t) => t.get_source(topics).await,
             TransformsConfig::RedisSinkSingle(r) => r.get_source(chain_name).await,
@@ -266,6 +274,7 @@ impl TransformsConfig {
             TransformsConfig::Coalesce(s) => s.get_source().await,
             TransformsConfig::QueryTypeFilter(s) => s.get_source().await,
             TransformsConfig::QueryCounter(s) => s.get_source().await,
+            TransformsConfig::RequestThrottling(s) => s.get_source().await,
         }
     }
 }

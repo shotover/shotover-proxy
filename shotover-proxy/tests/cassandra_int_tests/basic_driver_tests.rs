@@ -1,5 +1,7 @@
 use crate::cassandra_int_tests::{assert_query_result, ResultValue};
 use crate::helpers::ShotoverManager;
+use cassandra_cpp::{stmt, Error, ErrorKind};
+use futures::future::{join_all, try_join_all};
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
@@ -1441,4 +1443,54 @@ fn test_cassandra_peers_rewrite() {
             &[&[ResultValue::Int(9044)]],
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cassandra_request_throttling() {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
+
+    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window and not trigger the rate limiter with client's startup reqeusts
+    let connection_2 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window again
+
+    let statement = stmt!("SELECT * FROM system.peers");
+
+    let mut futures = vec![];
+    // these should all be let through the request throttling
+    for _ in 0..10 {
+        futures.push(connection.execute(&statement));
+        futures.push(connection_2.execute(&statement));
+    }
+    try_join_all(futures).await.unwrap();
+
+    // sleep to reset the window
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    futures = vec![];
+    // only around half of these should be let through the request throttling
+    for _ in 0..20 {
+        futures.push(connection.execute(&statement));
+        futures.push(connection_2.execute(&statement));
+    }
+    let mut results = join_all(futures).await;
+    results.retain(|result| match result {
+        Ok(_) => true,
+        Err(Error(
+            ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
+            _,
+        )) => false,
+        Err(e) => panic!(
+            "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
+            e
+        ),
+    });
+
+    let len = results.len();
+    assert!(len < 22 && len > 20, "got {len}");
 }
