@@ -41,19 +41,21 @@ impl Transform for CassandraPeersRewrite {
             .filter_map(|(i, m)| if is_system_peers(m) { Some(i) } else { None })
             .collect::<Vec<_>>();
 
-        let mut response = message_wrapper.call_next_transform().await?;
+        let mut responses = message_wrapper.call_next_transform().await?;
 
         for i in system_peers {
             if let Some(port) = self.port {
-                rewrite_port(&mut response[i], port);
+                rewrite_port(&mut responses[i], port);
             }
 
             if let Some(ip) = self.ip {
-                rewrite_ip(&mut response[i], ip);
+                rewrite_ip(&mut responses[i], ip);
             }
+
+            responses[i].invalidate_cache();
         }
 
-        Ok(response)
+        Ok(responses)
     }
 }
 
@@ -87,16 +89,14 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
                         .iter()
                         .position(|wanted_col| &wanted_col.name.as_str() == col)
                 })
-                .flatten()
-                .collect::<Vec<_>>();
+                .flatten();
 
             if let MessageValue::Rows(rows) = &mut *value {
-                for i in &port_column_indices {
+                for i in port_column_indices {
                     for row in rows.iter_mut() {
-                        row[*i] = MessageValue::Integer(new_port as i64, IntSize::I32);
+                        row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
                     }
                 }
-                message.invalidate_cache();
             }
         } else {
             panic!(
@@ -122,17 +122,13 @@ fn rewrite_ip(message: &mut Message, ip: IpAddr) {
                         .iter()
                         .position(|wanted_col| &wanted_col.name.as_str() == col)
                 })
-                .flatten()
-                .collect::<Vec<_>>();
+                .flatten();
 
-            if !ip_column_indices.is_empty() {
-                if let MessageValue::Rows(rows) = &mut *value {
+            if let MessageValue::Rows(rows) = &mut *value {
+                for i in ip_column_indices {
                     for row in rows.iter_mut() {
-                        for i in &ip_column_indices {
-                            row[*i] = MessageValue::Inet(ip);
-                        }
+                        row[i] = MessageValue::Inet(ip);
                     }
-                    message.invalidate_cache();
                 }
             }
         } else {
