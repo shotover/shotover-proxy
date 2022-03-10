@@ -1,23 +1,13 @@
 use cqlparser::ast::*;
-use cqlparser::parse;
 
-fn assert_parses(input: &[&str], ast: Vec<Statement>) {
-    for input in input {
-        assert_eq!(parse(input), ast);
-    }
-}
-
-#[test]
-fn test_insert() {
-    assert_parses(&["insert"], vec![Statement::Insert(Insert {})]);
-}
+use crate::assert_parses;
 
 #[test]
 fn test_select_one_field() {
     assert_parses(
         &[
-            "select field from table",
-            "SELECT    field    FROM    table",
+            "select field from table;",
+            "SELECT    field    FROM    table   ;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -39,8 +29,8 @@ fn test_select_one_field() {
 fn test_select_one_field_as() {
     assert_parses(
         &[
-            "select field as alias from table",
-            "SELECT    field    AS    alias   FROM    table",
+            "select field as alias from table;",
+            "SELECT    field    AS    alias   FROM    table   ;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -62,8 +52,8 @@ fn test_select_one_field_as() {
 fn test_select_many_fields_as() {
     assert_parses(
         &[
-            "select field1 as foo, field2, field3 as bar from table",
-            "select field1    as    foo    ,   field2    ,   field3   as   bar from table",
+            "select field1 as foo, field2, field3 as bar from table;",
+            "select field1    as    foo    ,   field2    ,   field3   as   bar from table    ;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -95,8 +85,8 @@ fn test_select_many_fields_as() {
 fn test_select_distinct() {
     assert_parses(
         &[
-            "SELECT distinct field FROM table",
-            "SELECT    DISTINCT    field FROM table",
+            "SELECT distinct field FROM table;",
+            "SELECT    DISTINCT    field FROM table    ;",
         ],
         vec![Statement::Select(Select {
             distinct: true,
@@ -118,8 +108,8 @@ fn test_select_distinct() {
 fn test_select_json() {
     assert_parses(
         &[
-            "SELECT json field FROM table",
-            "SELECT    JSON    field FROM table",
+            "SELECT json field FROM table;",
+            "SELECT    JSON    field FROM table      ;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -141,10 +131,10 @@ fn test_select_json() {
 fn test_select_order_by_asc() {
     assert_parses(
         &[
-            "SELECT field FROM table order by pk_field",
-            "SELECT field FROM table ORDER BY     pk_field",
-            "SELECT field FROM table order   BY    pk_field asc",
-            "SELECT field FROM table ORDER     BY     pk_field    ASC",
+            "SELECT field FROM table order by pk_field;",
+            "SELECT field FROM table ORDER BY     pk_field;",
+            "SELECT field FROM table order   BY    pk_field asc;",
+            "SELECT field FROM table ORDER     BY     pk_field    ASC;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -169,8 +159,8 @@ fn test_select_order_by_asc() {
 fn test_select_where_field_greater_than_int() {
     assert_parses(
         &[
-            "select field from table where foo > 1",
-            "select field from table where     foo     >     1",
+            "select field from table where foo > 1;",
+            "select field from table where     foo     >     1;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -196,8 +186,8 @@ fn test_select_where_field_greater_than_int() {
 fn test_select_where_field_and() {
     assert_parses(
         &[
-            "select field from table where foo < 1 and bar <= 1111",
-            "select field from table where     foo    <   1    AND    bar   <=    1111",
+            "select field from table where foo < 1 and bar <= 1111;",
+            "select field from table where     foo    <   1    AND    bar   <=    1111;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -230,8 +220,8 @@ fn test_select_where_field_and() {
 fn test_select_where_field_greater_than_or_equal_negative_int() {
     assert_parses(
         &[
-            "select field from table where foo >= -13",
-            "select field from table where     foo     >=     -13",
+            "select field from table where foo >= -13;",
+            "select field from table where     foo     >=     -13;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -257,8 +247,8 @@ fn test_select_where_field_greater_than_or_equal_negative_int() {
 fn test_select_where_field_equals_bool() {
     assert_parses(
         &[
-            "select field from table where foo = true",
-            "select field from table where     foo     =     true",
+            "select field from table where foo = true;",
+            "select field from table where     foo     =     true;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -284,8 +274,8 @@ fn test_select_where_field_equals_bool() {
 fn test_select_where_field_equals_string() {
     assert_parses(
         &[
-            "select field from table where foo = 'bar'",
-            "select field from table where     foo     =     'bar'",
+            "select field from table where foo = 'bar';",
+            "select field from table where     foo     =     'bar';",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -311,8 +301,8 @@ fn test_select_where_field_equals_string() {
 fn test_select_where_field_equals_string_escape_quote() {
     assert_parses(
         &[
-            "select field from table where foo = 'lucas'' cool string '''''",
-            "select field from table where     foo     =     'lucas'' cool string '''''",
+            "select field from table where foo = 'lucas'' cool string ''''';",
+            "select field from table where     foo     =     'lucas'' cool string ''''';",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -338,8 +328,8 @@ fn test_select_where_field_equals_string_escape_quote() {
 fn test_select_order_by_desc() {
     assert_parses(
         &[
-            "SELECT field FROM table order by foo desc",
-            "SELECT field FROM table ORDER     BY     foo    DESC",
+            "SELECT field FROM table order by foo desc;",
+            "SELECT field FROM table ORDER     BY     foo    DESC;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -364,8 +354,8 @@ fn test_select_order_by_desc() {
 fn test_select_limit_42() {
     assert_parses(
         &[
-            "SELECT field FROM table limit 42",
-            "SELECT field FROM table    LIMIT    42",
+            "SELECT field FROM table limit 42;",
+            "SELECT field FROM table    LIMIT    42;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -387,8 +377,8 @@ fn test_select_limit_42() {
 fn test_select_limit_0() {
     assert_parses(
         &[
-            "SELECT field FROM table limit 0",
-            "SELECT field FROM table    LIMIT    0",
+            "SELECT field FROM table limit 0;",
+            "SELECT field FROM table    LIMIT    0;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -410,8 +400,8 @@ fn test_select_limit_0() {
 fn test_select_allow_filtering() {
     assert_parses(
         &[
-            "SELECT field FROM table allow filtering",
-            "SELECT field FROM table    ALLOW FILTERING",
+            "SELECT field FROM table allow filtering;",
+            "SELECT field FROM table    ALLOW FILTERING;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -433,9 +423,9 @@ fn test_select_allow_filtering() {
 fn test_select_two_fields() {
     assert_parses(
         &[
-            "SELECT field1,field2 FROM table",
-            "SELECT field1, field2 FROM table",
-            "SELECT   field1  ,   field2    FROM    table",
+            "SELECT field1,field2 FROM table;",
+            "SELECT field1, field2 FROM table;",
+            "SELECT   field1  ,   field2    FROM    table;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -463,8 +453,8 @@ fn test_select_two_fields() {
 fn test_select_all() {
     assert_parses(
         &[
-            "SELECT * FROM foo",
-            "SELECT        *        FROM        foo",
+            "SELECT * FROM foo;",
+            "SELECT        *        FROM        foo;",
         ],
         vec![Statement::Select(Select {
             distinct: false,
@@ -485,7 +475,7 @@ fn test_select_all() {
 #[test]
 fn test_select_christmas_tree() {
     assert_parses(
-        &["SELECT distinct json field1, field2 as foo FROM table WHERE foo = 1 order by order_column DESC limit 9999 allow filtering"],
+        &["SELECT distinct json field1, field2 as foo FROM table WHERE foo = 1 order by order_column DESC limit 9999 allow filtering;"],
         vec![Statement::Select(Select {
             distinct: true,
             json: true,
