@@ -16,9 +16,12 @@ use cassandra_protocol::frame::{
 use cassandra_protocol::query::QueryParams;
 use cassandra_protocol::types::{CBytes, CInt};
 use itertools::Itertools;
+use nonzero_ext::nonzero;
 use sqlparser::ast::{SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
+use std::convert::TryInto;
+use std::num::NonZeroU32;
 use uuid::Uuid;
 
 use crate::message::{MessageValue, QueryType};
@@ -43,6 +46,22 @@ pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
     })
 }
 
+/// Count queries only from an unparsed Cassandra frame
+pub(crate) fn get_query_count(bytes: &[u8]) -> Result<NonZeroU32> {
+    let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
+        .map_err(|e| anyhow!("{e:?}"))?
+        .frame;
+
+    Ok(match frame.opcode {
+        Opcode::Batch => {
+            let short_bytes = &frame.body[1..3];
+            let short = u16::from_be_bytes(short_bytes.try_into()?);
+            NonZeroU32::new(short.into()).unwrap()
+        }
+        _ => nonzero!(1u32),
+    })
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
     pub version: Version,
@@ -61,6 +80,18 @@ impl CassandraFrame {
             stream_id: self.stream_id,
             tracing_id: self.tracing_id,
         }
+    }
+
+    // Count the amonut of queries in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other queries
+    pub(crate) fn get_query_count(&self) -> Result<NonZeroU32> {
+        Ok(match &self.operation {
+            CassandraOperation::Batch(bytes) => {
+                let short_bytes = &bytes[1..3];
+                let short = u16::from_be_bytes(short_bytes.try_into()?);
+                NonZeroU32::new(short.into()).unwrap()
+            }
+            _ => nonzero!(1u32),
+        })
     }
 
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {

@@ -43,10 +43,17 @@ impl Transform for RequestThrottling {
         let throttled_messages: Vec<(Message, usize)> = (0..message_wrapper.messages.len())
             .into_iter()
             .rev()
-            .filter(|_| self.limiter.check().is_err())
-            .map(|i| {
-                let message = message_wrapper.messages.remove(i);
-                (message, i)
+            .filter_map(|i| {
+                if self
+                    .limiter
+                    .check_n(message_wrapper.messages[i].query_count().ok()?)
+                    .is_err()
+                {
+                    let message = message_wrapper.messages.remove(i);
+                    Some((message, i))
+                } else {
+                    None
+                }
             })
             .collect();
 

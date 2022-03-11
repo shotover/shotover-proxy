@@ -20,12 +20,14 @@ use cassandra_protocol::{
     },
 };
 use itertools::Itertools;
+use nonzero_ext::nonzero;
 use num::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Value as SQLValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
+use std::num::NonZeroU32;
 use uuid::Uuid;
 
 enum Metadata {
@@ -174,6 +176,24 @@ impl Message {
             Frame::Redis(_) => unimplemented!(),
             Frame::None => Some(vec![]),
         }
+    }
+
+    pub fn query_count(&self) -> Result<NonZeroU32> {
+        Ok(match self.inner.as_ref().unwrap() {
+            MessageInner::RawBytes {
+                bytes,
+                message_type,
+            } => match message_type {
+                MessageType::Redis => nonzero!(1u32),
+                MessageType::None => nonzero!(1u32),
+                MessageType::Cassandra => cassandra::get_query_count(bytes)?,
+            },
+            MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
+                Frame::Cassandra(frame) => frame.get_query_count()?,
+                Frame::Redis(_) => nonzero!(1u32),
+                Frame::None => nonzero!(1u32),
+            },
+        })
     }
 
     /// Invalidates all internal caches.
