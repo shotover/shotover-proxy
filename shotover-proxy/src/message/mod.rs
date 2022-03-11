@@ -178,7 +178,7 @@ impl Message {
         }
     }
 
-    pub fn query_count(&self) -> Result<NonZeroU32> {
+    pub fn message_count(&self) -> Result<NonZeroU32> {
         Ok(match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
                 bytes,
@@ -186,10 +186,10 @@ impl Message {
             } => match message_type {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::None => nonzero!(1u32),
-                MessageType::Cassandra => cassandra::get_query_count(bytes)?,
+                MessageType::Cassandra => cassandra::get_message_count(bytes)?,
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
-                Frame::Cassandra(frame) => frame.get_query_count()?,
+                Frame::Cassandra(frame) => frame.get_message_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
                 Frame::None => nonzero!(1u32),
             },
