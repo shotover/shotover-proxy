@@ -1299,15 +1299,13 @@ fn test_passthrough() {
 
 #[test]
 #[serial]
-fn test_passthrough_tls() {
-    let _compose =
-        DockerCompose::new("example-configs/cassandra-passthrough-tls/docker-compose.yml");
+fn test_source_tls_and_single_tls() {
+    let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yml");
 
-    let shotover_manager = ShotoverManager::from_topology_file(
-        "example-configs/cassandra-passthrough-tls/topology.yaml",
-    );
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-tls/topology.yaml");
 
-    let ca_cert = "example-configs/cassandra-passthrough-tls/certs/localhost_CA.crt";
+    let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
