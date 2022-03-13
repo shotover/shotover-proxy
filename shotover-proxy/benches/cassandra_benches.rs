@@ -103,8 +103,8 @@ fn cassandra(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new_tls(
-                "example-configs/cassandra-passthrough-tls/topology.yaml",
-                "example-configs/cassandra-passthrough-tls/docker-compose.yml",
+                "example-configs/cassandra-tls/topology.yaml",
+                "example-configs/cassandra-tls/docker-compose.yml",
             )
         });
         for query in &queries {
@@ -228,7 +228,7 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let ca_cert = "example-configs/cassandra-passthrough-tls/certs/localhost_CA.crt";
+        let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
 
         let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
 
