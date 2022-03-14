@@ -3,7 +3,7 @@ use crate::{
     message::Message,
     transforms::{Transform, Transforms, Wrapper},
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use governor::{
     clock::DefaultClock,
@@ -11,6 +11,7 @@ use governor::{
     state::{InMemoryState, NotKeyed},
     Quota, RateLimiter,
 };
+use nonzero_ext::nonzero;
 use serde::Deserialize;
 use std::num::NonZeroU32;
 use std::sync::Arc;

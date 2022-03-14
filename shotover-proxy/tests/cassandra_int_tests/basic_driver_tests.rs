@@ -1485,7 +1485,6 @@ async fn test_cassandra_request_throttling() {
             Err(Error(
                 ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
                 _,
-            )) => false,
             Err(e) => panic!(
                 "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
                 e
