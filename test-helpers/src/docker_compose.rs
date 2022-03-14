@@ -113,7 +113,8 @@ impl DockerCompose {
             | "example-configs/cassandra-tls/docker-compose.yml"
             | "example-configs/cassandra-redis-cache/docker-compose.yml"
             | "example-configs/cassandra-protect-local/docker-compose.yml"
-            | "example-configs/cassandra-protect-aws/docker-compose.yml" => {
+            | "example-configs/cassandra-protect-aws/docker-compose.yml"
+            | "example-configs/cassandra-request-throttling/docker-compose.yml" => {
                 self.wait_for_log("Startup complete", 1)
             }
             "tests/test-configs/cassandra-peers-rewrite/docker-compose.yml" => {
