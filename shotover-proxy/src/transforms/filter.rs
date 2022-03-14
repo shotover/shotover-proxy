@@ -16,7 +16,7 @@ pub struct QueryTypeFilterConfig {
 }
 
 impl QueryTypeFilterConfig {
-    pub async fn get_source(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<Transforms> {
         Ok(Transforms::QueryTypeFilter(QueryTypeFilter {
             filter: self.filter.clone(),
         }))
