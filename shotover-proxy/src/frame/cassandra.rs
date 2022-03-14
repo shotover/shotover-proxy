@@ -26,6 +26,18 @@ use uuid::Uuid;
 
 use crate::message::{MessageValue, QueryType};
 
+/// Extract the length of a BATCH statement (count of requests) from the body bytes
+fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
+    let len = bytes.len();
+    if len < 2 {
+        return Err(anyhow!("BATCH statement body is not long enough"));
+    }
+
+    let short_bytes = &bytes[1..3];
+    let short = u16::from_be_bytes(short_bytes.try_into()?);
+    Ok(NonZeroU32::new(short.into()).unwrap())
+}
+
 pub(crate) struct CassandraMetadata {
     pub version: Version,
     pub stream_id: StreamId,
@@ -53,11 +65,7 @@ pub(crate) fn get_message_count(bytes: &[u8]) -> Result<NonZeroU32> {
         .frame;
 
     Ok(match frame.opcode {
-        Opcode::Batch => {
-            let short_bytes = &frame.body[1..3];
-            let short = u16::from_be_bytes(short_bytes.try_into()?);
-            NonZeroU32::new(short.into()).unwrap()
-        }
+        Opcode::Batch => get_batch_len(&frame.body)?,
         _ => nonzero!(1u32),
     })
 }
@@ -82,14 +90,10 @@ impl CassandraFrame {
         }
     }
 
-    // Count the amonut of queries in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other queries
+    // Count the amount of queries in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other queries
     pub(crate) fn get_message_count(&self) -> Result<NonZeroU32> {
         Ok(match &self.operation {
-            CassandraOperation::Batch(bytes) => {
-                let short_bytes = &bytes[1..3];
-                let short = u16::from_be_bytes(short_bytes.try_into()?);
-                NonZeroU32::new(short.into()).unwrap()
-            }
+            CassandraOperation::Batch(bytes) => get_batch_len(bytes)?,
             _ => nonzero!(1u32),
         })
     }
