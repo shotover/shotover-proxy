@@ -317,6 +317,18 @@ pub enum CassandraOperation {
 }
 
 impl CassandraOperation {
+    /// Return all queries contained within CassandaOperation::Query and CassandraOperation::Batch
+    pub fn queries(&mut self) -> std::slice::IterMut<Statement> {
+        match self {
+            CassandraOperation::Query {
+                query: CQL::Parsed(query),
+                ..
+            } => query.iter_mut(),
+            // TODO: Return CassandraOperation::Batch queries once we add BATCH parsing to cassandra-protocol
+            _ => [].iter_mut(),
+        }
+    }
+
     fn to_direction(&self) -> Direction {
         match self {
             CassandraOperation::Query { .. } => Direction::Request,

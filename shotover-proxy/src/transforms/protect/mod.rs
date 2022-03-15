@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, CQL};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -156,19 +156,13 @@ impl ProtectConfig {
     }
 }
 
-pub fn get_values_from_insert_or_update_mut(ast: &mut CQL) -> HashMap<String, &mut SQLValue> {
-    if let CQL::Parsed(ast) = ast {
-        match &mut ast[0] {
-            Statement::Insert {
-                source, columns, ..
-            } => get_values_from_insert_mut(columns.as_mut(), source.borrow_mut()),
-            Statement::Update { assignments, .. } => {
-                get_values_from_update_mut(assignments.as_mut())
-            }
-            _ => HashMap::new(),
-        }
-    } else {
-        HashMap::new()
+pub fn get_values_from_insert_or_update_mut(ast: &mut Statement) -> HashMap<String, &mut SQLValue> {
+    match ast {
+        Statement::Insert {
+            source, columns, ..
+        } => get_values_from_insert_mut(columns.as_mut(), source.borrow_mut()),
+        Statement::Update { assignments, .. } => get_values_from_update_mut(assignments.as_mut()),
+        _ => HashMap::new(),
     }
 }
 
@@ -210,25 +204,24 @@ impl Transform for Protect {
             let mut invalidate_cache = false;
             if let Some(namespace) = message.namespace() {
                 if namespace.len() == 2 {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Query { query, .. },
-                        ..
-                    })) = message.frame()
-                    {
-                        if let Some((_, tables)) =
-                            self.keyspace_table_columns.get_key_value(&namespace[0])
-                        {
-                            if let Some((_, columns)) = tables.get_key_value(&namespace[1]) {
-                                let mut values = get_values_from_insert_or_update_mut(query);
-                                for col in columns {
-                                    if let Some(value) = values.get_mut(col) {
-                                        let mut protected =
-                                            Protected::Plaintext(MessageValue::from(&**value));
-                                        protected = protected
-                                            .protect(&self.key_source, &self.key_id)
-                                            .await?;
-                                        **value = SQLValue::from(&MessageValue::from(protected));
-                                        invalidate_cache = true;
+                    if let Some(Frame::Cassandra(frame)) = message.frame() {
+                        for query in frame.operation.queries() {
+                            if let Some((_, tables)) =
+                                self.keyspace_table_columns.get_key_value(&namespace[0])
+                            {
+                                if let Some((_, columns)) = tables.get_key_value(&namespace[1]) {
+                                    let mut values = get_values_from_insert_or_update_mut(query);
+                                    for col in columns {
+                                        if let Some(value) = values.get_mut(col) {
+                                            let mut protected =
+                                                Protected::Plaintext(MessageValue::from(&**value));
+                                            protected = protected
+                                                .protect(&self.key_source, &self.key_id)
+                                                .await?;
+                                            **value =
+                                                SQLValue::from(&MessageValue::from(protected));
+                                            invalidate_cache = true;
+                                        }
                                     }
                                 }
                             }
@@ -256,41 +249,45 @@ impl Transform for Protect {
             })) = response.frame()
             {
                 if let Some(namespace) = request.namespace() {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Query { query, .. },
-                        ..
-                    })) = request.frame()
-                    {
-                        let projection: Vec<String> = get_values_from_insert_or_update_mut(query)
-                            .into_keys()
-                            .collect();
-                        if namespace.len() == 2 {
-                            if let Some((_keyspace, tables)) =
-                                self.keyspace_table_columns.get_key_value(&namespace[0])
-                            {
-                                if let Some((_table, protect_columns)) =
-                                    tables.get_key_value(&namespace[1])
+                    if let Some(Frame::Cassandra(frame)) = request.frame() {
+                        for query in frame.operation.queries() {
+                            let projection: Vec<String> =
+                                get_values_from_insert_or_update_mut(query)
+                                    .into_keys()
+                                    .collect();
+                            if namespace.len() == 2 {
+                                if let Some((_keyspace, tables)) =
+                                    self.keyspace_table_columns.get_key_value(&namespace[0])
                                 {
-                                    let mut positions: Vec<usize> = Vec::new();
-                                    for (i, p) in projection.iter().enumerate() {
-                                        if protect_columns.contains(p) {
-                                            positions.push(i);
+                                    if let Some((_table, protect_columns)) =
+                                        tables.get_key_value(&namespace[1])
+                                    {
+                                        let mut positions: Vec<usize> = Vec::new();
+                                        for (i, p) in projection.iter().enumerate() {
+                                            if protect_columns.contains(p) {
+                                                positions.push(i);
+                                            }
                                         }
-                                    }
-                                    for row in rows {
-                                        for index in &mut positions {
-                                            if let Some(v) = row.get_mut(*index) {
-                                                if let MessageValue::Bytes(_) = v {
-                                                    let protected =
-                                                        Protected::from_encrypted_bytes_value(v)
+                                        for row in rows.iter_mut() {
+                                            for index in &mut positions {
+                                                if let Some(v) = row.get_mut(*index) {
+                                                    if let MessageValue::Bytes(_) = v {
+                                                        let protected =
+                                                            Protected::from_encrypted_bytes_value(
+                                                                v,
+                                                            )
                                                             .await?;
-                                                    let new_value: MessageValue = protected
-                                                        .unprotect(&self.key_source, &self.key_id)
-                                                        .await?;
-                                                    *v = new_value;
-                                                    invalidate_cache = true;
-                                                } else {
-                                                    warn!("Tried decrypting non-blob column")
+                                                        let new_value: MessageValue = protected
+                                                            .unprotect(
+                                                                &self.key_source,
+                                                                &self.key_id,
+                                                            )
+                                                            .await?;
+                                                        *v = new_value;
+                                                        invalidate_cache = true;
+                                                    } else {
+                                                        warn!("Tried decrypting non-blob column")
+                                                    }
                                                 }
                                             }
                                         }

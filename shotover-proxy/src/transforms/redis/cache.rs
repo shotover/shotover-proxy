@@ -15,7 +15,6 @@ use serde::Deserialize;
 use sqlparser::ast::{Assignment, BinaryOperator, Expr, Ident, Query, SetExpr, Statement, Value};
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use tracing::info;
 
 const TRUE: [u8; 1] = [0x1];
 const FALSE: [u8; 1] = [0x0];
@@ -53,16 +52,14 @@ impl SimpleRedisCache {
         "SimpleRedisCache"
     }
 
-    async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
-        let mut stream_ids = Vec::with_capacity(messages.len());
-        for message in &mut messages {
-            if let Some(Frame::Cassandra(frame)) = message.frame() {
-                stream_ids.push(frame.stream_id);
-            } else {
-                bail!("Failed to parse cassandra message");
-            }
-            if let Some(table_name) = message.namespace().map(|x| x.join(".")) {
-                *message = match message.frame() {
+    async fn get_or_update_from_cache(
+        &mut self,
+        mut messages_cass_request: Messages,
+    ) -> ChainResponse {
+        let mut messages_redis_request = Vec::with_capacity(messages_cass_request.len());
+        for cass_request in &mut messages_cass_request {
+            if let Some(table_name) = cass_request.namespace().map(|x| x.join(".")) {
+                match cass_request.frame() {
                     Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..
@@ -72,38 +69,48 @@ impl SimpleRedisCache {
                             .get(&table_name)
                             .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
 
-                        Message::from_frame(Frame::Redis(build_redis_ast_from_sql(
-                            query,
-                            table_cache_schema,
-                        )?))
+                        messages_redis_request.push(Message::from_frame(Frame::Redis(
+                            build_redis_ast_from_sql(query, table_cache_schema)?,
+                        )));
                     }
                     message => bail!("cannot fetch {message:?} from cache"),
-                };
-                message.invalidate_cache();
+                }
             } else {
                 bail!("Failed to get message namespace");
             }
         }
 
-        let mut messages = self
+        let mut messages_redis_response = self
             .cache_chain
             .process_request(
-                Wrapper::new_with_chain_name(messages, self.cache_chain.name.clone()),
+                Wrapper::new_with_chain_name(messages_redis_request, self.cache_chain.name.clone()),
                 "clientdetailstodo".to_string(),
             )
             .await?;
-        for message in &mut messages {
-            info!("Received reply from redis cache {:?}", message);
-            // TODO: Translate the redis reply into cassandra
-            *message = Message::from_frame(Frame::Cassandra(CassandraFrame {
+
+        // Replace cass_request messages with cassandra responses in place.
+        // We reuse the vec like this to save allocations.
+        let mut messages_redis_response_iter = messages_redis_response.iter_mut();
+        for cass_request in &mut messages_cass_request {
+            let _redis_response = messages_redis_response_iter.next();
+
+            let mut redis_responses = vec![];
+            if let Some(Frame::Cassandra(frame)) = cass_request.frame() {
+                for _query in frame.operation.queries() {
+                    redis_responses.push(messages_redis_response_iter.next());
+                }
+            }
+
+            // TODO: Translate the redis_responses into a cassandra result
+            *cass_request = Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 operation: CassandraOperation::Result(CassandraResult::Void),
-                stream_id: stream_ids.remove(0),
+                stream_id: cass_request.stream_id().unwrap(),
                 tracing_id: None,
                 warnings: vec![],
             }));
         }
-        Ok(messages)
+        Ok(messages_cass_request)
     }
 }
 
