@@ -245,36 +245,36 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     #[async_recursion]
     /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transforms(
+    pub async fn get_transform(
         &self,
         topics: &TopicHolder,
         chain_name: String,
     ) -> Result<Transforms> {
         match self {
-            TransformsConfig::CassandraSinkSingle(c) => c.get_source(chain_name).await,
-            TransformsConfig::CassandraPeersRewrite(c) => c.get_source().await,
-            TransformsConfig::RedisCache(r) => r.get_source(topics).await,
-            TransformsConfig::Tee(t) => t.get_source(topics).await,
-            TransformsConfig::RedisSinkSingle(r) => r.get_source(chain_name).await,
-            TransformsConfig::ConsistentScatter(c) => c.get_source(topics).await,
+            TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
+            TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
+            TransformsConfig::RedisCache(r) => r.get_transform(topics).await,
+            TransformsConfig::Tee(t) => t.get_transform(topics).await,
+            TransformsConfig::RedisSinkSingle(r) => r.get_transform(chain_name).await,
+            TransformsConfig::ConsistentScatter(c) => c.get_transform(topics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger::new()))
             }
-            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_source().await,
+            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_transform().await,
             TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
-            TransformsConfig::DebugReturner(d) => d.get_source().await,
+            TransformsConfig::DebugReturner(d) => d.get_transform().await,
             TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
             #[cfg(test)]
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
             #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::Protect(p) => p.get_source().await,
-            TransformsConfig::RedisSinkCluster(r) => r.get_source(chain_name).await,
-            TransformsConfig::ParallelMap(s) => s.get_source(topics).await,
-            //TransformsConfig::PoolConnections(s) => s.get_source(topics).await,
-            TransformsConfig::Coalesce(s) => s.get_source().await,
-            TransformsConfig::QueryTypeFilter(s) => s.get_source().await,
-            TransformsConfig::QueryCounter(s) => s.get_source().await,
-            TransformsConfig::RequestThrottling(s) => s.get_source().await,
+            TransformsConfig::Protect(p) => p.get_transform().await,
+            TransformsConfig::RedisSinkCluster(r) => r.get_transform(chain_name).await,
+            TransformsConfig::ParallelMap(s) => s.get_transform(topics).await,
+            //TransformsConfig::PoolConnections(s) => s.get_transform(topics).await,
+            TransformsConfig::Coalesce(s) => s.get_transform().await,
+            TransformsConfig::QueryTypeFilter(s) => s.get_transform().await,
+            TransformsConfig::QueryCounter(s) => s.get_transform().await,
+            TransformsConfig::RequestThrottling(s) => s.get_transform().await,
         }
     }
 }
@@ -286,7 +286,7 @@ pub async fn build_chain_from_config(
 ) -> Result<TransformChain> {
     let mut transforms: Vec<Transforms> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_transforms(topics, name.clone()).await?)
+        transforms.push(tc.get_transform(topics, name.clone()).await?)
     }
     Ok(TransformChain::new(transforms, name))
 }
