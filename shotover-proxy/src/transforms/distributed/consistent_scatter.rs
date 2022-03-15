@@ -28,7 +28,7 @@ pub struct ConsistentScatterConfig {
 }
 
 impl ConsistentScatterConfig {
-    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 

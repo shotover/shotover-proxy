@@ -147,7 +147,7 @@ impl Protected {
 }
 
 impl ProtectConfig {
-    pub async fn get_source(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<Transforms> {
         Ok(Transforms::Protect(Protect {
             keyspace_table_columns: self.keyspace_table_columns.clone(),
             key_source: self.key_manager.build()?,

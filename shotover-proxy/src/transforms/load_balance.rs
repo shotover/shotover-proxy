@@ -18,7 +18,7 @@ pub struct ConnectionBalanceAndPoolConfig {
 }
 
 impl ConnectionBalanceAndPoolConfig {
-    pub async fn get_source(&self, topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
         let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
 
         Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {

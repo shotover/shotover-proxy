@@ -2,30 +2,21 @@ use crate::codec::redis::redis_query_type;
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, QueryType};
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
-use serde::Deserialize;
 use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, trace};
+
 #[derive(Clone, Default)]
 pub struct RedisTimestampTagger {}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct RedisTimestampTaggerConfig {}
 
 impl RedisTimestampTagger {
     pub fn new() -> Self {
         RedisTimestampTagger {}
-    }
-}
-
-impl RedisTimestampTaggerConfig {
-    pub async fn get_source(&self) -> Result<Transforms> {
-        Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger {}))
     }
 }
 

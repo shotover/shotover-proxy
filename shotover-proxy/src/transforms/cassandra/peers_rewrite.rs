@@ -14,7 +14,7 @@ pub struct CassandraPeersRewriteConfig {
 }
 
 impl CassandraPeersRewriteConfig {
-    pub async fn get_source(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<Transforms> {
         Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
             port: self.port,
         }))
