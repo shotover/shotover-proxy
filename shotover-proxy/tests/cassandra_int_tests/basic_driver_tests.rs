@@ -1287,7 +1287,7 @@ fn test_batch_statements(connection: &Session) {
 
     {
         let mut batch = Batch::new(BatchType::LOGGED);
-        for i in 0..5 {
+        for i in 0..2 {
             let statement = format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
@@ -1301,7 +1301,7 @@ fn test_batch_statements(connection: &Session) {
 
     {
         let mut batch = Batch::new(BatchType::LOGGED);
-        for i in 0..5 {
+        for i in 0..2 {
             let statement = format!(
                 "UPDATE batch_keyspace.batch_table SET lastname = 'test1' WHERE id = {};",
                 i
@@ -1318,7 +1318,7 @@ fn test_batch_statements(connection: &Session) {
 
     {
         let mut batch = Batch::new(BatchType::LOGGED);
-        for i in 0..5 {
+        for i in 0..2 {
             let statement = format!("DELETE FROM batch_keyspace.batch_table WHERE id = {};", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
