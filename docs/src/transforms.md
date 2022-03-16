@@ -372,7 +372,7 @@ The response from the down-chain transform is returned back up-chain but various
 
 ### RequestThrottling
 
-This transform will backpressure requests to Shotover, ensuring that throughput does not exceed the `max_requests_per_second` value. It uses a [Generic Cell Rate Algorithm ](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm). `max_requests_per_second` has a minimum allowed value of 50 to ensure that drivers such as Cassandra are able to complete their startup procedure correctly.
+This transform will backpressure requests to Shotover, ensuring that throughput does not exceed the `max_requests_per_second` value.`max_requests_per_second` has a minimum allowed value of 50 to ensure that drivers such as Cassandra are able to complete their startup procedure correctly. In Shotover, a "request" is counted as a query/statement to upstream service. In Cassandra, the list of queries in a BATCH statement are each counted as individual queries. It uses a [Generic Cell Rate Algorithm ](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm). 
 
 ```yaml
 - RequestThrottling
