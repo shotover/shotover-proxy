@@ -1382,6 +1382,7 @@ fn test_source_tls_and_single_tls() {
     collections::test(&connection);
     functions::test(&connection);
     prepared_statements::test(&connection);
+    test_batch_statements(&connection);
 }
 
 #[test]
@@ -1401,6 +1402,7 @@ fn test_cassandra_redis_cache() {
     functions::test(&connection);
     cache::test(&connection, &mut redis_connection);
     prepared_statements::test(&connection);
+    test_batch_statements(&connection);
 }
 
 #[test]
@@ -1423,6 +1425,7 @@ fn test_cassandra_protect_transform_local() {
     collections::test(&shotover_connection);
     functions::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
+    test_batch_statements(&shotover_connection);
 }
 
 #[test]
@@ -1445,6 +1448,7 @@ fn test_cassandra_protect_transform_aws() {
     collections::test(&shotover_connection);
     functions::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
+    test_batch_statements(&shotover_connection);
 }
 
 #[test]
@@ -1588,7 +1592,7 @@ async fn test_cassandra_request_throttling() {
         ));
     }
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
 
     test_batch_statements(&connection);
 }
