@@ -1,6 +1,6 @@
-use crate::cassandra_int_tests::{assert_query_result, ResultValue};
+use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
-use cassandra_cpp::{stmt, Error, ErrorKind};
+use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use futures::future::{join_all, try_join_all};
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
@@ -1459,37 +1459,77 @@ async fn test_cassandra_request_throttling() {
 
     let statement = stmt!("SELECT * FROM system.peers");
 
-    let mut futures = vec![];
     // these should all be let through the request throttling
-    for _ in 0..10 {
-        futures.push(connection.execute(&statement));
-        futures.push(connection_2.execute(&statement));
+    {
+        let mut futures = vec![];
+        for _ in 0..10 {
+            futures.push(connection.execute(&statement));
+            futures.push(connection_2.execute(&statement));
+        }
+        try_join_all(futures).await.unwrap();
     }
-    try_join_all(futures).await.unwrap();
 
     // sleep to reset the window
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    futures = vec![];
     // only around half of these should be let through the request throttling
-    for _ in 0..20 {
-        futures.push(connection.execute(&statement));
-        futures.push(connection_2.execute(&statement));
+    {
+        let mut futures = vec![];
+        for _ in 0..20 {
+            futures.push(connection.execute(&statement));
+            futures.push(connection_2.execute(&statement));
+        }
+        let mut results = join_all(futures).await;
+        results.retain(|result| match result {
+            Ok(_) => true,
+            Err(Error(
+                ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
+                _,
+            )) => false,
+            Err(e) => panic!(
+                "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
+                e
+            ),
+        });
+
+        let len = results.len();
+        assert!(20 < len && len <= 25, "got {len}");
     }
-    let mut results = join_all(futures).await;
-    results.retain(|result| match result {
-        Ok(_) => true,
-        Err(Error(
-            ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
-            _,
-        )) => false,
-        Err(e) => panic!(
-            "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
-            e
-        ),
-    });
 
-    let len = results.len();
+    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
 
-    assert!(20 < len && len <= 25, "got {len}");
+    // setup keyspace and table for the batch statement tests
+    {
+        run_query(&connection, "CREATE KEYSPACE test_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+        run_query(&connection, "CREATE TABLE test_keyspace.my_table (id int PRIMARY KEY, lastname text, firstname text);");
+    }
+
+    // this batch set should be allowed through
+    {
+        let mut batch = Batch::new(BatchType::LOGGED);
+        for i in 0..11 {
+            let statement = format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
+            batch.add_statement(&stmt!(statement.as_str())).unwrap();
+        }
+        connection.execute_batch(&batch).wait().unwrap();
+    }
+
+    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
+
+    // this batch set should not be allowed through
+    {
+        let mut batch = Batch::new(BatchType::LOGGED);
+        for i in 0..30 {
+            let statement = format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
+            batch.add_statement(&stmt!(statement.as_str())).unwrap();
+        }
+        let result = connection.execute_batch(&batch).wait().unwrap_err();
+        assert!(matches!(
+            result,
+            Error(
+                ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
+                ..
+            )
+        ));
+    }
 }
