@@ -1462,7 +1462,7 @@ async fn test_cassandra_request_throttling() {
     // these should all be let through the request throttling
     {
         let mut futures = vec![];
-        for _ in 0..10 {
+        for _ in 0..25 {
             futures.push(connection.execute(&statement));
             futures.push(connection_2.execute(&statement));
         }
@@ -1475,7 +1475,7 @@ async fn test_cassandra_request_throttling() {
     // only around half of these should be let through the request throttling
     {
         let mut futures = vec![];
-        for _ in 0..20 {
+        for _ in 0..50 {
             futures.push(connection.execute(&statement));
             futures.push(connection_2.execute(&statement));
         }
@@ -1485,6 +1485,7 @@ async fn test_cassandra_request_throttling() {
             Err(Error(
                 ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
                 _,
+            )) => false,
             Err(e) => panic!(
                 "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
                 e
@@ -1492,7 +1493,7 @@ async fn test_cassandra_request_throttling() {
         });
 
         let len = results.len();
-        assert!(20 < len && len <= 25, "got {len}");
+        assert!(50 < len && len <= 55, "got {len}");
     }
 
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
@@ -1506,7 +1507,7 @@ async fn test_cassandra_request_throttling() {
     // this batch set should be allowed through
     {
         let mut batch = Batch::new(BatchType::LOGGED);
-        for i in 0..11 {
+        for i in 0..25 {
             let statement = format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
@@ -1518,7 +1519,7 @@ async fn test_cassandra_request_throttling() {
     // this batch set should not be allowed through
     {
         let mut batch = Batch::new(BatchType::LOGGED);
-        for i in 0..30 {
+        for i in 0..60 {
             let statement = format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
