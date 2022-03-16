@@ -24,6 +24,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::convert::TryInto;
 use std::num::NonZeroU32;
+use std::slice::IterMut;
 use uuid::Uuid;
 
 use crate::message::{MessageValue, QueryType};
@@ -318,14 +319,19 @@ pub enum CassandraOperation {
 
 impl CassandraOperation {
     /// Return all queries contained within CassandaOperation::Query and CassandraOperation::Batch
-    pub fn queries(&mut self) -> std::slice::IterMut<Statement> {
+    /// An Err is returned if the operation cannot contain queries or the queries failed to parse.
+    pub fn queries(&mut self) -> Result<IterMut<Statement>> {
         match self {
             CassandraOperation::Query {
                 query: CQL::Parsed(query),
                 ..
-            } => query.iter_mut(),
+            } => Ok(query.iter_mut()),
+            CassandraOperation::Query {
+                query: CQL::FailedToParse(_),
+                ..
+            } => Err(anyhow!("Couldnt parse query")),
             // TODO: Return CassandraOperation::Batch queries once we add BATCH parsing to cassandra-protocol
-            _ => [].iter_mut(),
+            _ => Err(anyhow!("This operation cannot contain queries")),
         }
     }
 

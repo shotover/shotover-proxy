@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame, CQL};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame};
 use crate::message::{Message, MessageValue, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
@@ -56,22 +56,39 @@ impl SimpleRedisCache {
         &mut self,
         mut messages_cass_request: Messages,
     ) -> ChainResponse {
+        // This function is a little hard to follow, so heres an overview.
+        // We have 4 vecs of messages, each vec can be considered its own stage of processing.
+        // 1. messages_cass_request:
+        //     * the cassandra requests that the function receives.
+        // 2. messages_redis_request:
+        //     * each query in each cassandra request in messages_cass_request is transformed into a redis request
+        //     * each request gets sent to the redis server
+        // 3. messages_redis_response:
+        //     * the redis responses we get back from the server
+        // 4. messages_cass_response:
+        //     * Well messages_cass_response is what we would have called this, in reality we reuse the messages_cass_request vec because its cheaper.
+        //     * To create each response we go through each request in messages_cass_request:
+        //         + if the request is a CassandraOperation::Batch then we consume a message from messages_redis_response for each query in the batch
+        //             - if any of the messages are errors then generate a cassandra ERROR otherwise generate a VOID RESULT.
+        //                  - we can get away with this because batches can only contain INSERT/UPDATE/DELETE and therefore always contain either an ERROR or a VOID RESULT
+        //         + if the request is a CassandraOperation::Query then we consume a single message from messages_redis_response converting it to a cassandra response
+        //     * These are the cassandra responses that we return from the function.
+
         let mut messages_redis_request = Vec::with_capacity(messages_cass_request.len());
         for cass_request in &mut messages_cass_request {
             if let Some(table_name) = cass_request.namespace().map(|x| x.join(".")) {
                 match cass_request.frame() {
-                    Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Query { query, .. },
-                        ..
-                    })) => {
-                        let table_cache_schema = self
-                            .caching_schema
-                            .get(&table_name)
-                            .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
+                    Some(Frame::Cassandra(frame)) => {
+                        for query in frame.operation.queries()? {
+                            let table_cache_schema = self
+                                .caching_schema
+                                .get(&table_name)
+                                .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
 
-                        messages_redis_request.push(Message::from_frame(Frame::Redis(
-                            build_redis_ast_from_sql(query, table_cache_schema)?,
-                        )));
+                            messages_redis_request.push(Message::from_frame(Frame::Redis(
+                                build_redis_ast_from_sql(query, table_cache_schema)?,
+                            )));
+                        }
                     }
                     message => bail!("cannot fetch {message:?} from cache"),
                 }
@@ -80,7 +97,7 @@ impl SimpleRedisCache {
             }
         }
 
-        let mut messages_redis_response = self
+        let messages_redis_response = self
             .cache_chain
             .process_request(
                 Wrapper::new_with_chain_name(messages_redis_request, self.cache_chain.name.clone()),
@@ -90,14 +107,14 @@ impl SimpleRedisCache {
 
         // Replace cass_request messages with cassandra responses in place.
         // We reuse the vec like this to save allocations.
-        let mut messages_redis_response_iter = messages_redis_response.iter_mut();
+        let mut messages_redis_response_iter = messages_redis_response.into_iter();
         for cass_request in &mut messages_cass_request {
-            let _redis_response = messages_redis_response_iter.next();
-
             let mut redis_responses = vec![];
             if let Some(Frame::Cassandra(frame)) = cass_request.frame() {
-                for _query in frame.operation.queries() {
-                    redis_responses.push(messages_redis_response_iter.next());
+                if let Ok(queries) = frame.operation.queries() {
+                    for _query in queries {
+                        redis_responses.push(messages_redis_response_iter.next());
+                    }
                 }
             }
 
@@ -245,94 +262,90 @@ fn build_zrangebylex_min_max_from_sql(
 }
 
 fn build_redis_ast_from_sql(
-    ast: &CQL,
+    ast: &Statement,
     table_cache_schema: &TableCacheSchema,
 ) -> Result<RedisFrame> {
-    if let CQL::Parsed(ast) = ast {
-        match &ast[0] {
-            Statement::Query(q) => match &q.body {
-                SetExpr::Select(s) if s.selection.is_some() => {
-                    let expr = s.selection.as_ref().unwrap();
-                    let mut min: Vec<u8> = Vec::new();
-                    let mut max: Vec<u8> = Vec::new();
+    match ast {
+        Statement::Query(q) => match &q.body {
+            SetExpr::Select(s) if s.selection.is_some() => {
+                let expr = s.selection.as_ref().unwrap();
+                let mut min: Vec<u8> = Vec::new();
+                let mut max: Vec<u8> = Vec::new();
 
-                    build_zrangebylex_min_max_from_sql(
-                        expr,
-                        &table_cache_schema.partition_key,
-                        &mut min,
-                        &mut max,
-                    )?;
+                build_zrangebylex_min_max_from_sql(
+                    expr,
+                    &table_cache_schema.partition_key,
+                    &mut min,
+                    &mut max,
+                )?;
 
-                    let min = if min.is_empty() {
-                        Bytes::from_static(b"-")
-                    } else {
-                        Bytes::from(min)
-                    };
-                    let max = if max.is_empty() {
-                        Bytes::from_static(b"+")
-                    } else {
-                        Bytes::from(max)
-                    };
-
-                    let pk = table_cache_schema
-                        .partition_key
-                        .iter()
-                        .map(|k| get_equal_value_from_expr(expr, k))
-                        .fold(BytesMut::new(), |mut acc, v| {
-                            if let Some(v) = v {
-                                acc.extend(MessageValue::from(v).into_str_bytes());
-                            }
-                            acc
-                        });
-
-                    let commands_buffer = vec![
-                        RedisFrame::BulkString("ZRANGEBYLEX".into()),
-                        RedisFrame::BulkString(pk.freeze()),
-                        RedisFrame::BulkString(min),
-                        RedisFrame::BulkString(max),
-                    ];
-                    Ok(RedisFrame::Array(commands_buffer))
-                }
-                expr => Err(anyhow!("Can't build query from expr: {}", expr)),
-            },
-            Statement::Insert {
-                source, columns, ..
-            } => {
-                let query_values = get_values_from_insert(columns, source);
+                let min = if min.is_empty() {
+                    Bytes::from_static(b"-")
+                } else {
+                    Bytes::from(min)
+                };
+                let max = if max.is_empty() {
+                    Bytes::from_static(b"+")
+                } else {
+                    Bytes::from(max)
+                };
 
                 let pk = table_cache_schema
                     .partition_key
                     .iter()
-                    .map(|k| query_values.get(k.as_str()).unwrap())
+                    .map(|k| get_equal_value_from_expr(expr, k))
                     .fold(BytesMut::new(), |mut acc, v| {
-                        acc.extend(MessageValue::from(*v).into_str_bytes());
+                        if let Some(v) = v {
+                            acc.extend(MessageValue::from(v).into_str_bytes());
+                        }
                         acc
                     });
 
-                insert_or_update(table_cache_schema, query_values, pk)
+                let commands_buffer = vec![
+                    RedisFrame::BulkString("ZRANGEBYLEX".into()),
+                    RedisFrame::BulkString(pk.freeze()),
+                    RedisFrame::BulkString(min),
+                    RedisFrame::BulkString(max),
+                ];
+                Ok(RedisFrame::Array(commands_buffer))
             }
-            Statement::Update {
-                assignments,
-                selection,
-                ..
-            } => {
-                let query_values = get_values_from_update(assignments);
+            expr => Err(anyhow!("Can't build query from expr: {}", expr)),
+        },
+        Statement::Insert {
+            source, columns, ..
+        } => {
+            let query_values = get_values_from_insert(columns, source);
 
-                let pk = table_cache_schema
-                    .partition_key
-                    .iter()
-                    .map(|k| get_equal_value_from_expr(selection.as_ref().unwrap(), k).unwrap())
-                    .fold(BytesMut::new(), |mut acc, v| {
-                        acc.extend(MessageValue::from(v).into_str_bytes());
-                        acc
-                    });
+            let pk = table_cache_schema
+                .partition_key
+                .iter()
+                .map(|k| query_values.get(k.as_str()).unwrap())
+                .fold(BytesMut::new(), |mut acc, v| {
+                    acc.extend(MessageValue::from(*v).into_str_bytes());
+                    acc
+                });
 
-                insert_or_update(table_cache_schema, query_values, pk)
-            }
-            statement => Err(anyhow!("Cant build query from statement: {}", statement)),
+            insert_or_update(table_cache_schema, query_values, pk)
         }
-    } else {
-        Err(anyhow!("cannot use unparsed CQL"))
+        Statement::Update {
+            assignments,
+            selection,
+            ..
+        } => {
+            let query_values = get_values_from_update(assignments);
+
+            let pk = table_cache_schema
+                .partition_key
+                .iter()
+                .map(|k| get_equal_value_from_expr(selection.as_ref().unwrap(), k).unwrap())
+                .fold(BytesMut::new(), |mut acc, v| {
+                    acc.extend(MessageValue::from(v).into_str_bytes());
+                    acc
+                });
+
+            insert_or_update(table_cache_schema, query_values, pk)
+        }
+        statement => Err(anyhow!("Cant build query from statement: {}", statement)),
     }
 }
 
@@ -496,7 +509,6 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::cassandra::CQL;
     use crate::frame::RedisFrame;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
@@ -506,12 +518,15 @@ mod test {
     };
     use crate::transforms::{Transform, Transforms};
     use bytes::Bytes;
+    use sqlparser::ast::Statement;
     use sqlparser::dialect::GenericDialect;
     use sqlparser::parser::Parser;
     use std::collections::HashMap;
 
-    fn build_query(query_string: &str) -> CQL {
-        CQL::Parsed(Parser::parse_sql(&GenericDialect {}, query_string).unwrap())
+    fn build_query(query_string: &str) -> Statement {
+        Parser::parse_sql(&GenericDialect {}, query_string)
+            .unwrap()
+            .remove(0)
     }
 
     #[test]
