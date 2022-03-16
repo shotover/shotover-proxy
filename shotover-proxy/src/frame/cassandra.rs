@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
+use cassandra_protocol::consistency::Consistency;
 use cassandra_protocol::events::SchemaChange;
+use cassandra_protocol::frame::frame_batch::{BatchQuery, BatchQuerySubj, BatchType, BodyReqBatch};
 use cassandra_protocol::frame::frame_error::ErrorBody;
 use cassandra_protocol::frame::frame_query::BodyReqQuery;
 use cassandra_protocol::frame::frame_request::RequestBody;
@@ -13,8 +15,8 @@ use cassandra_protocol::frame::frame_result::{
 use cassandra_protocol::frame::{
     Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version,
 };
-use cassandra_protocol::query::QueryParams;
-use cassandra_protocol::types::{CBytes, CInt};
+use cassandra_protocol::query::{QueryParams, QueryValues};
+use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use itertools::Itertools;
 use nonzero_ext::nonzero;
 use sqlparser::ast::{SetExpr, Statement, TableFactor};
@@ -93,7 +95,9 @@ impl CassandraFrame {
     // Count the amount of queries in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other queries
     pub(crate) fn get_message_count(&self) -> Result<NonZeroU32> {
         Ok(match &self.operation {
-            CassandraOperation::Batch(bytes) => get_batch_len(bytes)?,
+            CassandraOperation::Batch(batch) => {
+                NonZeroU32::new(batch.queries.len() as u32).unwrap_or(nonzero!(1u32))
+            }
             _ => nonzero!(1u32),
         })
     }
@@ -184,7 +188,33 @@ impl CassandraFrame {
             Opcode::Execute => CassandraOperation::Execute(frame.body),
             Opcode::Register => CassandraOperation::Register(frame.body),
             Opcode::Event => CassandraOperation::Event(frame.body),
-            Opcode::Batch => CassandraOperation::Batch(frame.body),
+            Opcode::Batch => {
+                if let RequestBody::Batch(body) = frame.request_body()? {
+                    CassandraOperation::Batch(CassandraBatch {
+                        ty: body.batch_type,
+                        queries: body
+                            .queries
+                            .into_iter()
+                            .map(|query| BatchStatement {
+                                ty: match query.subject {
+                                    BatchQuerySubj::QueryString(query) => {
+                                        BatchStatementType::Statement(CQL::parse_from_string(query))
+                                    }
+                                    BatchQuerySubj::PreparedId(id) => {
+                                        BatchStatementType::PreparedId(id)
+                                    }
+                                },
+                                values: query.values,
+                            })
+                            .collect(),
+                        consistency: body.consistency,
+                        serial_consistency: body.serial_consistency,
+                        timestamp: body.timestamp,
+                    })
+                } else {
+                    unreachable!()
+                }
+            }
             Opcode::AuthChallenge => CassandraOperation::AuthChallenge(frame.body),
             Opcode::AuthResponse => CassandraOperation::AuthResponse(frame.body),
             Opcode::AuthSuccess => CassandraOperation::AuthSuccess(frame.body),
@@ -279,7 +309,7 @@ pub enum CassandraOperation {
     Execute(Vec<u8>),
     Register(Vec<u8>),
     Event(Vec<u8>),
-    Batch(Vec<u8>),
+    Batch(CassandraBatch),
     AuthChallenge(Vec<u8>),
     AuthResponse(Vec<u8>),
     AuthSuccess(Vec<u8>),
@@ -358,7 +388,26 @@ impl CassandraOperation {
             CassandraOperation::Execute(bytes) => bytes.to_vec(),
             CassandraOperation::Register(bytes) => bytes.to_vec(),
             CassandraOperation::Event(bytes) => bytes.to_vec(),
-            CassandraOperation::Batch(bytes) => bytes.to_vec(),
+            CassandraOperation::Batch(batch) => BodyReqBatch {
+                batch_type: batch.ty,
+                consistency: batch.consistency,
+                queries: batch
+                    .queries
+                    .into_iter()
+                    .map(|query| BatchQuery {
+                        subject: match query.ty {
+                            BatchStatementType::PreparedId(id) => BatchQuerySubj::PreparedId(id),
+                            BatchStatementType::Statement(statement) => {
+                                BatchQuerySubj::QueryString(statement.to_query_string())
+                            }
+                        },
+                        values: query.values,
+                    })
+                    .collect(),
+                serial_consistency: batch.serial_consistency,
+                timestamp: batch.timestamp,
+            }
+            .serialize_to_vec(),
             CassandraOperation::AuthChallenge(bytes) => bytes.to_vec(),
             CassandraOperation::AuthResponse(bytes) => bytes.to_vec(),
             CassandraOperation::AuthSuccess(bytes) => bytes.to_vec(),
@@ -431,4 +480,25 @@ pub enum CassandraResult {
     Prepared(Box<BodyResResultPrepared>),
     SchemaChange(SchemaChange),
     Void,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum BatchStatementType {
+    Statement(CQL),
+    PreparedId(CBytesShort),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct BatchStatement {
+    ty: BatchStatementType,
+    values: QueryValues,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct CassandraBatch {
+    ty: BatchType,
+    queries: Vec<BatchStatement>,
+    consistency: Consistency,
+    serial_consistency: Option<Consistency>,
+    timestamp: Option<CLong>,
 }
