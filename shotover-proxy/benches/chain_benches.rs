@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use shotover_proxy::frame::Frame;
+use hex_literal::hex;
+use shotover_proxy::frame::RedisFrame;
+use shotover_proxy::frame::{Frame, MessageType};
 use shotover_proxy::message::{Message, QueryType};
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
@@ -8,6 +10,7 @@ use shotover_proxy::transforms::filter::QueryTypeFilter;
 use shotover_proxy::transforms::null::Null;
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
+use shotover_proxy::transforms::throttling::RequestThrottlingConfig;
 use shotover_proxy::transforms::{Transforms, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -37,7 +40,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use shotover_proxy::frame::RedisFrame;
         let chain = TransformChain::new(
             vec![
                 Transforms::QueryTypeFilter(QueryTypeFilter {
@@ -76,7 +78,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use shotover_proxy::frame::RedisFrame;
         let chain = TransformChain::new(
             vec![
                 Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
@@ -132,7 +133,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        use shotover_proxy::frame::RedisFrame;
         let chain = TransformChain::new(
             vec![
                 Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
@@ -150,6 +150,49 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
 
         group.bench_function("redis_cluster_ports_rewrite", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput {
+                    chain: chain.clone(),
+                    wrapper: wrapper.clone(),
+                    client_details: "".into(),
+                },
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
+    {
+        let chain = TransformChain::new(
+            vec![
+                rt.block_on(
+                    RequestThrottlingConfig {
+                        // an absurdly large value is given so that all messages will pass through
+                        max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
+                    }
+                    .get_transform(),
+                )
+                .unwrap(),
+                Transforms::Null(Null::default()),
+            ],
+            "bench".to_string(),
+        );
+        let wrapper = Wrapper::new_with_chain_name(
+            vec![Message::from_bytes(
+                Bytes::from(
+                    // a simple select query
+                    hex!(
+                        "0400000307000000350000002e53454c454354202a2046524f4d20737973
+                        74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
+                    )
+                    .to_vec(),
+                ),
+                MessageType::Cassandra,
+            )],
+            chain.name.clone(),
+        );
+
+        group.bench_function("cassandra_request_throttling_unparsed", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.clone(),
