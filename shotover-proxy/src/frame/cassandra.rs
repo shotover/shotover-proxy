@@ -36,7 +36,7 @@ fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
     }
 
     let short_bytes = &bytes[1..3];
-    let short = u16::from_be_bytes(short_bytes.try_into()?);
+    let short = u16::from_be_bytes(short_bytes.try_into()?).max(1); // it is valid for a batch statement to have 0 statements, but for the purposes of shotover throttling we can count it as one query
     Ok(NonZeroU32::new(short.into()).unwrap())
 }
 
