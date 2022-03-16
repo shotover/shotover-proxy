@@ -108,17 +108,13 @@ fn cassandra(c: &mut Criterion) {
             )
         });
         for query in &queries {
-            group.bench_with_input(
-                format!("passthrough_tls_{}", query.name),
-                &resources,
-                |b, resources| {
-                    b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
-                        connection.execute(&query.statement).wait().unwrap();
-                    })
-                },
-            );
+            group.bench_with_input(format!("tls_{}", query.name), &resources, |b, resources| {
+                b.iter(|| {
+                    let mut resources = resources.borrow_mut();
+                    let connection = &mut resources.as_mut().unwrap().connection;
+                    connection.execute(&query.statement).wait().unwrap();
+                })
+            });
         }
     }
 
@@ -168,6 +164,28 @@ fn cassandra(c: &mut Criterion) {
             // Benches the case where the message meets the criteria for encryption
             group.bench_with_input(
                 format!("protect_local_{}_encrypted", query.name),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
+                    })
+                },
+            );
+        }
+    }
+
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "example-configs/cassandra-request-throttling/topology.yaml",
+                "example-configs/cassandra-request-throttling/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("request_throttling_{}", query.name),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
