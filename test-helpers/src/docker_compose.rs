@@ -113,7 +113,8 @@ impl DockerCompose {
             | "example-configs/cassandra-tls/docker-compose.yml"
             | "example-configs/cassandra-redis-cache/docker-compose.yml"
             | "example-configs/cassandra-protect-local/docker-compose.yml"
-            | "example-configs/cassandra-protect-aws/docker-compose.yml" => {
+            | "example-configs/cassandra-protect-aws/docker-compose.yml"
+            | "example-configs/cassandra-request-throttling/docker-compose.yml" => {
                 self.wait_for_log("Startup complete", 1)
             }
             "tests/test-configs/cassandra-peers-rewrite/docker-compose.yml" => {
@@ -138,7 +139,7 @@ impl DockerCompose {
     /// * If `count` occurrences of `log_text` is not found in the log within 90 seconds.
     ///
     fn wait_for_log(&self, log_text: &str, count: usize) {
-        let timeout_seconds = 100;
+        let timeout_seconds = 110;
         info!("wait_for_log: '{log_text}' {count}");
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
