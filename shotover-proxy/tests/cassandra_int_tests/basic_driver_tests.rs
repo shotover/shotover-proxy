@@ -1288,32 +1288,54 @@ fn test_batch_statements(connection: &Session) {
     {
         let mut batch = Batch::new(BatchType::LOGGED);
         for i in 0..2 {
-            let statement = format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
+            let statement = format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text1', 'text2')", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
         connection.execute_batch(&batch).wait().unwrap();
-        assert_query_result(
-            connection,
-            "SELECT lastname FROM batch_keyspace.batch_table WHERE id = 1;",
-            &[&[ResultValue::Varchar("text".into())]],
-        );
+
+        for i in 0..2 {
+            assert_query_result(
+                connection,
+                format!(
+                    "SELECT id, lastname, firstname FROM batch_keyspace.batch_table WHERE id = {};",
+                    i
+                )
+                .as_str(),
+                &[&[
+                    ResultValue::Int(i),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ]],
+            );
+        }
     }
 
     {
         let mut batch = Batch::new(BatchType::LOGGED);
         for i in 0..2 {
             let statement = format!(
-                "UPDATE batch_keyspace.batch_table SET lastname = 'test1' WHERE id = {};",
+                "UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = {};",
                 i
             );
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
         connection.execute_batch(&batch).wait().unwrap();
-        assert_query_result(
-            connection,
-            "SELECT lastname FROM batch_keyspace.batch_table WHERE id = 1;",
-            &[&[ResultValue::Varchar("test1".into())]],
-        );
+
+        for i in 0..2 {
+            assert_query_result(
+                connection,
+                format!(
+                    "SELECT id, lastname, firstname FROM batch_keyspace.batch_table WHERE id = {};",
+                    i
+                )
+                .as_str(),
+                &[&[
+                    ResultValue::Int(i),
+                    ResultValue::Varchar("text3".into()),
+                    ResultValue::Varchar("text2".into()),
+                ]],
+            );
+        }
     }
 
     {
