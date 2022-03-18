@@ -96,6 +96,7 @@ impl CassandraFrame {
     pub(crate) fn get_message_count(&self) -> Result<NonZeroU32> {
         Ok(match &self.operation {
             CassandraOperation::Batch(batch) => {
+                // it doesnt make sense to say a message is 0 messages, so when the batch has no queries we round up to 1
                 NonZeroU32::new(batch.queries.len() as u32).unwrap_or(nonzero!(1u32))
             }
             _ => nonzero!(1u32),
@@ -114,7 +115,7 @@ impl CassandraFrame {
                         params: body.query_params,
                     }
                 } else {
-                    unreachable!()
+                    unreachable!("We already know the operation is a query")
                 }
             }
             Opcode::Result => {
@@ -169,14 +170,14 @@ impl CassandraFrame {
                         ResResultBody::Void => CassandraOperation::Result(CassandraResult::Void),
                     }
                 } else {
-                    unreachable!()
+                    unreachable!("We already know the operation is a result")
                 }
             }
             Opcode::Error => {
                 if let ResponseBody::Error(body) = frame.response_body()? {
                     CassandraOperation::Error(body)
                 } else {
-                    unreachable!()
+                    unreachable!("We already know the operation is an error")
                 }
             }
             Opcode::Startup => CassandraOperation::Startup(frame.body),
@@ -212,7 +213,7 @@ impl CassandraFrame {
                         timestamp: body.timestamp,
                     })
                 } else {
-                    unreachable!()
+                    unreachable!("We already know the operation is a batch")
                 }
             }
             Opcode::AuthChallenge => CassandraOperation::AuthChallenge(frame.body),
