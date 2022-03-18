@@ -1293,21 +1293,22 @@ fn test_batch_statements(connection: &Session) {
         }
         connection.execute_batch(&batch).wait().unwrap();
 
-        for i in 0..2 {
-            assert_query_result(
-                connection,
-                format!(
-                    "SELECT id, lastname, firstname FROM batch_keyspace.batch_table WHERE id = {};",
-                    i
-                )
-                .as_str(),
-                &[&[
-                    ResultValue::Int(i),
+        assert_query_result(
+            connection,
+            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
+            &[
+                &[
+                    ResultValue::Int(0),
                     ResultValue::Varchar("text1".into()),
                     ResultValue::Varchar("text2".into()),
-                ]],
-            );
-        }
+                ],
+                &[
+                    ResultValue::Int(1),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+            ],
+        );
     }
 
     {
@@ -1321,21 +1322,22 @@ fn test_batch_statements(connection: &Session) {
         }
         connection.execute_batch(&batch).wait().unwrap();
 
-        for i in 0..2 {
-            assert_query_result(
-                connection,
-                format!(
-                    "SELECT id, lastname, firstname FROM batch_keyspace.batch_table WHERE id = {};",
-                    i
-                )
-                .as_str(),
-                &[&[
-                    ResultValue::Int(i),
+        assert_query_result(
+            connection,
+            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
+            &[
+                &[
+                    ResultValue::Int(0),
                     ResultValue::Varchar("text3".into()),
                     ResultValue::Varchar("text2".into()),
-                ]],
-            );
-        }
+                ],
+                &[
+                    ResultValue::Int(1),
+                    ResultValue::Varchar("text3".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+            ],
+        );
     }
 
     {
