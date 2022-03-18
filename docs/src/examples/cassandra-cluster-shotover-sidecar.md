@@ -35,7 +35,7 @@ Below we can see an example of a Cassandra node and it's Shotover sidecar, notic
     restart: always
     depends_on:
       - cassandra-two
-    image: shotover-proxy
+    image: shotover/shotover-proxy
     network_mode: "service:cassandra-two"
     volumes:
       - type: bind
