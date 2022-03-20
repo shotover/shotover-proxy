@@ -43,6 +43,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [RedisSinkSingle](#redissinksingle)                   | ✅          | Beta                  |
 | [RedisTimestampTagger](#redistimestamptagger)         | ❌          | Alpha                 |
 | [Tee](#tee)                                           | ✅          | Alpha                 |
+| [RequestThrottling](#requestthrottling)               |❌           | Alpha                 |
 <!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
 
 ### CassandraSinkSingle
@@ -366,4 +367,14 @@ The response from the down-chain transform is returned back up-chain but various
       - QueryTypeFilter:
           filter: Read
       - Null
+```
+
+
+### RequestThrottling
+
+This transform will backpressure requests to Shotover, ensuring that throughput does not exceed the `max_requests_per_second` value.`max_requests_per_second` has a minimum allowed value of 50 to ensure that drivers such as Cassandra are able to complete their startup procedure correctly. In Shotover, a "request" is counted as a query/statement to upstream service. In Cassandra, the list of queries in a BATCH statement are each counted as individual queries. It uses a [Generic Cell Rate Algorithm ](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm). 
+
+```yaml
+- RequestThrottling
+    max_requests_per_second: 20000
 ```
