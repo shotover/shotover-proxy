@@ -6,7 +6,7 @@ sources:
 chain_config:
   main_chain:
     - RequestThrottling:
-        max_requests_per_second: 20
+        max_requests_per_second: 50
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
 named_topics:

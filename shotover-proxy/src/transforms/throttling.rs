@@ -11,6 +11,7 @@ use governor::{
     state::{InMemoryState, NotKeyed},
     Quota, RateLimiter,
 };
+use nonzero_ext::nonzero;
 use serde::Deserialize;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ impl RequestThrottlingConfig {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
             ))),
+            max_requests_per_second: self.max_requests_per_second,
         }))
     }
 }
@@ -33,6 +35,7 @@ impl RequestThrottlingConfig {
 #[derive(Clone)]
 pub struct RequestThrottling {
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
+    max_requests_per_second: NonZeroU32,
 }
 
 #[async_trait]
@@ -72,5 +75,64 @@ impl Transform for RequestThrottling {
         }
 
         Ok(responses)
+    }
+
+    fn validate(&self) -> Vec<String> {
+        if self.max_requests_per_second < nonzero!(50u32) {
+            vec![
+                "RequestThrottling:".into(),
+                "  max_requests_per_second has a minimum allowed value of 50".into(),
+            ]
+        } else {
+            vec![]
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::transforms::chain::TransformChain;
+    use crate::transforms::null::Null;
+    use crate::transforms::Transforms;
+
+    #[test]
+    fn test_validate() {
+        {
+            let chain = TransformChain::new(
+                vec![
+                    Transforms::RequestThrottling(RequestThrottling {
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(20u32)))),
+                        max_requests_per_second: nonzero!(20u32),
+                    }),
+                    Transforms::Null(Null::default()),
+                ],
+                "test-chain".to_string(),
+            );
+
+            assert_eq!(
+                chain.validate(),
+                vec![
+                    "test-chain:",
+                    "  RequestThrottling:",
+                    "    max_requests_per_second has a minimum allowed value of 50"
+                ]
+            );
+        }
+
+        {
+            let chain = TransformChain::new(
+                vec![
+                    Transforms::RequestThrottling(RequestThrottling {
+                        limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(100u32)))),
+                        max_requests_per_second: nonzero!(100u32),
+                    }),
+                    Transforms::Null(Null::default()),
+                ],
+                "test-chain".to_string(),
+            );
+
+            assert_eq!(chain.validate(), Vec::<String>::new());
+        }
     }
 }
