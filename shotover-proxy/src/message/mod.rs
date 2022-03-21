@@ -182,7 +182,9 @@ impl Message {
         }
     }
 
-    pub fn message_count(&self) -> Result<NonZeroU32> {
+    /// Get the count of "requests" in this message. In Shotover, all messages are only 1 request except for batch messages which can contain 1 or more requests. If a batch message has
+    /// no inner requests, it's count is 1.
+    pub fn request_count(&self) -> Result<NonZeroU32> {
         Ok(match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
                 bytes,
@@ -190,10 +192,10 @@ impl Message {
             } => match message_type {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::None => nonzero!(1u32),
-                MessageType::Cassandra => cassandra::get_message_count(bytes)?,
+                MessageType::Cassandra => cassandra::get_request_count(bytes)?,
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
-                Frame::Cassandra(frame) => frame.get_message_count()?,
+                Frame::Cassandra(frame) => frame.get_request_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
                 Frame::None => nonzero!(1u32),
             },

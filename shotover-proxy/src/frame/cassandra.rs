@@ -61,7 +61,7 @@ pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
 }
 
 /// Count queries only from an unparsed Cassandra frame
-pub(crate) fn get_message_count(bytes: &[u8]) -> Result<NonZeroU32> {
+pub(crate) fn get_request_count(bytes: &[u8]) -> Result<NonZeroU32> {
     let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
         .map_err(|e| anyhow!("{e:?}"))?
         .frame;
@@ -93,7 +93,7 @@ impl CassandraFrame {
     }
 
     // Count the amount of queries in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other queries
-    pub(crate) fn get_message_count(&self) -> Result<NonZeroU32> {
+    pub(crate) fn get_request_count(&self) -> Result<NonZeroU32> {
         Ok(match &self.operation {
             CassandraOperation::Batch(batch) => {
                 // it doesnt make sense to say a message is 0 messages, so when the batch has no queries we round up to 1
