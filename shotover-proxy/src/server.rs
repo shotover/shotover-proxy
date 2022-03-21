@@ -100,7 +100,7 @@ pub struct TcpCodecListener<C: Codec> {
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         chain: TransformChain,
         source_name: String,
         listen_addr: String,
@@ -109,15 +109,17 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         limit_connections: Arc<Semaphore>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
-    ) -> Self {
+    ) -> Result<Self> {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
         available_connections_gauge.set(limit_connections.available_permits() as f64);
 
-        TcpCodecListener {
+        let listener = Some(create_listener(&listen_addr).await?);
+
+        Ok(TcpCodecListener {
             chain,
             source_name,
-            listener: None,
+            listener,
             listen_addr,
             hard_connection_limit,
             codec,
@@ -126,7 +128,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             tls,
             message_count: 0,
             available_connections_gauge,
-        }
+        })
     }
 
     /// Run the server
@@ -162,7 +164,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 match self.limit_connections.try_acquire() {
                     Ok(p) => {
                         if self.listener.is_none() {
-                            self.listener = Some(self.create_listener().await?);
+                            self.listener = Some(create_listener(&self.listen_addr).await?);
                         }
                         p.forget();
                     }
@@ -178,7 +180,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             } else {
                 self.limit_connections.acquire().await?.forget();
                 if self.listener.is_none() {
-                    self.listener = Some(self.create_listener().await?);
+                    self.listener = Some(create_listener(&self.listen_addr).await?);
                 }
             }
 
@@ -224,8 +226,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
             self.message_count = self.message_count.wrapping_add(1);
 
-            // Spawn a new task to process the connections. Tokio tasks are like
-            // asynchronous green threads and are executed concurrently.
+            // Spawn a new task to process the connections.
             tokio::spawn(
                 async move {
                     tracing::debug!("New connection from {}", handler.conn_details);
@@ -261,12 +262,6 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         }
     }
 
-    async fn create_listener(&self) -> Result<TcpListener> {
-        TcpListener::bind(&self.listen_addr)
-            .await
-            .map_err(|e| anyhow!("{} address={}", e, self.listen_addr))
-    }
-
     /// Accept an inbound connection.
     ///
     /// Errors are handled by backing off and retrying. An exponential backoff
@@ -298,6 +293,12 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             backoff *= 2;
         }
     }
+}
+
+async fn create_listener(listen_addr: &str) -> Result<TcpListener> {
+    TcpListener::bind(listen_addr)
+        .await
+        .map_err(|e| anyhow!("{} address={}", e, listen_addr))
 }
 
 pub struct Handler<C: Codec> {
@@ -453,12 +454,7 @@ impl<C: Codec + 'static> Handler<C> {
                 }
             };
 
-            // If `None` is returned from `read_frame()` then the peer closed
-            // the socket. There is no further work to do and the task can be
-            // terminated.
-
             debug!("Received raw message {:?}", messages);
-
             debug!("client details: {:?}", &self.client_details);
 
             match self
