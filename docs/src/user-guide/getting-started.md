@@ -17,4 +17,4 @@ To see Shotover's command line arguments run: `./shotover-proxy --help`
 
 Full `topology.yaml` examples configured for a specific use case:
 
-* [Redis clustering](../example-configs/redis-clustering-unaware.md)
+* [Redis clustering](../examples/redis-clustering-unaware.md)
