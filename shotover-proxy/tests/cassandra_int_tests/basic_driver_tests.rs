@@ -1493,7 +1493,7 @@ async fn test_cassandra_request_throttling() {
         });
 
         let len = results.len();
-        assert!(50 < len && len <= 55, "got {len}");
+        assert!(50 < len && len <= 60, "got {len}");
     }
 
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window

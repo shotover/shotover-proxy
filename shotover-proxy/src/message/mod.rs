@@ -60,6 +60,7 @@ pub struct Message {
     pub meta_timestamp: Option<i64>,
 }
 
+/// `from_*` methods for `Message`
 impl Message {
     /// This method should be called when you have have just the raw bytes of a message.
     /// This is expected to be used only by codecs that are decoding a protocol where the length of the message is provided in the header. e.g. cassandra
@@ -96,7 +97,10 @@ impl Message {
             meta_timestamp: None,
         }
     }
+}
 
+/// Methods for interacting with `Message::inner`
+impl Message {
     /// Returns a `&mut Frame` which contains the processed contents of the message.
     /// A transform may choose to modify the contents of the `&mut Frame` in order to modify the message that is sent to the DB.
     /// Any future calls to `frame()` in the same or future transforms will return the same modified `&mut Frame`.
