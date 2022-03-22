@@ -17,11 +17,12 @@ use cassandra_protocol::frame::{
 };
 use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
+use cql3_parser::cassandra_ast::{
+    CassandraAST, CassandraStatement, DeleteStatement, InsertStatement, SelectStatement,
+    UpdateStatement,
+};
 use itertools::Itertools;
 use nonzero_ext::nonzero;
-use sqlparser::ast::{SetExpr, Statement, TableFactor};
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
 use std::convert::TryInto;
 use std::num::NonZeroU32;
 use uuid::Uuid;
@@ -236,10 +237,10 @@ impl CassandraFrame {
                 query: CQL::Parsed(query),
                 ..
             } => match query.get(0) {
-                Some(Statement::Query(_x)) => QueryType::Read,
-                Some(Statement::Insert { .. }) => QueryType::Write,
-                Some(Statement::Update { .. }) => QueryType::Write,
-                Some(Statement::Delete { .. }) => QueryType::Write,
+                Some(CassandraStatement::Select(_)) => QueryType::Read,
+                Some(CassandraStatement::Insert(_)) => QueryType::Write,
+                Some(CassandraStatement::Update(_)) => QueryType::Write,
+                Some(CassandraStatement::Delete(_)) => QueryType::Write,
                 // TODO: handle prepared, execute and schema change query types
                 _ => QueryType::Read,
             },
@@ -247,34 +248,19 @@ impl CassandraFrame {
         }
     }
 
+    // TODO: This should be rewritten to better suit the new parser
     pub fn namespace(&self) -> Vec<String> {
         match &self.operation {
             CassandraOperation::Query {
                 query: CQL::Parsed(query),
                 ..
             } => match query.first() {
-                Some(Statement::Query(query)) => match &query.body {
-                    SetExpr::Select(select) => {
-                        if let TableFactor::Table { name, .. } =
-                            &select.from.get(0).unwrap().relation
-                        {
-                            name.0.iter().map(|a| a.value.clone()).collect()
-                        } else {
-                            vec![]
-                        }
-                    }
-                    _ => vec![],
-                },
-                Some(Statement::Insert { table_name, .. })
-                | Some(Statement::Delete { table_name, .. }) => {
-                    table_name.0.iter().map(|a| a.value.clone()).collect()
+                Some(CassandraStatement::Select(SelectStatement { table_name, .. }))
+                | Some(CassandraStatement::Insert(InsertStatement { table_name, .. }))
+                | Some(CassandraStatement::Delete(DeleteStatement { table_name, .. }))
+                | Some(CassandraStatement::Update(UpdateStatement { table_name, .. })) => {
+                    vec![table_name.clone()]
                 }
-                Some(Statement::Update { table, .. }) => match &table.relation {
-                    TableFactor::Table { name, .. } => {
-                        name.0.iter().map(|a| a.value.clone()).collect()
-                    }
-                    _ => vec![],
-                },
                 _ => vec![],
             },
             _ => vec![],
@@ -443,7 +429,7 @@ impl CassandraOperation {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum CQL {
-    Parsed(Vec<Statement>),
+    Parsed(Vec<CassandraStatement>),
     FailedToParse(String),
 }
 
@@ -456,17 +442,21 @@ impl CQL {
     }
 
     pub fn parse_from_string(sql: String) -> Self {
-        match Parser::parse_sql(&GenericDialect, &sql) {
-            _ if sql.contains("ALTER TABLE") || sql.contains("CREATE TABLE") => {
-                tracing::error!("Failed to parse CQL for frame {:?}\nError: Blacklisted query as sqlparser crate cant round trip it", sql);
-                CQL::FailedToParse(sql)
-            }
-            Ok(ast) => CQL::Parsed(ast),
-            Err(err) => {
-                tracing::error!("Failed to parse CQL for frame {:?}\nError: {:?}", sql, err);
-                CQL::FailedToParse(sql)
-            }
-        }
+        // match Parser::parse_sql(&GenericDialect, &sql) {
+        //     // TODO: can probably remove this now
+        //     _ if sql.contains("ALTER TABLE") || sql.contains("CREATE TABLE") => {
+        //         tracing::error!("Failed to parse CQL for frame {:?}\nError: Blacklisted query as sqlparser crate cant round trip it", sql);
+        //         CQL::FailedToParse(sql)
+        //     }
+        //     Ok(ast) => CQL::Parsed(ast),
+        //     Err(err) => {
+        //         tracing::error!("Failed to parse CQL for frame {:?}\nError: {:?}", sql, err);
+        //         CQL::FailedToParse(sql)
+        //     }
+        // }
+        // TODO: cqlparser internally panics instead of returning Err
+        let ast = CassandraAST::new(sql);
+        CQL::Parsed(vec![ast.statement])
     }
 }
 

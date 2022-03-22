@@ -7,6 +7,10 @@ use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use cql3_parser::cassandra_ast::{
+    AssignmentElement, CassandraStatement, DeleteStatement, InsertStatement, InsertValues, Operand,
+    SelectStatement, UpdateStatement,
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;
@@ -156,13 +160,16 @@ impl ProtectConfig {
     }
 }
 
-pub fn get_values_from_insert_or_update_mut(ast: &mut CQL) -> HashMap<String, &mut SQLValue> {
+pub fn get_values_from_insert_or_update_mut(ast: &mut CQL) -> HashMap<&mut str, &mut Operand> {
     if let CQL::Parsed(ast) = ast {
         match &mut ast[0] {
-            Statement::Insert {
-                source, columns, ..
-            } => get_values_from_insert_mut(columns.as_mut(), source.borrow_mut()),
-            Statement::Update { assignments, .. } => {
+            CassandraStatement::Insert(InsertStatement {
+                values, columns, ..
+            }) => {
+                // TODO: dont unwrap
+                get_values_from_insert_mut(columns.unwrap().as_mut(), values.unwrap().borrow_mut())
+            }
+            CassandraStatement::Update(UpdateStatement { assignments, .. }) => {
                 get_values_from_update_mut(assignments.as_mut())
             }
             _ => HashMap::new(),
@@ -173,31 +180,28 @@ pub fn get_values_from_insert_or_update_mut(ast: &mut CQL) -> HashMap<String, &m
 }
 
 fn get_values_from_insert_mut<'a>(
-    columns: &'a mut [Ident],
-    source: &'a mut Query,
-) -> HashMap<String, &'a mut SQLValue> {
+    columns: &'a mut [String],
+    values: &'a mut InsertValues,
+) -> HashMap<&'a mut str, &'a mut Operand> {
     let mut map = HashMap::new();
-    let mut columns_iter = columns.iter();
-    if let SetExpr::Values(v) = &mut source.body {
-        for value in &mut v.0 {
-            for ex in value {
-                if let Expr::Value(v) = ex {
-                    if let Some(c) = columns_iter.next() {
-                        map.insert(c.value.to_string(), v);
-                    }
-                }
+    let mut columns_iter = columns.iter_mut();
+    if let InsertValues::VALUES(values) = values {
+        for value in values {
+            if let Some(column) = columns_iter.next() {
+                map.insert(column.as_mut(), value);
             }
         }
     }
+    // TODO: do we need to handle InsertValues::JSON ?
     map
 }
 
-fn get_values_from_update_mut(assignments: &mut [Assignment]) -> HashMap<String, &mut SQLValue> {
+fn get_values_from_update_mut(
+    assignments: &mut [AssignmentElement],
+) -> HashMap<&mut str, &mut Operand> {
     let mut map = HashMap::new();
     for assignment in assignments {
-        if let Expr::Value(v) = &mut assignment.value {
-            map.insert(assignment.id.iter().map(|x| &x.value).join("."), v);
-        }
+        map.insert(assignment.name.column, assignment.value);
     }
     map
 }

@@ -322,7 +322,7 @@ fn build_redis_ast_from_sql(
 
                 insert_or_update(table_cache_schema, query_values, pk)
             }
-            statement => Err(anyhow!("Cant build query from statement: {}", statement)),
+            statement => Err(anyhow!("Cant build query from statement: {}", "TODO")),
         }
     } else {
         Err(anyhow!("cannot use unparsed CQL"))

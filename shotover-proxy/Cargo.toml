@@ -42,6 +42,7 @@ anyhow = "1.0.31"
 
 # Parsers
 sqlparser = "0.15"
+cql3_parser = { git = "https://github.com/rukai/rust_cql3_parser", branch = "renames" }
 serde = { version = "1.0.111", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.8.21"

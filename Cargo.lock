@@ -436,6 +436,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cql3_parser"
+version = "0.0.1"
+source = "git+https://github.com/rukai/rust_cql3_parser?branch=renames#8580f71cd1b42e6d784fd40ca85517ba6b63aae4"
+dependencies = [
+ "itertools",
+ "regex",
+ "tree-sitter",
+ "tree-sitter-cql",
+]
+
+[[package]]
 name = "crc16"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2461,6 +2472,7 @@ dependencies = [
  "cassandra-cpp",
  "cassandra-protocol",
  "clap 3.1.6",
+ "cql3_parser",
  "crc16",
  "criterion",
  "csv",
@@ -2991,6 +3003,26 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.20.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09b3b781640108d29892e8b9684642d2cda5ea05951fd58f0fea1db9edeb9b71"
+dependencies = [
+ "cc",
+ "regex",
+]
+
+[[package]]
+name = "tree-sitter-cql"
+version = "0.0.1"
+source = "git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql#a093d042d4d8275758274b428090100432cd5da8"
+dependencies = [
+ "cc",
+ "regex",
+ "tree-sitter",
 ]
 
 [[package]]
