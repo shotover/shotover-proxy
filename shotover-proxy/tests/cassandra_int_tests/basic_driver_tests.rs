@@ -1529,33 +1529,23 @@ fn test_cassandra_peers_rewrite() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_rewrite_peers_example() {
-    let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-rewrite-peers/docker-compose.yml");
+    let _docker_compose = DockerCompose::new_with_custom_timeout(
+        "example-configs/cassandra-rewrite-peers/docker-compose.yml",
+        150,
+    );
 
     let shotover_manager = ShotoverManager::from_topology_file(
         "example-configs/cassandra-rewrite-peers/topology.yaml",
     );
 
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let connection = shotover_manager.cassandra_connection("172.16.1.2", 9043);
     table::test(&connection); // run some basic tests to confirm it works as normal
 
-    {
-        assert_query_result(
-            &connection,
-            "SELECT data_center, native_port, rack FROM system.peers_v2;",
-            &[&[
-                ResultValue::Varchar("dc1".into()),
-                ResultValue::Int(9044),
-                ResultValue::Varchar("West".into()),
-            ]],
-        );
-
-        assert_query_result(
-            &connection,
-            "SELECT native_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044)]],
-        );
-    }
+    assert_query_result(
+        &connection,
+        "SELECT native_port FROM system.peers_v2;",
+        &[&[ResultValue::Int(9043)], &[ResultValue::Int(9043)]],
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
