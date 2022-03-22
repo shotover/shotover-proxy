@@ -71,7 +71,8 @@ impl CassandraSource {
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
-        );
+        )
+        .await?;
 
         let join_handle = Handle::current().spawn(async move {
             // Check we didn't receive a shutdown signal before the receiver was created
