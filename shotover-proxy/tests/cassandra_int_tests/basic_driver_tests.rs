@@ -1529,10 +1529,8 @@ fn test_cassandra_peers_rewrite() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_rewrite_peers_example() {
-    let _docker_compose = DockerCompose::new_with_custom_timeout(
-        "example-configs/cassandra-rewrite-peers/docker-compose.yml",
-        150,
-    );
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-rewrite-peers/docker-compose.yml");
 
     let shotover_manager = ShotoverManager::from_topology_file(
         "example-configs/cassandra-rewrite-peers/topology.yaml",

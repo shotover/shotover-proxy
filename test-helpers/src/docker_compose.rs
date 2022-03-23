@@ -73,29 +73,7 @@ impl DockerCompose {
             file_path: file_path.to_string(),
         };
 
-        let timeout_seconds = 110;
-        compose.wait_for_containers_to_startup(timeout_seconds);
-
-        compose
-    }
-
-    pub fn new_with_custom_timeout(file_path: &str, timeout_seconds: u64) -> Self {
-        if let Err(ErrorKind::NotFound) = Command::new("docker-compose")
-            .output()
-            .map_err(|e| e.kind())
-        {
-            panic!("Could not find docker-compose. Have you installed it?");
-        }
-
-        DockerCompose::clean_up(file_path).unwrap();
-
-        run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
-
-        let compose = DockerCompose {
-            file_path: file_path.to_string(),
-        };
-
-        compose.wait_for_containers_to_startup(timeout_seconds);
+        compose.wait_for_containers_to_startup();
 
         compose
     }
@@ -110,26 +88,26 @@ impl DockerCompose {
         DockerCompose::new("tests/transforms/docker-compose-moto.yml")
     }
 
-    fn wait_for_containers_to_startup(&self, timeout_seconds: u64) {
+    fn wait_for_containers_to_startup(&self) {
         match self.file_path.as_ref() {
             "tests/transforms/docker-compose-moto.yml" => {
-                self.wait_for_log(r#"Press CTRL\+C to quit"#, 1, timeout_seconds)
+                self.wait_for_log(r#"Press CTRL\+C to quit"#, 1, 110)
             }
             "example-configs/redis-passthrough/docker-compose.yml"
             | "example-configs/redis-tls/docker-compose.yml" => {
-                self.wait_for_log("Ready to accept connections", 1, timeout_seconds)
+                self.wait_for_log("Ready to accept connections", 1, 110)
             }
             "example-configs/redis-multi/docker-compose.yml" => {
-                self.wait_for_log("Ready to accept connections", 3, timeout_seconds)
+                self.wait_for_log("Ready to accept connections", 3, 110)
             }
             "tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml"
             | "example-configs/redis-cluster/docker-compose.yml"
             | "example-configs/redis-cluster-auth/docker-compose.yml"
             | "example-configs/redis-cluster-tls/docker-compose.yml" => {
-                self.wait_for_log("Cluster state changed", 6, timeout_seconds)
+                self.wait_for_log("Cluster state changed", 6, 110)
             }
             "example-configs/redis-cluster-dr/docker-compose.yml" => {
-                self.wait_for_log("Cluster state changed", 12, timeout_seconds)
+                self.wait_for_log("Cluster state changed", 12, 110)
             }
             "example-configs/cassandra-passthrough/docker-compose.yml"
             | "example-configs/cassandra-tls/docker-compose.yml"
@@ -137,16 +115,15 @@ impl DockerCompose {
             | "example-configs/cassandra-redis-cache/docker-compose.yml"
             | "example-configs/cassandra-protect-local/docker-compose.yml"
             | "example-configs/cassandra-protect-aws/docker-compose.yml"
-            | "example-configs/cassandra-request-throttling/docker-compose.yml"
             | "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yml"
             | "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yml" => {
-                self.wait_for_log("Startup complete", 1, timeout_seconds)
+                self.wait_for_log("Startup complete", 1, 110)
             }
             "tests/test-configs/cassandra-peers-rewrite/docker-compose.yml" => {
-                self.wait_for_log("Startup complete", 2, timeout_seconds)
+                self.wait_for_log("Startup complete", 2, 110)
             }
             "example-configs/cassandra-rewrite-peers/docker-compose.yml" => {
-                self.wait_for_log("Startup complete", 3, timeout_seconds)
+                self.wait_for_log("Startup complete", 3, 150)
             }
             path => unimplemented!(
                 "Unknown compose file `{path}` Please implement waiting logic for it here.",
