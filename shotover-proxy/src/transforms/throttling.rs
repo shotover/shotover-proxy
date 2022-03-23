@@ -49,7 +49,7 @@ impl Transform for RequestThrottling {
             .filter_map(|i| {
                 if self
                     .limiter
-                    .check_n(message_wrapper.messages[i].request_count().ok()?)
+                    .check_n(message_wrapper.messages[i].cell_count().ok()?)
                     .is_err()
                 {
                     let message = message_wrapper.messages.remove(i);
