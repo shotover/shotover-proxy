@@ -123,7 +123,7 @@ impl DockerCompose {
                 self.wait_for_log("Startup complete", 2, 110)
             }
             "example-configs/cassandra-rewrite-peers/docker-compose.yml" => {
-                self.wait_for_log("Startup complete", 3, 150)
+                self.wait_for_log("Startup complete", 3, 180)
             }
             path => unimplemented!(
                 "Unknown compose file `{path}` Please implement waiting logic for it here.",
