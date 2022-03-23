@@ -87,7 +87,53 @@ fn cassandra(c: &mut Criterion) {
         });
         for query in &queries {
             group.bench_with_input(
-                format!("passthrough_{}", query.name),
+                format!("passthrough_no_parse_{}", query.name),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
+                    })
+                },
+            );
+        }
+    }
+
+    #[cfg(feature = "alpha-transforms")]
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "tests/test-configs/cassandra-passthrough-parse-request/topology.yaml",
+                "example-configs/cassandra-passthrough/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_parse_request_{}", query.name),
+                &resources,
+                |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        let connection = &mut resources.as_mut().unwrap().connection;
+                        connection.execute(&query.statement).wait().unwrap();
+                    })
+                },
+            );
+        }
+    }
+
+    #[cfg(feature = "alpha-transforms")]
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "tests/test-configs/cassandra-passthrough-parse-response/topology.yaml",
+                "example-configs/cassandra-passthrough/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_parse_response_{}", query.name),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
