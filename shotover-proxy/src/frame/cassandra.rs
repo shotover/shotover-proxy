@@ -36,7 +36,10 @@ fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
     }
 
     let short_bytes = &bytes[1..3];
-    let short = u16::from_be_bytes(short_bytes.try_into()?); // it is valid for a batch statement to have 0 statements, but for the purposes of shotover throttling we can count it as one query
+    let short = u16::from_be_bytes(short_bytes.try_into()?);
+
+    // it is valid for a batch statement to have 0 statements,
+    // but for the purposes of shotover throttling we can count it as one query
     Ok(NonZeroU32::new(short.into()).unwrap_or(nonzero!(1u32)))
 }
 
@@ -60,8 +63,8 @@ pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
     })
 }
 
-/// Count queries only from an unparsed Cassandra frame
-pub(crate) fn get_query_count(bytes: &[u8]) -> Result<NonZeroU32> {
+/// Count "cells" only from an unparsed Cassandra frame
+pub(crate) fn cell_count(bytes: &[u8]) -> Result<NonZeroU32> {
     let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
         .map_err(|e| anyhow!("{e:?}"))?
         .frame;
@@ -92,8 +95,8 @@ impl CassandraFrame {
         }
     }
 
-    // Count the amount of queries in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other queries
-    pub(crate) fn get_query_count(&self) -> Result<NonZeroU32> {
+    // Count the amount of cells in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other types of Cassandra queries
+    pub(crate) fn cell_count(&self) -> Result<NonZeroU32> {
         Ok(match &self.operation {
             CassandraOperation::Batch(batch) => {
                 // it doesnt make sense to say a message is 0 messages, so when the batch has no queries we round up to 1

@@ -182,9 +182,11 @@ impl Message {
         }
     }
 
-    /// Get the count of "cells" in this message. In Shotover, all messages are only 1 cell except for batch messages which can contain 1 or more cells.
-    /// A cell in a batch message is equivalent to one of it's inner batched messages.
-    /// If a batch message has no inner messages, it's cell count is 1.
+    /// Batch messages have a cell count of 1 cell per inner message.
+    /// Cell count is determined as follows:
+    /// * Regular message - 1 cell
+    /// * Message containing submessages e.g. a batch request - 1 cell per submessage
+    /// * Message containing submessages with 0 submessages - 1 cell
     pub fn cell_count(&self) -> Result<NonZeroU32> {
         Ok(match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
@@ -193,10 +195,10 @@ impl Message {
             } => match message_type {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::None => nonzero!(1u32),
-                MessageType::Cassandra => cassandra::get_query_count(bytes)?,
+                MessageType::Cassandra => cassandra::cell_count(bytes)?,
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
-                Frame::Cassandra(frame) => frame.get_query_count()?,
+                Frame::Cassandra(frame) => frame.cell_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
                 Frame::None => nonzero!(1u32),
             },
