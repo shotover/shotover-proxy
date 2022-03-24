@@ -6,6 +6,9 @@ use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
+use crate::transforms::debug::force_parse::DebugForceParse;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::debug::force_parse::DebugForceParseConfig;
 use crate::transforms::debug::printer::DebugPrinter;
 use crate::transforms::debug::random_delay::DebugRandomDelay;
 use crate::transforms::debug::returner::{DebugReturner, DebugReturnerConfig};
@@ -86,6 +89,7 @@ pub enum Transforms {
     DebugReturner(DebugReturner),
     DebugRandomDelay(DebugRandomDelay),
     DebugPrinter(DebugPrinter),
+    DebugForceParse(DebugForceParse),
     ParallelMap(ParallelMap),
     PoolConnections(ConnectionBalanceAndPool),
     Coalesce(Coalesce),
@@ -108,6 +112,7 @@ impl Transforms {
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
+            Transforms::DebugForceParse(p) => p.transform(message_wrapper).await,
             Transforms::Null(n) => n.transform(message_wrapper).await,
             #[cfg(test)]
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
@@ -140,6 +145,7 @@ impl Transforms {
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
+            Transforms::DebugForceParse(a) => a.prep_transform_chain(t).await,
             Transforms::Null(a) => a.prep_transform_chain(t).await,
             #[cfg(test)]
             Transforms::Loopback(a) => a.prep_transform_chain(t).await,
@@ -170,6 +176,7 @@ impl Transforms {
             Transforms::RedisTimestampTagger(r) => r.validate(),
             Transforms::RedisClusterPortsRewrite(r) => r.validate(),
             Transforms::DebugPrinter(p) => p.validate(),
+            Transforms::DebugForceParse(p) => p.validate(),
             Transforms::Null(n) => n.validate(),
             Transforms::RedisSinkCluster(r) => r.validate(),
             Transforms::ParallelMap(s) => s.validate(),
@@ -197,6 +204,7 @@ impl Transforms {
             Transforms::RedisTimestampTagger(r) => r.is_terminating(),
             Transforms::RedisClusterPortsRewrite(r) => r.is_terminating(),
             Transforms::DebugPrinter(p) => p.is_terminating(),
+            Transforms::DebugForceParse(p) => p.is_terminating(),
             Transforms::Null(n) => n.is_terminating(),
             Transforms::RedisSinkCluster(r) => r.is_terminating(),
             Transforms::ParallelMap(s) => s.is_terminating(),
@@ -234,6 +242,8 @@ pub enum TransformsConfig {
     Loopback,
     #[cfg(feature = "alpha-transforms")]
     Protect(ProtectConfig),
+    #[cfg(feature = "alpha-transforms")]
+    DebugForceParse(DebugForceParseConfig),
     ParallelMap(ParallelMapConfig),
     //PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
@@ -268,6 +278,8 @@ impl TransformsConfig {
             TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
             #[cfg(feature = "alpha-transforms")]
             TransformsConfig::Protect(p) => p.get_transform().await,
+            #[cfg(feature = "alpha-transforms")]
+            TransformsConfig::DebugForceParse(d) => d.get_transform().await,
             TransformsConfig::RedisSinkCluster(r) => r.get_transform(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_transform(topics).await,
             //TransformsConfig::PoolConnections(s) => s.get_transform(topics).await,
