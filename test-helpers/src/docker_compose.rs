@@ -115,7 +115,9 @@ impl DockerCompose {
             | "example-configs/cassandra-redis-cache/docker-compose.yml"
             | "example-configs/cassandra-protect-local/docker-compose.yml"
             | "example-configs/cassandra-protect-aws/docker-compose.yml"
-            | "example-configs/cassandra-request-throttling/docker-compose.yml" => {
+            | "example-configs/cassandra-request-throttling/docker-compose.yml"
+            | "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yml"
+            | "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yml" => {
                 self.wait_for_log("Startup complete", 1)
             }
             "tests/test-configs/cassandra-peers-rewrite/docker-compose.yml" => {
