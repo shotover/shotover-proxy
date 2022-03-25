@@ -1,7 +1,7 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
 use crate::transforms::protect::KeyMaterial;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cached::proc_macro::cached;
 use rusoto_kms::KmsClient;
@@ -9,6 +9,7 @@ use rusoto_signature::Region;
 use serde::Deserialize;
 use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;
+use std::num::ParseIntError;
 use std::str::FromStr;
 
 #[async_trait]
@@ -34,9 +35,16 @@ pub enum KeyManagerConfig {
         endpoint: Option<String>,
     },
     Local {
-        kek: Key,
+        kek: String,
         kek_id: String,
     },
+}
+
+fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
+    (0..s.len())
+        .step_by(4)
+        .map(|i| u8::from_str_radix(&s[i + 2..i + 4], 16))
+        .collect()
 }
 
 impl KeyManagerConfig {
@@ -68,6 +76,8 @@ impl KeyManagerConfig {
                 grant_tokens,
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
+                let kek = Key::from_slice(&decode_hex(&kek)?)
+                    .ok_or_else(|| anyhow!("Not a valid key"))?;
                 Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
             }
         }
