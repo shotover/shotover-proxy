@@ -1,18 +1,17 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-
+use crate::helpers::ShotoverManager;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
+use shotover_proxy::tls::TlsConfig;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
-use tracing::trace;
-
-use crate::helpers::ShotoverManager;
-use shotover_proxy::tls::TlsConfig;
 use test_helpers::docker_compose::DockerCompose;
+use tracing::trace;
 
 // Debug rust is pretty slow, so keep the stress test small.
 // CI runs in both debug and release so the larger iteration count does get run there.
@@ -1259,6 +1258,8 @@ async fn test_passthrough() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_tls() {
+    test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/tls_keys"));
+
     let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
@@ -1272,6 +1273,8 @@ async fn test_cluster_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_source_tls_and_single_tls() {
+    test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/tls_keys"));
+
     let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
