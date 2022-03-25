@@ -1,4 +1,4 @@
-use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use futures::future::{join_all, try_join_all};
@@ -6,7 +6,7 @@ use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
 mod keyspace {
-    use crate::cassandra_int_tests::{
+    use crate::helpers::cassandra::{
         assert_query_result, assert_query_result_contains_row, run_query, ResultValue,
     };
     use cassandra_cpp::Session;
@@ -71,7 +71,7 @@ mod keyspace {
 }
 
 mod table {
-    use crate::cassandra_int_tests::{
+    use crate::helpers::cassandra::{
         assert_query_result, assert_query_result_contains_row,
         assert_query_result_not_contains_row, run_query, ResultValue,
     };
@@ -131,7 +131,7 @@ mod table {
 }
 
 mod udt {
-    use crate::cassandra_int_tests::run_query;
+    use crate::helpers::cassandra::run_query;
     use cassandra_cpp::{stmt, Session};
 
     fn test_create_udt(session: &Session) {
@@ -170,7 +170,7 @@ mod udt {
 }
 
 mod native_types {
-    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+    use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
     use cassandra_cpp::Session;
 
     fn select(session: &Session) {
@@ -290,7 +290,7 @@ date_test date,
 }
 
 mod collections {
-    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+    use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
     use cassandra_cpp::Session;
     use cassandra_protocol::frame::frame_result::ColType;
 
@@ -936,7 +936,7 @@ mod collections {
 }
 
 mod functions {
-    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+    use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
     use cassandra_cpp::{stmt, Session};
 
     fn drop_function(session: &Session) {
@@ -978,7 +978,7 @@ APPLY BATCH;"#,
 }
 
 mod prepared_statements {
-    use crate::cassandra_int_tests::{assert_query_result, assert_rows, run_query, ResultValue};
+    use crate::helpers::cassandra::{assert_query_result, assert_rows, run_query, ResultValue};
     use cassandra_cpp::Session;
 
     fn delete(session: &Session) {
@@ -1064,7 +1064,7 @@ mod prepared_statements {
 }
 
 mod cache {
-    use crate::cassandra_int_tests::{assert_query_result, run_query, ResultValue};
+    use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
     use cassandra_cpp::Session;
     use redis::Commands;
     use std::collections::HashSet;
@@ -1221,7 +1221,7 @@ mod cache {
 
 #[cfg(feature = "alpha-transforms")]
 mod protect {
-    use crate::cassandra_int_tests::{execute_query, run_query, ResultValue};
+    use crate::helpers::cassandra::{execute_query, run_query, ResultValue};
     use cassandra_cpp::Session;
 
     pub fn test(shotover_session: &Session, direct_session: &Session) {
