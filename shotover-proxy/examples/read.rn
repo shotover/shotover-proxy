@@ -1,0 +1,37 @@
+//! Partition read stress test - looks up a tiny partition by key, returns one row per query.
+
+// not sure how important a large value is for the ROW_COUNT
+// but a smaller one seems fine for now, and makes the bench complete faster
+//const ROW_COUNT = latte::param!("rows", 100000);
+const ROW_COUNT = latte::param!("rows", 1000);
+
+const INSERT = "insert";
+const READ = "read";
+
+const KEYSPACE = "latte";
+const TABLE = "basic";
+
+pub async fn schema(ctx) {
+    ctx.execute(`CREATE KEYSPACE IF NOT EXISTS ${KEYSPACE} \
+                    WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }`).await?;
+    ctx.execute(`DROP TABLE IF EXISTS ${KEYSPACE}.${TABLE}`).await?;
+    ctx.execute(`CREATE TABLE ${KEYSPACE}.${TABLE}(id bigint PRIMARY KEY)`).await?;
+}
+
+pub async fn erase(ctx) {
+    ctx.execute(`TRUNCATE TABLE ${KEYSPACE}.${TABLE}`).await
+}
+
+pub async fn prepare(ctx) {
+    ctx.load_cycle_count = ROW_COUNT;
+    ctx.prepare(INSERT, `INSERT INTO ${KEYSPACE}.${TABLE}(id) VALUES (:id)`).await?;
+    ctx.prepare(READ, `SELECT * FROM ${KEYSPACE}.${TABLE} WHERE id = :id`).await?;
+}
+
+pub async fn load(ctx, i) {
+    ctx.execute_prepared(INSERT, [i]).await?
+}
+
+pub async fn run(ctx, i) {
+    ctx.execute_prepared(READ, [latte::hash(i) % ROW_COUNT]).await?
+}

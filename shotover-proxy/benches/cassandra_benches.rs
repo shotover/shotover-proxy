@@ -105,7 +105,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "tests/test-configs/cassandra-passthrough-parse-request/topology.yaml",
-                "example-configs/cassandra-passthrough/docker-compose.yml",
+                "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yml",
             )
         });
         for query in &queries {
@@ -128,7 +128,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "tests/test-configs/cassandra-passthrough-parse-response/topology.yaml",
-                "example-configs/cassandra-passthrough/docker-compose.yml",
+                "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yml",
             )
         });
         for query in &queries {
