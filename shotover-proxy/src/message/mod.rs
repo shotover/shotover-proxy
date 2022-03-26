@@ -182,7 +182,12 @@ impl Message {
         }
     }
 
-    pub fn message_count(&self) -> Result<NonZeroU32> {
+    /// Batch messages have a cell count of 1 cell per inner message.
+    /// Cell count is determined as follows:
+    /// * Regular message - 1 cell
+    /// * Message containing submessages e.g. a batch request - 1 cell per submessage
+    /// * Message containing submessages with 0 submessages - 1 cell
+    pub fn cell_count(&self) -> Result<NonZeroU32> {
         Ok(match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
                 bytes,
@@ -190,10 +195,10 @@ impl Message {
             } => match message_type {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::None => nonzero!(1u32),
-                MessageType::Cassandra => cassandra::get_message_count(bytes)?,
+                MessageType::Cassandra => cassandra::cell_count(bytes)?,
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
-                Frame::Cassandra(frame) => frame.get_message_count()?,
+                Frame::Cassandra(frame) => frame.cell_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
                 Frame::None => nonzero!(1u32),
             },
