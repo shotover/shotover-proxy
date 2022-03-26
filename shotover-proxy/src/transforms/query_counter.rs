@@ -1,5 +1,4 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::{CassandraFrame, CassandraOperation, CQL};
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -32,32 +31,27 @@ impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         for m in &mut message_wrapper.messages {
             match m.frame() {
-                Some(Frame::Cassandra(CassandraFrame {
-                    operation:
-                        CassandraOperation::Query {
-                            query: CQL::Parsed(query),
-                            ..
-                        },
-                    ..
-                })) => {
-                    for statement in query {
-                        let query_type = match statement {
-                            Statement::Query(_) => "SELECT",
-                            Statement::Insert { .. } => "INSERT",
-                            Statement::Copy { .. } => "COPY",
-                            Statement::Update { .. } => "UPDATE",
-                            Statement::Delete { .. } => "DELETE",
-                            Statement::CreateTable { .. } => "CREATE TABLE",
-                            Statement::AlterTable { .. } => "ALTER TABLE",
-                            Statement::Drop { .. } => "DROP",
-                            _ => "UNRECOGNISED CQL",
-                        };
-                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "cassandra");
+                Some(Frame::Cassandra(frame)) => match frame.operation.queries() {
+                    Ok(queries) => {
+                        for statement in queries {
+                            let query_type = match statement {
+                                Statement::Query(_) => "SELECT",
+                                Statement::Insert { .. } => "INSERT",
+                                Statement::Copy { .. } => "COPY",
+                                Statement::Update { .. } => "UPDATE",
+                                Statement::Delete { .. } => "DELETE",
+                                Statement::CreateTable { .. } => "CREATE TABLE",
+                                Statement::AlterTable { .. } => "ALTER TABLE",
+                                Statement::Drop { .. } => "DROP",
+                                _ => "UNRECOGNISED CQL",
+                            };
+                            counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "cassandra");
+                        }
                     }
-                }
-                Some(Frame::Cassandra(_)) => {
-                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "cassandra")
-                }
+                    Err(_) => {
+                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "cassandra");
+                    }
+                },
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = get_redis_query_type(frame) {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");
