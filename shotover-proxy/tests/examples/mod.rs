@@ -1,4 +1,4 @@
-use crate::cassandra_int_tests::{assert_query_result, cassandra_connection, ResultValue};
+use crate::helpers::cassandra::{assert_query_result, cassandra_connection, ResultValue};
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
