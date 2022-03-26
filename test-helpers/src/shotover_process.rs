@@ -25,9 +25,9 @@ impl ShotoverProcess {
         // First ensure shotover is fully built so that the potentially lengthy build time is not included in the wait_for_socket_to_open timeout
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
         let all_args = if env!("PROFILE") == "release" {
-            vec!["build", "--release"]
+            vec!["build", "--all-features", "--release"]
         } else {
-            vec!["build"]
+            vec!["build", "--all-features"]
         };
         assert!(Command::new(env!("CARGO"))
             .args(&all_args)
@@ -38,9 +38,16 @@ impl ShotoverProcess {
 
         // Now actually run shotover and keep hold of the child process
         let all_args = if env!("PROFILE") == "release" {
-            vec!["run", "--release", "--", "-t", topology_path]
+            vec![
+                "run",
+                "--all-features",
+                "--release",
+                "--",
+                "-t",
+                topology_path,
+            ]
         } else {
-            vec!["run", "--", "-t", topology_path]
+            vec!["run", "--all-features", "--", "-t", topology_path]
         };
         let child = Some(
             Command::new(env!("CARGO"))
