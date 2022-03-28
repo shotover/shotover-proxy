@@ -1,6 +1,6 @@
 use clap::Parser;
 use test_helpers::docker_compose::DockerCompose;
-use test_helpers::shotover_process::{AssertExitsWith, ShotoverProcess};
+use test_helpers::shotover_process::ShotoverProcess;
 
 /// e.g.
 /// cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough -r 1000
@@ -33,15 +33,14 @@ fn main() {
         let _compose = DockerCompose::new(&format!("{}/docker-compose.yml", args.config_dir));
 
         // Uses ShotoverProcess instead of ShotoverManager for a more accurate benchmark
-        let _shotover_manager = ShotoverProcess::new(
-            &format!("{}/topology.yaml", args.config_dir),
-            AssertExitsWith::Success,
-        );
+        let shotover_manager = ShotoverProcess::new(&format!("{}/topology.yaml", args.config_dir));
 
         println!("Benching Shotover ...");
         bench_read(&latte, "localhost:9043", "localhost:9042");
         println!("Benching Direct Cassandra ...");
         bench_read(&latte, "localhost:9043", "localhost:9043");
+
+        shotover_manager.shutdown_and_assert_success();
     }
 
     println!("Direct Cassandra (A) vs Shotover (B)");

@@ -6,7 +6,6 @@ use std::process::{Child, Command, Stdio};
 pub struct ShotoverProcess {
     /// Always Some while ShotoverProcess is owned
     pub child: Option<Child>,
-    assert_exit: AssertExitsWith,
 }
 
 impl Drop for ShotoverProcess {
@@ -19,43 +18,15 @@ impl Drop for ShotoverProcess {
             }
 
             if !std::thread::panicking() {
-                let output = child.wait_with_output().unwrap();
-
-                let stdout = String::from_utf8(output.stdout).unwrap();
-                let stderr = String::from_utf8(output.stderr).unwrap();
-                let exit_code = output.status.code().unwrap();
-                match self.assert_exit {
-                    AssertExitsWith::Success => {
-                        if exit_code != 0 {
-                            panic!(
-                            "Shotover exited with {} but expected 0 exit code (Success).\nstdout: {}\nstderr: {}",
-                            exit_code, stdout, stderr
-                        );
-                        }
-                    }
-                    AssertExitsWith::Failure => {
-                        if exit_code == 0 {
-                            panic!(
-                            "Shotover exited with {} but expected non 0 exit code (Failure).\nstdout: {}\nstderr: {}",
-                            exit_code, stdout, stderr
-                        );
-                        }
-                    }
-                };
+                panic!("Need to call either wait or shutdown_and_assert_success method on ShotoverProcess before dropping it ");
             }
         }
     }
 }
 
-pub enum AssertExitsWith {
-    Success,
-    #[allow(unused)]
-    Failure,
-}
-
 impl ShotoverProcess {
     #[allow(unused)]
-    pub fn new(topology_path: &str, assert_exit: AssertExitsWith) -> ShotoverProcess {
+    pub fn new(topology_path: &str) -> ShotoverProcess {
         // First ensure shotover is fully built so that the potentially lengthy build time is not included in the wait_for_socket_to_open timeout
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
         let all_args = if env!("PROFILE") == "release" {
@@ -88,7 +59,7 @@ impl ShotoverProcess {
 
         crate::wait_for_socket_to_open("127.0.0.1", 9001); // Wait for observability metrics port to open
 
-        ShotoverProcess { child, assert_exit }
+        ShotoverProcess { child }
     }
 
     #[allow(unused)]
@@ -105,13 +76,29 @@ impl ShotoverProcess {
     pub fn wait(mut self) -> WaitOutput {
         let output = self.child.take().unwrap().wait_with_output().unwrap();
 
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        let stderr = String::from_utf8(output.stderr).unwrap();
+        let stdout = String::from_utf8(output.stdout).expect("stdout was not valid utf8");
+        let stderr = String::from_utf8(output.stderr).expect("stderr was not valid utf8");
 
         WaitOutput {
-            exit_code: output.status.code().unwrap(),
+            exit_code: output
+                .status
+                .code()
+                .expect("Couldnt get exit code, the process was killed by something like SIGKILL"),
             stdout,
             stderr,
+        }
+    }
+
+    #[allow(unused)]
+    pub fn shutdown_and_assert_success(mut self) {
+        self.signal(nix::sys::signal::Signal::SIGTERM);
+        let result = self.wait();
+
+        if result.exit_code != 0 {
+            panic!(
+                "Shotover exited with {} but expected 0 exit code (Success).\nstdout: {}\nstderr: {}",
+                result.exit_code, result.stdout, result.stderr
+            );
         }
     }
 }

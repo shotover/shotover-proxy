@@ -2,7 +2,7 @@ use serial_test::serial;
 use std::any::Any;
 
 use crate::helpers::ShotoverManager;
-use test_helpers::shotover_process::{AssertExitsWith, ShotoverProcess};
+use test_helpers::shotover_process::ShotoverProcess;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -39,10 +39,7 @@ fn test_early_shutdown_cassandra_source() {
 #[test]
 #[serial]
 fn test_shotover_responds_sigterm() {
-    let shotover_process = ShotoverProcess::new(
-        "example-configs/null-redis/topology.yaml",
-        AssertExitsWith::Success,
-    );
+    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
     shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
     let wait_output = shotover_process.wait();
@@ -58,10 +55,7 @@ fn test_shotover_responds_sigterm() {
 #[test]
 #[serial]
 fn test_shotover_responds_sigint() {
-    let shotover_process = ShotoverProcess::new(
-        "example-configs/null-redis/topology.yaml",
-        AssertExitsWith::Success,
-    );
+    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);
 
     let wait_output = shotover_process.wait();
