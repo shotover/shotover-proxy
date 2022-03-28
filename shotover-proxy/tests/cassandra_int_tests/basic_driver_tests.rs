@@ -1354,6 +1354,56 @@ fn test_batch_statements(connection: &Session) {
         let batch = Batch::new(BatchType::LOGGED);
         connection.execute_batch(&batch).wait().unwrap();
     }
+
+    // test batch statements over QUERY PROTOCOL
+    {
+        let insert_statement = stmt!(
+            "BEGIN BATCH
+INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (2, 'text1', 'text2');
+INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (3, 'text1', 'text2');
+APPLY BATCH;"
+        );
+
+        connection.execute(&insert_statement).wait().unwrap();
+
+        assert_query_result(
+            connection,
+            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
+            &[
+                &[
+                    ResultValue::Int(2),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+                &[
+                    ResultValue::Int(3),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+            ],
+        );
+
+        let select_statement = stmt!("BEGIN BATCH UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 2; UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 3; APPLY BATCH;");
+
+        connection.execute(&select_statement).wait().unwrap();
+
+        assert_query_result(
+            connection,
+            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
+            &[
+                &[
+                    ResultValue::Int(2),
+                    ResultValue::Varchar("text3".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+                &[
+                    ResultValue::Int(3),
+                    ResultValue::Varchar("text3".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+            ],
+        );
+    }
 }
 
 #[test]
