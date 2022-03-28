@@ -9,7 +9,6 @@ use rusoto_signature::Region;
 use serde::Deserialize;
 use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;
-use std::num::ParseIntError;
 use std::str::FromStr;
 
 #[async_trait]
@@ -38,13 +37,6 @@ pub enum KeyManagerConfig {
         kek: String,
         kek_id: String,
     },
-}
-
-fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
-    (0..s.len())
-        .step_by(4)
-        .map(|i| u8::from_str_radix(&s[i + 2..i + 4], 16))
-        .collect()
 }
 
 impl KeyManagerConfig {
@@ -76,8 +68,9 @@ impl KeyManagerConfig {
                 grant_tokens,
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
-                let kek = Key::from_slice(&decode_hex(&kek)?)
-                    .ok_or_else(|| anyhow!("Not a valid key"))?;
+                let decoded_base64 = base64::decode(&kek)?;
+                let kek =
+                    Key::from_slice(&decoded_base64).ok_or_else(|| anyhow!("Not a valid key"))?;
                 Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
             }
         }
