@@ -6,7 +6,7 @@ use test_helpers::docker_compose::DockerCompose;
 #[serial]
 async fn test_cassandra_rewrite_peers_example() {
     let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-rewrite-peers/docker-compose.yml");
+        DockerCompose::new("example-configs-docker/cassandra-rewrite-peers/docker-compose.yml");
 
     let connection = cassandra_connection("172.16.1.2", 9043);
 
