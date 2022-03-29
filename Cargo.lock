@@ -2452,6 +2452,7 @@ dependencies = [
  "anyhow",
  "async-recursion",
  "async-trait",
+ "base64",
  "bigdecimal",
  "bincode",
  "byteorder",
