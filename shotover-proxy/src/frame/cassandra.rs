@@ -1,4 +1,6 @@
-use anyhow::{anyhow, Result};
+use std::net::IpAddr;
+use std::str::FromStr;
+use anyhow::anyhow;
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::consistency::Consistency;
@@ -16,15 +18,18 @@ use cassandra_protocol::frame::{
     Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version,
 };
 use cassandra_protocol::query::{QueryParams, QueryValues};
-use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
+use cassandra_protocol::types::{AsCassandraType, CBytes, CBytesShort, CInt, CLong};
 use itertools::Itertools;
 use nonzero_ext::nonzero;
-use sqlparser::ast::{SetExpr, Statement, TableFactor};
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
 use std::convert::TryInto;
 use std::num::NonZeroU32;
 use std::slice::IterMut;
+use cassandra_protocol::types::blob::Blob;
+use cassandra_protocol::types::cassandra_type::CassandraType;
+use cql3_parser::cassandra_ast::CassandraAST;
+use cql3_parser::cassandra_statement::CassandraStatement;
+use cql3_parser::common::Operand;
+use sodiumoxide::hex;
 use uuid::Uuid;
 
 use crate::message::{MessageValue, QueryType};
@@ -75,6 +80,10 @@ pub(crate) fn cell_count(bytes: &[u8]) -> Result<NonZeroU32> {
         _ => nonzero!(1u32),
     })
 }
+=======
+// TODO remove this and use actual default from session.
+const DEFAULT_KEYSPACE : &str = "";
+>>>>>>> partial fix
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
@@ -235,17 +244,56 @@ impl CassandraFrame {
     }
 
     pub fn get_query_type(&self) -> QueryType {
+        /*
+        Read,
+    Write,
+    ReadWrite,
+    SchemaChange,
+    PubSubMessage,
+         */
         match &self.operation {
             CassandraOperation::Query {
-                query: CQL::Parsed(query),
+                query: cql,
                 ..
-            } => match query.get(0) {
-                Some(Statement::Query(_x)) => QueryType::Read,
-                Some(Statement::Insert { .. }) => QueryType::Write,
-                Some(Statement::Update { .. }) => QueryType::Write,
-                Some(Statement::Delete { .. }) => QueryType::Write,
-                // TODO: handle prepared, execute and schema change query types
-                _ => QueryType::Read,
+            } => match cql.statement.get(0).unwrap() {
+                CassandraStatement::AlterKeyspace(_) => QueryType::SchemaChange,
+                CassandraStatement::AlterMaterializedView(_) => QueryType::SchemaChange,
+                CassandraStatement::AlterRole(_) => QueryType::SchemaChange,
+                CassandraStatement::AlterTable(_) => QueryType::SchemaChange,
+                CassandraStatement::AlterType(_) => QueryType::SchemaChange,
+                CassandraStatement::AlterUser(_) => QueryType::SchemaChange,
+                CassandraStatement::ApplyBatch => QueryType::ReadWrite,
+                CassandraStatement::CreateAggregate(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateFunction(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateIndex(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateKeyspace(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateMaterializedView(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateRole(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateTable(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateTrigger(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateType(_) => QueryType::SchemaChange,
+                CassandraStatement::CreateUser(_) => QueryType::SchemaChange,
+                CassandraStatement::DeleteStatement(_) => QueryType::Write,
+                CassandraStatement::DropAggregate(_) => QueryType::SchemaChange,
+                CassandraStatement::DropFunction(_) => QueryType::SchemaChange,
+                CassandraStatement::DropIndex(_) => QueryType::SchemaChange,
+                CassandraStatement::DropKeyspace(_) => QueryType::SchemaChange,
+                CassandraStatement::DropMaterializedView(_) => QueryType::SchemaChange,
+                CassandraStatement::DropRole(_) => QueryType::SchemaChange,
+                CassandraStatement::DropTable(_) => QueryType::SchemaChange,
+                CassandraStatement::DropTrigger(_) => QueryType::SchemaChange,
+                CassandraStatement::DropType(_) => QueryType::SchemaChange,
+                CassandraStatement::DropUser(_) => QueryType::SchemaChange,
+                CassandraStatement::Grant(_) => QueryType::SchemaChange,
+                CassandraStatement::Insert(_) => QueryType::Write,
+                CassandraStatement::ListPermissions(_) => QueryType::Read,
+                CassandraStatement::ListRoles(_) => QueryType::Read,
+                CassandraStatement::Revoke(_) => QueryType::SchemaChange,
+                CassandraStatement::Select(_) => QueryType::Read,
+                CassandraStatement::Truncate( _) => QueryType::Write,
+                CassandraStatement::Update(_) => QueryType::Write,
+                CassandraStatement::Use(_) => QueryType::SchemaChange,
+                CassandraStatement::Unknown(_) => QueryType::Read,
             },
             _ => QueryType::Read,
         }
@@ -254,33 +302,9 @@ impl CassandraFrame {
     pub fn namespace(&self) -> Vec<String> {
         match &self.operation {
             CassandraOperation::Query {
-                query: CQL::Parsed(query),
+                query: cql,
                 ..
-            } => match query.first() {
-                Some(Statement::Query(query)) => match &query.body {
-                    SetExpr::Select(select) => {
-                        if let TableFactor::Table { name, .. } =
-                            &select.from.get(0).unwrap().relation
-                        {
-                            name.0.iter().map(|a| a.value.clone()).collect()
-                        } else {
-                            vec![]
-                        }
-                    }
-                    _ => vec![],
-                },
-                Some(Statement::Insert { table_name, .. })
-                | Some(Statement::Delete { table_name, .. }) => {
-                    table_name.0.iter().map(|a| a.value.clone()).collect()
-                }
-                Some(Statement::Update { table, .. }) => match &table.relation {
-                    TableFactor::Table { name, .. } => {
-                        name.0.iter().map(|a| a.value.clone()).collect()
-                    }
-                    _ => vec![],
-                },
-                _ => vec![],
-            },
+            } => cql.statement.iter().map( |x|x.get_keyspace( DEFAULT_KEYSPACE )).collect(),
             _ => vec![],
         }
     }
@@ -463,33 +487,94 @@ impl CassandraOperation {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum CQL {
-    Parsed(Vec<Statement>),
-    FailedToParse(String),
+pub struct CQL {
+    pub statement : Vec<CassandraStatement>,
+    pub has_error : Vec<bool>
 }
 
 impl CQL {
     pub fn to_query_string(&self) -> String {
-        match self {
-            CQL::Parsed(ast) => ast.iter().map(|x| x.to_string()).join(""),
-            CQL::FailedToParse(str) => str.clone(),
-        }
+        self.statement.get(0).unwrap().to_string()
     }
 
-    pub fn parse_from_string(sql: String) -> Self {
-        match Parser::parse_sql(&GenericDialect, &sql) {
-            _ if sql.contains("ALTER TABLE") || sql.contains("CREATE TABLE") => {
-                tracing::error!("Failed to parse CQL for frame {:?}\nError: Blacklisted query as sqlparser crate cant round trip it", sql);
-                CQL::FailedToParse(sql)
-            }
-            Ok(ast) => CQL::Parsed(ast),
-            Err(err) => {
-                tracing::error!("Failed to parse CQL for frame {:?}\nError: {:?}", sql, err);
-                CQL::FailedToParse(sql)
-            }
+    pub fn parse_from_string(cql: String) -> Self {
+        let ast = CassandraAST::new(cql );
+        CQL {
+            statement : vec![ast.statement],
+            has_error : vec![ast.has_error()],
         }
     }
 }
+
+pub trait ToCassandraType {
+    fn from_string_value(&self, value : &str) -> Option<CassandraType>;
+    fn as_cassandra_type(&self) -> Option<CassandraType>;
+}
+
+impl ToCassandraType for Operand {
+    fn from_string_value(&self, value : &str ) -> Option<CassandraType> {
+        // check for string types
+        if value.starts_with("'") || value.starts_with("$$") {
+            Some(CassandraType::Varchar(value.to_string()))
+        } else if value.starts_with("0X") || value.starts_with("X'") {
+            let mut chars = value.chars();
+            chars.next();
+            chars.next();
+            let bytes = hex::decode(chars.as_str()).unwrap();
+            Some(CassandraType::Blob(Blob::from(bytes)))
+        } else {
+            let num = i64::from_str(value);
+            if num.is_ok() {
+                Some(CassandraType::Bigint(num.unwrap()))
+            } else {
+                let num = f64::from_str(value);
+                if num.is_ok() {
+                    Some(CassandraType::Double(num.unwrap()))
+                } else {
+                    let uuid = Uuid::parse_str(value);
+                    if uuid.is_ok() {
+                        Some(CassandraType::Uuid(uuid.unwrap()))
+                    } else {
+                        let ipaddr = IpAddr::from_str(value);
+                        if ipaddr.is_ok() {
+                            Some(CassandraType::Inet(ipaddr.unwrap()))
+                        }
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+
+    fn as_cassandra_type(&self) -> Option<CassandraType> {
+        match self {
+            Operand::Const(value) => {
+                self.from_string_value( value )
+            }
+            Operand::Map(values) => {
+                CassandraType::Map(values.iter().map( |(key,value)| (self.from_string_value( key), self.from_string_value(value)) ).collect())
+            }
+            Operand::Set( values) => {
+                CassandraType::Set(values.iter().map( |value| self.from_string_value(value) ).collect())
+            }
+            Operand::List( values) => {
+                CassandraType::List(values.iter().map( |value| self.from_string_value(value) ).collect())
+            }
+            Operand::Tuple( values) => {
+                CassandraType::Tuple( values.iter().map( |o| o.as_cassandra_type()).collect())
+            }
+            Operand::Column(value) => {
+                CassandraType::Ascii( value.to_string() )
+            }
+            Operand::Func(value) => {
+                CassandraType::Ascii( value.to_string() )
+            }
+            Operand::Null => CassandraType::Null,
+        }
+    }
+}
+
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum CassandraResult {

@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, CQL, Frame, RedisFrame};
 use crate::message::{Message, MessageValue, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
@@ -15,6 +15,9 @@ use serde::Deserialize;
 use sqlparser::ast::{Assignment, BinaryOperator, Expr, Ident, Query, SetExpr, Statement, Value};
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use cql3_parser::cassandra_statement::CassandraStatement;
+use cql3_parser::common::{Operand, PrimaryKey, RelationElement, RelationOperator, WhereClause};
+use tracing::info;
 
 const TRUE: [u8; 1] = [0x1];
 const FALSE: [u8; 1] = [0x0];
@@ -29,6 +32,13 @@ pub struct RedisConfig {
 pub struct TableCacheSchema {
     partition_key: Vec<String>,
     range_key: Vec<String>,
+}
+
+
+impl From<&PrimaryKey> for TableCacheSchema {
+    fn from(value: &PrimaryKey) -> TableCacheSchema {
+        TableCacheSchema { partition_key: value.partition.clone(), range_key: value.clustering.clone() }
+    }
 }
 
 impl RedisConfig {
@@ -52,10 +62,7 @@ impl SimpleRedisCache {
         "SimpleRedisCache"
     }
 
-    async fn get_or_update_from_cache(
-        &mut self,
-        mut messages_cass_request: Messages,
-    ) -> ChainResponse {
+    async fn get_or_update_from_cache(&mut self, mut messages: Messages) -> ChainResponse {
         // This function is a little hard to follow, so heres an overview.
         // We have 4 vecs of messages, each vec can be considered its own stage of processing.
         // 1. messages_cass_request:
@@ -73,22 +80,28 @@ impl SimpleRedisCache {
         //                  - we can get away with this because batches can only contain INSERT/UPDATE/DELETE and therefore always contain either an ERROR or a VOID RESULT
         //         + if the request is a CassandraOperation::Query then we consume a single message from messages_redis_response converting it to a cassandra response
         //     * These are the cassandra responses that we return from the function.
+        let mut stream_ids = Vec::with_capacity(messages.len());
+        for message in &mut messages {
+            if let Some(Frame::Cassandra(frame)) = message.frame() {
+                stream_ids.push(frame.stream_id);
+            } else {
+                bail!("Failed to parse cassandra message");
+            }
+            if let Some(table_name) = message.namespace().map(|x| x.join(".")) {
+                *message = match message.frame() {
+                    Some(Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Query { query, .. },
+                        ..
+                    })) => {
+                        let table_cache_schema = self
+                            .caching_schema
+                            .get(&table_name)
+                            .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
 
-        let mut messages_redis_request = Vec::with_capacity(messages_cass_request.len());
-        for cass_request in &mut messages_cass_request {
-            if let Some(table_name) = cass_request.namespace().map(|x| x.join(".")) {
-                match cass_request.frame() {
-                    Some(Frame::Cassandra(frame)) => {
-                        for query in frame.operation.queries()? {
-                            let table_cache_schema = self
-                                .caching_schema
-                                .get(&table_name)
-                                .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
-
-                            messages_redis_request.push(Message::from_frame(Frame::Redis(
-                                build_redis_ast_from_sql(query, table_cache_schema)?,
-                            )));
-                        }
+                        Message::from_frame(Frame::Redis(build_redis_ast_from_cql3(
+                            query,
+                            table_cache_schema,
+                        )?))
                     }
                     message => bail!("cannot fetch {message:?} from cache"),
                 }
@@ -131,29 +144,6 @@ impl SimpleRedisCache {
     }
 }
 
-// TODO: We don't need to do it this way and allocate another struct
-struct ValueHelper(Value);
-
-impl ValueHelper {
-    fn as_bytes(&self) -> &[u8] {
-        match &self.0 {
-            Value::Number(v, false) => v.as_bytes(),
-            Value::SingleQuotedString(v) => v.as_bytes(),
-            Value::NationalStringLiteral(v) => v.as_bytes(),
-            Value::HexStringLiteral(v) => v.as_bytes(),
-            Value::Boolean(v) => {
-                if *v {
-                    &TRUE
-                } else {
-                    &FALSE
-                }
-            }
-            Value::Null => &[],
-            _ => unreachable!(),
-        }
-    }
-}
-
 fn append_prefix_min(min: &mut Vec<u8>) {
     if min.is_empty() {
         min.push(b'[');
@@ -170,286 +160,219 @@ fn append_prefix_max(max: &mut Vec<u8>) {
     }
 }
 
-fn build_zrangebylex_min_max_from_sql(
-    expr: &Expr,
-    pks: &[String],
+fn build_zrangebylex_min_max_from_cql3(
+    operator : &RelationOperator,
+    operand: &Operand,
     min: &mut Vec<u8>,
     max: &mut Vec<u8>,
 ) -> Result<()> {
-    match expr {
-        Expr::BinaryOp { left, op, right } => {
-            // first check if this is a related to PK
-            if let Expr::Identifier(i) = left.borrow() {
-                if pks.iter().any(|v| *v == i.value) {
-                    //Ignore this as we build the pk constraint elsewhere
-                    return Ok(());
-                }
-            }
 
-            match op {
-                BinaryOperator::Gt => {
-                    // we shift the value for Gt so that it works with other GtEq operators
-                    if let Expr::Value(v) = right.borrow() {
-                        let vh = ValueHelper(v.clone());
-
-                        let mut minrv = Vec::from(vh.as_bytes());
-                        let last_byte = minrv.last_mut().unwrap();
-                        *last_byte += 1;
-
-                        append_prefix_min(min);
-                        min.extend(minrv.iter());
-                    }
-                }
-                BinaryOperator::Lt => {
-                    // we shift the value for Lt so that it works with other LtEq operators
-                    if let Expr::Value(v) = right.borrow() {
-                        let vh = ValueHelper(v.clone());
-
-                        let mut maxrv = Vec::from(vh.as_bytes());
-                        let last_byte = maxrv.last_mut().unwrap();
-                        *last_byte -= 1;
-
-                        append_prefix_max(max);
-                        max.extend(maxrv.iter());
-                    }
-                }
-                BinaryOperator::GtEq => {
-                    if let Expr::Value(v) = right.borrow() {
-                        let vh = ValueHelper(v.clone());
-
-                        let minrv = Vec::from(vh.as_bytes());
-
-                        append_prefix_min(min);
-                        min.extend(minrv.iter());
-                    }
-                }
-                BinaryOperator::LtEq => {
-                    if let Expr::Value(v) = right.borrow() {
-                        let vh = ValueHelper(v.clone());
-
-                        let maxrv = Vec::from(vh.as_bytes());
-
-                        append_prefix_max(max);
-                        max.extend(maxrv.iter());
-                    }
-                }
-                BinaryOperator::Eq => {
-                    if let Expr::Value(v) = right.borrow() {
-                        let vh = ValueHelper(v.clone());
-
-                        let vh_bytes = vh.as_bytes();
-
-                        append_prefix_min(min);
-                        append_prefix_max(max);
-                        min.extend(vh_bytes.iter());
-                        max.extend(vh_bytes.iter());
-                    }
-                }
-                BinaryOperator::And => {
-                    build_zrangebylex_min_max_from_sql(left, pks, min, max)?;
-                    build_zrangebylex_min_max_from_sql(right, pks, min, max)?;
-                }
-                _ => {
-                    return Err(anyhow!("Couldn't build query"));
-                }
+    let mut bytes =
+        Vec::from( match operand {
+        Operand::Const(value) => {
+            match value.to_uppercase().as_str() {
+            "TRUE" => &TRUE,
+                "FALSE" => &FALSE,
+                _ => value.as_bytes(),
             }
         }
-        _ => {
+        Operand::Map(_) |
+        Operand::Set(_) |
+        Operand::List(_) |
+        Operand::Tuple(_) |
+        Operand::Column(_) |
+        Operand::Func(_) => operand.to_string().as_bytes(),
+        Operand::Null => &[],
+    });
+
+    match operator {
+        RelationOperator::LessThan => {
+            let last_byte = bytes.last_mut().unwrap();
+            *last_byte -= 1;
+
+            append_prefix_max(max);
+            max.extend(bytes.iter());
+        }
+        RelationOperator::LessThanOrEqual => {
+            append_prefix_max(max);
+            max.extend(bytes.iter());
+        }
+
+        RelationOperator::Equal => {
+            append_prefix_min(min);
+            append_prefix_max(max);
+            min.extend(bytes.iter());
+            max.extend(bytes.iter());
+        }
+        RelationOperator::GreaterThanOrEqual => {
+            append_prefix_min(min);
+            min.extend(bytes.iter());
+        }
+        RelationOperator::GreaterThan => {
+            let last_byte = bytes.last_mut().unwrap();
+            *last_byte += 1;
+            append_prefix_min(min);
+            min.extend(bytes.iter());
+        }
+        // should "IN"" be converted to an "or" "eq" combination
+
+        RelationOperator::NotEqual |
+        RelationOperator::In |
+        RelationOperator::Contains |
+        RelationOperator::ContainsKey |
+        RelationOperator::IsNot => {
             return Err(anyhow!("Couldn't build query"));
         }
     }
     Ok(())
 }
 
-fn build_redis_ast_from_sql(
-    ast: &Statement,
+fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, table_cache_schema: &TableCacheSchema)  -> Vec<RedisFrame> {
+    let mut min: Vec<u8> = Vec::new();
+    let mut max: Vec<u8> = Vec::new();
+
+    where_clause.iter().filter_map(|relation_element|
+        {
+            match &relation_element.obj {
+                Operand::Column(name) => {
+                    if table_cache_schema.partition_key.contains(name) {
+                        Some((&relation_element.oper,&relation_element.value))
+                    } else { None }
+                },
+                _ => None
+            }
+        }).for_each(|(operator,values)| {
+            for operand in values {
+                build_zrangebylex_min_max_from_cql3( operator,operand, &mut min, &mut max, );
+            }
+        });
+
+    let min = if min.is_empty() {
+        Bytes::from_static(b"-")
+    } else {
+        Bytes::from(min)
+    };
+    let max = if max.is_empty() {
+        Bytes::from_static(b"+")
+    } else {
+        Bytes::from(max)
+    };
+
+    let where_columns  = WhereClause::get_column_relation_element_map( where_clause );
+    let pk = table_cache_schema
+        .partition_key
+        .iter()
+        .filter_map(|k| {
+            let x = where_columns.get(k);
+            if x.is_none() {
+                return None
+            }
+            let y = x.iter().filter(|x| x.oper == RelationOperator::Equal).nth(0);
+            if y.is_none() {
+                return None
+            }
+            Some(y.value)
+        })
+        .fold(BytesMut::new(), |mut acc, v| {
+            if let Some(v) = v {
+                v.iter().for_each(|vv| acc.extend(MessageValue::from( vv ).into_str_bytes()));
+            }
+            acc
+        });
+    vec![
+        RedisFrame::BulkString("ZRANGEBYLEX".into()),
+        RedisFrame::BulkString(pk.freeze()),
+        RedisFrame::BulkString(min),
+        RedisFrame::BulkString(max),
+    ]
+}
+fn build_redis_ast_from_cql3 (
+    ast: &CQL,
     table_cache_schema: &TableCacheSchema,
-) -> Result<RedisFrame> {
-    match ast {
-        Statement::Query(q) => match &q.body {
-            SetExpr::Select(s) if s.selection.is_some() => {
-                let expr = s.selection.as_ref().unwrap();
-                let mut min: Vec<u8> = Vec::new();
-                let mut max: Vec<u8> = Vec::new();
-
-                build_zrangebylex_min_max_from_sql(
-                    expr,
-                    &table_cache_schema.partition_key,
-                    &mut min,
-                    &mut max,
-                )?;
-
-                let min = if min.is_empty() {
-                    Bytes::from_static(b"-")
+) -> Result<RedisFrame>
+{
+        match &ast.statement[0] {
+            CassandraStatement::Select(select) => {
+                if select.where_clause.is_some() {
+                    Ok(RedisFrame::Array( build_redis_frames_from_where_clause( &select.where_clause.unwrap(),table_cache_schema)))
                 } else {
-                    Bytes::from(min)
-                };
-                let max = if max.is_empty() {
-                    Bytes::from_static(b"+")
-                } else {
-                    Bytes::from(max)
-                };
-
+                    Err(anyhow!("Cant build query from statement: {}", &ast.statement[0]))
+                }
+            }
+            CassandraStatement::Insert(insert) => {
+                let value_map : HashMap<String,&Operand> = insert.get_value_map();
                 let pk = table_cache_schema
                     .partition_key
                     .iter()
-                    .map(|k| get_equal_value_from_expr(expr, k))
+                    .map(|k| value_map.get(k.as_str()).unwrap())
                     .fold(BytesMut::new(), |mut acc, v| {
-                        if let Some(v) = v {
-                            acc.extend(MessageValue::from(v).into_str_bytes());
-                        }
+                        acc.extend(MessageValue::from(*v).into_str_bytes());
                         acc
                     });
-
-                let commands_buffer = vec![
-                    RedisFrame::BulkString("ZRANGEBYLEX".into()),
+                let mut redis_frames: Vec<RedisFrame> = vec![
+                    RedisFrame::BulkString("ZADD".into()),
                     RedisFrame::BulkString(pk.freeze()),
-                    RedisFrame::BulkString(min),
-                    RedisFrame::BulkString(max),
                 ];
-                Ok(RedisFrame::Array(commands_buffer))
+
+                let mut map = HashMap::new();
+                value_map.iter().for_each(|(key,value)| {map.insert( key, MessageValue::from( value ));});
+                Ok(RedisFrame::Array(add_values_to_redis_frames(table_cache_schema, map, redis_frames)))
             }
-            expr => Err(anyhow!("Can't build query from expr: {}", expr)),
-        },
-        Statement::Insert {
-            source, columns, ..
-        } => {
-            let query_values = get_values_from_insert(columns, source);
+            CassandraStatement::Update(update) => {
+                let mut redis_frames = build_redis_frames_from_where_clause( &update.where_clause, table_cache_schema);
+                let mut map = HashMap::new();
+                for x in update.assignments {
+                    // skip any columns with +/- modifiers.
+                    if x.operator.is_none() {
+                        map.insert(x.name.to_string(), MessageValue::from(x.value))
+                    }
+                }
 
-            let pk = table_cache_schema
-                .partition_key
-                .iter()
-                .map(|k| query_values.get(k.as_str()).unwrap())
-                .fold(BytesMut::new(), |mut acc, v| {
-                    acc.extend(MessageValue::from(*v).into_str_bytes());
-                    acc
-                });
+                Ok(RedisFrame::Array(add_values_to_redis_frames(table_cache_schema, map, redis_frames )))
 
-            insert_or_update(table_cache_schema, query_values, pk)
+            }
+
+            statement => Err(anyhow!("Cant build query from statement: {}", statement)),
         }
-        Statement::Update {
-            assignments,
-            selection,
-            ..
-        } => {
-            let query_values = get_values_from_update(assignments);
-
-            let pk = table_cache_schema
-                .partition_key
-                .iter()
-                .map(|k| get_equal_value_from_expr(selection.as_ref().unwrap(), k).unwrap())
-                .fold(BytesMut::new(), |mut acc, v| {
-                    acc.extend(MessageValue::from(v).into_str_bytes());
-                    acc
-                });
-
-            insert_or_update(table_cache_schema, query_values, pk)
-        }
-        statement => Err(anyhow!("Cant build query from statement: {}", statement)),
-    }
 }
 
-fn insert_or_update(
+fn add_values_to_redis_frames(
     table_cache_schema: &TableCacheSchema,
-    query_values: HashMap<String, &Value>,
-    pk: BytesMut,
-) -> Result<RedisFrame> {
-    let mut commands_buffer: Vec<RedisFrame> = vec![
-        RedisFrame::BulkString("ZADD".into()),
-        RedisFrame::BulkString(pk.freeze()),
-    ];
+    query_values: HashMap<String, MessageValue>,
+    mut redis_frames : Vec<RedisFrame>
+) -> Vec<RedisFrame> {
 
     let clustering = table_cache_schema
         .range_key
         .iter()
         .map(|k| query_values.get(k.as_str()).unwrap())
         .fold(BytesMut::new(), |mut acc, v| {
-            acc.extend(MessageValue::from(*v).into_str_bytes());
+            acc.extend(v.into_str_bytes());
             acc
         });
 
-    let values = query_values
+    query_values
         .iter()
         .filter_map(|(p, v)| {
-            if table_cache_schema.partition_key.iter().all(|x| x != p)
-                && table_cache_schema.range_key.iter().all(|x| x != p)
+            if !(table_cache_schema.partition_key.contains(p) ||
+                table_cache_schema.range_key.contains( p))
             {
-                Some(MessageValue::from(*v))
-            } else {
                 None
+            } else {
+                Some(v)
             }
         })
-        .collect_vec();
-
-    for v in values {
-        commands_buffer.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
-        let mut value = clustering.clone();
-        if !value.is_empty() {
-            value.put_u8(b':');
-        }
-        value.extend(v.clone().into_str_bytes());
-        commands_buffer.push(RedisFrame::BulkString(value.freeze()));
-    }
-
-    Ok(RedisFrame::Array(commands_buffer))
-}
-
-fn get_values_from_insert<'a>(
-    columns: &'a [Ident],
-    source: &'a Query,
-) -> HashMap<String, &'a Value> {
-    let mut map = HashMap::new();
-    let mut columns_iter = columns.iter();
-    if let SetExpr::Values(v) = &source.body {
-        for value in &v.0 {
-            for ex in value {
-                if let Expr::Value(v) = ex {
-                    if let Some(c) = columns_iter.next() {
-                        // TODO: We should be able to avoid allocation here
-                        map.insert(c.value.to_string(), v);
-                    }
-                }
+        .for_each( |v| {
+            redis_frames.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
+            let mut value = clustering.clone();
+            if !value.is_empty() {
+                value.put_u8(b':');
             }
-        }
-    }
-    map
-}
+            value.extend(v.into_str_bytes());
+            redis_frames.push(RedisFrame::BulkString(value.freeze()));
+        });
 
-fn get_values_from_update(assignments: &[Assignment]) -> HashMap<String, &Value> {
-    let mut map = HashMap::new();
-    for assignment in assignments {
-        if let Expr::Value(v) = &assignment.value {
-            map.insert(assignment.id.iter().map(|x| &x.value).join("."), v);
-        }
-    }
-    map
-}
-
-fn get_equal_value_from_expr<'a>(expr: &'a Expr, find_identifier: &str) -> Option<&'a Value> {
-    if let Expr::BinaryOp { left, op, right } = expr {
-        match op {
-            BinaryOperator::And => get_equal_value_from_expr(left, find_identifier)
-                .or_else(|| get_equal_value_from_expr(right, find_identifier)),
-            BinaryOperator::Eq => {
-                if let Expr::Identifier(i) = left.borrow() {
-                    if i.value == find_identifier {
-                        if let Expr::Value(v) = right.borrow() {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    } else {
-        None
-    }
+    redis_frames
 }
 
 #[async_trait]

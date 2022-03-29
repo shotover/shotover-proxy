@@ -1,8 +1,6 @@
 use crate::codec::redis::redis_query_type;
-use crate::frame::{
     cassandra,
-    cassandra::{CassandraMetadata, CassandraOperation},
-};
+    cassandra::{CassandraMetadata, CassandraOperation, ToCassandraType};
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
@@ -24,17 +22,22 @@ use nonzero_ext::nonzero;
 use num::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-use sqlparser::ast::Value as SQLValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use uuid::Uuid;
+use std::str::FromStr;
+use cql3_parser::common::{DataTypeName, Operand};
+use cql3_parser::common::DataTypeName::Ascii;
+use sodiumoxide::hex;
+
 
 enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
     None,
 }
+
 
 pub type Messages = Vec<Message>;
 
@@ -473,12 +476,78 @@ impl From<&SQLValue> for MessageValue {
         match v {
             SQLValue::Number(v, false)
             | SQLValue::SingleQuotedString(v)
-            | SQLValue::NationalStringLiteral(v) => MessageValue::Strings(v.clone()),
+            | SQLValue::NationalStringLiteral(v) => MessageValue::Strings(v.to_string()),
             SQLValue::HexStringLiteral(v) => MessageValue::Strings(v.to_string()),
             SQLValue::Boolean(v) => MessageValue::Boolean(*v),
             _ => MessageValue::Strings("NULL".to_string()),
         }
     }
+}
+
+impl From<&MessageValue> for Operand {
+    fn from(v: &MessageValue) -> Self {
+        match v {
+            MessageValue::NULL => Operand::Null,
+            MessageValue::Bytes(b) => Operand::Const( format!("0X{}", b.encode_hex() )),
+            MessageValue::Strings(s) => Operand::Const(format!("'{}'", s)),
+            MessageValue::Integer(i, _) => Operand::Const(i.to_string()),
+            MessageValue::Float(f) => Operand::Const(f.to_string()),
+            MessageValue::Boolean(b) => Operand::Const( if b { "TRUE".to_string() } else {"FALSE".to_string()}),
+
+            _ => {}
+        }
+    }
+}
+
+impl From<&Operand> for MessageValue {
+
+    fn from(operand: &Operand) -> Self {
+        operand.as_cassandra_type().map_or( MessageValue::None, |x| MessageValue::create_element( x ))
+    }
+}
+
+impl From<&MessageValue> for DataTypeName {
+    fn from(v: &MessageValue) -> Self {
+        match v {
+            MessageValue::Bytes(_) => DataTypeName::Blob,
+            MessageValue::Ascii(_) => DataTypeName::Ascii,
+            MessageValue::Strings(_) => DataTypeName::Text,
+            MessageValue::Integer(_, size) => {
+                match size {
+                    //DataTypeName::Int
+                    IntSize::I64 => DataTypeName::BigInt,
+                    IntSize::I32 => DataTypeName::Int,
+                    IntSize::I16  => DataTypeName::SmallInt,
+                    IntSize::I8 => DataTypeName::TinyInt,
+                }
+            },
+            MessageValue::Double(_) => DataTypeName::Double,
+            MessageValue::Float(_) => DataTypeName::Float,
+            MessageValue::Boolean(_) => DataTypeName::Boolean,
+            MessageValue::Inet(_) => DataTypeName::Inet,
+            MessageValue::List(_) => DataTypeName::List,
+            MessageValue::Rows(_) => DataTypeName::List,
+            MessageValue::NamedRows(_) => DataTypeName::Tuple,
+            MessageValue::Document(_) => DataTypeName::Tuple,
+            MessageValue::FragmentedResponse(_) => DataTypeName::Tuple,
+            MessageValue::Set(_) => DataTypeName::Set,
+            MessageValue::Map(_) => DataTypeName::Map,
+            MessageValue::Varint(_) => DataTypeName::VarInt,
+            MessageValue::Decimal(_) => DataTypeName::Decimal,
+            MessageValue::Date(_) => DataTypeName::Date,
+            MessageValue::Timestamp(_) => DataTypeName::Timestamp,
+            MessageValue::Timeuuid(_) => DataTypeName::TimeUuid,
+            MessageValue::Varchar(_) => DataTypeName::VarChar,
+            MessageValue::Uuid(_) => DataTypeName::Uuid,
+            MessageValue::Time(_) => DataTypeName::Time,
+            MessageValue::Counter(_) => DataTypeName::Counter,
+            MessageValue::Tuple(_) => DataTypeName::Tuple,
+            MessageValue::Udt(_) => DataTypeName::Tuple,
+            MessageValue::NULL => {},
+            None => {},
+        }
+    }
+
 }
 
 impl From<RedisFrame> for MessageValue {
@@ -574,7 +643,7 @@ impl MessageValue {
         wrapper(data, col_type).unwrap()
     }
 
-    fn create_element(element: CassandraType) -> MessageValue {
+    pub fn create_element(element: CassandraType) -> MessageValue {
         match element {
             CassandraType::Ascii(a) => MessageValue::Ascii(a),
             CassandraType::Bigint(b) => MessageValue::Integer(b, IntSize::I64),
