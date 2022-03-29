@@ -1,3 +1,4 @@
+use crate::docker_compose::run_command;
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use std::process::{Child, Command, Stdio};
@@ -9,11 +10,15 @@ pub struct ShotoverProcess {
 
 impl Drop for ShotoverProcess {
     fn drop(&mut self) {
-        if let Some(child) = &self.child {
+        if let Some(child) = self.child.take() {
             if let Err(err) =
                 nix::sys::signal::kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL)
             {
                 println!("Failed to shutdown ShotoverProcess {err}");
+            }
+
+            if !std::thread::panicking() {
+                panic!("Need to call either wait or shutdown_and_assert_success method on ShotoverProcess before dropping it ");
             }
         }
     }
@@ -29,12 +34,7 @@ impl ShotoverProcess {
         } else {
             vec!["build", "--all-features"]
         };
-        assert!(Command::new(env!("CARGO"))
-            .args(&all_args)
-            .stdout(Stdio::piped())
-            .status()
-            .unwrap()
-            .success());
+        run_command(env!("CARGO"), &all_args).unwrap();
 
         // Now actually run shotover and keep hold of the child process
         let all_args = if env!("PROFILE") == "release" {
@@ -51,7 +51,6 @@ impl ShotoverProcess {
         };
         let child = Some(
             Command::new(env!("CARGO"))
-                .env("RUST_LOG", "debug,shotover_proxy=debug")
                 .args(&all_args)
                 .stdout(Stdio::piped())
                 .spawn()
@@ -74,12 +73,38 @@ impl ShotoverProcess {
     }
 
     #[allow(unused)]
-    pub fn wait(mut self) -> (Option<i32>, String, String) {
+    pub fn wait(mut self) -> WaitOutput {
         let output = self.child.take().unwrap().wait_with_output().unwrap();
 
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        let stderr = String::from_utf8(output.stderr).unwrap();
+        let stdout = String::from_utf8(output.stdout).expect("stdout was not valid utf8");
+        let stderr = String::from_utf8(output.stderr).expect("stderr was not valid utf8");
 
-        (output.status.code(), stdout, stderr)
+        WaitOutput {
+            exit_code: output
+                .status
+                .code()
+                .expect("Couldnt get exit code, the process was killed by something like SIGKILL"),
+            stdout,
+            stderr,
+        }
     }
+
+    #[allow(unused)]
+    pub fn shutdown_and_assert_success(mut self) {
+        self.signal(nix::sys::signal::Signal::SIGTERM);
+        let result = self.wait();
+
+        if result.exit_code != 0 {
+            panic!(
+                "Shotover exited with {} but expected 0 exit code (Success).\nstdout: {}\nstderr: {}",
+                result.exit_code, result.stdout, result.stderr
+            );
+        }
+    }
+}
+
+pub struct WaitOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
 }
