@@ -42,12 +42,12 @@ fn test_shotover_responds_sigterm() {
     let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
     shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
-    let (code, stdout, _) = shotover_process.wait();
-    assert_eq!(code, Some(0));
-    if !stdout.contains("received SIGTERM") {
+    let wait_output = shotover_process.wait();
+    assert_eq!(wait_output.exit_code, 0);
+    if !wait_output.stdout.contains("received SIGTERM") {
         panic!(
             "stdout does not contain 'received SIGTERM'. Instead was: {}",
-            stdout
+            wait_output.stdout
         );
     }
 }
@@ -58,12 +58,12 @@ fn test_shotover_responds_sigint() {
     let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);
 
-    let (code, stdout, _) = shotover_process.wait();
-    assert_eq!(code, Some(0));
-    if !stdout.contains("received SIGINT") {
+    let wait_output = shotover_process.wait();
+    assert_eq!(wait_output.exit_code, 0);
+    if !wait_output.stdout.contains("received SIGINT") {
         panic!(
             "stdout does not contain 'received SIGINT'. Instead was: {}",
-            stdout
+            wait_output.stdout
         );
     }
 }
