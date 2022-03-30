@@ -143,12 +143,6 @@ mod cassandra_protocol_tests {
     use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
     use hex_literal::hex;
-    use sqlparser::ast::Expr::BinaryOp;
-    use sqlparser::ast::Value::SingleQuotedString;
-    use sqlparser::ast::{
-        BinaryOperator, Expr, Ident, ObjectName, Query, Select, SelectItem, SetExpr, Statement,
-        TableFactor, TableWithJoins, Value as SQLValue, Values,
-    };
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame_codec_roundtrip(
@@ -371,7 +365,12 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::Parsed(vec![Statement::Query(Box::new(Query {
+                query:  CQL{ statement: vec![
+                    CassandraAst::parse( "Select * from system where key = 'local'")
+                ], has_error: vec![false] },
+                /*
+
+                CQL::Parsed(vec![Statement::Query(Box::new(Query {
                     with: None,
                     body: SetExpr::Select(Box::new(Select {
                         distinct: false,
@@ -417,7 +416,8 @@ mod cassandra_protocol_tests {
                     offset: None,
                     fetch: None,
                     lock: None,
-                }))]),
+                params: Default::default()
+            }))]),*/
                 params: QueryParams::default(),
             },
         }))];
@@ -438,7 +438,10 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::Parsed(vec![Statement::Insert {
+                query: CQL{ statement: vec![
+                    CassandraAst::parse( "Select bar from foo")
+                ], has_error: vec![false] },
+                /*CQL::Parsed(vec![Statement::Insert {
                     or: None,
                     table_name: ObjectName(vec![
                         Ident {
@@ -470,7 +473,7 @@ mod cassandra_protocol_tests {
                     after_columns: (vec![]),
                     table: false,
                     on: None,
-                }]),
+                }]),*/
                 params: QueryParams::default(),
             },
         }))];

@@ -1,6 +1,8 @@
 use crate::codec::redis::redis_query_type;
+use crate::frame::{
     cassandra,
-    cassandra::{CassandraMetadata, CassandraOperation, ToCassandraType};
+    cassandra::{CassandraMetadata, CassandraOperation, ToCassandraType},
+};
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
@@ -26,11 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use uuid::Uuid;
-use std::str::FromStr;
 use cql3_parser::common::{DataTypeName, Operand};
-use cql3_parser::common::DataTypeName::Ascii;
-use sodiumoxide::hex;
-
 
 enum Metadata {
     Cassandra(CassandraMetadata),
@@ -455,52 +453,64 @@ pub enum IntSize {
     I8,  // Tinyint
 }
 
-impl From<&MessageValue> for SQLValue {
-    fn from(v: &MessageValue) -> Self {
-        match v {
-            MessageValue::NULL => SQLValue::Null,
-            MessageValue::Bytes(b) => {
-                SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap())
-            } // TODO: this is definitely wrong
-            MessageValue::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            MessageValue::Integer(i, _) => SQLValue::Number(i.to_string(), false),
-            MessageValue::Float(f) => SQLValue::Number(f.to_string(), false),
-            MessageValue::Boolean(b) => SQLValue::Boolean(*b),
-            _ => SQLValue::Null,
-        }
-    }
-}
-
-impl From<&SQLValue> for MessageValue {
-    fn from(v: &SQLValue) -> Self {
-        match v {
-            SQLValue::Number(v, false)
-            | SQLValue::SingleQuotedString(v)
-            | SQLValue::NationalStringLiteral(v) => MessageValue::Strings(v.to_string()),
-            SQLValue::HexStringLiteral(v) => MessageValue::Strings(v.to_string()),
-            SQLValue::Boolean(v) => MessageValue::Boolean(*v),
-            _ => MessageValue::Strings("NULL".to_string()),
-        }
-    }
-}
-
 impl From<&MessageValue> for Operand {
     fn from(v: &MessageValue) -> Self {
         match v {
             MessageValue::NULL => Operand::Null,
-            MessageValue::Bytes(b) => Operand::Const( format!("0X{}", b.encode_hex() )),
-            MessageValue::Strings(s) => Operand::Const(format!("'{}'", s)),
-            MessageValue::Integer(i, _) => Operand::Const(i.to_string()),
-            MessageValue::Float(f) => Operand::Const(f.to_string()),
-            MessageValue::Boolean(b) => Operand::Const( if b { "TRUE".to_string() } else {"FALSE".to_string()}),
+            MessageValue::Bytes(b) => Operand::from(b) ,
+            MessageValue::Ascii( s ) |
+            MessageValue::Varchar(s) |
+            MessageValue::Strings(s) => Operand::from(s.as_str()),
+            MessageValue::Integer(i, _) => Operand::from(i),
+            MessageValue::Float(f) => Operand::from(&f.0),
+            MessageValue::Boolean(b) => Operand::from(b),
+            MessageValue::Double(d) => Operand::from(&d.0),
+            MessageValue::Inet(i) => Operand::from( i ),
+            MessageValue::Varint( i ) => Operand::from(i),
+            MessageValue::Decimal(d ) => Operand::from(d),
+            MessageValue::Date( d) => Operand::from(d),
+            MessageValue::Time(t) |
+            MessageValue::Counter(t) |
+            MessageValue::Timestamp(t) => Operand::from(t),
+            MessageValue::Uuid(u) |
+            MessageValue::Timeuuid( u) => Operand::from( u ),
 
-            _ => {}
+            MessageValue::List(l) => {Operand::List( l.iter().map( |x| Operand::from(x).to_string()).collect())}
+
+            MessageValue::Rows(r) => {
+                Operand::Tuple( r.iter().map( |row| row.iter().map( |m| Operand::from(m)).collect()).map( |v| Operand::Tuple(v)).collect())
+            }
+
+            MessageValue::NamedRows(r) => {
+                Operand::Tuple( r.iter().map( |nr| Operand::Map(nr.iter().map( |(k,v)| (k.clone(), Operand::from(v).to_string())).collect())).collect())
+            }
+
+            MessageValue::Set(s) => {
+                Operand::Set( s.iter().map( |m| Operand::from(m).to_string()).collect())
+            }
+            MessageValue::Map(m) => {
+                Operand::Map( m.iter().map( |(k,v)| (Operand::from(k).to_string(), Operand::from(v).to_string())).collect() )
+            }
+
+            MessageValue::FragmentedResponse(t) |
+            MessageValue::Tuple(t) => {
+                Operand::Tuple( t.iter().map( |m| Operand::from(m)).collect())
+            }
+
+            MessageValue::Udt(d) |
+            MessageValue::Document(d) => {
+                Operand::Map( d.iter().map( |(k,v)| (k.clone(),Operand::from(v).to_string())).collect())
+            }
+
+            MessageValue::None => {
+                Operand::Null
+            }
+
         }
     }
 }
 
 impl From<&Operand> for MessageValue {
-
     fn from(operand: &Operand) -> Self {
         operand.as_cassandra_type().map_or( MessageValue::None, |x| MessageValue::create_element( x ))
     }
@@ -543,8 +553,8 @@ impl From<&MessageValue> for DataTypeName {
             MessageValue::Counter(_) => DataTypeName::Counter,
             MessageValue::Tuple(_) => DataTypeName::Tuple,
             MessageValue::Udt(_) => DataTypeName::Tuple,
-            MessageValue::NULL => {},
-            None => {},
+            MessageValue::NULL => DataTypeName::Custom( "NULL".to_string()),
+            MessageValue::None => DataTypeName::Custom( "None".to_string()),
         }
     }
 

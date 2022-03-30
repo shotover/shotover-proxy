@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, CQL, Frame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -7,19 +7,15 @@ use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
-//use sqlparser::ast::{Assignment, Expr, Ident, Query, SetExpr, Statement, Value as SQLValue};
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
 use cql3_parser::insert::InsertValues;
 use cql3_parser::select::SelectElement;
-use cql3_parser::update::AssignmentElement;
-use serde_yaml::seed::from_slice_seed;
+use futures::TryFutureExt;
 use sodiumoxide::hex;
 use tracing::warn;
 
@@ -98,8 +94,8 @@ impl From<Protected> for MessageValue {
     }
 }
 
-impl From<Protected> for Operand {
-    fn from(p: Protected) -> Self {
+impl From<&Protected> for Operand {
+    fn from(p: &Protected) -> Self {
         match p {
             Protected::Plaintext(_) => panic!(
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
@@ -178,73 +174,23 @@ impl ProtectConfig {
     }
 }
 
-pub fn get_values_from_insert_or_update_mut(ast: &mut CQL) -> HashMap<String, &Operand> {
-    match ast.statement[0] {
-        Some(stmt) =>
-            match stmt {
-                CassandraStatement::Insert(insert) => {
-                    match insert.values {
-                        InsertValues::Values(values) => {
-                            let mut result = HashMap::new();
-                            // if the lengths don't match we will return an empty hashmap.
-                            if values.len() == insert.columns.len() {
-                                for (i, value) in values.iter().enumerate() {
-                                    if let Operand::Const(val) = value {
-                                        result.insert( insert.columns[i].to_string(), value);
-                                    }
-                                }
-                            } else {
-                                // TODO do we need to clear data here?
-                            }
-                            result
-                        }
-                        // TODO parse JSON?
-                        InsertValues::Json(_) => HashMap::new()
-                    }
-                }
-
-                CassandraStatement::Update(update) => {
-                    let mut result = HashMap::new();
-                    for assignment in update.assignments {
-                        // the operator adds something like +x or -x to the assignment so it indicates this is not a value
-                        // and thus we should skip it.
-                        if assignment.operator.is_none() {
-                            if let Operand::Const(val) = &assignment.value {
-                                result.insert( assignment.name.to_string(), assignment.value);
-                            }
-                        } else {
-                            // TODO do we need to clear data here?
-                        }
-                    }
-                    result
-                }
-
-                _ => HashMap::new()
-            }
-
-        _ => HashMap::new()
-    }
-}
-
 /// determines if columns in the CassandraStatement need to be encrypted and encrypts them.  Returns `true` if any columns were changed.
-#[async_trait]
-fn encrypt_columns( statement : &mut CassandraStatement, columns : &Vec<String>, key_source : &KeyManager, key_id : &str) -> bool {
+async fn encrypt_columns( statement : &mut CassandraStatement, columns : &Vec<String>, key_source : &KeyManager, key_id : &str) -> Result<bool> {
 
     let mut data_changed = false;
     match statement {
         CassandraStatement::Insert(insert) => {
-            let indices = insert.columns.iter().enumerate().filter( |(i,col_name)| columns.contains( col_name ))
+            let indices :Vec<usize>= insert.columns.iter().enumerate().filter( |(i,col_name)| columns.contains( col_name ))
                 .map( |(i,col_name)| i).collect();
             match &mut insert.values {
-                InsertValues::Values(operands) => {
-                    for i in indices {
-                       let operand = operands[i].unwrap();
-                       let mut protected = Protected::Plaintext( MessageValue::from(operand ));
-                       protected = protected.protect( key_source, key_id ).await?;
-                       std::mem::replace( &mut operands[i], Operand::from(protected));
-                        data_changed = true;
+                InsertValues::Values(value_operands) => {
+                    for idx in indices {
+                        let mut protected = Protected::Plaintext(MessageValue::from( &value_operands[idx] ));
+                        protected = protected.protect(key_source, key_id).await?;
+                        std::mem::replace( &mut value_operands[idx], Operand::from( &protected));
+                        data_changed = true
                    }
-                }
+                },
                 InsertValues::Json(_) => {
                     // TODO parse json and encrypt.
                 }
@@ -255,14 +201,16 @@ fn encrypt_columns( statement : &mut CassandraStatement, columns : &Vec<String>,
                 if columns.contains( &assignment.name.column ) {
                     let mut protected = Protected::Plaintext( MessageValue::from(&assignment.value) );
                     protected = protected.protect( key_source, key_id ).await?;
-                    assignment.value = Operand::from( protected );
+                    assignment.value = Operand::from( &protected );
                     data_changed = true;
                 }
             }
         }
-        _ => {}
+        _ => {
+            // no other statement are modified
+        }
     }
-    data_changed
+    Ok(data_changed)
 }
 
 #[async_trait]
@@ -283,7 +231,7 @@ impl Transform for Protect {
                         {
                             if let Some((_, columns)) = tables.get_key_value(&namespace[1]) {
                                 for mut stmt in query.statement {
-                                    data_changed = encrypt_columns(&mut stmt, columns, &self.key_source, &self.key_id )
+                                    data_changed = encrypt_columns(&mut stmt, columns, &self.key_source, &self.key_id ).unwrap()
                                 }
                             }
                         }
@@ -315,6 +263,7 @@ impl Transform for Protect {
                         ..
                     })) = request.frame()
                     {
+
                         if namespace.len() == 2 {
                             if let Some((_keyspace, tables)) =
                             self.keyspace_table_columns.get_key_value(&namespace[0])
@@ -355,50 +304,6 @@ impl Transform for Protect {
                                                     }
                                                 }
                                         }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        let projection: Vec<String> = get_values_from_insert_or_update_mut(query)
-                            .into_keys()
-                            .collect();
-                        if namespace.len() == 2 {
-                            if let Some((_keyspace, tables)) =
-                                self.keyspace_table_columns.get_key_value(&namespace[0])
-                            {
-                                if let Some((_table, protect_columns)) =
-                                    tables.get_key_value(&namespace[1])
-                                {
-                                    let mut positions: Vec<usize> = Vec::new();
-                                    for (i, p) in projection.iter().enumerate() {
-                                        if protect_columns.contains(p) {
-                                            positions.push(i);
-                                        }
-                                    }
-                                    for row in rows {
-                                        for index in &mut positions {
-                                            if let Some(v) = row.get_mut(*index) {
-                                                if let MessageValue::Bytes(_) = v {
-                                                    let protected =
-                                                        Protected::from_encrypted_bytes_value(v)
-                                                            .await?;
-                                                            let new_value: MessageValue = protected
-                                                                .unprotect(
-                                                                    &self.key_source,
-                                                                    &self.key_id,
-                                                                )
-                                                                .await?;
-                                                            *v = new_value;
-                                                            invalidate_cache = true;
-                                                        } else {
-                                                            warn!(
-                                                                "Tried decrypting non-blob column"
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                                 }
