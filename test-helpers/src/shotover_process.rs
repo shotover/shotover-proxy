@@ -53,11 +53,20 @@ impl ShotoverProcess {
             Command::new(env!("CARGO"))
                 .args(&all_args)
                 .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
                 .spawn()
                 .unwrap(),
         );
 
-        crate::wait_for_socket_to_open("127.0.0.1", 9001); // Wait for observability metrics port to open
+        // Wait for observability metrics port to open
+        if let Err(err) = crate::try_wait_for_socket_to_open("127.0.0.1", 9001) {
+            // Shutdown shotover and panic if shotover hit any kind of failure.
+            // Panicking here is good because any errors here are more important then reporting the timeout
+            ShotoverProcess { child }.shutdown_and_assert_success();
+
+            // If shotover shutdown fine then just panic with a generic error. Good luck developer.
+            panic!("Shotover succesfully started up and shutdown, but the metrics port was never opened: {}", err);
+        }
 
         ShotoverProcess { child }
     }
@@ -96,7 +105,7 @@ impl ShotoverProcess {
 
         if result.exit_code != 0 {
             panic!(
-                "Shotover exited with {} but expected 0 exit code (Success).\nstdout: {}\nstderr: {}",
+                "Shotover exited with {} but expected 0 exit code (Success).\nstdout:\n{}\nstderr:\n{}",
                 result.exit_code, result.stdout, result.stderr
             );
         }
