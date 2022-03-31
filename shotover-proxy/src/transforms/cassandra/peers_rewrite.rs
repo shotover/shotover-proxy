@@ -106,7 +106,7 @@ mod test {
         query::QueryParams,
     };
 
-    fn create_query_message(query: String) -> Message {
+    fn create_query_message(query: &str) -> Message {
         let original = Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,

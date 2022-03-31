@@ -160,22 +160,23 @@ fn build_zrangebylex_min_max_from_cql3(
 ) -> Result<()> {
 
     let mut bytes =
-        Vec::from( match operand {
+        match operand {
         Operand::Const(value) => {
-            match value.to_uppercase().as_str() {
+            Vec::from(
+                match value.to_uppercase().as_str() {
             "TRUE" => &TRUE,
                 "FALSE" => &FALSE,
                 _ => value.as_bytes(),
-            }
+            })
         }
         Operand::Map(_) |
         Operand::Set(_) |
         Operand::List(_) |
         Operand::Tuple(_) |
         Operand::Column(_) |
-        Operand::Func(_) => operand.to_string().as_bytes(),
-        Operand::Null => &[],
-    });
+        Operand::Func(_) => Vec::from(operand.to_string().as_bytes()),
+        Operand::Null => vec!(),
+    };
 
     match operator {
         RelationOperator::LessThan => {
@@ -219,10 +220,10 @@ fn build_zrangebylex_min_max_from_cql3(
     Ok(())
 }
 
-fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, table_cache_schema: &TableCacheSchema)  -> Vec<RedisFrame> {
+fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, table_cache_schema: &TableCacheSchema)  -> Result<Vec<RedisFrame>> {
     let mut min: Vec<u8> = Vec::new();
     let mut max: Vec<u8> = Vec::new();
-
+    let mut had_err = None;
     where_clause.iter().filter_map(|relation_element|
         {
             match &relation_element.obj {
@@ -235,10 +236,16 @@ fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, t
             }
         }).for_each(|(operator,values)| {
             for operand in values {
-                build_zrangebylex_min_max_from_cql3( operator,operand, &mut min, &mut max, );
+                let x = build_zrangebylex_min_max_from_cql3( operator,operand, &mut min, &mut max, );
+                if x.is_err() {
+                    had_err = x.err()
+                }
             }
         });
 
+    if had_err.is_some() {
+        return Err(had_err.unwrap());
+    }
     let min = if min.is_empty() {
         Bytes::from_static(b"-")
     } else {
@@ -266,17 +273,15 @@ fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, t
             Some(&y.unwrap().value)
         })
         .fold(BytesMut::new(), |mut acc, v| {
-            if let Some(v) = v {
-                v.iter().for_each(|vv| acc.extend(MessageValue::from( vv ).into_str_bytes()));
-            }
+            v.iter().for_each(|operand| acc.extend(MessageValue::from( operand ).into_str_bytes()));
             acc
         });
-    vec![
+    Ok(vec![
         RedisFrame::BulkString("ZRANGEBYLEX".into()),
         RedisFrame::BulkString(pk.freeze()),
         RedisFrame::BulkString(min),
         RedisFrame::BulkString(max),
-    ]
+    ])
 }
 fn build_redis_ast_from_cql3 (
     statement: &CassandraStatement,
@@ -286,7 +291,7 @@ fn build_redis_ast_from_cql3 (
         match statement {
             CassandraStatement::Select(select) => {
                 if select.where_clause.is_some() {
-                    Ok(RedisFrame::Array( build_redis_frames_from_where_clause( &select.where_clause.unwrap(),table_cache_schema)))
+                    Ok(RedisFrame::Array( build_redis_frames_from_where_clause( &select.where_clause.as_ref().unwrap(),table_cache_schema)?))
                 } else {
                     Err(anyhow!("Cant build query from statement: {}", statement))
                 }
@@ -301,7 +306,7 @@ fn build_redis_ast_from_cql3 (
                         acc.extend(MessageValue::from(*v).into_str_bytes());
                         acc
                     });
-                let mut redis_frames: Vec<RedisFrame> = vec![
+                let redis_frames: Vec<RedisFrame> = vec![
                     RedisFrame::BulkString("ZADD".into()),
                     RedisFrame::BulkString(pk.freeze()),
                 ];
@@ -311,12 +316,12 @@ fn build_redis_ast_from_cql3 (
                 Ok(RedisFrame::Array(add_values_to_redis_frames(table_cache_schema, map, redis_frames)))
             }
             CassandraStatement::Update(update) => {
-                let mut redis_frames = build_redis_frames_from_where_clause( &update.where_clause, table_cache_schema);
+                let redis_frames = build_redis_frames_from_where_clause( &update.where_clause, table_cache_schema)?;
                 let mut map = HashMap::new();
-                for x in update.assignments {
+                for x in &update.assignments {
                     // skip any columns with +/- modifiers.
                     if x.operator.is_none() {
-                        map.insert(x.name.to_string(), MessageValue::from(&x.value))
+                        map.insert(x.name.to_string(), MessageValue::from(&x.value));
                     }
                 }
 
@@ -337,8 +342,8 @@ fn add_values_to_redis_frames(
         .range_key
         .iter()
         .map(|k| query_values.get(k.as_str()).unwrap())
-        .fold(BytesMut::new(), |mut acc, v| {
-            acc.extend(v.into_str_bytes());
+        .fold(BytesMut::new(), |mut acc, message_value| {
+            acc.extend(&message_value.clone().into_str_bytes());
             acc
         });
 
@@ -353,13 +358,13 @@ fn add_values_to_redis_frames(
                 Some(v)
             }
         })
-        .for_each( |v| {
+        .for_each( |message_value| {
             redis_frames.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
             let mut value = clustering.clone();
             if !value.is_empty() {
                 value.put_u8(b':');
             }
-            value.extend(v.into_str_bytes());
+            value.extend(message_value.clone().into_str_bytes());
             redis_frames.push(RedisFrame::BulkString(value.freeze()));
         });
 
@@ -438,7 +443,7 @@ mod test {
 
     fn build_query(query_string: &str) -> CassandraStatement {
         let ast = CassandraAST::new( query_string );
-        ast.statement
+        ast.statements[0].clone()
     }
 
     #[test]

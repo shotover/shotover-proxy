@@ -18,7 +18,7 @@ use cassandra_protocol::frame::{
     Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version,
 };
 use cassandra_protocol::query::{QueryParams, QueryValues};
-use cassandra_protocol::types::{AsCassandraType, CBytes, CBytesShort, CInt, CLong};
+use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use nonzero_ext::nonzero;
 use std::convert::TryInto;
 use std::num::NonZeroU32;
@@ -494,8 +494,8 @@ impl CQL {
     pub fn parse_from_string(cql_query_str: &str) -> Self {
         let ast = CassandraAST::new(cql_query_str );
         CQL {
-            statement : ast.statements,
             has_error : ast.has_error(),
+            statement : ast.statements,
         }
     }
 }

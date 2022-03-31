@@ -15,7 +15,6 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
 use cql3_parser::insert::InsertValues;
 use cql3_parser::select::SelectElement;
-use futures::TryFutureExt;
 use sodiumoxide::hex;
 use tracing::warn;
 
@@ -180,14 +179,15 @@ async fn encrypt_columns( statement : &mut CassandraStatement, columns : &Vec<St
     let mut data_changed = false;
     match statement {
         CassandraStatement::Insert(insert) => {
-            let indices :Vec<usize>= insert.columns.iter().enumerate().filter( |(i,col_name)| columns.contains( col_name ))
-                .map( |(i,col_name)| i).collect();
+            let indices :Vec<usize>= insert.columns.iter().enumerate()
+                .filter_map( |(i,col_name)| if columns.contains( col_name ) { Some(i) } else { None })
+                .collect();
             match &mut insert.values {
                 InsertValues::Values(value_operands) => {
                     for idx in indices {
                         let mut protected = Protected::Plaintext(MessageValue::from( &value_operands[idx] ));
                         protected = protected.protect(key_source, key_id).await?;
-                        std::mem::replace( &mut value_operands[idx], Operand::from( &protected));
+                        value_operands[idx] = Operand::from( &protected );
                         data_changed = true
                    }
                 },
@@ -230,8 +230,8 @@ impl Transform for Protect {
                             self.keyspace_table_columns.get_key_value(&namespace[0])
                         {
                             if let Some((_, columns)) = tables.get_key_value(&namespace[1]) {
-                                for mut stmt in query.statement {
-                                    data_changed = encrypt_columns(&mut stmt, columns, &self.key_source, &self.key_id ).unwrap()
+                                for stmt in &mut query.statement {
+                                    data_changed = encrypt_columns(stmt, columns, &self.key_source, &self.key_id ).await?;
                                 }
                             }
                         }
@@ -271,7 +271,7 @@ impl Transform for Protect {
                                 if let Some((_table, protect_columns)) =
                                 tables.get_key_value(&namespace[1])
                                 {
-                                    for cassandra_statement in query.statement {
+                                    for cassandra_statement in &query.statement {
                                         if let CassandraStatement::Select(select) = cassandra_statement {
                                             let positions : Vec<usize> = select.columns.iter().enumerate()
                                                 .filter_map( | (i,col)| {
@@ -286,9 +286,9 @@ impl Transform for Protect {
                                                         None
                                                     }
                                                 }).collect();
-                                            for row in rows {
-                                                for index in positions {
-                                                    if let Some(v) = row.get_mut(index) {
+                                            for row in &mut *rows {
+                                                for index in &positions {
+                                                    if let Some(v) = row.get_mut(*index) {
                                                         if let MessageValue::Bytes(_) = v {
                                                             let protected =
                                                                 Protected::from_encrypted_bytes_value(v)

@@ -359,15 +359,14 @@ mod cassandra_protocol_tests {
             "0400000307000000350000002e53454c454354202a2046524f4d20737973
             74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
         );
+
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 3,
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query:  CQL{ statement: vec![
-                    CassandraAst::parse( "Select * from system where key = 'local'")
-                ], has_error: vec![false] },
+                query:  CQL::parse_from_string("Select * from system where key = 'local'"),
                 /*
 
                 CQL::Parsed(vec![Statement::Query(Box::new(Query {
@@ -438,9 +437,7 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL{ statement: vec![
-                    CassandraAst::parse( "Select bar from foo")
-                ], has_error: vec![false] },
+                query: CQL::parse_from_string("Select bar from foo"),
                 /*CQL::Parsed(vec![Statement::Insert {
                     or: None,
                     table_name: ObjectName(vec![
