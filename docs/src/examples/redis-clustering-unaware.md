@@ -6,7 +6,7 @@ The following guide shows you how to configure Shotover Proxy to support transpa
 
 First you need to setup a Redis cluster for Shotover to connect to.
 
-The easiest way to do this is with this example [docker-compose.yml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/example-configs/redis-cluster/docker-compose.yml)
+The easiest way to do this is with this example [docker-compose.yml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/example-configs-docker/redis-cluster/docker-compose.yml)
 You should first inspect the `docker-compose.yml` to understand what the cluster looks like and how its exposed to the network.
 
 Then run:
@@ -26,33 +26,14 @@ This more accurately reflects a real production use but will take a bit more set
 Modify your `topology.yaml` file like this:
 
 ```yaml
-{{#include ../../../shotover-proxy/example-configs/redis-cluster/topology.yaml}}
+{{#include ../../../shotover-proxy/example-configs-docker/redis-cluster/topology.yaml}}
 ```
 
 If you didnt use the standard `docker-compose.yml` setup then you will need to change `first_contact_points` to point to the Redis instances you used.
 
-## Starting
-
-Run Shotover, if Shotover can successfully contact your Redis cluster you should see the following:
-
-```console
-user@demo$ ./shotover-proxy
-2021-11-03T06:20:03.955870Z  INFO shotover_proxy::runner: Starting Shotover 0.1.0
-2021-11-03T06:20:03.955879Z  INFO shotover_proxy::runner: configuration=Config { main_log_level: "info,shotover_proxy=info", observability_interface: "0.0.0.0:9001" }
-2021-11-03T06:20:03.955884Z  INFO shotover_proxy::runner: topology=Topology { sources: {"redis_prod": Redis(RedisConfig { listen_addr: "127.0.0.1:6379", connection_limit: None, hard_connection_limit: None, tls: None })}, chain_config: {"redis_chain": [RedisSinkCluster(RedisSinkClusterConfig { first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"], tls: None, connection_count: None })]}, named_topics: {"testtopic": 5}, source_to_chain_mapping: {"redis_prod": "redis_chain"} }
-2021-11-03T06:20:03.955893Z  INFO shotover_proxy::config::topology: Loaded topics ["testtopic"]
-2021-11-03T06:20:03.956635Z  INFO shotover_proxy::transforms::redis::sink_cluster: connected to upstream
-2021-11-03T06:20:03.956644Z  INFO shotover_proxy::config::topology: Loaded chains ["redis_chain"]
-2021-11-03T06:20:03.956648Z  INFO shotover_proxy::sources::redis_source: Starting Redis source on [127.0.0.1:6379]
-2021-11-03T06:20:03.956659Z  INFO shotover_proxy::config::topology: Loaded sources [["redis_prod"]] and linked to chains
-2021-11-03T06:20:03.956675Z  INFO shotover_proxy::server: accepting inbound connections
-```
-
-The `RedisSinkCluster` transform needs to be able to connect to the Redis cluster when it starts up otherwise Shotover will exit with an error.
-
 ## Testing
 
-With Shotover Proxy now up and running, we can test out our client application. Let's start it up!
+With your Redis Cluster and Shotover now up and running, we can test out our client application. Let's start it up!
 
 ```console
 redis-benchmark -t set,get

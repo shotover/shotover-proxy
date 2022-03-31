@@ -91,23 +91,23 @@ impl DockerCompose {
     fn wait_for_containers_to_startup(&self) {
         match self.file_path.as_ref() {
             "tests/transforms/docker-compose-moto.yml" => {
-                self.wait_for_log(r#"Press CTRL\+C to quit"#, 1)
+                self.wait_for_log(r#"Press CTRL\+C to quit"#, 1, 110)
             }
             "example-configs/redis-passthrough/docker-compose.yml"
             | "example-configs/redis-tls/docker-compose.yml" => {
-                self.wait_for_log("Ready to accept connections", 1)
+                self.wait_for_log("Ready to accept connections", 1, 110)
             }
             "example-configs/redis-multi/docker-compose.yml" => {
-                self.wait_for_log("Ready to accept connections", 3)
+                self.wait_for_log("Ready to accept connections", 3, 110)
             }
             "tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml"
             | "example-configs/redis-cluster/docker-compose.yml"
             | "example-configs/redis-cluster-auth/docker-compose.yml"
             | "example-configs/redis-cluster-tls/docker-compose.yml" => {
-                self.wait_for_log("Cluster state changed", 6)
+                self.wait_for_log("Cluster state changed", 6, 110)
             }
             "example-configs/redis-cluster-dr/docker-compose.yml" => {
-                self.wait_for_log("Cluster state changed", 12)
+                self.wait_for_log("Cluster state changed", 12, 110)
             }
             "example-configs/cassandra-passthrough/docker-compose.yml"
             | "example-configs/cassandra-tls/docker-compose.yml"
@@ -118,10 +118,13 @@ impl DockerCompose {
             | "example-configs/cassandra-request-throttling/docker-compose.yml"
             | "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yml"
             | "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yml" => {
-                self.wait_for_log("Startup complete", 1)
+                self.wait_for_log("Startup complete", 1, 110)
             }
             "tests/test-configs/cassandra-peers-rewrite/docker-compose.yml" => {
-                self.wait_for_log("Startup complete", 2)
+                self.wait_for_log("Startup complete", 2, 110)
+            }
+            "example-configs-docker/cassandra-rewrite-peers/docker-compose.yml" => {
+                self.wait_for_log("Startup complete", 3, 180)
             }
             path => unimplemented!(
                 "Unknown compose file `{path}` Please implement waiting logic for it here.",
@@ -141,8 +144,7 @@ impl DockerCompose {
     /// # Panics
     /// * If `count` occurrences of `log_text` is not found in the log within 90 seconds.
     ///
-    fn wait_for_log(&self, log_text: &str, count: usize) {
-        let timeout_seconds = 110;
+    fn wait_for_log(&self, log_text: &str, count: usize, timeout_seconds: u64) {
         info!("wait_for_log: '{log_text}' {count}");
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();

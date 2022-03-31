@@ -1,0 +1,17 @@
+---
+sources:
+  redis_prod:
+    # define how shotover listens for incoming connections from our client application (`redis-benchmark`).
+    Redis:
+      listen_addr: "127.0.0.1:6379"
+chain_config:
+  redis_chain:
+    # configure Shotover to connect to the Redis cluster via our defined contact points
+    - RedisSinkCluster:
+        first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
+named_topics:
+  testtopic: 5
+
+source_to_chain_mapping:
+  # connect our Redis source to our Redis cluster sink (transform).
+  redis_prod: redis_chain
