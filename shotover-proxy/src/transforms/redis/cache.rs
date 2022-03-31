@@ -224,21 +224,19 @@ fn build_redis_frames_from_where_clause( where_clause : &[RelationElement], tabl
     let mut min: Vec<u8> = Vec::new();
     let mut max: Vec<u8> = Vec::new();
     let mut had_err = None;
-    where_clause.iter().filter_map(|relation_element|
-        {
-            match &relation_element.obj {
-                Operand::Column(name) => {
-                    if table_cache_schema.partition_key.contains(name) {
-                        Some((&relation_element.oper,&relation_element.value))
-                    } else { None }
-                },
-                _ => None
-            }
-        }).for_each(|(operator,values)| {
-            for operand in values {
-                let x = build_zrangebylex_min_max_from_cql3( operator,operand, &mut min, &mut max, );
-                if x.is_err() {
-                    had_err = x.err()
+
+    let where_columns  = WhereClause::get_column_relation_element_map( where_clause );
+
+    // process the partition key
+    where_columns.iter().filter(|(name,_relation_elements)| {
+        ! table_cache_schema.partition_key.contains( name )
+    }).for_each( |(_name,relation_elements)| {
+            for relation_element in relation_elements {
+                for operand in &relation_element.value {
+                    let x = build_zrangebylex_min_max_from_cql3(&relation_element.oper, &operand, &mut min, &mut max, );
+                    if x.is_err() {
+                        had_err = x.err()
+                    }
                 }
             }
         });
@@ -257,7 +255,6 @@ fn build_redis_frames_from_where_clause( where_clause : &[RelationElement], tabl
         Bytes::from(max)
     };
 
-    let where_columns  = WhereClause::get_column_relation_element_map( where_clause );
     let pk = table_cache_schema
         .partition_key
         .iter()
@@ -436,6 +433,7 @@ mod test {
     use std::collections::HashMap;
     use cql3_parser::cassandra_ast::CassandraAST;
     use cql3_parser::cassandra_statement::CassandraStatement;
+    use tls_parser::nom::AsBytes;
 
     fn build_query(query_string: &str) -> CassandraStatement {
         let ast = CassandraAST::new( query_string );
@@ -459,6 +457,40 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"[123:965")),
             RedisFrame::BulkString(Bytes::from_static(b"]123:965")),
         ]);
+
+        if let RedisFrame::Array(v)= query {
+            assert_eq!(4,v.len());
+            let mut iter = v.iter();
+            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
+                assert_eq!( b"ZRANGEBYLEX", b.as_bytes());
+            }
+            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
+                assert_eq!( b"1", b.as_bytes());
+            }
+
+            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
+              if b.starts_with( b"[123:") {
+                  assert_eq!(  b"[123:965", b.as_bytes());
+              } else {
+                  assert_eq!( b"[965:123", b.as_bytes());
+              }
+            } else {
+                assert!(false);
+            }
+
+            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
+                if b.starts_with( b"]123:") {
+                    assert_eq!(  b"]123:965", b.as_bytes());
+                } else {
+                    assert_eq!( b"]965:123", b.as_bytes());
+                }
+            } else {
+                assert!(false);
+            }
+
+        } else {
+            assert!(false)
+        }
 
         assert_eq!(expected, query);
     }
