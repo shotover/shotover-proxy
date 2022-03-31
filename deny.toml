@@ -116,6 +116,13 @@ license-files = [
     { path = "COPYRIGHT", hash = 0x39f8ad31 }
 ]
 
+# ring is described as being ISC compatible by its license file: https://github.com/briansmith/ring/blob/main/LICENSE
+[[licenses.clarify]]
+name = "ring"
+version = "*"
+expression = "ISC"
+license-files = []
+
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
 # licensing information
