@@ -478,7 +478,7 @@ impl From<&MessageValue> for Operand {
             MessageValue::List(l) => {Operand::List( l.iter().map( |x| Operand::from(x).to_string()).collect())}
 
             MessageValue::Rows(r) => {
-                Operand::Tuple( r.iter().map( |row| row.iter().map( |m| Operand::from(m)).collect()).map( |v| Operand::Tuple(v)).collect())
+                Operand::Tuple( r.iter().map( |row| row.iter().map( Operand::from ).collect()).map( Operand::Tuple ).collect())
             }
 
             MessageValue::NamedRows(r) => {
@@ -494,7 +494,7 @@ impl From<&MessageValue> for Operand {
 
             MessageValue::FragmentedResponse(t) |
             MessageValue::Tuple(t) => {
-                Operand::Tuple( t.iter().map( |m| Operand::from(m)).collect())
+                Operand::Tuple( t.iter().map( Operand::from ).collect())
             }
 
             MessageValue::Udt(d) |
@@ -512,7 +512,7 @@ impl From<&MessageValue> for Operand {
 
 impl From<&Operand> for MessageValue {
     fn from(operand: &Operand) -> Self {
-        operand.as_cassandra_type().map_or( MessageValue::None, |x| MessageValue::create_element( x ))
+        operand.as_cassandra_type().map_or( MessageValue::None, MessageValue::create_element)
     }
 }
 

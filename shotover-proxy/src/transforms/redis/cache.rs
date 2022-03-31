@@ -220,7 +220,7 @@ fn build_zrangebylex_min_max_from_cql3(
     Ok(())
 }
 
-fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, table_cache_schema: &TableCacheSchema)  -> Result<Vec<RedisFrame>> {
+fn build_redis_frames_from_where_clause( where_clause : &[RelationElement], table_cache_schema: &TableCacheSchema)  -> Result<Vec<RedisFrame>> {
     let mut min: Vec<u8> = Vec::new();
     let mut max: Vec<u8> = Vec::new();
     let mut had_err = None;
@@ -243,8 +243,8 @@ fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, t
             }
         });
 
-    if had_err.is_some() {
-        return Err(had_err.unwrap());
+    if let Some(e) = had_err {
+        return Err(e);
     }
     let min = if min.is_empty() {
         Bytes::from_static(b"-")
@@ -263,13 +263,9 @@ fn build_redis_frames_from_where_clause( where_clause : &Vec<RelationElement>, t
         .iter()
         .filter_map(|k| {
             let x = where_columns.get(k);
-            if x.is_none() {
-                return None
-            }
-            let y = x.unwrap().iter().filter(|x| x.oper == RelationOperator::Equal).nth(0);
-            if y.is_none() {
-                return None
-            }
+            x?;
+            let y = x.unwrap().iter().find(|x| x.oper == RelationOperator::Equal);
+            y?;
             Some(&y.unwrap().value)
         })
         .fold(BytesMut::new(), |mut acc, v| {
@@ -291,7 +287,7 @@ fn build_redis_ast_from_cql3 (
         match statement {
             CassandraStatement::Select(select) => {
                 if select.where_clause.is_some() {
-                    Ok(RedisFrame::Array( build_redis_frames_from_where_clause( &select.where_clause.as_ref().unwrap(),table_cache_schema)?))
+                    Ok(RedisFrame::Array( build_redis_frames_from_where_clause( select.where_clause.as_ref().unwrap(),table_cache_schema)?))
                 } else {
                     Err(anyhow!("Cant build query from statement: {}", statement))
                 }

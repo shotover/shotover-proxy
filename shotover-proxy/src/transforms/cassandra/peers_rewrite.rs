@@ -163,14 +163,14 @@ mod test {
     #[test]
     fn test_is_system_peers_v2() {
         assert!(is_system_peers(&mut create_query_message(
-            "SELECT * FROM system.peers_v2;".into()
+            "SELECT * FROM system.peers_v2;"
         )));
 
         assert!(!is_system_peers(&mut create_query_message(
-            "SELECT * FROM not_system.peers_v2;".into()
+            "SELECT * FROM not_system.peers_v2;"
         )));
 
-        assert!(!is_system_peers(&mut create_query_message("".into())));
+        assert!(!is_system_peers(&mut create_query_message("")));
     }
 
     #[test]

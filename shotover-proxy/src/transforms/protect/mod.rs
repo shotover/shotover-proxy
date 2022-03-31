@@ -174,7 +174,7 @@ impl ProtectConfig {
 }
 
 /// determines if columns in the CassandraStatement need to be encrypted and encrypts them.  Returns `true` if any columns were changed.
-async fn encrypt_columns( statement : &mut CassandraStatement, columns : &Vec<String>, key_source : &KeyManager, key_id : &str) -> Result<bool> {
+async fn encrypt_columns( statement : &mut CassandraStatement, columns : &[String], key_source : &KeyManager, key_id : &str) -> Result<bool> {
 
     let mut data_changed = false;
     match statement {
