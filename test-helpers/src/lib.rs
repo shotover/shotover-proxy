@@ -1,3 +1,4 @@
+pub mod cert;
 pub mod docker_compose;
 pub mod shotover_process;
 
