@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::path::Path;
 use test_helpers::docker_compose::DockerCompose;
 
 #[path = "../tests/helpers/mod.rs"]
@@ -69,6 +70,9 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "single_tls",
         || {
+            test_helpers::cert::generate_test_certs(Path::new(
+                "example-configs/redis-tls/tls_keys",
+            ));
             let compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
             let shotover_manager =
                 ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
@@ -87,6 +91,9 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "cluster_tls",
         || {
+            test_helpers::cert::generate_test_certs(Path::new(
+                "example-configs/redis-tls/tls_keys",
+            ));
             let compose =
                 DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
             let shotover_manager = ShotoverManager::from_topology_file(
