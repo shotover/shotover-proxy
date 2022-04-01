@@ -279,11 +279,11 @@ This transform is a full featured Redis driver that will connect to a Redis clus
     # Removing this field will disable TLS.
     tls:
       # Path to the certificate file, typically named with a .crt extension.
-      certificate_authority_path: "example-configs/redis-tls/tls_keys/ca.crt"
+      certificate_authority_path: "example-configs/redis-tls/certs/ca.crt"
       # Path to the private key file, typically named with a .key extension.
-      certificate_path: "example-configs/redis-tls/tls_keys/redis.crt"
+      certificate_path: "example-configs/redis-tls/certs/redis.crt"
       # Path to the certificate authority file typically named ca.crt.
-      private_key_path: "example-configs/redis-tls/tls_keys/redis.key"
+      private_key_path: "example-configs/redis-tls/certs/redis.key"
 ```
 
 Unlike other Redis cluster drivers, this transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
@@ -369,10 +369,9 @@ The response from the down-chain transform is returned back up-chain but various
       - Null
 ```
 
-
 ### RequestThrottling
 
-This transform will backpressure requests to Shotover, ensuring that throughput does not exceed the `max_requests_per_second` value.`max_requests_per_second` has a minimum allowed value of 50 to ensure that drivers such as Cassandra are able to complete their startup procedure correctly. In Shotover, a "request" is counted as a query/statement to upstream service. In Cassandra, the list of queries in a BATCH statement are each counted as individual queries. It uses a [Generic Cell Rate Algorithm ](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm). 
+This transform will backpressure requests to Shotover, ensuring that throughput does not exceed the `max_requests_per_second` value.`max_requests_per_second` has a minimum allowed value of 50 to ensure that drivers such as Cassandra are able to complete their startup procedure correctly. In Shotover, a "request" is counted as a query/statement to upstream service. In Cassandra, the list of queries in a BATCH statement are each counted as individual queries. It uses a [Generic Cell Rate Algorithm](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm).
 
 ```yaml
 - RequestThrottling

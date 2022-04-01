@@ -1258,7 +1258,7 @@ async fn test_passthrough() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_tls() {
-    test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/tls_keys"));
+    test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
 
     let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
     let shotover_manager =
@@ -1273,16 +1273,16 @@ async fn test_cluster_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_source_tls_and_single_tls() {
-    test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/tls_keys"));
+    test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
 
     let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
     let tls_config = TlsConfig {
-        certificate_authority_path: "example-configs/redis-tls/tls_keys/ca.crt".into(),
-        certificate_path: "example-configs/redis-tls/tls_keys/redis.crt".into(),
-        private_key_path: "example-configs/redis-tls/tls_keys/redis.key".into(),
+        certificate_authority_path: "example-configs/redis-tls/certs/ca.crt".into(),
+        certificate_path: "example-configs/redis-tls/certs/redis.crt".into(),
+        private_key_path: "example-configs/redis-tls/certs/redis.key".into(),
     };
 
     let mut connection = shotover_manager
