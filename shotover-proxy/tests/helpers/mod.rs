@@ -95,16 +95,10 @@ impl ShotoverManager {
                 .await
                 .unwrap(),
         );
-        let mut stream_with_timeout = TimeoutStream::new(stream);
-        stream_with_timeout.set_read_timeout(Some(Duration::from_secs(10)));
-
-        let connection_info = Default::default();
-        redis::aio::Connection::new(
-            &connection_info,
-            Box::pin(stream_with_timeout) as Pin<Box<dyn AsyncStream + Send + Sync>>,
+        ShotoverManager::redis_connection_async_inner(
+            Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
         )
         .await
-        .unwrap()
     }
 
     #[allow(unused)]
@@ -124,11 +118,22 @@ impl ShotoverManager {
             .connect_unverified_hostname(tcp_stream)
             .await
             .unwrap();
+        ShotoverManager::redis_connection_async_inner(
+            Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
+        )
+        .await
+    }
+
+    async fn redis_connection_async_inner(
+        stream: Pin<Box<dyn AsyncStream + Send + Sync>>,
+    ) -> redis::aio::Connection {
+        let mut stream_with_timeout = TimeoutStream::new(stream);
+        stream_with_timeout.set_read_timeout(Some(Duration::from_secs(10)));
 
         let connection_info = Default::default();
         redis::aio::Connection::new(
             &connection_info,
-            Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>,
+            Box::pin(stream_with_timeout) as Pin<Box<dyn AsyncStream + Send + Sync>>,
         )
         .await
         .unwrap()
