@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame};
-use crate::message::{Message, MessageValue, Messages, QueryType};
+use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
 use cassandra_protocol::frame::Version;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{Operand, PrimaryKey, RelationElement, RelationOperator, WhereClause};
 
@@ -62,7 +62,7 @@ impl SimpleRedisCache {
         &mut self,
         mut messages_cass_request: Messages
     ) -> ChainResponse {
-        // This function is a little hard to follow, so heres an overview.
+        // This function is a little hard to follow, so here's an overview.
         // We have 4 vecs of messages, each vec can be considered its own stage of processing.
         // 1. messages_cass_request:
         //     * the cassandra requests that the function receives.
@@ -82,7 +82,8 @@ impl SimpleRedisCache {
 
         let mut messages_redis_request = Vec::with_capacity(messages_cass_request.len());
         for cass_request in &mut messages_cass_request {
-            if let Some(table_name) = cass_request.namespace().map(|x| x.join(".")) {
+
+            if let Some(table_name) = cass_request.get_table_names().map(|x| x.join(".")) {
                 match cass_request.frame() {
                     Some(Frame::Cassandra(frame)) => {
                         for query in frame.operation.queries()? {
@@ -233,7 +234,7 @@ fn build_redis_frames_from_where_clause( where_clause : &[RelationElement], tabl
     }).for_each( |(_name,relation_elements)| {
             for relation_element in relation_elements {
                 for operand in &relation_element.value {
-                    let x = build_zrangebylex_min_max_from_cql3(&relation_element.oper, &operand, &mut min, &mut max, );
+                    let x = build_zrangebylex_min_max_from_cql3(&relation_element.oper, operand, &mut min, &mut max, );
                     if x.is_err() {
                         had_err = x.err()
                     }
@@ -266,7 +267,7 @@ fn build_redis_frames_from_where_clause( where_clause : &[RelationElement], tabl
             Some(&y.unwrap().value)
         })
         .fold(BytesMut::new(), |mut acc, v| {
-            v.iter().for_each(|operand| acc.extend(MessageValue::from( operand ).into_str_bytes()));
+            v.iter().for_each(|operand| acc.extend(operand.to_string().as_bytes()));
             acc
         });
     Ok(vec![
@@ -276,6 +277,20 @@ fn build_redis_frames_from_where_clause( where_clause : &[RelationElement], tabl
         RedisFrame::BulkString(max),
     ])
 }
+
+fn extract_partition_key( partition_key_columns : &[String], value_map : &BTreeMap<String,&Operand>) -> Result<BytesMut>{
+    let pk = partition_key_columns
+        .iter()
+        .map(|k|
+            value_map.get(k.as_str()).unwrap()
+        )
+        .fold(BytesMut::new(), |mut acc, v| {
+            acc.extend(v.to_string().as_bytes());
+            acc
+        });
+    Ok(pk)
+}
+
 fn build_redis_ast_from_cql3 (
     statement: &CassandraStatement,
     table_cache_schema: &TableCacheSchema,
@@ -290,36 +305,48 @@ fn build_redis_ast_from_cql3 (
                 }
             }
             CassandraStatement::Insert(insert) => {
-                let value_map : HashMap<String,&Operand> = insert.get_value_map();
-                let pk = table_cache_schema
-                    .partition_key
-                    .iter()
-                    .map(|k| value_map.get(k.as_str()).unwrap())
-                    .fold(BytesMut::new(), |mut acc, v| {
-                        acc.extend(MessageValue::from(*v).into_str_bytes());
-                        acc
-                    });
-                let redis_frames: Vec<RedisFrame> = vec![
+                // partition key from the value map
+                // values from the remaining parts of the value map.
+                let value_map : BTreeMap<String,&Operand> = insert.get_value_map();
+                let pk = extract_partition_key( &table_cache_schema.partition_key, &value_map )?;
+                let mut redis_frames: Vec<RedisFrame> = vec![
                     RedisFrame::BulkString("ZADD".into()),
                     RedisFrame::BulkString(pk.freeze()),
                 ];
-
-                let mut map = HashMap::new();
-                value_map.iter().for_each(|(key,value)| {map.insert( key.clone(), MessageValue::from( *value ));});
-                Ok(RedisFrame::Array(add_values_to_redis_frames(table_cache_schema, map, redis_frames)))
+                add_values_to_redis_frames(table_cache_schema, value_map, &mut redis_frames)?;
+                Ok(RedisFrame::Array(redis_frames))
             }
             CassandraStatement::Update(update) => {
-                let redis_frames = build_redis_frames_from_where_clause( &update.where_clause, table_cache_schema)?;
-                let mut map = HashMap::new();
-                for x in &update.assignments {
-                    // skip any columns with +/- modifiers.
-                    if x.operator.is_none() {
-                        map.insert(x.name.to_string(), MessageValue::from(&x.value));
+                // only want the partition key built from `equals` statements in the where clause
+                // and values from the set clause
+                let where_tree = WhereClause::get_column_relation_element_map(&update.where_clause);
+                let mut value_map :BTreeMap<String,&Operand>  = where_tree
+                    .iter().filter_map( |(k,v)| {
+                        for relation in v {
+                            if relation.oper == RelationOperator::Equal && relation.value.len() == 1 {
+                                return Some((k.clone(),&relation.value[0]));
+                            }
+                        }
+                        None
+                }).collect();
+                let mut has_err = false;
+                update.assignments.iter().for_each( |assignment| {
+                    if assignment.operator.is_some() {
+                        has_err = true;
+                    } else {
+                        value_map.insert( assignment.name.to_string(), &assignment.value );
                     }
+                });
+                if has_err {
+                    return Err(anyhow!("Set values include operations"));
                 }
-
-                Ok(RedisFrame::Array(add_values_to_redis_frames(table_cache_schema, map, redis_frames )))
-
+                let pk = extract_partition_key( &table_cache_schema.partition_key, &value_map )?;
+                let mut redis_frames: Vec<RedisFrame> = vec![
+                    RedisFrame::BulkString("ZADD".into()),
+                    RedisFrame::BulkString(pk.freeze()),
+                ];
+                add_values_to_redis_frames(table_cache_schema, value_map, &mut redis_frames)?;
+                Ok(RedisFrame::Array(redis_frames))
             }
             statement => Err(anyhow!("Cant build query from statement: {}", statement)),
         }
@@ -327,41 +354,48 @@ fn build_redis_ast_from_cql3 (
 
 fn add_values_to_redis_frames(
     table_cache_schema: &TableCacheSchema,
-    query_values: HashMap<String, MessageValue>,
-    mut redis_frames : Vec<RedisFrame>
-) -> Vec<RedisFrame> {
+    query_values: BTreeMap<String, &Operand>,
+    redis_frames : &mut Vec<RedisFrame>
+) -> Result<()> {
 
-    let clustering = table_cache_schema
+    let mut has_err = None;
+    let mut clustering = table_cache_schema
         .range_key
         .iter()
-        .map(|k| query_values.get(k.as_str()).unwrap())
-        .fold(BytesMut::new(), |mut acc, message_value| {
-            acc.extend(&message_value.clone().into_str_bytes());
+        .filter_map(|k| {
+            if let Some(x) = query_values.get(k.as_str()) {
+                Some(x)
+            } else {
+                has_err = Some(anyhow!( "Clustering column {} missing from statement", k ));
+                None
+            }
+        })
+        .fold(BytesMut::new(), |mut acc, operand| {
+            acc.extend(operand.to_string().as_bytes());
             acc
         });
+    if let Some(e) = has_err {
+        return Err(e);
+    }
+    if !clustering.is_empty() {
+        clustering.put_u8(b':');
+    }
+    redis_frames.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
 
     query_values
         .iter()
         .filter_map(|(p, v)| {
-            if !(table_cache_schema.partition_key.contains(p) ||
-                table_cache_schema.range_key.contains( p))
-            {
+            if table_cache_schema.partition_key.contains(p) ||
+                table_cache_schema.range_key.contains(p) {
                 None
-            } else {
-                Some(v)
-            }
+            } else { Some(*v)}
         })
-        .for_each( |message_value| {
-            redis_frames.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
-            let mut value = clustering.clone();
-            if !value.is_empty() {
-                value.put_u8(b':');
-            }
-            value.extend(message_value.clone().into_str_bytes());
-            redis_frames.push(RedisFrame::BulkString(value.freeze()));
+        .for_each( |operand| {
+            clustering.extend(operand.to_string().as_bytes());
         });
+    redis_frames.push(RedisFrame::BulkString(clustering.freeze()));
 
-    redis_frames
+    Ok(())
 }
 
 #[async_trait]
@@ -433,10 +467,10 @@ mod test {
     use std::collections::HashMap;
     use cql3_parser::cassandra_ast::CassandraAST;
     use cql3_parser::cassandra_statement::CassandraStatement;
-    use tls_parser::nom::AsBytes;
 
     fn build_query(query_string: &str) -> CassandraStatement {
         let ast = CassandraAST::new( query_string );
+        assert!( !ast.has_error() );
         ast.statements[0].clone()
     }
 
@@ -457,41 +491,6 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"[123:965")),
             RedisFrame::BulkString(Bytes::from_static(b"]123:965")),
         ]);
-
-        if let RedisFrame::Array(v)= query {
-            assert_eq!(4,v.len());
-            let mut iter = v.iter();
-            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
-                assert_eq!( b"ZRANGEBYLEX", b.as_bytes());
-            }
-            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
-                assert_eq!( b"1", b.as_bytes());
-            }
-
-            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
-              if b.starts_with( b"[123:") {
-                  assert_eq!(  b"[123:965", b.as_bytes());
-              } else {
-                  assert_eq!( b"[965:123", b.as_bytes());
-              }
-            } else {
-                assert!(false);
-            }
-
-            if let RedisFrame::BulkString( b ) = iter.next().unwrap() {
-                if b.starts_with( b"]123:") {
-                    assert_eq!(  b"]123:965", b.as_bytes());
-                } else {
-                    assert_eq!( b"]965:123", b.as_bytes());
-                }
-            } else {
-                assert!(false);
-            }
-
-        } else {
-            assert!(false)
-        }
-
         assert_eq!(expected, query);
     }
 
@@ -530,7 +529,7 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
             RedisFrame::BulkString(Bytes::from_static(b"1")),
             RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
+            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
         ]);
 
         assert_eq!(expected, query);
@@ -551,7 +550,7 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
             RedisFrame::BulkString(Bytes::from_static(b"1")),
             RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
+            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
         ]);
 
         assert_eq!(expected, query);
@@ -574,7 +573,7 @@ mod test {
 
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
-        assert_ne!(query_one, query_two);
+        assert_eq!(query_one, query_two);
     }
 
     #[test]

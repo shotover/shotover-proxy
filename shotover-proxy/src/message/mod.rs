@@ -174,10 +174,14 @@ impl Message {
         }
     }
 
-    /// Returns None when fails to parse the message
-    pub fn namespace(&mut self) -> Option<Vec<String>> {
+
+    /// Returns the table names found in the message.
+    /// None if the statements do not contain table names.
+    pub fn get_table_names(&mut self) -> Option<Vec<String>> {
         match self.frame()? {
-            Frame::Cassandra(cassandra) => Some(cassandra.namespace()),
+            Frame::Cassandra(cassandra) => {
+                Some(cassandra.get_table_name_statement_map().iter().map( |(k,_v)| k.clone()).collect())
+            }
             Frame::Redis(_) => unimplemented!(),
             Frame::None => Some(vec![]),
         }
@@ -709,39 +713,6 @@ impl MessageValue {
                 MessageValue::Tuple(value_list)
             }
             CassandraType::Null => MessageValue::NULL,
-        }
-    }
-
-    pub fn into_str_bytes(self) -> Bytes {
-        match self {
-            MessageValue::NULL => Bytes::from("".to_string()),
-            MessageValue::None => Bytes::from("".to_string()),
-            MessageValue::Bytes(b) => b,
-            MessageValue::Strings(s) => Bytes::from(s),
-            MessageValue::Integer(i, _) => Bytes::from(format!("{i}")),
-            MessageValue::Float(f) => Bytes::from(format!("{f}")),
-            MessageValue::Boolean(b) => Bytes::from(format!("{b}")),
-            MessageValue::Inet(i) => Bytes::from(format!("{i}")),
-            MessageValue::FragmentedResponse(_) => unimplemented!(),
-            MessageValue::Document(_) => unimplemented!(),
-            MessageValue::NamedRows(_) => unimplemented!(),
-            MessageValue::List(_) => unimplemented!(),
-            MessageValue::Rows(_) => unimplemented!(),
-            MessageValue::Ascii(_) => unimplemented!(),
-            MessageValue::Double(_) => unimplemented!(),
-            MessageValue::Set(_) => unimplemented!(),
-            MessageValue::Map(_) => unimplemented!(),
-            MessageValue::Varint(_) => unimplemented!(),
-            MessageValue::Decimal(_) => unimplemented!(),
-            MessageValue::Date(_) => unimplemented!(),
-            MessageValue::Timestamp(_) => unimplemented!(),
-            MessageValue::Timeuuid(_) => unimplemented!(),
-            MessageValue::Varchar(_) => unimplemented!(),
-            MessageValue::Uuid(_) => unimplemented!(),
-            MessageValue::Time(_) => unimplemented!(),
-            MessageValue::Counter(_) => unimplemented!(),
-            MessageValue::Tuple(_) => unimplemented!(),
-            MessageValue::Udt(_) => unimplemented!(),
         }
     }
 }

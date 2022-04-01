@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
@@ -80,8 +81,6 @@ pub(crate) fn cell_count(bytes: &[u8]) -> Result<NonZeroU32> {
         _ => nonzero!(1u32),
     })
 }
-// TODO remove this and use actual default from session.
-const DEFAULT_KEYSPACE: &str = "";
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
@@ -296,15 +295,36 @@ impl CassandraFrame {
         }
     }
 
-    pub fn namespace(&self) -> Vec<String> {
-        match &self.operation {
-            CassandraOperation::Query { query: cql, .. } => cql
-                .statement
-                .iter()
-                .map(|x| x.get_keyspace(DEFAULT_KEYSPACE))
-                .collect(),
-            _ => vec![],
-        }
+    /// returns a mapping of table names to (index,statement) pairs, where index is the index in the CQL
+    /// of the statement.
+    pub fn get_table_name_statement_map(&self) -> HashMap<String,Vec<(usize,&CassandraStatement)>> {
+        let mut result: HashMap<String,Vec<(usize,&CassandraStatement)>>  = HashMap::new();
+        if let CassandraOperation::Query { query: cql, .. } = &self.operation {
+
+                cql.statement.iter().enumerate().for_each( |(idx,statement)| {
+                    let name = match statement {
+                        CassandraStatement::AlterTable(t) => {Some(&t.name)}
+                        CassandraStatement::CreateIndex(i) => {Some(&i.table)}
+                        CassandraStatement::CreateMaterializedView(m) => {Some(&m.table)}
+                        CassandraStatement::CreateTable(t) => {Some(&t.name)}
+                        CassandraStatement::DropTable(t) => {Some(&t.name)}
+                        CassandraStatement::DropTrigger(t) => {Some(&t.table)}
+                        CassandraStatement::Insert(i) => {Some(&i.table_name)}
+                        CassandraStatement::Select(s) => {Some(&s.table_name)}
+                        CassandraStatement::Truncate(t) => {Some(t)}
+                        CassandraStatement::Update(u) => {Some(&u.table_name)}
+                        _ => None
+                    };
+                    if let Some(k) = name {
+                        if let Some(v) = result.get_mut(k) {
+                            v.push( (idx,statement));
+                        } else {
+                            result.insert( k.to_string(), vec![(idx,statement)]);
+                        }
+                    }
+                });
+            };
+        result
     }
 
     pub fn encode(self) -> RawCassandraFrame {

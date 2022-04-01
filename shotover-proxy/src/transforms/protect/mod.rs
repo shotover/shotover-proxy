@@ -219,7 +219,7 @@ impl Transform for Protect {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in message_wrapper.messages.iter_mut() {
             let mut data_changed = false;
-            if let Some(namespace) = message.namespace() {
+            if let Some(namespace) = message.get_table_names() {
                 if namespace.len() == 2 {
                     if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
@@ -257,7 +257,7 @@ impl Transform for Protect {
                 ..
             })) = response.frame()
             {
-                if let Some(namespace) = request.namespace() {
+                if let Some(namespace) = request.get_table_names() {
                     if let Some(Frame::Cassandra(CassandraFrame {
                         operation: CassandraOperation::Query { query, .. },
                         ..

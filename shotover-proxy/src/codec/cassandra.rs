@@ -366,7 +366,7 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query:  CQL::parse_from_string("Select * from system where key = 'local'"),
+                query:  CQL::parse_from_string("Select * from system.local where key = 'local'"),
                 /*
 
                 CQL::Parsed(vec![Statement::Query(Box::new(Query {
@@ -437,7 +437,7 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::parse_from_string("Select bar from foo"),
+                query: CQL::parse_from_string("insert into system.foo (bar) values ('bar2')"),
                 /*CQL::Parsed(vec![Statement::Insert {
                     or: None,
                     table_name: ObjectName(vec![
