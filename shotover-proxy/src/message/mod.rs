@@ -174,16 +174,16 @@ impl Message {
         }
     }
 
-
     /// Returns the table names found in the message.
     /// None if the statements do not contain table names.
-    pub fn get_table_names(&mut self) -> Option<Vec<String>> {
-        match self.frame()? {
-            Frame::Cassandra(cassandra) => {
-                Some(cassandra.get_table_name_statement_map().iter().map( |(k,_v)| k.clone()).collect())
+    pub fn get_table_names(&mut self) -> Vec<String> {
+        match self.frame() {
+            Some(Frame::Cassandra(cassandra)) => {
+                cassandra.get_table_names()
             }
-            Frame::Redis(_) => unimplemented!(),
-            Frame::None => Some(vec![]),
+            Some(Frame::Redis(_)) => unimplemented!(),
+            Some(Frame::None) => vec![],
+            _ => unreachable!()
         }
     }
 

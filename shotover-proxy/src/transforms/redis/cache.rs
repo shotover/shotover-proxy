@@ -81,59 +81,73 @@ impl SimpleRedisCache {
         //     * These are the cassandra responses that we return from the function.
 
         let mut messages_redis_request = Vec::with_capacity(messages_cass_request.len());
+        // process only as long as all the cass requests can be answered with from the cache.
+
         for cass_request in &mut messages_cass_request {
+            match cass_request.frame() {
+                Some(Frame::Cassandra(frame)) => {
+                    // get the statements that have table names
+                    if let CassandraOperation::Query { query, params } = &frame.operation {
+                        if let Some(table_name) = query.get_table_name() {
 
-            if let Some(table_name) = cass_request.get_table_names().map(|x| x.join(".")) {
-                match cass_request.frame() {
-                    Some(Frame::Cassandra(frame)) => {
-                        for query in frame.operation.queries()? {
-                            let table_cache_schema = self
+                            // process the table if it is listed in the caching schema
+                            if let Some(table_cache_schema) = self
                                 .caching_schema
-                                .get(&table_name)
-                                .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
-
-                            messages_redis_request.push(Message::from_frame(Frame::Redis(
-                                build_redis_ast_from_cql3(query, table_cache_schema)?,
-                            )));
+                                .get(table_name) {
+                                match query.statement {
+                                    CassandraStatement::Insert(_) |
+                                    CassandraStatement::Update(_) |
+                                    CassandraStatement::Delete(_) => {
+                                        let result = build_redis_ast_from_cql3(&query.statement, table_cache_schema);
+                                        if result.is_ok() {
+                                            messages_redis_request.push(Message::from_frame(Frame::Redis(result.unwrap())));
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            }
                         }
                     }
-                    message => bail!("cannot fetch {message:?} from cache"),
+                },
+                _ => {
+                    // statements that we can not handle
                 }
-            } else {
-                bail!("Failed to get message namespace");
             }
         }
+            // if we can handle all the query from the cache then do so
+            if ! &messages_redis_request.is_empty() {
+                let messages_redis_response = self
+                    .cache_chain
+                    .process_request(
+                        Wrapper::new_with_chain_name(messages_redis_request, self.cache_chain.name.clone()),
+                        "clientdetailstodo".to_string(),
+                    )
+                    .await?;
 
-        let messages_redis_response = self
-            .cache_chain
-            .process_request(
-                Wrapper::new_with_chain_name(messages_redis_request, self.cache_chain.name.clone()),
-                "clientdetailstodo".to_string(),
-            )
-            .await?;
-
-        // Replace cass_request messages with cassandra responses in place.
-        // We reuse the vec like this to save allocations.
-        let mut messages_redis_response_iter = messages_redis_response.into_iter();
-        for cass_request in &mut messages_cass_request {
-            let mut redis_responses = vec![];
-            if let Some(Frame::Cassandra(frame)) = cass_request.frame() {
-                if let Ok(queries) = frame.operation.queries() {
-                    for _query in queries {
-                        redis_responses.push(messages_redis_response_iter.next());
+                // Replace cass_request messages with cassandra responses in place.
+                // We reuse the vec like this to save allocations.
+                let mut messages_redis_response_iter = messages_redis_response.into_iter();
+                for cass_request in &mut messages_cass_request {
+                    let mut redis_responses = vec![];
+                    if let Some(Frame::Cassandra(frame)) = cass_request.frame() {
+                        if let Ok(queries) = frame.operation.queries() {
+                            for _query in queries {
+                                redis_responses.push(messages_redis_response_iter.next());
+                            }
+                        }
                     }
+
+                    // TODO: Translate the redis_responses into a cassandra result
+                    *cass_request = Message::from_frame(Frame::Cassandra(CassandraFrame {
+                        version: Version::V4,
+                        operation: CassandraOperation::Result(CassandraResult::Void),
+                        stream_id: cass_request.stream_id().unwrap(),
+                        tracing_id: None,
+                        warnings: vec![],
+                    }));
                 }
             }
 
-            // TODO: Translate the redis_responses into a cassandra result
-            *cass_request = Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
-                operation: CassandraOperation::Result(CassandraResult::Void),
-                stream_id: cass_request.stream_id().unwrap(),
-                tracing_id: None,
-                warnings: vec![],
-            }));
-        }
         Ok(messages_cass_request)
     }
 }
@@ -301,7 +315,7 @@ fn build_redis_ast_from_cql3 (
                 if select.where_clause.is_some() {
                     Ok(RedisFrame::Array( build_redis_frames_from_where_clause( select.where_clause.as_ref().unwrap(),table_cache_schema)?))
                 } else {
-                    Err(anyhow!("Cant build query from statement: {}", statement))
+                    Err(anyhow!("Can't build query from statement: {}", statement))
                 }
             }
             CassandraStatement::Insert(insert) => {
@@ -348,7 +362,7 @@ fn build_redis_ast_from_cql3 (
                 add_values_to_redis_frames(table_cache_schema, value_map, &mut redis_frames)?;
                 Ok(RedisFrame::Array(redis_frames))
             }
-            statement => Err(anyhow!("Cant build query from statement: {}", statement)),
+            _ => unreachable!(),
         }
 }
 

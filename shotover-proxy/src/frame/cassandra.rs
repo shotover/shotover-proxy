@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
@@ -251,7 +250,7 @@ impl CassandraFrame {
         PubSubMessage,
              */
         match &self.operation {
-            CassandraOperation::Query { query: cql, .. } => match cql.statement.get(0).unwrap() {
+            CassandraOperation::Query { query: cql, .. } => match cql.statement {
                 CassandraStatement::AlterKeyspace(_) => QueryType::SchemaChange,
                 CassandraStatement::AlterMaterializedView(_) => QueryType::SchemaChange,
                 CassandraStatement::AlterRole(_) => QueryType::SchemaChange,
@@ -269,7 +268,7 @@ impl CassandraFrame {
                 CassandraStatement::CreateTrigger(_) => QueryType::SchemaChange,
                 CassandraStatement::CreateType(_) => QueryType::SchemaChange,
                 CassandraStatement::CreateUser(_) => QueryType::SchemaChange,
-                CassandraStatement::DeleteStatement(_) => QueryType::Write,
+                CassandraStatement::Delete(_) => QueryType::Write,
                 CassandraStatement::DropAggregate(_) => QueryType::SchemaChange,
                 CassandraStatement::DropFunction(_) => QueryType::SchemaChange,
                 CassandraStatement::DropIndex(_) => QueryType::SchemaChange,
@@ -295,35 +294,30 @@ impl CassandraFrame {
         }
     }
 
+
+
     /// returns a mapping of table names to (index,statement) pairs, where index is the index in the CQL
     /// of the statement.
-    pub fn get_table_name_statement_map(&self) -> HashMap<String,Vec<(usize,&CassandraStatement)>> {
-        let mut result: HashMap<String,Vec<(usize,&CassandraStatement)>>  = HashMap::new();
-        if let CassandraOperation::Query { query: cql, .. } = &self.operation {
+    pub fn get_table_names(&self) -> Vec<String> {
+        let mut result = vec!();
+        match &self.operation {
+            CassandraOperation::Query { query: cql, .. } => {
+                if let Some(name) = cql.get_table_name() {
+                    result.push( name.into() );
+                }
+            }
+            CassandraOperation::Batch( batch ) => {
+                    for q in &batch.queries {
 
-                cql.statement.iter().enumerate().for_each( |(idx,statement)| {
-                    let name = match statement {
-                        CassandraStatement::AlterTable(t) => {Some(&t.name)}
-                        CassandraStatement::CreateIndex(i) => {Some(&i.table)}
-                        CassandraStatement::CreateMaterializedView(m) => {Some(&m.table)}
-                        CassandraStatement::CreateTable(t) => {Some(&t.name)}
-                        CassandraStatement::DropTable(t) => {Some(&t.name)}
-                        CassandraStatement::DropTrigger(t) => {Some(&t.table)}
-                        CassandraStatement::Insert(i) => {Some(&i.table_name)}
-                        CassandraStatement::Select(s) => {Some(&s.table_name)}
-                        CassandraStatement::Truncate(t) => {Some(t)}
-                        CassandraStatement::Update(u) => {Some(&u.table_name)}
-                        _ => None
-                    };
-                    if let Some(k) = name {
-                        if let Some(v) = result.get_mut(k) {
-                            v.push( (idx,statement));
-                        } else {
-                            result.insert( k.to_string(), vec![(idx,statement)]);
+                        if let BatchStatementType::Statement(cql) = &q.ty {
+                            if let Some(name) = cql.get_table_name() {
+                                result.push( name.into() );
+                            }
                         }
                     }
-                });
-            };
+                },
+            _ => {}
+        }
         result
     }
 
@@ -365,10 +359,13 @@ pub enum CassandraOperation {
 impl CassandraOperation {
     /// Return all queries contained within CassandaOperation::Query and CassandraOperation::Batch
     /// An Err is returned if the operation cannot contain queries or the queries failed to parse.
-    pub fn queries(&mut self) -> Result<IterMut<CassandraStatement>> {
+    ///
+    /// TODO: This will return a custom iterator type when BATCH support is added
+    pub fn queries(&mut self) -> Result<std::iter::Once<&mut CassandraStatement>> {
         match self {
-            CassandraOperation::Query { query: cql, .. } => Ok(cql.statement.iter_mut()),
+            CassandraOperation::Query { query: cql, .. } => Ok(std::iter::once(&mut cql.statement )),
             // TODO: Return CassandraOperation::Batch queries once we add BATCH parsing to cassandra-protocol
+
             _ => Err(anyhow!("This operation cannot contain queries")),
         }
     }
@@ -499,20 +496,40 @@ impl CassandraOperation {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CQL {
-    pub statement: Vec<CassandraStatement>,
+    pub statement: CassandraStatement,
     pub has_error: bool,
 }
 
 impl CQL {
     pub fn to_query_string(&self) -> String {
-        self.statement.iter().join(";")
+        self.statement.to_string()
     }
 
+    /// the CassandraAST handles multiple queries in a string separated by semi-colons: `;` however
+    /// CQL only stores one query so this method only returns the first one if there are multiples.
     pub fn parse_from_string(cql_query_str: &str) -> Self {
         let ast = CassandraAST::new(cql_query_str);
         CQL {
             has_error: ast.has_error(),
-            statement: ast.statements,
+            statement: ast.statements.first().unwrap().clone(),
+        }
+    }
+
+    /// returns the table name specified in the command if one is present.
+    pub fn get_table_name(&self) -> Option<&String> {
+        match &self.statement {
+            CassandraStatement::AlterTable(t) => { Some(&t.name) }
+            CassandraStatement::CreateIndex(i) => { Some(&i.table) }
+            CassandraStatement::CreateMaterializedView(m) => { Some(&m.table) }
+            CassandraStatement::CreateTable(t) => { Some(&t.name) }
+            CassandraStatement::Delete(d) => { Some(&d.table_name) }
+            CassandraStatement::DropTable(t) => { Some(&t.name) }
+            CassandraStatement::DropTrigger(t) => { Some(&t.table) }
+            CassandraStatement::Insert(i) => { Some(&i.table_name) }
+            CassandraStatement::Select(s) => { Some(&s.table_name) }
+            CassandraStatement::Truncate(t) => { Some(t) }
+            CassandraStatement::Update(u) => { Some(&u.table_name) }
+            _ => None
         }
     }
 }

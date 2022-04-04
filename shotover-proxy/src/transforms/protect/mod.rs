@@ -16,6 +16,7 @@ use cql3_parser::common::Operand;
 use cql3_parser::insert::InsertValues;
 use cql3_parser::select::SelectElement;
 use sodiumoxide::hex;
+use sqlparser::test_utils::table;
 use tracing::warn;
 
 
@@ -219,25 +220,23 @@ impl Transform for Protect {
         // encrypt the values included in any INSERT or UPDATE queries
         for message in message_wrapper.messages.iter_mut() {
             let mut data_changed = false;
-            if let Some(namespace) = message.get_table_names() {
-                if namespace.len() == 2 {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Query { query, .. },
-                        ..
-                    })) = message.frame()
+
+            if let Some(Frame::Cassandra(CassandraFrame {
+                                             operation: CassandraOperation::Query { query, .. },
+                                             ..
+                                         })) = message.frame()
+            {
+                if let Some(table_name) = query.get_table_name() {
+                    if let Some((_, tables)) =
+                    self.keyspace_table_columns.get_key_value(table_name)
                     {
-                        if let Some((_, tables)) =
-                            self.keyspace_table_columns.get_key_value(&namespace[0])
-                        {
-                            if let Some((_, columns)) = tables.get_key_value(&namespace[1]) {
-                                for stmt in &mut query.statement {
-                                    data_changed = encrypt_columns(stmt, columns, &self.key_source, &self.key_id ).await?;
-                                }
-                            }
+                        if let Some((_, columns)) = tables.get_key_value(table_name ) {
+                            data_changed = encrypt_columns(&mut query.statement, columns, &self.key_source, &self.key_id).await?;
                         }
                     }
                 }
             }
+
             if data_changed {
                 message.invalidate_cache();
             }
@@ -257,53 +256,48 @@ impl Transform for Protect {
                 ..
             })) = response.frame()
             {
-                if let Some(namespace) = request.get_table_names() {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Query { query, .. },
-                        ..
-                    })) = request.frame()
-                    {
-
-                        if namespace.len() == 2 {
-                            if let Some((_keyspace, tables)) =
-                            self.keyspace_table_columns.get_key_value(&namespace[0])
+                if let Some(Frame::Cassandra(CassandraFrame {
+                                                 operation: CassandraOperation::Query { query, .. },
+                                                 ..
+                                             })) = request.frame()
+                {
+                    if let Some(table_name) = query.get_table_name() {
+                        if let Some((_keyspace, tables)) =
+                        self.keyspace_table_columns.get_key_value(table_name)
+                        {
+                            if let Some((_table, protect_columns)) =
+                            tables.get_key_value(table_name)
                             {
-                                if let Some((_table, protect_columns)) =
-                                tables.get_key_value(&namespace[1])
-                                {
-                                    for cassandra_statement in &query.statement {
-                                        if let CassandraStatement::Select(select) = cassandra_statement {
-                                            let positions : Vec<usize> = select.columns.iter().enumerate()
-                                                .filter_map( | (i,col)| {
-                                                    if let SelectElement::Column(named) = col {
-                                                        if protect_columns.contains(&named.name)
-                                                        {
-                                                            Some(i)
-                                                        } else {
-                                                            None
-                                                        }
-                                                    } else {
-                                                        None
-                                                    }
-                                                }).collect();
-                                            for row in &mut *rows {
-                                                for index in &positions {
-                                                    if let Some(v) = row.get_mut(*index) {
-                                                        if let MessageValue::Bytes(_) = v {
-                                                            let protected =
-                                                                Protected::from_encrypted_bytes_value(v)
-                                                                    .await?;
-                                                            let new_value: MessageValue = protected
-                                                                .unprotect(&self.key_source, &self.key_id)
-                                                                .await?;
-                                                            *v = new_value;
-                                                            invalidate_cache = true;
-                                                        } else {
-                                                            warn!("Tried decrypting non-blob column")
-                                                        }
-                                                    }
+                                if let CassandraStatement::Select(select) = &query.statement {
+                                    let positions: Vec<usize> = select.columns.iter().enumerate()
+                                        .filter_map(|(i, col)| {
+                                            if let SelectElement::Column(named) = col {
+                                                if protect_columns.contains(&named.name)
+                                                {
+                                                    Some(i)
+                                                } else {
+                                                    None
                                                 }
-                                        }
+                                            } else {
+                                                None
+                                            }
+                                        }).collect();
+                                    for row in &mut *rows {
+                                        for index in &positions {
+                                            if let Some(v) = row.get_mut(*index) {
+                                                if let MessageValue::Bytes(_) = v {
+                                                    let protected =
+                                                        Protected::from_encrypted_bytes_value(v)
+                                                            .await?;
+                                                    let new_value: MessageValue = protected
+                                                        .unprotect(&self.key_source, &self.key_id)
+                                                        .await?;
+                                                    *v = new_value;
+                                                    invalidate_cache = true;
+                                                } else {
+                                                    warn!("Tried decrypting non-blob column")
+                                                }
+                                            }
                                         }
                                     }
                                 }

@@ -1200,9 +1200,9 @@ mod cache {
             ["1", "2", "3"].into_iter().map(|x| x.to_string()).collect();
         assert_eq!(result, expected);
 
-        assert_sorted_set_equals(redis_connection, "1", &["1:11", "1:foo"]);
-        assert_sorted_set_equals(redis_connection, "2", &["2:12", "2:bar"]);
-        assert_sorted_set_equals(redis_connection, "3", &["3:13", "3:baz"]);
+        assert_sorted_set_equals(redis_connection, "1", &["1:11", "1:'foo'"]);
+        assert_sorted_set_equals(redis_connection, "2", &["2:12", "2:'bar'"]);
+        assert_sorted_set_equals(redis_connection, "3", &["3:13", "3:'baz'"]);
     }
 
     fn assert_sorted_set_equals(

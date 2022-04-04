@@ -71,11 +71,8 @@ impl Transform for CassandraPeersRewrite {
 fn extract_native_port_column(message: &mut Message) -> Vec<String> {
     let mut result: Vec<String> = vec![];
     if let Some(Frame::Cassandra(cassandra)) = message.frame() {
-        let map = cassandra.get_table_name_statement_map();
-        let statements = map.get("system.peers_v2");
-        if let Some(v) = statements {
-            for (_stmt_idx, x) in v {
-                if let CassandraStatement::Select(select) = x {
+        if let CassandraOperation::Query { query, .. } = &cassandra.operation {
+            if let CassandraStatement::Select(select) = &query.statement {
                     select
                         .columns
                         .iter()
@@ -88,7 +85,6 @@ fn extract_native_port_column(message: &mut Message) -> Vec<String> {
                             SelectElement::Star => result.push("native_port".to_string()),
                             _ => {}
                         });
-                }
             }
         }
     }
