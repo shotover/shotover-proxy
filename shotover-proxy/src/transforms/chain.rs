@@ -260,8 +260,7 @@ impl TransformChain {
         client_details: String,
     ) -> ChainResponse {
         let start = Instant::now();
-        let iter = self.chain.iter_mut().collect_vec();
-        wrapper.reset(iter);
+        wrapper.reset(&mut self.chain);
 
         let result = wrapper.call_next_transform().await;
         self.chain_total.increment(1);
