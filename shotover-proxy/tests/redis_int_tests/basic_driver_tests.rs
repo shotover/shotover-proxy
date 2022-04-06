@@ -1286,7 +1286,7 @@ async fn test_source_tls_and_single_tls() {
     };
 
     let mut connection = shotover_manager
-        .redis_connection_async_tls(6380, tls_config)
+        .redis_connection_async_tls(6379, tls_config)
         .await;
 
     run_all(&mut connection).await;
