@@ -356,9 +356,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.1.7"
+version = "3.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c67e7973e74896f4bba06ca2dcfd28d54f9cb8c035e940a32b88ed48f5f5ecf2"
+checksum = "71c47df61d9e16dc010b55dba1952a57d8c215dbb533fd13cdd13369aac73b1c"
 dependencies = [
  "atty",
  "bitflags",
@@ -438,7 +438,7 @@ dependencies = [
 [[package]]
 name = "cql3_parser"
 version = "0.0.1"
-source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=main#73691a61b89870d3a01a064ee0274502f35f0067"
+source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=main#4b04fdc52d1aaea01dfc366e6d4382ad93c65f8e"
 dependencies = [
  "bigdecimal",
  "bytes",
@@ -581,9 +581,9 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.13.1"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d720b8683f8dd83c65155f0530560cba68cd2bf395f6513a483caee57ff7f4"
+checksum = "dbcc37e3091b4dfd0af76cb0087b9c89b8e03072abc28ae2efc8fdd733bfc5f5"
 dependencies = [
  "darling_core",
  "darling_macro",
@@ -591,9 +591,9 @@ dependencies = [
 
 [[package]]
 name = "darling_core"
-version = "0.13.1"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a340f241d2ceed1deb47ae36c4144b2707ec7dd0b649f894cb39bb595986324"
+checksum = "9569a966dba8cd57879b8efd2bf82b5c56bb466e19767a69c560bddee1a27f5c"
 dependencies = [
  "fnv",
  "ident_case",
@@ -605,9 +605,9 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
-version = "0.13.1"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72c41b3b7352feb3211a0d743dc5700a4e3b60f51bd2b368892d1e0f9a95f44b"
+checksum = "efae147148c6380157050146a2040b65dbe91bef6e97aaaa39ef0d469d2eb4af"
 dependencies = [
  "darling_core",
  "quote",
@@ -691,9 +691,9 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "encoding_rs"
-version = "0.8.30"
+version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7896dc8abb250ffdda33912550faa54c88ec8b998dec0b2c55ab224921ce11df"
+checksum = "9852635589dc9f9ea1b6fe9f05b50ef208c85c834a562f0c6abb1c475736ec2b"
 dependencies = [
  "cfg-if",
 ]
@@ -1914,9 +1914,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.36"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7342d5883fbccae1cc37a2353b09c87c9b0f3afd73f5fb9bba687a1f733b029"
+checksum = "ec757218438d5fda206afc041538b2f6d889286160d649a86a24d37e1235afd1"
 dependencies = [
  "unicode-xid",
 ]
@@ -2479,7 +2479,7 @@ dependencies = [
  "cached",
  "cassandra-cpp",
  "cassandra-protocol",
- "clap 3.1.7",
+ "clap 3.1.8",
  "cql3_parser",
  "crc16",
  "criterion",
@@ -2563,9 +2563,9 @@ checksum = "76a77a8fd93886010f05e7ea0720e569d6d16c65329dbe3ec033bbbccccb017b"
 
 [[package]]
 name = "slab"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9def91fd1e018fe007022791f865d0ccc9b3a0d5001e01aabb8b40e46000afb5"
+checksum = "eb703cfe953bccee95685111adeedb76fabe4e97549a58d16f03ea7b9367bb32"
 
 [[package]]
 name = "slog"
@@ -2659,9 +2659,9 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 
 [[package]]
 name = "syn"
-version = "1.0.90"
+version = "1.0.91"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "704df27628939572cd88d33f171cd6f896f4eaca85252c6e0a72d8d8287ee86f"
+checksum = "b683b2b825c8eef438b77c36a06dc262294da3d5a5813fac20da149241dcd44d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2975,9 +2975,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.23"
+version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa31669fa42c09c34d94d8165dd2012e8ff3c66aca50f3bb226b68f216f2706c"
+checksum = "90442985ee2f57c9e1b548ee72ae842f4a9a20e3f417cc38dbc5dc684d9bb4ee"
 dependencies = [
  "lazy_static",
  "valuable",
@@ -2997,9 +2997,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e0ab7bdc962035a87fba73f3acca9b8a8d0034c2e6f60b84aeaaddddc155dce"
+checksum = "b9df98b037d039d03400d9dd06b0f8ce05486b5f25e9a2d7d36196e142ebbc52"
 dependencies = [
  "ansi_term",
  "lazy_static",
@@ -3026,7 +3026,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-cql"
 version = "0.0.1"
-source = "git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql?branch=main#c01b7c8682b68cb8fcec00adc667744fdc8db2e2"
+source = "git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql?branch=main#ead1375c83892111d31540e6d8d0dc563f187939"
 dependencies = [
  "cc",
  "regex",

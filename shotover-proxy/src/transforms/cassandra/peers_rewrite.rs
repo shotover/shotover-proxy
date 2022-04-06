@@ -1,4 +1,4 @@
-use crate::frame::{CassandraOperation, CassandraResult, Frame};
+use crate::frame::{CassandraOperation, CassandraResult, Frame, CQL};
 use crate::message::{IntSize, Message, MessageValue};
 use crate::{
     error::ChainResponse,
@@ -73,18 +73,22 @@ fn extract_native_port_column(message: &mut Message) -> Vec<String> {
     if let Some(Frame::Cassandra(cassandra)) = message.frame() {
         if let CassandraOperation::Query { query, .. } = &cassandra.operation {
             if let CassandraStatement::Select(select) = &query.statement {
-                    select
-                        .columns
-                        .iter()
-                        .for_each(|select_element| match select_element {
-                            SelectElement::Column(col_name) => {
-                                if col_name.name.eq("native_port") {
-                                    result.push(col_name.alias_or_name());
+                if let Some(table_name) = CQL::get_table_name(&query.statement) {
+                    if table_name.eq("system.peers_v2") {
+                        select
+                            .columns
+                            .iter()
+                            .for_each(|select_element| match select_element {
+                                SelectElement::Column(col_name) => {
+                                    if col_name.name.eq("native_port") {
+                                        result.push(col_name.alias_or_name());
+                                    }
                                 }
-                            }
-                            SelectElement::Star => result.push("native_port".to_string()),
-                            _ => {}
-                        });
+                                SelectElement::Star => result.push("native_port".to_string()),
+                                _ => {}
+                            });
+                    }
+                }
             }
         }
     }
@@ -95,15 +99,21 @@ fn extract_native_port_column(message: &mut Message) -> Vec<String> {
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
 fn rewrite_port(message: &mut Message, column_names: &[String], new_port: u32) {
     if let Some(Frame::Cassandra(frame)) = message.frame() {
-        if let CassandraOperation::Result(CassandraResult::Rows { value, metadata }) = &mut frame.operation
+        if let CassandraOperation::Result(CassandraResult::Rows { value, metadata }) =
+            &mut frame.operation
         {
-            let port_column_index : Vec<usize>= metadata
+            let port_column_index: Vec<usize> = metadata
                 .col_specs
-                .iter().enumerate()
-                .filter_map(|(idx, col)| if column_names.contains(&col.name) {
-                    Some(idx)
-                } else { None }
-                ).collect();
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, col)| {
+                    if column_names.contains(&col.name) {
+                        Some(idx)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
             if let MessageValue::Rows(rows) = value {
                 for row in rows.iter_mut() {

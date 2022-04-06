@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use metrics::{counter, register_counter};
 use serde::Deserialize;
 
-
 #[derive(Debug, Clone)]
 pub struct QueryCounter {
     counter_name: String,

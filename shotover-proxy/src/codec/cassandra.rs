@@ -366,57 +366,57 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query:  CQL::parse_from_string("Select * from system.local where key = 'local'"),
+                query: CQL::parse_from_string("Select * from system.local where key = 'local'"),
                 /*
 
-                CQL::Parsed(vec![Statement::Query(Box::new(Query {
-                    with: None,
-                    body: SetExpr::Select(Box::new(Select {
-                        distinct: false,
-                        top: None,
-                        projection: vec![SelectItem::Wildcard],
-                        from: vec![TableWithJoins {
-                            relation: TableFactor::Table {
-                                name: ObjectName(vec![
-                                    Ident {
-                                        value: "system".into(),
-                                        quote_style: None,
-                                    },
-                                    Ident {
-                                        value: "local".into(),
-                                        quote_style: None,
-                                    },
-                                ]),
-                                alias: None,
-                                args: vec![],
-                                with_hints: vec![],
-                            },
-                            joins: vec![],
-                        }],
-                        lateral_views: vec![],
-                        selection: Some(BinaryOp {
-                            left: Box::new(Expr::Identifier(Ident {
-                                value: "key".into(),
-                                quote_style: None,
-                            })),
-                            op: BinaryOperator::Eq,
-                            right: Box::new(Expr::Value(SQLValue::SingleQuotedString(
-                                "local".into(),
-                            ))),
-                        }),
-                        group_by: vec![],
-                        cluster_by: vec![],
-                        distribute_by: vec![],
-                        sort_by: vec![],
-                        having: None,
-                    })),
-                    order_by: vec![],
-                    limit: None,
-                    offset: None,
-                    fetch: None,
-                    lock: None,
-                params: Default::default()
-            }))]),*/
+                    CQL::Parsed(vec![Statement::Query(Box::new(Query {
+                        with: None,
+                        body: SetExpr::Select(Box::new(Select {
+                            distinct: false,
+                            top: None,
+                            projection: vec![SelectItem::Wildcard],
+                            from: vec![TableWithJoins {
+                                relation: TableFactor::Table {
+                                    name: ObjectName(vec![
+                                        Ident {
+                                            value: "system".into(),
+                                            quote_style: None,
+                                        },
+                                        Ident {
+                                            value: "local".into(),
+                                            quote_style: None,
+                                        },
+                                    ]),
+                                    alias: None,
+                                    args: vec![],
+                                    with_hints: vec![],
+                                },
+                                joins: vec![],
+                            }],
+                            lateral_views: vec![],
+                            selection: Some(BinaryOp {
+                                left: Box::new(Expr::Identifier(Ident {
+                                    value: "key".into(),
+                                    quote_style: None,
+                                })),
+                                op: BinaryOperator::Eq,
+                                right: Box::new(Expr::Value(SQLValue::SingleQuotedString(
+                                    "local".into(),
+                                ))),
+                            }),
+                            group_by: vec![],
+                            cluster_by: vec![],
+                            distribute_by: vec![],
+                            sort_by: vec![],
+                            having: None,
+                        })),
+                        order_by: vec![],
+                        limit: None,
+                        offset: None,
+                        fetch: None,
+                        lock: None,
+                    params: Default::default()
+                }))]),*/
                 params: QueryParams::default(),
             },
         }))];

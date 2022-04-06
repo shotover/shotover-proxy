@@ -19,6 +19,7 @@ use cassandra_protocol::{
         CBytes,
     },
 };
+use cql3_parser::common::{DataTypeName, Operand};
 use itertools::Itertools;
 use nonzero_ext::nonzero;
 use num::BigInt;
@@ -28,14 +29,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use uuid::Uuid;
-use cql3_parser::common::{DataTypeName, Operand};
 
 enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
     None,
 }
-
 
 pub type Messages = Vec<Message>;
 
@@ -178,12 +177,10 @@ impl Message {
     /// None if the statements do not contain table names.
     pub fn get_table_names(&mut self) -> Vec<String> {
         match self.frame() {
-            Some(Frame::Cassandra(cassandra)) => {
-                cassandra.get_table_names()
-            }
+            Some(Frame::Cassandra(cassandra)) => cassandra.get_table_names(),
             Some(Frame::Redis(_)) => unimplemented!(),
             Some(Frame::None) => vec![],
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -461,62 +458,75 @@ impl From<&MessageValue> for Operand {
     fn from(v: &MessageValue) -> Self {
         match v {
             MessageValue::NULL => Operand::Null,
-            MessageValue::Bytes(b) => Operand::from(b) ,
-            MessageValue::Ascii( s ) |
-            MessageValue::Varchar(s) |
-            MessageValue::Strings(s) => Operand::from(s.as_str()),
+            MessageValue::Bytes(b) => Operand::from(b),
+            MessageValue::Ascii(s) | MessageValue::Varchar(s) | MessageValue::Strings(s) => {
+                Operand::from(s.as_str())
+            }
             MessageValue::Integer(i, _) => Operand::from(i),
             MessageValue::Float(f) => Operand::from(&f.0),
             MessageValue::Boolean(b) => Operand::from(b),
             MessageValue::Double(d) => Operand::from(&d.0),
-            MessageValue::Inet(i) => Operand::from( i ),
-            MessageValue::Varint( i ) => Operand::from(i),
-            MessageValue::Decimal(d ) => Operand::from(d),
-            MessageValue::Date( d) => Operand::from(d),
-            MessageValue::Time(t) |
-            MessageValue::Counter(t) |
-            MessageValue::Timestamp(t) => Operand::from(t),
-            MessageValue::Uuid(u) |
-            MessageValue::Timeuuid( u) => Operand::from( u ),
+            MessageValue::Inet(i) => Operand::from(i),
+            MessageValue::Varint(i) => Operand::from(i),
+            MessageValue::Decimal(d) => Operand::from(d),
+            MessageValue::Date(d) => Operand::from(d),
+            MessageValue::Time(t) | MessageValue::Counter(t) | MessageValue::Timestamp(t) => {
+                Operand::from(t)
+            }
+            MessageValue::Uuid(u) | MessageValue::Timeuuid(u) => Operand::from(u),
 
-            MessageValue::List(l) => {Operand::List( l.iter().map( |x| Operand::from(x).to_string()).collect())}
-
-            MessageValue::Rows(r) => {
-                Operand::Tuple( r.iter().map( |row| row.iter().map( Operand::from ).collect()).map( Operand::Tuple ).collect())
+            MessageValue::List(l) => {
+                Operand::List(l.iter().map(|x| Operand::from(x).to_string()).collect())
             }
 
-            MessageValue::NamedRows(r) => {
-                Operand::Tuple( r.iter().map( |nr| Operand::Map(nr.iter().map( |(k,v)| (k.clone(), Operand::from(v).to_string())).collect())).collect())
-            }
+            MessageValue::Rows(r) => Operand::Tuple(
+                r.iter()
+                    .map(|row| row.iter().map(Operand::from).collect())
+                    .map(Operand::Tuple)
+                    .collect(),
+            ),
+
+            MessageValue::NamedRows(r) => Operand::Tuple(
+                r.iter()
+                    .map(|nr| {
+                        Operand::Map(
+                            nr.iter()
+                                .map(|(k, v)| (k.clone(), Operand::from(v).to_string()))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            ),
 
             MessageValue::Set(s) => {
-                Operand::Set( s.iter().map( |m| Operand::from(m).to_string()).collect())
+                Operand::Set(s.iter().map(|m| Operand::from(m).to_string()).collect())
             }
-            MessageValue::Map(m) => {
-                Operand::Map( m.iter().map( |(k,v)| (Operand::from(k).to_string(), Operand::from(v).to_string())).collect() )
+            MessageValue::Map(m) => Operand::Map(
+                m.iter()
+                    .map(|(k, v)| (Operand::from(k).to_string(), Operand::from(v).to_string()))
+                    .collect(),
+            ),
+
+            MessageValue::FragmentedResponse(t) | MessageValue::Tuple(t) => {
+                Operand::Tuple(t.iter().map(Operand::from).collect())
             }
 
-            MessageValue::FragmentedResponse(t) |
-            MessageValue::Tuple(t) => {
-                Operand::Tuple( t.iter().map( Operand::from ).collect())
-            }
+            MessageValue::Udt(d) | MessageValue::Document(d) => Operand::Map(
+                d.iter()
+                    .map(|(k, v)| (k.clone(), Operand::from(v).to_string()))
+                    .collect(),
+            ),
 
-            MessageValue::Udt(d) |
-            MessageValue::Document(d) => {
-                Operand::Map( d.iter().map( |(k,v)| (k.clone(),Operand::from(v).to_string())).collect())
-            }
-
-            MessageValue::None => {
-                Operand::Null
-            }
-
+            MessageValue::None => Operand::Null,
         }
     }
 }
 
 impl From<&Operand> for MessageValue {
     fn from(operand: &Operand) -> Self {
-        operand.as_cassandra_type().map_or( MessageValue::None, MessageValue::create_element)
+        operand
+            .as_cassandra_type()
+            .map_or(MessageValue::None, MessageValue::create_element)
     }
 }
 
@@ -531,10 +541,10 @@ impl From<&MessageValue> for DataTypeName {
                     //DataTypeName::Int
                     IntSize::I64 => DataTypeName::BigInt,
                     IntSize::I32 => DataTypeName::Int,
-                    IntSize::I16  => DataTypeName::SmallInt,
+                    IntSize::I16 => DataTypeName::SmallInt,
                     IntSize::I8 => DataTypeName::TinyInt,
                 }
-            },
+            }
             MessageValue::Double(_) => DataTypeName::Double,
             MessageValue::Float(_) => DataTypeName::Float,
             MessageValue::Boolean(_) => DataTypeName::Boolean,
@@ -557,11 +567,10 @@ impl From<&MessageValue> for DataTypeName {
             MessageValue::Counter(_) => DataTypeName::Counter,
             MessageValue::Tuple(_) => DataTypeName::Tuple,
             MessageValue::Udt(_) => DataTypeName::Tuple,
-            MessageValue::NULL => DataTypeName::Custom( "NULL".to_string()),
-            MessageValue::None => DataTypeName::Custom( "None".to_string()),
+            MessageValue::NULL => DataTypeName::Custom("NULL".to_string()),
+            MessageValue::None => DataTypeName::Custom("None".to_string()),
         }
     }
-
 }
 
 impl From<RedisFrame> for MessageValue {

@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame};
-use crate::message::{Message, Messages, QueryType};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame, CQL};
+use crate::message::{Message, MessageValue, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -10,13 +10,11 @@ use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
 use cassandra_protocol::frame::Version;
+use cql3_parser::cassandra_statement::CassandraStatement;
+use cql3_parser::common::{Operand, RelationOperator};
+use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
-use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{Operand, PrimaryKey, RelationElement, RelationOperator, WhereClause};
-
-const TRUE: [u8; 1] = [0x1];
-const FALSE: [u8; 1] = [0x0];
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisConfig {
@@ -28,13 +26,6 @@ pub struct RedisConfig {
 pub struct TableCacheSchema {
     partition_key: Vec<String>,
     range_key: Vec<String>,
-}
-
-
-impl From<&PrimaryKey> for TableCacheSchema {
-    fn from(value: &PrimaryKey) -> TableCacheSchema {
-        TableCacheSchema { partition_key: value.partition.clone(), range_key: value.clustering.clone() }
-    }
 }
 
 impl RedisConfig {
@@ -60,7 +51,7 @@ impl SimpleRedisCache {
 
     async fn get_or_update_from_cache(
         &mut self,
-        mut messages_cass_request: Messages
+        mut messages_cass_request: Messages,
     ) -> ChainResponse {
         // This function is a little hard to follow, so here's an overview.
         // We have 4 vecs of messages, each vec can be considered its own stage of processing.
@@ -81,76 +72,60 @@ impl SimpleRedisCache {
         //     * These are the cassandra responses that we return from the function.
 
         let mut messages_redis_request = Vec::with_capacity(messages_cass_request.len());
-        // process only as long as all the cass requests can be answered with from the cache.
-
         for cass_request in &mut messages_cass_request {
             match cass_request.frame() {
                 Some(Frame::Cassandra(frame)) => {
-                    // get the statements that have table names
-                    if let CassandraOperation::Query { query, params } = &frame.operation {
-                        if let Some(table_name) = query.get_table_name() {
-
-                            // process the table if it is listed in the caching schema
-                            if let Some(table_cache_schema) = self
+                    for query in frame.operation.queries()? {
+                        if let Some(table_name) = CQL::get_table_name(query) {
+                            let table_cache_schema = self
                                 .caching_schema
-                                .get(table_name) {
-                                match query.statement {
-                                    CassandraStatement::Insert(_) |
-                                    CassandraStatement::Update(_) |
-                                    CassandraStatement::Delete(_) => {
-                                        let result = build_redis_ast_from_cql3(&query.statement, table_cache_schema);
-                                        if result.is_ok() {
-                                            messages_redis_request.push(Message::from_frame(Frame::Redis(result.unwrap())));
-                                        }
-                                    },
-                                    _ => {}
-                                }
-                            }
+                                .get(table_name)
+                                .ok_or_else(|| anyhow!("{table_name} not a caching table"))?;
+
+                            messages_redis_request.push(Message::from_frame(Frame::Redis(
+                                build_redis_ast_from_cql3(query, table_cache_schema)?,
+                            )));
                         }
                     }
-                },
-                _ => {
-                    // statements that we can not handle
                 }
+                message => bail!("cannot fetch {message:?} from cache"),
             }
         }
-            // if we can handle all the query from the cache then do so
-            if ! &messages_redis_request.is_empty() {
-                let messages_redis_response = self
-                    .cache_chain
-                    .process_request(
-                        Wrapper::new_with_chain_name(messages_redis_request, self.cache_chain.name.clone()),
-                        "clientdetailstodo".to_string(),
-                    )
-                    .await?;
 
-                // Replace cass_request messages with cassandra responses in place.
-                // We reuse the vec like this to save allocations.
-                let mut messages_redis_response_iter = messages_redis_response.into_iter();
-                for cass_request in &mut messages_cass_request {
-                    let mut redis_responses = vec![];
-                    if let Some(Frame::Cassandra(frame)) = cass_request.frame() {
-                        if let Ok(queries) = frame.operation.queries() {
-                            for _query in queries {
-                                redis_responses.push(messages_redis_response_iter.next());
-                            }
-                        }
+        let messages_redis_response = self
+            .cache_chain
+            .process_request(
+                Wrapper::new_with_chain_name(messages_redis_request, self.cache_chain.name.clone()),
+                "clientdetailstodo".to_string(),
+            )
+            .await?;
+
+        // Replace cass_request messages with cassandra responses in place.
+        // We reuse the vec like this to save allocations.
+        let mut messages_redis_response_iter = messages_redis_response.into_iter();
+        for cass_request in &mut messages_cass_request {
+            let mut redis_responses = vec![];
+            if let Some(Frame::Cassandra(frame)) = cass_request.frame() {
+                if let Ok(queries) = frame.operation.queries() {
+                    for _query in queries {
+                        redis_responses.push(messages_redis_response_iter.next());
                     }
-
-                    // TODO: Translate the redis_responses into a cassandra result
-                    *cass_request = Message::from_frame(Frame::Cassandra(CassandraFrame {
-                        version: Version::V4,
-                        operation: CassandraOperation::Result(CassandraResult::Void),
-                        stream_id: cass_request.stream_id().unwrap(),
-                        tracing_id: None,
-                        warnings: vec![],
-                    }));
                 }
             }
 
+            // TODO: Translate the redis_responses into a cassandra result
+            *cass_request = Message::from_frame(Frame::Cassandra(CassandraFrame {
+                version: Version::V4,
+                operation: CassandraOperation::Result(CassandraResult::Void),
+                stream_id: cass_request.stream_id().unwrap(),
+                tracing_id: None,
+                warnings: vec![],
+            }));
+        }
         Ok(messages_cass_request)
     }
 }
+
 fn append_prefix_min(min: &mut Vec<u8>) {
     if min.is_empty() {
         min.push(b'[');
@@ -167,32 +142,19 @@ fn append_prefix_max(max: &mut Vec<u8>) {
     }
 }
 
-fn build_zrangebylex_min_max_from_cql3(
-    operator : &RelationOperator,
+fn operand_to_bytes(operand: &Operand) -> Vec<u8> {
+    let message_value = MessageValue::from(operand);
+    let bytes: cassandra_protocol::types::value::Bytes = message_value.into();
+    bytes.into_inner()
+}
+
+fn build_zrangebylex_min_max_from_sql(
+    operator: &RelationOperator,
     operand: &Operand,
     min: &mut Vec<u8>,
     max: &mut Vec<u8>,
 ) -> Result<()> {
-
-    let mut bytes =
-        match operand {
-        Operand::Const(value) => {
-            Vec::from(
-                match value.to_uppercase().as_str() {
-            "TRUE" => &TRUE,
-                "FALSE" => &FALSE,
-                _ => value.as_bytes(),
-            })
-        }
-        Operand::Map(_) |
-        Operand::Set(_) |
-        Operand::List(_) |
-        Operand::Tuple(_) |
-        Operand::Column(_) |
-        Operand::Func(_) => Vec::from(operand.to_string().as_bytes()),
-        Operand::Null => vec!(),
-    };
-
+    let mut bytes = operand_to_bytes(operand);
     match operator {
         RelationOperator::LessThan => {
             let last_byte = bytes.last_mut().unwrap();
@@ -223,212 +185,184 @@ fn build_zrangebylex_min_max_from_cql3(
             min.extend(bytes.iter());
         }
         // should "IN"" be converted to an "or" "eq" combination
-
-        RelationOperator::NotEqual |
-        RelationOperator::In |
-        RelationOperator::Contains |
-        RelationOperator::ContainsKey |
-        RelationOperator::IsNot => {
+        RelationOperator::NotEqual
+        | RelationOperator::In
+        | RelationOperator::Contains
+        | RelationOperator::ContainsKey
+        | RelationOperator::IsNot => {
             return Err(anyhow!("Couldn't build query"));
         }
     }
     Ok(())
 }
 
-fn build_redis_frames_from_where_clause( where_clause : &[RelationElement], table_cache_schema: &TableCacheSchema)  -> Result<Vec<RedisFrame>> {
-    let mut min: Vec<u8> = Vec::new();
-    let mut max: Vec<u8> = Vec::new();
-    let mut had_err = None;
-
-    let where_columns  = WhereClause::get_column_relation_element_map( where_clause );
-
-    // process the partition key
-    where_columns.iter().filter(|(name,_relation_elements)| {
-        ! table_cache_schema.partition_key.contains( name )
-    }).for_each( |(_name,relation_elements)| {
-            for relation_element in relation_elements {
-                for operand in &relation_element.value {
-                    let x = build_zrangebylex_min_max_from_cql3(&relation_element.oper, operand, &mut min, &mut max, );
-                    if x.is_err() {
-                        had_err = x.err()
-                    }
-                }
-            }
-        });
-
-    if let Some(e) = had_err {
-        return Err(e);
-    }
-    let min = if min.is_empty() {
-        Bytes::from_static(b"-")
-    } else {
-        Bytes::from(min)
-    };
-    let max = if max.is_empty() {
-        Bytes::from_static(b"+")
-    } else {
-        Bytes::from(max)
-    };
-
-    let pk = table_cache_schema
-        .partition_key
-        .iter()
-        .filter_map(|k| {
-            let x = where_columns.get(k);
-            x?;
-            let y = x.unwrap().iter().find(|x| x.oper == RelationOperator::Equal);
-            y?;
-            Some(&y.unwrap().value)
-        })
-        .fold(BytesMut::new(), |mut acc, v| {
-            v.iter().for_each(|operand| acc.extend(operand.to_string().as_bytes()));
-            acc
-        });
-    Ok(vec![
-        RedisFrame::BulkString("ZRANGEBYLEX".into()),
-        RedisFrame::BulkString(pk.freeze()),
-        RedisFrame::BulkString(min),
-        RedisFrame::BulkString(max),
-    ])
-}
-
-fn extract_partition_key( partition_key_columns : &[String], value_map : &BTreeMap<String,&Operand>) -> Result<BytesMut>{
-    let pk = partition_key_columns
-        .iter()
-        .map(|k|
-            value_map.get(k.as_str()).unwrap()
-        )
-        .fold(BytesMut::new(), |mut acc, v| {
-            acc.extend(v.to_string().as_bytes());
-            acc
-        });
-    Ok(pk)
-}
-
-fn build_redis_ast_from_cql3 (
+fn build_redis_ast_from_cql3(
     statement: &CassandraStatement,
     table_cache_schema: &TableCacheSchema,
-) -> Result<RedisFrame>
-{
-        match statement {
-            CassandraStatement::Select(select) => {
-                if select.where_clause.is_some() {
-                    Ok(RedisFrame::Array( build_redis_frames_from_where_clause( select.where_clause.as_ref().unwrap(),table_cache_schema)?))
-                } else {
-                    Err(anyhow!("Can't build query from statement: {}", statement))
-                }
-            }
-            CassandraStatement::Insert(insert) => {
-                // partition key from the value map
-                // values from the remaining parts of the value map.
-                let value_map : BTreeMap<String,&Operand> = insert.get_value_map();
-                let pk = extract_partition_key( &table_cache_schema.partition_key, &value_map )?;
-                let mut redis_frames: Vec<RedisFrame> = vec![
-                    RedisFrame::BulkString("ZADD".into()),
-                    RedisFrame::BulkString(pk.freeze()),
-                ];
-                add_values_to_redis_frames(table_cache_schema, value_map, &mut redis_frames)?;
-                Ok(RedisFrame::Array(redis_frames))
-            }
-            CassandraStatement::Update(update) => {
-                // only want the partition key built from `equals` statements in the where clause
-                // and values from the set clause
-                let where_tree = WhereClause::get_column_relation_element_map(&update.where_clause);
-                let mut value_map :BTreeMap<String,&Operand>  = where_tree
-                    .iter().filter_map( |(k,v)| {
-                        for relation in v {
-                            if relation.oper == RelationOperator::Equal && relation.value.len() == 1 {
-                                return Some((k.clone(),&relation.value[0]));
-                            }
+) -> Result<RedisFrame> {
+    match statement {
+        CassandraStatement::Select(select) => {
+            if select.filtering || !select.columns.is_empty() || !select.where_clause.is_empty() {
+                Err(anyhow!("Can't build query from expr: {}", select))
+            } else {
+                let mut min: Vec<u8> = Vec::new();
+                let mut max: Vec<u8> = Vec::new();
+
+                // extract the partition and range operands
+                // fail if any are missing
+                let mut partition_segments: HashMap<&str, &Operand> = HashMap::new();
+                let mut range_segments: HashMap<&str, (&RelationOperator, &Operand)> =
+                    HashMap::new();
+
+                for relation_element in &select.where_clause {
+                    if let Operand::Column(column_name) = &relation_element.obj {
+                        // name has to be in partition or range key.
+                        if table_cache_schema.partition_key.contains(&column_name) {
+                            partition_segments.insert(&column_name, &relation_element.value);
+                        } else if table_cache_schema.range_key.contains(&column_name) {
+                            range_segments.insert(
+                                &column_name,
+                                (&relation_element.oper, &relation_element.value),
+                            );
+                        } else {
+                            return Err(anyhow!(
+                                "Couldn't build query- column {} is not in the key",
+                                column_name
+                            ));
                         }
-                        None
-                }).collect();
-                let mut has_err = false;
-                update.assignments.iter().for_each( |assignment| {
-                    if assignment.operator.is_some() {
-                        has_err = true;
-                    } else {
-                        value_map.insert( assignment.name.to_string(), &assignment.value );
                     }
-                });
-                if has_err {
-                    return Err(anyhow!("Set values include operations"));
                 }
-                let pk = extract_partition_key( &table_cache_schema.partition_key, &value_map )?;
-                let mut redis_frames: Vec<RedisFrame> = vec![
-                    RedisFrame::BulkString("ZADD".into()),
-                    RedisFrame::BulkString(pk.freeze()),
+                let mut skipping = false;
+                for column_name in &table_cache_schema.range_key {
+                    if let Some((operator, operand)) = range_segments.get(column_name.as_str()) {
+                        if skipping {
+                            // we skipped an earlier column so this is an error.
+                            return Err(anyhow!(
+                                "Columns in the middle of the range key were skipped"
+                            ));
+                        }
+                        if let Err(e) = build_zrangebylex_min_max_from_sql(
+                            &operator, &operand, &mut min, &mut max,
+                        ) {
+                            return Err(e);
+                        }
+                    } else {
+                        // once we skip a range key column we have to skip all the rest so set a flag.
+                        skipping = true;
+                    }
+                }
+                let min = if min.is_empty() {
+                    Bytes::from_static(b"-")
+                } else {
+                    Bytes::from(min)
+                };
+                let max = if max.is_empty() {
+                    Bytes::from_static(b"+")
+                } else {
+                    Bytes::from(max)
+                };
+
+                let mut partition_key = BytesMut::new();
+                for column_name in &table_cache_schema.partition_key {
+                    if let Some(operand) = partition_segments.get(column_name.as_str()) {
+                        partition_key.extend(operand_to_bytes(operand).iter());
+                    } else {
+                        return Err(anyhow!("partition column {} missing", column_name));
+                    }
+                }
+
+                let commands_buffer = vec![
+                    RedisFrame::BulkString("ZRANGEBYLEX".into()),
+                    RedisFrame::BulkString(partition_key.freeze()),
+                    RedisFrame::BulkString(min),
+                    RedisFrame::BulkString(max),
                 ];
-                add_values_to_redis_frames(table_cache_schema, value_map, &mut redis_frames)?;
-                Ok(RedisFrame::Array(redis_frames))
+                Ok(RedisFrame::Array(commands_buffer))
             }
-            _ => unreachable!(),
         }
+        CassandraStatement::Insert(insert) => {
+            let query_values = insert.get_value_map();
+            add_query_values(table_cache_schema, query_values)
+        }
+        CassandraStatement::Update(update) => {
+            let mut query_values: BTreeMap<&str, &Operand> = BTreeMap::new();
+            for assignment_element in &update.assignments {
+                if assignment_element.operator.is_some() {
+                    return Err(anyhow!("Update has calculations in values"));
+                }
+                if assignment_element.name.idx.is_some() {
+                    return Err(anyhow!("Update has indexed columns"));
+                }
+                query_values.insert(
+                    assignment_element.name.column.as_str(),
+                    &assignment_element.value,
+                );
+            }
+            add_query_values(table_cache_schema, query_values)
+        }
+        statement => Err(anyhow!("Cant build query from statement: {}", statement)),
+    }
 }
 
-fn add_values_to_redis_frames(
+fn add_query_values(
     table_cache_schema: &TableCacheSchema,
-    query_values: BTreeMap<String, &Operand>,
-    redis_frames : &mut Vec<RedisFrame>
-) -> Result<()> {
+    query_values: BTreeMap<&str, &Operand>,
+) -> Result<RedisFrame> {
+    let mut partition_key = BytesMut::new();
+    for column_name in &table_cache_schema.partition_key {
+        if let Some(operand) = query_values.get(column_name.as_str()) {
+            partition_key.extend(operand_to_bytes(operand).iter());
+        } else {
+            return Err(anyhow!("partition column {} missing", column_name));
+        }
+    }
 
-    let mut has_err = None;
-    let mut clustering = table_cache_schema
-        .range_key
+    let mut clustering = BytesMut::new();
+    for column_name in &table_cache_schema.range_key {
+        if let Some(operand) = query_values.get(column_name.as_str()) {
+            clustering.extend(operand_to_bytes(operand).iter());
+        } else {
+            return Err(anyhow!("range column {} missing", column_name));
+        }
+    }
+
+    let mut commands_buffer: Vec<RedisFrame> = vec![
+        RedisFrame::BulkString("ZADD".into()),
+        RedisFrame::BulkString(partition_key.freeze()),
+    ];
+
+    let values = query_values
         .iter()
-        .filter_map(|k| {
-            if let Some(x) = query_values.get(k.as_str()) {
-                Some(x)
+        .filter_map(|(column_name, value)| {
+            if !table_cache_schema
+                .partition_key
+                .contains(&column_name.to_string())
+                && !table_cache_schema
+                    .range_key
+                    .contains(&column_name.to_string())
+            {
+                Some(value)
             } else {
-                has_err = Some(anyhow!( "Clustering column {} missing from statement", k ));
                 None
             }
         })
-        .fold(BytesMut::new(), |mut acc, operand| {
-            acc.extend(operand.to_string().as_bytes());
-            acc
-        });
-    if let Some(e) = has_err {
-        return Err(e);
-    }
-    if !clustering.is_empty() {
-        clustering.put_u8(b':');
-    }
-    redis_frames.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
+        .collect_vec();
 
-    query_values
-        .iter()
-        .filter_map(|(p, v)| {
-            if table_cache_schema.partition_key.contains(p) ||
-                table_cache_schema.range_key.contains(p) {
-                None
-            } else { Some(*v)}
-        })
-        .for_each( |operand| {
-            clustering.extend(operand.to_string().as_bytes());
-        });
-    redis_frames.push(RedisFrame::BulkString(clustering.freeze()));
+    for operand in values {
+        commands_buffer.push(RedisFrame::BulkString(Bytes::from_static(b"0")));
+        let mut value = clustering.clone();
+        if !value.is_empty() {
+            value.put_u8(b':');
+        }
+        value.extend(operand_to_bytes(operand).iter());
+        commands_buffer.push(RedisFrame::BulkString(value.freeze()));
+    }
 
-    Ok(())
+    Ok(RedisFrame::Array(commands_buffer))
 }
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    fn validate(&self) -> Vec<String> {
-        let mut errors = self
-            .cache_chain
-            .validate()
-            .iter()
-            .map(|x| format!("  {x}"))
-            .collect::<Vec<String>>();
-
-        if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
-        }
-
-        errors
-    }
-
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut updates = false;
 
@@ -465,11 +399,26 @@ impl Transform for SimpleRedisCache {
             upstream
         }
     }
+
+    fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .cache_chain
+            .validate()
+            .iter()
+            .map(|x| format!("  {x}"))
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::frame::RedisFrame;
+    use crate::frame::{RedisFrame, CQL};
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
@@ -478,14 +427,13 @@ mod test {
     };
     use crate::transforms::{Transform, Transforms};
     use bytes::Bytes;
-    use std::collections::HashMap;
-    use cql3_parser::cassandra_ast::CassandraAST;
     use cql3_parser::cassandra_statement::CassandraStatement;
+    use std::collections::HashMap;
 
     fn build_query(query_string: &str) -> CassandraStatement {
-        let ast = CassandraAST::new( query_string );
-        assert!( !ast.has_error() );
-        ast.statements[0].clone()
+        let cql = CQL::parse_from_string(query_string);
+        assert!(!cql.has_error);
+        cql.statement
     }
 
     #[test]
@@ -505,6 +453,7 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"[123:965")),
             RedisFrame::BulkString(Bytes::from_static(b"]123:965")),
         ]);
+
         assert_eq!(expected, query);
     }
 
@@ -543,7 +492,7 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
             RedisFrame::BulkString(Bytes::from_static(b"1")),
             RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
+            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
         ]);
 
         assert_eq!(expected, query);
@@ -564,7 +513,7 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
             RedisFrame::BulkString(Bytes::from_static(b"1")),
             RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
+            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
         ]);
 
         assert_eq!(expected, query);
@@ -587,7 +536,7 @@ mod test {
 
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
-        assert_eq!(query_one, query_two);
+        assert_ne!(query_one, query_two);
     }
 
     #[test]

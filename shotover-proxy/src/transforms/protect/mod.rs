@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, CQL};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -7,18 +7,16 @@ use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use serde::{Deserialize, Serialize};
-use sodiumoxide::crypto::secretbox;
-use sodiumoxide::crypto::secretbox::{Key, Nonce};
-use std::collections::HashMap;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
 use cql3_parser::insert::InsertValues;
 use cql3_parser::select::SelectElement;
+use serde::{Deserialize, Serialize};
+use sodiumoxide::crypto::secretbox;
+use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use sodiumoxide::hex;
-use sqlparser::test_utils::table;
+use std::collections::HashMap;
 use tracing::warn;
-
 
 mod aws_kms;
 mod key_management;
@@ -100,10 +98,10 @@ impl From<&Protected> for Operand {
             Protected::Plaintext(_) => panic!(
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
-            Protected::Ciphertext { .. } => {
-                Operand::Const( format!( "0X{}",
-                                         hex::encode(serde_json::to_vec(&p).unwrap())))
-            }
+            Protected::Ciphertext { .. } => Operand::Const(format!(
+                "0X{}",
+                hex::encode(serde_json::to_vec(&p).unwrap())
+            )),
         }
     }
 }
@@ -175,34 +173,48 @@ impl ProtectConfig {
 }
 
 /// determines if columns in the CassandraStatement need to be encrypted and encrypts them.  Returns `true` if any columns were changed.
-async fn encrypt_columns( statement : &mut CassandraStatement, columns : &[String], key_source : &KeyManager, key_id : &str) -> Result<bool> {
-
+async fn encrypt_columns(
+    statement: &mut CassandraStatement,
+    columns: &[String],
+    key_source: &KeyManager,
+    key_id: &str,
+) -> Result<bool> {
     let mut data_changed = false;
     match statement {
         CassandraStatement::Insert(insert) => {
-            let indices :Vec<usize>= insert.columns.iter().enumerate()
-                .filter_map( |(i,col_name)| if columns.contains( col_name ) { Some(i) } else { None })
+            let indices: Vec<usize> = insert
+                .columns
+                .iter()
+                .enumerate()
+                .filter_map(|(i, col_name)| {
+                    if columns.contains(col_name) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
                 .collect();
             match &mut insert.values {
                 InsertValues::Values(value_operands) => {
                     for idx in indices {
-                        let mut protected = Protected::Plaintext(MessageValue::from( &value_operands[idx] ));
+                        let mut protected =
+                            Protected::Plaintext(MessageValue::from(&value_operands[idx]));
                         protected = protected.protect(key_source, key_id).await?;
-                        value_operands[idx] = Operand::from( &protected );
+                        value_operands[idx] = Operand::from(&protected);
                         data_changed = true
-                   }
-                },
+                    }
+                }
                 InsertValues::Json(_) => {
                     // TODO parse json and encrypt.
                 }
             }
         }
         CassandraStatement::Update(update) => {
-            for assignment  in &mut update.assignments {
-                if columns.contains( &assignment.name.column ) {
-                    let mut protected = Protected::Plaintext( MessageValue::from(&assignment.value) );
-                    protected = protected.protect( key_source, key_id ).await?;
-                    assignment.value = Operand::from( &protected );
+            for assignment in &mut update.assignments {
+                if columns.contains(&assignment.name.column) {
+                    let mut protected = Protected::Plaintext(MessageValue::from(&assignment.value));
+                    protected = protected.protect(key_source, key_id).await?;
+                    assignment.value = Operand::from(&protected);
                     data_changed = true;
                 }
             }
@@ -222,16 +234,21 @@ impl Transform for Protect {
             let mut data_changed = false;
 
             if let Some(Frame::Cassandra(CassandraFrame {
-                                             operation: CassandraOperation::Query { query, .. },
-                                             ..
-                                         })) = message.frame()
+                operation: CassandraOperation::Query { query, .. },
+                ..
+            })) = message.frame()
             {
-                if let Some(table_name) = query.get_table_name() {
-                    if let Some((_, tables)) =
-                    self.keyspace_table_columns.get_key_value(table_name)
+                if let Some(table_name) = CQL::get_table_name(&query.statement) {
+                    if let Some((_, tables)) = self.keyspace_table_columns.get_key_value(table_name)
                     {
-                        if let Some((_, columns)) = tables.get_key_value(table_name ) {
-                            data_changed = encrypt_columns(&mut query.statement, columns, &self.key_source, &self.key_id).await?;
+                        if let Some((_, columns)) = tables.get_key_value(table_name) {
+                            data_changed = encrypt_columns(
+                                &mut query.statement,
+                                columns,
+                                &self.key_source,
+                                &self.key_id,
+                            )
+                            .await?;
                         }
                     }
                 }
@@ -257,23 +274,25 @@ impl Transform for Protect {
             })) = response.frame()
             {
                 if let Some(Frame::Cassandra(CassandraFrame {
-                                                 operation: CassandraOperation::Query { query, .. },
-                                                 ..
-                                             })) = request.frame()
+                    operation: CassandraOperation::Query { query, .. },
+                    ..
+                })) = request.frame()
                 {
-                    if let Some(table_name) = query.get_table_name() {
+                    if let Some(table_name) = CQL::get_table_name(&query.statement) {
                         if let Some((_keyspace, tables)) =
-                        self.keyspace_table_columns.get_key_value(table_name)
+                            self.keyspace_table_columns.get_key_value(table_name)
                         {
                             if let Some((_table, protect_columns)) =
-                            tables.get_key_value(table_name)
+                                tables.get_key_value(table_name)
                             {
                                 if let CassandraStatement::Select(select) = &query.statement {
-                                    let positions: Vec<usize> = select.columns.iter().enumerate()
+                                    let positions: Vec<usize> = select
+                                        .columns
+                                        .iter()
+                                        .enumerate()
                                         .filter_map(|(i, col)| {
                                             if let SelectElement::Column(named) = col {
-                                                if protect_columns.contains(&named.name)
-                                                {
+                                                if protect_columns.contains(&named.name) {
                                                     Some(i)
                                                 } else {
                                                     None
@@ -281,7 +300,8 @@ impl Transform for Protect {
                                             } else {
                                                 None
                                             }
-                                        }).collect();
+                                        })
+                                        .collect();
                                     for row in &mut *rows {
                                         for index in &positions {
                                             if let Some(v) = row.get_mut(*index) {
@@ -316,4 +336,3 @@ impl Transform for Protect {
         Ok(result)
     }
 }
-
