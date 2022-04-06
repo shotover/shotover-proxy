@@ -411,6 +411,7 @@ mod cassandra_protocol_tests {
                         distribute_by: vec![],
                         sort_by: vec![],
                         having: None,
+                        into: None,
                     })),
                     order_by: vec![],
                     limit: None,
