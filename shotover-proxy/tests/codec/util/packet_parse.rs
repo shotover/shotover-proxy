@@ -1,3 +1,4 @@
+use pcap::{Packet as PcapPacket, PacketHeader as PcapPacketHeader};
 use pktparse::arp::ArpPacket;
 use pktparse::ethernet::{EtherType, EthernetFrame};
 use pktparse::ip::IPProtocol;
@@ -6,10 +7,23 @@ use pktparse::ipv6::IPv6Header;
 use pktparse::tcp::TcpHeader;
 use pktparse::udp::UdpHeader;
 use pktparse::*;
+use serde::Deserialize;
 use std::string::ToString;
 use tls_parser::TlsMessage;
 
-use serde::Deserialize;
+pub struct OwnedPcapPacket {
+    header: PcapPacketHeader,
+    data: Vec<u8>,
+}
+
+impl OwnedPcapPacket {
+    pub fn from(packet: PcapPacket) -> OwnedPcapPacket {
+        OwnedPcapPacket {
+            header: *packet.header,
+            data: packet.data.to_owned(),
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct PacketParse {}
@@ -62,15 +76,14 @@ impl PacketParse {
         PacketParse {}
     }
 
-    pub fn parse_packet(
-        &self,
-        data: Vec<u8>,
-        len: u32,
-        ts: String,
-    ) -> Result<ParsedPacket, String> {
-        let mut parsed_packet = self.parse_link_layer(&data)?;
-        parsed_packet.len = len;
-        parsed_packet.timestamp = ts;
+    pub fn parse_packet(&self, packet: &OwnedPcapPacket) -> Result<ParsedPacket, String> {
+        let mut parsed_packet = self.parse_link_layer(&packet.data)?;
+        let timestamp = format!(
+            "{}.{:06}",
+            &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
+        );
+        parsed_packet.len = packet.header.len;
+        parsed_packet.timestamp = timestamp;
         Ok(parsed_packet)
     }
 
