@@ -44,7 +44,7 @@ fn main() {
     }
 
     println!("Direct Cassandra (A) vs Shotover (B)");
-    latte.compare("read-localhost:9042.json", "read-localhost:9043.json");
+    latte.compare("read-localhost:9043.json", "read-localhost:9042.json");
 }
 
 fn bench_read(latte: &Latte, address_load: &str, address_bench: &str) {
@@ -128,8 +128,8 @@ impl Latte {
         .unwrap();
     }
 
-    fn compare(&self, first: &str, second: &str) {
-        run_command_to_stdout("latte", &["show", first, "-b", second]);
+    fn compare(&self, file_a: &str, file_b: &str) {
+        run_command_to_stdout("latte", &["show", file_b, "-b", file_a]);
     }
 }
 
