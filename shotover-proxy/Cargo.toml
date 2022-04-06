@@ -100,3 +100,6 @@ harness = false
 [[bench]]
 name = "cassandra_benches"
 harness = false
+
+[profile.release]
+debug = false
