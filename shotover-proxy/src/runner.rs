@@ -65,26 +65,35 @@ impl Runner {
 
         let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);
 
-        Ok(Runner {
+
+        let runner = Runner {
             runtime,
             runtime_handle,
             topology,
             config,
             tracing,
-        })
+        };
+
+
+            if let Some(observability_interface) = &runner.config.observability_interface{
+                runner.with_observability_interface(observability_interface)?;
+            }
+
+
+       Ok(runner)
     }
 
-    pub fn with_observability_interface(self) -> Result<Self> {
+    fn with_observability_interface(& self, observability_interface: &str) -> Result<()> {
         let recorder = PrometheusBuilder::new().build_recorder();
         let handle = recorder.handle();
         metrics::set_boxed_recorder(Box::new(recorder))?;
 
-        let socket: SocketAddr = self.config.observability_interface.parse()?;
+        let socket: SocketAddr = observability_interface.parse()?;
         let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
 
         self.runtime_handle.spawn(exporter.async_run());
 
-        Ok(self)
+        Ok(())
     }
 
     pub fn run_spawn(self) -> RunnerSpawned {

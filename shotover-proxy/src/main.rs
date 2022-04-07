@@ -7,7 +7,5 @@ use clap::Parser;
 use shotover_proxy::runner::{ConfigOpts, Runner};
 
 fn main() -> Result<()> {
-    Runner::new(ConfigOpts::parse())?
-        .with_observability_interface()?
-        .run_block()
+    Runner::new(ConfigOpts::parse())?.run_block()
 }
