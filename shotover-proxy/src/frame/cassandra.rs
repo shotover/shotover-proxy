@@ -742,9 +742,8 @@ impl CQL {
     }
 
     /// Returns true if there are any parameters in the query
-    pub fn has_params(&self) -> bool {
-        let mut statement = self.statement.clone();
-        match &mut statement {
+    pub fn has_params(statement: &CassandraStatement) -> bool {
+        match statement {
             CassandraStatement::Delete(delete) => {
                 if CQL::has_params_in_relation_elements(&delete.where_clause) {
                     return true;
@@ -754,7 +753,7 @@ impl CQL {
                 }
             }
             CassandraStatement::Insert(insert) => {
-                if let InsertValues::Values(operands) = &mut insert.values {
+                if let InsertValues::Values(operands) = &insert.values {
                     for operand_idx in 0..operands.len() {
                         if let Operand::Param(_) = &operands[operand_idx] {
                             return true;

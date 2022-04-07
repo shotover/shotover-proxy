@@ -1,7 +1,7 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame, CQL};
-use crate::message::{Message, MessageValue, Messages, QueryType};
+use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
     build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
@@ -11,7 +11,8 @@ use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
 use cassandra_protocol::frame::Version;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{Operand, RelationOperator};
+use cql3_parser::common::{Operand, RelationElement, RelationOperator};
+use cql3_parser::select::SelectElement;
 use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
@@ -142,19 +143,13 @@ fn append_prefix_max(max: &mut Vec<u8>) {
     }
 }
 
-fn operand_to_bytes(operand: &Operand) -> Vec<u8> {
-    let message_value = MessageValue::from(operand);
-    let bytes: cassandra_protocol::types::value::Bytes = message_value.into();
-    bytes.into_inner()
-}
-
 fn build_zrangebylex_min_max_from_sql(
     operator: &RelationOperator,
     operand: &Operand,
     min: &mut Vec<u8>,
     max: &mut Vec<u8>,
 ) -> Result<()> {
-    let mut bytes = operand_to_bytes(operand);
+    let mut bytes = BytesMut::from(operand.to_string().as_bytes());
     match operator {
         RelationOperator::LessThan => {
             let last_byte = bytes.last_mut().unwrap();
@@ -196,89 +191,120 @@ fn build_zrangebylex_min_max_from_sql(
     Ok(())
 }
 
+fn is_cacheable(statement: &CassandraStatement) -> bool {
+    CQL::has_params(statement)
+        || match statement {
+            CassandraStatement::Select(select) => {
+                if select.filtering || select.where_clause.is_empty() {
+                    return false;
+                }
+                if !select.columns.is_empty() {
+                    if select.columns.len() == 1 && select.columns[0].eq(&SelectElement::Star) {
+                        // ok
+                    } else {
+                        return false;
+                    }
+                }
+                true
+            }
+            CassandraStatement::Insert(insert) => !insert.if_not_exists,
+            CassandraStatement::Update(update) => !update.if_exists,
+
+            _ => false,
+        }
+}
+
 fn build_redis_ast_from_cql3(
     statement: &CassandraStatement,
     table_cache_schema: &TableCacheSchema,
 ) -> Result<RedisFrame> {
+    if !is_cacheable(statement) {
+        return Err(anyhow!("{} is not cacheable", statement));
+    }
     match statement {
         CassandraStatement::Select(select) => {
-            if select.filtering || !select.columns.is_empty() || !select.where_clause.is_empty() {
-                Err(anyhow!("Can't build query from expr: {}", select))
-            } else {
-                let mut min: Vec<u8> = Vec::new();
-                let mut max: Vec<u8> = Vec::new();
+            let mut min: Vec<u8> = Vec::new();
+            let mut max: Vec<u8> = Vec::new();
 
-                // extract the partition and range operands
-                // fail if any are missing
-                let mut partition_segments: HashMap<&str, &Operand> = HashMap::new();
-                let mut range_segments: HashMap<&str, (&RelationOperator, &Operand)> =
-                    HashMap::new();
+            // extract the partition and range operands
+            // fail if any are missing
+            let mut partition_segments: HashMap<&str, &Operand> = HashMap::new();
+            let mut range_segments: HashMap<&str, Vec<&RelationElement>> = HashMap::new();
 
-                for relation_element in &select.where_clause {
-                    if let Operand::Column(column_name) = &relation_element.obj {
-                        // name has to be in partition or range key.
-                        if table_cache_schema.partition_key.contains(&column_name) {
-                            partition_segments.insert(&column_name, &relation_element.value);
-                        } else if table_cache_schema.range_key.contains(&column_name) {
-                            range_segments.insert(
-                                &column_name,
-                                (&relation_element.oper, &relation_element.value),
-                            );
+            for relation_element in &select.where_clause {
+                if let Operand::Column(column_name) = &relation_element.obj {
+                    // name has to be in partition or range key.
+                    if table_cache_schema.partition_key.contains(&column_name) {
+                        partition_segments.insert(&column_name, &relation_element.value);
+                    } else if table_cache_schema.range_key.contains(&column_name) {
+                        let value = range_segments.get_mut(column_name.as_str());
+                        let vec = if value.is_none() {
+                            range_segments.insert(&column_name, vec![]);
+                            range_segments.get_mut(column_name.as_str()).unwrap()
                         } else {
-                            return Err(anyhow!(
-                                "Couldn't build query- column {} is not in the key",
-                                column_name
-                            ));
-                        }
+                            value.unwrap()
+                        };
+
+                        vec.push(relation_element);
+                    } else {
+                        return Err(anyhow!(
+                            "Couldn't build query- column {} is not in the key",
+                            column_name
+                        ));
                     }
                 }
-                let mut skipping = false;
-                for column_name in &table_cache_schema.range_key {
-                    if let Some((operator, operand)) = range_segments.get(column_name.as_str()) {
-                        if skipping {
-                            // we skipped an earlier column so this is an error.
-                            return Err(anyhow!(
-                                "Columns in the middle of the range key were skipped"
-                            ));
-                        }
+            }
+            let mut skipping = false;
+            for column_name in &table_cache_schema.range_key {
+                if let Some(relation_elements) = range_segments.get(column_name.as_str()) {
+                    if skipping {
+                        // we skipped an earlier column so this is an error.
+                        return Err(anyhow!(
+                            "Columns in the middle of the range key were skipped"
+                        ));
+                    }
+                    for range_element in relation_elements {
                         if let Err(e) = build_zrangebylex_min_max_from_sql(
-                            &operator, &operand, &mut min, &mut max,
+                            &range_element.oper,
+                            &range_element.value,
+                            &mut min,
+                            &mut max,
                         ) {
                             return Err(e);
                         }
-                    } else {
-                        // once we skip a range key column we have to skip all the rest so set a flag.
-                        skipping = true;
                     }
-                }
-                let min = if min.is_empty() {
-                    Bytes::from_static(b"-")
                 } else {
-                    Bytes::from(min)
-                };
-                let max = if max.is_empty() {
-                    Bytes::from_static(b"+")
-                } else {
-                    Bytes::from(max)
-                };
-
-                let mut partition_key = BytesMut::new();
-                for column_name in &table_cache_schema.partition_key {
-                    if let Some(operand) = partition_segments.get(column_name.as_str()) {
-                        partition_key.extend(operand_to_bytes(operand).iter());
-                    } else {
-                        return Err(anyhow!("partition column {} missing", column_name));
-                    }
+                    // once we skip a range key column we have to skip all the rest so set a flag.
+                    skipping = true;
                 }
-
-                let commands_buffer = vec![
-                    RedisFrame::BulkString("ZRANGEBYLEX".into()),
-                    RedisFrame::BulkString(partition_key.freeze()),
-                    RedisFrame::BulkString(min),
-                    RedisFrame::BulkString(max),
-                ];
-                Ok(RedisFrame::Array(commands_buffer))
             }
+            let min = if min.is_empty() {
+                Bytes::from_static(b"-")
+            } else {
+                Bytes::from(min)
+            };
+            let max = if max.is_empty() {
+                Bytes::from_static(b"+")
+            } else {
+                Bytes::from(max)
+            };
+
+            let mut partition_key = BytesMut::new();
+            for column_name in &table_cache_schema.partition_key {
+                if let Some(operand) = partition_segments.get(column_name.as_str()) {
+                    partition_key.extend(operand.to_string().as_bytes());
+                } else {
+                    return Err(anyhow!("partition column {} missing", column_name));
+                }
+            }
+
+            let commands_buffer = vec![
+                RedisFrame::BulkString("ZRANGEBYLEX".into()),
+                RedisFrame::BulkString(partition_key.freeze()),
+                RedisFrame::BulkString(min),
+                RedisFrame::BulkString(max),
+            ];
+            Ok(RedisFrame::Array(commands_buffer))
         }
         CassandraStatement::Insert(insert) => {
             let query_values = insert.get_value_map();
@@ -298,6 +324,17 @@ fn build_redis_ast_from_cql3(
                     &assignment_element.value,
                 );
             }
+            for relation_element in &update.where_clause {
+                if relation_element.oper == RelationOperator::Equal {
+                    if let Operand::Column(name) = &relation_element.obj {
+                        if table_cache_schema.partition_key.contains(&name)
+                            || table_cache_schema.range_key.contains(&name)
+                        {
+                            query_values.insert(&name, &relation_element.value);
+                        }
+                    }
+                }
+            }
             add_query_values(table_cache_schema, query_values)
         }
         statement => Err(anyhow!("Cant build query from statement: {}", statement)),
@@ -311,7 +348,7 @@ fn add_query_values(
     let mut partition_key = BytesMut::new();
     for column_name in &table_cache_schema.partition_key {
         if let Some(operand) = query_values.get(column_name.as_str()) {
-            partition_key.extend(operand_to_bytes(operand).iter());
+            partition_key.extend(operand.to_string().as_bytes());
         } else {
             return Err(anyhow!("partition column {} missing", column_name));
         }
@@ -320,7 +357,7 @@ fn add_query_values(
     let mut clustering = BytesMut::new();
     for column_name in &table_cache_schema.range_key {
         if let Some(operand) = query_values.get(column_name.as_str()) {
-            clustering.extend(operand_to_bytes(operand).iter());
+            clustering.extend(operand.to_string().as_bytes());
         } else {
             return Err(anyhow!("range column {} missing", column_name));
         }
@@ -331,6 +368,7 @@ fn add_query_values(
         RedisFrame::BulkString(partition_key.freeze()),
     ];
 
+    // get values not in partition or cluster key
     let values = query_values
         .iter()
         .filter_map(|(column_name, value)| {
@@ -354,7 +392,7 @@ fn add_query_values(
         if !value.is_empty() {
             value.put_u8(b':');
         }
-        value.extend(operand_to_bytes(operand).iter());
+        value.extend(operand.to_string().as_bytes());
         commands_buffer.push(RedisFrame::BulkString(value.freeze()));
     }
 
@@ -440,7 +478,7 @@ mod test {
     fn equal_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec![],
+            range_key: vec!["x".to_string(), "y".to_string()],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
@@ -492,7 +530,7 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
             RedisFrame::BulkString(Bytes::from_static(b"1")),
             RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
+            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
         ]);
 
         assert_eq!(expected, query);
@@ -513,7 +551,7 @@ mod test {
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
             RedisFrame::BulkString(Bytes::from_static(b"1")),
             RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"yo:123")),
+            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
         ]);
 
         assert_eq!(expected, query);
@@ -523,7 +561,7 @@ mod test {
     fn check_deterministic_order_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec![],
+            range_key: vec!["x".to_string(), "y".to_string()],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
@@ -536,14 +574,14 @@ mod test {
 
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
         // So here we will just expect the order is correct in the query. TODO: we may need to revisit this as support for other databases is added
-        assert_ne!(query_one, query_two);
+        assert_eq!(query_one, query_two);
     }
 
     #[test]
     fn range_exclusive_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec![],
+            range_key: vec!["x".to_string()],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999");
@@ -564,7 +602,7 @@ mod test {
     fn range_inclusive_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec![],
+            range_key: vec!["x".to_string()],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999");
@@ -627,7 +665,7 @@ mod test {
     fn open_range_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec![],
+            range_key: vec!["x".to_string()],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123");
