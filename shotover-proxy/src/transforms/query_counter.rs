@@ -30,14 +30,15 @@ impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         for m in &mut message_wrapper.messages {
             match m.frame() {
-                Some(Frame::Cassandra(frame)) => match frame.operation.queries() {
-                    Ok(queries) => {
+
+                Some(Frame::Cassandra(frame)) => {
+                    let queries = frame.operation.queries();
+                    if queries.is_empty() {
+                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "cassandra");
+                    } else {
                         for statement in queries {
                             counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => statement.short_name(), "type" => "cassandra");
                         }
-                    }
-                    Err(_) => {
-                        counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "cassandra");
                     }
                 },
                 Some(Frame::Redis(frame)) => {

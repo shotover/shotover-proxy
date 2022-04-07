@@ -358,12 +358,14 @@ impl CassandraOperation {
     /// An Err is returned if the operation cannot contain queries or the queries failed to parse.
     ///
     /// TODO: This will return a custom iterator type when BATCH support is added
-    pub fn queries(&mut self) -> Result<std::iter::Once<&mut CassandraStatement>> {
+    pub fn queries(&mut self) -> Vec<&mut CassandraStatement> {
+        let mut result = vec!();
         match self {
-            CassandraOperation::Query { query: cql, .. } => Ok(std::iter::once(&mut cql.statement)),
+            CassandraOperation::Query { query: cql, .. } => result.push( &mut *cql.statement),
             // TODO: Return CassandraOperation::Batch queries once we add BATCH parsing to cassandra-protocol
-            _ => Err(anyhow!("This operation cannot contain queries")),
+            _ => { }
         }
+        result
     }
 
     fn to_direction(&self) -> Direction {
