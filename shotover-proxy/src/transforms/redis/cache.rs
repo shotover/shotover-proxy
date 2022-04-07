@@ -403,7 +403,9 @@ fn build_redis_ast_from_cql3(
         CassandraStatement::Update(update) => {
             let mut query_values: BTreeMap<String, &Operand> = BTreeMap::new();
 
-            update.assignments.iter().for_each( |assignment| {query_values.insert( assignment.name.to_string(), &assignment.value);} );
+            update.assignments.iter().for_each(|assignment| {
+                query_values.insert(assignment.name.to_string(), &assignment.value);
+            });
             for relation_element in &update.where_clause {
                 if relation_element.oper == RelationOperator::Equal {
                     if let Operand::Column(name) = &relation_element.obj {
@@ -669,7 +671,6 @@ mod test {
 
         let result = build_redis_ast_from_cql3(&ast, &table_cache_schema);
         let query = result.ok().unwrap();
-
 
         let expected = RedisFrame::Array(vec![
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
