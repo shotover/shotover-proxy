@@ -238,17 +238,14 @@ impl Transform for Protect {
                 ..
             })) = message.frame()
             {
-                if let Some(table_name) = CQL::get_table_name(&query.statement) {
+                let statement = query.get_statement_mut();
+                if let Some(table_name) = CQL::get_table_name(statement) {
                     if let Some((_, tables)) = self.keyspace_table_columns.get_key_value(table_name)
                     {
                         if let Some((_, columns)) = tables.get_key_value(table_name) {
-                            data_changed = encrypt_columns(
-                                &mut query.statement,
-                                columns,
-                                &self.key_source,
-                                &self.key_id,
-                            )
-                            .await?;
+                            data_changed =
+                                encrypt_columns(statement, columns, &self.key_source, &self.key_id)
+                                    .await?;
                         }
                     }
                 }
@@ -278,14 +275,15 @@ impl Transform for Protect {
                     ..
                 })) = request.frame()
                 {
-                    if let Some(table_name) = CQL::get_table_name(&query.statement) {
+                    let statement = query.get_statement();
+                    if let Some(table_name) = CQL::get_table_name(statement) {
                         if let Some((_keyspace, tables)) =
                             self.keyspace_table_columns.get_key_value(table_name)
                         {
                             if let Some((_table, protect_columns)) =
                                 tables.get_key_value(table_name)
                             {
-                                if let CassandraStatement::Select(select) = &query.statement {
+                                if let CassandraStatement::Select(select) = &statement {
                                     let positions: Vec<usize> = select
                                         .columns
                                         .iter()

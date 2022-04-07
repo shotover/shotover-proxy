@@ -251,7 +251,7 @@ impl CassandraFrame {
         PubSubMessage,
              */
         match &self.operation {
-            CassandraOperation::Query { query: cql, .. } => match cql.statement {
+            CassandraOperation::Query { query: cql, .. } => match cql.get_statement() {
                 CassandraStatement::AlterKeyspace(_) => QueryType::SchemaChange,
                 CassandraStatement::AlterMaterializedView(_) => QueryType::SchemaChange,
                 CassandraStatement::AlterRole(_) => QueryType::SchemaChange,
@@ -492,11 +492,23 @@ impl CassandraOperation {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CQL {
-    pub statement: CassandraStatement,
+    statement: Box<CassandraStatement>,
     pub has_error: bool,
 }
 
 impl CQL {
+    pub fn get_statement_mut(&mut self) -> &mut CassandraStatement {
+        self.statement.as_mut()
+    }
+
+    pub fn get_statement(&self) -> &CassandraStatement {
+        self.statement.as_ref()
+    }
+
+    pub fn clone_statement(&self) -> CassandraStatement {
+        self.get_statement().clone()
+    }
+
     fn from_value_and_col_spec(value: &Value, col_spec: &ColSpec) -> Operand {
         match value {
             Value::Some(vec) => {
@@ -515,25 +527,23 @@ impl CQL {
         query_params: &QueryParams,
         param_types: &[ColSpec],
     ) -> Operand {
-        if let Some(values) = &query_params.values {
-            if let QueryValues::NamedValues(value_map) = values {
-                if let Some(value) = value_map.get(name) {
-                    if let Some(idx) = value_map
-                        .iter()
-                        .enumerate()
-                        .filter_map(
-                            |(idx, (key, _value))| {
-                                if key.eq(name) {
-                                    Some(idx)
-                                } else {
-                                    None
-                                }
-                            },
-                        )
-                        .next()
-                    {
-                        return CQL::from_value_and_col_spec(value, &param_types[idx]);
-                    }
+        if let Some(QueryValues::NamedValues(value_map)) = &query_params.values {
+            if let Some(value) = value_map.get(name) {
+                if let Some(idx) = value_map
+                    .iter()
+                    .enumerate()
+                    .filter_map(
+                        |(idx, (key, _value))| {
+                            if key.eq(name) {
+                                Some(idx)
+                            } else {
+                                None
+                            }
+                        },
+                    )
+                    .next()
+                {
+                    return CQL::from_value_and_col_spec(value, &param_types[idx]);
                 }
             }
         }
@@ -561,7 +571,7 @@ impl CQL {
 
     fn set_operand_if_param(
         operand: &Operand,
-        mut param_idx: &mut usize,
+        param_idx: &mut usize,
         query_params: &QueryParams,
         param_types: &[ColSpec],
     ) -> Operand {
@@ -571,7 +581,7 @@ impl CQL {
                 vec.iter().for_each(|o| {
                     vec2.push(CQL::set_operand_if_param(
                         o,
-                        &mut param_idx,
+                        param_idx,
                         query_params,
                         param_types,
                     ))
@@ -580,7 +590,7 @@ impl CQL {
                 Operand::Tuple(vec2)
             }
             Operand::Param(param_name) => {
-                if param_name.starts_with("?") {
+                if param_name.starts_with('?') {
                     CQL::set_param_value_by_position(param_idx, query_params, param_types)
                 } else {
                     let name = param_name.split_at(0).1;
@@ -592,7 +602,7 @@ impl CQL {
                 vec.iter().for_each(|o| {
                     vec2.push(CQL::set_operand_if_param(
                         o,
-                        &mut param_idx,
+                        param_idx,
                         query_params,
                         param_types,
                     ))
@@ -610,9 +620,9 @@ impl CQL {
         param_types: &[ColSpec],
         where_clause: &mut [RelationElement],
     ) {
-        for relation_idx in 0..where_clause.len() {
-            where_clause[relation_idx].value = CQL::set_operand_if_param(
-                &where_clause[relation_idx].value,
+        for relation_element in where_clause {
+            relation_element.value = CQL::set_operand_if_param(
+                &relation_element.value,
                 param_idx,
                 query_params,
                 param_types,
@@ -629,7 +639,7 @@ impl CQL {
         param_types: &[ColSpec],
     ) -> CassandraStatement {
         let mut param_idx: usize = 0;
-        let mut statement = self.statement.clone();
+        let mut statement = self.clone_statement();
         match &mut statement {
             CassandraStatement::Delete(delete) => {
                 CQL::set_relation_elements_values(
@@ -647,13 +657,9 @@ impl CQL {
             }
             CassandraStatement::Insert(insert) => {
                 if let InsertValues::Values(operands) = &mut insert.values {
-                    for operand_idx in 0..operands.len() {
-                        operands[operand_idx] = CQL::set_operand_if_param(
-                            &mut operands[operand_idx],
-                            &mut param_idx,
-                            params,
-                            param_types,
-                        )
+                    for operand in operands {
+                        *operand =
+                            CQL::set_operand_if_param(operand, &mut param_idx, params, param_types)
                     }
                 }
             }
@@ -679,7 +685,7 @@ impl CQL {
                             AssignmentOperator::Plus(operand) => {
                                 assignment_element.operator = Option::from(
                                     AssignmentOperator::Plus(CQL::set_operand_if_param(
-                                        &operand,
+                                        operand,
                                         &mut param_idx,
                                         params,
                                         param_types,
@@ -689,7 +695,7 @@ impl CQL {
                             AssignmentOperator::Minus(operand) => {
                                 assignment_element.operator = Option::from(
                                     AssignmentOperator::Minus(CQL::set_operand_if_param(
-                                        &operand,
+                                        operand,
                                         &mut param_idx,
                                         params,
                                         param_types,
@@ -754,8 +760,8 @@ impl CQL {
             }
             CassandraStatement::Insert(insert) => {
                 if let InsertValues::Values(operands) = &insert.values {
-                    for operand_idx in 0..operands.len() {
-                        if let Operand::Param(_) = &operands[operand_idx] {
+                    for operand in operands {
+                        if let Operand::Param(_) = operand {
                             return true;
                         }
                     }
@@ -806,7 +812,7 @@ impl CQL {
         let ast = CassandraAST::new(cql_query_str);
         CQL {
             has_error: ast.has_error(),
-            statement: ast.statements.first().unwrap().clone(),
+            statement: Box::new(ast.statements.first().unwrap().clone()),
         }
     }
 

@@ -234,18 +234,15 @@ fn build_redis_ast_from_cql3(
             for relation_element in &select.where_clause {
                 if let Operand::Column(column_name) = &relation_element.obj {
                     // name has to be in partition or range key.
-                    if table_cache_schema.partition_key.contains(&column_name) {
-                        partition_segments.insert(&column_name, &relation_element.value);
-                    } else if table_cache_schema.range_key.contains(&column_name) {
+                    if table_cache_schema.partition_key.contains(column_name) {
+                        partition_segments.insert(column_name, &relation_element.value);
+                    } else if table_cache_schema.range_key.contains(column_name) {
                         let value = range_segments.get_mut(column_name.as_str());
-                        let vec = if value.is_none() {
-                            range_segments.insert(&column_name, vec![]);
-                            range_segments.get_mut(column_name.as_str()).unwrap()
+                        if let Some(vec) = value {
+                            vec.push(relation_element)
                         } else {
-                            value.unwrap()
+                            range_segments.insert(column_name, vec![relation_element]);
                         };
-
-                        vec.push(relation_element);
                     } else {
                         return Err(anyhow!(
                             "Couldn't build query- column {} is not in the key",
@@ -327,10 +324,10 @@ fn build_redis_ast_from_cql3(
             for relation_element in &update.where_clause {
                 if relation_element.oper == RelationOperator::Equal {
                     if let Operand::Column(name) = &relation_element.obj {
-                        if table_cache_schema.partition_key.contains(&name)
-                            || table_cache_schema.range_key.contains(&name)
+                        if table_cache_schema.partition_key.contains(name)
+                            || table_cache_schema.range_key.contains(name)
                         {
-                            query_values.insert(&name, &relation_element.value);
+                            query_values.insert(name, &relation_element.value);
                         }
                     }
                 }
@@ -471,7 +468,7 @@ mod test {
     fn build_query(query_string: &str) -> CassandraStatement {
         let cql = CQL::parse_from_string(query_string);
         assert!(!cql.has_error);
-        cql.statement
+        cql.get_statement().clone()
     }
 
     #[test]
