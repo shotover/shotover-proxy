@@ -1,7 +1,7 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
 use crate::transforms::protect::KeyMaterial;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cached::proc_macro::cached;
 use rusoto_kms::KmsClient;
@@ -34,7 +34,7 @@ pub enum KeyManagerConfig {
         endpoint: Option<String>,
     },
     Local {
-        kek: Key,
+        kek: String,
         kek_id: String,
     },
 }
@@ -68,6 +68,9 @@ impl KeyManagerConfig {
                 grant_tokens,
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
+                let decoded_base64 = base64::decode(&kek)?;
+                let kek =
+                    Key::from_slice(&decoded_base64).ok_or_else(|| anyhow!("Not a valid key"))?;
                 Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
             }
         }

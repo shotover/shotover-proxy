@@ -367,56 +367,6 @@ mod cassandra_protocol_tests {
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: CQL::parse_from_string("Select * from system.local where key = 'local'"),
-                /*
-
-                    CQL::Parsed(vec![Statement::Query(Box::new(Query {
-                        with: None,
-                        body: SetExpr::Select(Box::new(Select {
-                            distinct: false,
-                            top: None,
-                            projection: vec![SelectItem::Wildcard],
-                            from: vec![TableWithJoins {
-                                relation: TableFactor::Table {
-                                    name: ObjectName(vec![
-                                        Ident {
-                                            value: "system".into(),
-                                            quote_style: None,
-                                        },
-                                        Ident {
-                                            value: "local".into(),
-                                            quote_style: None,
-                                        },
-                                    ]),
-                                    alias: None,
-                                    args: vec![],
-                                    with_hints: vec![],
-                                },
-                                joins: vec![],
-                            }],
-                            lateral_views: vec![],
-                            selection: Some(BinaryOp {
-                                left: Box::new(Expr::Identifier(Ident {
-                                    value: "key".into(),
-                                    quote_style: None,
-                                })),
-                                op: BinaryOperator::Eq,
-                                right: Box::new(Expr::Value(SQLValue::SingleQuotedString(
-                                    "local".into(),
-                                ))),
-                            }),
-                            group_by: vec![],
-                            cluster_by: vec![],
-                            distribute_by: vec![],
-                            sort_by: vec![],
-                            having: None,
-                        })),
-                        order_by: vec![],
-                        limit: None,
-                        offset: None,
-                        fetch: None,
-                        lock: None,
-                    params: Default::default()
-                }))]),*/
                 params: QueryParams::default(),
             },
         }))];
@@ -438,39 +388,6 @@ mod cassandra_protocol_tests {
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: CQL::parse_from_string("insert into system.foo (bar) values ('bar2')"),
-                /*CQL::Parsed(vec![Statement::Insert {
-                    or: None,
-                    table_name: ObjectName(vec![
-                        Ident {
-                            value: "system".into(),
-                            quote_style: None,
-                        },
-                        Ident {
-                            value: "foo".into(),
-                            quote_style: None,
-                        },
-                    ]),
-                    columns: (vec![Ident {
-                        value: "bar".into(),
-                        quote_style: None,
-                    }]),
-                    overwrite: false,
-                    source: Box::new(Query {
-                        with: None,
-                        body: (SetExpr::Values(Values(vec![vec![sqlparser::ast::Expr::Value(
-                            SingleQuotedString("bar2".to_string()),
-                        )]]))),
-                        order_by: vec![],
-                        limit: None,
-                        offset: None,
-                        fetch: None,
-                        lock: None,
-                    }),
-                    partitioned: None,
-                    after_columns: (vec![]),
-                    table: false,
-                    on: None,
-                }]),*/
                 params: QueryParams::default(),
             },
         }))];

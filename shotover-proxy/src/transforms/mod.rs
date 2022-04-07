@@ -303,13 +303,15 @@ pub async fn build_chain_from_config(
     Ok(TransformChain::new(transforms, name))
 }
 
+use std::slice::IterMut;
+
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
 /// Most [`Transform`] authors will only be interested in [`Wrapper.messages`].
 #[derive(Debug)]
 pub struct Wrapper<'a> {
     pub messages: Messages,
-    transforms: Vec<&'a mut Transforms>,
+    transforms: IterMut<'a, Transforms>,
     pub client_details: String,
     chain_name: String,
     /// When true transforms must flush any buffered messages into the messages field.
@@ -325,7 +327,7 @@ impl<'a> Clone for Wrapper<'a> {
     fn clone(&self) -> Self {
         Wrapper {
             messages: self.messages.clone(),
-            transforms: vec![],
+            transforms: [].iter_mut(),
             client_details: self.client_details.clone(),
             chain_name: self.chain_name.clone(),
             flush: false,
@@ -353,10 +355,10 @@ impl<'a> Wrapper<'a> {
     ///
     /// The result of calling the next transform is then provided as a response.
     pub async fn call_next_transform(mut self) -> ChainResponse {
-        if self.transforms.is_empty() {
-            panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a terminating sink transform to send the messages somewhere.");
-        }
-        let transform = self.transforms.remove(0);
+        let transform = match self.transforms.next() {
+            Some(transform) => transform,
+            None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a terminating sink transform to send the messages somewhere.")
+        };
 
         let transform_name = transform.get_name();
         let chain_name = self.chain_name.clone();
@@ -377,7 +379,7 @@ impl<'a> Wrapper<'a> {
     pub fn new(m: Messages) -> Self {
         Wrapper {
             messages: m,
-            transforms: vec![],
+            transforms: [].iter_mut(),
             client_details: "".to_string(),
             chain_name: "".to_string(),
             flush: false,
@@ -387,7 +389,7 @@ impl<'a> Wrapper<'a> {
     pub fn new_with_chain_name(m: Messages, chain_name: String) -> Self {
         Wrapper {
             messages: m,
-            transforms: vec![],
+            transforms: [].iter_mut(),
             client_details: "".to_string(),
             chain_name,
             flush: false,
@@ -397,7 +399,7 @@ impl<'a> Wrapper<'a> {
     pub fn flush_with_chain_name(chain_name: String) -> Self {
         Wrapper {
             messages: vec![],
-            transforms: vec![],
+            transforms: [].iter_mut(),
             client_details: "".into(),
             chain_name,
             flush: true,
@@ -411,15 +413,15 @@ impl<'a> Wrapper<'a> {
     ) -> Self {
         Wrapper {
             messages: m,
-            transforms: vec![],
+            transforms: [].iter_mut(),
             client_details,
             chain_name,
             flush: false,
         }
     }
 
-    pub fn reset(&mut self, transforms: Vec<&'a mut Transforms>) {
-        self.transforms = transforms;
+    pub fn reset(&mut self, transforms: &'a mut Vec<Transforms>) {
+        self.transforms = transforms.iter_mut();
     }
 }
 

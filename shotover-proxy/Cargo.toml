@@ -41,7 +41,7 @@ thiserror = "1.0"
 anyhow = "1.0.31"
 
 # Parsers
-sqlparser = "0.14"
+sqlparser = "0.16"
 cql3_parser = { git = "https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git", branch = "main" }
 serde = { version = "1.0.111", features = ["derive"] }
 serde_json = "1.0"
@@ -50,6 +50,7 @@ bincode = "1.3.1"
 num = { version = "0.4.0", features = ["serde"] }
 uuid = { version = "0.8.2", features = ["serde"]}
 bigdecimal = {version ="0.3.0", features = ["serde"]}
+base64 = "0.13.0"
 
 #Observability
 metrics = "0.18.0"
@@ -75,16 +76,15 @@ csv = "1.1.6"
 strum_macros = "0.24"
 
 [dev-dependencies]
+rayon = "1.5.1"
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "version-0.4", version = "0.3", features = ["async_tokio", "html_reports"] }
 redis = { version = "0.21.0", features = ["tokio-comp", "cluster"] }
 pcap = "0.9.0"
 pktparse = { version = "0.7.0", features = ["serde"] }
 tls-parser = "0.11.0"
-threadpool = "1.0"
 tokio-io-timeout = "1.1.1"
-num_cpus = "1.0"
 serial_test = "0.6.0"
-cassandra-cpp = "0.17.0"
+cassandra-cpp = "1.1.0"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
 nix = "0.23.0"

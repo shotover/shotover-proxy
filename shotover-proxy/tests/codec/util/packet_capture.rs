@@ -1,11 +1,9 @@
-use crate::codec::util::packet_parse::{PacketHeader, PacketParse, ParsedPacket};
-
+use crate::codec::util::packet_parse::{OwnedPcapPacket, PacketHeader, PacketParse, ParsedPacket};
 use anyhow::Result;
 use pcap::{Active, Capture, Device};
+use rayon::prelude::*;
 use std::net::IpAddr;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use threadpool::ThreadPool;
 
 #[derive(Default)]
 pub struct PacketCapture {
@@ -45,15 +43,9 @@ impl PacketCapture {
         self.print_headers();
 
         while let Ok(packet) = cap_handle.next() {
-            let data = packet.data.to_owned();
-            let len = packet.header.len;
-            let ts = format!(
-                "{}.{:06}",
-                &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
-            );
-
+            let packet = OwnedPcapPacket::from(packet);
             let packet_parse = PacketParse::default();
-            let parsed_packet = packet_parse.parse_packet(data, len, ts);
+            let parsed_packet = packet_parse.parse_packet(&packet);
             match parsed_packet {
                 Ok(parsed_packet) => {
                     self.print_packet(&parsed_packet);
@@ -135,11 +127,7 @@ impl PacketCapture {
         file_name: &Path,
         filter: Option<String>,
     ) -> Vec<Result<ParsedPacket, String>> {
-        // TODO: Fix flakiness from out-of-order futures.
-        // let pool = ThreadPool::new(num_cpus::get() * 2);
-        let pool = ThreadPool::new(1);
         let mut cap_handle = Capture::from_file(file_name).unwrap();
-        let packets = Arc::new(Mutex::new(Vec::new()));
 
         if let Some(filter) = filter {
             cap_handle
@@ -147,29 +135,15 @@ impl PacketCapture {
                 .expect("Filters invalid, please check the documentation.");
         }
 
-        while let Ok(packet) = cap_handle.next() {
-            let data = packet.data.to_owned();
-            let len = packet.header.len;
-            let ts = format!(
-                "{}.{:06}",
-                &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
-            );
+        let packets: Vec<_> =
+            std::iter::from_fn(move || cap_handle.next().ok().map(OwnedPcapPacket::from)).collect();
 
-            let packets = packets.clone();
-
-            pool.execute(move || {
+        packets
+            .par_iter()
+            .map(|packet| {
                 let packet_parse = PacketParse::default();
-                let parsed_packet = packet_parse.parse_packet(data, len, ts);
-
-                packets.lock().unwrap().push(parsed_packet);
-            });
-        }
-
-        pool.join();
-
-        Arc::try_unwrap(packets)
-            .expect("more refs remaining")
-            .into_inner()
-            .unwrap()
+                packet_parse.parse_packet(packet)
+            })
+            .collect()
     }
 }

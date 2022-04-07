@@ -107,14 +107,12 @@ exceptions = [
     { allow = ["LGPL-3.0"], name = "pktparse", version = "*" }, # Allowed because its only used as a dev-dependency
 ]
 
-# TODO: Should be fixed upstream soon https://github.com/hsivonen/encoding_rs/issues/75
+# ring is described as being ISC compatible by its license file: https://github.com/briansmith/ring/blob/main/LICENSE
 [[licenses.clarify]]
-name = "encoding_rs"
+name = "ring"
 version = "*"
-expression = "(Apache-2.0 OR MIT) AND BSD-3-Clause"
-license-files = [
-    { path = "COPYRIGHT", hash = 0x39f8ad31 }
-]
+expression = "ISC"
+license-files = []
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the

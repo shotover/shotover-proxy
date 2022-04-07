@@ -6,6 +6,7 @@
 tests/soaktest-*
 *.gz
 /.vscode
+/shotover-proxy/example-configs/redis-tls/certs
 .workspace.code-workspace
 /test_tmp
 output.txt
