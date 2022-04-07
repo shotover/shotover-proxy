@@ -30,7 +30,6 @@ impl Transform for QueryCounter {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         for m in &mut message_wrapper.messages {
             match m.frame() {
-
                 Some(Frame::Cassandra(frame)) => {
                     let queries = frame.operation.queries();
                     if queries.is_empty() {
@@ -40,7 +39,7 @@ impl Transform for QueryCounter {
                             counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => statement.short_name(), "type" => "cassandra");
                         }
                     }
-                },
+                }
                 Some(Frame::Redis(frame)) => {
                     if let Some(query_type) = get_redis_query_type(frame) {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => query_type, "type" => "redis");

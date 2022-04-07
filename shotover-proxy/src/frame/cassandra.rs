@@ -359,12 +359,17 @@ impl CassandraOperation {
     ///
     /// TODO: This will return a custom iterator type when BATCH support is added
     pub fn queries(&mut self) -> Vec<&mut CassandraStatement> {
-        let mut result = vec!();
+        let mut result = vec![];
+        /*
         match self {
             CassandraOperation::Query { query: cql, .. } => result.push( &mut *cql.statement),
             // TODO: Return CassandraOperation::Batch queries once we add BATCH parsing to cassandra-protocol
             _ => { }
         }
+         */
+        if let CassandraOperation::Query { query: cql, .. } = self {
+            result.push(&mut *cql.statement)
+        };
         result
     }
 
