@@ -401,14 +401,16 @@ fn build_redis_ast_from_cql3(
             add_query_values(table_cache_schema, query_values)
         }
         CassandraStatement::Update(update) => {
-            let mut query_values: BTreeMap<&str, &Operand> = BTreeMap::new();
+            let mut query_values: BTreeMap<String, &Operand> = BTreeMap::new();
+
+            update.assignments.iter().for_each( |assignment| {query_values.insert( assignment.name.to_string(), &assignment.value);} );
             for relation_element in &update.where_clause {
                 if relation_element.oper == RelationOperator::Equal {
                     if let Operand::Column(name) = &relation_element.obj {
                         if table_cache_schema.partition_key.contains(name)
                             || table_cache_schema.range_key.contains(name)
                         {
-                            query_values.insert(name, &relation_element.value);
+                            query_values.insert(name.clone(), &relation_element.value);
                         }
                     }
                 }
@@ -424,11 +426,11 @@ fn build_redis_ast_from_cql3(
 
 fn add_query_values(
     table_cache_schema: &TableCacheSchema,
-    query_values: BTreeMap<&str, &Operand>,
+    query_values: BTreeMap<String, &Operand>,
 ) -> Result<RedisFrame, CacheableState> {
     let mut partition_key = BytesMut::new();
     for column_name in &table_cache_schema.partition_key {
-        if let Some(operand) = query_values.get(column_name.as_str()) {
+        if let Some(operand) = query_values.get(column_name) {
             partition_key.extend(operand.to_string().as_bytes());
         } else {
             return Err(CacheableState::Err(format!(
@@ -665,9 +667,9 @@ mod test {
 
         let ast = build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
-            .ok()
-            .unwrap();
+        let result = build_redis_ast_from_cql3(&ast, &table_cache_schema);
+        let query = result.ok().unwrap();
+
 
         let expected = RedisFrame::Array(vec![
             RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
