@@ -1,6 +1,7 @@
 version: "3.3"
 networks:
   cluster_subnet:
+    name: cluster_subnet
     driver: bridge
     ipam:
       driver: default
