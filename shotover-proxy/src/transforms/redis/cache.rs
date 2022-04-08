@@ -750,7 +750,7 @@ mod test {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain = TransformChain::new(vec![], "test-chain".to_string());
+        let chain = TransformChain::new(vec![], "test-chain".to_string(), false);
         let transform = SimpleRedisCache {
             cache_chain: chain,
             caching_schema: HashMap::new(),
@@ -775,6 +775,7 @@ mod test {
                 Transforms::Null(Null::default()),
             ],
             "test-chain".to_string(),
+            false,
         );
         let transform = SimpleRedisCache {
             cache_chain: chain,

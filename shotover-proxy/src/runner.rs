@@ -65,7 +65,6 @@ impl Runner {
 
         let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);
 
-
         let runner = Runner {
             runtime,
             runtime_handle,
@@ -74,16 +73,14 @@ impl Runner {
             tracing,
         };
 
+        if let Some(observability_interface) = &runner.config.observability_interface {
+            runner.with_observability_interface(observability_interface)?;
+        }
 
-            if let Some(observability_interface) = &runner.config.observability_interface{
-                runner.with_observability_interface(observability_interface)?;
-            }
-
-
-       Ok(runner)
+        Ok(runner)
     }
 
-    fn with_observability_interface(& self, observability_interface: &str) -> Result<()> {
+    fn with_observability_interface(&self, observability_interface: &str) -> Result<()> {
         let recorder = PrometheusBuilder::new().build_recorder();
         let handle = recorder.handle();
         metrics::set_boxed_recorder(Box::new(recorder))?;
@@ -239,7 +236,13 @@ pub async fn run(
         std::mem::size_of::<Wrapper<'_>>()
     );
 
-    match topology.run_chains(trigger_shutdown_rx).await {
+    match topology
+        .run_chains(
+            trigger_shutdown_rx,
+            config.observability_interface.is_some(),
+        )
+        .await
+    {
         Ok(sources) => {
             futures::future::join_all(sources.into_iter().map(|x| x.into_join_handle())).await;
             info!("Shotover was shutdown cleanly.");

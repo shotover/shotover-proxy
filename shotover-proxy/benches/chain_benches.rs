@@ -23,8 +23,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.noise_threshold(0.2);
 
     {
-        let chain =
-            TransformChain::new(vec![Transforms::Null(Null::default())], "bench".to_string());
+        let chain = TransformChain::new(
+            vec![Transforms::Null(Null::default())],
+            "bench".to_string(),
+            false,
+        );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::None)],
             chain.name.clone(),
@@ -52,6 +55,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 Transforms::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
             ],
             "bench".to_string(),
+            false,
         );
         let wrapper = Wrapper::new_with_chain_name(
             vec![
@@ -93,6 +97,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 ]))),
             ],
             "bench".to_string(),
+            false,
         );
         let wrapper_set = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
@@ -143,6 +148,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 Transforms::Null(Null::default()),
             ],
             "bench".to_string(),
+            false,
         );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
@@ -180,6 +186,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 Transforms::Null(Null::default()),
             ],
             "bench".to_string(),
+            false,
         );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_bytes(

@@ -157,8 +157,9 @@ mod parallel_map_tests {
                 Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
+            false,
         );
-        let chain_2 = TransformChain::new(vec![], "test-chain-2".to_string());
+        let chain_2 = TransformChain::new(vec![], "test-chain-2".to_string(), false);
 
         let transform = ParallelMap {
             chains: vec![chain_1, chain_2],
@@ -184,6 +185,7 @@ mod parallel_map_tests {
                 Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
+            false,
         );
         let chain_2 = TransformChain::new(
             vec![
@@ -192,6 +194,7 @@ mod parallel_map_tests {
                 Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
+            false,
         );
 
         let transform = ParallelMap {

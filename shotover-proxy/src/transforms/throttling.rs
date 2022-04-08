@@ -108,6 +108,7 @@ mod test {
                     Transforms::Null(Null::default()),
                 ],
                 "test-chain".to_string(),
+                false,
             );
 
             assert_eq!(
@@ -130,6 +131,7 @@ mod test {
                     Transforms::Null(Null::default()),
                 ],
                 "test-chain".to_string(),
+                false,
             );
 
             assert_eq!(chain.validate(), Vec::<String>::new());

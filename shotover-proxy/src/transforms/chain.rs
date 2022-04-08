@@ -50,9 +50,9 @@ pub struct TransformChain {
     pub chain: InnerChain,
 
     #[derivative(Debug = "ignore")]
-    chain_total: Counter,
+    chain_total: Option<Counter>,
     #[derivative(Debug = "ignore")]
-    chain_failures: Counter,
+    chain_failures: Option<Counter>,
 }
 
 #[derive(Debug, Clone)]
@@ -209,16 +209,23 @@ impl TransformChain {
         }
     }
 
-    pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
-        for transform in &transform_list {
-            register_counter!("shotover_transform_total", "transform" => transform.get_name());
-            register_counter!("shotover_transform_failures", "transform" => transform.get_name());
-            register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
-        }
+    pub fn new(transform_list: Vec<Transforms>, name: String, enable_metrics: bool) -> Self {
+        let (chain_total, chain_failures) = if enable_metrics {
+            for transform in &transform_list {
+                register_counter!("shotover_transform_total", "transform" => transform.get_name());
+                register_counter!("shotover_transform_failures", "transform" => transform.get_name());
+                register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
+            }
 
-        let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
-        let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", "chain" => name.clone());
+            let chain_total =
+                Some(register_counter!("shotover_chain_total", "chain" => name.clone()));
+            let chain_failures =
+                Some(register_counter!("shotover_chain_failures", "chain" => name.clone()));
+            register_histogram!("shotover_chain_latency", "chain" => name.clone());
+            (chain_total, chain_failures)
+        } else {
+            (None, None)
+        };
 
         TransformChain {
             name,
@@ -283,10 +290,16 @@ impl TransformChain {
         wrapper.reset(&mut self.chain);
 
         let result = wrapper.call_next_transform().await;
-        self.chain_total.increment(1);
-        if result.is_err() {
-            self.chain_failures.increment(1);
+
+        if let Some(chain_total) = &self.chain_total {
+            chain_total.increment(1);
         }
+
+        if let Some(chain_failures) = &self.chain_failures {
+            if result.is_err() {
+                chain_failures.increment(1);
+            };
+        };
 
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
@@ -302,7 +315,7 @@ mod chain_tests {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain = TransformChain::new(vec![], "test-chain".to_string());
+        let chain = TransformChain::new(vec![], "test-chain".to_string(), false);
         assert_eq!(
             chain.validate(),
             vec!["test-chain:", "  Chain cannot be empty"]
@@ -318,6 +331,7 @@ mod chain_tests {
                 Transforms::Null(Null::default()),
             ],
             "test-chain".to_string(),
+            false,
         );
         assert_eq!(chain.validate(), Vec::<String>::new());
     }

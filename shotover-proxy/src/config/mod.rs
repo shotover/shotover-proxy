@@ -6,7 +6,7 @@ pub mod topology;
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub main_log_level: String,
-    pub observability_interface: String,
+    pub observability_interface: Option<String>,
 }
 
 impl Config {

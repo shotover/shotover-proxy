@@ -256,7 +256,9 @@ impl TransformsConfig {
     /// Return a new instance of the transform that the config is specifying.
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
         match self {
-            TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
+            TransformsConfig::CassandraSinkSingle(c) => {
+                c.get_transform(chain_name, enable_metrics).await
+            }
             TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
             TransformsConfig::RedisCache(r) => r.get_transform().await,
             TransformsConfig::Tee(t) => t.get_transform().await,
@@ -294,7 +296,7 @@ pub async fn build_chain_from_config(
     for tc in transform_configs {
         transforms.push(tc.get_transform(name.clone()).await?)
     }
-    Ok(TransformChain::new(transforms, name))
+    Ok(TransformChain::new(transforms, name, enable_metrics))
 }
 
 use std::slice::IterMut;

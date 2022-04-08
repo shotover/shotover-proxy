@@ -44,6 +44,7 @@ impl Topology {
     pub async fn run_chains(
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
+        enable_metrics: bool,
     ) -> Result<Vec<Sources>> {
         let mut sources_list: Vec<Sources> = Vec::new();
 
@@ -158,7 +159,7 @@ mod topology_tests {
         let (_sender, trigger_shutdown_rx) = watch::channel::<bool>(false);
 
         let topology = Topology::topology_from_config(config);
-        topology.run_chains(trigger_shutdown_rx).await
+        topology.run_chains(trigger_shutdown_rx, false).await
     }
 
     #[tokio::test]
@@ -544,7 +545,7 @@ redis_chain:
 
         let topology = Topology::new_from_yaml(yaml_contents);
         let error = topology
-            .run_chains(trigger_shutdown_rx)
+            .run_chains(trigger_shutdown_rx, false)
             .await
             .unwrap_err()
             .to_string();

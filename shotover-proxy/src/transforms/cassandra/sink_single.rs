@@ -28,12 +28,17 @@ pub struct CassandraSinkSingleConfig {
 }
 
 impl CassandraSinkSingleConfig {
-    pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
+    pub async fn get_transform(
+        &self,
+        chain_name: String,
+        enable_metrics: bool,
+    ) -> Result<Transforms> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
             chain_name,
             tls,
+            enable_metrics,
         )))
     }
 }
@@ -42,7 +47,7 @@ pub struct CassandraSinkSingle {
     address: String,
     outbound: Option<CassandraConnection>,
     chain_name: String,
-    failed_requests: Counter,
+    failed_requests: Option<Counter>,
     tls: Option<TlsConnector>,
 }
 
@@ -63,8 +68,15 @@ impl CassandraSinkSingle {
         address: String,
         chain_name: String,
         tls: Option<TlsConnector>,
+        enable_metrics: bool,
     ) -> CassandraSinkSingle {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
+        let failed_requests = if enable_metrics {
+            Some(
+                register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle"),
+            )
+        } else {
+            None
+        };
 
         CassandraSinkSingle {
             address,

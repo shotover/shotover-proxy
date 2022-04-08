@@ -100,10 +100,11 @@ mod test {
                     Response::Message(Messages::new()),
                 ))],
                 "child_test".to_string(),
+                false,
             ),
         });
 
-        let mut chain = TransformChain::new(vec![transform], "test".to_string());
+        let mut chain = TransformChain::new(vec![transform], "test".to_string(), false);
 
         for _ in 0..90 {
             let r = chain

@@ -245,15 +245,15 @@ mod scatter_transform_tests {
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
             "one".to_string(),
-            TransformChain::new(vec![ok_repeat.clone()], "one".to_string()),
+            TransformChain::new(vec![ok_repeat.clone()], "one".to_string(), false),
         );
         two_of_three.insert(
             "two".to_string(),
-            TransformChain::new(vec![ok_repeat.clone()], "two".to_string()),
+            TransformChain::new(vec![ok_repeat.clone()], "two".to_string(), false),
         );
         two_of_three.insert(
             "three".to_string(),
-            TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
+            TransformChain::new(vec![err_repeat.clone()], "three".to_string(), false),
         );
 
         let mut tuneable_success_consistency = Transforms::ConsistentScatter(ConsistentScatter {
@@ -272,15 +272,15 @@ mod scatter_transform_tests {
         let mut one_of_three = HashMap::new();
         one_of_three.insert(
             "one".to_string(),
-            TransformChain::new(vec![ok_repeat.clone()], "one".to_string()),
+            TransformChain::new(vec![ok_repeat.clone()], "one".to_string(), false),
         );
         one_of_three.insert(
             "two".to_string(),
-            TransformChain::new(vec![err_repeat.clone()], "two".to_string()),
+            TransformChain::new(vec![err_repeat.clone()], "two".to_string(), false),
         );
         one_of_three.insert(
             "three".to_string(),
-            TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
+            TransformChain::new(vec![err_repeat.clone()], "three".to_string(), false),
         );
 
         let mut tuneable_fail_consistency = Transforms::ConsistentScatter(ConsistentScatter {
@@ -306,8 +306,9 @@ mod scatter_transform_tests {
                 Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
+            false,
         );
-        let chain_2 = TransformChain::new(vec![], "test-chain-2".to_string());
+        let chain_2 = TransformChain::new(vec![], "test-chain-2".to_string(), false);
 
         let transform = ConsistentScatter {
             route_map: vec![
@@ -337,6 +338,7 @@ mod scatter_transform_tests {
                 Transforms::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
+            false,
         );
         let chain_2 = TransformChain::new(
             vec![
@@ -345,6 +347,7 @@ mod scatter_transform_tests {
                 Transforms::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
+            false,
         );
 
         let transform = ConsistentScatter {
