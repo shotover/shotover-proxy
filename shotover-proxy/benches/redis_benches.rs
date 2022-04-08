@@ -15,10 +15,8 @@ fn redis(c: &mut Criterion) {
         "active",
         || {
             let compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml");
-            let shotover_manager = ShotoverManager::from_topology_file_with_config(
-                "example-configs/redis-multi/topology.yaml",
-                "tests/helpers/config.yaml",
-            );
+            let shotover_manager =
+                ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
             BenchResources::new(shotover_manager, compose)
         },
         move |b, state| {
@@ -35,10 +33,8 @@ fn redis(c: &mut Criterion) {
         "cluster",
         || {
             let compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml");
-            let shotover_manager = ShotoverManager::from_topology_file_with_config(
-                "example-configs/redis-cluster/topology.yaml",
-                "tests/helpers/config.yaml",
-            );
+            let shotover_manager =
+                ShotoverManager::from_topology_file("example-configs/redis-cluster/topology.yaml");
             BenchResources::new(shotover_manager, compose)
         },
         move |b, state| {
@@ -56,9 +52,8 @@ fn redis(c: &mut Criterion) {
         || {
             let compose =
                 DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
-            let shotover_manager = ShotoverManager::from_topology_file_with_config(
+            let shotover_manager = ShotoverManager::from_topology_file(
                 "example-configs/redis-passthrough/topology.yaml",
-                "tests/helpers/config.yaml",
             );
             BenchResources::new(shotover_manager, compose)
         },
@@ -77,10 +72,8 @@ fn redis(c: &mut Criterion) {
         || {
             test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
             let compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
-            let shotover_manager = ShotoverManager::from_topology_file_with_config(
-                "example-configs/redis-tls/topology.yaml",
-                "tests/helpers/config.yaml",
-            );
+            let shotover_manager =
+                ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
             BenchResources::new(shotover_manager, compose)
         },
         move |b, state| {
@@ -99,9 +92,8 @@ fn redis(c: &mut Criterion) {
             test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
             let compose =
                 DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
-            let shotover_manager = ShotoverManager::from_topology_file_with_config(
+            let shotover_manager = ShotoverManager::from_topology_file(
                 "example-configs/redis-cluster-tls/topology.yaml",
-                "tests/helpers/config.yaml",
             );
             BenchResources::new(shotover_manager, compose)
         },
