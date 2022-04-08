@@ -13,10 +13,9 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.set_load_balance_round_robin();
     let result = cluster.connect();
     if let Some(err) = &result.as_ref().err() {
-        assert!( false, "{}",err );
+        assert!(false, "{}", err);
     }
     result.unwrap()
-    //cluster.connect().unwrap()
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
