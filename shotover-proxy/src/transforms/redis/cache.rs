@@ -493,7 +493,7 @@ impl Transform for SimpleRedisCache {
             {
                 Ok(cr) => Ok(cr),
                 Err(e) => {
-                    tracing::error!("failed to fetch from cache: {:?}", e);
+                    tracing::warn!("failed to fetch from cache: {:?}", e);
                     message_wrapper.call_next_transform().await
                 }
             }

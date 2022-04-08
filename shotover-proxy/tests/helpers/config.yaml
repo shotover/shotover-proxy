@@ -1,0 +1,3 @@
+---
+main_log_level: "error,shotover_proxy=error"
+observability_interface: "0.0.0.0:9001"
