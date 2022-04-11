@@ -156,7 +156,7 @@ impl RedisSinkCluster {
                 // TODO: Improve error messages within the reassembled response. E.g. which channel failed.
 
                 Box::pin(async move {
-                    let response = responses
+                    let mut response = responses
                         .fold(vec![], |mut acc, response| async move {
                             match response {
                                 Ok(Response {
@@ -181,7 +181,7 @@ impl RedisSinkCluster {
                     Ok(Response {
                         original: message,
                         response: ChainResponse::Ok(vec![Message::from_frame(Frame::Redis(
-                            RedisFrame::Array(response),
+                            response.remove(0),
                         ))]),
                     })
                 })
