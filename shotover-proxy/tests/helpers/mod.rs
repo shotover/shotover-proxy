@@ -48,7 +48,10 @@ impl ShotoverManager {
     }
 
     #[allow(dead_code)] // to make clippy happy
-    pub fn from_topology_file_with_config(topology_path: &str, config_file: &str) -> ShotoverManager {
+    pub fn from_topology_file_with_config(
+        topology_path: &str,
+        config_file: &str,
+    ) -> ShotoverManager {
         let opts = ConfigOpts {
             topology_file: topology_path.into(),
             config_file: config_file.into(),
@@ -70,12 +73,11 @@ impl ShotoverManager {
         }
     }
 
-
     #[allow(dead_code)] // to make clippy happy
     pub fn from_topology_file_without_observability(topology_path: &str) -> ShotoverManager {
         let opts = ConfigOpts {
             topology_file: topology_path.into(),
-            config_file: "tests/helpers/config.yaml".into(),
+            config_file: "tests/helpers/config_without_observability.yaml".into(),
             ..ConfigOpts::default()
         };
         let spawn = Runner::new(opts)
