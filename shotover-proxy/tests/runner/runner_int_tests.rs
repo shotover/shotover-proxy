@@ -39,7 +39,7 @@ fn test_early_shutdown_cassandra_source() {
 #[test]
 #[serial]
 fn test_shotover_responds_sigterm() {
-    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
+    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml", None);
     shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
     let wait_output = shotover_process.wait();
@@ -55,7 +55,7 @@ fn test_shotover_responds_sigterm() {
 #[test]
 #[serial]
 fn test_shotover_responds_sigint() {
-    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml");
+    let shotover_process = ShotoverProcess::new("example-configs/null-redis/topology.yaml", None);
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);
 
     let wait_output = shotover_process.wait();

@@ -26,7 +26,7 @@ impl Drop for ShotoverProcess {
 
 impl ShotoverProcess {
     #[allow(unused)]
-    pub fn new(topology_path: &str) -> ShotoverProcess {
+    pub fn new(topology_path: &str, config_path: Option<String>) -> ShotoverProcess {
         // First ensure shotover is fully built so that the potentially lengthy build time is not included in the wait_for_socket_to_open timeout
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
         let all_args = if env!("PROFILE") == "release" {
@@ -35,6 +35,12 @@ impl ShotoverProcess {
             vec!["build", "--all-features"]
         };
         run_command(env!("CARGO"), &all_args).unwrap();
+
+        let config = if let Some(config_path) = config_path {
+            config_path
+        } else {
+            "config/config.yaml".into()
+        };
 
         // Now actually run shotover and keep hold of the child process
         let all_args = if env!("PROFILE") == "release" {
