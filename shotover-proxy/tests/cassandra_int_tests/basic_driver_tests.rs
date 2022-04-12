@@ -1124,7 +1124,7 @@ mod cache {
         // query against some other field
         assert_query_result(
             cassandra_session,
-            "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table WHERE x=11",
+            "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table WHERE x=11 ALLOW FILTERING",
             &[],
         );
 
@@ -1191,7 +1191,7 @@ mod cache {
         // query against some other field
         assert_query_result(
             cassandra_session,
-            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE x=11",
+            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE x=11 ALLOW FILTERING",
             &[],
         );
 

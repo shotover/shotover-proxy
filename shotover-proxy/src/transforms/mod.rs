@@ -304,6 +304,7 @@ pub async fn build_chain_from_config(
 }
 
 use std::slice::IterMut;
+use tracing::info;
 
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
@@ -362,6 +363,7 @@ impl<'a> Wrapper<'a> {
 
         let transform_name = transform.get_name();
         let chain_name = self.chain_name.clone();
+        info!( "call_next_transform calling {} {}", transform_name, chain_name );
 
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME

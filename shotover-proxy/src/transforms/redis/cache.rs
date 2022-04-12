@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame, CQL};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
@@ -12,11 +12,11 @@ use bytes::{BufMut, Bytes, BytesMut};
 use cassandra_protocol::frame::Version;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{Operand, RelationElement, RelationOperator};
-use cql3_parser::select::SelectElement;
 use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use tracing_log::log::info;
+use crate::frame::cassandra::CQLStatement;
 
 enum CacheableState {
     Read,
@@ -83,6 +83,7 @@ impl SimpleRedisCache {
         //         + if the request is a CassandraOperation::Query then we consume a single message from messages_redis_response converting it to a cassandra response
         //     * These are the cassandra responses that we return from the function.
 
+        info!("get_or_update_from_cache called");
         let mut messages_redis_request = Vec::with_capacity(messages_cass_request.len());
         for cass_request in &mut messages_cass_request {
             match cass_request.frame() {
@@ -96,7 +97,8 @@ impl SimpleRedisCache {
                             CacheableState::Read
                             | CacheableState::Update
                             | CacheableState::Delete => {
-                                if let Some(table_name) = CQL::get_table_name(statement) {
+                                info!("get_or_update_from_cache processing cacheable state");
+                                if let Some(table_name) = CQLStatement::get_table_name(statement) {
                                     if let Some(table_cache_schema) =
                                         self.caching_schema.get(table_name)
                                     {
@@ -121,6 +123,7 @@ impl SimpleRedisCache {
                                 }
                             }
                             _ => {
+                                info!("get_or_update_from_cache not processing cacheable state");
                                 // do nothing here but check again again outside of match as state may have changed
                             }
                         }
@@ -142,6 +145,8 @@ impl SimpleRedisCache {
             }
         }
 
+        info!("get_or_update_from_cache calling cache_chain.process_request");
+
         match self
             .cache_chain
             .process_request(
@@ -151,6 +156,7 @@ impl SimpleRedisCache {
             .await
         {
             Ok(messages_redis_response) => {
+                info!("get_or_update_from_cache received OK from cache_chain.process_request");
                 // Replace cass_request messages with cassandra responses in place.
                 // We reuse the vec like this to save allocations.
                 let mut messages_redis_response_iter = messages_redis_response.into_iter();
@@ -250,7 +256,7 @@ fn build_zrangebylex_min_max_from_sql(
 }
 
 fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
-    let has_params = CQL::has_params(statement);
+    let has_params = CQLStatement::has_params(statement);
 
     match statement {
         CassandraStatement::Select(select) => {
@@ -260,14 +266,16 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
                 CacheableState::Skip("Can not cache with ALLOW FILTERING".into())
             } else if select.where_clause.is_empty() {
                 CacheableState::Skip("Can not cache if where clause is empty".into())
-            } else if !select.columns.is_empty() {
+            /* } else if !select.columns.is_empty() {
                 if select.columns.len() == 1 && select.columns[0].eq(&SelectElement::Star) {
                     CacheableState::Read
                 } else {
                     CacheableState::Skip(
-                        "Can not cache if columns other than '*' are not selected".into(),
+                        "Can not cache if columns other than '*' are selected".into(),
                     )
                 }
+
+            */
             } else {
                 CacheableState::Read
             }
@@ -495,38 +503,51 @@ impl Transform for SimpleRedisCache {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut read_cache = true;
         for m in &mut message_wrapper.messages {
-            if let Some(Frame::Cassandra(CassandraFrame {
-                operation: CassandraOperation::Query { .. },
-                ..
-            })) = m.frame()
-            {
-                /* let statement = query.get_statement();
-                match  is_cacheable(statement ) {
-                    CacheableState::Read |
-                    CacheableState::Update |
-                    CacheableState::Delete => {}
-                    CacheableState::Skip(reason)  => {
-                        tracing::info!( "Cache skipped for {} due to {}", statement, reason );
-                        use_cache = false;
-                    }
-                    CacheableState::Err(reason) => {
-                        tracing::error!("Cache failed for {} due to {}", statement, reason);
-                        use_cache = false;
-                    }
-                }
+            if let Some(&mut Frame::Cassandra(CassandraFrame{ operation : CassandraOperation::Query{ query ,  ..},..})) = &mut m.frame() {
 
-                */
-                match m.get_query_type() {
-                    QueryType::Read => {}
-                    QueryType::Write => read_cache = false,
-                    QueryType::ReadWrite => read_cache = false,
-                    QueryType::SchemaChange => read_cache = false,
-                    QueryType::PubSubMessage => {}
-                }
+
+
+
+            //if let Some(&mut Frame::Cassandra(CassandraFrame {
+            //                                      operation: &CassandraOperation::Query { query, .. },
+           //                                       ..
+           //                                   })) = &mut m.frame()
+           //     {
+                    /* let statement = query.get_statement();
+                    match  is_cacheable(statement ) {
+                        CacheableState::Read |
+                        CacheableState::Update |
+                        CacheableState::Delete => {}
+                        CacheableState::Skip(reason)  => {
+                            tracing::info!( "Cache skipped for {} due to {}", statement, reason );
+                            use_cache = false;
+                        }
+                        CacheableState::Err(reason) => {
+                            tracing::error!("Cache failed for {} due to {}", statement, reason);
+                            use_cache = false;
+                        }
+                    }
+
+                    */
+                    for cql_statement in query.statements {
+                        info!("cache transform processing {}", cql_statement);
+                        match cql_statement.get_query_type() {
+                            QueryType::Read => {}
+                            QueryType::Write => read_cache = false,
+                            QueryType::ReadWrite => read_cache = false,
+                            QueryType::SchemaChange => read_cache = false,
+                            QueryType::PubSubMessage => {}
+                        }
+                    }
+
+
+            } else {
+                read_cache = false;
             }
         }
+        info!("cache transform read_cache:{} ", read_cache);
 
-        // If there are no write queries (all queries are reads) we can use the cache
+        // If there are no write queries (all queries are reads) we can read the cache
         if read_cache {
             match self
                 .get_or_update_from_cache(message_wrapper.messages.clone())

@@ -1,4 +1,4 @@
-use crate::frame::{CassandraOperation, CassandraResult, Frame, CQL};
+use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue};
 use crate::{
     error::ChainResponse,
@@ -10,6 +10,7 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::select::SelectElement;
 use serde::Deserialize;
 use std::collections::HashMap;
+use crate::frame::cassandra::CQLStatement;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraPeersRewriteConfig {
@@ -72,22 +73,24 @@ fn extract_native_port_column(message: &mut Message) -> Vec<String> {
     let mut result: Vec<String> = vec![];
     if let Some(Frame::Cassandra(cassandra)) = message.frame() {
         if let CassandraOperation::Query { query, .. } = &cassandra.operation {
-            let statement = query.get_statement();
-            if let CassandraStatement::Select(select) = &statement {
-                if let Some(table_name) = CQL::get_table_name(statement) {
-                    if table_name.eq("system.peers_v2") {
-                        select
-                            .columns
-                            .iter()
-                            .for_each(|select_element| match select_element {
-                                SelectElement::Column(col_name) => {
-                                    if col_name.name.eq("native_port") {
-                                        result.push(col_name.alias_or_name());
+            for cql_statement in &query.statements {
+                let statement = &cql_statement.statement;
+                if let CassandraStatement::Select(select) = &statement {
+                    if let Some(table_name) = CQLStatement::get_table_name(&statement) {
+                        if table_name.eq("system.peers_v2") {
+                            select
+                                .columns
+                                .iter()
+                                .for_each(|select_element| match select_element {
+                                    SelectElement::Column(col_name) => {
+                                        if col_name.name.eq("native_port") {
+                                            result.push(col_name.alias_or_name());
+                                        }
                                     }
-                                }
-                                SelectElement::Star => result.push("native_port".to_string()),
-                                _ => {}
-                            });
+                                    SelectElement::Star => result.push("native_port".to_string()),
+                                    _ => {}
+                                });
+                        }
                     }
                 }
             }

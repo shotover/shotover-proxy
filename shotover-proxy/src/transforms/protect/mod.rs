@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, CQL};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -17,6 +17,7 @@ use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use sodiumoxide::hex;
 use std::collections::HashMap;
 use tracing::warn;
+use crate::frame::cassandra::CQLStatement;
 
 mod aws_kms;
 mod key_management;
@@ -238,14 +239,17 @@ impl Transform for Protect {
                 ..
             })) = message.frame()
             {
-                let statement = query.get_statement_mut();
-                if let Some(table_name) = CQL::get_table_name(statement) {
-                    if let Some((_, tables)) = self.keyspace_table_columns.get_key_value(table_name)
-                    {
-                        if let Some((_, columns)) = tables.get_key_value(table_name) {
-                            data_changed =
-                                encrypt_columns(statement, columns, &self.key_source, &self.key_id)
-                                    .await?;
+                for cql_statement in &mut query.statements {
+                    let statement = &mut cql_statement.statement;
+
+                    if let Some(table_name) = CQLStatement::get_table_name(statement) {
+                        if let Some((_, tables)) = self.keyspace_table_columns.get_key_value(table_name)
+                        {
+                            if let Some((_, columns)) = tables.get_key_value(table_name) {
+                                data_changed =
+                                    encrypt_columns(statement, columns, &self.key_source, &self.key_id)
+                                        .await?;
+                            }
                         }
                     }
                 }
@@ -275,45 +279,47 @@ impl Transform for Protect {
                     ..
                 })) = request.frame()
                 {
-                    let statement = query.get_statement();
-                    if let Some(table_name) = CQL::get_table_name(statement) {
-                        if let Some((_keyspace, tables)) =
+                    for cql_statement in &mut query.statements {
+                        let statement = &mut cql_statement.statement;
+                        if let Some(table_name) = CQLStatement::get_table_name(statement) {
+                            if let Some((_keyspace, tables)) =
                             self.keyspace_table_columns.get_key_value(table_name)
-                        {
-                            if let Some((_table, protect_columns)) =
-                                tables.get_key_value(table_name)
                             {
-                                if let CassandraStatement::Select(select) = &statement {
-                                    let positions: Vec<usize> = select
-                                        .columns
-                                        .iter()
-                                        .enumerate()
-                                        .filter_map(|(i, col)| {
-                                            if let SelectElement::Column(named) = col {
-                                                if protect_columns.contains(&named.name) {
-                                                    Some(i)
+                                if let Some((_table, protect_columns)) =
+                                tables.get_key_value(table_name)
+                                {
+                                    if let CassandraStatement::Select(select) = &statement {
+                                        let positions: Vec<usize> = select
+                                            .columns
+                                            .iter()
+                                            .enumerate()
+                                            .filter_map(|(i, col)| {
+                                                if let SelectElement::Column(named) = col {
+                                                    if protect_columns.contains(&named.name) {
+                                                        Some(i)
+                                                    } else {
+                                                        None
+                                                    }
                                                 } else {
                                                     None
                                                 }
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect();
-                                    for row in &mut *rows {
-                                        for index in &positions {
-                                            if let Some(v) = row.get_mut(*index) {
-                                                if let MessageValue::Bytes(_) = v {
-                                                    let protected =
-                                                        Protected::from_encrypted_bytes_value(v)
+                                            })
+                                            .collect();
+                                        for row in &mut *rows {
+                                            for index in &positions {
+                                                if let Some(v) = row.get_mut(*index) {
+                                                    if let MessageValue::Bytes(_) = v {
+                                                        let protected =
+                                                            Protected::from_encrypted_bytes_value(v)
+                                                                .await?;
+                                                        let new_value: MessageValue = protected
+                                                            .unprotect(&self.key_source, &self.key_id)
                                                             .await?;
-                                                    let new_value: MessageValue = protected
-                                                        .unprotect(&self.key_source, &self.key_id)
-                                                        .await?;
-                                                    *v = new_value;
-                                                    invalidate_cache = true;
-                                                } else {
-                                                    warn!("Tried decrypting non-blob column")
+                                                        *v = new_value;
+                                                        invalidate_cache = true;
+                                                    } else {
+                                                        warn!("Tried decrypting non-blob column")
+                                                    }
                                                 }
                                             }
                                         }
