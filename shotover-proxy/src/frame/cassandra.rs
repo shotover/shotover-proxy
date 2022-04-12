@@ -762,11 +762,6 @@ impl Display for CQLStatement {
     }
 }
 
-#[dervie(Copy,Clone)]
-struct CQLStatementListWrapper<'a> {
-    statement_ref : &'a Vec<Box<CQLStatement>>
-}
-
 #[derive(PartialEq, Debug, Clone)]
 pub struct CQL {
     pub statements: Vec<Box<CQLStatement>>,

@@ -500,10 +500,10 @@ fn add_query_values(
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
-    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let mut read_cache = true;
-        for m in &mut message_wrapper.messages {
-            if let Some(&mut Frame::Cassandra(CassandraFrame{ operation : CassandraOperation::Query{ query ,  ..},..})) = &mut m.frame() {
+        for m in &message_wrapper.messages {
+            if let Some(Frame::Cassandra(CassandraFrame{ operation : CassandraOperation::Query{ query ,  ..},..})) = m.frame() {
 
 
 
@@ -529,7 +529,7 @@ impl Transform for SimpleRedisCache {
                     }
 
                     */
-                    for cql_statement in query.statements {
+                    for cql_statement in &query.statements {
                         info!("cache transform processing {}", cql_statement);
                         match cql_statement.get_query_type() {
                             QueryType::Read => {}
