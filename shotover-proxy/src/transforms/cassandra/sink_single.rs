@@ -48,11 +48,13 @@ pub struct CassandraSinkSingle {
 
 impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
-        CassandraSinkSingle::new(
-            self.address.clone(),
-            self.chain_name.clone(),
-            self.tls.clone(),
-        )
+        CassandraSinkSingle {
+            address: self.address.clone(),
+            outbound: None,
+            chain_name: self.chain_name.clone(),
+            tls: self.tls.clone(),
+            failed_requests: self.failed_requests.clone(),
+        }
     }
 }
 
