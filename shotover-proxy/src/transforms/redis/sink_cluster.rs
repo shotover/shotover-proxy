@@ -549,12 +549,16 @@ impl RoutingInfo {
         };
 
         Ok(match command_name.as_slice() {
-            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" => Some(RoutingInfo::AllMasters),
+            b"FLUSHALL" | b"FLUSHDB" => Some(RoutingInfo::AllMasters),
             b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
-            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE" | b"TIME"
-            | b"KEYS" | b"ACL" => Some(RoutingInfo::AllNodes),
-            b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
-            | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
+            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"SAVE" | b"TIME" | b"KEYS" | b"ACL" => {
+                Some(RoutingInfo::AllNodes)
+            }
+            b"SCRIPT" => match args.get(1) {
+                Some(RedisFrame::BulkString(a)) if a.to_ascii_uppercase() == b"KILL" => None,
+                _ => Some(RoutingInfo::AllMasters),
+            },
+            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" => None,
             b"EVALSHA" | b"EVAL" => match args.get(2) {
                 Some(RedisFrame::BulkString(key_count)) => std::str::from_utf8(key_count)
                     .unwrap_or("0")
