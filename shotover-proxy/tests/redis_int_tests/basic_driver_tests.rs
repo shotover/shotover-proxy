@@ -1,9 +1,10 @@
 use crate::helpers::ShotoverManager;
+use crate::redis_int_tests::assert::*;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
-use redis::{AsyncCommands, Cmd, Commands, ErrorKind, RedisError, Value};
+use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
 use shotover_proxy::tls::TlsConfig;
 use std::collections::{HashMap, HashSet};
@@ -20,27 +21,6 @@ const STRESS_TEST_MULTIPLIER: usize = 1;
 
 #[cfg(not(debug_assertions))]
 const STRESS_TEST_MULTIPLIER: usize = 100;
-
-async fn assert_nil(cmd: &mut Cmd, connection: &mut Connection) {
-    assert_eq!(
-        cmd.query_async::<_, Option<String>>(connection).await,
-        Ok(None)
-    );
-}
-async fn assert_ok(cmd: &mut Cmd, connection: &mut Connection) {
-    // TODO: enable this assert once its fixed in the codebase
-    //assert_eq!(cmd.query_async(connection).await, Ok("OK".to_string()));
-
-    cmd.query_async::<_, ()>(connection).await.unwrap();
-}
-
-async fn assert_int(cmd: &mut Cmd, connection: &mut Connection, value: i64) {
-    assert_eq!(cmd.query_async(connection).await, Ok(value));
-}
-
-async fn assert_bytes(cmd: &mut Cmd, connection: &mut Connection, value: &[u8]) {
-    assert_eq!(cmd.query_async(connection).await, Ok(value.to_vec()));
-}
 
 async fn test_args(connection: &mut Connection) {
     assert_ok(redis::cmd("SET").arg("key1").arg(b"foo"), connection).await;
