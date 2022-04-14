@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 use tracing_log::log::{info, warn};
 use cassandra_protocol::frame::Serialize;
+use cql3_parser::select::{Named, Select, SelectElement};
 use itertools::Itertools;
 
 /*
@@ -101,10 +102,11 @@ impl SimpleRedisCache {
                                     statement,
                                     table_cache_schema,
                                 ) {
-                                    Ok(redis_key) => {
+                                    Ok((redis_key,hash_key)) => {
                                     let commands_buffer = vec![
-                                        RedisFrame::BulkString("GET".into()),
-                                        RedisFrame::BulkString(redis_key.into()), ];
+                                        RedisFrame::BulkString("HGET".into()),
+                                        RedisFrame::BulkString(redis_key.into()),
+                                        RedisFrame::BulkString(hash_key.into()), ];
 
                                     messages_redis_request.push(Message::from_frame(
                                         Frame::Redis(RedisFrame::Array(commands_buffer)),
@@ -155,26 +157,23 @@ impl SimpleRedisCache {
                 let queries = frame.operation.queries();
                 if queries.len() != 1 {
                     Err(CacheableState::Err("Cacheable Cassandra query must be only one statement".into()))
-                } else {
-                    if let Some(mut redis_response) = messages_redis_response_iter.next() {
-                        match redis_response.frame() {
-                            Some(Frame::Redis(RedisFrame::BulkString(redis_bytes))) => {
-                                // Redis response contains serialized version of result struct from CassandraOperation::Result( result )
-                                let x = redis_bytes.iter().map(|y| *y).collect_vec();
-                                let mut cursor = Cursor::new(x.as_slice());
-                                let answer = CassandraResult::from_cursor(&mut cursor, Version::V4);
-                                if let Ok(result) = answer {
-                                    Ok(result)
-                                } else {
-                                    Err(CacheableState::Err(answer.err().unwrap().to_string()))
-                                }
+                } else if let Some(mut redis_response) = messages_redis_response_iter.next() {
+                    match redis_response.frame() {
+                        Some(Frame::Redis(RedisFrame::BulkString(redis_bytes))) => {
+                            // Redis response contains serialized version of result struct from CassandraOperation::Result( result )
+                            let x = redis_bytes.iter().copied().collect_vec();
+                            let mut cursor = Cursor::new(x.as_slice());
+                            let answer = CassandraResult::from_cursor(&mut cursor, Version::V4);
+                            if let Ok(result) = answer {
+                                Ok(result)
+                            } else {
+                                Err(CacheableState::Err(answer.err().unwrap().to_string()))
                             }
-                            _ => Err(CacheableState::Err("No Redis frame in Redis response".into()))
                         }
-                    } else {
-                        Err(CacheableState::Err("Redis response was None".into()))
+                        _ => Err(CacheableState::Err("No Redis frame in Redis response".into()))
                     }
-
+                } else {
+                    Err(CacheableState::Err("Redis response was None".into()))
                 }
             } else {
                 Ok(CassandraResult::Void)
@@ -247,9 +246,9 @@ impl SimpleRedisCache {
     fn clear_table_cache(&mut self, cql_statement: &CQLStatement, table_cache_schema: &TableCacheSchema) -> Option<Message> {
         // TODO is it possible to return the future and process in parallel?
         let statement = &cql_statement.statement;
-        if let Ok(redis_key) = build_redis_key_from_cql3(statement, table_cache_schema) {
+        if let Ok((redis_key,_hash_key)) = build_redis_key_from_cql3(statement, table_cache_schema) {
             let commands_buffer: Vec<RedisFrame> = vec![
-                RedisFrame::BulkString("DEL".into()),
+                RedisFrame::BulkString("GETDEL".into()),
                 RedisFrame::BulkString(redis_key.into()),
             ];
             Some(Message::from_frame(Frame::Redis(RedisFrame::Array(commands_buffer))))
@@ -295,7 +294,7 @@ impl SimpleRedisCache {
                             let statement = &cql_statement.statement;
                             if let Some(table_cache_schema) = self.caching_schema.get(table_name.as_str())
                             {
-                                if let Ok(redis_key) = build_redis_key_from_cql3(
+                                if let Ok((redis_key,hash_key)) = build_redis_key_from_cql3(
                                     statement,
                                     table_cache_schema,
                                 ) {
@@ -304,8 +303,9 @@ impl SimpleRedisCache {
                                     result.serialize(&mut cursor);
 
                                     let commands_buffer: Vec<RedisFrame> = vec![
-                                        RedisFrame::BulkString("SET".into()),
+                                        RedisFrame::BulkString("HSET".into()),
                                         RedisFrame::BulkString(redis_key.into()),
+                                        RedisFrame::BulkString(hash_key.into()),
                                         RedisFrame::BulkString(encoded.into()),
                                     ];
 
@@ -421,9 +421,7 @@ fn build_query_redis_key_from_value_map(
     table_cache_schema: &TableCacheSchema,
     query_values: &BTreeMap<String, Vec<RelationElement>>,
 ) -> Result<BytesMut, CacheableState> {
-
-        let mut redis_key = BytesMut::new();
-
+        let mut key : Vec<u8> = vec!();
         for c_name in &table_cache_schema.partition_key {
             let column_name = c_name.to_lowercase();
             match query_values.get( column_name.as_str() ) {
@@ -432,7 +430,10 @@ fn build_query_redis_key_from_value_map(
                     if relation_elements.len() > 1 {
                         return Err( CacheableState::Skip( format!("partition key segment {} has more than one relationship", column_name)));
                     }
-                    redis_key.extend( relation_elements[0].value.to_string().as_bytes() );
+                    if !key.is_empty() {
+                        key.push( b':' )
+                    }
+                    key.extend(relation_elements[0].value.to_string().as_bytes() );
                 }
             }
         }
@@ -449,21 +450,76 @@ fn build_query_redis_key_from_value_map(
                             "Columns in the middle of the range key were skipped".into(),
                         ));
                     }
+                    if relation_elements.len() > 1 {
+                        return Err( CacheableState::Skip( format!("partition key segment {} has more than one relationship", column_name)));
+                    }
+                    if !key.is_empty() {
+                        key.push( b':' )
+                    }
+                    key.extend(relation_elements[0].value.to_string().as_bytes() );
+                    /*
                     let mut my_elements = relation_elements.clone();
 
                         my_elements.sort();
                         for relation_element in my_elements {
-                            redis_key.extend( relation_element.to_string().as_bytes() );
+                            if !redis_key.is_empty() {
+                                redis_key.extend(':');
+                            }
+                            redis_key.extend( relation_element.value.to_string().as_bytes() );
                         }
-
+*/
                 }
             }
         }
-        Ok(redis_key)
+        Ok(BytesMut::from( key.as_slice() ))
+}
+
+/// build the redis key for the query.
+/// key is cassandra partition key (must be completely specified) prepended to
+/// the cassandra range key (may be partially specified)
+fn build_query_redis_hash_from_value_map(
+    table_cache_schema: &TableCacheSchema,
+    query_values: &BTreeMap<String, Vec<RelationElement>>,
+    select : &Select
+) -> Result<BytesMut, CacheableState> {
+
+    let mut my_values = query_values.clone();
+    for c_name in &table_cache_schema.partition_key {
+        let column_name = c_name.to_lowercase();
+        my_values.remove(&column_name);
+    }
+    for c_name in &table_cache_schema.range_key {
+        let column_name = c_name.to_lowercase();
+        my_values.remove(&column_name);
+    }
+
+    let mut str  = if select.columns.is_empty() {
+        String::from(  "WHERE ")
+    } else {
+        let mut tmp = select.columns.iter().map(|select_element| {
+            match select_element {
+                SelectElement::Star => { SelectElement::Star }
+                SelectElement::Column(named) => { SelectElement::Column(Named { name: named.name.to_lowercase(), alias: match &named.alias{
+                    None => None,
+                    Some(name) => Some(name.to_lowercase()),
+                } }) },
+                SelectElement::Function(named) => {SelectElement::Function(Named { name: named.name.to_lowercase(), alias: match &named.alias{
+                    None => None,
+                    Some(name) => Some(name.to_lowercase()),
+                } })}
+            }
+        }).join( ", ");
+        tmp.push_str( " WHERE ");
+        tmp
+    };
+    str.push_str( my_values.iter_mut().sorted()
+        .flat_map( |(_k,v)| v.iter() ).join(" AND ").as_str());
+
+    Ok(BytesMut::from( str.as_str() ))
 }
 
 
-fn populate_value_map_from_where_clause(value_map : &mut BTreeMap<String,Vec<RelationElement>>, where_clause : &Vec<RelationElement>) {
+fn populate_value_map_from_where_clause(value_map : &mut BTreeMap<String,Vec<RelationElement>>, where_clause : &[RelationElement]) {
     for relation_element in where_clause {
         let column_name = relation_element.obj.to_string().to_lowercase();
         let value = value_map.get_mut(column_name.as_str());
@@ -478,12 +534,13 @@ fn populate_value_map_from_where_clause(value_map : &mut BTreeMap<String,Vec<Rel
 fn build_redis_key_from_cql3(
     statement: &CassandraStatement,
     table_cache_schema: &TableCacheSchema,
-) -> Result<BytesMut, CacheableState> {
+) -> Result<(BytesMut,BytesMut), CacheableState> {
     let mut value_map : BTreeMap<String,Vec<RelationElement>> = BTreeMap::new();
     match statement {
         CassandraStatement::Select(select) => {
             populate_value_map_from_where_clause( &mut value_map, &select.where_clause );
-            build_query_redis_key_from_value_map(table_cache_schema, &value_map)
+            Ok((build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
+                build_query_redis_hash_from_value_map(table_cache_schema, &value_map, &select)?))
         }
 
         CassandraStatement::Insert(insert) => {
@@ -501,14 +558,16 @@ fn build_redis_key_from_cql3(
                     value_map.insert(column_name, vec![relation_element]);
                 };
             }
-            build_query_redis_key_from_value_map(table_cache_schema, &value_map)
+            Ok((build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
+                BytesMut::new() ))
         }
         CassandraStatement::Update(update) => {
             populate_value_map_from_where_clause( &mut value_map, &update.where_clause);
-            build_query_redis_key_from_value_map(table_cache_schema, &value_map)
+            Ok((build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
+                BytesMut::new() ))
         }
         _ => unreachable!(
-            "{} should not be passed to build_redis_ast_from_cql3",
+            "{} should not be passed to build_redis_key_from_cql3",
             statement
         ),
     }
@@ -590,11 +649,9 @@ mod test {
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
-    use crate::transforms::redis::cache::{
-        build_redis_ast_from_cql3, SimpleRedisCache, TableCacheSchema,
-    };
+    use crate::transforms::redis::cache::{build_query_redis_hash_from_value_map, build_redis_key_from_cql3, SimpleRedisCache, TableCacheSchema};
     use crate::transforms::{Transform, Transforms};
-    use bytes::Bytes;
+    use bytes::{Bytes, BytesMut};
     use cql3_parser::cassandra_statement::CassandraStatement;
     use std::collections::HashMap;
 
@@ -613,18 +670,12 @@ mod test {
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"[123:965")),
-            RedisFrame::BulkString(Bytes::from_static(b"]123:965")),
-        ]);
-
-        assert_eq!(expected, query);
+        assert_eq!( BytesMut::from( "1:123:965"), redis_key);
+        assert_eq!( BytesMut::from( "* WHERE "), hash_key );
     }
 
     #[test]
@@ -636,18 +687,12 @@ mod test {
 
         let ast = build_query("INSERT INTO foo (z, v) VALUES (1, 123)");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"123")),
-        ]);
-
-        assert_eq!(expected, query);
+        assert_eq!( BytesMut::from( "1"), redis_key);
+        assert!( hash_key.is_empty());
     }
 
     #[test]
@@ -658,40 +703,28 @@ mod test {
         };
 
         let ast = build_query("INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)");
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
-        ]);
-
-        assert_eq!(expected, query);
+        assert_eq!(BytesMut::from("1:'yo'"), redis_key);
+    assert!( hash_key.is_empty() );
     }
 
     #[test]
     fn update_simple_clustering_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec!["c".to_string()],
+            range_key: vec![],
         };
 
         let ast = build_query("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1");
 
-        let result = build_redis_ast_from_cql3(&ast, &table_cache_schema);
-        let query = result.ok().unwrap();
+        let result = build_redis_key_from_cql3(&ast, &table_cache_schema);
+        let (redis_key, hash_key) = result.ok().unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZADD")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"0")),
-            RedisFrame::BulkString(Bytes::from_static(b"'yo':123")),
-        ]);
-
-        assert_eq!(expected, query);
+        assert_eq!(BytesMut::from("1"), redis_key);
+        assert!( hash_key.is_empty());
     }
 
     #[test]
@@ -703,13 +736,13 @@ mod test {
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
 
-        let query_one = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let query_one = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
         let ast = build_query("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123");
 
-        let query_two = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let query_two = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
@@ -722,46 +755,36 @@ mod test {
     fn range_exclusive_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec!["x".to_string()],
+            range_key: vec![],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"[124")),
-            RedisFrame::BulkString(Bytes::from_static(b"]998")),
-        ]);
+        assert_eq!(BytesMut::from( "1" ), redis_key);
+        assert_eq!(BytesMut::from( "* WHERE x > 123 AND x < 999"), hash_key);
 
-        assert_eq!(expected, query);
     }
 
     #[test]
     fn range_inclusive_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec!["x".to_string()],
+            range_key: vec![],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"[123")),
-            RedisFrame::BulkString(Bytes::from_static(b"]999")),
-        ]);
+        assert_eq!(BytesMut::from("1"), redis_key);
+        assert_eq!(BytesMut::from( "* WHERE x >= 123 AND x <= 999"), hash_key);
 
-        assert_eq!(expected, query);
     }
 
     #[test]
@@ -773,18 +796,12 @@ mod test {
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"-")),
-            RedisFrame::BulkString(Bytes::from_static(b"+")),
-        ]);
-
-        assert_eq!(expected, query);
+        assert_eq!(BytesMut::from( "1" ), redis_key);
+assert_eq!( BytesMut::from( "* WHERE "), hash_key);
     }
 
     #[test]
@@ -794,58 +811,41 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = build_query("SELECT * FROM foo WHERE z = 1 AND y = 2");
+        let ast = build_query("SELECT thing FROM foo WHERE z = 1 AND y = 2");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
-            RedisFrame::BulkString(Bytes::from_static(b"12")),
-            RedisFrame::BulkString(Bytes::from_static(b"-")),
-            RedisFrame::BulkString(Bytes::from_static(b"+")),
-        ]);
-
-        assert_eq!(expected, query);
+        assert_eq!(BytesMut::from("1:2"), key);
+        assert_eq!(BytesMut::from( "thing WHERE "), hash_key);
     }
 
     #[test]
     fn open_range_test() {
         let table_cache_schema = TableCacheSchema {
             partition_key: vec!["z".to_string()],
-            range_key: vec!["x".to_string()],
+            range_key: vec![],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x >= 123");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"[123")),
-            RedisFrame::BulkString(Bytes::from_static(b"+")),
-        ]);
-
-        assert_eq!(expected, query);
+        assert_eq!(BytesMut::from("1"), redis_key);
+        assert_eq!(BytesMut::from("* WHERE x >= 123"), hash_key );
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123");
 
-        let query = build_redis_ast_from_cql3(&ast, &table_cache_schema)
+        let (redis_key, hash_key) = build_redis_key_from_cql3(&ast, &table_cache_schema)
             .ok()
             .unwrap();
 
-        let expected = RedisFrame::Array(vec![
-            RedisFrame::BulkString(Bytes::from_static(b"ZRANGEBYLEX")),
-            RedisFrame::BulkString(Bytes::from_static(b"1")),
-            RedisFrame::BulkString(Bytes::from_static(b"-")),
-            RedisFrame::BulkString(Bytes::from_static(b"]123")),
-        ]);
+        assert_eq!(BytesMut::from("1"), redis_key);
+        assert_eq!(BytesMut::from("* WHERE x <= 123"), hash_key );
 
-        assert_eq!(expected, query);
     }
 
     #[tokio::test]

@@ -76,7 +76,7 @@ fn extract_native_port_column(message: &mut Message) -> Vec<String> {
             for cql_statement in &query.statements {
                 let statement = &cql_statement.statement;
                 if let CassandraStatement::Select(select) = &statement {
-                    if let Some(table_name) = CQLStatement::get_table_name(&statement) {
+                    if let Some(table_name) = CQLStatement::get_table_name(statement) {
                         if table_name.eq("system.peers_v2") {
                             select
                                 .columns

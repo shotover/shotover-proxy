@@ -527,10 +527,7 @@ impl CQLStatement {
     }
 
     pub fn is_apply_batch(&self) -> bool {
-        match &self.statement {
-            CassandraStatement::ApplyBatch => true,
-            _ => false,
-        }
+        matches!(&self.statement, CassandraStatement::ApplyBatch)
     }
 
     /// returns the query type for the current statement.
@@ -1093,17 +1090,17 @@ impl CassandraResult {
                     }
                 CassandraResult::Rows {
                     value : MessageValue::Rows(value),
-                    metadata: body_res_result_rows.metadata.clone(),
+                    metadata: body_res_result_rows.metadata,
                 }
             },
             ResResultBody::SetKeyspace(keyspace) => {
-                CassandraResult::SetKeyspace( Box::new( keyspace.clone() ))
+                CassandraResult::SetKeyspace( Box::new( keyspace ))
             }
             ResResultBody::Prepared(prepared) => {
-                CassandraResult::Prepared(Box::new( prepared.clone()))
+                CassandraResult::Prepared(Box::new( prepared))
             }
             ResResultBody::SchemaChange(schema_change) => {
-                CassandraResult::SchemaChange( schema_change.clone())
+                CassandraResult::SchemaChange( schema_change )
             }
         })
     }
