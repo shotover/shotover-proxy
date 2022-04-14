@@ -363,7 +363,10 @@ impl<'a> Wrapper<'a> {
 
         let transform_name = transform.get_name();
         let chain_name = self.chain_name.clone();
-        info!( "call_next_transform calling {} {}", transform_name, chain_name );
+        info!(
+            "call_next_transform calling {} {}",
+            transform_name, chain_name
+        );
 
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME

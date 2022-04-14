@@ -1,4 +1,5 @@
 use crate::error::ChainResponse;
+use crate::frame::cassandra::CQLStatement;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
@@ -17,7 +18,6 @@ use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use sodiumoxide::hex;
 use std::collections::HashMap;
 use tracing::warn;
-use crate::frame::cassandra::CQLStatement;
 
 mod aws_kms;
 mod key_management;
@@ -243,12 +243,17 @@ impl Transform for Protect {
                     let statement = &mut cql_statement.statement;
 
                     if let Some(table_name) = CQLStatement::get_table_name(statement) {
-                        if let Some((_, tables)) = self.keyspace_table_columns.get_key_value(table_name)
+                        if let Some((_, tables)) =
+                            self.keyspace_table_columns.get_key_value(table_name)
                         {
                             if let Some((_, columns)) = tables.get_key_value(table_name) {
-                                data_changed =
-                                    encrypt_columns(statement, columns, &self.key_source, &self.key_id)
-                                        .await?;
+                                data_changed = encrypt_columns(
+                                    statement,
+                                    columns,
+                                    &self.key_source,
+                                    &self.key_id,
+                                )
+                                .await?;
                             }
                         }
                     }
@@ -283,10 +288,10 @@ impl Transform for Protect {
                         let statement = &mut cql_statement.statement;
                         if let Some(table_name) = CQLStatement::get_table_name(statement) {
                             if let Some((_keyspace, tables)) =
-                            self.keyspace_table_columns.get_key_value(table_name)
+                                self.keyspace_table_columns.get_key_value(table_name)
                             {
                                 if let Some((_table, protect_columns)) =
-                                tables.get_key_value(table_name)
+                                    tables.get_key_value(table_name)
                                 {
                                     if let CassandraStatement::Select(select) = &statement {
                                         let positions: Vec<usize> = select
@@ -310,10 +315,15 @@ impl Transform for Protect {
                                                 if let Some(v) = row.get_mut(*index) {
                                                     if let MessageValue::Bytes(_) = v {
                                                         let protected =
-                                                            Protected::from_encrypted_bytes_value(v)
-                                                                .await?;
+                                                            Protected::from_encrypted_bytes_value(
+                                                                v,
+                                                            )
+                                                            .await?;
                                                         let new_value: MessageValue = protected
-                                                            .unprotect(&self.key_source, &self.key_id)
+                                                            .unprotect(
+                                                                &self.key_source,
+                                                                &self.key_id,
+                                                            )
                                                             .await?;
                                                         *v = new_value;
                                                         invalidate_cache = true;

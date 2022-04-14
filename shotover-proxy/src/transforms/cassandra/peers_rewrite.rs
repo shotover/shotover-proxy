@@ -1,3 +1,4 @@
+use crate::frame::cassandra::CQLStatement;
 use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue};
 use crate::{
@@ -10,7 +11,6 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::select::SelectElement;
 use serde::Deserialize;
 use std::collections::HashMap;
-use crate::frame::cassandra::CQLStatement;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraPeersRewriteConfig {

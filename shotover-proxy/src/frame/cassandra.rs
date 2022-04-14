@@ -8,13 +8,8 @@ use cassandra_protocol::frame::frame_error::ErrorBody;
 use cassandra_protocol::frame::frame_query::BodyReqQuery;
 use cassandra_protocol::frame::frame_request::RequestBody;
 use cassandra_protocol::frame::frame_response::ResponseBody;
-use cassandra_protocol::frame::frame_result::{
-    BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ColSpec, ResResultBody,
-    RowsMetadata, RowsMetadataFlags,
-};
-use cassandra_protocol::frame::{
-    Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version,
-};
+use cassandra_protocol::frame::frame_result::{BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ColSpec, ResResultBody, RowsMetadata, RowsMetadataFlags};
+use cassandra_protocol::frame::{Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version};
 use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::blob::Blob;
 use cassandra_protocol::types::cassandra_type::CassandraType;
@@ -30,14 +25,15 @@ use nonzero_ext::nonzero;
 use sodiumoxide::hex;
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
+use std::io::Cursor;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::message::{MessageValue, QueryType};
 use crate::message::QueryType::PubSubMessage;
+use crate::message::{MessageValue, QueryType};
 
 /// Extract the length of a BATCH statement (count of requests) from the body bytes
 fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
@@ -256,29 +252,31 @@ impl CassandraFrame {
         PubSubMessage,
              */
         match &self.operation {
-            CassandraOperation::Query { query: cql, .. } =>  {
+            CassandraOperation::Query { query: cql, .. } => {
                 // set to lowest type
                 let mut result = QueryType::SchemaChange;
                 for cql_statement in &cql.statements {
                     result = match cql_statement.get_query_type() {
-                        QueryType::ReadWrite => { QueryType::ReadWrite },
-                        QueryType::Write => {  match result {
-                            QueryType::ReadWrite |
-                            QueryType::Write => { result },
-                            QueryType::Read => { QueryType::ReadWrite },
-                            QueryType::SchemaChange |
-                            PubSubMessage => { QueryType::Write },
-                        }},
-                        QueryType::Read => { if result==QueryType::SchemaChange {QueryType::Read } else { result }},
-                        QueryType::SchemaChange |
-                        PubSubMessage => { result }
+                        QueryType::ReadWrite => QueryType::ReadWrite,
+                        QueryType::Write => match result {
+                            QueryType::ReadWrite | QueryType::Write => result,
+                            QueryType::Read => QueryType::ReadWrite,
+                            QueryType::SchemaChange | PubSubMessage => QueryType::Write,
+                        },
+                        QueryType::Read => {
+                            if result == QueryType::SchemaChange {
+                                QueryType::Read
+                            } else {
+                                result
+                            }
+                        }
+                        QueryType::SchemaChange | PubSubMessage => result,
                     }
                 }
                 result
-            },
-            _ => QueryType::Read ,
+            }
+            _ => QueryType::Read,
         }
-
     }
 
     /// returns a list of table names from the CassandraOperation
@@ -296,7 +294,9 @@ impl CassandraFrame {
                 for q in &batch.queries {
                     if let BatchStatementType::Statement(cql) = &q.ty {
                         for cql_statement in &cql.statements {
-                            if let Some(name) = CQLStatement::get_table_name(&cql_statement.statement) {
+                            if let Some(name) =
+                                CQLStatement::get_table_name(&cql_statement.statement)
+                            {
                                 result.push(name.into());
                             }
                         }
@@ -360,6 +360,27 @@ impl CassandraOperation {
         if let CassandraOperation::Query { query: cql, .. } = self {
             for cql_statement in &mut cql.statements {
                 result.push(&mut cql_statement.statement)
+            }
+        }
+        result
+    }
+
+    /// Return all queries contained within CassandaOperation::Query and CassandraOperation::Batch
+    /// An Err is returned if the operation cannot contain queries or the queries failed to parse.
+    ///
+    /// TODO: This will return a custom iterator type when BATCH support is added
+    pub fn get_cql_statements(&mut self) -> Vec<&mut Box<CQLStatement>> {
+        let mut result = vec![];
+        /*
+        match self {
+            CassandraOperation::Query { query: cql, .. } => result.push( &mut *cql.statement),
+            // TODO: Return CassandraOperation::Batch queries once we add BATCH parsing to cassandra-protocol
+            _ => { }
+        }
+         */
+        if let CassandraOperation::Query { query: cql, .. } = self {
+            for cql_statement in &mut cql.statements {
+                result.push(cql_statement)
             }
         }
         result
@@ -491,12 +512,11 @@ impl CassandraOperation {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CQLStatement {
-    pub(crate) statement: CassandraStatement,
-    has_error: bool,
+    pub statement: CassandraStatement,
+    pub has_error: bool,
 }
 
 impl CQLStatement {
-
     pub fn is_begin_batch(&self) -> bool {
         match &self.statement {
             CassandraStatement::Delete(delete) => delete.begin_batch.is_some(),
@@ -753,22 +773,19 @@ impl CQLStatement {
         }
         false
     }
-
 }
 
 impl Display for CQLStatement {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.statement.fmt( f )
+        self.statement.fmt(f)
     }
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CQL {
     pub statements: Vec<Box<CQLStatement>>,
-    has_error: bool,
+    pub(crate) has_error: bool,
 }
-
-
 
 impl CQL {
     /// the number of statements in the CQL
@@ -897,7 +914,6 @@ impl CQL {
         }
     }
 
-
     pub fn to_query_string(&self) -> String {
         self.statements
             .iter()
@@ -1014,6 +1030,85 @@ pub enum CassandraResult {
     Void,
 }
 
+impl Serialize for CassandraResult {
+    fn serialize(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
+        let res_result_body : ResResultBody = match self {
+            CassandraResult::Rows { value,metadata } => {
+                match value {
+                    MessageValue::Rows(rows) => {
+                        let mut rows_content: Vec<Vec<CBytes>> = Vec::with_capacity(rows.len());
+                        for row in rows {
+                            let mut row_data = Vec::with_capacity(row.len());
+                            for element in row {
+                                let b = cassandra_protocol::types::value::Bytes::from(element.clone());
+                                row_data.push(CBytes::new(b.into_inner()));
+                            }
+                            rows_content.push(row_data);
+                        }
+                        let body_res_result_rows = BodyResResultRows {
+                            metadata: metadata.clone(),
+                            rows_count: rows.len() as CInt,
+                            rows_content
+                        };
+                        ResResultBody::Rows(body_res_result_rows)
+                    }
+                    _ => ResResultBody::Void
+                }
+            }
+            CassandraResult::SetKeyspace( keyspace ) => {
+                ResResultBody::SetKeyspace(*keyspace.clone())
+            }
+            CassandraResult::Prepared( prepared ) => {
+                ResResultBody::Prepared( *prepared.clone() )
+            }
+            CassandraResult::SchemaChange(schema_change) => {
+                ResResultBody::SchemaChange( schema_change.clone() )
+            }
+            CassandraResult::Void => {
+                ResResultBody::Void
+            }
+        };
+        res_result_body.serialize(cursor);
+    }
+}
+
+impl CassandraResult {
+    pub fn from_cursor(
+        cursor: &mut Cursor<&[u8]>,
+        version: Version,
+    ) -> Result<CassandraResult> {
+
+        let res_result_body = ResResultBody::from_cursor(cursor, version)?;
+        Ok(match res_result_body {
+            ResResultBody::Void => CassandraResult::Void,
+
+            ResResultBody::Rows( body_res_result_rows) => {
+                    let mut value : Vec<Vec<MessageValue>> = Vec::with_capacity(body_res_result_rows.rows_content.len());
+                    for row in &body_res_result_rows.rows_content {
+                        let mut row_values = Vec::with_capacity( body_res_result_rows.metadata.col_specs.len());
+                        for (cbytes,colspec) in row.iter().zip( body_res_result_rows.metadata.col_specs.iter() ) {
+                            row_values.push( MessageValue::build_value_from_cstar_col_type(colspec, cbytes) );
+                        }
+                        value.push(row_values);
+                    }
+                CassandraResult::Rows {
+                    value : MessageValue::Rows(value),
+                    metadata: body_res_result_rows.metadata.clone(),
+                }
+            },
+            ResResultBody::SetKeyspace(keyspace) => {
+                CassandraResult::SetKeyspace( Box::new( keyspace.clone() ))
+            }
+            ResResultBody::Prepared(prepared) => {
+                CassandraResult::Prepared(Box::new( prepared.clone()))
+            }
+            ResResultBody::SchemaChange(schema_change) => {
+                CassandraResult::SchemaChange( schema_change.clone())
+            }
+        })
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum BatchStatementType {
     Statement(CQL),
@@ -1033,4 +1128,48 @@ pub struct CassandraBatch {
     consistency: Consistency,
     serial_consistency: Option<Consistency>,
     timestamp: Option<CLong>,
+}
+
+#[cfg(test)]
+mod test {
+    use crate::frame::CQL;
+
+    #[test]
+    fn cql_round_trip_test() {
+        let query = r#"BEGIN BATCH
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (1, 11, 'foo');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (2, 12, 'bar');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');
+            APPLY BATCH;"#;
+
+        let expected = "BEGIN BATCH INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (1, 11, 'foo'); INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (2, 12, 'bar'); INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz'); APPLY BATCH";
+        let cql = CQL::parse_from_string(query);
+        let result = cql.to_query_string();
+        assert_eq!(expected, result)
+    }
+
+    #[test]
+    fn cql_parse_multiple_test() {
+        let query = r#"INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (1, 11, 'foo');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (2, 12, 'bar');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');"#;
+
+        let cql = CQL::parse_from_string(query);
+        assert_eq!(3, cql.get_statement_count());
+        assert!(!cql.has_error);
+    }
+
+    #[test]
+    fn cql_bad_statement_test() {
+        let query = r#"INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (1, 11, 'foo');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');
+                INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');"#;
+
+        let cql = CQL::parse_from_string(query);
+        assert_eq!(3, cql.get_statement_count());
+        assert!(cql.has_error);
+        assert!(!cql.statements[0].has_error);
+        assert!(cql.statements[1].has_error);
+        assert!(!cql.statements[2].has_error);
+    }
 }
