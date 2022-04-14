@@ -1,6 +1,5 @@
 use cassandra_cpp::{stmt, Cluster, Error, Session, Value, ValueType};
 use ordered_float::OrderedFloat;
-use test_helpers::try_wait_for_socket_to_open;
 use tracing::info;
 
 pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {

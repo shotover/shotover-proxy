@@ -1,8 +1,7 @@
-
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::frame::cassandra::CQLStatement;
-use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, CQL, Frame, RedisFrame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame, CQL};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{
@@ -11,16 +10,16 @@ use crate::transforms::{
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::BytesMut;
+use cassandra_protocol::frame::Serialize;
 use cassandra_protocol::frame::Version;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{Operand, RelationElement, RelationOperator};
-use serde::{Deserialize};
+use cql3_parser::select::{Named, Select, SelectElement};
+use itertools::Itertools;
+use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 use tracing_log::log::{info, warn};
-use cassandra_protocol::frame::Serialize;
-use cql3_parser::select::{Named, Select, SelectElement};
-use itertools::Itertools;
 
 /*
 Uses redis as a cache.  Data is stored in Redis as a Hash.
@@ -76,7 +75,6 @@ pub struct SimpleRedisCache {
     caching_schema: HashMap<String, TableCacheSchema>,
 }
 
-
 impl SimpleRedisCache {
     fn get_name(&self) -> &'static str {
         "SimpleRedisCache"
@@ -84,8 +82,10 @@ impl SimpleRedisCache {
 
     /// Build the messages for the cache query from the cassandra request messages.
     /// returns the Redis Messages or a `CacheableState:Err` or `CacheableState::Skip` as the error
-    fn build_cache_query(&mut self,
-                         cassandra_messages: &mut Messages, ) -> Result<Messages, CacheableState> {
+    fn build_cache_query(
+        &mut self,
+        cassandra_messages: &mut Messages,
+    ) -> Result<Messages, CacheableState> {
         let mut messages_redis_request = Vec::with_capacity(cassandra_messages.len());
         for cass_request in cassandra_messages {
             match &mut cass_request.frame() {
@@ -96,37 +96,40 @@ impl SimpleRedisCache {
                             let statement = &cql_statement.statement;
                             info!("build_cache_query processing cacheable state");
                             if let Some(table_cache_schema) =
-                            self.caching_schema.get(table_name.as_str())
+                                self.caching_schema.get(table_name.as_str())
                             {
-                                match  build_redis_key_from_cql3(
-                                    statement,
-                                    table_cache_schema,
-                                ) {
-                                    Ok((redis_key,hash_key)) => {
-                                    let commands_buffer = vec![
-                                        RedisFrame::BulkString("HGET".into()),
-                                        RedisFrame::BulkString(redis_key.into()),
-                                        RedisFrame::BulkString(hash_key.into()), ];
+                                match build_redis_key_from_cql3(statement, table_cache_schema) {
+                                    Ok((redis_key, hash_key)) => {
+                                        let commands_buffer = vec![
+                                            RedisFrame::BulkString("HGET".into()),
+                                            RedisFrame::BulkString(redis_key.into()),
+                                            RedisFrame::BulkString(hash_key.into()),
+                                        ];
 
-                                    messages_redis_request.push(Message::from_frame(
-                                        Frame::Redis(RedisFrame::Array(commands_buffer)),
-                                    ));
-                                },
-                                    Err(err_state) => {state = err_state;}
+                                        messages_redis_request.push(Message::from_frame(
+                                            Frame::Redis(RedisFrame::Array(commands_buffer)),
+                                        ));
+                                    }
+                                    Err(err_state) => {
+                                        state = err_state;
+                                    }
                                 }
                             } else {
-                                state = CacheableState::Skip(
-                                    format!("Table {} not in caching list", table_name)
-                                );
+                                state = CacheableState::Skip(format!(
+                                    "Table {} not in caching list",
+                                    table_name
+                                ));
                             }
                         } else {
-                            state = CacheableState::Skip(format!("{} is not a readable query",cql_statement));
+                            state = CacheableState::Skip(format!(
+                                "{} is not a readable query",
+                                cql_statement
+                            ));
                         }
 
                         match state {
-                            CacheableState::Err(_) |
-                            CacheableState::Skip(_) => { return Err(state) }
-                            _ => {},
+                            CacheableState::Err(_) | CacheableState::Skip(_) => return Err(state),
+                            _ => {}
                         }
                     }
                 }
@@ -143,7 +146,11 @@ impl SimpleRedisCache {
     /// unwraps redis response messages into cassandra messages. It does this by replacing the Cassandra
     /// request messages with their corresponding Cassandra response messages and returns them.
     /// Result is either the modified message_cass_request (now response messages) or and CacheableState::Err.
-    fn unwrap_cache_response(&self, messages_redis_response: Messages, mut cassandra_messages: Messages) -> Result<Messages, CacheableState> {
+    fn unwrap_cache_response(
+        &self,
+        messages_redis_response: Messages,
+        mut cassandra_messages: Messages,
+    ) -> Result<Messages, CacheableState> {
         // Replace cass_request messages with cassandra responses in place.
         // We reuse the vec like this to save allocations.
         let mut messages_redis_response_iter = messages_redis_response.into_iter();
@@ -153,33 +160,38 @@ impl SimpleRedisCache {
 
         for cass_request in cassandra_messages.iter_mut() {
             // the responses for this request
-            let cassandra_result : Result<CassandraResult, CacheableState> = if let Some(Frame::Cassandra(frame)) = &mut cass_request.frame() {
-                let queries = frame.operation.queries();
-                if queries.len() != 1 {
-                    Err(CacheableState::Err("Cacheable Cassandra query must be only one statement".into()))
-                } else if let Some(mut redis_response) = messages_redis_response_iter.next() {
-                    match redis_response.frame() {
-                        Some(Frame::Redis(RedisFrame::BulkString(redis_bytes))) => {
-                            // Redis response contains serialized version of result struct from CassandraOperation::Result( result )
-                            let x = redis_bytes.iter().copied().collect_vec();
-                            let mut cursor = Cursor::new(x.as_slice());
-                            let answer = CassandraResult::from_cursor(&mut cursor, Version::V4);
-                            if let Ok(result) = answer {
-                                Ok(result)
-                            } else {
-                                Err(CacheableState::Err(answer.err().unwrap().to_string()))
+            let cassandra_result: Result<CassandraResult, CacheableState> =
+                if let Some(Frame::Cassandra(frame)) = &mut cass_request.frame() {
+                    let queries = frame.operation.queries();
+                    if queries.len() != 1 {
+                        Err(CacheableState::Err(
+                            "Cacheable Cassandra query must be only one statement".into(),
+                        ))
+                    } else if let Some(mut redis_response) = messages_redis_response_iter.next() {
+                        match redis_response.frame() {
+                            Some(Frame::Redis(RedisFrame::BulkString(redis_bytes))) => {
+                                // Redis response contains serialized version of result struct from CassandraOperation::Result( result )
+                                let x = redis_bytes.iter().copied().collect_vec();
+                                let mut cursor = Cursor::new(x.as_slice());
+                                let answer = CassandraResult::from_cursor(&mut cursor, Version::V4);
+                                if let Ok(result) = answer {
+                                    Ok(result)
+                                } else {
+                                    Err(CacheableState::Err(answer.err().unwrap().to_string()))
+                                }
                             }
+                            _ => Err(CacheableState::Err(
+                                "No Redis frame in Redis response".into(),
+                            )),
                         }
-                        _ => Err(CacheableState::Err("No Redis frame in Redis response".into()))
+                    } else {
+                        Err(CacheableState::Err("Redis response was None".into()))
                     }
                 } else {
-                    Err(CacheableState::Err("Redis response was None".into()))
-                }
-            } else {
-                Ok(CassandraResult::Void)
-            };
-            if let Err(state) =  cassandra_result {
-                return Err( state );
+                    Ok(CassandraResult::Void)
+                };
+            if let Err(state) = cassandra_result {
+                return Err(state);
             }
 
             *cass_request = Message::from_frame(Frame::Cassandra(CassandraFrame {
@@ -221,7 +233,10 @@ impl SimpleRedisCache {
         info!("read_from_cache called");
 
         // build the cache query
-        let messages_redis_request = self.build_cache_query(&mut cassandra_messages).ok().unwrap();
+        let messages_redis_request = self
+            .build_cache_query(&mut cassandra_messages)
+            .ok()
+            .unwrap();
 
         // execute the cache query
         info!("read_from_cache calling cache_chain.process_request");
@@ -243,61 +258,80 @@ impl SimpleRedisCache {
     }
 
     /// clear the cache for the entry.
-    fn clear_table_cache(&mut self, cql_statement: &CQLStatement, table_cache_schema: &TableCacheSchema) -> Option<Message> {
+    fn clear_table_cache(
+        &mut self,
+        cql_statement: &CQLStatement,
+        table_cache_schema: &TableCacheSchema,
+    ) -> Option<Message> {
         // TODO is it possible to return the future and process in parallel?
         let statement = &cql_statement.statement;
-        if let Ok((redis_key,_hash_key)) = build_redis_key_from_cql3(statement, table_cache_schema) {
+        if let Ok((redis_key, _hash_key)) = build_redis_key_from_cql3(statement, table_cache_schema)
+        {
             let commands_buffer: Vec<RedisFrame> = vec![
                 RedisFrame::BulkString("GETDEL".into()),
                 RedisFrame::BulkString(redis_key.into()),
             ];
-            Some(Message::from_frame(Frame::Redis(RedisFrame::Array(commands_buffer))))
+            Some(Message::from_frame(Frame::Redis(RedisFrame::Array(
+                commands_buffer,
+            ))))
         } else {
             None
         }
     }
 
-
     /// calls the next transform and process the result for caching.
-    async fn execute_upstream_and_process_result<'a>(&mut self, message_wrapper: Wrapper<'a>
+    async fn execute_upstream_and_process_result<'a>(
+        &mut self,
+        message_wrapper: Wrapper<'a>,
     ) -> ChainResponse {
         let mut orig_messages = message_wrapper.messages.clone();
-        let orig_cql : Option<&mut CQL> = orig_messages.iter_mut()
-            .filter_map( |message| {
-                if let Some(Frame::Cassandra(CassandraFrame { operation: CassandraOperation::Query{query,..}, .. })) = message.frame()
+        let orig_cql: Option<&mut CQL> = orig_messages
+            .iter_mut()
+            .filter_map(|message| {
+                if let Some(Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Query { query, .. },
+                    ..
+                })) = message.frame()
                 {
                     Some(query)
                 } else {
                     None
                 }
-
-            } ).next();
+            })
+            .next();
         let result_messages = &mut message_wrapper.call_next_transform().await?;
         if orig_cql.is_some() {
-            let mut cache_messages: Vec<Message> = vec!();
-            for (response, cql_statement) in result_messages.iter_mut().zip(orig_cql.unwrap().statements.iter()) {
-                if let Some(Frame::Cassandra(CassandraFrame { operation: CassandraOperation::Result(result), .. })) = response.frame() {
+            let mut cache_messages: Vec<Message> = vec![];
+            for (response, cql_statement) in result_messages
+                .iter_mut()
+                .zip(orig_cql.unwrap().statements.iter())
+            {
+                if let Some(Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Result(result),
+                    ..
+                })) = response.frame()
+                {
                     match is_cacheable(cql_statement) {
-                        CacheableState::Update(table_name) |
-                        CacheableState::Delete(table_name) => {
-                            if let Some(table_cache_schema) = self.caching_schema.get(&table_name )
-                            {
+                        CacheableState::Update(table_name) | CacheableState::Delete(table_name) => {
+                            if let Some(table_cache_schema) = self.caching_schema.get(&table_name) {
                                 let table_schema = table_cache_schema.clone();
-                                if let Some(fut_message) = self.clear_table_cache(cql_statement, &table_schema) {
+                                if let Some(fut_message) =
+                                    self.clear_table_cache(cql_statement, &table_schema)
+                                {
                                     cache_messages.push(fut_message);
                                 }
                             } else {
-                                info!( "table {} is not being cached", table_name );
+                                info!("table {} is not being cached", table_name);
                             }
                         }
                         CacheableState::Read(table_name) => {
                             let statement = &cql_statement.statement;
-                            if let Some(table_cache_schema) = self.caching_schema.get(table_name.as_str())
+                            if let Some(table_cache_schema) =
+                                self.caching_schema.get(table_name.as_str())
                             {
-                                if let Ok((redis_key,hash_key)) = build_redis_key_from_cql3(
-                                    statement,
-                                    table_cache_schema,
-                                ) {
+                                if let Ok((redis_key, hash_key)) =
+                                    build_redis_key_from_cql3(statement, table_cache_schema)
+                                {
                                     let mut encoded: Vec<u8> = Vec::new();
                                     let mut cursor = Cursor::new(&mut encoded);
                                     result.serialize(&mut cursor);
@@ -309,34 +343,34 @@ impl SimpleRedisCache {
                                         RedisFrame::BulkString(encoded.into()),
                                     ];
 
-                                    cache_messages.push( Message::from_frame(Frame::Redis(RedisFrame::Array(commands_buffer))));
-
+                                    cache_messages.push(Message::from_frame(Frame::Redis(
+                                        RedisFrame::Array(commands_buffer),
+                                    )));
                                 }
                             }
                         }
-                        CacheableState::Skip(_reason) |
-                        CacheableState::Err(_reason) => {
+                        CacheableState::Skip(_reason) | CacheableState::Err(_reason) => {
                             // do nothing
                         }
                     }
                 }
             }
-            if ! cache_messages.is_empty() {
+            if !cache_messages.is_empty() {
                 let result = self
                     .cache_chain
                     .process_request(
                         Wrapper::new_with_chain_name(cache_messages, self.cache_chain.name.clone()),
                         "clientdetailstodo".to_string(),
-                    ).await;
+                    )
+                    .await;
                 if result.is_err() {
-                    warn!( "Cache error: {}", result.err().unwrap());
+                    warn!("Cache error: {}", result.err().unwrap());
                 }
             }
         }
         Ok(result_messages.to_vec())
     }
 }
-
 
 /// Determines if a statement is cacheable.  Cacheable statements have several common
 /// properties as well as operation specific properties.
@@ -345,13 +379,11 @@ impl SimpleRedisCache {
 ///  * must not contain a parsing error
 ///  *
 fn is_cacheable(cql_statement: &CQLStatement) -> CacheableState {
-
     // check issues common to all cql_statements
     if cql_statement.has_error {
-        return CacheableState::Skip( "CQL statement has error".into());
+        return CacheableState::Skip("CQL statement has error".into());
     }
-    if let Some(table_name) = CQLStatement::get_table_name(&cql_statement.statement)
-    {
+    if let Some(table_name) = CQLStatement::get_table_name(&cql_statement.statement) {
         let has_params = CQLStatement::has_params(&cql_statement.statement);
 
         match &cql_statement.statement {
@@ -363,15 +395,15 @@ fn is_cacheable(cql_statement: &CQLStatement) -> CacheableState {
                 } else if select.where_clause.is_empty() {
                     CacheableState::Skip("Can not cache if where clause is empty".into())
                     /* } else if !select.columns.is_empty() {
-                if select.columns.len() == 1 && select.columns[0].eq(&SelectElement::Star) {
-                    CacheableState::Read
-                } else {
-                    CacheableState::Skip(
-                        "Can not cache if columns other than '*' are selected".into(),
-                    )
-                }
+                        if select.columns.len() == 1 && select.columns[0].eq(&SelectElement::Star) {
+                            CacheableState::Read
+                        } else {
+                            CacheableState::Skip(
+                                "Can not cache if columns other than '*' are selected".into(),
+                            )
+                        }
 
-            */
+                    */
                 } else {
                     CacheableState::Read(table_name.into())
                 }
@@ -390,16 +422,16 @@ fn is_cacheable(cql_statement: &CQLStatement) -> CacheableState {
                     for assignment_element in &update.assignments {
                         if assignment_element.operator.is_some() {
                             info!(
-                            "Clearing {} cache: {} has calculations in values",
-                            update.table_name, assignment_element.name
-                        );
+                                "Clearing {} cache: {} has calculations in values",
+                                update.table_name, assignment_element.name
+                            );
                             return CacheableState::Delete(table_name.into());
                         }
                         if assignment_element.name.idx.is_some() {
                             info!(
-                            "Clearing {} cache: {} is an indexed columns",
-                            update.table_name, assignment_element.name
-                        );
+                                "Clearing {} cache: {} is an indexed columns",
+                                update.table_name, assignment_element.name
+                            );
                             return CacheableState::Delete(table_name.into());
                         }
                     }
@@ -421,57 +453,70 @@ fn build_query_redis_key_from_value_map(
     table_cache_schema: &TableCacheSchema,
     query_values: &BTreeMap<String, Vec<RelationElement>>,
 ) -> Result<BytesMut, CacheableState> {
-        let mut key : Vec<u8> = vec!();
-        for c_name in &table_cache_schema.partition_key {
-            let column_name = c_name.to_lowercase();
-            match query_values.get( column_name.as_str() ) {
-                None => { return Err( CacheableState::Skip( format!("Partition key not complete. missing segment {}", column_name )));},
-                Some( relation_elements ) => {
-                    if relation_elements.len() > 1 {
-                        return Err( CacheableState::Skip( format!("partition key segment {} has more than one relationship", column_name)));
-                    }
-                    if !key.is_empty() {
-                        key.push( b':' )
-                    }
-                    key.extend(relation_elements[0].value.to_string().as_bytes() );
+    let mut key: Vec<u8> = vec![];
+    for c_name in &table_cache_schema.partition_key {
+        let column_name = c_name.to_lowercase();
+        match query_values.get(column_name.as_str()) {
+            None => {
+                return Err(CacheableState::Skip(format!(
+                    "Partition key not complete. missing segment {}",
+                    column_name
+                )));
+            }
+            Some(relation_elements) => {
+                if relation_elements.len() > 1 {
+                    return Err(CacheableState::Skip(format!(
+                        "partition key segment {} has more than one relationship",
+                        column_name
+                    )));
                 }
+                if !key.is_empty() {
+                    key.push(b':')
+                }
+                key.extend(relation_elements[0].value.to_string().as_bytes());
             }
         }
-        let mut skipping = false;
+    }
+    let mut skipping = false;
 
-        for c_name in &table_cache_schema.range_key {
-            let column_name = c_name.to_lowercase();
-            match query_values.get( column_name.as_str() ) {
-                None => {  skipping = true; },
-                Some( relation_elements ) => {
-                    if skipping {
-                        // we skipped an earlier column so this is an error.
-                        return Err(CacheableState::Err(
-                            "Columns in the middle of the range key were skipped".into(),
-                        ));
-                    }
-                    if relation_elements.len() > 1 {
-                        return Err( CacheableState::Skip( format!("partition key segment {} has more than one relationship", column_name)));
-                    }
-                    if !key.is_empty() {
-                        key.push( b':' )
-                    }
-                    key.extend(relation_elements[0].value.to_string().as_bytes() );
-                    /*
-                    let mut my_elements = relation_elements.clone();
-
-                        my_elements.sort();
-                        for relation_element in my_elements {
-                            if !redis_key.is_empty() {
-                                redis_key.extend(':');
-                            }
-                            redis_key.extend( relation_element.value.to_string().as_bytes() );
-                        }
-*/
+    for c_name in &table_cache_schema.range_key {
+        let column_name = c_name.to_lowercase();
+        match query_values.get(column_name.as_str()) {
+            None => {
+                skipping = true;
+            }
+            Some(relation_elements) => {
+                if skipping {
+                    // we skipped an earlier column so this is an error.
+                    return Err(CacheableState::Err(
+                        "Columns in the middle of the range key were skipped".into(),
+                    ));
                 }
+                if relation_elements.len() > 1 {
+                    return Err(CacheableState::Skip(format!(
+                        "partition key segment {} has more than one relationship",
+                        column_name
+                    )));
+                }
+                if !key.is_empty() {
+                    key.push(b':')
+                }
+                key.extend(relation_elements[0].value.to_string().as_bytes());
+                /*
+                                    let mut my_elements = relation_elements.clone();
+
+                                        my_elements.sort();
+                                        for relation_element in my_elements {
+                                            if !redis_key.is_empty() {
+                                                redis_key.extend(':');
+                                            }
+                                            redis_key.extend( relation_element.value.to_string().as_bytes() );
+                                        }
+                */
             }
         }
-        Ok(BytesMut::from( key.as_slice() ))
+    }
+    Ok(BytesMut::from(key.as_slice()))
 }
 
 /// build the redis key for the query.
@@ -480,9 +525,8 @@ fn build_query_redis_key_from_value_map(
 fn build_query_redis_hash_from_value_map(
     table_cache_schema: &TableCacheSchema,
     query_values: &BTreeMap<String, Vec<RelationElement>>,
-    select : &Select
+    select: &Select,
 ) -> Result<BytesMut, CacheableState> {
-
     let mut my_values = query_values.clone();
     for c_name in &table_cache_schema.partition_key {
         let column_name = c_name.to_lowercase();
@@ -493,33 +537,43 @@ fn build_query_redis_hash_from_value_map(
         my_values.remove(&column_name);
     }
 
-    let mut str  = if select.columns.is_empty() {
-        String::from(  "WHERE ")
+    let mut str = if select.columns.is_empty() {
+        String::from("WHERE ")
     } else {
-        let mut tmp = select.columns.iter().map(|select_element| {
-            match select_element {
-                SelectElement::Star => { SelectElement::Star }
-                SelectElement::Column(named) => { SelectElement::Column(Named { name: named.name.to_lowercase(), alias: match &named.alias{
-                    None => None,
-                    Some(name) => Some(name.to_lowercase()),
-                } }) },
-                SelectElement::Function(named) => {SelectElement::Function(Named { name: named.name.to_lowercase(), alias: match &named.alias{
-                    None => None,
-                    Some(name) => Some(name.to_lowercase()),
-                } })}
-            }
-        }).join( ", ");
-        tmp.push_str( " WHERE ");
+        let mut tmp = select
+            .columns
+            .iter()
+            .map(|select_element| match select_element {
+                SelectElement::Star => SelectElement::Star,
+                SelectElement::Column(named) => SelectElement::Column(Named {
+                    name: named.name.to_lowercase(),
+                    alias: named.alias.as_ref().map(|name| name.to_lowercase()),
+                }),
+                SelectElement::Function(named) => SelectElement::Function(Named {
+                    name: named.name.to_lowercase(),
+                    alias: named.alias.as_ref().map(|name| name.to_lowercase()),
+                }),
+            })
+            .join(", ");
+        tmp.push_str(" WHERE ");
         tmp
     };
-    str.push_str( my_values.iter_mut().sorted()
-        .flat_map( |(_k,v)| v.iter() ).join(" AND ").as_str());
+    str.push_str(
+        my_values
+            .iter_mut()
+            .sorted()
+            .flat_map(|(_k, v)| v.iter())
+            .join(" AND ")
+            .as_str(),
+    );
 
-    Ok(BytesMut::from( str.as_str() ))
+    Ok(BytesMut::from(str.as_str()))
 }
 
-
-fn populate_value_map_from_where_clause(value_map : &mut BTreeMap<String,Vec<RelationElement>>, where_clause : &[RelationElement]) {
+fn populate_value_map_from_where_clause(
+    value_map: &mut BTreeMap<String, Vec<RelationElement>>,
+    where_clause: &[RelationElement],
+) {
     for relation_element in where_clause {
         let column_name = relation_element.obj.to_string().to_lowercase();
         let value = value_map.get_mut(column_name.as_str());
@@ -534,37 +588,43 @@ fn populate_value_map_from_where_clause(value_map : &mut BTreeMap<String,Vec<Rel
 fn build_redis_key_from_cql3(
     statement: &CassandraStatement,
     table_cache_schema: &TableCacheSchema,
-) -> Result<(BytesMut,BytesMut), CacheableState> {
-    let mut value_map : BTreeMap<String,Vec<RelationElement>> = BTreeMap::new();
+) -> Result<(BytesMut, BytesMut), CacheableState> {
+    let mut value_map: BTreeMap<String, Vec<RelationElement>> = BTreeMap::new();
     match statement {
         CassandraStatement::Select(select) => {
-            populate_value_map_from_where_clause( &mut value_map, &select.where_clause );
-            Ok((build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
-                build_query_redis_hash_from_value_map(table_cache_schema, &value_map, &select)?))
+            populate_value_map_from_where_clause(&mut value_map, &select.where_clause);
+            Ok((
+                build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
+                build_query_redis_hash_from_value_map(table_cache_schema, &value_map, select)?,
+            ))
         }
 
         CassandraStatement::Insert(insert) => {
             for (c_name, operand) in insert.get_value_map().into_iter() {
                 let column_name = c_name.to_lowercase();
-                let relation_element = RelationElement{
-                    obj: Operand::Column( column_name.clone()),
+                let relation_element = RelationElement {
+                    obj: Operand::Column(column_name.clone()),
                     oper: RelationOperator::Equal,
                     value: operand.clone(),
                 };
                 let value = value_map.get_mut(column_name.as_str());
                 if let Some(vec) = value {
-                    vec.push( relation_element)
+                    vec.push(relation_element)
                 } else {
                     value_map.insert(column_name, vec![relation_element]);
                 };
             }
-            Ok((build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
-                BytesMut::new() ))
+            Ok((
+                build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
+                BytesMut::new(),
+            ))
         }
         CassandraStatement::Update(update) => {
-            populate_value_map_from_where_clause( &mut value_map, &update.where_clause);
-            Ok((build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
-                BytesMut::new() ))
+            populate_value_map_from_where_clause(&mut value_map, &update.where_clause);
+            Ok((
+                build_query_redis_key_from_value_map(table_cache_schema, &value_map)?,
+                BytesMut::new(),
+            ))
         }
         _ => unreachable!(
             "{} should not be passed to build_redis_key_from_cql3",
@@ -572,7 +632,6 @@ fn build_redis_key_from_cql3(
         ),
     }
 }
-
 
 #[async_trait]
 impl Transform for SimpleRedisCache {
@@ -602,30 +661,28 @@ impl Transform for SimpleRedisCache {
 
         // If there are no write queries (all queries are reads) we can read the cache
         if read_cache {
-            match self
-                .read_from_cache(message_wrapper.messages.clone())
-                .await
-            {
+            match self.read_from_cache(message_wrapper.messages.clone()).await {
                 Ok(cr) => return Ok(cr),
                 Err(inner_state) => match &inner_state {
                     CacheableState::Skip(reason) => {
                         tracing::info!("Cache skipped: {} ", reason);
-                        self.execute_upstream_and_process_result( message_wrapper ).await
+                        self.execute_upstream_and_process_result(message_wrapper)
+                            .await
                     }
                     CacheableState::Err(reason) => {
                         tracing::error!("Cache failed: {} ", reason);
                         message_wrapper.call_next_transform().await
                     }
                     _ => {
-                    unreachable!("should not find read, update or delete as an error.");
+                        unreachable!("should not find read, update or delete as an error.");
                     }
                 },
             }
         } else {
-            self.execute_upstream_and_process_result( message_wrapper ).await
+            self.execute_upstream_and_process_result(message_wrapper)
+                .await
         }
     }
-
 
     fn validate(&self) -> Vec<String> {
         let mut errors = self
@@ -645,13 +702,15 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::{RedisFrame, CQL};
+    use crate::frame::CQL;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
-    use crate::transforms::redis::cache::{build_query_redis_hash_from_value_map, build_redis_key_from_cql3, SimpleRedisCache, TableCacheSchema};
+    use crate::transforms::redis::cache::{
+        build_redis_key_from_cql3, SimpleRedisCache, TableCacheSchema,
+    };
     use crate::transforms::{Transform, Transforms};
-    use bytes::{Bytes, BytesMut};
+    use bytes::BytesMut;
     use cql3_parser::cassandra_statement::CassandraStatement;
     use std::collections::HashMap;
 
@@ -674,8 +733,8 @@ mod test {
             .ok()
             .unwrap();
 
-        assert_eq!( BytesMut::from( "1:123:965"), redis_key);
-        assert_eq!( BytesMut::from( "* WHERE "), hash_key );
+        assert_eq!(BytesMut::from("1:123:965"), redis_key);
+        assert_eq!(BytesMut::from("* WHERE "), hash_key);
     }
 
     #[test]
@@ -691,8 +750,8 @@ mod test {
             .ok()
             .unwrap();
 
-        assert_eq!( BytesMut::from( "1"), redis_key);
-        assert!( hash_key.is_empty());
+        assert_eq!(BytesMut::from("1"), redis_key);
+        assert!(hash_key.is_empty());
     }
 
     #[test]
@@ -708,7 +767,7 @@ mod test {
             .unwrap();
 
         assert_eq!(BytesMut::from("1:'yo'"), redis_key);
-    assert!( hash_key.is_empty() );
+        assert!(hash_key.is_empty());
     }
 
     #[test]
@@ -724,7 +783,7 @@ mod test {
         let (redis_key, hash_key) = result.ok().unwrap();
 
         assert_eq!(BytesMut::from("1"), redis_key);
-        assert!( hash_key.is_empty());
+        assert!(hash_key.is_empty());
     }
 
     #[test]
@@ -764,9 +823,8 @@ mod test {
             .ok()
             .unwrap();
 
-        assert_eq!(BytesMut::from( "1" ), redis_key);
-        assert_eq!(BytesMut::from( "* WHERE x > 123 AND x < 999"), hash_key);
-
+        assert_eq!(BytesMut::from("1"), redis_key);
+        assert_eq!(BytesMut::from("* WHERE x > 123 AND x < 999"), hash_key);
     }
 
     #[test]
@@ -783,8 +841,7 @@ mod test {
             .unwrap();
 
         assert_eq!(BytesMut::from("1"), redis_key);
-        assert_eq!(BytesMut::from( "* WHERE x >= 123 AND x <= 999"), hash_key);
-
+        assert_eq!(BytesMut::from("* WHERE x >= 123 AND x <= 999"), hash_key);
     }
 
     #[test]
@@ -800,8 +857,8 @@ mod test {
             .ok()
             .unwrap();
 
-        assert_eq!(BytesMut::from( "1" ), redis_key);
-assert_eq!( BytesMut::from( "* WHERE "), hash_key);
+        assert_eq!(BytesMut::from("1"), redis_key);
+        assert_eq!(BytesMut::from("* WHERE "), hash_key);
     }
 
     #[test]
@@ -818,7 +875,7 @@ assert_eq!( BytesMut::from( "* WHERE "), hash_key);
             .unwrap();
 
         assert_eq!(BytesMut::from("1:2"), key);
-        assert_eq!(BytesMut::from( "thing WHERE "), hash_key);
+        assert_eq!(BytesMut::from("thing WHERE "), hash_key);
     }
 
     #[test]
@@ -835,7 +892,7 @@ assert_eq!( BytesMut::from( "* WHERE "), hash_key);
             .unwrap();
 
         assert_eq!(BytesMut::from("1"), redis_key);
-        assert_eq!(BytesMut::from("* WHERE x >= 123"), hash_key );
+        assert_eq!(BytesMut::from("* WHERE x >= 123"), hash_key);
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x <= 123");
 
@@ -844,8 +901,7 @@ assert_eq!( BytesMut::from( "* WHERE "), hash_key);
             .unwrap();
 
         assert_eq!(BytesMut::from("1"), redis_key);
-        assert_eq!(BytesMut::from("* WHERE x <= 123"), hash_key );
-
+        assert_eq!(BytesMut::from("* WHERE x <= 123"), hash_key);
     }
 
     #[tokio::test]

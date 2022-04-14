@@ -8,8 +8,13 @@ use cassandra_protocol::frame::frame_error::ErrorBody;
 use cassandra_protocol::frame::frame_query::BodyReqQuery;
 use cassandra_protocol::frame::frame_request::RequestBody;
 use cassandra_protocol::frame::frame_response::ResponseBody;
-use cassandra_protocol::frame::frame_result::{BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ColSpec, ResResultBody, RowsMetadata, RowsMetadataFlags};
-use cassandra_protocol::frame::{Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version};
+use cassandra_protocol::frame::frame_result::{
+    BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ColSpec, ResResultBody,
+    RowsMetadata, RowsMetadataFlags,
+};
+use cassandra_protocol::frame::{
+    Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version,
+};
 use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::blob::Blob;
 use cassandra_protocol::types::cassandra_type::CassandraType;
@@ -1029,78 +1034,71 @@ pub enum CassandraResult {
 
 impl Serialize for CassandraResult {
     fn serialize(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
-        let res_result_body : ResResultBody = match self {
-            CassandraResult::Rows { value,metadata } => {
-                match value {
-                    MessageValue::Rows(rows) => {
-                        let mut rows_content: Vec<Vec<CBytes>> = Vec::with_capacity(rows.len());
-                        for row in rows {
-                            let mut row_data = Vec::with_capacity(row.len());
-                            for element in row {
-                                let b = cassandra_protocol::types::value::Bytes::from(element.clone());
-                                row_data.push(CBytes::new(b.into_inner()));
-                            }
-                            rows_content.push(row_data);
+        let res_result_body: ResResultBody = match self {
+            CassandraResult::Rows { value, metadata } => match value {
+                MessageValue::Rows(rows) => {
+                    let mut rows_content: Vec<Vec<CBytes>> = Vec::with_capacity(rows.len());
+                    for row in rows {
+                        let mut row_data = Vec::with_capacity(row.len());
+                        for element in row {
+                            let b = cassandra_protocol::types::value::Bytes::from(element.clone());
+                            row_data.push(CBytes::new(b.into_inner()));
                         }
-                        let body_res_result_rows = BodyResResultRows {
-                            metadata: metadata.clone(),
-                            rows_count: rows.len() as CInt,
-                            rows_content
-                        };
-                        ResResultBody::Rows(body_res_result_rows)
+                        rows_content.push(row_data);
                     }
-                    _ => ResResultBody::Void
+                    let body_res_result_rows = BodyResResultRows {
+                        metadata: metadata.clone(),
+                        rows_count: rows.len() as CInt,
+                        rows_content,
+                    };
+                    ResResultBody::Rows(body_res_result_rows)
                 }
-            }
-            CassandraResult::SetKeyspace( keyspace ) => {
-                ResResultBody::SetKeyspace(*keyspace.clone())
-            }
-            CassandraResult::Prepared( prepared ) => {
-                ResResultBody::Prepared( *prepared.clone() )
-            }
+                _ => ResResultBody::Void,
+            },
+            CassandraResult::SetKeyspace(keyspace) => ResResultBody::SetKeyspace(*keyspace.clone()),
+            CassandraResult::Prepared(prepared) => ResResultBody::Prepared(*prepared.clone()),
             CassandraResult::SchemaChange(schema_change) => {
-                ResResultBody::SchemaChange( schema_change.clone() )
+                ResResultBody::SchemaChange(schema_change.clone())
             }
-            CassandraResult::Void => {
-                ResResultBody::Void
-            }
+            CassandraResult::Void => ResResultBody::Void,
         };
         res_result_body.serialize(cursor);
     }
 }
 
 impl CassandraResult {
-    pub fn from_cursor(
-        cursor: &mut Cursor<&[u8]>,
-        version: Version,
-    ) -> Result<CassandraResult> {
-
+    pub fn from_cursor(cursor: &mut Cursor<&[u8]>, version: Version) -> Result<CassandraResult> {
         let res_result_body = ResResultBody::from_cursor(cursor, version)?;
         Ok(match res_result_body {
             ResResultBody::Void => CassandraResult::Void,
 
-            ResResultBody::Rows( body_res_result_rows) => {
-                    let mut value : Vec<Vec<MessageValue>> = Vec::with_capacity(body_res_result_rows.rows_content.len());
-                    for row in &body_res_result_rows.rows_content {
-                        let mut row_values = Vec::with_capacity( body_res_result_rows.metadata.col_specs.len());
-                        for (cbytes,colspec) in row.iter().zip( body_res_result_rows.metadata.col_specs.iter() ) {
-                            row_values.push( MessageValue::build_value_from_cstar_col_type(colspec, cbytes) );
-                        }
-                        value.push(row_values);
+            ResResultBody::Rows(body_res_result_rows) => {
+                let mut value: Vec<Vec<MessageValue>> =
+                    Vec::with_capacity(body_res_result_rows.rows_content.len());
+                for row in &body_res_result_rows.rows_content {
+                    let mut row_values =
+                        Vec::with_capacity(body_res_result_rows.metadata.col_specs.len());
+                    for (cbytes, colspec) in row
+                        .iter()
+                        .zip(body_res_result_rows.metadata.col_specs.iter())
+                    {
+                        row_values.push(MessageValue::build_value_from_cstar_col_type(
+                            colspec, cbytes,
+                        ));
                     }
+                    value.push(row_values);
+                }
                 CassandraResult::Rows {
-                    value : MessageValue::Rows(value),
+                    value: MessageValue::Rows(value),
                     metadata: body_res_result_rows.metadata,
                 }
-            },
+            }
             ResResultBody::SetKeyspace(keyspace) => {
-                CassandraResult::SetKeyspace( Box::new( keyspace ))
+                CassandraResult::SetKeyspace(Box::new(keyspace))
             }
-            ResResultBody::Prepared(prepared) => {
-                CassandraResult::Prepared(Box::new( prepared))
-            }
+            ResResultBody::Prepared(prepared) => CassandraResult::Prepared(Box::new(prepared)),
             ResResultBody::SchemaChange(schema_change) => {
-                CassandraResult::SchemaChange( schema_change )
+                CassandraResult::SchemaChange(schema_change)
             }
         })
     }
