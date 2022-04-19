@@ -87,10 +87,77 @@ async fn test_keys(connection: &mut Connection) {
         .unwrap();
     let expected = HashSet::from(["foo".to_string(), "bar".to_string(), "baz".to_string()]);
     assert_eq!(keys, expected);
+
+    assert_eq!(redis::cmd("DBSIZE").query_async(connection).await, Ok(3u64));
 }
 
 async fn test_client_name(connection: &mut Connection) {
     assert_ok(redis::cmd("CLIENT").arg("SETNAME").arg("FOO"), connection).await;
+    assert_eq!(
+        redis::cmd("CLIENT")
+            .arg("GETNAME")
+            .query_async(connection)
+            .await,
+        Ok("FOO".to_string())
+    );
+}
+
+async fn test_save(connection: &mut Connection) {
+    let lastsave1: u64 = redis::cmd("LASTSAVE")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert_ok(&mut redis::cmd("SAVE"), connection).await;
+
+    let lastsave2: u64 = redis::cmd("LASTSAVE")
+        .query_async(connection)
+        .await
+        .unwrap();
+
+    assert!(lastsave1 > 0);
+    assert!(lastsave2 > 0);
+    assert!(lastsave2 > lastsave1);
+}
+
+async fn test_ping_echo(connection: &mut Connection) {
+    assert_eq!(
+        redis::cmd("PING").query_async(connection).await,
+        Ok("PONG".to_string())
+    );
+    assert_eq!(
+        redis::cmd("ECHO")
+            .arg("reply")
+            .query_async(connection)
+            .await,
+        Ok("reply".to_string())
+    );
+}
+
+async fn test_time(connection: &mut Connection) {
+    let (time_seconds, extra_ms): (u64, u64) =
+        redis::cmd("TIME").query_async(connection).await.unwrap();
+
+    assert!(time_seconds > 0);
+    assert!(extra_ms < 1_000_000);
+}
+
+async fn test_time_cluster(connection: &mut Connection) {
+    assert_eq!(
+        redis::cmd("TIME")
+            .query_async::<_, ()>(connection)
+            .await
+            .unwrap_err()
+            .detail()
+            .unwrap(),
+        "Shotover RedisSinkCluster does not not support this command used in this way".to_string(),
+    );
+}
+
+async fn test_client_name_cluster(connection: &mut Connection) {
+    assert_ok(redis::cmd("CLIENT").arg("SETNAME").arg("FOO"), connection).await;
+    // RedisSinkCluster does not support SETNAME/GETNAME so GETNAME always returns nil
+    assert_nil(redis::cmd("CLIENT").arg("GETNAME"), connection).await;
 }
 
 async fn test_hash_ops(connection: &mut Connection) {
@@ -1170,13 +1237,13 @@ async fn test_cluster_ports_rewrite() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_active_active_redis() {
+async fn test_redis_multi() {
     let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
-    run_all_active_safe(&mut connection).await;
+    run_all_multi_safe(&mut connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1275,7 +1342,7 @@ async fn test_cluster_dr_redis() {
     run_all_cluster_safe(&mut connection).await;
 }
 
-async fn run_all_active_safe(connection: &mut Connection) {
+async fn run_all_multi_safe(connection: &mut Connection) {
     test_cluster_basics(connection).await;
     test_cluster_eval(connection).await;
     test_cluster_script(connection).await; //TODO: script does not seem to be loading in the server?
@@ -1309,6 +1376,9 @@ async fn run_all_active_safe(connection: &mut Connection) {
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
     test_client_name(connection).await;
+    //test_save(connection).await; // Save is not supported here
+    test_ping_echo(connection).await;
+    test_time(connection).await;
 }
 
 async fn run_all_cluster_safe(connection: &mut Connection) {
@@ -1349,7 +1419,10 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_nice_list_api(connection).await;
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
-    test_client_name(connection).await;
+    test_client_name_cluster(connection).await;
+    test_save(connection).await;
+    test_ping_echo(connection).await;
+    test_time_cluster(connection).await;
 }
 
 async fn run_all(connection: &mut Connection) {
@@ -1385,4 +1458,7 @@ async fn run_all(connection: &mut Connection) {
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
     test_client_name(connection).await;
+    test_save(connection).await;
+    test_ping_echo(connection).await;
+    test_time(connection).await;
 }

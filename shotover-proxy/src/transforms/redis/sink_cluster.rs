@@ -128,6 +128,12 @@ impl RedisSinkCluster {
             ChannelResult::Other(Command::AUTH) => {
                 return self.on_auth(command).await;
             }
+            ChannelResult::ShortCircuit(frame) => {
+                let (one_tx, one_rx) = immediate_responder();
+                send_frame_response(one_tx, frame)
+                    .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
+                return Ok(Box::pin(one_rx));
+            }
         };
 
         Ok(match channels.len() {
@@ -407,7 +413,7 @@ impl RedisSinkCluster {
                     vec![]
                 },
             ),
-            RoutingInfo::AllNodes => {
+            RoutingInfo::AllNodes(_) => {
                 ChannelResult::Channels(self.slots.nodes.iter().cloned().collect())
             }
             RoutingInfo::AllMasters(_) => {
@@ -423,6 +429,10 @@ impl RedisSinkCluster {
             ),
             RoutingInfo::Other(name) => ChannelResult::Other(name),
             RoutingInfo::Unsupported => ChannelResult::Channels(vec![]),
+            RoutingInfo::ShortCircuitNil => ChannelResult::ShortCircuit(RedisFrame::Null),
+            RoutingInfo::ShortCircuitOk => {
+                ChannelResult::ShortCircuit(RedisFrame::SimpleString(Bytes::from("OK")))
+            }
         }
     }
 
@@ -482,7 +492,10 @@ impl RedisSinkCluster {
     #[inline(always)]
     fn short_circuit(&self, one_tx: oneshot::Sender<Response>) {
         warn!("Could not route request - short circuiting");
-        if let Err(e) = self.send_error_response(one_tx, "ERR Could not route request") {
+        if let Err(e) = self.send_error_response(
+            one_tx,
+            "ERR Shotover RedisSinkCluster does not not support this command used in this way",
+        ) {
             trace!("short circuiting - couldn't send error - {:?}", e);
         }
     }
@@ -536,21 +549,22 @@ impl SlotMap {
 
 #[derive(Debug, Clone, Copy)]
 pub enum RoutingInfo {
-    AllNodes,
+    AllNodes(ResponseJoin),
     AllMasters(ResponseJoin),
     Random,
     Slot(u16),
     Other(Command),
     Unsupported,
+    ShortCircuitOk,
+    ShortCircuitNil,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ResponseJoin {
     First,
     ArrayJoin,
-    // TODO
-    // IntegerSum,
-    // EarliestDate,
+    IntegerSum,
+    IntegerMin,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -561,6 +575,7 @@ pub enum Command {
 enum ChannelResult {
     Channels(Vec<String>),
     Other(Command),
+    ShortCircuit(RedisFrame),
 }
 
 impl RoutingInfo {
@@ -573,21 +588,31 @@ impl RoutingInfo {
 
         Ok(match command_name.as_slice() {
             b"FLUSHALL" | b"FLUSHDB" => RoutingInfo::AllMasters(ResponseJoin::First),
-            b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
-            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"SAVE" | b"TIME" | b"ACL" => {
-                RoutingInfo::AllNodes
-            }
-
+            b"DBSIZE" => RoutingInfo::AllMasters(ResponseJoin::IntegerSum),
             b"KEYS" => RoutingInfo::AllMasters(ResponseJoin::ArrayJoin),
+            b"LASTSAVE" => RoutingInfo::AllNodes(ResponseJoin::IntegerMin),
+            b"BGSAVE" | b"SAVE" | b"BGREWRITEAOF" | b"ACL" => {
+                RoutingInfo::AllNodes(ResponseJoin::First)
+            }
             b"SCRIPT" => match args.get(1) {
                 Some(RedisFrame::BulkString(a)) if a.to_ascii_uppercase() == b"KILL" => {
                     RoutingInfo::Unsupported
                 }
                 _ => RoutingInfo::AllMasters(ResponseJoin::First),
             },
-            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" => {
-                RoutingInfo::Unsupported
-            }
+            b"CLIENT" => match args.get(1) {
+                Some(RedisFrame::BulkString(sub_command)) => {
+                    let sub_command = sub_command.to_ascii_uppercase();
+                    match sub_command.as_slice() {
+                        b"SETNAME" => RoutingInfo::ShortCircuitOk,
+                        b"GETNAME" => RoutingInfo::ShortCircuitNil,
+                        _ => RoutingInfo::Unsupported,
+                    }
+                }
+                _ => RoutingInfo::Random,
+            },
+            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" | b"CONFIG"
+            | b"SLOWLOG" | b"INFO" | b"TIME" => RoutingInfo::Unsupported,
             b"EVALSHA" | b"EVAL" => match args.get(2) {
                 Some(RedisFrame::BulkString(key_count)) => {
                     if key_count.as_ref() == b"0" {
@@ -596,7 +621,7 @@ impl RoutingInfo {
                         // For an EVAL to succeed every key must be present on the same node.
                         // So we use the first key to find the correct destination node and if any of the
                         // remaining keys are not on the same node as the first key then the destination
-                        // node will handle will correctly handle this for us.
+                        // node will correctly handle this for us.
                         args.get(3)
                             .and_then(RoutingInfo::for_key)
                             .unwrap_or(RoutingInfo::Unsupported)
@@ -620,6 +645,7 @@ impl RoutingInfo {
                 })
                 .unwrap_or(RoutingInfo::Unsupported),
             b"AUTH" => RoutingInfo::Other(Command::AUTH),
+            b"ECHO" | b"PING" => RoutingInfo::Random,
             _ => match args.get(1) {
                 Some(key) => RoutingInfo::for_key(key).unwrap_or(RoutingInfo::Unsupported),
                 None => RoutingInfo::Random,
@@ -642,6 +668,7 @@ impl RoutingInfo {
     pub fn response_join(&self) -> ResponseJoin {
         match self {
             RoutingInfo::AllMasters(join) => *join,
+            RoutingInfo::AllNodes(join) => *join,
             _ => ResponseJoin::First,
         }
     }
@@ -650,6 +677,18 @@ impl RoutingInfo {
 impl ResponseJoin {
     pub fn join(&self, prev_frame: RedisFrame, next_frame: RedisFrame) -> RedisFrame {
         match self {
+            ResponseJoin::IntegerMin => match (prev_frame, next_frame) {
+                (RedisFrame::Integer(prev), RedisFrame::Integer(next)) => {
+                    RedisFrame::Integer(prev.min(next))
+                }
+                _ => RedisFrame::Error("One of the redis frames was not an integer".into()),
+            },
+            ResponseJoin::IntegerSum => match (prev_frame, next_frame) {
+                (RedisFrame::Integer(prev), RedisFrame::Integer(next)) => {
+                    RedisFrame::Integer(prev + next)
+                }
+                _ => RedisFrame::Error("One of the redis frames was not an integer".into()),
+            },
             ResponseJoin::ArrayJoin => match (prev_frame, next_frame) {
                 (RedisFrame::Array(mut prev), RedisFrame::Array(next)) => {
                     prev.extend(next);
