@@ -17,7 +17,7 @@ use tracing_subscriber::layer::Layered;
 use tracing_subscriber::reload::Handle;
 use tracing_subscriber::{EnvFilter, Registry};
 
-use crate::admin::httpserver::LogFilterHttpExporter;
+use crate::observability::LogFilterHttpExporter;
 use crate::config::topology::Topology;
 use crate::config::Config;
 use crate::transforms::Transforms;
