@@ -58,7 +58,7 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-This transfrom emits a metrics counter named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
 
 ### CassandraPeersRewrite
 
@@ -214,7 +214,7 @@ The log can be accessed via the [Shotover metrics](user-guide/configuration.md#o
     name: "DR chain"
 ```
 
-This transform emits a metrics counter named `query_count` with the label `name` defined as the name from the config, in the example it will be `DR chain`.
+This transform emits a metrics [counter](user-guide/observability.md#counter) named `query_count` with the label `name` defined as the name from the config, in the example it will be `DR chain`.
 
 ### QueryTypeFilter
 
@@ -294,7 +294,7 @@ Unlike other Redis cluster drivers, this transform does support pipelining. It d
 
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
-This transfrom emits a metrics counter named `failed_requests` and the labels `transform` defined as `RedisSinkCluster` and `chain` as the name of the chain that this transform is in.
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `RedisSinkCluster` and `chain` as the name of the chain that this transform is in.
 
 #### Differences to real Redis
 
@@ -329,7 +329,7 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
-This transfrom emits a metrics counter named `failed_requests` and the labels `transform` defined as `RedisSinkSingle` and `chain` as the name of the chain that this transform is in.
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `RedisSinkSingle` and `chain` as the name of the chain that this transform is in.
 
 ### RedisTimestampTagger
 
@@ -377,7 +377,7 @@ The response from the down-chain transform is returned back up-chain but various
       - Null
 ```
 
-This transfrom emits a metrics counter named `tee_dropped_messages` and the label `chain` as `Tee`.
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `tee_dropped_messages` and the label `chain` as `Tee`.
 
 ### RequestThrottling
 
