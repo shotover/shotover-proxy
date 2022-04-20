@@ -425,7 +425,7 @@ impl<'a> Wrapper<'a> {
         }
     }
 
-    pub fn reset(&mut self, transforms: &'a mut Vec<Transforms>) {
+    pub fn reset(&mut self, transforms: &'a mut [Transforms]) {
         self.transforms = transforms.iter_mut();
     }
 }

@@ -549,32 +549,30 @@ impl RoutingInfo {
         };
 
         Ok(match command_name.as_slice() {
-            b"FLUSHALL" | b"FLUSHDB" | b"SCRIPT" => Some(RoutingInfo::AllMasters),
+            b"FLUSHALL" | b"FLUSHDB" => Some(RoutingInfo::AllMasters),
             b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
-            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"CLIENT LIST" | b"SAVE" | b"TIME"
-            | b"KEYS" | b"ACL" => Some(RoutingInfo::AllNodes),
-            b"SCAN" | b"CLIENT SETNAME" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF"
-            | b"SCRIPT KILL" | b"MOVE" | b"BITOP" => None,
-            b"EVALSHA" | b"EVAL" => {
-                //TODO: Appears the the codec is not decoding integers correctly
-                match args.get(2) {
-                    Some(RedisFrame::Integer(key_count)) => Some(*key_count),
-                    Some(RedisFrame::BulkString(key_count)) => {
-                        String::from_utf8(key_count.to_vec())
-                            .unwrap_or_else(|_| "0".to_string())
-                            .parse::<i64>()
-                            .ok()
-                    }
-                    _ => None,
-                }
-                .and_then(|key_count| {
-                    if key_count == 0 {
-                        Some(RoutingInfo::Random)
-                    } else {
-                        args.get(3).and_then(RoutingInfo::for_key)
-                    }
-                })
+            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"SAVE" | b"TIME" | b"KEYS" | b"ACL" => {
+                Some(RoutingInfo::AllNodes)
             }
+            b"SCRIPT" => match args.get(1) {
+                Some(RedisFrame::BulkString(a)) if a.to_ascii_uppercase() == b"KILL" => None,
+                _ => Some(RoutingInfo::AllMasters),
+            },
+            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" => None,
+            b"EVALSHA" | b"EVAL" => match args.get(2) {
+                Some(RedisFrame::BulkString(key_count)) => std::str::from_utf8(key_count)
+                    .unwrap_or("0")
+                    .parse::<i64>()
+                    .ok(),
+                _ => None,
+            }
+            .and_then(|key_count| {
+                if key_count == 0 {
+                    Some(RoutingInfo::Random)
+                } else {
+                    args.get(3).and_then(RoutingInfo::for_key)
+                }
+            }),
             b"XGROUP" | b"XINFO" => args.get(2).and_then(RoutingInfo::for_key),
             b"XREAD" | b"XREADGROUP" => args
                 .iter()

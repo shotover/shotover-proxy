@@ -1,4 +1,5 @@
 use crate::helpers::ShotoverManager;
+use crate::redis_int_tests::assert::*;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
@@ -6,7 +7,7 @@ use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
 use shotover_proxy::tls::TlsConfig;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
@@ -22,17 +23,8 @@ const STRESS_TEST_MULTIPLIER: usize = 1;
 const STRESS_TEST_MULTIPLIER: usize = 100;
 
 async fn test_args(connection: &mut Connection) {
-    redis::cmd("SET")
-        .arg("key1")
-        .arg(b"foo")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("SET")
-        .arg(&["key2", "bar"])
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(redis::cmd("SET").arg("key1").arg(b"foo"), connection).await;
+    assert_ok(redis::cmd("SET").arg(&["key2", "bar"]), connection).await;
 
     assert_eq!(
         redis::cmd("MGET")
@@ -45,66 +37,29 @@ async fn test_args(connection: &mut Connection) {
 
 async fn test_getset(connection: &mut Connection) {
     for _ in 0..100 * STRESS_TEST_MULTIPLIER {
-        redis::cmd("SET")
-            .arg("foo")
-            .arg(42)
-            .query_async::<_, ()>(connection)
-            .await
-            .unwrap();
-        assert_eq!(
-            redis::cmd("GET").arg("foo").query_async(connection).await,
-            Ok(42)
-        );
+        assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
+        assert_int(redis::cmd("GET").arg("foo"), connection, 42).await;
 
-        redis::cmd("SET")
-            .arg("bar")
-            .arg("foo")
-            .query_async::<_, ()>(connection)
-            .await
-            .unwrap();
-        assert_eq!(
-            redis::cmd("GET").arg("bar").query_async(connection).await,
-            Ok(b"foo".to_vec())
-        );
+        assert_ok(redis::cmd("SET").arg("bar").arg("foo"), connection).await;
+        assert_bytes(redis::cmd("GET").arg("bar"), connection, b"foo").await;
     }
 
     // ensure every possible byte is passed through unmodified
     let every_byte: Vec<u8> = (0..=255).collect();
-    redis::cmd("SET")
-        .arg("bar")
-        .arg(&every_byte)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(redis::cmd("SET").arg("bar").arg(&every_byte), connection).await;
     assert_eq!(
         redis::cmd("GET").arg("bar").query_async(connection).await,
         Ok(every_byte)
     );
 
     // ensure non-uppercase commands are handled properly
-    redis::cmd("SeT")
-        .arg("bar")
-        .arg("foo")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    assert_eq!(
-        redis::cmd("get").arg("bar").query_async(connection).await,
-        Ok(b"foo".to_vec())
-    );
+    assert_ok(redis::cmd("SeT").arg("bar").arg("foo"), connection).await;
+    assert_bytes(redis::cmd("get").arg("bar"), connection, b"foo").await;
 }
 
 async fn test_incr(connection: &mut Connection) {
-    redis::cmd("SET")
-        .arg("foo")
-        .arg(42)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    assert_eq!(
-        redis::cmd("INCR").arg("foo").query_async(connection).await,
-        Ok(43usize)
-    );
+    assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
+    assert_int(redis::cmd("INCR").arg("foo"), connection, 43).await;
 }
 
 async fn test_info(connection: &mut Connection) {
@@ -119,118 +74,54 @@ async fn test_info(connection: &mut Connection) {
     assert!(info.contains_key(&"role"));
 }
 
+async fn test_client_name(connection: &mut Connection) {
+    assert_ok(redis::cmd("CLIENT").arg("SETNAME").arg("FOO"), connection).await;
+}
+
 async fn test_hash_ops(connection: &mut Connection) {
-    redis::cmd("FLUSHDB")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("HSET")
-        .arg("foo")
-        .arg("key_1")
-        .arg(1)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("HSET")
-        .arg("foo")
-        .arg("key_2")
-        .arg(2)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+    assert_int(
+        redis::cmd("HSET").arg("foo").arg("key_1").arg(1),
+        connection,
+        1,
+    )
+    .await;
+    assert_int(
+        redis::cmd("HSET").arg("foo").arg("key_2").arg(2),
+        connection,
+        1,
+    )
+    .await;
 
-    let h: HashMap<String, i32> = redis::cmd("HGETALL")
+    let result: HashMap<String, i32> = redis::cmd("HGETALL")
         .arg("foo")
         .query_async(connection)
         .await
         .unwrap();
-    assert_eq!(h.len(), 2);
-    assert_eq!(h.get("key_1"), Some(&1i32));
-    assert_eq!(h.get("key_2"), Some(&2i32));
-
-    let h: BTreeMap<String, i32> = redis::cmd("HGETALL")
-        .arg("foo")
-        .query_async(connection)
-        .await
-        .unwrap();
-    assert_eq!(h.len(), 2);
-    assert_eq!(h.get("key_1"), Some(&1i32));
-    assert_eq!(h.get("key_2"), Some(&2i32));
+    let expected = HashMap::from([("key_1".to_string(), 1), ("key_2".to_string(), 2)]);
+    assert_eq!(result, expected);
 }
 
 async fn test_set_ops(connection: &mut Connection) {
-    redis::cmd("FLUSHDB")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("SADD")
-        .arg("foo")
-        .arg(1)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("SADD")
-        .arg("foo")
-        .arg(2)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("SADD")
-        .arg("foo")
-        .arg(3)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+    assert_int(redis::cmd("SADD").arg("foo").arg(1), connection, 1).await;
+    assert_int(redis::cmd("SADD").arg("foo").arg(2), connection, 1).await;
+    assert_int(redis::cmd("SADD").arg("foo").arg(3), connection, 1).await;
 
-    let mut s: Vec<i32> = redis::cmd("SMEMBERS")
+    let result: HashSet<i32> = redis::cmd("SMEMBERS")
         .arg("foo")
         .query_async(connection)
         .await
         .unwrap();
-    s.sort_unstable();
-    assert_eq!(s.len(), 3);
-    assert_eq!(&s, &[1, 2, 3]);
-
-    let set: HashSet<i32> = redis::cmd("SMEMBERS")
-        .arg("foo")
-        .query_async(connection)
-        .await
-        .unwrap();
-    assert_eq!(set.len(), 3);
-    assert!(set.contains(&1i32));
-    assert!(set.contains(&2i32));
-    assert!(set.contains(&3i32));
-
-    let set: BTreeSet<i32> = redis::cmd("SMEMBERS")
-        .arg("foo")
-        .query_async(connection)
-        .await
-        .unwrap();
-    assert_eq!(set.len(), 3);
-    assert!(set.contains(&1i32));
-    assert!(set.contains(&2i32));
-    assert!(set.contains(&3i32));
+    let expected = HashSet::from([1, 2, 3]);
+    assert_eq!(result, expected);
 }
 
 async fn test_scan(connection: &mut Connection) {
-    redis::cmd("SADD")
-        .arg("foo")
-        .arg(1)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("SADD")
-        .arg("foo")
-        .arg(2)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("SADD")
-        .arg("foo")
-        .arg(3)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+    assert_int(redis::cmd("SADD").arg("foo").arg(1), connection, 1).await;
+    assert_int(redis::cmd("SADD").arg("foo").arg(2), connection, 1).await;
+    assert_int(redis::cmd("SADD").arg("foo").arg(3), connection, 1).await;
 
     let (cur, mut s): (i32, Vec<i32>) = redis::cmd("SSCAN")
         .arg("foo")
@@ -245,12 +136,7 @@ async fn test_scan(connection: &mut Connection) {
 }
 
 async fn test_optionals(connection: &mut Connection) {
-    redis::cmd("SET")
-        .arg("foo")
-        .arg(1)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(redis::cmd("SET").arg("foo").arg(1), connection).await;
 
     let (a, b): (Option<i32>, Option<i32>) = redis::cmd("MGET")
         .arg("foo")
@@ -270,10 +156,7 @@ async fn test_optionals(connection: &mut Connection) {
 }
 
 async fn test_scanning(connection: &mut Connection) {
-    redis::cmd("FLUSHDB")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
     let mut unseen = HashSet::<usize>::new();
 
     for x in 0..100 * STRESS_TEST_MULTIPLIER {
@@ -304,10 +187,7 @@ async fn test_scanning(connection: &mut Connection) {
 }
 
 async fn test_filtered_scanning(connection: &mut Connection) {
-    redis::cmd("FLUSHDB")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
     let mut unseen = HashSet::<usize>::new();
 
     for x in 0..3000 {
@@ -330,7 +210,7 @@ async fn test_filtered_scanning(connection: &mut Connection) {
 }
 
 async fn test_pipeline_error(connection: &mut Connection) {
-    let ((_k1, _k2),): ((i32, i32),) = redis::pipe()
+    let result: ((i32, i32),) = redis::pipe()
         .cmd("SET")
         .arg("k{x}ey_1")
         .arg(42)
@@ -344,6 +224,8 @@ async fn test_pipeline_error(connection: &mut Connection) {
         .query_async(connection)
         .await
         .unwrap();
+
+    assert_eq!(result, ((42, 43),));
 
     assert_eq!(
         redis::pipe()
@@ -555,16 +437,14 @@ async fn test_script(connection: &mut Connection) {
 }
 
 async fn test_tuple_args(connection: &mut Connection) {
-    redis::cmd("FLUSHDB")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("HMSET")
-        .arg("my_key")
-        .arg(&[("field_1", 42), ("field_2", 23)])
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+    assert_ok(
+        redis::cmd("HMSET")
+            .arg("my_key")
+            .arg(&[("field_1", 42), ("field_2", 23)]),
+        connection,
+    )
+    .await;
 
     assert_eq!(
         redis::cmd("HGET")
@@ -620,30 +500,14 @@ async fn test_nice_hash_api(connection: &mut Connection) {
         Ok(())
     );
 
-    let hm: HashMap<String, isize> = connection.hgetall("my_hash").await.unwrap();
-    assert_eq!(hm.get("f1"), Some(&1));
-    assert_eq!(hm.get("f2"), Some(&2));
-    assert_eq!(hm.get("f3"), Some(&4));
-    assert_eq!(hm.get("f4"), Some(&8));
-    assert_eq!(hm.len(), 4);
-
-    let hm: BTreeMap<String, isize> = connection.hgetall("my_hash").await.unwrap();
-    assert_eq!(hm.get("f1"), Some(&1));
-    assert_eq!(hm.get("f2"), Some(&2));
-    assert_eq!(hm.get("f3"), Some(&4));
-    assert_eq!(hm.get("f4"), Some(&8));
-    assert_eq!(hm.len(), 4);
-
-    let v: Vec<(String, isize)> = connection.hgetall("my_hash").await.unwrap();
-    assert_eq!(
-        v,
-        vec![
-            ("f1".to_string(), 1),
-            ("f2".to_string(), 2),
-            ("f3".to_string(), 4),
-            ("f4".to_string(), 8),
-        ]
-    );
+    let result: HashMap<String, isize> = connection.hgetall("my_hash").await.unwrap();
+    let expected = HashMap::from([
+        ("f1".to_string(), 1),
+        ("f2".to_string(), 2),
+        ("f3".to_string(), 4),
+        ("f4".to_string(), 8),
+    ]);
+    assert_eq!(result, expected);
 
     assert_eq!(connection.hget("my_hash", &["f2", "f4"]).await, Ok((2, 8)));
     assert_eq!(connection.hincr("my_hash", "f1", 1).await, Ok(2));
@@ -704,17 +568,8 @@ async fn test_bit_operations(connection: &mut Connection) {
 }
 
 async fn test_cluster_basics(connection: &mut Connection) {
-    redis::cmd("SET")
-        .arg("{x}key1")
-        .arg(b"foo")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("SET")
-        .arg(&["{x}key2", "bar"])
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(redis::cmd("SET").arg("{x}key1").arg(b"foo"), connection).await;
+    assert_ok(redis::cmd("SET").arg("{x}key2").arg(b"bar"), connection).await;
 
     assert_eq!(
         redis::cmd("MGET")
@@ -784,11 +639,7 @@ async fn test_auth(connection: &mut Connection) {
     );
 
     // Switch to default superuser.
-    redis::cmd("AUTH")
-        .arg("shotover")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(redis::cmd("AUTH").arg("shotover"), connection).await;
 
     // Set random value to be checked later.
     let expected_foo: String = thread_rng()
@@ -796,19 +647,14 @@ async fn test_auth(connection: &mut Connection) {
         .take(30)
         .map(char::from)
         .collect();
-    redis::cmd("SET")
-        .arg("foo")
-        .arg(&expected_foo)
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(redis::cmd("SET").arg("foo").arg(&expected_foo), connection).await;
 
     // Read-only user with no other permissions should not be able to auth.
-    redis::cmd("ACL")
-        .arg(&["SETUSER", "brokenuser", "+@read", "on", ">password"])
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(
+        redis::cmd("ACL").arg(&["SETUSER", "brokenuser", "+@read", "on", ">password"]),
+        connection,
+    )
+    .await;
     assert_eq!(
         redis::cmd("AUTH")
             .arg("brokenuser")
@@ -822,8 +668,8 @@ async fn test_auth(connection: &mut Connection) {
 
     // Read-only user with CLUSTER SLOTS permission should be able to auth, but cannot perform writes.
     // We then use this user to read back the original value that should not have been overwritten.
-    redis::cmd("ACL")
-        .arg(&[
+    assert_ok(
+        redis::cmd("ACL").arg(&[
             "SETUSER",
             "testuser",
             "+@read",
@@ -831,16 +677,15 @@ async fn test_auth(connection: &mut Connection) {
             "on",
             ">password",
             "allkeys",
-        ])
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
-    redis::cmd("AUTH")
-        .arg("testuser")
-        .arg("password")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+        ]),
+        connection,
+    )
+    .await;
+    assert_ok(
+        redis::cmd("AUTH").arg("testuser").arg("password"),
+        connection,
+    )
+    .await;
     assert_eq!(
         redis::cmd("SET")
             .arg("foo")
@@ -859,11 +704,7 @@ async fn test_auth(connection: &mut Connection) {
 
 async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mut Connection) {
     // ensure we are authenticated as the default superuser to setup for the auth isolation test.
-    redis::cmd("AUTH")
-        .arg("shotover")
-        .query_async::<_, ()>(connection)
-        .await
-        .unwrap();
+    assert_ok(redis::cmd("AUTH").arg("shotover"), connection).await;
 
     // Create users with only access to their own key, and test their permissions using new connections.
     for i in 1..=100 {
@@ -897,18 +738,13 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
             Some("NOAUTH")
         );
 
-        redis::cmd("AUTH")
-            .arg(&user)
-            .arg(&pass)
-            .query_async::<_, ()>(&mut new_connection)
-            .await
-            .unwrap();
+        assert_ok(
+            redis::cmd("AUTH").arg(&user).arg(&pass),
+            &mut new_connection,
+        )
+        .await;
 
-        redis::cmd("GET")
-            .arg(&key)
-            .query_async::<_, ()>(&mut new_connection)
-            .await
-            .unwrap();
+        assert_nil(redis::cmd("GET").arg(&key), &mut new_connection).await;
 
         assert_eq!(
             redis::cmd("GET")
@@ -1138,23 +974,13 @@ async fn test_cluster_replication(
         assert!(replication_connection.get::<&str, i32>("foo").is_err());
         assert!(replication_connection.get::<&str, i32>("bar").is_err());
 
-        redis::cmd("SET")
-            .arg("foo")
-            .arg(42)
-            .query_async::<_, ()>(connection)
-            .await
-            .unwrap();
+        assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
         assert_eq!(
             redis::cmd("GET").arg("foo").query_async(connection).await,
             Ok(42)
         );
 
-        redis::cmd("SET")
-            .arg("bar")
-            .arg("blah")
-            .query_async::<_, ()>(connection)
-            .await
-            .unwrap();
+        assert_ok(redis::cmd("SET").arg("bar").arg("blah"), connection).await;
         assert_eq!(
             redis::cmd("GET").arg("bar").query_async(connection).await,
             Ok(b"blah".to_vec())
@@ -1183,28 +1009,25 @@ async fn test_dr_auth(shotover_manager: &ShotoverManager) {
     let mut connection_shotover_noauth = shotover_manager.redis_connection_async(6379).await;
 
     let mut connection_shotover_auth = shotover_manager.redis_connection_async(6379).await;
-    redis::cmd("AUTH")
-        .arg("default")
-        .arg("shotover")
-        .query_async::<_, ()>(&mut connection_shotover_auth)
-        .await
-        .unwrap();
+    assert_ok(
+        redis::cmd("AUTH").arg("default").arg("shotover"),
+        &mut connection_shotover_auth,
+    )
+    .await;
 
     let mut connection_dr_auth = shotover_manager.redis_connection_async(2120).await;
-    redis::cmd("AUTH")
-        .arg("default")
-        .arg("shotover")
-        .query_async::<_, ()>(&mut connection_dr_auth)
-        .await
-        .unwrap();
+    assert_ok(
+        redis::cmd("AUTH").arg("default").arg("shotover"),
+        &mut connection_dr_auth,
+    )
+    .await;
 
     // writing to shotover when authed should succeed
-    redis::cmd("SET")
-        .arg("authed_write")
-        .arg(42)
-        .query_async::<_, ()>(&mut connection_shotover_auth)
-        .await
-        .unwrap();
+    assert_ok(
+        redis::cmd("SET").arg("authed_write").arg(42),
+        &mut connection_shotover_auth,
+    )
+    .await;
     assert_eq!(
         redis::cmd("GET")
             .arg("authed_write")
@@ -1449,6 +1272,7 @@ async fn run_all_active_safe(connection: &mut Connection) {
     test_nice_list_api(connection).await;
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
+    test_client_name(connection).await;
 }
 
 async fn run_all_cluster_safe(connection: &mut Connection) {
@@ -1488,6 +1312,7 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_nice_list_api(connection).await;
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
+    test_client_name(connection).await;
 }
 
 async fn run_all(connection: &mut Connection) {
@@ -1521,4 +1346,5 @@ async fn run_all(connection: &mut Connection) {
     test_nice_list_api(connection).await;
     test_tuple_decoding_regression(connection).await;
     test_bit_operations(connection).await;
+    test_client_name(connection).await;
 }
