@@ -34,7 +34,7 @@ use std::io::Cursor;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::str::FromStr;
-use tracing::info;
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::message::QueryType::PubSubMessage;
@@ -926,7 +926,7 @@ impl CQL {
     /// the CassandraAST handles multiple queries in a string separated by semi-colons: `;` however
     /// CQL only stores one query so this method only returns the first one if there are multiples.
     pub fn parse_from_string(cql_query_str: &str) -> Self {
-        info!("parse_from_string: {}", cql_query_str);
+        debug!("parse_from_string: {}", cql_query_str);
         let ast = CassandraAST::new(cql_query_str);
 
         let mut vec = Vec::with_capacity(ast.statements.len());

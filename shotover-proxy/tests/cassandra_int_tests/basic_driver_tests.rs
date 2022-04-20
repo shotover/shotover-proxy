@@ -2,12 +2,9 @@ use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind, Session};
 use futures::future::{join_all, try_join_all};
-use metrics::Recorder;
+use metrics_util::debugging::DebuggingRecorder;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
-use metrics::counter;
-use metrics_util::debugging::DebuggingRecorder;
-
 
 mod keyspace {
     use crate::helpers::cassandra::{
@@ -1070,25 +1067,28 @@ mod prepared_statements {
 mod cache {
     use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
     use cassandra_cpp::Session;
+    use metrics_util::debugging::{DebugValue, Snapshotter};
     use redis::Commands;
     use std::collections::HashSet;
-    use metrics::counter;
-    use metrics_util::debugging::{DebugValue, Snapshotter};
     use tracing_log::log::info;
 
-    pub fn test(cassandra_session: &Session, redis_connection: &mut redis::Connection, snapshotter : &Snapshotter) {
+    pub fn test(
+        cassandra_session: &Session,
+        redis_connection: &mut redis::Connection,
+        snapshotter: &Snapshotter,
+    ) {
         test_batch_insert(cassandra_session, redis_connection, snapshotter);
         test_simple(cassandra_session, redis_connection, snapshotter);
     }
 
     /// gets the current miss count from the cache instrumentation.
     fn get_cache_miss_value(snapshotter: &Snapshotter) -> u64 {
-        let mut result = 0 as u64;
-        for (x,_,_,v) in snapshotter.snapshot().into_vec().iter() {
+        let mut result = 0_u64;
+        for (x, _, _, v) in snapshotter.snapshot().into_vec().iter() {
             if let DebugValue::Counter(vv) = v {
-                if x.key().name().eq( "cache_miss") {
+                if x.key().name().eq("cache_miss") {
                     //return *vv;
-                    info!( "Cache value: {}", vv );
+                    info!("Cache value: {}", vv);
                     if *vv > result {
                         result = *vv;
                     }
@@ -1100,22 +1100,34 @@ mod cache {
 
     /// The first time a query hits the cache it should not be found, the second time it should.
     /// This function verifies that case by utilizing the cache miss instrumentation.
-    fn double_query(snapshotter: &Snapshotter, session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
-        let mut before = get_cache_miss_value(snapshotter);
+    fn double_query(
+        snapshotter: &Snapshotter,
+        session: &Session,
+        query: &str,
+        expected_rows: &[&[ResultValue]],
+    ) {
+        let before = get_cache_miss_value(snapshotter);
         // first query should miss the cache
         assert_query_result(session, query, expected_rows);
-        let mut after = get_cache_miss_value(snapshotter);
-        assert_eq!(  before+1, get_cache_miss_value(snapshotter), "first {}", query );
+        let after = get_cache_miss_value(snapshotter);
+        assert_eq!(
+            before + 1,
+            get_cache_miss_value(snapshotter),
+            "first {}",
+            query
+        );
 
         let before = after;
         assert_query_result(session, query, expected_rows);
         let after = get_cache_miss_value(snapshotter);
-        assert_eq!( before, after, "second {}", query );
+        assert_eq!(before, after, "second {}", query);
     }
 
-    fn test_batch_insert(cassandra_session: &Session, redis_connection: &mut redis::Connection, snapshotter : &Snapshotter) {
-
-
+    fn test_batch_insert(
+        cassandra_session: &Session,
+        redis_connection: &mut redis::Connection,
+        snapshotter: &Snapshotter,
+    ) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
         run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_batch_insert WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -1133,7 +1145,7 @@ mod cache {
         );
 
         // selects without where clauses do not hit the cache
-        let mut before = get_cache_miss_value(snapshotter);
+        let before = get_cache_miss_value(snapshotter);
         assert_query_result(
             cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table",
@@ -1155,20 +1167,18 @@ mod cache {
                 ],
             ],
         );
-        assert_eq!( before, get_cache_miss_value(snapshotter));
-
+        assert_eq!(before, get_cache_miss_value(snapshotter));
 
         // query against the primary key
-        double_query( &snapshotter,
+        double_query(
+            snapshotter,
             cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_batch_insert.test_table WHERE id=1",
-            &[
-              &[
+            &[&[
                 ResultValue::Int(1),
                 ResultValue::Int(11),
                 ResultValue::Varchar("foo".into()),
-            ],
-            ],
+            ]],
         );
 
         let before = get_cache_miss_value(snapshotter);
@@ -1182,7 +1192,7 @@ mod cache {
                 ResultValue::Varchar("foo".into()),
             ],],
         );
-        assert_eq!( before, get_cache_miss_value(snapshotter));
+        assert_eq!(before, get_cache_miss_value(snapshotter));
 
         // Insert a dummy key to ensure the keys command is working correctly, we can remove this later.
         redis_connection
@@ -1190,10 +1200,20 @@ mod cache {
             .unwrap();
         let mut result: Vec<String> = redis_connection.keys("*").unwrap();
         result.sort();
-        assert_eq!(result, [ "1".to_string(), "dummy_key".to_string(),]);
+        assert_eq!(
+            result,
+            [
+                "dummy_key".to_string(),
+                "test_cache_keyspace_batch_insert.test_table:1".to_string(),
+            ]
+        );
     }
 
-    fn test_simple(cassandra_session: &Session, redis_connection: &mut redis::Connection, snapshotter : &Snapshotter) {
+    fn test_simple(
+        cassandra_session: &Session,
+        redis_connection: &mut redis::Connection,
+        snapshotter: &Snapshotter,
+    ) {
         redis::cmd("FLUSHDB").execute(redis_connection);
 
         run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -1216,7 +1236,7 @@ mod cache {
         );
 
         // selects without where clauses do not hit the cache
-        let mut before = get_cache_miss_value(snapshotter);
+        let before = get_cache_miss_value(snapshotter);
         assert_query_result(
             cassandra_session,
             "SELECT id, x, name FROM test_cache_keyspace_simple.test_table",
@@ -1241,43 +1261,39 @@ mod cache {
         assert_eq!(before, get_cache_miss_value(snapshotter));
 
         // query against the primary key
-        double_query(&snapshotter,
-                     cassandra_session,
-                     "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=1",
-                     &[
-                         &[
-                             ResultValue::Int(1),
-                             ResultValue::Int(11),
-                             ResultValue::Varchar("foo".into()),
-                         ],
-                     ],
+        double_query(
+            snapshotter,
+            cassandra_session,
+            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=1",
+            &[&[
+                ResultValue::Int(1),
+                ResultValue::Int(11),
+                ResultValue::Varchar("foo".into()),
+            ]],
         );
 
         // ensure key 2 and 3 are also loaded
-        double_query(&snapshotter,
-                     cassandra_session,
-                     "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=2",
-                     &[
-                         &[
-                             ResultValue::Int(2),
-                             ResultValue::Int(12),
-                             ResultValue::Varchar("bar".into()),
-                         ],
-                     ],
+        double_query(
+            snapshotter,
+            cassandra_session,
+            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=2",
+            &[&[
+                ResultValue::Int(2),
+                ResultValue::Int(12),
+                ResultValue::Varchar("bar".into()),
+            ]],
         );
 
-        double_query(&snapshotter,
-                     cassandra_session,
-                     "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=3",
-                     &[
-                         &[
-                             ResultValue::Int(3),
-                             ResultValue::Int(13),
-                             ResultValue::Varchar("baz".into()),
-                         ],
-                     ],
+        double_query(
+            snapshotter,
+            cassandra_session,
+            "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=3",
+            &[&[
+                ResultValue::Int(3),
+                ResultValue::Int(13),
+                ResultValue::Varchar("baz".into()),
+            ]],
         );
-
 
         // query without primary key does not hit the cache
         let before = get_cache_miss_value(snapshotter);
@@ -1295,13 +1311,31 @@ mod cache {
         assert_eq!(before, get_cache_miss_value(snapshotter));
 
         let result: HashSet<String> = redis_connection.keys("*").unwrap();
-        let expected: HashSet<String> =
-            ["1", "2", "3"].into_iter().map(|x| x.to_string()).collect();
+        let expected: HashSet<String> = [
+            "test_cache_keyspace_simple.test_table:1",
+            "test_cache_keyspace_simple.test_table:2",
+            "test_cache_keyspace_simple.test_table:3",
+        ]
+        .into_iter()
+        .map(|x| x.to_string())
+        .collect();
         assert_eq!(result, expected);
 
-        assert_sorted_set_equals(redis_connection, "1", &["id, x, name WHERE "]);
-        assert_sorted_set_equals(redis_connection, "2", &["id, x, name WHERE "]);
-        assert_sorted_set_equals(redis_connection, "3", &["id, x, name WHERE "]);
+        assert_sorted_set_equals(
+            redis_connection,
+            "test_cache_keyspace_simple.test_table:1",
+            &["id, x, name WHERE "],
+        );
+        assert_sorted_set_equals(
+            redis_connection,
+            "test_cache_keyspace_simple.test_table:2",
+            &["id, x, name WHERE "],
+        );
+        assert_sorted_set_equals(
+            redis_connection,
+            "test_cache_keyspace_simple.test_table:3",
+            &["id, x, name WHERE "],
+        );
     }
 
     fn assert_sorted_set_equals(
@@ -1311,9 +1345,7 @@ mod cache {
     ) {
         let expected_values: HashSet<String> =
             expected_values.iter().map(|x| x.to_string()).collect();
-        let values : HashSet<String> = redis_connection
-            .hkeys( key )
-            .unwrap();
+        let values: HashSet<String> = redis_connection.hkeys(key).unwrap();
         assert_eq!(values, expected_values)
     }
 }
@@ -1561,17 +1593,17 @@ fn test_source_tls_and_single_tls() {
 #[test]
 #[serial]
 fn test_cassandra_redis_cache() {
-    let recorder =DebuggingRecorder::new();
-    let rec = &recorder;
+    let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
     let result = recorder.install();
     if result.is_err() {
-        assert!( false, "{:?}", result.err() );
+        panic!("{:?}", result.err());
     }
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yml");
 
-    let shotover_manager =
-        ShotoverManager::from_topology_file_without_observability("example-configs/cassandra-redis-cache/topology.yaml");
+    let shotover_manager = ShotoverManager::from_topology_file_without_observability(
+        "example-configs/cassandra-redis-cache/topology.yaml",
+    );
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
