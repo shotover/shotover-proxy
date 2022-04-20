@@ -9,10 +9,10 @@ chain_config:
         caching_schema:
           test_cache_keyspace_batch_insert.test_table:
             partition_key: [id]
-            range_key: [id]
+            range_key: []
           test_cache_keyspace_simple.test_table:
             partition_key: [id]
-            range_key: [id]
+            range_key: []
         chain:
           - RedisSinkSingle:
               remote_address: "127.0.0.1:6379"
