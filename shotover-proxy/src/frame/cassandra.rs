@@ -945,12 +945,12 @@ impl CQL {
 }
 
 pub trait ToCassandraType {
-    fn from_string_value(&self, value: &str) -> Option<CassandraType>;
+    fn from_string_value(value: &str) -> Option<CassandraType>;
     fn as_cassandra_type(&self) -> Option<CassandraType>;
 }
 
 impl ToCassandraType for Operand {
-    fn from_string_value(&self, value: &str) -> Option<CassandraType> {
+    fn from_string_value(value: &str) -> Option<CassandraType> {
         // check for string types
         if value.starts_with('\'') || value.starts_with("$$") {
             Some(CassandraType::Varchar(value.to_string()))
@@ -975,14 +975,14 @@ impl ToCassandraType for Operand {
 
     fn as_cassandra_type(&self) -> Option<CassandraType> {
         match self {
-            Operand::Const(value) => self.from_string_value(value),
+            Operand::Const(value) => Operand::from_string_value(value),
             Operand::Map(values) => Some(CassandraType::Map(
                 values
                     .iter()
                     .map(|(key, value)| {
                         (
-                            self.from_string_value(key).unwrap(),
-                            self.from_string_value(value).unwrap(),
+                            Operand::from_string_value(key).unwrap(),
+                            Operand::from_string_value(value).unwrap(),
                         )
                     })
                     .collect(),
@@ -990,13 +990,13 @@ impl ToCassandraType for Operand {
             Operand::Set(values) => Some(CassandraType::Set(
                 values
                     .iter()
-                    .filter_map(|value| self.from_string_value(value))
+                    .filter_map(|value| Operand::from_string_value(value))
                     .collect(),
             )),
             Operand::List(values) => Some(CassandraType::List(
                 values
                     .iter()
-                    .filter_map(|value| self.from_string_value(value))
+                    .filter_map(|value| Operand::from_string_value(value))
                     .collect(),
             )),
             Operand::Tuple(values) => Some(CassandraType::Tuple(
