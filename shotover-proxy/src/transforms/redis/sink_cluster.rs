@@ -130,6 +130,7 @@ impl RedisSinkCluster {
         };
 
         Ok(match channels.len() {
+            // Return an error as we cant send anything if there are no channels.
             0 => {
                 let (one_tx, one_rx) = immediate_responder();
                 match self.connection_error {
@@ -140,11 +141,15 @@ impl RedisSinkCluster {
                 };
                 Box::pin(one_rx)
             }
+            // Send to the single channel and return its response.
             1 => {
                 let channel = channels.get(0).unwrap();
                 let one_rx = self.choose_and_send(channel, message).await?;
                 Box::pin(one_rx.map_err(|_| anyhow!("no response from single channel")))
             }
+            // Send to all senders.
+            // If any of the responses were a failure then return that failure.
+            // Otherwise return the first successful result
             _ => {
                 let responses = FuturesUnordered::new();
 
@@ -152,36 +157,36 @@ impl RedisSinkCluster {
                     responses.push(self.choose_and_send(&channel, message.clone()).await?);
                 }
 
-                // Reassemble upstream responses in any order into an array, as the downstream response.
-                // TODO: Improve error messages within the reassembled response. E.g. which channel failed.
-
                 Box::pin(async move {
                     let response = responses
-                        .fold(vec![], |mut acc, response| async move {
-                            match response {
-                                Ok(Response {
-                                    response: Ok(mut messages),
-                                    ..
-                                }) => acc.push(messages.pop().map_or(
-                                    RedisFrame::Null,
-                                    |mut message| match message.frame().unwrap() {
-                                        Frame::Redis(frame) => frame.take(),
-                                        _ => unreachable!(),
-                                    },
-                                )),
-                                Ok(Response {
-                                    response: Err(e), ..
-                                }) => acc.push(RedisFrame::Error(e.to_string().into())),
-                                Err(e) => acc.push(RedisFrame::Error(e.to_string().into())),
+                        .fold(None, |acc, response| async move {
+                            if let Some(RedisFrame::Error(_)) = acc {
+                                acc
+                            } else {
+                                match response {
+                                    Ok(Response {
+                                        response: Ok(mut messages),
+                                        ..
+                                    }) => Some(messages.pop().map_or(
+                                        RedisFrame::Null,
+                                        |mut message| match message.frame().unwrap() {
+                                            Frame::Redis(frame) => frame.take(),
+                                            _ => unreachable!("This is a direct response from a redis sink so it must be a redis message"),
+                                        },
+                                    )),
+                                    Ok(Response {
+                                        response: Err(e), ..
+                                    }) => Some(RedisFrame::Error(e.to_string().into())),
+                                    Err(e) => Some(RedisFrame::Error(e.to_string().into())),
+                                }
                             }
-                            acc
                         })
                         .await;
 
                     Ok(Response {
                         original: message,
                         response: ChainResponse::Ok(vec![Message::from_frame(Frame::Redis(
-                            RedisFrame::Array(response),
+                            response.unwrap(),
                         ))]),
                     })
                 })
