@@ -16,19 +16,7 @@ This is a single string that you can use to configure logging with Shotover. It 
 
 ### observability_interface 
 
-Shotover has an observability interface for you to collect Prometheus data from. This value will define the address and port for Shotover's observability interface. It is configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses.
-
-#### Metrics
-
-This interface will serve Prometheus metrics from `/metrics`. The metrics listed on [this page](./configuration.md) are included by default, others are transform specific.
-
-#### Log levels and filters
-
-You can configure log levels and filters at `/filter`. This can be done by a POST HTTP request to the `/filter` endpoint with the `env_filter` string set as the POST data. For example:
-
-```shell
-curl -X PUT -d 'info,shotover_proxy=info' http://127.0.0.1:9001/filter
-```
+Shotover has an observability interface for you to collect Prometheus data from. This value will define the address and port for Shotover's observability interface. It is configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses. More information is on the [observability page](./observability.md).
 
 ## topology.yaml
 
