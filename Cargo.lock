@@ -438,7 +438,7 @@ dependencies = [
 [[package]]
 name = "cql3_parser"
 version = "0.0.1"
-source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=main#d769cfcef25114d19c88f369536215763a3bd471"
+source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=main#101e86e0c9b98241b4e216a0639ee269ec994248"
 dependencies = [
  "bigdecimal",
  "bytes",
