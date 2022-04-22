@@ -9,9 +9,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::Operand;
+use cql3_parser::common::{FQName, Operand};
 use cql3_parser::insert::InsertValues;
-use cql3_parser::select::SelectElement;
+use cql3_parser::select::{Select, SelectElement};
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
@@ -31,6 +31,59 @@ pub struct Protect {
     // TODO this should be a function to create key_ids based on "something", e.g. primary key
     // for the moment this is just a string
     key_id: String,
+}
+
+impl Protect {
+    fn get_protected_columns(&self, table_name : &FQName ) -> Option<&Vec<String>> {
+        // TODO replace "" with cached keyspace name
+        if let Some(tables) = self.keyspace_table_columns.get(table_name.extract_keyspace( ""))
+        {
+            tables.get(&table_name.name)
+        } else {
+            None
+        }
+    }
+
+    /// processes the select statement to modify the rows.  returns true if the rows were modified
+    async fn process_select(&self, select : &Select, columns : &Vec<String>, rows : &mut Vec<Vec<MessageValue>>) -> Result<bool> {
+        let mut modified = false;
+
+        let positions: Vec<usize> = select
+            .columns
+            .iter()
+            .enumerate()
+            .filter_map(|(i, col)| {
+                if let SelectElement::Column(named) = col {
+                    if columns.contains(&named.name) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for row in &mut *rows {
+            for index in &positions {
+                if let Some(message_value) = row.get_mut(*index) {
+                    let protected = Protected::extract_result(message_value);
+
+                    let new_value: MessageValue = protected.unwrap()
+                        .unprotect(
+                            &self.key_source,
+                            &self.key_id,
+                        )
+                        .await?;
+                    *message_value = new_value;
+                    modified = true;
+                }
+            }
+        }
+
+        Ok(modified)
+    }
+
 }
 
 #[derive(Clone)]
@@ -86,8 +139,8 @@ impl From<Protected> for MessageValue {
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
             Protected::Ciphertext { .. } => {
-                MessageValue::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
-                //MessageValue::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
+                //MessageValue::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
+                MessageValue::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
             }
         }
     }
@@ -99,28 +152,48 @@ impl From<&Protected> for Operand {
             Protected::Plaintext(_) => panic!(
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
-            Protected::Ciphertext { .. } => Operand::Const(format!(
-                "0X{}",
-                hex::encode(serde_json::to_vec(&p).unwrap())
-            )),
+            Protected::Ciphertext { .. } => Operand::Const(format!("'{}'", hex::encode(serde_json::to_vec(&p).unwrap()))),
         }
     }
 }
 
 impl Protected {
-    pub async fn from_encrypted_bytes_value(value: &MessageValue) -> Result<Protected> {
-        match value {
-            MessageValue::Bytes(b) => {
-                // let protected_something: Protected = serde_json::from_slice(b.bytes())?;
-                let protected_something: Protected = bincode::deserialize(b)?;
-                Ok(protected_something)
-            }
-            _ => Err(anyhow!(
+    fn extract_result(value : &MessageValue ) -> Result<Protected> {
+            match value {
+                MessageValue::Bytes(b) => {
+                    // let protected_something: Protected = serde_json::from_slice(b.bytes())?;
+                    let protected_something = bincode::deserialize(b);
+                    if protected_something.is_err() {
+                        Err(anyhow!( "{:?}", protected_something.err()))
+                    } else {
+                        Ok(protected_something.unwrap())
+                    }
+                }
+                MessageValue::Varchar(s) => {
+                    warn!("varchar {}", s );
+                    let mut hex_value = s.chars();
+                    hex_value.next();
+                    hex_value.next_back();
+
+
+                    let byte_value = hex::decode(hex_value.as_str());
+                    //let plain = decrypt( byte_value);
+                    //let x = bincode::deserialize(&byte_value.unwrap());
+
+                    let protected_something = bincode::deserialize(&byte_value.unwrap());
+                    if protected_something.is_err() {
+                        Err(anyhow!( "{:?}", protected_something.err()))
+                    } else {
+                        Ok(protected_something.unwrap())
+                    }
+                }
+                _ => Err(anyhow!(
                 "Could not get bytes to decrypt - wrong value type {:?}",
                 value
             )),
-        }
+            }
     }
+
     // TODO should this actually return self (we are sealing the plaintext value, but we don't swap out the plaintext??
     pub async fn protect(self, key_management: &KeyManager, key_id: &str) -> Result<Protected> {
         let sym_key = key_management
@@ -157,7 +230,13 @@ impl Protected {
                 let sym_key = key_management
                     .cached_get_key(key_id.to_string(), Some(enc_dek), Some(kek_id))
                     .await?;
-                decrypt(cipher, nonce, &sym_key.plaintext)
+                let result = decrypt(cipher, nonce, &sym_key.plaintext);
+                if result.is_err() {
+                    Err( anyhow!( "{}", result.err().unwrap() ))
+                } else {
+                    Ok( result.unwrap())
+                }
+
             }
         }
     }
@@ -227,6 +306,7 @@ async fn encrypt_columns(
     Ok(data_changed)
 }
 
+
 #[async_trait]
 impl Transform for Protect {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
@@ -241,19 +321,16 @@ impl Transform for Protect {
             {
                 for cql_statement in &mut query.statements {
                     let statement = &mut cql_statement.statement;
-
                     if let Some(table_name) = CQLStatement::get_table_name(statement) {
-                        if let Some((_, tables)) =
-                            self.keyspace_table_columns.get_key_value(table_name)
-                        {
-                            if let Some((_, columns)) = tables.get_key_value(table_name) {
-                                data_changed = encrypt_columns(
-                                    statement,
-                                    columns,
-                                    &self.key_source,
-                                    &self.key_id,
-                                )
-                                .await?;
+                        if let Some(columns) = self.get_protected_columns( table_name ) {
+                            data_changed = encrypt_columns(
+                                statement,
+                                &columns,
+                                &self.key_source,
+                                &self.key_id,
+                            ).await?;
+                            if data_changed {
+                                warn!( "statement changed to {}", statement );
                             }
                         }
                     }
@@ -271,69 +348,23 @@ impl Transform for Protect {
         for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {
             let mut invalidate_cache = false;
             if let Some(Frame::Cassandra(CassandraFrame {
-                operation:
-                    CassandraOperation::Result(CassandraResult::Rows {
-                        value: MessageValue::Rows(rows),
-                        ..
-                    }),
-                ..
-            })) = response.frame()
-            {
+                                             operation: CassandraOperation::Query { query, .. },
+                                             ..
+                                         })) = request.frame() {
                 if let Some(Frame::Cassandra(CassandraFrame {
-                    operation: CassandraOperation::Query { query, .. },
-                    ..
-                })) = request.frame()
-                {
+                                                 operation:
+                                                 CassandraOperation::Result(CassandraResult::Rows {
+                                                                                value: MessageValue::Rows(rows),
+                                                                                ..
+                                                                            }),
+                                                 ..
+                                             })) = response.frame() {
                     for cql_statement in &mut query.statements {
                         let statement = &mut cql_statement.statement;
                         if let Some(table_name) = CQLStatement::get_table_name(statement) {
-                            if let Some((_keyspace, tables)) =
-                                self.keyspace_table_columns.get_key_value(table_name)
-                            {
-                                if let Some((_table, protect_columns)) =
-                                    tables.get_key_value(table_name)
-                                {
-                                    if let CassandraStatement::Select(select) = &statement {
-                                        let positions: Vec<usize> = select
-                                            .columns
-                                            .iter()
-                                            .enumerate()
-                                            .filter_map(|(i, col)| {
-                                                if let SelectElement::Column(named) = col {
-                                                    if protect_columns.contains(&named.name) {
-                                                        Some(i)
-                                                    } else {
-                                                        None
-                                                    }
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .collect();
-                                        for row in &mut *rows {
-                                            for index in &positions {
-                                                if let Some(v) = row.get_mut(*index) {
-                                                    if let MessageValue::Bytes(_) = v {
-                                                        let protected =
-                                                            Protected::from_encrypted_bytes_value(
-                                                                v,
-                                                            )
-                                                            .await?;
-                                                        let new_value: MessageValue = protected
-                                                            .unprotect(
-                                                                &self.key_source,
-                                                                &self.key_id,
-                                                            )
-                                                            .await?;
-                                                        *v = new_value;
-                                                        invalidate_cache = true;
-                                                    } else {
-                                                        warn!("Tried decrypting non-blob column")
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                            if let Some(columns) = self.get_protected_columns( table_name ) {
+                                if let CassandraStatement::Select(select) = &statement {
+                                    invalidate_cache |=  self.process_select( select, columns, rows ).await?
                                 }
                             }
                         }
@@ -348,5 +379,33 @@ impl Transform for Protect {
         // this used to be worse https://doc.rust-lang.org/book/ch18-03-pattern-syntax.html#destructuring-structs-and-tuples
         // TODO: destructure the above bracket mountain as below
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use serde::Serialize;
+    use crate::message::MessageValue;
+    use crate::transforms::protect::key_management::{KeyManagement, KeyManager};
+    use crate::transforms::protect::local_kek::LocalKeyManagement;
+    use crate::transforms::protect::Protected;
+    use sodiumoxide::crypto::secretbox::{Key, Nonce};
+
+    #[tokio::test(flavor = "multi_thread")]
+    //#[test]
+    async fn round_trip_test() {
+        if sodiumoxide::init().is_err() {
+            panic!( "could not init sodiumoxide");
+        }
+        let kek = sodiumoxide::crypto::secretbox::xsalsa20poly1305::gen_key();
+        let local_key_mgr = LocalKeyManagement{ kek, kek_id: "".to_string() };
+        let key_mgr = KeyManager::Local(local_key_mgr);
+        let msg_value =  MessageValue::Varchar("Hello World".to_string());
+        let plain = Protected::Plaintext( msg_value.clone() );
+        let encr = plain.protect( &key_mgr, "" ).await.unwrap();
+        let new_msg = encr.unprotect( &key_mgr, "" ).await;
+
+        assert_eq!( &msg_value, &new_msg.unwrap() );
+
     }
 }

@@ -22,7 +22,7 @@ use cassandra_protocol::types::value::Value;
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{Operand, RelationElement};
+use cql3_parser::common::{Operand, RelationElement, FQName};
 use cql3_parser::insert::InsertValues;
 use cql3_parser::update::AssignmentOperator;
 use itertools::Itertools;
@@ -285,13 +285,13 @@ impl CassandraFrame {
     }
 
     /// returns a list of table names from the CassandraOperation
-    pub fn get_table_names(&self) -> Vec<String> {
+    pub fn get_table_names(&self) -> Vec<&FQName> {
         let mut result = vec![];
         match &self.operation {
             CassandraOperation::Query { query: cql, .. } => {
                 for cql_statement in &cql.statements {
                     if let Some(name) = CQLStatement::get_table_name(&cql_statement.statement) {
-                        result.push(name.into());
+                        result.push(name);
                     }
                 }
             }
@@ -302,7 +302,7 @@ impl CassandraFrame {
                             if let Some(name) =
                                 CQLStatement::get_table_name(&cql_statement.statement)
                             {
-                                result.push(name.into());
+                                result.push(name);
                             }
                         }
                     }
@@ -587,7 +587,7 @@ impl CQLStatement {
     }
 
     /// returns the table name specified in the command if one is present.
-    pub fn get_table_name(statement: &CassandraStatement) -> Option<&String> {
+    pub fn get_table_name(statement: &CassandraStatement) -> Option<&FQName> {
         match statement {
             CassandraStatement::AlterTable(t) => Some(&t.name),
             CassandraStatement::CreateIndex(i) => Some(&i.table),

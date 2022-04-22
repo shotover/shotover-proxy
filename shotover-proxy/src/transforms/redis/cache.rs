@@ -670,7 +670,7 @@ fn build_redis_key_from_cql3(
                 build_query_redis_key_from_value_map(
                     table_cache_schema,
                     &value_map,
-                    &select.table_name,
+                    &select.table_name.to_string(),
                 )?,
                 build_query_redis_hash_from_value_map(table_cache_schema, &value_map, select)?,
             ))
@@ -695,7 +695,7 @@ fn build_redis_key_from_cql3(
                 build_query_redis_key_from_value_map(
                     table_cache_schema,
                     &value_map,
-                    &insert.table_name,
+                    &insert.table_name.to_string(),
                 )?,
                 Bytes::new(),
             ))
@@ -706,7 +706,7 @@ fn build_redis_key_from_cql3(
                 build_query_redis_key_from_value_map(
                     table_cache_schema,
                     &value_map,
-                    &update.table_name,
+                    &update.table_name.to_string(),
                 )?,
                 Bytes::new(),
             ))

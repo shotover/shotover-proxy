@@ -177,7 +177,7 @@ impl Message {
     /// None if the statements do not contain table names.
     pub fn get_table_names(&mut self) -> Vec<String> {
         match self.frame() {
-            Some(Frame::Cassandra(cassandra)) => cassandra.get_table_names(),
+            Some(Frame::Cassandra(cassandra)) => cassandra.get_table_names().iter().map( |n| n.to_string()).collect_vec(),
             Some(Frame::Redis(_)) => unimplemented!(),
             Some(Frame::None) => vec![],
             _ => unreachable!(),

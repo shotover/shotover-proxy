@@ -1403,7 +1403,7 @@ mod protect {
         if let ResultValue::Varchar(value) = &result[0][2] {
             assert!(value.starts_with("{\"Ciphertext"));
         } else {
-            panic!("expectected 3rd column to be ResultValue::Varchar in {result:?}");
+            panic!("expected 3rd column to be ResultValue::Varchar in {result:?}");
         }
         assert_eq!(result[0][3], ResultValue::Int(42));
         assert_eq!(result[0][4], ResultValue::Boolean(true));
