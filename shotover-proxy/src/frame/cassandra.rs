@@ -953,7 +953,14 @@ impl ToCassandraType for Operand {
     fn from_string_value(value: &str) -> Option<CassandraType> {
         // check for string types
         if value.starts_with('\'') || value.starts_with("$$") {
-            Some(CassandraType::Varchar(value.to_string()))
+            let mut chars = value.chars();
+            chars.next();
+            chars.next_back();
+            if value.starts_with('$') {
+                chars.next();
+                chars.next_back();
+            }
+            Some(CassandraType::Varchar(chars.as_str().to_string()))
         } else if value.starts_with("0X") || value.starts_with("0x") {
             let mut chars = value.chars();
             chars.next();

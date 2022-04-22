@@ -2579,6 +2579,7 @@ dependencies = [
  "rayon",
  "redis",
  "redis-protocol",
+ "regex",
  "reqwest",
  "rusoto_kms",
  "rusoto_signature",

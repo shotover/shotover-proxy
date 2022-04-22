@@ -1354,6 +1354,7 @@ mod cache {
 mod protect {
     use crate::helpers::cassandra::{execute_query, run_query, ResultValue};
     use cassandra_cpp::Session;
+    use regex::Regex;
 
     pub fn test(shotover_session: &Session, direct_session: &Session) {
         run_query(shotover_session, "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -1401,7 +1402,8 @@ mod protect {
         assert_eq!(result[0][0], ResultValue::Varchar("pk1".into()));
         assert_eq!(result[0][1], ResultValue::Varchar("cluster".into()));
         if let ResultValue::Varchar(value) = &result[0][2] {
-            assert!(value.starts_with("{\"Ciphertext"));
+            let re = Regex::new( r"^[0-9a-fA-F]+$").unwrap();
+            assert!( re.is_match( value ));
         } else {
             panic!("expected 3rd column to be ResultValue::Varchar in {result:?}");
         }
