@@ -102,7 +102,9 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "single_tls",
         || {
-            test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
+            test_helpers::cert::generate_redis_test_certs(Path::new(
+                "example-configs/redis-tls/certs",
+            ));
             BenchResources::new(
                 "example-configs/redis-tls/topology.yaml",
                 "example-configs/redis-tls/docker-compose.yml",
@@ -122,7 +124,9 @@ fn redis(c: &mut Criterion) {
     group.bench_with_input(
         "cluster_tls",
         || {
-            test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
+            test_helpers::cert::generate_redis_test_certs(Path::new(
+                "example-configs/redis-tls/certs",
+            ));
             BenchResources::new(
                 "example-configs/redis-cluster-tls/topology.yaml",
                 "example-configs/redis-cluster-tls/docker-compose.yml",

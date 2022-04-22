@@ -1429,6 +1429,7 @@ fn test_passthrough() {
 #[test]
 #[serial]
 fn test_source_tls_and_single_tls() {
+    test_helpers::cert::generate_cassandra_test_certs();
     let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yml");
 
     let shotover_manager =

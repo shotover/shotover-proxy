@@ -7,6 +7,12 @@ tests/soaktest-*
 *.gz
 /.vscode
 /shotover-proxy/example-configs/redis-tls/certs
+/shotover-proxy/example-configs/cassandra-tls/certs/*.jks
+/shotover-proxy/example-configs/cassandra-tls/certs/*.p12
+/shotover-proxy/example-configs/cassandra-tls/certs/*.key
+/shotover-proxy/example-configs/cassandra-tls/certs/*.srl
+/shotover-proxy/example-configs/cassandra-tls/certs/*.csr
+/shotover-proxy/example-configs/cassandra-tls/certs/*.crt
 .workspace.code-workspace
 /test_tmp
 output.txt

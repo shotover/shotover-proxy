@@ -1,7 +1,10 @@
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa};
+use std::env::{current_dir, set_current_dir};
+use std::io::ErrorKind;
 use std::path::Path;
+use std::process::Command;
 
-pub fn generate_test_certs(path: &Path) {
+pub fn generate_redis_test_certs(path: &Path) {
     let mut params = CertificateParams::default();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     // This must be "Certificate Authority"
@@ -33,4 +36,24 @@ pub fn generate_test_certs(path: &Path) {
     )
     .unwrap();
     std::fs::write(path.join("redis.key"), cert.serialize_private_key_pem()).unwrap();
+}
+
+pub fn generate_cassandra_test_certs() {
+    println!("starting {:?}", current_dir().unwrap());
+    let current_path = current_dir().unwrap();
+
+    set_current_dir("example-configs/cassandra-tls/certs").unwrap();
+
+    if let Err(ErrorKind::NotFound) = Command::new("./gen_certs.sh")
+        .output()
+        .map_err(|e| e.kind())
+    {
+        panic!("Could not generate test certs");
+    }
+
+    println!("{:?}", Command::new("ls").output());
+
+    set_current_dir(current_path).unwrap();
+
+    println!("finished {:?}", current_dir().unwrap());
 }
