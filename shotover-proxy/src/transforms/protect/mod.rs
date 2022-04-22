@@ -17,7 +17,6 @@ use sodiumoxide::crypto::secretbox;
 use sodiumoxide::crypto::secretbox::{Key, Nonce};
 use sodiumoxide::hex;
 use std::collections::HashMap;
-use tracing::warn;
 use tracing_log::log::debug;
 
 mod aws_kms;
@@ -53,12 +52,10 @@ impl Protect {
     /// decodes a byte array into the Protected object.  This is here to centeralize the serde for
     /// the Protected object.
     fn decode(data : &[u8] ) -> Result<Protected> {
-        let result = serde_json::from_slice( &data );
-        if result.is_err() {
-            Err(anyhow!( "{:?}", result.err()))
-        } else {
-            let decoded :Protected = result.unwrap();
-            Ok(decoded)
+        let result = serde_json::from_slice( data );
+        match result {
+            Ok(decoded) => { Ok(decoded)}
+            Err(e) => {Err(anyhow!( "{:?}", e))}
         }
     }
 
@@ -156,7 +153,7 @@ impl Protect {
 
 
     /// processes the select statement to modify the rows.  returns `true` if the rows were modified
-    async fn process_select(&self, select : &Select, columns : &Vec<String>, rows : &mut Vec<Vec<MessageValue>>) -> Result<bool> {
+    async fn process_select(&self, select : &Select, columns : &[String], rows : &mut Vec<Vec<MessageValue>>) -> Result<bool> {
         let mut modified = false;
 
         // get the positions of the protected columns in the result
@@ -177,7 +174,7 @@ impl Protect {
             })
             .collect();
         // only do the work if there are columns we are interested in
-        if positions.len() > 0 {
+        if ! positions.is_empty() {
             for row in &mut *rows {
                 for index in &positions {
                     if let Some(message_value) = row.get_mut(*index) {
@@ -256,12 +253,12 @@ impl From<Protected> for MessageValue {
 }
 
 impl From<&Protected> for Operand {
-    fn from(p: &Protected) -> Self {
-        match p {
+    fn from(protected: &Protected) -> Self {
+        match protected {
             Protected::Plaintext(_) => panic!(
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
-            Protected::Ciphertext { .. } => Operand::Const(format!("'{}'", hex::encode(Protect::encode(&p).unwrap()))),
+            Protected::Ciphertext { .. } => Operand::Const(format!("'{}'", hex::encode(Protect::encode(protected).unwrap()))),
         }
     }
 }
@@ -275,7 +272,7 @@ impl Protected {
             .await?;
         match &self {
             Protected::Plaintext(message_value) => {
-                let (cipher, nonce) = encrypt(&message_value, &sym_key.plaintext);
+                let (cipher, nonce) = encrypt(message_value, &sym_key.plaintext);
                 Ok(Protected::Ciphertext {
                     cipher,
                     nonce,
@@ -399,7 +396,6 @@ mod test {
     use cql3_parser::cassandra_statement::CassandraStatement;
     use cql3_parser::common::Operand;
     use cql3_parser::insert::InsertValues;
-    use futures::future::ok;
     use sodiumoxide::crypto::secretbox::Nonce;
     use crate::message::MessageValue;
     use crate::transforms::protect::key_management::KeyManager;
@@ -417,7 +413,7 @@ mod test {
 
         let protected = Protected::Ciphertext {
             cipher : ocipher.clone(),
-            nonce : ononce.clone(),
+            nonce : ononce,
             enc_dek : oenc_dek.clone(),
             kek_id : okek_id.clone(),
         };
@@ -469,12 +465,30 @@ mod test {
         let data_changed = protect.encrypt_columns(statement).await.unwrap();
         assert!( data_changed );
 
-        let mut encr_value = String::new();
         if let CassandraStatement::Insert(insert) = statement {
             if let InsertValues::Values(operands) = &insert.values {
-                if let Operand::Const( value ) = &operands[0] {
-                    encr_value = value.clone();
-                    assert!( ! value.eq( "Hello World'") );
+                if let Operand::Const( encr_value ) = &operands[0] {
+                    assert!( ! encr_value.eq( "Hello World'") );
+                    // remove the quotes
+                    let mut hex_value = encr_value.chars();
+                    hex_value.next();
+                    hex_value.next_back();
+                    let s =  hex_value.as_str().to_string();
+                    let mv = MessageValue::Varchar(s);
+                    // build the row
+                    let row = vec![mv];
+                    let mut rows = vec![row];
+
+                    let stmt_txt = "select col1 from test_table where col2='i am clean'";
+                    let cql = CQL::parse_from_string(stmt_txt);
+                    let statement = &cql.statements[0].statement;
+
+                    if let CassandraStatement::Select(select) = statement {
+                        let result = protect.process_select(select, &cols, &mut rows ).await;
+                        assert!( result.unwrap() );
+                        assert_eq!( &msg_value, &rows[0][0] );
+                    }
+
                 } else {
                     panic!( "Not a const value");
                 }
@@ -485,24 +499,5 @@ mod test {
             panic!("not an INSERT");
         }
 
-        // remove the quotes
-        let mut hex_value = encr_value.chars();
-        hex_value.next();
-        hex_value.next_back();
-        let s =  hex_value.as_str().to_string();
-        let mv = MessageValue::Varchar(s);
-        // build the row
-        let row = vec![mv];
-        let mut rows = vec![row];
-
-        let stmt_txt = "select col1 from test_table where col2='i am clean'";
-        let cql = CQL::parse_from_string(stmt_txt);
-        let statement = &cql.statements[0].statement;
-
-        if let CassandraStatement::Select(select) = statement {
-            let result = protect.process_select(select, &cols, &mut rows ).await;
-            assert!( result.unwrap() );
-            assert_eq!( &msg_value, &rows[0][0] );
-        }
     }
 }
