@@ -366,7 +366,7 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::parse_from_string("SELECT FROM system.local WHERE key = 'local'"),
+                query: CQL::parse_from_string("SELECT * FROM system.local WHERE key = 'local'"),
                 params: QueryParams::default(),
             },
         }))];
