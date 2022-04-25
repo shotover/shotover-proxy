@@ -1,3 +1,5 @@
+use crate::message::QueryType::PubSubMessage;
+use crate::message::{MessageValue, QueryType};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
@@ -36,9 +38,6 @@ use std::num::NonZeroU32;
 use std::str::FromStr;
 use tracing::debug;
 use uuid::Uuid;
-
-use crate::message::QueryType::PubSubMessage;
-use crate::message::{MessageValue, QueryType};
 
 /// Extract the length of a BATCH statement (count of requests) from the body bytes
 fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
