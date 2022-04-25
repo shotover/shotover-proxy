@@ -22,7 +22,7 @@ use cassandra_protocol::types::value::Value;
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{Operand, RelationElement, FQName};
+use cql3_parser::common::{FQName, Operand, RelationElement};
 use cql3_parser::insert::InsertValues;
 use cql3_parser::update::AssignmentOperator;
 use itertools::Itertools;

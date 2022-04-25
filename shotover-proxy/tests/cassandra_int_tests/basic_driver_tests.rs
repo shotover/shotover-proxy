@@ -1386,7 +1386,7 @@ mod protect {
             "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
         );
         if let ResultValue::Varchar(value) = &result[0][2] {
-            assert_eq!( "I am gonna get encrypted!!", value);
+            assert_eq!("I am gonna get encrypted!!", value);
             //assert!(value.starts_with("{\"Ciphertext"));
         } else {
             panic!("expected 3rd column to be ResultValue::Varchar in {result:?}");
@@ -1402,8 +1402,8 @@ mod protect {
         assert_eq!(result[0][0], ResultValue::Varchar("pk1".into()));
         assert_eq!(result[0][1], ResultValue::Varchar("cluster".into()));
         if let ResultValue::Varchar(value) = &result[0][2] {
-            let re = Regex::new( r"^[0-9a-fA-F]+$").unwrap();
-            assert!( re.is_match( value ));
+            let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap();
+            assert!(re.is_match(value));
         } else {
             panic!("expected 3rd column to be ResultValue::Varchar in {result:?}");
         }
