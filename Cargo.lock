@@ -54,9 +54,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.56"
+version = "1.0.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4361135be9122e0870de935d7c439aef945b9f9ddd4199a553b5270b49c82a27"
+checksum = "08f9b8508dccb7687a1d6c4ce66b2b0ecef467c94667de27d8d7fe1f8d2a9cdc"
 
 [[package]]
 name = "arrayref"
@@ -356,9 +356,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.1.10"
+version = "3.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3124f3f75ce09e22d1410043e1e24f2ecc44fad3afe4f08408f1f7663d68da2b"
+checksum = "7c167e37342afc5f33fd87bbc870cedd020d2a6dffa05d45ccd9241fbdd146db"
 dependencies = [
  "atty",
  "bitflags",
@@ -446,8 +446,8 @@ dependencies = [
 
 [[package]]
 name = "cql3_parser"
-version = "0.0.1"
-source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=create_FQName#e6d5b9d352d0212ebbeccd427422efca1c792ea6"
+version = "0.1.0"
+source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=main#f654a7f8795ab98d279be966e9fde1352f7d753b"
 dependencies = [
  "bigdecimal",
  "bytes",
@@ -2549,7 +2549,7 @@ dependencies = [
  "cached",
  "cassandra-cpp",
  "cassandra-protocol",
- "clap 3.1.10",
+ "clap 3.1.12",
  "cql3_parser",
  "crc16",
  "criterion",
@@ -3054,9 +3054,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-log"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6923477a48e41c1951f1999ef8bb5a3023eb723ceadafe78ffb65dc366761e3"
+checksum = "78ddad33d2d10b1ed7eb9d1f518a5674713876e97e5bb9b7345a7984fbb4f922"
 dependencies = [
  "env_logger",
  "lazy_static",
