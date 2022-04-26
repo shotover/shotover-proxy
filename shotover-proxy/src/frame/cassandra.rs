@@ -30,7 +30,6 @@ use cql3_parser::update::AssignmentOperator;
 use itertools::Itertools;
 use nonzero_ext::nonzero;
 use sodiumoxide::hex;
-use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
 use std::io::Cursor;
 use std::net::IpAddr;
@@ -38,7 +37,6 @@ use std::num::NonZeroU32;
 use std::str::FromStr;
 use tracing::debug;
 use uuid::Uuid;
-use crate::message::{MessageValue, QueryType};
 
 /// Functions for operations on an unparsed Cassandra frame
 pub mod raw_frame {
