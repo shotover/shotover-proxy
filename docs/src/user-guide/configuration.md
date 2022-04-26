@@ -12,17 +12,11 @@ The configuration file is used to change general behavior of Shotover. Currently
 
 ### main_log_level
 
-This is a single string that you can use to configure logging with Shotover. It supports [env_filter](https://docs.rs/env_logger/0.7.1/env_logger/) style configuration and filtering syntax. Log levels and filters can be dynamically changed while Shotover Proxy is still running.
+This is a single string that you can use to configure logging with Shotover. It supports [env_filter](https://docs.rs/env_logger/0.7.1/env_logger/) style configuration and filtering syntax. Log levels and filters can be dynamically changed while Shotover is still running.
 
-This can be done by a POST HTTP request to the `/filter` endpoint (configured located at the observability interface) with the env_filter string set as the POST data. For example:
+### observability_interface 
 
-```shell
-curl -X PUT -d 'info,shotover_proxy=info' http://127.0.0.1:9001/filter
-```
-
-### observability_interface
-
-Defines the interface and port for Shotover's observability interface. This interface will serve Prometheus metrics from `/metrics` and allow you to configure log levels and filters at `/filter`. Configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses.
+Shotover has an observability interface for you to collect Prometheus data from. This value will define the address and port for Shotover's observability interface. It is configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses. More information is on the [observability page](./observability.md).
 
 ## topology.yaml
 

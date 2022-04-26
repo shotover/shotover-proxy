@@ -1,9 +1,13 @@
-use std::env;
-use std::net::SocketAddr;
-
+use crate::config::topology::Topology;
+use crate::config::Config;
+use crate::observability::LogFilterHttpExporter;
+use crate::transforms::Transforms;
+use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
 use clap::{crate_version, Parser};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use std::env;
+use std::net::SocketAddr;
 use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
@@ -16,12 +20,6 @@ use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::layer::Layered;
 use tracing_subscriber::reload::Handle;
 use tracing_subscriber::{EnvFilter, Registry};
-
-use crate::admin::httpserver::LogFilterHttpExporter;
-use crate::config::topology::Topology;
-use crate::config::Config;
-use crate::transforms::Transforms;
-use crate::transforms::Wrapper;
 
 #[derive(Parser, Clone)]
 #[clap(version = crate_version!(), author = "Instaclustr")]

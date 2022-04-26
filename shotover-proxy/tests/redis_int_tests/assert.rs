@@ -9,10 +9,7 @@ pub async fn assert_nil(cmd: &mut Cmd, connection: &mut Connection) {
 }
 
 pub async fn assert_ok(cmd: &mut Cmd, connection: &mut Connection) {
-    // TODO: enable this assert once its fixed in the codebase
-    //assert_eq!(cmd.query_async(connection).await, Ok("OK".to_string()));
-
-    cmd.query_async::<_, ()>(connection).await.unwrap();
+    assert_eq!(cmd.query_async(connection).await, Ok("OK".to_string()));
 }
 
 pub async fn assert_int(cmd: &mut Cmd, connection: &mut Connection, value: i64) {
