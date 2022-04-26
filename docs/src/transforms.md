@@ -58,6 +58,8 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
+
 ### CassandraPeersRewrite
 
 This transform should be used with the `CassandraSinkSingle` transform. It will write over the ports of the peers returned by queries to the `system.peers_v2` table in Cassandra with a user supplied value (typically the port that Shotover is listening on so Cassandra drivers will connect to Shotover instead of the Cassandra nodes themselves).
@@ -212,6 +214,8 @@ The log can be accessed via the [Shotover metrics](user-guide/configuration.md#o
     name: "DR chain"
 ```
 
+This transform emits a metrics [counter](user-guide/observability.md#counter) named `query_count` with the label `name` defined as the name from the config, in the example it will be `DR chain`.
+
 ### QueryTypeFilter
 
 This transform will drop messages that match the specified filter.
@@ -290,6 +294,8 @@ Unlike other Redis cluster drivers, this transform does support pipelining. It d
 
 Latency and throughput will be different from pipelining with a single Redis node, but not by much.
 
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `RedisSinkCluster` and `chain` as the name of the chain that this transform is in.
+
 #### Differences to real Redis
 
 On an existing authenticated connection, a failed auth attempt will not "unauthenticate" the user. This behaviour matches Redis 6 but is different to Redis 5.
@@ -322,6 +328,8 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
+
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `RedisSinkSingle` and `chain` as the name of the chain that this transform is in.
 
 ### RedisTimestampTagger
 
@@ -368,6 +376,8 @@ The response from the down-chain transform is returned back up-chain but various
           filter: Read
       - Null
 ```
+
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `tee_dropped_messages` and the label `chain` as `Tee`.
 
 ### RequestThrottling
 
