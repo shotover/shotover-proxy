@@ -201,7 +201,7 @@ impl Message {
             } => match message_type {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::None => nonzero!(1u32),
-                MessageType::Cassandra => cassandra::cell_count(bytes)?,
+                MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 Frame::Cassandra(frame) => frame.cell_count()?,
@@ -283,7 +283,9 @@ impl Message {
                 bytes,
                 message_type,
             } => match message_type {
-                MessageType::Cassandra => Ok(Metadata::Cassandra(cassandra::metadata(&*bytes)?)),
+                MessageType::Cassandra => Ok(Metadata::Cassandra(cassandra::raw_frame::metadata(
+                    &*bytes,
+                )?)),
                 MessageType::Redis => Ok(Metadata::Redis),
                 MessageType::None => Ok(Metadata::None),
             },
