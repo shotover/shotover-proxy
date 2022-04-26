@@ -469,16 +469,6 @@ fn is_cacheable(cql_statement: &CQLStatement) -> CacheableState {
                     CacheableState::Skip("Can not cache with ALLOW FILTERING".into())
                 } else if select.where_clause.is_empty() {
                     CacheableState::Skip("Can not cache if where clause is empty".into())
-                    /* } else if !select.columns.is_empty() {
-                        if select.columns.len() == 1 && select.columns[0].eq(&SelectElement::Star) {
-                            CacheableState::Read
-                        } else {
-                            CacheableState::Skip(
-                                "Can not cache if columns other than '*' are selected".into(),
-                            )
-                        }
-
-                    */
                 } else {
                     CacheableState::Read(table_name.into())
                 }
@@ -530,8 +520,7 @@ fn build_query_redis_key_from_value_map(
     query_values: &BTreeMap<String, Vec<RelationElement>>,
     table_name: &str,
 ) -> Result<Bytes, CacheableState> {
-    let mut key: Vec<u8> = vec![];
-    key.extend(table_name.as_bytes());
+    let mut key = table_name.as_bytes().to_vec();
     for c_name in &table_cache_schema.partition_key {
         let column_name = c_name.to_lowercase();
         debug!("processing partition key segment: {}", column_name);
