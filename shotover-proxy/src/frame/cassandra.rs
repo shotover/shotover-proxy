@@ -21,25 +21,59 @@ use nonzero_ext::nonzero;
 use sqlparser::ast::{SetExpr, Statement, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use std::convert::TryInto;
 use std::num::NonZeroU32;
 use uuid::Uuid;
 
 use crate::message::{MessageValue, QueryType};
 
-/// Extract the length of a BATCH statement (count of requests) from the body bytes
-fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
-    let len = bytes.len();
-    if len < 2 {
-        return Err(anyhow!("BATCH statement body is not long enough"));
+/// Functions for operations on an unparsed Cassandra frame
+pub mod raw_frame {
+    use super::{CassandraMetadata, RawCassandraFrame};
+    use anyhow::{anyhow, Result};
+    use cassandra_protocol::{compression::Compression, frame::Opcode};
+    use nonzero_ext::nonzero;
+    use std::convert::TryInto;
+    use std::num::NonZeroU32;
+
+    /// Extract the length of a BATCH statement (count of requests) from the body bytes
+    fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
+        let len = bytes.len();
+        if len < 2 {
+            return Err(anyhow!("BATCH statement body is not long enough"));
+        }
+
+        let short_bytes = &bytes[1..3];
+        let short = u16::from_be_bytes(short_bytes.try_into()?);
+
+        // it is valid for a batch statement to have 0 statements,
+        // but for the purposes of shotover throttling we can count it as one query
+        Ok(NonZeroU32::new(short.into()).unwrap_or(nonzero!(1u32)))
     }
 
-    let short_bytes = &bytes[1..3];
-    let short = u16::from_be_bytes(short_bytes.try_into()?);
+    /// Parse metadata only from an unparsed Cassandra frame
+    pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
+        let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
+            .map_err(|e| anyhow!("{e:?}"))?
+            .frame;
 
-    // it is valid for a batch statement to have 0 statements,
-    // but for the purposes of shotover throttling we can count it as one query
-    Ok(NonZeroU32::new(short.into()).unwrap_or(nonzero!(1u32)))
+        Ok(CassandraMetadata {
+            version: frame.version,
+            stream_id: frame.stream_id,
+            tracing_id: frame.tracing_id,
+        })
+    }
+
+    /// Count "cells" only from an unparsed Cassandra frame
+    pub(crate) fn cell_count(bytes: &[u8]) -> Result<NonZeroU32> {
+        let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
+            .map_err(|e| anyhow!("{e:?}"))?
+            .frame;
+
+        Ok(match frame.opcode {
+            Opcode::Batch => get_batch_len(&frame.body)?,
+            _ => nonzero!(1u32),
+        })
+    }
 }
 
 pub(crate) struct CassandraMetadata {
@@ -47,31 +81,6 @@ pub(crate) struct CassandraMetadata {
     pub stream_id: StreamId,
     pub tracing_id: Option<Uuid>,
     // missing `warnings` field because we are not using it currently
-}
-
-/// Parse metadata only from an unparsed Cassandra frame
-pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
-    let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
-        .map_err(|e| anyhow!("{e:?}"))?
-        .frame;
-
-    Ok(CassandraMetadata {
-        version: frame.version,
-        stream_id: frame.stream_id,
-        tracing_id: frame.tracing_id,
-    })
-}
-
-/// Count "cells" only from an unparsed Cassandra frame
-pub(crate) fn cell_count(bytes: &[u8]) -> Result<NonZeroU32> {
-    let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
-        .map_err(|e| anyhow!("{e:?}"))?
-        .frame;
-
-    Ok(match frame.opcode {
-        Opcode::Batch => get_batch_len(&frame.body)?,
-        _ => nonzero!(1u32),
-    })
 }
 
 #[derive(PartialEq, Debug, Clone)]
