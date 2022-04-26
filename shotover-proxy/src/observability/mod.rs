@@ -1,12 +1,12 @@
+use anyhow::{anyhow, Result};
+use bytes::Bytes;
 use hyper::{
     service::{make_service_fn, service_fn},
     Method, Request, StatusCode, {Body, Response, Server},
 };
-
-use anyhow::{anyhow, Result};
-use bytes::Bytes;
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::convert::Infallible;
+use std::str;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, trace};
 use tracing_subscriber::reload::Handle;
@@ -16,14 +16,14 @@ use tracing_subscriber::EnvFilter;
 pub struct LogFilterHttpExporter<S> {
     recorder_handle: PrometheusHandle,
     address: SocketAddr,
-    handle: Handle<EnvFilter, S>,
+    tracing_handle: Handle<EnvFilter, S>,
 }
 
-fn set_from<S>(bytes: Bytes, handle: &Handle<EnvFilter, S>) -> Result<(), String>
+/// Sets the `tracing_suscriber` filter level to the value of `bytes` on `handle`
+fn set_filter<S>(bytes: Bytes, handle: &Handle<EnvFilter, S>) -> Result<(), String>
 where
     S: tracing::Subscriber + 'static,
 {
-    use std::str;
     let body = str::from_utf8(bytes.as_ref()).map_err(|e| format!("{e}"))?;
     trace!(request.body = ?body);
     let new_filter = body
@@ -49,12 +49,12 @@ where
     pub fn new(
         recorder_handle: PrometheusHandle,
         address: SocketAddr,
-        handle: Handle<EnvFilter, S>,
+        tracing_handle: Handle<EnvFilter, S>,
     ) -> Self {
         LogFilterHttpExporter {
             recorder_handle,
             address,
-            handle,
+            tracing_handle,
         }
     }
 
@@ -67,27 +67,27 @@ where
     }
 
     async fn async_run_inner(self) -> Result<()> {
-        let controller = Arc::new(self.recorder_handle);
-        let handle = Arc::new(self.handle);
+        let recorder_handle = Arc::new(self.recorder_handle);
+        let tracing_handle = Arc::new(self.tracing_handle);
 
         let make_svc = make_service_fn(move |_| {
-            let controller = controller.clone();
-            let handle = handle.clone();
+            let recorder_handle = recorder_handle.clone();
+            let tracing_handle = tracing_handle.clone();
 
             async move {
                 Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let controller = controller.clone();
-                    let handle = handle.clone();
+                    let recorder_handle = recorder_handle.clone();
+                    let tracing_handle = tracing_handle.clone();
 
                     async move {
                         let response = match (req.method(), req.uri().path()) {
                             (&Method::GET, "/metrics") => {
-                                Response::new(Body::from(controller.as_ref().render()))
+                                Response::new(Body::from(recorder_handle.as_ref().render()))
                             }
                             (&Method::PUT, "/filter") => {
                                 trace!("setting filter");
                                 match hyper::body::to_bytes(req).await {
-                                    Ok(body) => match set_from(body, &handle) {
+                                    Ok(body) => match set_filter(body, &tracing_handle) {
                                         Err(error) => {
                                             error!(%error, "setting filter failed!");
                                             rsp(StatusCode::INTERNAL_SERVER_ERROR, error)
@@ -100,7 +100,7 @@ where
                                     }
                                 }
                             }
-                            _ => rsp(StatusCode::NOT_FOUND, "try '/filter'"),
+                            _ => rsp(StatusCode::NOT_FOUND, "try '/filter' or `/metrics`"),
                         };
                         Ok::<_, Infallible>(response)
                     }

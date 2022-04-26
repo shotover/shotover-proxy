@@ -6,6 +6,7 @@
   - [Getting Started](./user-guide/getting-started.md)
   - [Concepts](./user-guide/concepts.md)
   - [Configuration](./user-guide/configuration.md)
+  - [Observability](./user-guide/observability.md)
 - [Source Types](./source-types.md)
 - [Transforms](./transforms.md)
 - [Examples]()
