@@ -9,6 +9,7 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+## Uncomment the following line to force IDE's that resist configuration to run all tests
 #default = ["alpha-transforms"]
 # Include WIP alpha transforms in the public API
 alpha-transforms = []

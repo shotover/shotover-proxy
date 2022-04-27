@@ -40,21 +40,14 @@ impl Protect {
     fn encode(protected: &Protected) -> Result<Vec<u8>> {
         match protected {
             Protected::Plaintext(_) => Err(anyhow!("can not encode plain text")),
-            Protected::Ciphertext { .. } => match serde_json::to_vec(protected) {
-                Ok(data) => Ok(data),
-                Err(e) => Err(anyhow!("{:?}", e)),
-            },
+            Protected::Ciphertext { .. } => Ok(serde_json::to_vec(protected)?),
         }
     }
 
     /// decodes a byte array into the Protected object.  This is here to centeralize the serde for
     /// the Protected object.
     fn decode(data: &[u8]) -> Result<Protected> {
-        let result = serde_json::from_slice(data);
-        match result {
-            Ok(decoded) => Ok(decoded),
-            Err(e) => Err(anyhow!("{:?}", e)),
-        }
+        Ok(serde_json::from_slice(data)?)
     }
 
     /// get the list of protected columns for the specified table name.  Will return `None` if no columns
