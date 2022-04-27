@@ -250,11 +250,11 @@ impl Message {
 
     // TODO: replace with a to_error_reply, should be easier to reason about
     pub fn set_error(&mut self, error: String) {
-        *self = Message::from_frame(match self.frame().unwrap() {
-            Frame::Redis(_) => {
+        *self = Message::from_frame(match self.metadata().unwrap() {
+            Metadata::Redis => {
                 Frame::Redis(RedisFrame::Error(Str::from_inner(error.into()).unwrap()))
             }
-            Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
+            Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
                 version: frame.version,
                 stream_id: frame.stream_id,
                 operation: CassandraOperation::Error(ErrorBody {
@@ -265,7 +265,7 @@ impl Message {
                 tracing_id: frame.tracing_id,
                 warnings: vec![],
             }),
-            Frame::None => Frame::None,
+            Metadata::None => Frame::None,
         });
         self.invalidate_cache();
     }
