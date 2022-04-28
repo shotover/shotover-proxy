@@ -15,15 +15,21 @@ pub struct CassandraPeersRewriteConfig {
 
 impl CassandraPeersRewriteConfig {
     pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
-            port: self.port,
-        }))
+        Ok(Transforms::CassandraPeersRewrite(
+            CassandraPeersRewrite::new(self.port),
+        ))
     }
 }
 
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
     port: u32,
+}
+
+impl CassandraPeersRewrite {
+    pub fn new(port: u32) -> Self {
+        CassandraPeersRewrite { port }
+    }
 }
 
 #[async_trait]
