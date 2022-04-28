@@ -799,6 +799,11 @@ impl CQL {
         param_types: &[ColSpec],
     ) -> Operand {
         if let Some(QueryValues::NamedValues(value_map)) = &query_params.values {
+            /*
+               this code block first uses the hash table to determine if there is a value for the name.
+               then, only if there is, does it do the longer iteration over the value map looking for the
+               name to extract the position which is then used to index the proper param_type.
+            */
             if let Some(value) = value_map.get(name) {
                 if let Some(idx) = value_map
                     .iter()
