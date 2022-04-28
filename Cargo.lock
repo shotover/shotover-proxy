@@ -445,6 +445,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cql3_parser"
+version = "0.1.0"
+source = "git+https://github.com/conorbros/rust_cql3_parser#81b93a4fd8bbc7cce4bd55d8b0dfa5d078a75338"
+dependencies = [
+ "bigdecimal",
+ "bytes",
+ "hex",
+ "itertools",
+ "num",
+ "regex",
+ "tree-sitter",
+ "tree-sitter-cql 0.0.1 (git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql?branch=main)",
+ "uuid 0.8.2",
+]
+
+[[package]]
 name = "crc16"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2504,6 +2520,7 @@ dependencies = [
  "cassandra-cpp",
  "cassandra-protocol",
  "clap 3.1.12",
+ "cql3_parser",
  "crc16",
  "criterion",
  "csv",
@@ -2553,6 +2570,8 @@ dependencies = [
  "tracing-appender",
  "tracing-log",
  "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-cql 0.0.1 (git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql)",
  "uuid 1.0.0",
 ]
 
@@ -3034,6 +3053,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter"
+version = "0.20.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09b3b781640108d29892e8b9684642d2cda5ea05951fd58f0fea1db9edeb9b71"
+dependencies = [
+ "cc",
+ "regex",
+]
+
+[[package]]
+name = "tree-sitter-cql"
+version = "0.0.1"
+source = "git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql?branch=main#ead1375c83892111d31540e6d8d0dc563f187939"
+dependencies = [
+ "cc",
+ "regex",
+ "tree-sitter",
+]
+
+[[package]]
+name = "tree-sitter-cql"
+version = "0.0.1"
+source = "git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql#ead1375c83892111d31540e6d8d0dc563f187939"
+dependencies = [
+ "cc",
+ "regex",
+ "tree-sitter",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3105,6 +3154,9 @@ name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "uuid"

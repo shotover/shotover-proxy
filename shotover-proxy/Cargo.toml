@@ -50,6 +50,9 @@ num = { version = "0.4.0", features = ["serde"] }
 uuid = { version = "1.0.0", features = ["serde"] }
 bigdecimal = {version ="0.3.0", features = ["serde"] }
 base64 = "0.13.0"
+cql3_parser = { git = "https://github.com/conorbros/rust_cql3_parser" }
+tree-sitter = "0.20.6"
+tree-sitter-cql = { git = "https://github.com/Claude-at-Instaclustr/tree-sitter-cql" }
 
 #Observability
 metrics = "0.18.0"
