@@ -11,7 +11,6 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.set_credentials("cassandra", "cassandra").unwrap();
     cluster.set_port(port).ok();
     cluster.set_load_balance_round_robin();
-    let result = cluster.connect();
     // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
     // So we instead force the Display formatter `{}` on the error.
     cluster.connect().map_err(|err| format!("{err}")).unwrap()
