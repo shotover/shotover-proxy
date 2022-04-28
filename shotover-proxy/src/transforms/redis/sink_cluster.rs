@@ -589,20 +589,21 @@ impl RoutingInfo {
                 RoutingInfo::Unsupported
             }
             b"EVALSHA" | b"EVAL" => match args.get(2) {
-                Some(RedisFrame::BulkString(key_count)) => std::str::from_utf8(key_count)
-                    .unwrap_or("0")
-                    .parse::<u64>()
-                    .ok(),
-                _ => None,
-            }
-            .and_then(|key_count| {
-                if key_count == 0 {
-                    Some(RoutingInfo::Random)
-                } else {
-                    args.get(3).and_then(RoutingInfo::for_key)
+                Some(RedisFrame::BulkString(key_count)) => {
+                    if key_count.as_ref() == b"0" {
+                        RoutingInfo::Random
+                    } else {
+                        // For an EVAL to succeed every key must be present on the same node.
+                        // So we use the first key to find the correct destination node and if any of the
+                        // remaining keys are not on the same node as the first key then the destination
+                        // node will handle will correctly handle this for us.
+                        args.get(3)
+                            .and_then(RoutingInfo::for_key)
+                            .unwrap_or(RoutingInfo::Unsupported)
+                    }
                 }
-            })
-            .unwrap_or(RoutingInfo::Unsupported),
+                _ => RoutingInfo::Unsupported,
+            },
             b"XGROUP" | b"XINFO" => args
                 .get(2)
                 .and_then(RoutingInfo::for_key)
