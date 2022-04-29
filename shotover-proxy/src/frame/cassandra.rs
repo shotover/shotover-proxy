@@ -370,7 +370,7 @@ impl CassandraOperation {
     /// Return all queries contained within CassandaOperation::Query and CassandraOperation::Batch
     ///
     /// TODO: This will return a custom iterator type when BATCH support is added
-    pub fn get_cql_statements(&mut self) -> Vec<&mut Box<CQLStatement>> {
+    pub fn get_cql_statements(&mut self) -> Vec<&mut CQLStatement> {
         if let CassandraOperation::Query { query: cql, .. } = self {
             cql.statements.iter_mut().collect()
         } else {
@@ -772,7 +772,7 @@ impl Display for CQLStatement {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CQL {
-    pub statements: Vec<Box<CQLStatement>>,
+    pub statements: Vec<CQLStatement>,
     pub(crate) has_error: bool,
 }
 
@@ -907,11 +907,9 @@ impl CQL {
             statements: ast
                 .statements
                 .iter()
-                .map(|stmt| {
-                    Box::new(CQLStatement {
-                        has_error: stmt.0,
-                        statement: stmt.1.clone(),
-                    })
+                .map(|stmt| CQLStatement {
+                    has_error: stmt.0,
+                    statement: stmt.1.clone(),
                 })
                 .collect(),
         }
