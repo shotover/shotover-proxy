@@ -445,9 +445,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "cql3_parser"
+name = "cql3-parser"
 version = "0.1.0"
-source = "git+https://github.com/shotover/rust_cql3_parser.git#f654a7f8795ab98d279be966e9fde1352f7d753b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ed1aad3b971b15c93eeb793834fd3ef93c79965c6a0244473811fc57b76e645"
 dependencies = [
  "bigdecimal",
  "bytes",
@@ -2550,7 +2551,7 @@ dependencies = [
  "cassandra-cpp",
  "cassandra-protocol",
  "clap 3.1.12",
- "cql3_parser",
+ "cql3-parser",
  "crc16",
  "criterion",
  "csv",
@@ -2588,7 +2589,6 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "sodiumoxide",
- "sqlparser",
  "strum_macros",
  "test-helpers",
  "thiserror",
@@ -2683,15 +2683,6 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
-
-[[package]]
-name = "sqlparser"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e9a527b68048eb95495a1508f6c8395c8defcff5ecdbe8ad4106d08a2ef2a3c"
-dependencies = [
- "log",
-]
 
 [[package]]
 name = "static_assertions"
@@ -3095,7 +3086,8 @@ dependencies = [
 [[package]]
 name = "tree-sitter-cql"
 version = "0.0.1"
-source = "git+https://github.com/Claude-at-Instaclustr/tree-sitter-cql?branch=main#ead1375c83892111d31540e6d8d0dc563f187939"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fdcd73bf0389e82b70592060b7e25195d8d1728d7a0b76b549e92f7f5d124b4"
 dependencies = [
  "cc",
  "regex",
