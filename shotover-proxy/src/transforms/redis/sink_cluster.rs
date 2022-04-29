@@ -587,10 +587,22 @@ impl RoutingInfo {
         };
 
         Ok(match command_name.as_slice() {
+            // These commands write data but need to touch every shard so we send it to every master
             b"FLUSHALL" | b"FLUSHDB" => RoutingInfo::AllMasters(ResponseJoin::First),
+            // The total count of all keys can be obtained by summing the count of keys from every shard.
             b"DBSIZE" => RoutingInfo::AllMasters(ResponseJoin::IntegerSum),
+            // A complete list of every key can be obtained by joining the key lists provided by every shard.
+            //
+            // With this implementation, running `KEYS *` in a large production environment could OoM shotover.
+            // But I assume in such an environment the nodes would be configured to not allow running KEYS.
+            // So each redis node would return an error and then we would return a single error to the client which would be fine.
             b"KEYS" => RoutingInfo::AllMasters(ResponseJoin::ArrayJoin),
+            // The LASTSAVE command is needed to confirm that a previous BGSAVE command has succeed.
+            // In order to maintain this use case we query every node and return the oldest save time.
+            // This way the return value wont change until every node has completed their BGSAVE.
             b"LASTSAVE" => RoutingInfo::AllNodes(ResponseJoin::IntegerMin),
+            // When a command that forces writing to disk occurs we want it to occur on every node.
+            // Replica nodes receive updates from their master nodes and we want those to be written to disk too.
             b"BGSAVE" | b"SAVE" | b"BGREWRITEAOF" | b"ACL" => {
                 RoutingInfo::AllNodes(ResponseJoin::First)
             }
@@ -600,6 +612,12 @@ impl RoutingInfo {
                 }
                 _ => RoutingInfo::AllMasters(ResponseJoin::First),
             },
+            // * We cant reasonably support CLIENT SETNAME/GETNAME in shotover
+            //     - Connections are pooled so we cant forward it to the redis node
+            //     - We cant just implement the functionality shotover side because the connection names are supposed to be viewable from CLIENT LIST
+            // * However we dont want to just fail them either as clients like jedis would break so:
+            //     - We just pretend to accept CLIENT SETNAME returning an "OK" but without hitting any nodes
+            //     - We just pretend to handle CLIENT GETNAME always returning nil without hitting any nodes
             b"CLIENT" => match args.get(1) {
                 Some(RedisFrame::BulkString(sub_command)) => {
                     let sub_command = sub_command.to_ascii_uppercase();
@@ -611,6 +629,7 @@ impl RoutingInfo {
                 }
                 _ => RoutingInfo::Random,
             },
+            // These commands can not reasonably be supported by shotover, so we just return an error to the client when they are used
             b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" | b"CONFIG"
             | b"SLOWLOG" | b"INFO" | b"TIME" => RoutingInfo::Unsupported,
             b"EVALSHA" | b"EVAL" => match args.get(2) {
@@ -645,6 +664,9 @@ impl RoutingInfo {
                 })
                 .unwrap_or(RoutingInfo::Unsupported),
             b"AUTH" => RoutingInfo::Other(Command::AUTH),
+            // These are stateless commands that return a response.
+            // We just need a single redis node to handle this for us so shotover can pretend to be a single node.
+            // So we just pick a node at random.
             b"ECHO" | b"PING" => RoutingInfo::Random,
             _ => match args.get(1) {
                 Some(key) => RoutingInfo::for_key(key).unwrap_or(RoutingInfo::Unsupported),
