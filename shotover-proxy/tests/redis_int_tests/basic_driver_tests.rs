@@ -642,6 +642,26 @@ async fn test_auth(connection: &mut Connection) {
         Some("NOAUTH")
     );
 
+    // Ensure RedisClusterPortsRewrite correctly handles NOAUTH errors
+    assert_eq!(
+        redis::cmd("CLUSTER")
+            .arg("SLOTS")
+            .query_async::<_, String>(connection)
+            .await
+            .unwrap_err()
+            .code(),
+        Some("NOAUTH")
+    );
+    assert_eq!(
+        redis::cmd("CLUSTER")
+            .arg("NODES")
+            .query_async::<_, String>(connection)
+            .await
+            .unwrap_err()
+            .code(),
+        Some("NOAUTH")
+    );
+
     // Authenticating with incorrect password should fail.
     assert_eq!(
         redis::cmd("AUTH")
