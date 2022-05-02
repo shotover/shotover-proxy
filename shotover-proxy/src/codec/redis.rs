@@ -47,7 +47,7 @@ impl Decoder for RedisCodec {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
         loop {
-            match decode_mut(src).map_err(|e| anyhow!("Error decoding redis frame {}", e))? {
+            match decode_mut(src).map_err(|e| anyhow!(e).context("Error decoding redis frame)"))? {
                 Some((frame, _size, bytes)) => {
                     self.messages
                         .push(Message::from_bytes_and_frame(bytes, Frame::Redis(frame)));

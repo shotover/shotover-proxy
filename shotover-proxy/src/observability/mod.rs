@@ -110,7 +110,7 @@ where
 
         let address = self.address;
         Server::try_bind(&address)
-            .map_err(|e| anyhow!("Failed to bind to {}: {}", address, e))?
+            .map_err(|e| anyhow!(e).context(format!("Failed to bind to {}", address)))?
             .serve(make_svc)
             .await
             .map_err(|e| anyhow!(e))

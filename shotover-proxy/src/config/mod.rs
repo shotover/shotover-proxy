@@ -11,8 +11,9 @@ pub struct Config {
 
 impl Config {
     pub fn from_file(filepath: String) -> Result<Config> {
-        let file = std::fs::File::open(&filepath)
-            .map_err(|err| anyhow!("Couldn't open the config file {}: {}", &filepath, err))?;
+        let file = std::fs::File::open(&filepath).map_err(|err| {
+            anyhow!(err).context(format!("Couldn't open the config file {}", &filepath))
+        })?;
         Ok(serde_yaml::from_reader(file)?)
     }
 }
