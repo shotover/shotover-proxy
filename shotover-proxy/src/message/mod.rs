@@ -130,6 +130,14 @@ impl Message {
         }
     }
 
+    pub(crate) fn get_raw_bytes(&self) -> &Bytes {
+        match self.inner.as_ref().unwrap() {
+            MessageInner::RawBytes { bytes, .. } => bytes,
+            MessageInner::Parsed { bytes, .. } => bytes,
+            MessageInner::Modified { .. } => panic!("can't get raw bytes of modified"),
+        }
+    }
+
     // TODO: Considering we already have the expected message type here maybe we should perform any required conversions and return a Result<Bytes> here.
     // I've left it as is to keep the PR simpler and there could be a need for codecs to control this process that I havent investigated.
     pub fn into_encodable(self, expected_message_type: MessageType) -> Result<Encodable> {
