@@ -1182,9 +1182,9 @@ async fn test_active_active_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_auth_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-auth/docker-compose.yml");
+    let _compose = DockerCompose::new("tests/test-configs/redis-cluster-auth/docker-compose.yml");
     let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-cluster-auth/topology.yaml");
+        ShotoverManager::from_topology_file("tests/test-configs/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     test_auth(&mut connection).await;
