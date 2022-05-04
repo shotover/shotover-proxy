@@ -1598,10 +1598,7 @@ fn test_source_tls_and_single_tls() {
 fn test_cassandra_redis_cache() {
     let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
-    let result = recorder.install();
-    if result.is_err() {
-        panic!("{:?}", result.err());
-    }
+    recorder.install().unwrap();
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yml");
 
     let shotover_manager = ShotoverManager::from_topology_file_without_observability(

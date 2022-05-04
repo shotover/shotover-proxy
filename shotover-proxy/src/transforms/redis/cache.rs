@@ -791,7 +791,7 @@ mod test {
 
     fn build_query(query_string: &str) -> CassandraStatement {
         let cql = CQL::parse_from_string(query_string);
-        assert!(!cql.has_error);
+        assert!(!cql.has_error());
         cql.statements[0].statement.clone()
     }
 

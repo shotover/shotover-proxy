@@ -70,11 +70,9 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
             for cql_statement in &query.statements {
                 let statement = &cql_statement.statement;
                 if let CassandraStatement::Select(select) = &statement {
-                    if peer_table.eq(&select.table_name) {
-                        select
-                            .columns
-                            .iter()
-                            .for_each(|select_element| match select_element {
+                    if peer_table == &select.table_name {
+                        for select_element in &select.columns {
+                            match select_element {
                                 SelectElement::Column(col_name) => {
                                     if col_name.name == "native_port" {
                                         result.push(col_name.alias_or_name());
@@ -82,7 +80,8 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
                                 }
                                 SelectElement::Star => result.push("native_port".to_string()),
                                 _ => {}
-                            });
+                            }
+                        }
                     }
                 }
             }
@@ -201,8 +200,7 @@ mod test {
             &peer_table,
             &mut create_query_message("SELECT * FROM system.peers_v2;"),
         );
-        assert_eq!(1, v.len());
-        assert_eq!("native_port", v[0]);
+        assert_eq!(vec!("native_port".to_string()), v);
 
         let v = extract_native_port_column(
             &peer_table,
@@ -214,8 +212,7 @@ mod test {
             &peer_table,
             &mut create_query_message("SELECT native_port as foo from system.peers_v2"),
         );
-        assert_eq!(1, v.len());
-        assert_eq!("foo", v[0]);
+        assert_eq!(vec!("foo".to_string()), v);
 
         let v = extract_native_port_column(
             &peer_table,
@@ -223,9 +220,7 @@ mod test {
                 "SELECT native_port as foo, native_port from system.peers_v2",
             ),
         );
-        assert_eq!(2, v.len());
-        assert_eq!("foo", v[0]);
-        assert_eq!("native_port", v[1]);
+        assert_eq!(vec!["foo".to_string(), "native_port".to_string()], v);
     }
 
     #[test]

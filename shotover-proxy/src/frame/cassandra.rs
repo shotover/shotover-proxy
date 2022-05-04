@@ -1,4 +1,3 @@
-use crate::message::QueryType::PubSubMessage;
 use crate::message::{MessageValue, QueryType};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
@@ -11,7 +10,7 @@ use cassandra_protocol::frame::frame_query::BodyReqQuery;
 use cassandra_protocol::frame::frame_request::RequestBody;
 use cassandra_protocol::frame::frame_response::ResponseBody;
 use cassandra_protocol::frame::frame_result::{
-    BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ColSpec, ResResultBody,
+    BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ResResultBody,
     RowsMetadata, RowsMetadataFlags,
 };
 use cassandra_protocol::frame::{
@@ -20,7 +19,6 @@ use cassandra_protocol::frame::{
 use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::blob::Blob;
 use cassandra_protocol::types::cassandra_type::CassandraType;
-use cassandra_protocol::types::value::Value;
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -256,34 +254,40 @@ impl CassandraFrame {
     }
 
     /// returns the query type for the current statement.
+    /// Query type is calculated by scanning the query types of the enclosed statements with the
+    /// highest valued result being returned.
+    ///
+    /// Statements, in descending order, are:
+    ///
+    /// * ReadWrite
+    /// * Write
+    /// * Read
+    /// * SchemaChange
+    /// * PubSubMessage
     pub fn get_query_type(&self) -> QueryType {
-        /*
-            Read,
-        Write,
-        ReadWrite,
-        SchemaChange,
-        PubSubMessage,
-             */
         match &self.operation {
             CassandraOperation::Query { query: cql, .. } => {
                 // set to lowest type
-                let mut result = QueryType::SchemaChange;
+                let mut result = QueryType::PubSubMessage;
                 for cql_statement in &cql.statements {
                     result = match (cql_statement.get_query_type(), &result) {
                         (QueryType::ReadWrite, _) => QueryType::ReadWrite,
-                        (QueryType::Write, QueryType::ReadWrite | QueryType::Write) => result,
-                        (QueryType::Write, QueryType::Read) => QueryType::ReadWrite,
-                        (QueryType::Write, QueryType::SchemaChange | PubSubMessage) => {
+                        (QueryType::Write, QueryType::Read | QueryType::ReadWrite) => {
+                            QueryType::ReadWrite
+                        }
+                        (QueryType::Write, QueryType::SchemaChange | QueryType::PubSubMessage) => {
                             QueryType::Write
                         }
-                        (QueryType::Read, _) => {
-                            if result == QueryType::SchemaChange {
-                                QueryType::Read
-                            } else {
-                                result
-                            }
+                        (QueryType::Read, QueryType::ReadWrite | QueryType::Write) => {
+                            QueryType::ReadWrite
                         }
-                        (QueryType::SchemaChange | PubSubMessage, _) => result,
+                        (QueryType::Read, QueryType::SchemaChange | QueryType::PubSubMessage) => {
+                            QueryType::Read
+                        }
+                        (QueryType::SchemaChange, QueryType::PubSubMessage) => {
+                            QueryType::SchemaChange
+                        }
+                        _ => result,
                     }
                 }
                 result
@@ -518,10 +522,6 @@ impl CQLStatement {
         }
     }
 
-    pub fn is_apply_batch(&self) -> bool {
-        matches!(&self.statement, CassandraStatement::ApplyBatch)
-    }
-
     /// returns the query type for the current statement.
     pub fn get_query_type(&self) -> QueryType {
         /*
@@ -589,99 +589,6 @@ impl CQLStatement {
             CassandraStatement::Update(u) => Some(&u.table_name),
             _ => None,
         }
-    }
-
-    /// replaces the Operand::Param objects with Operand::Const objects where the parameters are defined in the
-    /// QueryParameters.
-    /// This method makes a copy of the CassandraStatement
-    pub fn set_param_values(
-        &self,
-        params: &QueryParams,
-        param_types: &[ColSpec],
-    ) -> CassandraStatement {
-        let mut param_idx: usize = 0;
-        let mut statement = self.statement.clone();
-        match &mut statement {
-            CassandraStatement::Delete(delete) => {
-                CQL::set_relation_elements_values(
-                    &mut param_idx,
-                    params,
-                    param_types,
-                    &mut delete.where_clause,
-                );
-                CQL::set_relation_elements_values(
-                    &mut param_idx,
-                    params,
-                    param_types,
-                    &mut delete.if_clause,
-                );
-            }
-            CassandraStatement::Insert(insert) => {
-                if let InsertValues::Values(operands) = &mut insert.values {
-                    for operand in operands {
-                        *operand =
-                            CQL::set_operand_if_param(operand, &mut param_idx, params, param_types)
-                    }
-                }
-            }
-            CassandraStatement::Select(select) => {
-                CQL::set_relation_elements_values(
-                    &mut param_idx,
-                    params,
-                    param_types,
-                    &mut select.where_clause,
-                );
-            }
-            CassandraStatement::Update(update) => {
-                for assignment_idx in 0..update.assignments.len() {
-                    let mut assignment_element = &mut update.assignments[assignment_idx];
-                    assignment_element.value = CQL::set_operand_if_param(
-                        &assignment_element.value,
-                        &mut param_idx,
-                        params,
-                        param_types,
-                    );
-                    if let Some(assignment_operator) = &assignment_element.operator {
-                        match assignment_operator {
-                            AssignmentOperator::Plus(operand) => {
-                                assignment_element.operator = Option::from(
-                                    AssignmentOperator::Plus(CQL::set_operand_if_param(
-                                        operand,
-                                        &mut param_idx,
-                                        params,
-                                        param_types,
-                                    )),
-                                );
-                            }
-                            AssignmentOperator::Minus(operand) => {
-                                assignment_element.operator = Option::from(
-                                    AssignmentOperator::Minus(CQL::set_operand_if_param(
-                                        operand,
-                                        &mut param_idx,
-                                        params,
-                                        param_types,
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                }
-                CQL::set_relation_elements_values(
-                    &mut param_idx,
-                    params,
-                    param_types,
-                    &mut update.where_clause,
-                );
-                CQL::set_relation_elements_values(
-                    &mut param_idx,
-                    params,
-                    param_types,
-                    &mut update.if_clause,
-                );
-            }
-            _ => {}
-        }
-        statement
     }
 
     fn has_params_in_operand(operand: &Operand) -> bool {
@@ -773,121 +680,11 @@ impl Display for CQLStatement {
 #[derive(PartialEq, Debug, Clone)]
 pub struct CQL {
     pub statements: Vec<CQLStatement>,
-    pub(crate) has_error: bool,
 }
 
 impl CQL {
-    fn from_value_and_col_spec(value: &Value, col_spec: &ColSpec) -> Operand {
-        match value {
-            Value::Some(vec) => {
-                let cbytes = CBytes::new(vec.clone());
-                let message_value =
-                    MessageValue::build_value_from_cstar_col_type(col_spec, &cbytes);
-                let pmsg_value = &message_value;
-                pmsg_value.into()
-            }
-            Value::Null => Operand::Null,
-            Value::NotSet => Operand::Null,
-        }
-    }
-
-    /// Get the value of the parameter named `name` if it exists.  Otherwise the name itself is returned as
-    /// a parameter Operand.
-    fn set_param_value_by_name(
-        name: &str,
-        query_params: &QueryParams,
-        param_types: &[ColSpec],
-    ) -> Operand {
-        if let Some(QueryValues::NamedValues(value_map)) = &query_params.values {
-            /*
-               this code block first uses the hash table to determine if there is a value for the name.
-               then, only if there is, does it do the longer iteration over the value map looking for the
-               name to extract the position which is then used to index the proper param_type.
-            */
-            if let Some(value) = value_map.get(name) {
-                if let Some(idx) = value_map
-                    .iter()
-                    .enumerate()
-                    .filter_map(
-                        |(idx, (key, _value))| {
-                            if key.eq(name) {
-                                Some(idx)
-                            } else {
-                                None
-                            }
-                        },
-                    )
-                    .next()
-                {
-                    return CQL::from_value_and_col_spec(value, &param_types[idx]);
-                }
-            }
-        }
-        Operand::Param(format!(":{}", name))
-    }
-
-    fn set_param_value_by_position(
-        param_idx: &mut usize,
-        query_params: &QueryParams,
-        param_types: &[ColSpec],
-    ) -> Operand {
-        if let Some(QueryValues::SimpleValues(values)) = &query_params.values {
-            if let Some(value) = values.get(*param_idx) {
-                *param_idx += 1;
-                CQL::from_value_and_col_spec(value, &param_types[*param_idx])
-            } else {
-                *param_idx += 1;
-                Operand::Param("?".into())
-            }
-        } else {
-            *param_idx += 1;
-            Operand::Param("?".into())
-        }
-    }
-
-    fn set_operand_if_param(
-        operand: &Operand,
-        param_idx: &mut usize,
-        query_params: &QueryParams,
-        param_types: &[ColSpec],
-    ) -> Operand {
-        match operand {
-            Operand::Tuple(vec) => Operand::Tuple(
-                vec.iter()
-                    .map(|o| CQL::set_operand_if_param(o, param_idx, query_params, param_types))
-                    .collect(),
-            ),
-            Operand::Param(param_name) => {
-                if param_name.starts_with('?') {
-                    CQL::set_param_value_by_position(param_idx, query_params, param_types)
-                } else {
-                    let name = param_name.split_at(0).1;
-                    CQL::set_param_value_by_name(name, query_params, param_types)
-                }
-            }
-            Operand::Collection(vec) => Operand::Collection(
-                vec.iter()
-                    .map(|o| CQL::set_operand_if_param(o, param_idx, query_params, param_types))
-                    .collect(),
-            ),
-            _ => operand.clone(),
-        }
-    }
-
-    fn set_relation_elements_values(
-        param_idx: &mut usize,
-        query_params: &QueryParams,
-        param_types: &[ColSpec],
-        where_clause: &mut [RelationElement],
-    ) {
-        for relation_element in where_clause {
-            relation_element.value = CQL::set_operand_if_param(
-                &relation_element.value,
-                param_idx,
-                query_params,
-                param_types,
-            );
-        }
+    pub fn has_error(&self) -> bool {
+        self.statements.iter().any(|s| s.has_error)
     }
 
     pub fn to_query_string(&self) -> String {
@@ -903,7 +700,6 @@ impl CQL {
         debug!("parse_from_string: {}", cql_query_str);
         let ast = CassandraAST::new(cql_query_str);
         CQL {
-            has_error: ast.has_error(),
             statements: ast
                 .statements
                 .iter()
@@ -1130,7 +926,7 @@ mod test {
 
         let cql = CQL::parse_from_string(query);
         assert_eq!(3, cql.statements.len());
-        assert!(!cql.has_error);
+        assert!(!cql.has_error());
     }
 
     #[test]
@@ -1141,7 +937,7 @@ mod test {
 
         let cql = CQL::parse_from_string(query);
         assert_eq!(3, cql.statements.len());
-        assert!(cql.has_error);
+        assert!(cql.has_error());
         assert!(!cql.statements[0].has_error);
         assert!(cql.statements[1].has_error);
         assert!(!cql.statements[2].has_error);
