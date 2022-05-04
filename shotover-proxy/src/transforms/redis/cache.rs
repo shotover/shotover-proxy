@@ -438,8 +438,8 @@ impl SimpleRedisCache {
                         "clientdetailstodo".to_string(),
                     )
                     .await;
-                if result.is_err() {
-                    warn!("Cache error: {}", result.err().unwrap());
+                if let Err(err) = result {
+                    warn!("Cache error: {}", err);
                 }
             }
         }

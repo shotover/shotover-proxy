@@ -299,12 +299,7 @@ impl Protected {
                 let sym_key = key_management
                     .cached_get_key(key_id.to_string(), Some(enc_dek), Some(kek_id))
                     .await?;
-                let result = decrypt(cipher, nonce, &sym_key.plaintext);
-                if result.is_err() {
-                    Err(anyhow!("{}", result.err().unwrap()))
-                } else {
-                    Ok(result.unwrap())
-                }
+                decrypt(cipher, nonce, &sym_key.plaintext)
             }
         }
     }
@@ -439,9 +434,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     //#[test]
     async fn round_trip_test() {
-        if sodiumoxide::init().is_err() {
-            panic!("could not init sodiumoxide");
-        }
+        sodiumoxide::init().expect("could not init sodiumoxide");
 
         // verify low level round trip works.
         let kek = sodiumoxide::crypto::secretbox::xsalsa20poly1305::gen_key();
