@@ -297,28 +297,12 @@ impl CassandraFrame {
     }
 
     /// returns a list of table names from the CassandraOperation
-    pub fn get_table_names(&self) -> Vec<&FQName> {
-        match &self.operation {
-            CassandraOperation::Query { query: cql, .. } => cql
-                .statements
-                .iter()
-                .filter_map(|stmt| CQLStatement::get_table_name(&stmt.statement))
-                .collect(),
-            CassandraOperation::Batch(batch) => batch
-                .queries
-                .iter()
-                .filter_map(|batch_stmt| match &batch_stmt.ty {
-                    BatchStatementType::Statement(cql) => Some(cql),
-                    _ => None,
-                })
-                .flat_map(|cql| {
-                    cql.statements
-                        .iter()
-                        .filter_map(|stmt| CQLStatement::get_table_name(&stmt.statement))
-                })
-                .collect(),
-            _ => vec![],
-        }
+    pub fn get_table_names(&mut self) -> Vec<&FQName> {
+        self.operation
+            .queries()
+            .into_iter()
+            .filter_map(|stmt| CQLStatement::get_table_name(stmt))
+            .collect()
     }
 
     pub fn encode(self) -> RawCassandraFrame {
@@ -687,7 +671,7 @@ impl CQL {
         self.statements.iter().any(|s| s.has_error)
     }
 
-    pub fn to_query_string(&self) -> String {
+    fn to_query_string(&self) -> String {
         self.statements
             .iter()
             .map(|c| c.statement.to_string())
