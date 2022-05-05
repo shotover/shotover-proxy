@@ -117,13 +117,13 @@ impl CassandraSinkSingle {
                                         response: Ok(mut resp),
                                         ..
                                     } => {
-                                        for message in &mut resp {
-                                            if let Ok(Opcode::Error) =
-                                                cassandra::raw_frame::get_opcode(
-                                                    message.get_raw_bytes(),
-                                                )
-                                            {
-                                                self.failed_requests.increment(1);
+                                        for message in &resp {
+                                            if let Some(raw_bytes) = message.as_raw_bytes() {
+                                                if let Ok(Opcode::Error) =
+                                                    cassandra::raw_frame::get_opcode(raw_bytes)
+                                                {
+                                                    self.failed_requests.increment(1);
+                                                }
                                             }
                                         }
                                         responses.append(&mut resp);
