@@ -233,7 +233,10 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
 
                     // Process the connection. If an error is encountered, log it.
                     if let Err(err) = handler.run(socket).await {
-                        error!(cause = ?err, "connection error");
+                        error!(
+                            "{:?}",
+                            err.context("connection was unexpectedly terminated")
+                        );
                     }
                 }
                 .instrument(tracing::error_span!(
@@ -469,13 +472,16 @@ impl<C: Codec + 'static> Handler<C> {
                 )
                 .await
             {
-                Ok(modified_message) => {
-                    debug!("sending message: {:?}", modified_message);
+                Ok(modified_messages) => {
+                    debug!("sending message: {:?}", modified_messages);
                     // send the result of the process up stream
-                    out_tx.send(modified_message)?;
+                    out_tx.send(modified_messages)?;
                 }
                 Err(e) => {
-                    error!("process_request chain processing error - {}", e);
+                    error!(
+                        "{:?}",
+                        e.context("chain failed to send and/or receive messages")
+                    );
                 }
             }
         }

@@ -158,8 +158,9 @@ impl Topology {
     }
 
     pub fn from_file(filepath: String) -> Result<Topology> {
-        let file = std::fs::File::open(&filepath)
-            .map_err(|err| anyhow!("Couldn't open the topology file {}: {}", &filepath, err))?;
+        let file = std::fs::File::open(&filepath).map_err(|err| {
+            anyhow!(err).context(format!("Couldn't open the topology file {}", &filepath))
+        })?;
         let config: TopologyConfig = serde_yaml::from_reader(file)?;
 
         Ok(Topology::topology_from_config(config))
