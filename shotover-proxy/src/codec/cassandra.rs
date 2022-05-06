@@ -65,8 +65,7 @@ impl Decoder for CassandraCodec {
         }
 
         loop {
-            // TODO: We could implement our own version and length check here directly on the bytes to avoid the duplicate frame parse
-            match RawCassandraFrame::check_frame(src) {
+            match RawCassandraFrame::check_frame_size(src) {
                 Ok(frame_len) => {
                     // Clear the read bytes from the FramedReader
                     let bytes = src.split_to(frame_len);
