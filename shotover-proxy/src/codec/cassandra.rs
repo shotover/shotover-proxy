@@ -5,7 +5,7 @@ use anyhow::{anyhow, Error, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::frame_error::{AdditionalErrorInfo, ErrorBody};
-use cassandra_protocol::frame::{CheckFrameError, Frame as RawCassandraFrame, Version};
+use cassandra_protocol::frame::{CheckFrameSizeError, Frame as RawCassandraFrame, Version};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info};
 
@@ -77,14 +77,14 @@ impl Decoder for CassandraCodec {
                     self.messages
                         .push(Message::from_bytes(bytes.freeze(), MessageType::Cassandra));
                 }
-                Err(CheckFrameError::NotEnoughBytes) => {
+                Err(CheckFrameSizeError::NotEnoughBytes) => {
                     if self.messages.is_empty() || src.remaining() != 0 {
                         return Ok(None);
                     } else {
                         return Ok(Some(std::mem::take(&mut self.messages)));
                     }
                 }
-                Err(CheckFrameError::UnsupportedVersion(version)) => {
+                Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
                     // if we got an error force the close on the next read.
                     // We can not immediately close as we are gong to queue a message
                     // back to the client and we have to allow time for the message
