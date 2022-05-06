@@ -173,6 +173,16 @@ impl Message {
         }
     }
 
+    /// Only use for messages read straight from the socket
+    /// that are definitely in an unparsed state
+    /// (haven't passed through any transforms where they might have been parsed or modified)
+    pub(crate) fn as_raw_bytes(&self) -> Option<&Bytes> {
+        match self.inner.as_ref().unwrap() {
+            MessageInner::RawBytes { bytes, .. } => Some(bytes),
+            _ => None,
+        }
+    }
+
     /// Returns None when fails to parse the message
     pub fn namespace(&mut self) -> Option<Vec<String>> {
         match self.frame()? {
