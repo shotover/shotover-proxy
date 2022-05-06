@@ -74,6 +74,11 @@ pub mod raw_frame {
             _ => nonzero!(1u32),
         })
     }
+
+    pub(crate) fn get_opcode(bytes: &[u8]) -> Result<Opcode> {
+        let opcode = Opcode::try_from(bytes[4])?;
+        Ok(opcode)
+    }
 }
 
 pub(crate) struct CassandraMetadata {

@@ -2,8 +2,7 @@ use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
-use crate::frame::cassandra::CassandraOperation;
-use crate::frame::{CassandraFrame, Frame};
+use crate::frame::cassandra;
 use crate::message::Messages;
 use crate::tls::TlsConfig;
 use crate::tls::TlsConnector;
@@ -11,6 +10,7 @@ use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
+use cassandra_protocol::frame::Opcode;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::time::Duration;
@@ -117,13 +117,13 @@ impl CassandraSinkSingle {
                                         response: Ok(mut resp),
                                         ..
                                     } => {
-                                        for message in &mut resp {
-                                            if let Some(Frame::Cassandra(CassandraFrame {
-                                                operation: CassandraOperation::Error(_),
-                                                ..
-                                            })) = message.frame()
-                                            {
-                                                self.failed_requests.increment(1);
+                                        for message in &resp {
+                                            if let Some(raw_bytes) = message.as_raw_bytes() {
+                                                if let Ok(Opcode::Error) =
+                                                    cassandra::raw_frame::get_opcode(raw_bytes)
+                                                {
+                                                    self.failed_requests.increment(1);
+                                                }
                                             }
                                         }
                                         responses.append(&mut resp);
