@@ -58,7 +58,7 @@ impl RedisSinkClusterConfig {
                 info!("upstream requires auth");
             }
             Err(e) => {
-                bail!("failed to connect to upstream: {}", e);
+                return Err(anyhow!(e).context("failed to connect to upstream"));
             }
         }
 
@@ -471,7 +471,7 @@ impl RedisSinkCluster {
                 self.send_error_response(one_tx, e.to_string().as_str())?;
             }
             Err(e) => {
-                bail!("authentication failed: {}", e);
+                return Err(anyhow!(e).context("authentication failed"));
             }
         }
 
