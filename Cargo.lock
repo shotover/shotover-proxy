@@ -291,7 +291,7 @@ checksum = "8234d29d30873ab5a41e3557b8515d3ecbaefb1ea5be579425b3b0074b6d0e40"
 [[package]]
 name = "cassandra-protocol"
 version = "1.1.1"
-source = "git+https://github.com/krojew/cdrs-tokio#62ce78e5592fc8ea00a13fc4c30df5343693b7ce"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=check-frame-length#fa31f519dc029da476e77ccc578c90d65a805842"
 dependencies = [
  "arrayref",
  "bitflags",
