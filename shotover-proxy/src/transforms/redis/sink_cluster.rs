@@ -128,6 +128,12 @@ impl RedisSinkCluster {
             ChannelResult::Other(Command::AUTH) => {
                 return self.on_auth(command).await;
             }
+            ChannelResult::ShortCircuit(frame) => {
+                let (one_tx, one_rx) = immediate_responder();
+                send_frame_response(one_tx, frame)
+                    .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
+                return Ok(Box::pin(one_rx));
+            }
         };
 
         Ok(match channels.len() {
@@ -407,7 +413,7 @@ impl RedisSinkCluster {
                     vec![]
                 },
             ),
-            RoutingInfo::AllNodes => {
+            RoutingInfo::AllNodes(_) => {
                 ChannelResult::Channels(self.slots.nodes.iter().cloned().collect())
             }
             RoutingInfo::AllMasters(_) => {
@@ -423,6 +429,10 @@ impl RedisSinkCluster {
             ),
             RoutingInfo::Other(name) => ChannelResult::Other(name),
             RoutingInfo::Unsupported => ChannelResult::Channels(vec![]),
+            RoutingInfo::ShortCircuitNil => ChannelResult::ShortCircuit(RedisFrame::Null),
+            RoutingInfo::ShortCircuitOk => {
+                ChannelResult::ShortCircuit(RedisFrame::SimpleString(Bytes::from("OK")))
+            }
         }
     }
 
@@ -482,7 +492,10 @@ impl RedisSinkCluster {
     #[inline(always)]
     fn short_circuit(&self, one_tx: oneshot::Sender<Response>) {
         warn!("Could not route request - short circuiting");
-        if let Err(e) = self.send_error_response(one_tx, "ERR Could not route request") {
+        if let Err(e) = self.send_error_response(
+            one_tx,
+            "ERR Shotover RedisSinkCluster does not not support this command used in this way",
+        ) {
             trace!("short circuiting - couldn't send error - {:?}", e);
         }
     }
@@ -536,21 +549,22 @@ impl SlotMap {
 
 #[derive(Debug, Clone, Copy)]
 pub enum RoutingInfo {
-    AllNodes,
+    AllNodes(ResponseJoin),
     AllMasters(ResponseJoin),
     Random,
     Slot(u16),
     Other(Command),
     Unsupported,
+    ShortCircuitOk,
+    ShortCircuitNil,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ResponseJoin {
     First,
     ArrayJoin,
-    // TODO
-    // IntegerSum,
-    // EarliestDate,
+    IntegerSum,
+    IntegerMin,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -561,6 +575,7 @@ pub enum Command {
 enum ChannelResult {
     Channels(Vec<String>),
     Other(Command),
+    ShortCircuit(RedisFrame),
 }
 
 impl RoutingInfo {
@@ -572,22 +587,51 @@ impl RoutingInfo {
         };
 
         Ok(match command_name.as_slice() {
+            // These commands write data but need to touch every shard so we send it to every master
             b"FLUSHALL" | b"FLUSHDB" => RoutingInfo::AllMasters(ResponseJoin::First),
-            b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
-            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"SAVE" | b"TIME" | b"ACL" => {
-                RoutingInfo::AllNodes
-            }
-
+            // The total count of all keys can be obtained by summing the count of keys from every shard.
+            b"DBSIZE" => RoutingInfo::AllMasters(ResponseJoin::IntegerSum),
+            // A complete list of every key can be obtained by joining the key lists provided by every shard.
+            //
+            // With this implementation, running `KEYS *` in a large production environment could OoM shotover.
+            // But I assume in such an environment the nodes would be configured to not allow running KEYS.
+            // So each redis node would return an error and then we would return a single error to the client which would be fine.
             b"KEYS" => RoutingInfo::AllMasters(ResponseJoin::ArrayJoin),
+            // The LASTSAVE command is needed to confirm that a previous BGSAVE command has succeed.
+            // In order to maintain this use case we query every node and return the oldest save time.
+            // This way the return value wont change until every node has completed their BGSAVE.
+            b"LASTSAVE" => RoutingInfo::AllNodes(ResponseJoin::IntegerMin),
+            // When a command that forces writing to disk occurs we want it to occur on every node.
+            // Replica nodes receive updates from their master nodes and we want those to be written to disk too.
+            b"BGSAVE" | b"SAVE" | b"BGREWRITEAOF" | b"ACL" => {
+                RoutingInfo::AllNodes(ResponseJoin::First)
+            }
             b"SCRIPT" => match args.get(1) {
                 Some(RedisFrame::BulkString(a)) if a.to_ascii_uppercase() == b"KILL" => {
                     RoutingInfo::Unsupported
                 }
                 _ => RoutingInfo::AllMasters(ResponseJoin::First),
             },
-            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" => {
-                RoutingInfo::Unsupported
-            }
+            // * We cant reasonably support CLIENT SETNAME/GETNAME in shotover
+            //     - Connections are pooled so we cant forward it to the redis node
+            //     - We cant just implement the functionality shotover side because the connection names are supposed to be viewable from CLIENT LIST
+            // * However we dont want to just fail them either as clients like jedis would break so:
+            //     - We just pretend to accept CLIENT SETNAME returning an "OK" but without hitting any nodes
+            //     - We just pretend to handle CLIENT GETNAME always returning nil without hitting any nodes
+            b"CLIENT" => match args.get(1) {
+                Some(RedisFrame::BulkString(sub_command)) => {
+                    let sub_command = sub_command.to_ascii_uppercase();
+                    match sub_command.as_slice() {
+                        b"SETNAME" => RoutingInfo::ShortCircuitOk,
+                        b"GETNAME" => RoutingInfo::ShortCircuitNil,
+                        _ => RoutingInfo::Unsupported,
+                    }
+                }
+                _ => RoutingInfo::Random,
+            },
+            // These commands can not reasonably be supported by shotover, so we just return an error to the client when they are used
+            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" | b"CONFIG"
+            | b"SLOWLOG" | b"INFO" | b"TIME" => RoutingInfo::Unsupported,
             b"EVALSHA" | b"EVAL" => match args.get(2) {
                 Some(RedisFrame::BulkString(key_count)) => {
                     if key_count.as_ref() == b"0" {
@@ -596,7 +640,7 @@ impl RoutingInfo {
                         // For an EVAL to succeed every key must be present on the same node.
                         // So we use the first key to find the correct destination node and if any of the
                         // remaining keys are not on the same node as the first key then the destination
-                        // node will handle will correctly handle this for us.
+                        // node will correctly handle this for us.
                         args.get(3)
                             .and_then(RoutingInfo::for_key)
                             .unwrap_or(RoutingInfo::Unsupported)
@@ -620,6 +664,10 @@ impl RoutingInfo {
                 })
                 .unwrap_or(RoutingInfo::Unsupported),
             b"AUTH" => RoutingInfo::Other(Command::AUTH),
+            // These are stateless commands that return a response.
+            // We just need a single redis node to handle this for us so shotover can pretend to be a single node.
+            // So we just pick a node at random.
+            b"ECHO" | b"PING" => RoutingInfo::Random,
             _ => match args.get(1) {
                 Some(key) => RoutingInfo::for_key(key).unwrap_or(RoutingInfo::Unsupported),
                 None => RoutingInfo::Random,
@@ -642,6 +690,7 @@ impl RoutingInfo {
     pub fn response_join(&self) -> ResponseJoin {
         match self {
             RoutingInfo::AllMasters(join) => *join,
+            RoutingInfo::AllNodes(join) => *join,
             _ => ResponseJoin::First,
         }
     }
@@ -650,6 +699,18 @@ impl RoutingInfo {
 impl ResponseJoin {
     pub fn join(&self, prev_frame: RedisFrame, next_frame: RedisFrame) -> RedisFrame {
         match self {
+            ResponseJoin::IntegerMin => match (prev_frame, next_frame) {
+                (RedisFrame::Integer(prev), RedisFrame::Integer(next)) => {
+                    RedisFrame::Integer(prev.min(next))
+                }
+                _ => RedisFrame::Error("One of the redis frames was not an integer".into()),
+            },
+            ResponseJoin::IntegerSum => match (prev_frame, next_frame) {
+                (RedisFrame::Integer(prev), RedisFrame::Integer(next)) => {
+                    RedisFrame::Integer(prev + next)
+                }
+                _ => RedisFrame::Error("One of the redis frames was not an integer".into()),
+            },
             ResponseJoin::ArrayJoin => match (prev_frame, next_frame) {
                 (RedisFrame::Array(mut prev), RedisFrame::Array(next)) => {
                     prev.extend(next);
