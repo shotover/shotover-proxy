@@ -5,7 +5,7 @@ use anyhow::{anyhow, Error, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::frame_error::{AdditionalErrorInfo, ErrorBody};
-use cassandra_protocol::frame::{Frame as RawCassandraFrame, ParseFrameError, Version};
+use cassandra_protocol::frame::{CheckFrameSizeError, Frame as RawCassandraFrame, Version};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info};
 
@@ -65,11 +65,10 @@ impl Decoder for CassandraCodec {
         }
 
         loop {
-            // TODO: We could implement our own version and length check here directly on the bytes to avoid the duplicate frame parse
-            match RawCassandraFrame::from_buffer(src, self.compressor) {
-                Ok(parsed_frame) => {
+            match RawCassandraFrame::check_frame_size(src) {
+                Ok(frame_len) => {
                     // Clear the read bytes from the FramedReader
-                    let bytes = src.split_to(parsed_frame.frame_len);
+                    let bytes = src.split_to(frame_len);
                     tracing::debug!(
                         "incoming cassandra message:\n{}",
                         pretty_hex::pretty_hex(&bytes)
@@ -78,14 +77,14 @@ impl Decoder for CassandraCodec {
                     self.messages
                         .push(Message::from_bytes(bytes.freeze(), MessageType::Cassandra));
                 }
-                Err(ParseFrameError::NotEnoughBytes) => {
+                Err(CheckFrameSizeError::NotEnoughBytes) => {
                     if self.messages.is_empty() || src.remaining() != 0 {
                         return Ok(None);
                     } else {
                         return Ok(Some(std::mem::take(&mut self.messages)));
                     }
                 }
-                Err(ParseFrameError::UnsupportedVersion(version)) => {
+                Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
                     // if we got an error force the close on the next read.
                     // We can not immediately close as we are gong to queue a message
                     // back to the client and we have to allow time for the message
