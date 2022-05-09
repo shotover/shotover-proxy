@@ -75,7 +75,7 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
                             match select_element {
                                 SelectElement::Column(col_name) => {
                                     if col_name.name == "native_port" {
-                                        result.push(col_name.alias_or_name());
+                                        result.push(col_name.alias_or_name().to_string());
                                     }
                                 }
                                 SelectElement::Star => result.push("native_port".to_string()),
