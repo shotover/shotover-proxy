@@ -122,7 +122,8 @@ impl RedisSinkCluster {
             message => bail!("syntax error: bad command: {message:?}"),
         };
 
-        let channels = match self.get_channels(command).await? {
+        let routing_info = RoutingInfo::for_command_frame(command)?;
+        let channels = match self.get_channels(routing_info) {
             ChannelResult::Channels(channels) => channels,
             ChannelResult::Other(Command::AUTH) => {
                 return self.on_auth(command).await;
@@ -156,7 +157,6 @@ impl RedisSinkCluster {
                 for channel in channels {
                     responses.push(self.choose_and_send(&channel, message.clone()).await?);
                 }
-
                 Box::pin(async move {
                     let response = responses
                         .fold(None, |acc, response| async move {
@@ -170,8 +170,16 @@ impl RedisSinkCluster {
                                     }) => Some(messages.pop().map_or(
                                         RedisFrame::Null,
                                         |mut message| match message.frame().unwrap() {
-                                            Frame::Redis(frame) => frame.take(),
-                                            _ => unreachable!("This is a direct response from a redis sink so it must be a redis message"),
+                                            Frame::Redis(frame) => {
+                                                let new_frame = frame.take();
+                                                match acc {
+                                                    Some(prev_frame) => routing_info
+                                                        .response_join()
+                                                        .join(prev_frame, new_frame),
+                                                    None => new_frame,
+                                                }
+                                            }
+                                            _ => unreachable!("direct response from a redis sink"),
                                         },
                                     )),
                                     Ok(Response {
@@ -390,22 +398,22 @@ impl RedisSinkCluster {
     }
 
     #[inline(always)]
-    async fn get_channels(&mut self, command: &[RedisFrame]) -> Result<ChannelResult> {
-        Ok(match RoutingInfo::for_command_frame(command)? {
-            Some(RoutingInfo::Slot(slot)) => ChannelResult::Channels(
+    fn get_channels(&mut self, routing_info: RoutingInfo) -> ChannelResult {
+        match routing_info {
+            RoutingInfo::Slot(slot) => ChannelResult::Channels(
                 if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
                     vec![lookup.clone()]
                 } else {
                     vec![]
                 },
             ),
-            Some(RoutingInfo::AllNodes) => {
+            RoutingInfo::AllNodes => {
                 ChannelResult::Channels(self.slots.nodes.iter().cloned().collect())
             }
-            Some(RoutingInfo::AllMasters) => {
+            RoutingInfo::AllMasters(_) => {
                 ChannelResult::Channels(self.slots.masters.values().cloned().collect())
             }
-            Some(RoutingInfo::Random) => ChannelResult::Channels(
+            RoutingInfo::Random => ChannelResult::Channels(
                 self.slots
                     .masters
                     .values()
@@ -413,9 +421,9 @@ impl RedisSinkCluster {
                     .map(|key| vec![key.clone()])
                     .unwrap_or_default(),
             ),
-            Some(RoutingInfo::Other(name)) => ChannelResult::Other(name),
-            None => ChannelResult::Channels(vec![]),
-        })
+            RoutingInfo::Other(name) => ChannelResult::Other(name),
+            RoutingInfo::Unsupported => ChannelResult::Channels(vec![]),
+        }
     }
 
     async fn on_auth(&mut self, command: &[RedisFrame]) -> Result<ResponseFuture> {
@@ -529,10 +537,20 @@ impl SlotMap {
 #[derive(Debug, Clone, Copy)]
 pub enum RoutingInfo {
     AllNodes,
-    AllMasters,
+    AllMasters(ResponseJoin),
     Random,
     Slot(u16),
     Other(Command),
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ResponseJoin {
+    First,
+    ArrayJoin,
+    // TODO
+    // IntegerSum,
+    // EarliestDate,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -547,38 +565,49 @@ enum ChannelResult {
 
 impl RoutingInfo {
     #[inline(always)]
-    pub fn for_command_frame(args: &[RedisFrame]) -> Result<Option<RoutingInfo>> {
+    pub fn for_command_frame(args: &[RedisFrame]) -> Result<RoutingInfo> {
         let command_name = match args.get(0) {
             Some(RedisFrame::BulkString(command_name)) => command_name.to_ascii_uppercase(),
             _ => bail!("syntax error: bad command name"),
         };
 
         Ok(match command_name.as_slice() {
-            b"FLUSHALL" | b"FLUSHDB" => Some(RoutingInfo::AllMasters),
+            b"FLUSHALL" | b"FLUSHDB" => RoutingInfo::AllMasters(ResponseJoin::First),
             b"ECHO" | b"CONFIG" | b"CLIENT" | b"SLOWLOG" | b"DBSIZE" | b"LASTSAVE" | b"PING"
-            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"SAVE" | b"TIME" | b"KEYS" | b"ACL" => {
-                Some(RoutingInfo::AllNodes)
+            | b"INFO" | b"BGREWRITEAOF" | b"BGSAVE" | b"SAVE" | b"TIME" | b"ACL" => {
+                RoutingInfo::AllNodes
             }
+
+            b"KEYS" => RoutingInfo::AllMasters(ResponseJoin::ArrayJoin),
             b"SCRIPT" => match args.get(1) {
-                Some(RedisFrame::BulkString(a)) if a.to_ascii_uppercase() == b"KILL" => None,
-                _ => Some(RoutingInfo::AllMasters),
-            },
-            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" => None,
-            b"EVALSHA" | b"EVAL" => match args.get(2) {
-                Some(RedisFrame::BulkString(key_count)) => std::str::from_utf8(key_count)
-                    .unwrap_or("0")
-                    .parse::<i64>()
-                    .ok(),
-                _ => None,
-            }
-            .and_then(|key_count| {
-                if key_count == 0 {
-                    Some(RoutingInfo::Random)
-                } else {
-                    args.get(3).and_then(RoutingInfo::for_key)
+                Some(RedisFrame::BulkString(a)) if a.to_ascii_uppercase() == b"KILL" => {
+                    RoutingInfo::Unsupported
                 }
-            }),
-            b"XGROUP" | b"XINFO" => args.get(2).and_then(RoutingInfo::for_key),
+                _ => RoutingInfo::AllMasters(ResponseJoin::First),
+            },
+            b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" => {
+                RoutingInfo::Unsupported
+            }
+            b"EVALSHA" | b"EVAL" => match args.get(2) {
+                Some(RedisFrame::BulkString(key_count)) => {
+                    if key_count.as_ref() == b"0" {
+                        RoutingInfo::Random
+                    } else {
+                        // For an EVAL to succeed every key must be present on the same node.
+                        // So we use the first key to find the correct destination node and if any of the
+                        // remaining keys are not on the same node as the first key then the destination
+                        // node will handle will correctly handle this for us.
+                        args.get(3)
+                            .and_then(RoutingInfo::for_key)
+                            .unwrap_or(RoutingInfo::Unsupported)
+                    }
+                }
+                _ => RoutingInfo::Unsupported,
+            },
+            b"XGROUP" | b"XINFO" => args
+                .get(2)
+                .and_then(RoutingInfo::for_key)
+                .unwrap_or(RoutingInfo::Unsupported),
             b"XREAD" | b"XREADGROUP" => args
                 .iter()
                 .position(|a| match a {
@@ -588,11 +617,12 @@ impl RoutingInfo {
                 .and_then(|streams_position| {
                     args.get(streams_position + 1)
                         .and_then(RoutingInfo::for_key)
-                }),
-            b"AUTH" => Some(RoutingInfo::Other(Command::AUTH)),
+                })
+                .unwrap_or(RoutingInfo::Unsupported),
+            b"AUTH" => RoutingInfo::Other(Command::AUTH),
             _ => match args.get(1) {
-                Some(key) => RoutingInfo::for_key(key),
-                None => Some(RoutingInfo::Random),
+                Some(key) => RoutingInfo::for_key(key).unwrap_or(RoutingInfo::Unsupported),
+                None => RoutingInfo::Random,
             },
         })
     }
@@ -606,6 +636,28 @@ impl RoutingInfo {
             ))
         } else {
             None
+        }
+    }
+
+    pub fn response_join(&self) -> ResponseJoin {
+        match self {
+            RoutingInfo::AllMasters(join) => *join,
+            _ => ResponseJoin::First,
+        }
+    }
+}
+
+impl ResponseJoin {
+    pub fn join(&self, prev_frame: RedisFrame, next_frame: RedisFrame) -> RedisFrame {
+        match self {
+            ResponseJoin::ArrayJoin => match (prev_frame, next_frame) {
+                (RedisFrame::Array(mut prev), RedisFrame::Array(next)) => {
+                    prev.extend(next);
+                    RedisFrame::Array(prev)
+                }
+                _ => RedisFrame::Error("One of the redis frames was not an array".into()),
+            },
+            ResponseJoin::First => prev_frame,
         }
     }
 }

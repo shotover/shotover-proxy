@@ -74,6 +74,21 @@ async fn test_info(connection: &mut Connection) {
     assert!(info.contains_key(&"role"));
 }
 
+async fn test_keys(connection: &mut Connection) {
+    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+    assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
+    assert_ok(redis::cmd("SET").arg("bar").arg(42), connection).await;
+    assert_ok(redis::cmd("SET").arg("baz").arg(42), connection).await;
+
+    let keys: HashSet<String> = redis::cmd("KEYS")
+        .arg("*")
+        .query_async(connection)
+        .await
+        .unwrap();
+    let expected = HashSet::from(["foo".to_string(), "bar".to_string(), "baz".to_string()]);
+    assert_eq!(keys, expected);
+}
+
 async fn test_client_name(connection: &mut Connection) {
     assert_ok(redis::cmd("CLIENT").arg("SETNAME").arg("FOO"), connection).await;
 }
@@ -1248,6 +1263,7 @@ async fn run_all_active_safe(connection: &mut Connection) {
     test_getset(connection).await;
     test_incr(connection).await;
     test_info(connection).await;
+    test_keys(connection).await;
     // test_hash_ops(connection).await;
     test_set_ops(connection).await;
     test_scan(connection).await;
@@ -1288,6 +1304,7 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_getset(connection).await;
     test_incr(connection).await;
     // test_info().await;
+    test_keys(connection).await;
     // test_hash_ops().await;
     test_set_ops(connection).await;
     test_scan(connection).await;
@@ -1320,6 +1337,7 @@ async fn run_all(connection: &mut Connection) {
     test_getset(connection).await;
     test_incr(connection).await;
     test_info(connection).await;
+    test_keys(connection).await;
     test_hash_ops(connection).await;
     test_set_ops(connection).await;
     test_scan(connection).await;
