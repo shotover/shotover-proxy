@@ -1,80 +1,112 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use redis::Cmd;
 use std::path::Path;
 use test_helpers::docker_compose::DockerCompose;
+use test_helpers::lazy::new_lazy_shared;
 
 #[path = "../tests/helpers/mod.rs"]
 mod helpers;
 use helpers::ShotoverManager;
+
+struct Query {
+    name: &'static str,
+    command: Cmd,
+}
 
 fn redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("redis");
     group.throughput(criterion::Throughput::Elements(1));
     group.noise_threshold(0.2);
 
-    group.bench_with_input(
-        "active",
-        || {
-            let compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml");
-            let shotover_manager =
-                ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
+    let queries = [
+        Query {
+            name: "set",
+            command: redis::cmd("SET").arg("foo").arg(42).clone(),
         },
-        move |b, state| {
-            b.iter(|| {
-                redis::cmd("SET")
-                    .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
-            })
+        Query {
+            name: "get",
+            command: redis::cmd("GET").arg("bench_test_data").clone(),
         },
-    );
+    ];
 
-    group.bench_with_input(
-        "cluster",
-        || {
-            let compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml");
-            let shotover_manager =
-                ShotoverManager::from_topology_file("example-configs/redis-cluster/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
-        },
-        move |b, state| {
-            b.iter(|| {
-                redis::cmd("SET")
-                    .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
-            })
-        },
-    );
-
-    group.bench_with_input(
-        "passthrough",
-        || {
-            let compose =
-                DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
-            let shotover_manager = ShotoverManager::from_topology_file(
-                "example-configs/redis-passthrough/topology.yaml",
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "example-configs/redis-multi/topology.yaml",
+                "example-configs/redis-multi/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("active_{}", query.name),
+                &resources,
+                move |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        query
+                            .command
+                            .execute(&mut resources.as_mut().unwrap().connection);
+                    })
+                },
             );
-            BenchResources::new(shotover_manager, compose)
-        },
-        move |b, state| {
-            b.iter(|| {
-                redis::cmd("SET")
-                    .arg("foo")
-                    .arg(42)
-                    .execute(&mut state.connection);
-            })
-        },
-    );
+        }
+    }
 
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "example-configs/redis-cluster/topology.yaml",
+                "example-configs/redis-cluster/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("cluster_{}", query.name),
+                &resources,
+                move |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        query
+                            .command
+                            .execute(&mut resources.as_mut().unwrap().connection);
+                    })
+                },
+            );
+        }
+    }
+
+    {
+        let resources = new_lazy_shared(|| {
+            BenchResources::new(
+                "example-configs/redis-passthrough/topology.yaml",
+                "example-configs/redis-passthrough/docker-compose.yml",
+            )
+        });
+        for query in &queries {
+            group.bench_with_input(
+                format!("passthrough_{}", query.name),
+                &resources,
+                move |b, resources| {
+                    b.iter(|| {
+                        let mut resources = resources.borrow_mut();
+                        query
+                            .command
+                            .execute(&mut resources.as_mut().unwrap().connection);
+                    })
+                },
+            );
+        }
+    }
+
+    // Only need to test one case here as the type of command shouldnt affect TLS
     group.bench_with_input(
         "single_tls",
         || {
             test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
-            let compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
-            let shotover_manager =
-                ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
-            BenchResources::new(shotover_manager, compose)
+            BenchResources::new(
+                "example-configs/redis-tls/topology.yaml",
+                "example-configs/redis-tls/docker-compose.yml",
+            )
         },
         move |b, state| {
             b.iter(|| {
@@ -86,16 +118,15 @@ fn redis(c: &mut Criterion) {
         },
     );
 
+    // Only need to test one case here as the type of command shouldnt affect TLS
     group.bench_with_input(
         "cluster_tls",
         || {
             test_helpers::cert::generate_test_certs(Path::new("example-configs/redis-tls/certs"));
-            let compose =
-                DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
-            let shotover_manager = ShotoverManager::from_topology_file(
+            BenchResources::new(
                 "example-configs/redis-cluster-tls/topology.yaml",
-            );
-            BenchResources::new(shotover_manager, compose)
+                "example-configs/redis-cluster-tls/docker-compose.yml",
+            )
         },
         move |b, state| {
             b.iter(|| {
@@ -118,9 +149,15 @@ struct BenchResources {
 }
 
 impl BenchResources {
-    fn new(shotover_manager: ShotoverManager, compose: DockerCompose) -> Self {
+    fn new(shotover_topology: &str, compose_file: &str) -> Self {
+        let compose = DockerCompose::new(compose_file);
+        let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
+
         let mut connection = shotover_manager.redis_connection(6379);
-        redis::cmd("FLUSHDB").execute(&mut connection);
+        redis::cmd("SET")
+            .arg("bench_test_data")
+            .arg("A value with some length length to it to form a reasonable benchmark")
+            .execute(&mut connection);
 
         Self {
             _compose: compose,
