@@ -10,7 +10,7 @@ license = "Apache-2.0"
 
 [features]
 ## Uncomment the following line to force IDE's that resist configuration to run all tests
-#default = ["alpha-transforms"]
+default = ["alpha-transforms"]
 # Include WIP alpha transforms in the public API
 alpha-transforms = []
 

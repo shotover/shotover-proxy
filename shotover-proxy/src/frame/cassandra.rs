@@ -84,6 +84,11 @@ pub mod raw_frame {
             _ => nonzero!(1u32),
         })
     }
+
+    pub(crate) fn get_opcode(bytes: &[u8]) -> Result<Opcode> {
+        let opcode = Opcode::try_from(bytes[4])?;
+        Ok(opcode)
+    }
 }
 
 pub(crate) struct CassandraMetadata {
@@ -302,6 +307,15 @@ impl CassandraFrame {
             .queries()
             .into_iter()
             .filter_map(|stmt| CQLStatement::get_table_name(stmt))
+            .collect()
+    }
+
+    /// returns a list of unique keyspace (namespace) from the table names in the statement(s).
+    pub fn namespace(&mut self) -> Vec<String> {
+        self.get_table_names()
+            .into_iter()
+            .filter_map(|fq_name| fq_name.keyspace.clone())
+            .unique()
             .collect()
     }
 

@@ -1,4 +1,4 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
+use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind, Session};
 use futures::future::{join_all, try_join_all};
@@ -1693,6 +1693,12 @@ fn test_cassandra_peers_rewrite() {
             "SELECT native_port FROM system.peers_v2;",
             &[&[ResultValue::Int(9042)]],
         );
+
+        assert_query_result(
+            &normal_connection,
+            "SELECT native_port as foo FROM system.peers_v2;",
+            &[&[ResultValue::Int(9042)]],
+        );
     }
 
     {
@@ -1711,6 +1717,27 @@ fn test_cassandra_peers_rewrite() {
             "SELECT native_port FROM system.peers_v2;",
             &[&[ResultValue::Int(9044)]],
         );
+
+        assert_query_result(
+            &rewrite_port_connection,
+            "SELECT native_port as foo FROM system.peers_v2;",
+            &[&[ResultValue::Int(9044)]],
+        );
+
+        assert_query_result(
+            &rewrite_port_connection,
+            "SELECT native_port, native_port FROM system.peers_v2;",
+            &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
+        );
+
+        assert_query_result(
+            &rewrite_port_connection,
+            "SELECT native_port, native_port as some_port FROM system.peers_v2;",
+            &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
+        );
+
+        let result = execute_query(&rewrite_port_connection, "SELECT * FROM system.peers_v2;");
+        assert_eq!(result[0][5], ResultValue::Int(9044));
     }
 }
 

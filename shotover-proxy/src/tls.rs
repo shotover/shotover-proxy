@@ -43,8 +43,7 @@ impl TlsAcceptor {
         Pin::new(&mut ssl_stream)
             .accept()
             .await
-            .map_err(|x| anyhow!("Failed to accept TLS connection: {}", x))?;
-
+            .map_err(|e| anyhow!(e).context("Failed to accept TLS connection"))?;
         Ok(ssl_stream)
     }
 }

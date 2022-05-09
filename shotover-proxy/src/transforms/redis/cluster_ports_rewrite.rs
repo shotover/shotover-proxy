@@ -88,7 +88,7 @@ impl Transform for RedisClusterPortsRewrite {
 
 /// Rewrites the ports of a response to a CLUSTER SLOTS message to `new_port`
 fn rewrite_port_slot(frame: &mut Frame, new_port: u16) -> Result<()> {
-    if let Frame::Redis(RedisFrame::Array(ref mut array)) = frame {
+    if let Frame::Redis(RedisFrame::Array(array)) = frame {
         for elem in array.iter_mut() {
             if let RedisFrame::Array(slot) = elem {
                 for (index, mut frame) in slot.iter_mut().enumerate() {
@@ -105,79 +105,77 @@ fn rewrite_port_slot(frame: &mut Frame, new_port: u16) -> Result<()> {
                 }
             };
         }
-        Ok(())
-    } else {
-        bail!("RedisClusterPortsRewrite intercepted an incorrect message")
     }
+    Ok(())
 }
 
 /// Get a mutable reference to the CSV string inside a response to CLUSTER NODES or REPLICAS
-fn get_buffer(frame: &mut Frame) -> Result<&mut Bytes> {
+fn get_buffer(frame: &mut Frame) -> Option<&mut Bytes> {
     // CLUSTER NODES
-    if let Frame::Redis(RedisFrame::BulkString(ref mut buf)) = frame {
-        return Ok(buf);
+    if let Frame::Redis(RedisFrame::BulkString(buf)) = frame {
+        return Some(buf);
     }
 
     // CLUSTER REPLICAS
     if let Frame::Redis(RedisFrame::Array(array)) = frame {
         for item in array.iter_mut() {
-            if let RedisFrame::BulkString(ref mut buf) = item {
-                return Ok(buf);
+            if let RedisFrame::BulkString(buf) = item {
+                return Some(buf);
             }
         }
     }
 
-    bail!("RedisClusterPortsRewrite intercepted an incorrect message");
+    None
 }
 
 /// Rewrites the ports of a response to a CLUSTER NODES message to `new_port`
 fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
-    let buf = get_buffer(frame)?;
+    if let Some(buf) = get_buffer(frame) {
+        let mut bytes_writer = BytesMut::new().writer();
 
-    let mut bytes_writer = BytesMut::new().writer();
+        {
+            let read_cursor = std::io::Cursor::new(&buf);
 
-    {
-        let read_cursor = std::io::Cursor::new(&buf);
+            let mut reader = csv::ReaderBuilder::new()
+                .delimiter(b' ')
+                .has_headers(false)
+                .flexible(true) // flexible because the last fields is an arbitrary number of tokens
+                .from_reader(read_cursor);
 
-        let mut reader = csv::ReaderBuilder::new()
-            .delimiter(b' ')
-            .has_headers(false)
-            .flexible(true) // flexible because the last fields is an arbitrary number of tokens
-            .from_reader(read_cursor);
+            let mut writer = csv::WriterBuilder::new()
+                .delimiter(b' ')
+                .flexible(true)
+                .from_writer(&mut bytes_writer);
 
-        let mut writer = csv::WriterBuilder::new()
-            .delimiter(b' ')
-            .flexible(true)
-            .from_writer(&mut bytes_writer);
+            for result in reader.records() {
+                let record = result?;
+                let mut record_iter = record.into_iter();
 
-        for result in reader.records() {
-            let record = result?;
-            let mut record_iter = record.into_iter();
+                // Write the id field
+                let id = record_iter
+                    .next()
+                    .ok_or_else(|| anyhow!("CLUSTER NODES response missing id field"))?;
+                writer.write_field(id)?;
 
-            // Write the id field
-            let id = record_iter
-                .next()
-                .ok_or_else(|| anyhow!("CLUSTER NODES response missing id field"))?;
-            writer.write_field(id)?;
+                // Modify and rewrite the port field
+                let ip = record_iter
+                    .next()
+                    .ok_or_else(|| anyhow!("CLUSTER NODES response missing address field"))?;
 
-            // Modify and rewrite the port field
-            let ip = record_iter
-                .next()
-                .ok_or_else(|| anyhow!("CLUSTER NODES response missing address field"))?;
+                let split = ip.split(|c| c == ':' || c == '@').collect::<Vec<&str>>();
 
-            let split = ip.split(|c| c == ':' || c == '@').collect::<Vec<&str>>();
+                let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
 
-            let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
+                writer.write_field(&*new_ip)?;
 
-            writer.write_field(&*new_ip)?;
-
-            // Write the last of the record
-            writer.write_record(record_iter)?;
+                // Write the last of the record
+                writer.write_record(record_iter)?;
+            }
+            writer.flush()?;
         }
-        writer.flush()?;
-    }
 
-    *buf = bytes_writer.into_inner().freeze();
+        *buf = bytes_writer.into_inner().freeze();
+    }
 
     Ok(())
 }

@@ -1,7 +1,7 @@
 use crate::frame::RedisFrame;
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, QueryType};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use bytes::{Buf, BytesMut};
 use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
@@ -43,11 +43,11 @@ impl RedisCodec {
 
 impl Decoder for RedisCodec {
     type Item = Messages;
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
         loop {
-            match decode_mut(src).map_err(|e| anyhow!("Error decoding redis frame {}", e))? {
+            match decode_mut(src).map_err(|e| anyhow!(e).context("Error decoding redis frame)"))? {
                 Some((frame, _size, bytes)) => {
                     self.messages
                         .push(Message::from_bytes_and_frame(bytes, Frame::Redis(frame)));

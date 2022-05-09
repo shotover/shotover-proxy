@@ -1,8 +1,8 @@
 use crate::frame::cassandra::CassandraOperation;
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages};
-use anyhow::anyhow;
-use bytes::{BufMut, BytesMut};
+use anyhow::{anyhow, Error, Result};
+use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::frame_error::{AdditionalErrorInfo, ErrorBody};
 use cassandra_protocol::frame::{Frame as RawCassandraFrame, ParseFrameError, Version};
@@ -19,6 +19,8 @@ pub struct CassandraCodec {
     /// number does not match there may be too much or too little data in the buffer so we need
     /// to discard the connection.  The string is used in the error message.
     force_close: Option<String>,
+
+    messages: Vec<Message>,
 }
 
 impl Default for CassandraCodec {
@@ -32,6 +34,7 @@ impl CassandraCodec {
         CassandraCodec {
             compressor: Compression::None,
             force_close: None,
+            messages: vec![],
         }
     }
 }
@@ -52,60 +55,63 @@ impl CassandraCodec {
 
 impl Decoder for CassandraCodec {
     type Item = Messages;
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn decode(
-        &mut self,
-        src: &mut BytesMut,
-    ) -> std::result::Result<Option<Self::Item>, Self::Error> {
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
         // if we need to close the connection return an error.
         if let Some(result) = self.force_close.take() {
             debug!("Closing errored connection: {:?}", &result);
             return Err(anyhow!(result));
         }
 
-        // TODO: We could implement our own version and length check here directly on the bytes to avoid the duplicate frame parse
-        match RawCassandraFrame::from_buffer(src, self.compressor) {
-            Ok(parsed_frame) => {
-                // Clear the read bytes from the FramedReader
-                let bytes = src.split_to(parsed_frame.frame_len);
-                tracing::debug!(
-                    "incoming cassandra message:\n{}",
-                    pretty_hex::pretty_hex(&bytes)
-                );
+        loop {
+            // TODO: We could implement our own version and length check here directly on the bytes to avoid the duplicate frame parse
+            match RawCassandraFrame::from_buffer(src, self.compressor) {
+                Ok(parsed_frame) => {
+                    // Clear the read bytes from the FramedReader
+                    let bytes = src.split_to(parsed_frame.frame_len);
+                    tracing::debug!(
+                        "incoming cassandra message:\n{}",
+                        pretty_hex::pretty_hex(&bytes)
+                    );
 
-                Ok(Some(vec![Message::from_bytes(
-                    bytes.freeze(),
-                    MessageType::Cassandra,
-                )]))
-            }
-            Err(ParseFrameError::NotEnoughBytes) => Ok(None),
-            Err(ParseFrameError::UnsupportedVersion(version)) => {
-                // if we got an error force the close on the next read.
-                // We can not immediately close as we are gong to queue a message
-                // back to the client and we have to allow time for the message
-                // to be sent.  We can not reuse the connection as it may/does contain excess
-                // data from the failed parse.
-                self.force_close = Some(format!(
-                    "Received frame with unknown protocol version: {}",
-                    version
-                ));
+                    self.messages
+                        .push(Message::from_bytes(bytes.freeze(), MessageType::Cassandra));
+                }
+                Err(ParseFrameError::NotEnoughBytes) => {
+                    if self.messages.is_empty() || src.remaining() != 0 {
+                        return Ok(None);
+                    } else {
+                        return Ok(Some(std::mem::take(&mut self.messages)));
+                    }
+                }
+                Err(ParseFrameError::UnsupportedVersion(version)) => {
+                    // if we got an error force the close on the next read.
+                    // We can not immediately close as we are gong to queue a message
+                    // back to the client and we have to allow time for the message
+                    // to be sent.  We can not reuse the connection as it may/does contain excess
+                    // data from the failed parse.
+                    self.force_close = Some(format!(
+                        "Received frame with unknown protocol version: {}",
+                        version
+                    ));
 
-                let mut message = Message::from_frame(Frame::Cassandra(CassandraFrame {
-                    version: Version::V4,
-                    stream_id: 0,
-                    operation: CassandraOperation::Error(ErrorBody {
-                        error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
-                        message: "Invalid or unsupported protocol version".into(),
-                        additional_info: AdditionalErrorInfo::Server,
-                    }),
-                    tracing_id: None,
-                    warnings: vec![],
-                }));
-                message.return_to_sender = true;
-                Ok(Some(vec![message]))
+                    let mut message = Message::from_frame(Frame::Cassandra(CassandraFrame {
+                        version: Version::V4,
+                        stream_id: 0,
+                        operation: CassandraOperation::Error(ErrorBody {
+                            error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
+                            message: "Invalid or unsupported protocol version".into(),
+                            additional_info: AdditionalErrorInfo::Server,
+                        }),
+                        tracing_id: None,
+                        warnings: vec![],
+                    }));
+                    message.return_to_sender = true;
+                    return Ok(Some(vec![message]));
+                }
+                err => return Err(anyhow!("Failed to parse frame {:?}", err)),
             }
-            err => Err(anyhow!("Failed to parse frame {:?}", err)),
         }
     }
 }

@@ -19,10 +19,9 @@ pub struct CassandraPeersRewriteConfig {
 
 impl CassandraPeersRewriteConfig {
     pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::CassandraPeersRewrite(CassandraPeersRewrite {
-            port: self.port,
-            peer_table: FQName::new("system", "peers_v2"),
-        }))
+        Ok(Transforms::CassandraPeersRewrite(
+            CassandraPeersRewrite::new(self.port),
+        ))
     }
 }
 
@@ -30,6 +29,15 @@ impl CassandraPeersRewriteConfig {
 pub struct CassandraPeersRewrite {
     port: u32,
     peer_table: FQName,
+}
+
+impl CassandraPeersRewrite {
+    pub fn new(port: u32) -> Self {
+        CassandraPeersRewrite {
+            port,
+            peer_table: FQName::new("system", "peers_v2"),
+        }
+    }
 }
 
 #[async_trait]

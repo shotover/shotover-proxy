@@ -1,9 +1,13 @@
 use bytes::Bytes;
+use cassandra_protocol::{
+    compression::Compression, consistency::Consistency, frame::Version, query::QueryParams,
+};
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use hex_literal::hex;
 use shotover_proxy::frame::RedisFrame;
-use shotover_proxy::frame::{Frame, MessageType};
+use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, CQL};
 use shotover_proxy::message::{Message, QueryType};
+use shotover_proxy::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover_proxy::transforms::chain::TransformChain;
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::filter::QueryTypeFilter;
@@ -193,6 +197,57 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
 
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
+            b.to_async(&rt).iter_batched(
+                || BenchInput {
+                    chain: chain.clone(),
+                    wrapper: wrapper.clone(),
+                    client_details: "".into(),
+                },
+                BenchInput::bench,
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
+    {
+        let chain = TransformChain::new(
+            vec![
+                Transforms::CassandraPeersRewrite(CassandraPeersRewrite::new(9042)),
+                Transforms::Null(Null::default()),
+            ],
+            "bench".into(),
+        );
+
+        let wrapper = Wrapper::new_with_chain_name(
+            vec![Message::from_bytes(
+                CassandraFrame {
+                    version: Version::V4,
+                    stream_id: 0,
+                    tracing_id: None,
+                    warnings: vec![],
+                    operation: CassandraOperation::Query {
+                        query: CQL::parse_from_string("INSERT INTO foo (z, v) VALUES (1, 123)"),
+                        params: QueryParams {
+                            consistency: Consistency::One,
+                            with_names: false,
+                            values: None,
+                            page_size: Some(5000),
+                            paging_state: None,
+                            serial_consistency: None,
+                            timestamp: Some(1643855761086585),
+                        },
+                    },
+                }
+                .encode()
+                .encode_with(Compression::None)
+                .unwrap()
+                .into(),
+                MessageType::Cassandra,
+            )],
+            "bench".into(),
+        );
+
+        group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.clone(),
