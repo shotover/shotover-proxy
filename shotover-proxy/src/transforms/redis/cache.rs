@@ -455,9 +455,6 @@ impl SimpleRedisCache {
 ///  *
 fn is_cacheable(cql_statement: &CQLStatement) -> CacheableState {
     // check issues common to all cql_statements
-    if cql_statement.has_error {
-        return CacheableState::Skip("CQL statement has error".into());
-    }
     if let Some(table_name) = CQLStatement::get_table_name(&cql_statement.statement) {
         let has_params = CQLStatement::has_params(&cql_statement.statement);
 
@@ -791,7 +788,6 @@ mod test {
 
     fn build_query(query_string: &str) -> CassandraStatement {
         let cql = CQL::parse_from_string(query_string);
-        assert!(!cql.has_error());
         cql.statements[0].statement.clone()
     }
 
