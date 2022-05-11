@@ -673,23 +673,13 @@ impl CQL {
         debug!("parse_from_string: {}", cql_query_str);
         let ast = CassandraAST::new(cql_query_str);
 
-        let error = ast.has_error();
-        let statements = ast
-            .statements
-            .into_iter()
-            .map(|(_, statement, start, stop)|  {
-                match (error, statement) {
-                    (true, statement @ CassandraStatement::Unknown(_)) => statement,
-                    (true, _) => {
-                        match String::from_utf8(Vec::from(&cql_query_str[start..stop])) {
-                            Ok(str) => CassandraStatement::Unknown(str),
-                            Err(_) => CassandraStatement::Unknown(cql_query_str.to_string())
-                        }
-                    },
-                    (false, statement) => statement,
-                }
-            })
-            .collect();
+        let statements = if ast.has_error() {
+            vec![ CassandraStatement::Unknown( cql_query_str.to_string() )]
+        } else {
+            ast.statements.into_iter()
+                .map( |(_err, statement, _start, _end)| statement )
+                .collect()
+        };
         CQL { statements }
     }
 }
@@ -930,21 +920,16 @@ mod test {
             EXECUTE BATCH"#,
             r#"INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');
             INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');"#];
-        let expected = [
-            "INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');",
-            r#"BEGIN BATCH INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz'); INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');
-            EXECUTE BATCH"#,
-            "INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz'); INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');"];
         for idx in 0..query.len() {
             let cql = CQL::parse_from_string(query[idx]);
             let result = cql.to_query_string();
-            for stmt in cql.statements {
-                match stmt {
-                    CassandraStatement::Unknown(_) => {},
-                    _ => panic!( "Should be Unknown type"),
-                }
+            assert_eq!( 1, cql.statements.len() );
+            if let CassandraStatement::Unknown( txt ) = &cql.statements[0] {
+                assert_eq!(query[idx], txt, "failed at test {}", idx);
+            } else {
+                panic!( "Should be Unknown type, failed at test {}", idx);
             }
-            assert_eq!(expected[idx],  result, "failed at test {}", idx);
+            assert_eq!(query[idx],  result, "failed at test {}", idx);
         }
     }
 }

@@ -327,8 +327,7 @@ impl Transform for Protect {
                 ..
             })) = message.frame()
             {
-                for cql_statement in &mut query.statements {
-                    let statement = &mut cql_statement.statement;
+                for statement in &mut query.statements {
                     data_changed |= self.encrypt_columns(statement).await.unwrap();
                     if data_changed {
                         debug!("statement changed to {}", statement);
@@ -359,8 +358,7 @@ impl Transform for Protect {
                     ..
                 })) = response.frame()
                 {
-                    for cql_statement in &mut query.statements {
-                        let statement = &mut cql_statement.statement;
+                    for statement in &mut query.statements {
                         if let Some(table_name) = CQLStatement::get_table_name(statement) {
                             if let Some(columns) = self.get_protected_columns(table_name) {
                                 if let CassandraStatement::Select(select) = &statement {
@@ -470,7 +468,7 @@ mod test {
         // test insert change is reversed on select
         let stmt_txt = "insert into test_table (col1, col2) VALUES ('Hello World', 'i am clean')";
         let mut cql = CQL::parse_from_string(stmt_txt);
-        let statement = &mut cql.statements[0].statement;
+        let statement = &mut cql.statements[0];
         let data_changed = protect.encrypt_columns(statement).await.unwrap();
         assert!(data_changed);
 
@@ -490,10 +488,10 @@ mod test {
 
                     let stmt_txt = "select col1 from test_table where col2='i am clean'";
                     let cql = CQL::parse_from_string(stmt_txt);
-                    let statement = &cql.statements[0].statement;
+                    let statement = &cql.statements[0];
 
                     if let CassandraStatement::Select(select) = statement {
-                        let result = protect.process_select(select, &cols, &mut rows).await;
+                        let result = protect.process_select(&select, &cols, &mut rows).await;
                         assert!(result.unwrap());
                         assert_eq!(&msg_value, &rows[0][0]);
                     }

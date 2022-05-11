@@ -124,10 +124,9 @@ impl SimpleRedisCache {
         for cass_request in cassandra_messages {
             match &mut cass_request.frame() {
                 Some(Frame::Cassandra(frame)) => {
-                    for cql_statement in frame.operation.get_cql_statements() {
-                        let mut state = is_cacheable(cql_statement);
+                    for statement in frame.operation.queries() {
+                        let mut state = is_cacheable(statement);
                         if let CacheableState::Read(table_name) = &mut state {
-                            let statement = &cql_statement.statement;
                             debug!("build_cache_query processing cacheable state");
                             if let Some(table_cache_schema) =
                                 self.caching_schema.get(table_name.as_str())
@@ -166,7 +165,7 @@ impl SimpleRedisCache {
                         } else {
                             state = CacheableState::Skip(format!(
                                 "{} is not a readable query",
-                                cql_statement
+                                statement
                             ));
                         }
 
@@ -331,11 +330,11 @@ impl SimpleRedisCache {
     /// clear the cache for the single row specified by the redis_key
     fn clear_row_cache(
         &mut self,
-        cql_statement: &CQLStatement,
+        statement: &CassandraStatement,
         table_cache_schema: &TableCacheSchema,
     ) -> Option<Message> {
         // TODO is it possible to return the future and process in parallel?
-        let statement = &cql_statement.statement;
+
         if let Ok((redis_key, _hash_key)) = build_redis_key_from_cql3(statement, table_cache_schema)
         {
             let commands_buffer: Vec<RedisFrame> = vec![
@@ -373,7 +372,7 @@ impl SimpleRedisCache {
         let result_messages = &mut message_wrapper.call_next_transform().await?;
         if orig_cql.is_some() {
             let mut cache_messages: Vec<Message> = vec![];
-            for (response, cql_statement) in result_messages
+            for (response, statement) in result_messages
                 .iter_mut()
                 .zip(orig_cql.unwrap().statements.iter())
             {
@@ -382,12 +381,12 @@ impl SimpleRedisCache {
                     ..
                 })) = response.frame()
                 {
-                    match is_cacheable(cql_statement) {
+                    match is_cacheable(statement) {
                         CacheableState::Update(table_name) | CacheableState::Delete(table_name) => {
                             if let Some(table_cache_schema) = self.caching_schema.get(&table_name) {
                                 let table_schema = table_cache_schema.clone();
                                 if let Some(fut_message) =
-                                    self.clear_row_cache(cql_statement, &table_schema)
+                                    self.clear_row_cache(statement, &table_schema)
                                 {
                                     cache_messages.push(fut_message);
                                 }
@@ -400,7 +399,6 @@ impl SimpleRedisCache {
                             self.clear_table_cache();
                         }
                         CacheableState::Read(table_name) => {
-                            let statement = &cql_statement.statement;
                             if let Some(table_cache_schema) =
                                 self.caching_schema.get(table_name.as_str())
                             {
@@ -453,12 +451,12 @@ impl SimpleRedisCache {
 ///  * must specify table name
 ///  * must not contain a parsing error
 ///  *
-fn is_cacheable(cql_statement: &CQLStatement) -> CacheableState {
-    // check issues common to all cql_statements
-    if let Some(table_name) = CQLStatement::get_table_name(&cql_statement.statement) {
-        let has_params = CQLStatement::has_params(&cql_statement.statement);
+fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
+    // check issues common to all CassandraStatements
+    if let Some(table_name) = CQLStatement::get_table_name(statement) {
+        let has_params = CQLStatement::has_params(statement);
 
-        match &cql_statement.statement {
+        match statement {
             CassandraStatement::Select(select) => {
                 if has_params {
                     CacheableState::Delete(table_name.into())
@@ -714,9 +712,9 @@ impl Transform for SimpleRedisCache {
                 ..
             })) = m.frame()
             {
-                for cql_statement in &query.statements {
-                    debug!("cache transform processing {}", cql_statement);
-                    match cql_statement.get_query_type() {
+                for statement in &query.statements {
+                    debug!("cache transform processing {}", statement);
+                    match CQLStatement::get_query_type(statement) {
                         QueryType::Read => {}
                         QueryType::Write => read_cache = false,
                         QueryType::ReadWrite => read_cache = false,
@@ -788,7 +786,7 @@ mod test {
 
     fn build_query(query_string: &str) -> CassandraStatement {
         let cql = CQL::parse_from_string(query_string);
-        cql.statements[0].statement.clone()
+        cql.statements[0].clone()
     }
 
     #[test]

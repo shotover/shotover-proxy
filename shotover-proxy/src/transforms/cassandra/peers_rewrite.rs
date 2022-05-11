@@ -75,9 +75,8 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
     let mut result: Vec<String> = vec![];
     if let Some(Frame::Cassandra(cassandra)) = message.frame() {
         if let CassandraOperation::Query { query, .. } = &cassandra.operation {
-            for cql_statement in &query.statements {
-                let statement = &cql_statement.statement;
-                if let CassandraStatement::Select(select) = &statement {
+            for statement in &query.statements {
+                if let CassandraStatement::Select(select) = statement {
                     if peer_table == &select.table_name {
                         for select_element in &select.columns {
                             match select_element {
