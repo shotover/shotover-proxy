@@ -120,7 +120,8 @@ impl DockerCompose {
             | "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yml" => {
                 self.wait_for_log("Startup complete", 1, 110)
             }
-            "tests/test-configs/cassandra-peers-rewrite/docker-compose.yml" => {
+            "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml"
+            | "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml" => {
                 self.wait_for_log("Startup complete", 2, 110)
             }
             "example-configs-docker/cassandra-rewrite-peers/docker-compose.yml" => {

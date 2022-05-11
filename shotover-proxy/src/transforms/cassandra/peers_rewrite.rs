@@ -85,12 +85,8 @@ fn rewrite_port(message: &mut Message, new_port: u32) {
                     message.invalidate_cache();
                 }
             }
-        } else {
-            panic!(
-                "Expected CassandraOperation::Result(CassandraResult::Rows), got {:?}",
-                frame
-            );
         }
+        // if we didn't get a CassandraOperation::Result(Rows) we should ignore it as it will be an error
     }
 }
 
