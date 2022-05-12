@@ -125,7 +125,7 @@ impl RedisSinkCluster {
         let routing_info = RoutingInfo::for_command_frame(command)?;
         let channels = match self.get_channels(routing_info) {
             ChannelResult::Channels(channels) => channels,
-            ChannelResult::Other(Command::AUTH) => {
+            ChannelResult::Auth => {
                 return self.on_auth(command).await;
             }
             ChannelResult::ShortCircuit(frame) => {
@@ -427,7 +427,7 @@ impl RedisSinkCluster {
                     .map(|key| vec![key.clone()])
                     .unwrap_or_default(),
             ),
-            RoutingInfo::Other(name) => ChannelResult::Other(name),
+            RoutingInfo::Auth => ChannelResult::Auth,
             RoutingInfo::Unsupported => ChannelResult::Channels(vec![]),
             RoutingInfo::ShortCircuitNil => ChannelResult::ShortCircuit(RedisFrame::Null),
             RoutingInfo::ShortCircuitOk => {
@@ -553,7 +553,7 @@ pub enum RoutingInfo {
     AllMasters(ResponseJoin),
     Random,
     Slot(u16),
-    Other(Command),
+    Auth,
     Unsupported,
     ShortCircuitOk,
     ShortCircuitNil,
@@ -567,14 +567,9 @@ pub enum ResponseJoin {
     IntegerMin,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Command {
-    AUTH,
-}
-
 enum ChannelResult {
     Channels(Vec<String>),
-    Other(Command),
+    Auth,
     ShortCircuit(RedisFrame),
 }
 
@@ -663,7 +658,7 @@ impl RoutingInfo {
                         .and_then(RoutingInfo::for_key)
                 })
                 .unwrap_or(RoutingInfo::Unsupported),
-            b"AUTH" => RoutingInfo::Other(Command::AUTH),
+            b"AUTH" => RoutingInfo::Auth,
             // These are stateless commands that return a response.
             // We just need a single redis node to handle this for us so shotover can pretend to be a single node.
             // So we just pick a node at random.
