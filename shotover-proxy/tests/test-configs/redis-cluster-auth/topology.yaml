@@ -10,14 +10,15 @@ chain_config:
     - RedisClusterPortsRewrite:
         new_port: 6379
     - RedisSinkCluster:
-        first_contact_points:
-          [
-            "127.0.0.1:2230",
-            "127.0.0.1:2231",
-            "127.0.0.1:2232",
-            "127.0.0.1:2233",
-            "127.0.0.1:2234",
-            "127.0.0.1:2235",
-          ]
+        destination:
+          Hiding:
+            [
+              "127.0.0.1:2230",
+              "127.0.0.1:2231",
+              "127.0.0.1:2232",
+              "127.0.0.1:2233",
+              "127.0.0.1:2234",
+              "127.0.0.1:2235",
+            ]
 source_to_chain_mapping:
   redis_prod: redis_chain

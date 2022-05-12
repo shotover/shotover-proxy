@@ -55,8 +55,8 @@ fn redis(c: &mut Criterion) {
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
-                "example-configs/redis-cluster/topology.yaml",
-                "example-configs/redis-cluster/docker-compose.yml",
+                "example-configs/redis-cluster-hiding/topology.yaml",
+                "example-configs/redis-cluster-hiding/docker-compose.yml",
             )
         });
         for query in &queries {
