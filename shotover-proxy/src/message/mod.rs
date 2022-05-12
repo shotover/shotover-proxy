@@ -549,9 +549,7 @@ impl From<&MessageValue> for Operand {
 
 impl From<&Operand> for MessageValue {
     fn from(operand: &Operand) -> Self {
-        operand
-            .as_cassandra_type()
-            .map_or(MessageValue::None, MessageValue::create_element)
+        MessageValue::create_element(operand.as_cassandra_type())
     }
 }
 

@@ -359,9 +359,7 @@ impl CassandraOperation {
     /// TODO: This will return a custom iterator type when BATCH support is added
     pub fn queries(&mut self) -> Vec<&mut CassandraStatement> {
         if let CassandraOperation::Query { query: cql, .. } = self {
-            cql.statements
-                .iter_mut()
-                .collect()
+            cql.statements.iter_mut().collect()
         } else {
             Vec::<&mut CassandraStatement>::new()
         }
@@ -492,11 +490,10 @@ impl CassandraOperation {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct CQLStatement {
-}
+pub struct CQLStatement {}
 
 impl CQLStatement {
-    pub fn is_begin_batch( statement : &CassandraStatement ) -> bool {
+    pub fn is_begin_batch(statement: &CassandraStatement) -> bool {
         match statement {
             CassandraStatement::Delete(delete) => delete.begin_batch.is_some(),
             CassandraStatement::Insert(insert) => insert.begin_batch.is_some(),
@@ -506,7 +503,7 @@ impl CQLStatement {
     }
 
     /// returns the query type for the current statement.
-    pub fn get_query_type(statement : &CassandraStatement) -> QueryType {
+    pub fn get_query_type(statement: &CassandraStatement) -> QueryType {
         /* the query types in descending order, are:
         ReadWrite
         Write
@@ -661,10 +658,7 @@ pub struct CQL {
 
 impl CQL {
     fn to_query_string(&self) -> String {
-        self.statements
-            .iter()
-            .map(|c| c.to_string())
-            .join("; ")
+        self.statements.iter().map(|c| c.to_string()).join("; ")
     }
 
     /// the CassandraAST handles multiple queries in a string separated by semi-colons: `;` however
@@ -674,10 +668,11 @@ impl CQL {
         let ast = CassandraAST::new(cql_query_str);
 
         let statements = if ast.has_error() {
-            vec![ CassandraStatement::Unknown( cql_query_str.to_string() )]
+            vec![CassandraStatement::Unknown(cql_query_str.to_string())]
         } else {
-            ast.statements.into_iter()
-                .map( |(_err, statement, _start, _end)| statement )
+            ast.statements
+                .into_iter()
+                .map(|parsed_statement| parsed_statement.statement)
                 .collect()
         };
         CQL { statements }
@@ -685,83 +680,72 @@ impl CQL {
 }
 
 pub trait ToCassandraType {
-    fn from_string_value(value: &str) -> Option<CassandraType>;
-    fn as_cassandra_type(&self) -> Option<CassandraType>;
+    fn as_cassandra_type(&self) -> CassandraType;
 }
 
 impl ToCassandraType for Operand {
-    fn from_string_value(value: &str) -> Option<CassandraType> {
-        // check for string types
-        if value.starts_with('\'') || value.starts_with("$$") {
-            let mut chars = value.chars();
-            chars.next();
-            chars.next_back();
-            if value.starts_with('$') {
-                chars.next();
-                chars.next_back();
+    fn as_cassandra_type(&self) -> CassandraType {
+        // function to convert string to CassandraType
+        let from_string_value = |value: &str| {
+            // check for string types
+            if value.starts_with('\'') || value.starts_with("$$") {
+                /* to convert to a VarChar type we have to strip the delimiters off the front and back
+                of the string.  Soe remove one char (front and back) in the case of `'` and two in the case of `$$`
+                 */
+                CassandraType::Varchar(Operand::unescape(value))
+            } else if value.starts_with("0X") || value.starts_with("0x") {
+                hex::decode(&value[2..])
+                    .map(|x| CassandraType::Blob(Blob::from(x)))
+                    .unwrap_or(CassandraType::Null)
+            } else if let Ok(n) = i64::from_str(value) {
+                CassandraType::Bigint(n)
+            } else if let Ok(n) = f64::from_str(value) {
+                CassandraType::Double(n)
+            } else if let Ok(uuid) = Uuid::parse_str(value) {
+                CassandraType::Uuid(uuid)
+            } else if let Ok(ipaddr) = IpAddr::from_str(value) {
+                CassandraType::Inet(ipaddr)
+            } else {
+                CassandraType::Null
             }
-            Some(CassandraType::Varchar(chars.as_str().to_string()))
-        } else if value.starts_with("0X") || value.starts_with("0x") {
-            let mut chars = value.chars();
-            chars.next();
-            chars.next();
-            let bytes = hex::decode(chars.as_str()).unwrap();
-            Some(CassandraType::Blob(Blob::from(bytes)))
-        } else if let Ok(n) = i64::from_str(value) {
-            Some(CassandraType::Bigint(n))
-        } else if let Ok(n) = f64::from_str(value) {
-            Some(CassandraType::Double(n))
-        } else if let Ok(uuid) = Uuid::parse_str(value) {
-            Some(CassandraType::Uuid(uuid))
-        } else if let Ok(ipaddr) = IpAddr::from_str(value) {
-            Some(CassandraType::Inet(ipaddr))
-        } else {
-            None
-        }
-    }
-
-    fn as_cassandra_type(&self) -> Option<CassandraType> {
+        };
         match self {
-            Operand::Const(value) => Operand::from_string_value(value),
-            Operand::Map(values) => Some(CassandraType::Map(
+            Operand::Const(value) => from_string_value(value),
+            Operand::Map(values) => {
+                let mapping = values
+                    .iter()
+                    .map(|(key, value)| (from_string_value(key), from_string_value(value)))
+                    .collect();
+                CassandraType::Map(mapping)
+            }
+            Operand::Set(values) => CassandraType::Set(
                 values
                     .iter()
-                    .map(|(key, value)| {
-                        (
-                            Operand::from_string_value(key).unwrap(),
-                            Operand::from_string_value(value).unwrap(),
-                        )
-                    })
+                    .map(|value| from_string_value(value))
                     .collect(),
-            )),
-            Operand::Set(values) => Some(CassandraType::Set(
+            ),
+            Operand::List(values) => CassandraType::List(
                 values
                     .iter()
-                    .filter_map(|value| Operand::from_string_value(value))
+                    .map(|value| from_string_value(value))
                     .collect(),
-            )),
-            Operand::List(values) => Some(CassandraType::List(
+            ),
+            Operand::Tuple(values) => CassandraType::Tuple(
                 values
                     .iter()
-                    .filter_map(|value| Operand::from_string_value(value))
+                    .map(|value| value.as_cassandra_type())
                     .collect(),
-            )),
-            Operand::Tuple(values) => Some(CassandraType::Tuple(
+            ),
+            Operand::Column(value) => CassandraType::Ascii(value.to_string()),
+            Operand::Func(value) => CassandraType::Ascii(value.to_string()),
+            Operand::Null => CassandraType::Null,
+            Operand::Param(_) => CassandraType::Null,
+            Operand::Collection(values) => CassandraType::List(
                 values
                     .iter()
-                    .filter_map(|value| value.as_cassandra_type())
+                    .map(|value| value.as_cassandra_type())
                     .collect(),
-            )),
-            Operand::Column(value) => Some(CassandraType::Ascii(value.to_string())),
-            Operand::Func(value) => Some(CassandraType::Ascii(value.to_string())),
-            Operand::Null => Some(CassandraType::Null),
-            Operand::Param(_) => None,
-            Operand::Collection(values) => Some(CassandraType::List(
-                values
-                    .iter()
-                    .filter_map(|value| value.as_cassandra_type())
-                    .collect(),
-            )),
+            ),
         }
     }
 }
@@ -874,8 +858,15 @@ pub struct CassandraBatch {
 
 #[cfg(test)]
 mod test {
+    use crate::frame::cassandra::ToCassandraType;
     use crate::frame::CQL;
+    use cassandra_protocol::types::cassandra_type::CassandraType;
+    use cassandra_protocol::types::prelude::Blob;
     use cql3_parser::cassandra_statement::CassandraStatement;
+    use cql3_parser::common::Operand;
+    use std::net::IpAddr;
+    use std::str::FromStr;
+    use uuid::Uuid;
 
     #[test]
     fn cql_round_trip_test() {
@@ -903,33 +894,266 @@ mod test {
             if let CassandraStatement::Insert(_x) = stmt {
                 // do nothing
             } else {
-                panic!(
-                    "{:?}  should have been CassandraStatement::Insert",
-                    stmt
-                );
+                panic!("{:?}  should have been CassandraStatement::Insert", stmt);
             }
         }
     }
 
     #[test]
     fn cql_bad_statement_test() {
-        let query = [
+        let queries = [
             "INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');",
             r#"BEGIN BATCH INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');
             INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');
             EXECUTE BATCH"#,
             r#"INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (3, 13, 'baz');
             INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name)  (2, 12, 'bar');"#];
-        for idx in 0..query.len() {
-            let cql = CQL::parse_from_string(query[idx]);
+        for query in queries {
+            let cql = CQL::parse_from_string(query);
             let result = cql.to_query_string();
-            assert_eq!( 1, cql.statements.len() );
-            if let CassandraStatement::Unknown( txt ) = &cql.statements[0] {
-                assert_eq!(query[idx], txt, "failed at test {}", idx);
+            assert_eq!(1, cql.statements.len());
+            if let CassandraStatement::Unknown(txt) = &cql.statements[0] {
+                assert_eq!(query, txt, "failed at test {}", query);
             } else {
-                panic!( "Should be Unknown type, failed at test {}", idx);
+                panic!("Should be Unknown type, failed at test {}", query);
             }
-            assert_eq!(query[idx],  result, "failed at test {}", idx);
+            assert_eq!(query, result);
         }
+    }
+
+    #[test]
+    pub fn test_to_cassandra_type_for_const_operand() {
+        assert_eq!(
+            CassandraType::Bigint(55),
+            Operand::Const("55".to_string()).as_cassandra_type()
+        );
+        assert_eq!(
+            CassandraType::Double(5.5),
+            Operand::Const("5.5".to_string()).as_cassandra_type()
+        );
+        let uuid = Uuid::parse_str("123e4567-e89b-12d3-a456-426655440000").unwrap();
+        assert_eq!(
+            CassandraType::Uuid(uuid),
+            Operand::Const("123e4567-e89b-12d3-a456-426655440000".to_string()).as_cassandra_type()
+        );
+        let ipaddr = IpAddr::from_str("192.168.0.1").unwrap();
+        assert_eq!(
+            CassandraType::Inet(ipaddr),
+            Operand::Const("192.168.0.1".to_string()).as_cassandra_type()
+        );
+        let ipaddr = IpAddr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334").unwrap();
+        assert_eq!(
+            CassandraType::Inet(ipaddr),
+            Operand::Const("2001:0db8:85a3:0000:0000:8a2e:0370:7334".to_string())
+                .as_cassandra_type()
+        );
+        assert_eq!(
+            CassandraType::Blob(Blob::from(vec![255_u8, 234_u8, 1_u8, 13_u8])),
+            Operand::Const("0xFFEA010D".to_string()).as_cassandra_type()
+        );
+        let tests = [
+            (
+                "'Women''s Tour of New Zealand'",
+                "Women's Tour of New Zealand",
+            ),
+            (
+                "$$Women's Tour of New Zealand$$",
+                "Women's Tour of New Zealand",
+            ),
+            (
+                "$$Women''s Tour of New Zealand$$",
+                "Women''s Tour of New Zealand",
+            ),
+        ];
+        for (txt, expected) in tests {
+            assert_eq!(
+                CassandraType::Varchar(expected.to_string()),
+                Operand::Const(txt.to_string()).as_cassandra_type()
+            );
+        }
+        assert_eq!(
+            CassandraType::Null,
+            Operand::Const("not a valid const".to_string()).as_cassandra_type()
+        );
+        assert_eq!(
+            CassandraType::Null,
+            Operand::Const("0xnot a hex".to_string()).as_cassandra_type()
+        );
+    }
+
+    #[test]
+    pub fn test_to_cassandra_type_for_string_collection_operands() {
+        let args = vec![
+            "55".to_string(),
+            "5.5".to_string(),
+            "123e4567-e89b-12d3-a456-426655440000".to_string(),
+            "192.168.0.1".to_string(),
+            "2001:0db8:85a3:0000:0000:8a2e:0370:7334".to_string(),
+            "0xFFEA010D".to_string(),
+            "'Women''s Tour of New Zealand'".to_string(),
+            "$$Women's Tour of New Zealand$$".to_string(),
+            "$$Women''s Tour of New Zealand$$".to_string(),
+            "invalid text".to_string(),
+            "0xinvalid hex".to_string(),
+        ];
+
+        let expected = vec![
+            CassandraType::Bigint(55),
+            CassandraType::Double(5.5),
+            CassandraType::Uuid(Uuid::parse_str("123e4567-e89b-12d3-a456-426655440000").unwrap()),
+            CassandraType::Inet(IpAddr::from_str("192.168.0.1").unwrap()),
+            CassandraType::Inet(
+                IpAddr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334").unwrap(),
+            ),
+            CassandraType::Blob(Blob::from(vec![255_u8, 234_u8, 1_u8, 13_u8])),
+            CassandraType::Varchar("Women's Tour of New Zealand".to_string()),
+            CassandraType::Varchar("Women's Tour of New Zealand".to_string()),
+            CassandraType::Varchar("Women''s Tour of New Zealand".to_string()),
+            CassandraType::Null,
+            CassandraType::Null,
+        ];
+
+        assert_eq!(
+            CassandraType::List(expected.clone()),
+            Operand::List(args.clone()).as_cassandra_type()
+        );
+        assert_eq!(
+            CassandraType::Set(expected),
+            Operand::Set(args).as_cassandra_type()
+        );
+    }
+
+    #[test]
+    pub fn test_to_cassandra_type_for_map_operand() {
+        let args = vec![
+            ("1".to_string(), "55".to_string()),
+            ("2".to_string(), "5.5".to_string()),
+            (
+                "3".to_string(),
+                "123e4567-e89b-12d3-a456-426655440000".to_string(),
+            ),
+            ("4".to_string(), "192.168.0.1".to_string()),
+            (
+                "5".to_string(),
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334".to_string(),
+            ),
+            ("6".to_string(), "0xFFEA010D".to_string()),
+            (
+                "7".to_string(),
+                "'Women''s Tour of New Zealand'".to_string(),
+            ),
+            (
+                "8".to_string(),
+                "$$Women's Tour of New Zealand$$".to_string(),
+            ),
+            (
+                "9".to_string(),
+                "$$Women''s Tour of New Zealand$$".to_string(),
+            ),
+            ("'A'".to_string(), "invalid text".to_string()),
+            ("'B'".to_string(), "0xinvalid hex".to_string()),
+        ];
+        let expected = vec![
+            (CassandraType::Bigint(1), CassandraType::Bigint(55)),
+            (CassandraType::Bigint(2), CassandraType::Double(5.5)),
+            (
+                CassandraType::Bigint(3),
+                CassandraType::Uuid(
+                    Uuid::parse_str("123e4567-e89b-12d3-a456-426655440000").unwrap(),
+                ),
+            ),
+            (
+                CassandraType::Bigint(4),
+                CassandraType::Inet(IpAddr::from_str("192.168.0.1").unwrap()),
+            ),
+            (
+                CassandraType::Bigint(5),
+                CassandraType::Inet(
+                    IpAddr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334").unwrap(),
+                ),
+            ),
+            (
+                CassandraType::Bigint(6),
+                CassandraType::Blob(Blob::from(vec![255_u8, 234_u8, 1_u8, 13_u8])),
+            ),
+            (
+                CassandraType::Bigint(7),
+                CassandraType::Varchar("Women's Tour of New Zealand".to_string()),
+            ),
+            (
+                CassandraType::Bigint(8),
+                CassandraType::Varchar("Women's Tour of New Zealand".to_string()),
+            ),
+            (
+                CassandraType::Bigint(9),
+                CassandraType::Varchar("Women''s Tour of New Zealand".to_string()),
+            ),
+            (CassandraType::Varchar("A".to_string()), CassandraType::Null),
+            (CassandraType::Varchar("B".to_string()), CassandraType::Null),
+        ];
+
+        assert_eq!(
+            CassandraType::Map(expected),
+            Operand::Map(args).as_cassandra_type()
+        )
+    }
+
+    #[test]
+    pub fn test_to_cassandra_type_for_collection_operands() {
+        let args = vec![
+            Operand::Const("55".to_string()),
+            Operand::Const("5.5".to_string()),
+            Operand::Const("123e4567-e89b-12d3-a456-426655440000".to_string()),
+            Operand::Const("192.168.0.1".to_string()),
+            Operand::Const("2001:0db8:85a3:0000:0000:8a2e:0370:7334".to_string()),
+            Operand::Const("0xFFEA010D".to_string()),
+            Operand::Const("'Women''s Tour of New Zealand'".to_string()),
+            Operand::Const("$$Women's Tour of New Zealand$$".to_string()),
+            Operand::Const("$$Women''s Tour of New Zealand$$".to_string()),
+            Operand::Const("invalid text".to_string()),
+            Operand::Const("0xinvalid hex".to_string()),
+        ];
+
+        let expected = vec![
+            CassandraType::Bigint(55),
+            CassandraType::Double(5.5),
+            CassandraType::Uuid(Uuid::parse_str("123e4567-e89b-12d3-a456-426655440000").unwrap()),
+            CassandraType::Inet(IpAddr::from_str("192.168.0.1").unwrap()),
+            CassandraType::Inet(
+                IpAddr::from_str("2001:0db8:85a3:0000:0000:8a2e:0370:7334").unwrap(),
+            ),
+            CassandraType::Blob(Blob::from(vec![255_u8, 234_u8, 1_u8, 13_u8])),
+            CassandraType::Varchar("Women's Tour of New Zealand".to_string()),
+            CassandraType::Varchar("Women's Tour of New Zealand".to_string()),
+            CassandraType::Varchar("Women''s Tour of New Zealand".to_string()),
+            CassandraType::Null,
+            CassandraType::Null,
+        ];
+
+        assert_eq!(
+            CassandraType::Tuple(expected.clone()),
+            Operand::Tuple(args.clone()).as_cassandra_type()
+        );
+        assert_eq!(
+            CassandraType::List(expected),
+            Operand::Collection(args).as_cassandra_type()
+        );
+    }
+
+    #[test]
+    pub fn test_to_cassandra_type_for_misc_operands() {
+        assert_eq!(
+            CassandraType::Ascii("Hello".to_string()),
+            Operand::Column("Hello".to_string()).as_cassandra_type()
+        );
+        assert_eq!(
+            CassandraType::Ascii("Hello".to_string()),
+            Operand::Func("Hello".to_string()).as_cassandra_type()
+        );
+        assert_eq!(CassandraType::Null, Operand::Null.as_cassandra_type());
+        assert_eq!(
+            CassandraType::Null,
+            Operand::Param("Hello".to_string()).as_cassandra_type()
+        );
     }
 }

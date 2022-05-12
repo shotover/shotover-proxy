@@ -491,7 +491,7 @@ mod test {
                     let statement = &cql.statements[0];
 
                     if let CassandraStatement::Select(select) = statement {
-                        let result = protect.process_select(&select, &cols, &mut rows).await;
+                        let result = protect.process_select(select, &cols, &mut rows).await;
                         assert!(result.unwrap());
                         assert_eq!(&msg_value, &rows[0][0]);
                     }

@@ -447,7 +447,7 @@ dependencies = [
 [[package]]
 name = "cql3-parser"
 version = "0.1.1"
-source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=verify_error#e87dcc207247e735b6942c20d52cbc1d27bcb28a"
+source = "git+https://github.com/Claude-at-Instaclustr/rust_cql3_parser.git?branch=verify_error#5396f01195161f23bb272a4625a6946a1e1c0cfc"
 dependencies = [
  "bigdecimal",
  "bytes",
@@ -455,6 +455,7 @@ dependencies = [
  "itertools",
  "num",
  "regex",
+ "serde",
  "tree-sitter",
  "tree-sitter-cql",
  "uuid 1.0.0",
