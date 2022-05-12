@@ -19,7 +19,8 @@ use derivative::Derivative;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt, TryFutureExt};
 use metrics::{counter, register_counter};
-use rand::prelude::SmallRng;
+use rand::rngs::SmallRng;
+use rand::seq::IteratorRandom;
 use rand::SeedableRng;
 use redis_protocol::types::Redirection;
 use serde::Deserialize;
@@ -423,7 +424,7 @@ impl RedisSinkCluster {
                 self.slots
                     .masters
                     .values()
-                    .next()
+                    .choose(&mut self.rng)
                     .map(|key| vec![key.clone()])
                     .unwrap_or_default(),
             ),
