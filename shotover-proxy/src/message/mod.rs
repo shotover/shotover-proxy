@@ -425,8 +425,7 @@ pub enum QueryType {
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
 pub enum MessageValue {
-    NULL,
-    None,
+    Null,
     #[serde(with = "my_bytes")]
     Bytes(Bytes),
     Ascii(String),
@@ -467,7 +466,7 @@ pub enum IntSize {
 impl From<&MessageValue> for SQLValue {
     fn from(v: &MessageValue) -> Self {
         match v {
-            MessageValue::NULL => SQLValue::Null,
+            MessageValue::Null => SQLValue::Null,
             MessageValue::Bytes(b) => {
                 SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap())
             } // TODO: this is definitely wrong
@@ -505,7 +504,7 @@ impl From<RedisFrame> for MessageValue {
             RedisFrame::Array(a) => {
                 MessageValue::List(a.iter().cloned().map(MessageValue::from).collect())
             }
-            RedisFrame::Null => MessageValue::NULL,
+            RedisFrame::Null => MessageValue::Null,
         }
     }
 }
@@ -521,7 +520,7 @@ impl From<&RedisFrame> for MessageValue {
             RedisFrame::Array(a) => {
                 MessageValue::List(a.iter().cloned().map(MessageValue::from).collect())
             }
-            RedisFrame::Null => MessageValue::NULL,
+            RedisFrame::Null => MessageValue::Null,
         }
     }
 }
@@ -529,8 +528,7 @@ impl From<&RedisFrame> for MessageValue {
 impl From<MessageValue> for RedisFrame {
     fn from(value: MessageValue) -> RedisFrame {
         match value {
-            MessageValue::NULL => RedisFrame::Null,
-            MessageValue::None => todo!(),
+            MessageValue::Null => RedisFrame::Null,
             MessageValue::Bytes(b) => RedisFrame::BulkString(b),
             MessageValue::Strings(s) => RedisFrame::SimpleString(s.into()),
             MessageValue::Integer(i, _) => RedisFrame::Integer(i),
@@ -641,14 +639,13 @@ impl MessageValue {
                     .collect();
                 MessageValue::Tuple(value_list)
             }
-            CassandraType::Null => MessageValue::NULL,
+            CassandraType::Null => MessageValue::Null,
         }
     }
 
     pub fn into_str_bytes(self) -> Bytes {
         match self {
-            MessageValue::NULL => Bytes::from("".to_string()),
-            MessageValue::None => Bytes::from("".to_string()),
+            MessageValue::Null => Bytes::from("".to_string()),
             MessageValue::Bytes(b) => b,
             MessageValue::Strings(s) => Bytes::from(s),
             MessageValue::Integer(i, _) => Bytes::from(format!("{i}")),
@@ -682,8 +679,7 @@ impl MessageValue {
 impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
     fn from(value: MessageValue) -> cassandra_protocol::types::value::Bytes {
         match value {
-            MessageValue::NULL => (-1_i32).into(),
-            MessageValue::None => cassandra_protocol::types::value::Bytes::new(vec![]),
+            MessageValue::Null => (-1_i32).into(),
             MessageValue::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
             MessageValue::Strings(s) => s.into(),
             MessageValue::Integer(x, size) => {
