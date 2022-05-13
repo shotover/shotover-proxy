@@ -18,6 +18,7 @@ pub struct RedisConfig {
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
     pub tls: Option<TlsConfig>,
+    pub timeout: Option<u64>,
 }
 
 impl RedisConfig {
@@ -34,6 +35,7 @@ impl RedisConfig {
             self.connection_limit,
             self.hard_connection_limit,
             self.tls.clone(),
+            self.timeout,
         )
         .await
         .map(|x| vec![Sources::Redis(x)])
@@ -56,6 +58,7 @@ impl RedisSource {
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
         tls: Option<TlsConfig>,
+        timeout: Option<u64>,
     ) -> Result<RedisSource> {
         info!("Starting Redis source on [{}]", listen_addr);
         let name = "RedisSource";
@@ -69,6 +72,7 @@ impl RedisSource {
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
+            timeout,
         )
         .await?;
 

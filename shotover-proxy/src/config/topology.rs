@@ -218,6 +218,7 @@ mod topology_tests {
             connection_limit: None,
             hard_connection_limit: None,
             tls: None,
+            timeout: None,
         });
 
         let mut sources = HashMap::new();
