@@ -1,5 +1,6 @@
 pub mod cert;
 pub mod docker_compose;
+pub mod lazy;
 pub mod shotover_process;
 
 use anyhow::{bail, Result};

@@ -1387,7 +1387,6 @@ mod protect {
         );
         if let ResultValue::Varchar(value) = &result[0][2] {
             assert_eq!("I am gonna get encrypted!!", value);
-            //assert!(value.starts_with("{\"Ciphertext"));
         } else {
             panic!("expected 3rd column to be ResultValue::Varchar in {result:?}");
         }
@@ -1666,78 +1665,106 @@ fn test_cassandra_protect_transform_aws() {
 #[test]
 #[serial]
 fn test_cassandra_peers_rewrite() {
-    let _docker_compose =
-        DockerCompose::new("tests/test-configs/cassandra-peers-rewrite/docker-compose.yml");
-
-    let shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
-    );
-
-    let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
-
-    let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
-    table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
-
+    // check it works with the newer version of Cassandra
     {
-        assert_query_result(
-            &normal_connection,
-            "SELECT data_center, native_port, rack FROM system.peers_v2;",
-            &[&[
-                ResultValue::Varchar("dc1".into()),
-                ResultValue::Int(9042),
-                ResultValue::Varchar("West".into()),
-            ]],
-        );
-        assert_query_result(
-            &normal_connection,
-            "SELECT native_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9042)]],
+        let _docker_compose = DockerCompose::new(
+            "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
         );
 
-        assert_query_result(
-            &normal_connection,
-            "SELECT native_port as foo FROM system.peers_v2;",
-            &[&[ResultValue::Int(9042)]],
+        let shotover_manager = ShotoverManager::from_topology_file(
+            "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
         );
+
+        let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+
+        let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+        table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
+
+        {
+            assert_query_result(
+                &normal_connection,
+                "SELECT data_center, native_port, rack FROM system.peers_v2;",
+                &[&[
+                    ResultValue::Varchar("dc1".into()),
+                    ResultValue::Int(9042),
+                    ResultValue::Varchar("West".into()),
+                ]],
+            );
+            assert_query_result(
+                &normal_connection,
+                "SELECT native_port FROM system.peers_v2;",
+                &[&[ResultValue::Int(9042)]],
+            );
+
+            assert_query_result(
+                &normal_connection,
+                "SELECT native_port as foo FROM system.peers_v2;",
+                &[&[ResultValue::Int(9042)]],
+            );
+        }
+
+        {
+            assert_query_result(
+                &rewrite_port_connection,
+                "SELECT data_center, native_port, rack FROM system.peers_v2;",
+                &[&[
+                    ResultValue::Varchar("dc1".into()),
+                    ResultValue::Int(9044),
+                    ResultValue::Varchar("West".into()),
+                ]],
+            );
+
+            assert_query_result(
+                &rewrite_port_connection,
+                "SELECT native_port FROM system.peers_v2;",
+                &[&[ResultValue::Int(9044)]],
+            );
+
+            assert_query_result(
+                &rewrite_port_connection,
+                "SELECT native_port as foo FROM system.peers_v2;",
+                &[&[ResultValue::Int(9044)]],
+            );
+
+            assert_query_result(
+                &rewrite_port_connection,
+                "SELECT native_port, native_port FROM system.peers_v2;",
+                &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
+            );
+
+            assert_query_result(
+                &rewrite_port_connection,
+                "SELECT native_port, native_port as some_port FROM system.peers_v2;",
+                &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
+            );
+
+            let result = execute_query(&rewrite_port_connection, "SELECT * FROM system.peers_v2;");
+            assert_eq!(result[0][5], ResultValue::Int(9044));
+        }
     }
 
+    // check it works with an older version of Cassandra
     {
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT data_center, native_port, rack FROM system.peers_v2;",
-            &[&[
-                ResultValue::Varchar("dc1".into()),
-                ResultValue::Int(9044),
-                ResultValue::Varchar("West".into()),
-            ]],
+        let _docker_compose = DockerCompose::new(
+            "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml",
         );
 
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044)]],
+        let shotover_manager = ShotoverManager::from_topology_file(
+            "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
         );
 
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port as foo FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044)]],
-        );
+        let connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+        table::test(&connection); // run some basic tests to confirm it works as normal
 
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port, native_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
-        );
-
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port, native_port as some_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
-        );
-
-        let result = execute_query(&rewrite_port_connection, "SELECT * FROM system.peers_v2;");
-        assert_eq!(result[0][5], ResultValue::Int(9044));
+        let statement = stmt!("SELECT data_center, native_port, rack FROM system.peers_v2;");
+        let result = connection.execute(&statement).wait().unwrap_err();
+        assert!(matches!(
+            result,
+            Error(
+                ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_INVALID_QUERY, ..),
+                _
+            )
+        ));
     }
 }
 

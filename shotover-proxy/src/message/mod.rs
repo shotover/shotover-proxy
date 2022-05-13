@@ -440,8 +440,7 @@ pub enum QueryType {
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
 pub enum MessageValue {
-    NULL,
-    None,
+    Null,
     #[serde(with = "my_bytes")]
     Bytes(Bytes),
     Ascii(String),
@@ -482,7 +481,7 @@ pub enum IntSize {
 impl From<&MessageValue> for Operand {
     fn from(v: &MessageValue) -> Self {
         match v {
-            MessageValue::NULL => Operand::Null,
+            MessageValue::Null => Operand::Null,
             MessageValue::Bytes(b) => Operand::from(b),
             MessageValue::Ascii(s) | MessageValue::Varchar(s) | MessageValue::Strings(s) => {
                 Operand::from(s.as_str())
@@ -541,8 +540,6 @@ impl From<&MessageValue> for Operand {
                     .map(|(k, v)| (k.clone(), Operand::from(v).to_string()))
                     .collect(),
             ),
-
-            MessageValue::None => Operand::Null,
         }
     }
 }
@@ -590,8 +587,7 @@ impl From<&MessageValue> for DataTypeName {
             MessageValue::Counter(_) => DataTypeName::Counter,
             MessageValue::Tuple(_) => DataTypeName::Tuple,
             MessageValue::Udt(_) => DataTypeName::Tuple,
-            MessageValue::NULL => DataTypeName::Custom("NULL".to_string()),
-            MessageValue::None => DataTypeName::Custom("None".to_string()),
+            MessageValue::Null => DataTypeName::Custom("NULL".to_string()),
         }
     }
 }
@@ -608,7 +604,7 @@ impl From<RedisFrame> for MessageValue {
             RedisFrame::Array(a) => {
                 MessageValue::List(a.iter().cloned().map(MessageValue::from).collect())
             }
-            RedisFrame::Null => MessageValue::NULL,
+            RedisFrame::Null => MessageValue::Null,
         }
     }
 }
@@ -624,7 +620,7 @@ impl From<&RedisFrame> for MessageValue {
             RedisFrame::Array(a) => {
                 MessageValue::List(a.iter().cloned().map(MessageValue::from).collect())
             }
-            RedisFrame::Null => MessageValue::NULL,
+            RedisFrame::Null => MessageValue::Null,
         }
     }
 }
@@ -632,8 +628,7 @@ impl From<&RedisFrame> for MessageValue {
 impl From<MessageValue> for RedisFrame {
     fn from(value: MessageValue) -> RedisFrame {
         match value {
-            MessageValue::NULL => RedisFrame::Null,
-            MessageValue::None => todo!(),
+            MessageValue::Null => RedisFrame::Null,
             MessageValue::Bytes(b) => RedisFrame::BulkString(b),
             MessageValue::Strings(s) => RedisFrame::SimpleString(s.into()),
             MessageValue::Integer(i, _) => RedisFrame::Integer(i),
@@ -744,7 +739,7 @@ impl MessageValue {
                     .collect();
                 MessageValue::Tuple(value_list)
             }
-            CassandraType::Null => MessageValue::NULL,
+            CassandraType::Null => MessageValue::Null,
         }
     }
 }
@@ -752,8 +747,7 @@ impl MessageValue {
 impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
     fn from(value: MessageValue) -> cassandra_protocol::types::value::Bytes {
         match value {
-            MessageValue::NULL => (-1_i32).into(),
-            MessageValue::None => cassandra_protocol::types::value::Bytes::new(vec![]),
+            MessageValue::Null => (-1_i32).into(),
             MessageValue::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
             MessageValue::Strings(s) => s.into(),
             MessageValue::Integer(x, size) => {
