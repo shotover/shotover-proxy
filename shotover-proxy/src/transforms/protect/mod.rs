@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::CQLStatement;
+use crate::frame::cassandra::cql_statement;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
@@ -86,7 +86,7 @@ impl Protect {
     ///  * `key_id` the key within the manager to use.
     async fn encrypt_columns(&self, statement: &mut CassandraStatement) -> Result<bool> {
         let mut data_changed = false;
-        if let Some(table_name) = CQLStatement::get_table_name(statement) {
+        if let Some(table_name) = cql_statement::get_table_name(statement) {
             if let Some(columns) = self.get_protected_columns(table_name) {
                 match statement {
                     CassandraStatement::Insert(insert) => {
@@ -359,7 +359,7 @@ impl Transform for Protect {
                 })) = response.frame()
                 {
                     for statement in &mut query.statements {
-                        if let Some(table_name) = CQLStatement::get_table_name(statement) {
+                        if let Some(table_name) = cql_statement::get_table_name(statement) {
                             if let Some(columns) = self.get_protected_columns(table_name) {
                                 if let CassandraStatement::Select(select) = &statement {
                                     invalidate_cache |=

@@ -22,9 +22,7 @@ use cassandra_protocol::types::cassandra_type::CassandraType;
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{FQName, Operand, RelationElement};
-use cql3_parser::insert::InsertValues;
-use cql3_parser::update::AssignmentOperator;
+use cql3_parser::common::{FQName, Operand};
 use itertools::Itertools;
 use nonzero_ext::nonzero;
 use sodiumoxide::hex;
@@ -274,7 +272,7 @@ impl CassandraFrame {
                 // set to lowest type
                 let mut result = QueryType::PubSubMessage;
                 for cql_statement in &cql.statements {
-                    result = match (CQLStatement::get_query_type(cql_statement), &result) {
+                    result = match (cql_statement::get_query_type(cql_statement), &result) {
                         (QueryType::ReadWrite, _) => QueryType::ReadWrite,
                         (QueryType::Write, QueryType::Read | QueryType::ReadWrite) => {
                             QueryType::ReadWrite
@@ -305,7 +303,7 @@ impl CassandraFrame {
         self.operation
             .queries()
             .into_iter()
-            .filter_map(|stmt| CQLStatement::get_table_name(stmt))
+            .filter_map(|stmt| cql_statement::get_table_name(stmt))
             .collect()
     }
 
@@ -489,18 +487,12 @@ impl CassandraOperation {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct CQLStatement {}
-
-impl CQLStatement {
-    pub fn is_begin_batch(statement: &CassandraStatement) -> bool {
-        match statement {
-            CassandraStatement::Delete(delete) => delete.begin_batch.is_some(),
-            CassandraStatement::Insert(insert) => insert.begin_batch.is_some(),
-            CassandraStatement::Update(update) => update.begin_batch.is_some(),
-            _ => false,
-        }
-    }
+pub mod cql_statement {
+    use crate::message::QueryType;
+    use cql3_parser::cassandra_statement::CassandraStatement;
+    use cql3_parser::common::{FQName, Operand, RelationElement};
+    use cql3_parser::insert::InsertValues;
+    use cql3_parser::update::AssignmentOperator;
 
     /// returns the query type for the current statement.
     pub fn get_query_type(statement: &CassandraStatement) -> QueryType {
@@ -575,7 +567,7 @@ impl CQLStatement {
         match operand {
             Operand::Tuple(vec) | Operand::Collection(vec) => {
                 for oper in vec {
-                    if CQLStatement::has_params_in_operand(oper) {
+                    if has_params_in_operand(oper) {
                         return true;
                     }
                 }
@@ -588,7 +580,7 @@ impl CQLStatement {
 
     fn has_params_in_relation_elements(where_clause: &[RelationElement]) -> bool {
         for relation_idx in where_clause {
-            if CQLStatement::has_params_in_operand(&relation_idx.value) {
+            if has_params_in_operand(&relation_idx.value) {
                 return true;
             }
         }
@@ -599,10 +591,10 @@ impl CQLStatement {
     pub fn has_params(statement: &CassandraStatement) -> bool {
         match statement {
             CassandraStatement::Delete(delete) => {
-                if CQLStatement::has_params_in_relation_elements(&delete.where_clause) {
+                if has_params_in_relation_elements(&delete.where_clause) {
                     return true;
                 }
-                if CQLStatement::has_params_in_relation_elements(&delete.if_clause) {
+                if has_params_in_relation_elements(&delete.if_clause) {
                     return true;
                 }
             }
@@ -616,7 +608,7 @@ impl CQLStatement {
                 }
             }
             CassandraStatement::Select(select) => {
-                return CQLStatement::has_params_in_relation_elements(&select.where_clause);
+                return has_params_in_relation_elements(&select.where_clause);
             }
             CassandraStatement::Update(update) => {
                 for assignment_element in &update.assignments {
@@ -638,10 +630,10 @@ impl CQLStatement {
                         }
                     }
                 }
-                if CQLStatement::has_params_in_relation_elements(&update.where_clause) {
+                if has_params_in_relation_elements(&update.where_clause) {
                     return true;
                 }
-                if CQLStatement::has_params_in_relation_elements(&update.if_clause) {
+                if has_params_in_relation_elements(&update.if_clause) {
                     return true;
                 }
             }
@@ -686,7 +678,7 @@ pub trait ToCassandraType {
 impl ToCassandraType for Operand {
     fn as_cassandra_type(&self) -> CassandraType {
         // function to convert string to CassandraType
-        let from_string_value = |value: &str| {
+        fn from_string_value(value: &str) -> CassandraType {
             // check for string types
             if value.starts_with('\'') || value.starts_with("$$") {
                 /* to convert to a VarChar type we have to strip the delimiters off the front and back
@@ -708,7 +700,7 @@ impl ToCassandraType for Operand {
             } else {
                 CassandraType::Null
             }
-        };
+        }
         match self {
             Operand::Const(value) => from_string_value(value),
             Operand::Map(values) => {

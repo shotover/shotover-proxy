@@ -1,6 +1,6 @@
 use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
-use crate::frame::cassandra::CQLStatement;
+use crate::frame::cassandra::cql_statement;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame, CQL};
 use crate::message::{Message, Messages, QueryType};
 use crate::transforms::chain::TransformChain;
@@ -9,7 +9,7 @@ use crate::transforms::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use cassandra_protocol::frame::Serialize;
 use cassandra_protocol::frame::Version;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -38,40 +38,34 @@ metadata - serialized form of the metadata from cassandra.
 
  */
 enum CacheableState {
-    /// string is the table name
-    Read(String),
-    /// string is the table name
-    Update(String),
-    /// string is the table name
-    Delete(String),
-    /// string is the table being dropped
-    Drop(String),
-    /// string is the reason for the skip
-    Skip(String),
-    /// string is the reason for the error
-    Err(String),
+    Read { table_name: String },
+    Update { table_name: String },
+    Delete { table_name: String },
+    Drop { table_name: String },
+    Skip { reason: String },
+    Err { reason: String },
 }
 
 impl Display for CacheableState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CacheableState::Read(name) => {
-                write!(f, "Reading {}", name)
+            CacheableState::Read { table_name } => {
+                write!(f, "Reading {}", table_name)
             }
-            CacheableState::Update(name) => {
-                write!(f, "Updating {}", name)
+            CacheableState::Update { table_name } => {
+                write!(f, "Updating {}", table_name)
             }
-            CacheableState::Delete(name) => {
-                write!(f, "Deleting {}", name)
+            CacheableState::Delete { table_name } => {
+                write!(f, "Deleting {}", table_name)
             }
-            CacheableState::Drop(name) => {
-                write!(f, "Dropping {}", name)
+            CacheableState::Drop { table_name } => {
+                write!(f, "Dropping {}", table_name)
             }
-            CacheableState::Skip(txt) => {
-                write!(f, "Skipping due to: {}", txt)
+            CacheableState::Skip { reason } => {
+                write!(f, "Skipping due to: {}", reason)
             }
-            CacheableState::Err(txt) => {
-                write!(f, "Error due to: {}", txt)
+            CacheableState::Err { reason } => {
+                write!(f, "Error due to: {}", reason)
             }
         }
     }
@@ -126,7 +120,7 @@ impl SimpleRedisCache {
                 Some(Frame::Cassandra(frame)) => {
                     for statement in frame.operation.queries() {
                         let mut state = is_cacheable(statement);
-                        if let CacheableState::Read(table_name) = &mut state {
+                        if let CacheableState::Read { table_name } = &mut state {
                             debug!("build_cache_query processing cacheable state");
                             if let Some(table_cache_schema) =
                                 self.caching_schema.get(table_name.as_str())
@@ -157,20 +151,18 @@ impl SimpleRedisCache {
                                     }
                                 }
                             } else {
-                                state = CacheableState::Skip(format!(
-                                    "Table {} not in caching list",
-                                    table_name
-                                ));
+                                state = CacheableState::Skip {
+                                    reason: format!("Table {} not in caching list", table_name),
+                                };
                             }
                         } else {
-                            state = CacheableState::Skip(format!(
-                                "{} is not a readable query",
-                                statement
-                            ));
+                            state = CacheableState::Skip {
+                                reason: format!("{} is not a readable query", statement),
+                            };
                         }
 
                         match state {
-                            CacheableState::Err(_) | CacheableState::Skip(_) => {
+                            CacheableState::Err { .. } | CacheableState::Skip { .. } => {
                                 debug!("build_cache_query: {}", state);
                                 return Err(state);
                             }
@@ -179,9 +171,9 @@ impl SimpleRedisCache {
                     }
                 }
                 _ => {
-                    return Err(CacheableState::Err(format!(
-                        "cannot fetch {cass_request:?} from cache"
-                    )))
+                    return Err(CacheableState::Err {
+                        reason: format!("cannot fetch {cass_request:?} from cache"),
+                    })
                 }
             }
         }
@@ -206,55 +198,60 @@ impl SimpleRedisCache {
         for cass_request in cassandra_messages.iter_mut() {
             // the responses for this request
             let cassandra_result: Result<CassandraResult, CacheableState> =
-                if let Some(Frame::Cassandra(frame)) = &mut cass_request.frame() {
+                if let Some(Frame::Cassandra(frame)) = cass_request.frame() {
                     let queries = frame.operation.queries();
                     if queries.len() != 1 {
-                        Err(CacheableState::Err(
-                            "Cacheable Cassandra query must be only one statement".into(),
-                        ))
+                        Err(CacheableState::Err {
+                            reason: "Cacheable Cassandra query must be only one statement".into(),
+                        })
                     } else if let Some(mut redis_response) = messages_redis_response_iter.next() {
                         match redis_response.frame() {
                             Some(Frame::Redis(redis_frame)) => {
                                 match redis_frame {
-                                    RedisFrame::SimpleString(_) => Err(CacheableState::Err(
-                                        "Redis returned a simple string".into(),
-                                    )),
+                                    RedisFrame::SimpleString(_) => Err(CacheableState::Err {
+                                        reason: "Redis returned a simple string".into(),
+                                    }),
                                     RedisFrame::Error(e) => {
-                                        return Err(CacheableState::Err(e.to_string()))
+                                        return Err(CacheableState::Err {
+                                            reason: e.to_string(),
+                                        })
                                     }
-                                    RedisFrame::Integer(_) => Err(CacheableState::Err(
-                                        "Redis returned an int value".into(),
-                                    )),
+                                    RedisFrame::Integer(_) => Err(CacheableState::Err {
+                                        reason: "Redis returned an int value".into(),
+                                    }),
                                     RedisFrame::BulkString(redis_bytes) => {
                                         // Redis response contains serialized version of result struct from CassandraOperation::Result( result )
-                                        let x = redis_bytes.iter().copied().collect_vec();
-                                        let mut cursor = Cursor::new(x.as_slice());
+                                        let mut cursor = Cursor::new(redis_bytes.as_ref());
                                         let answer =
                                             CassandraResult::from_cursor(&mut cursor, Version::V4);
                                         if let Ok(result) = answer {
                                             Ok(result)
                                         } else {
-                                            Err(CacheableState::Err(
-                                                answer.err().unwrap().to_string(),
-                                            ))
+                                            Err(CacheableState::Err {
+                                                reason: answer.unwrap_err().to_string(),
+                                            })
                                         }
                                     }
-                                    RedisFrame::Array(_) => Err(CacheableState::Err(
-                                        "Redis returned an array value".into(),
-                                    )),
+                                    RedisFrame::Array(_) => Err(CacheableState::Err {
+                                        reason: "Redis returned an array value".into(),
+                                    }),
                                     RedisFrame::Null => {
                                         self.missed_requests.increment(1);
-                                        Err(CacheableState::Skip("No cache results".into()))
+                                        Err(CacheableState::Skip {
+                                            reason: "No cache results".into(),
+                                        })
                                     }
                                 }
                             }
 
-                            _ => Err(CacheableState::Err(
-                                "No Redis frame in Redis response".into(),
-                            )),
+                            _ => Err(CacheableState::Err {
+                                reason: "No Redis frame in Redis response".into(),
+                            }),
                         }
                     } else {
-                        Err(CacheableState::Err("Redis response was None".into()))
+                        Err(CacheableState::Err {
+                            reason: "Redis response was None".into(),
+                        })
                     }
                 } else {
                     Ok(CassandraResult::Void)
@@ -313,7 +310,9 @@ impl SimpleRedisCache {
                 "clientdetailstodo".to_string(),
             )
             .await
-            .map_err(|e| CacheableState::Err(format!("Redis error: {}", e)))?;
+            .map_err(|e| CacheableState::Err {
+                reason: format!("Redis error: {}", e),
+            })?;
 
         debug!("read_from_cache received OK from cache_chain.process_request");
         self.unwrap_cache_response(messages_redis_response, cassandra_messages)
@@ -370,11 +369,9 @@ impl SimpleRedisCache {
             })
             .next();
         let result_messages = &mut message_wrapper.call_next_transform().await?;
-        if orig_cql.is_some() {
+        if let Some(orig_cql) = orig_cql {
             let mut cache_messages: Vec<Message> = vec![];
-            for (response, statement) in result_messages
-                .iter_mut()
-                .zip(orig_cql.unwrap().statements.iter())
+            for (response, statement) in result_messages.iter_mut().zip(orig_cql.statements.iter())
             {
                 if let Some(Frame::Cassandra(CassandraFrame {
                     operation: CassandraOperation::Result(result),
@@ -382,7 +379,8 @@ impl SimpleRedisCache {
                 })) = response.frame()
                 {
                     match is_cacheable(statement) {
-                        CacheableState::Update(table_name) | CacheableState::Delete(table_name) => {
+                        CacheableState::Update { table_name }
+                        | CacheableState::Delete { table_name } => {
                             if let Some(table_cache_schema) = self.caching_schema.get(&table_name) {
                                 let table_schema = table_cache_schema.clone();
                                 if let Some(fut_message) =
@@ -394,11 +392,11 @@ impl SimpleRedisCache {
                                 debug!("table {} is not being cached", table_name);
                             }
                         }
-                        CacheableState::Drop(table_name) => {
+                        CacheableState::Drop { table_name } => {
                             info!("table {} dropped", table_name);
                             self.clear_table_cache();
                         }
-                        CacheableState::Read(table_name) => {
+                        CacheableState::Read { table_name } => {
                             if let Some(table_cache_schema) =
                                 self.caching_schema.get(table_name.as_str())
                             {
@@ -422,7 +420,7 @@ impl SimpleRedisCache {
                                 }
                             }
                         }
-                        CacheableState::Skip(_reason) | CacheableState::Err(_reason) => {
+                        CacheableState::Skip { .. } | CacheableState::Err { .. } => {
                             // do nothing
                         }
                     }
@@ -453,32 +451,48 @@ impl SimpleRedisCache {
 ///  *
 fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
     // check issues common to all CassandraStatements
-    if let Some(table_name) = CQLStatement::get_table_name(statement) {
-        let has_params = CQLStatement::has_params(statement);
+    if let Some(table_name) = cql_statement::get_table_name(statement) {
+        let has_params = cql_statement::has_params(statement);
 
         match statement {
             CassandraStatement::Select(select) => {
                 if has_params {
-                    CacheableState::Delete(table_name.into())
+                    CacheableState::Delete {
+                        table_name: table_name.into(),
+                    }
                 } else if select.filtering {
-                    CacheableState::Skip("Can not cache with ALLOW FILTERING".into())
+                    CacheableState::Skip {
+                        reason: "Can not cache with ALLOW FILTERING".into(),
+                    }
                 } else if select.where_clause.is_empty() {
-                    CacheableState::Skip("Can not cache if where clause is empty".into())
+                    CacheableState::Skip {
+                        reason: "Can not cache if where clause is empty".into(),
+                    }
                 } else {
-                    CacheableState::Read(table_name.into())
+                    CacheableState::Read {
+                        table_name: table_name.to_string(),
+                    }
                 }
             }
             CassandraStatement::Insert(insert) => {
                 if has_params || insert.if_not_exists {
-                    CacheableState::Delete(table_name.into())
+                    CacheableState::Delete {
+                        table_name: table_name.into(),
+                    }
                 } else {
-                    CacheableState::Update(table_name.into())
+                    CacheableState::Update {
+                        table_name: table_name.into(),
+                    }
                 }
             }
-            CassandraStatement::DropTable(_) => CacheableState::Drop(table_name.into()),
+            CassandraStatement::DropTable(_) => CacheableState::Drop {
+                table_name: table_name.into(),
+            },
             CassandraStatement::Update(update) => {
                 if has_params || update.if_exists {
-                    CacheableState::Delete(table_name.into())
+                    CacheableState::Delete {
+                        table_name: table_name.into(),
+                    }
                 } else {
                     for assignment_element in &update.assignments {
                         if assignment_element.operator.is_some() {
@@ -486,24 +500,34 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
                                 "Clearing {} cache: {} has calculations in values",
                                 update.table_name, assignment_element.name
                             );
-                            return CacheableState::Delete(table_name.into());
+                            return CacheableState::Delete {
+                                table_name: table_name.into(),
+                            };
                         }
                         if assignment_element.name.idx.is_some() {
                             debug!(
                                 "Clearing {} cache: {} is an indexed columns",
                                 update.table_name, assignment_element.name
                             );
-                            return CacheableState::Delete(table_name.into());
+                            return CacheableState::Delete {
+                                table_name: table_name.into(),
+                            };
                         }
                     }
-                    CacheableState::Update(table_name.into())
+                    CacheableState::Update {
+                        table_name: table_name.into(),
+                    }
                 }
             }
 
-            _ => CacheableState::Skip("Statement is not a cacheable type".into()),
+            _ => CacheableState::Skip {
+                reason: "Statement is not a cacheable type".into(),
+            },
         }
     } else {
-        CacheableState::Skip("No table name specified".into())
+        CacheableState::Skip {
+            reason: "No table name specified".into(),
+        }
     }
 }
 
@@ -521,17 +545,21 @@ fn build_query_redis_key_from_value_map(
         debug!("processing partition key segment: {}", column_name);
         match query_values.get(column_name.as_str()) {
             None => {
-                return Err(CacheableState::Skip(format!(
-                    "Partition key not complete. missing segment {}",
-                    column_name
-                )));
+                return Err(CacheableState::Skip {
+                    reason: format!(
+                        "Partition key not complete. missing segment {}",
+                        column_name
+                    ),
+                });
             }
             Some(relation_elements) => {
                 if relation_elements.len() > 1 {
-                    return Err(CacheableState::Skip(format!(
-                        "partition key segment {} has more than one relationship",
-                        column_name
-                    )));
+                    return Err(CacheableState::Skip {
+                        reason: format!(
+                            "partition key segment {} has more than one relationship",
+                            column_name
+                        ),
+                    });
                 }
                 debug!(
                     "extending key with segment {} value {}",
@@ -553,15 +581,17 @@ fn build_query_redis_key_from_value_map(
             Some(relation_elements) => {
                 if skipping {
                     // we skipped an earlier column so this is an error.
-                    return Err(CacheableState::Err(
-                        "Columns in the middle of the range key were skipped".into(),
-                    ));
+                    return Err(CacheableState::Err {
+                        reason: "Columns in the middle of the range key were skipped".into(),
+                    });
                 }
                 if relation_elements.len() > 1 {
-                    return Err(CacheableState::Skip(format!(
-                        "partition key segment {} has more than one relationship",
-                        column_name
-                    )));
+                    return Err(CacheableState::Skip {
+                        reason: format!(
+                            "partition key segment {} has more than one relationship",
+                            column_name
+                        ),
+                    });
                 }
                 debug!(
                     "extending key with segment {} value {}",
@@ -573,7 +603,7 @@ fn build_query_redis_key_from_value_map(
             }
         }
     }
-    Ok(BytesMut::from(key.as_slice()).freeze())
+    Ok(Bytes::from(key))
 }
 
 /// build the redis key for the query.
@@ -624,7 +654,7 @@ fn build_query_redis_hash_from_value_map(
             .as_str(),
     );
 
-    Ok(BytesMut::from(str.as_str()).freeze())
+    Ok(Bytes::from(str))
 }
 
 fn populate_value_map_from_where_clause(
@@ -714,7 +744,7 @@ impl Transform for SimpleRedisCache {
             {
                 for statement in &query.statements {
                     debug!("cache transform processing {}", statement);
-                    match CQLStatement::get_query_type(statement) {
+                    match cql_statement::get_query_type(statement) {
                         QueryType::Read => {}
                         QueryType::Write => read_cache = false,
                         QueryType::ReadWrite => read_cache = false,
@@ -733,12 +763,12 @@ impl Transform for SimpleRedisCache {
             match self.read_from_cache(message_wrapper.messages.clone()).await {
                 Ok(cr) => return Ok(cr),
                 Err(inner_state) => match &inner_state {
-                    CacheableState::Skip(reason) => {
+                    CacheableState::Skip { reason } => {
                         info!("Cache skipped: {} ", reason);
                         self.execute_upstream_and_process_result(message_wrapper)
                             .await
                     }
-                    CacheableState::Err(reason) => {
+                    CacheableState::Err { reason } => {
                         error!("Cache failed: {} ", reason);
                         message_wrapper.call_next_transform().await
                     }
