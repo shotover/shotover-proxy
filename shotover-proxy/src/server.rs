@@ -97,6 +97,7 @@ pub struct TcpCodecListener<C: Codec> {
 
     available_connections_gauge: Gauge,
 
+    /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<u64>,
 }
 
@@ -352,6 +353,7 @@ pub struct Handler<C: Codec> {
 
     tls: Option<TlsAcceptor>,
 
+    /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<u64>,
 }
 

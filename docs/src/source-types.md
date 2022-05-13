@@ -20,6 +20,9 @@ Cassandra:
   # * when true: the connection is dropped.
   # * when false: the connection will wait until a connection can be made within the limit.
   hard_connection_limit: false
+ 
+  #  Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
+  # timeout: 60
 ```
 
 ## MPSC
@@ -57,4 +60,7 @@ Redis:
     private_key_path: "tls/redis.key"
     # Path to the certificate authority file typically named ca.crt.
     certificate_authority_path: "tls/ca.crt"
+    
+  #  Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
+  # timeout: 60
 ```
