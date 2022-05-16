@@ -132,6 +132,34 @@ impl Transforms {
         }
     }
 
+    async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        match self {
+            Transforms::CassandraSinkSingle(c) => c.transform_rev(message_wrapper).await,
+            Transforms::CassandraPeersRewrite(c) => c.transform_rev(message_wrapper).await,
+            Transforms::RedisCache(r) => r.transform_rev(message_wrapper).await,
+            Transforms::Tee(m) => m.transform_rev(message_wrapper).await,
+            Transforms::DebugPrinter(p) => p.transform_rev(message_wrapper).await,
+            Transforms::DebugForceParse(p) => p.transform_rev(message_wrapper).await,
+            Transforms::Null(n) => n.transform_rev(message_wrapper).await,
+            #[cfg(test)]
+            Transforms::Loopback(n) => n.transform_rev(message_wrapper).await,
+            Transforms::Protect(p) => p.transform_rev(message_wrapper).await,
+            Transforms::DebugReturner(p) => p.transform_rev(message_wrapper).await,
+            Transforms::DebugRandomDelay(p) => p.transform_rev(message_wrapper).await,
+            Transforms::ConsistentScatter(tc) => tc.transform_rev(message_wrapper).await,
+            Transforms::RedisSinkSingle(r) => r.transform_rev(message_wrapper).await,
+            Transforms::RedisTimestampTagger(r) => r.transform_rev(message_wrapper).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.transform_rev(message_wrapper).await,
+            Transforms::RedisSinkCluster(r) => r.transform_rev(message_wrapper).await,
+            Transforms::ParallelMap(s) => s.transform_rev(message_wrapper).await,
+            Transforms::PoolConnections(s) => s.transform_rev(message_wrapper).await,
+            Transforms::Coalesce(s) => s.transform_rev(message_wrapper).await,
+            Transforms::QueryTypeFilter(s) => s.transform_rev(message_wrapper).await,
+            Transforms::QueryCounter(s) => s.transform_rev(message_wrapper).await,
+            Transforms::RequestThrottling(s) => s.transform_rev(message_wrapper).await,
+        }
+    }
+
     fn get_name(&self) -> &'static str {
         self.into()
     }
@@ -369,6 +397,27 @@ impl<'a> Wrapper<'a> {
         result
     }
 
+    pub async fn call_next_transform_rev(mut self) -> ChainResponse {
+        let transform = match self.transforms.next() {
+            Some(transform) => transform,
+            None => return Ok(self.messages),
+        };
+
+        let transform_name = transform.get_name();
+        let chain_name = self.chain_name.clone();
+
+        let start = Instant::now();
+        let result = CONTEXT_CHAIN_NAME
+            .scope(chain_name, transform.transform_rev(self))
+            .await;
+        counter!("shotover_transform_total", 1, "transform" => transform_name);
+        if result.is_err() {
+            counter!("shotover_transform_failures", 1, "transform" => transform_name)
+        }
+        histogram!("shotover_transform_latency", start.elapsed(),  "transform" => transform_name);
+        result
+    }
+
     #[cfg(test)]
     pub fn new(m: Messages) -> Self {
         Wrapper {
@@ -415,6 +464,11 @@ impl<'a> Wrapper<'a> {
     }
 
     pub fn reset(&mut self, transforms: &'a mut [Transforms]) {
+        self.transforms = transforms.iter_mut();
+    }
+
+    pub fn reset_rev(&mut self, transforms: &'a mut [Transforms]) {
+        transforms.reverse();
         self.transforms = transforms.iter_mut();
     }
 }
@@ -520,6 +574,11 @@ pub trait Transform: Send {
     /// In this example `counter` will contain the count of the number of messages seen for this connection.
     /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
+
+    async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        let response = message_wrapper.call_next_transform_rev().await?;
+        Ok(response)
+    }
 
     /// This method provides a hook into chain setup that allows you to perform any chain setup
     /// needed before receiving traffic. It is generally recommended to do any setup on the first query

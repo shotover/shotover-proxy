@@ -291,6 +291,20 @@ impl TransformChain {
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
     }
+
+    pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> ChainResponse {
+        let start = Instant::now();
+        wrapper.reset_rev(&mut self.chain);
+
+        let result = wrapper.call_next_transform_rev().await;
+        self.chain_total.increment(1);
+        if result.is_err() {
+            self.chain_failures.increment(1);
+        }
+
+        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone());
+        result
+    }
 }
 
 #[cfg(test)]
