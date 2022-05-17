@@ -17,7 +17,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
@@ -449,7 +449,7 @@ impl<C: Codec + 'static> Handler<C> {
                         Err(_) => {
                             if let Some(timeout) =  self.timeout {
                                 if idle_time_seconds < timeout {
-                                    trace!("Connection Idle for more than {} seconds {}", timeout, self.conn_details);
+                                    debug!("Connection Idle for more than {} seconds {}", timeout, self.conn_details);
                                 } else {
                                     debug!("Dropping. Connection Idle for more than {} seconds {}", timeout, self.conn_details);
                                     return Ok(());
