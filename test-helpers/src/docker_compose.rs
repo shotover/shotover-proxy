@@ -111,7 +111,6 @@ impl DockerCompose {
             }
             "example-configs/cassandra-passthrough/docker-compose.yml"
             | "example-configs/cassandra-tls/docker-compose.yml"
-            | "example-configs/cassandra-throttle/docker-compose.yml"
             | "example-configs/cassandra-redis-cache/docker-compose.yml"
             | "example-configs/cassandra-protect-local/docker-compose.yml"
             | "example-configs/cassandra-protect-aws/docker-compose.yml"
