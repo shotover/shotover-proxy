@@ -115,3 +115,32 @@ and use the same query again. You should see the following results returned, not
 ```
 
 If everything has worked, you will be able to use Cassandra, with your connection going through Shotover!
+
+
+#### Adding Rate Limiting
+
+The next section of this tutorial will cover adding rate limiting to your Cassandra cluster with Shotover. We will add the `RequestThrottling` transform to our `topology.yaml` as shown below. This transform should go at the front of the chain to prevent any unnessecary operations from occurring if a query is going to be rate limited.
+
+```YAML
+---
+sources:
+  cassandra_prod:
+    Cassandra:
+      listen_addr: "0.0.0.0:9043"
+chain_config:
+  main_chain:
+    - RequestThrottling:
+        max_requests_per_second: 40000
+    - CassandraPeersRewrite:
+        port: 9043
+    - CassandraSinkSingle:
+        remote_address: "127.0.0.1:9042"
+named_topics:
+  testtopic: 5
+source_to_chain_mapping:
+  cassandra_prod: main_chain
+```
+
+In this example we will set your `max_requests_per_second` to 40,000. This will allow a max of 40,000 queries per second to go through this Shotover instance, across all connections.
+
+After completing this step you can restart your cluster with `docker-compose restart` to enable rate limiting.
