@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::{Message, QueryType};
 use crate::transforms::chain::BufferedChain;
@@ -28,13 +27,13 @@ pub struct ConsistentScatterConfig {
 }
 
 impl ConsistentScatterConfig {
-    pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<Transforms> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
         for (key, value) in &self.route_map {
             route_map.push(
-                build_chain_from_config(key.clone(), value, topics)
+                build_chain_from_config(key.clone(), value)
                     .await?
                     .into_buffered_chain(10),
             );

@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
@@ -51,20 +50,19 @@ pub struct TeeConfig {
 }
 
 impl TeeConfig {
-    pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<Transforms> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let mismatch_chain =
             if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
                 Some(
-                    build_chain_from_config("mismatch_chain".to_string(), mismatch_chain, topics)
+                    build_chain_from_config("mismatch_chain".to_string(), mismatch_chain)
                         .await?
                         .into_buffered_chain(buffer_size),
                 )
             } else {
                 None
             };
-        let tee_chain =
-            build_chain_from_config("tee_chain".to_string(), &self.chain, topics).await?;
+        let tee_chain = build_chain_from_config("tee_chain".to_string(), &self.chain).await?;
 
         Ok(Transforms::Tee(Tee::new(
             tee_chain.into_buffered_chain(buffer_size),
@@ -170,8 +168,8 @@ impl Transform for Tee {
                 let chain_response = chain_result?;
 
                 if !chain_response.eq(&tee_response) {
-                    if let Some(topic) = &mut self.mismatch_chain {
-                        topic.process_request(failed_message, None).await?;
+                    if let Some(mismatch_chain) = &mut self.mismatch_chain {
+                        mismatch_chain.process_request(failed_message, None).await?;
                     }
                 }
 
@@ -184,17 +182,10 @@ impl Transform for Tee {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::topology::TopicHolder;
     use crate::transforms::TransformsConfig;
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_validate_no_subchain() {
-        let holder = TopicHolder {
-            topics_rx: HashMap::new(),
-            topics_tx: HashMap::new(),
-        };
-
         {
             let config = TeeConfig {
                 behavior: Some(ConsistencyBehavior::Ignore),
@@ -202,7 +193,7 @@ mod tests {
                 chain: vec![TransformsConfig::Null],
                 buffer_size: None,
             };
-            let transform = config.get_transform(&holder).await.unwrap();
+            let transform = config.get_transform().await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -214,7 +205,7 @@ mod tests {
                 chain: vec![TransformsConfig::Null],
                 buffer_size: None,
             };
-            let transform = config.get_transform(&holder).await.unwrap();
+            let transform = config.get_transform().await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -222,11 +213,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let holder = TopicHolder {
-            topics_rx: HashMap::new(),
-            topics_tx: HashMap::new(),
-        };
-
         let config = TeeConfig {
             behavior: Some(ConsistencyBehavior::SubchainOnMismatch(vec![
                 TransformsConfig::Null,
@@ -237,7 +223,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_transform(&holder).await.unwrap();
+        let transform = config.get_transform().await.unwrap();
         let result = transform.validate();
         let expected = vec!["Tee:", "  mismatch_chain:", "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain."];
         assert_eq!(result, expected);
@@ -245,11 +231,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let holder = TopicHolder {
-            topics_rx: HashMap::new(),
-            topics_tx: HashMap::new(),
-        };
-
         let config = TeeConfig {
             behavior: Some(ConsistencyBehavior::SubchainOnMismatch(vec![
                 TransformsConfig::Null,
@@ -259,7 +240,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_transform(&holder).await.unwrap();
+        let transform = config.get_transform().await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
