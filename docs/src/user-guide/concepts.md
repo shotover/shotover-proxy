@@ -18,11 +18,3 @@ A transform chain is a ordered list of transforms that a message will pass throu
 ## Topology
 
 A topology is how you configure Shotover. You define your sources, your transforms in a transform chain and then assign the chain to a source.
-
-# Other concepts
-
-## Topics
-
-Shotover has a basic, built-in topic based messaging capability. A transform can access topic channels to publish messages on to. To receive messages, there is a message source that you can assign a chain to. This allows for complex routing and asynchronous passing of messages between transform chains in a topology.
-
-Generally if you want to build blocking behaviour in your chain, you will use transforms that have sub chains. For non-blocking behaviour (e.g. copying a query to a Kafka queue while sending it the upstream service) use topic based transforms.

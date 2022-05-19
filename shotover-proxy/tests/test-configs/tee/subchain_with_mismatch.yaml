@@ -21,7 +21,5 @@ chain_config:
               Redis: "41"
     - DebugReturner:
         Redis: "42"
-named_topics:
-  example: 10
 source_to_chain_mapping:
   redis_1: redis_chain_1

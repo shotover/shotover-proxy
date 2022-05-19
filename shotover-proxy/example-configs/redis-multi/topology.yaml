@@ -21,7 +21,5 @@ chain_config:
             - RedisTimestampTagger
             - RedisSinkSingle:
                 remote_address: "127.0.0.1:3333"
-named_topics:
-  testtopic: 5
 source_to_chain_mapping:
   redis_prod: redis_chain

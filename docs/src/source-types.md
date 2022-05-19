@@ -25,17 +25,6 @@ Cassandra:
   # timeout: 60
 ```
 
-## MPSC
-
-```yaml
-Mpsc:
-  topic_name: "test_topic",
-
-  coalesce_behavior:
-    Count:
-      10000
-```
-
 ## Redis
 
 ```yaml

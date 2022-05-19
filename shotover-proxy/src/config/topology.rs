@@ -19,7 +19,6 @@ pub struct Topology {
 pub struct TopologyConfig {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
-    pub named_topics: Option<HashMap<String, Option<usize>>>,
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
@@ -153,7 +152,6 @@ mod topology_tests {
         let config = TopologyConfig {
             sources,
             chain_config,
-            named_topics: None,
             source_to_chain_mapping: HashMap::new(), // Leave source to chain mapping empty so it doesn't build and run the transform chains
         };
 

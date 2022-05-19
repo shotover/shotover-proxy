@@ -6,7 +6,5 @@ sources:
 chain_config:
   main_chain:
     - Null
-named_topics:
-  testtopic: 5
 source_to_chain_mapping:
   cassandra_prod: main_chain

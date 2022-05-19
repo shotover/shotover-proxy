@@ -8,7 +8,5 @@ chain_config:
     - QueryCounter:
         name: redis-chain
     - Null
-named_topics:
-  testtopic: 5
 source_to_chain_mapping:
   redis_prod: redis_chain
