@@ -17,7 +17,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
@@ -96,6 +96,9 @@ pub struct TcpCodecListener<C: Codec> {
     message_count: u64,
 
     available_connections_gauge: Gauge,
+
+    /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
+    timeout: Option<u64>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
@@ -109,6 +112,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         limit_connections: Arc<Semaphore>,
         trigger_shutdown_rx: watch::Receiver<bool>,
         tls: Option<TlsAcceptor>,
+        timeout: Option<u64>,
     ) -> Result<Self> {
         let available_connections_gauge =
             register_gauge!("shotover_available_connections", "source" => source_name.clone());
@@ -128,6 +132,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             tls,
             message_count: 0,
             available_connections_gauge,
+            timeout,
         })
     }
 
@@ -222,6 +227,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
                 tls: self.tls.clone(),
+
+                timeout: self.timeout,
             };
 
             self.message_count = self.message_count.wrapping_add(1);
@@ -345,6 +352,9 @@ pub struct Handler<C: Codec> {
     shutdown: Shutdown,
 
     tls: Option<TlsAcceptor>,
+
+    /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
+    timeout: Option<u64>,
 }
 
 fn spawn_read_write_tasks<
@@ -437,13 +447,13 @@ impl<C: Codec + 'static> Handler<C> {
                             }
                         },
                         Err(_) => {
-                            if idle_time_seconds < 35 {
-                                trace!("Connection Idle for more than {} seconds {}",
-                                    idle_time_seconds, self.conn_details);
-                            } else {
-                                debug!("Dropping. Connection Idle for more than {} seconds {}",
-                                    idle_time_seconds, self.conn_details);
-                                return Ok(());
+                            if let Some(timeout) =  self.timeout {
+                                if idle_time_seconds < timeout {
+                                    debug!("Connection Idle for more than {} seconds {}", timeout, self.conn_details);
+                                } else {
+                                    debug!("Dropping. Connection Idle for more than {} seconds {}", timeout, self.conn_details);
+                                    return Ok(());
+                                }
                             }
                             idle_time_seconds *= 2;
                             continue
