@@ -1,19 +1,39 @@
-use crate::config::topology::ChannelMessage;
 use crate::error::ChainResponse;
+use crate::message::Messages;
 use crate::transforms::{Transforms, Wrapper};
 use anyhow::{anyhow, Result};
-use futures::TryFutureExt;
-
 use derivative::Derivative;
+use futures::TryFutureExt;
 use itertools::Itertools;
 use metrics::{histogram, register_counter, register_histogram, Counter};
-use tokio::sync::mpsc::Sender;
-use tokio::sync::oneshot::Receiver as OneReceiver;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, error, info, trace, Instrument};
 
 type InnerChain = Vec<Transforms>;
+
+#[derive(Debug)]
+pub struct BufferedChainMessage {
+    pub messages: Messages,
+    pub return_chan: Option<oneshot::Sender<crate::error::ChainResponse>>,
+}
+
+impl BufferedChainMessage {
+    pub fn new_with_no_return(m: Messages) -> Self {
+        BufferedChainMessage {
+            messages: m,
+            return_chan: None,
+        }
+    }
+
+    pub fn new(m: Messages, return_chan: oneshot::Sender<ChainResponse>) -> Self {
+        BufferedChainMessage {
+            messages: m,
+            return_chan: Some(return_chan),
+        }
+    }
+}
 
 //TODO explore running the transform chain on a LocalSet for better locality to a given OS thread
 //Will also mean we can have `!Send` types  in our transform chain
@@ -38,7 +58,7 @@ pub struct TransformChain {
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
     pub original_chain: TransformChain,
-    send_handle: Sender<ChannelMessage>,
+    send_handle: mpsc::Sender<BufferedChainMessage>,
     #[cfg(test)]
     pub count: std::sync::Arc<tokio::sync::Mutex<usize>>,
 }
@@ -63,19 +83,19 @@ impl BufferedChain {
         &mut self,
         wrapper: Wrapper<'_>,
         buffer_timeout_micros: Option<u64>,
-    ) -> Result<OneReceiver<ChainResponse>> {
-        let (one_tx, one_rx) = tokio::sync::oneshot::channel::<ChainResponse>();
+    ) -> Result<oneshot::Receiver<ChainResponse>> {
+        let (one_tx, one_rx) = oneshot::channel::<ChainResponse>();
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(ChannelMessage::new(wrapper.messages, one_tx))
+                    .send(BufferedChainMessage::new(wrapper.messages, one_tx))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        ChannelMessage::new(wrapper.messages, one_tx),
+                        BufferedChainMessage::new(wrapper.messages, one_tx),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -94,14 +114,14 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(ChannelMessage::new_with_no_return(wrapper.messages))
+                    .send(BufferedChainMessage::new_with_no_return(wrapper.messages))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        ChannelMessage::new_with_no_return(wrapper.messages),
+                        BufferedChainMessage::new_with_no_return(wrapper.messages),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -114,7 +134,7 @@ impl BufferedChain {
 
 impl TransformChain {
     pub fn into_buffered_chain(self, buffer_size: usize) -> BufferedChain {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMessage>(buffer_size);
+        let (tx, mut rx) = mpsc::channel::<BufferedChainMessage>(buffer_size);
 
         #[cfg(test)]
         let count = std::sync::Arc::new(tokio::sync::Mutex::new(0_usize));
@@ -126,7 +146,7 @@ impl TransformChain {
         let mut chain = self.clone();
         let _jh = tokio::spawn(
             async move {
-                while let Some(ChannelMessage {
+                while let Some(BufferedChainMessage {
                     return_chan,
                     messages,
                 }) = rx.recv().await
