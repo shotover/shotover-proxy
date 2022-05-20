@@ -76,7 +76,7 @@ pub struct RedisSinkCluster {
     rng: SmallRng,
     connection_count: usize,
     connection_pool: ConnectionPool<RedisCodec, RedisAuthenticator, UsernamePasswordToken>,
-    connection_error: Option<&'static str>,
+    reason_for_no_nodes: Option<&'static str>,
     rebuild_connections: bool,
     first_contact_points: Vec<String>,
     token: Option<UsernamePasswordToken>,
@@ -101,7 +101,7 @@ impl RedisSinkCluster {
             first_contact_points,
             connection_count,
             connection_pool,
-            connection_error: None,
+            reason_for_no_nodes: None,
             rebuild_connections: false,
             token: None,
         };
@@ -141,7 +141,7 @@ impl RedisSinkCluster {
             // Return an error as we cant send anything if there are no channels.
             0 => {
                 let (one_tx, one_rx) = immediate_responder();
-                match self.connection_error {
+                match self.reason_for_no_nodes {
                     Some(message) => {
                         self.send_error_response(one_tx, message).ok();
                     }
@@ -270,13 +270,13 @@ impl RedisSinkCluster {
                 self.slots = slots;
                 self.channels = channels;
 
-                self.connection_error = None;
+                self.reason_for_no_nodes = None;
                 self.rebuild_connections = false;
                 Ok(())
             }
             Err(err @ TransformError::Upstream(RedisError::NotAuthenticated)) => {
                 // Assume retry is pointless if authentication is required.
-                self.connection_error = Some("NOAUTH Authentication required (cached)");
+                self.reason_for_no_nodes = Some("NOAUTH Authentication required (cached)");
                 self.rebuild_connections = false;
                 Err(err)
             }
