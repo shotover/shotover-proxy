@@ -97,18 +97,10 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         );
 
         let mut lanes = self.lanes.lock().await;
-        let lane = lanes.entry(token.clone()).or_insert_with(HashMap::new);
-        let address = address.to_string();
+        let lane = lanes.entry(token.clone()).or_default();
 
-        let mut connections: Vec<Connection> = lane
-            .get_mut(&address)
-            .map(|existing_connections| {
-                existing_connections.retain(|connection| !connection.is_closed());
-                existing_connections.iter().take(connection_count).cloned()
-            })
-            .into_iter()
-            .flatten()
-            .collect();
+        let connections = lane.entry(address.to_string()).or_default();
+        connections.retain(|connection| !connection.is_closed());
 
         let shortfall_count = connection_count.saturating_sub(connections.len());
 
@@ -116,16 +108,14 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
             // IDEA: Set min/max connections at the pool level? Limit number of new connections per call?
             connections.append(
                 &mut self
-                    .new_unpooled_connections(&address, token, shortfall_count)
+                    .new_unpooled_connections(address, token, shortfall_count)
                     .await?,
             );
         }
 
-        // NOTE: This replaces the whole lane, disowning the old one.
         // IDEA: Maintain weak references so the pool can track disowned connections?
-        lane.insert(address, connections.clone());
 
-        Ok(connections)
+        Ok(connections[..connection_count].to_vec())
     }
 
     async fn new_unpooled_connections(
