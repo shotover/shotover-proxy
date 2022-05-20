@@ -9,7 +9,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{FQName, Operand};
+use cql3_parser::common::{FQName, Identifier, Operand};
 use cql3_parser::insert::InsertValues;
 use cql3_parser::select::{Select, SelectElement};
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,8 @@ mod pkcs_11;
 
 #[derive(Clone)]
 pub struct Protect {
-    keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
+    /// map of keyspace Identifiers to map of table Identifiers to column Identifiers
+    keyspace_table_columns: HashMap<Identifier, HashMap<Identifier, Vec<Identifier>>>,
     key_source: KeyManager,
     // TODO this should be a function to create key_ids based on "something", e.g. primary key
     // for the moment this is just a string
@@ -52,11 +53,11 @@ impl Protect {
 
     /// get the list of protected columns for the specified table name.  Will return `None` if no columns
     /// are defined for the table.
-    fn get_protected_columns(&self, table_name: &FQName) -> Option<&Vec<String>> {
+    fn get_protected_columns(&self, table_name: &FQName) -> Option<&Vec<Identifier>> {
         // TODO replace "" with cached keyspace name
         if let Some(tables) = self
             .keyspace_table_columns
-            .get(table_name.extract_keyspace(""))
+            .get(table_name.extract_keyspace(&Identifier::default()))
         {
             tables.get(&table_name.name)
         } else {
@@ -149,7 +150,7 @@ impl Protect {
     async fn process_select(
         &self,
         select: &Select,
-        columns: &[String],
+        columns: &[Identifier],
         rows: &mut Vec<Vec<MessageValue>>,
     ) -> Result<bool> {
         let mut modified = false;
@@ -197,7 +198,7 @@ pub struct KeyMaterial {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ProtectConfig {
-    pub keyspace_table_columns: HashMap<String, HashMap<String, Vec<String>>>,
+    pub keyspace_table_columns: HashMap<Identifier, HashMap<Identifier, Vec<Identifier>>>,
     pub key_manager: KeyManagerConfig,
 }
 
@@ -390,7 +391,7 @@ mod test {
     use crate::transforms::protect::{Protect, Protected};
     use bytes::Bytes;
     use cql3_parser::cassandra_statement::CassandraStatement;
-    use cql3_parser::common::Operand;
+    use cql3_parser::common::{Identifier, Operand};
     use cql3_parser::insert::InsertValues;
     use sodiumoxide::crypto::secretbox::Nonce;
     use std::collections::HashMap;
@@ -441,11 +442,11 @@ mod test {
             kek_id: "".to_string(),
         };
 
-        let cols = vec!["col1".to_string()];
+        let cols = vec![Identifier::parse("col1")];
         let mut tables = HashMap::new();
-        tables.insert("test_table".to_string(), cols.clone());
+        tables.insert(Identifier::parse("test_table"), cols.clone());
         let mut keyspace_table_columns = HashMap::new();
-        keyspace_table_columns.insert("".to_string(), tables);
+        keyspace_table_columns.insert(Default::default(), tables);
         let protect = Protect {
             keyspace_table_columns,
             key_source: KeyManager::Local(local_key_mgr),

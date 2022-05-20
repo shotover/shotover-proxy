@@ -13,8 +13,8 @@ use bytes::Bytes;
 use cassandra_protocol::frame::Serialize;
 use cassandra_protocol::frame::Version;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{Operand, RelationElement, RelationOperator};
-use cql3_parser::select::{Named, Select, SelectElement};
+use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, RelationOperator};
+use cql3_parser::select::Select;
 use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
@@ -38,10 +38,10 @@ metadata - serialized form of the metadata from cassandra.
 
  */
 enum CacheableState {
-    Read { table_name: String },
-    Update { table_name: String },
-    Delete { table_name: String },
-    Drop { table_name: String },
+    Read { table_name: FQName },
+    Update { table_name: FQName },
+    Delete { table_name: FQName },
+    Drop { table_name: FQName },
     Skip { reason: String },
     Err { reason: String },
 }
@@ -73,24 +73,48 @@ impl Display for CacheableState {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisConfig {
-    pub caching_schema: HashMap<String, TableCacheSchema>,
+    pub caching_schema: HashMap<String, TableCacheSchemaConfig>,
     pub chain: Vec<TransformsConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct TableCacheSchema {
+pub struct TableCacheSchemaConfig {
     partition_key: Vec<String>,
     range_key: Vec<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct TableCacheSchema {
+    partition_key: Vec<Identifier>,
+    range_key: Vec<Identifier>,
+}
+
+impl From<&TableCacheSchemaConfig> for TableCacheSchema {
+    fn from(cfg: &TableCacheSchemaConfig) -> Self {
+        TableCacheSchema {
+            partition_key: cfg
+                .partition_key
+                .iter()
+                .map(|s| Identifier::parse(s))
+                .collect(),
+            range_key: cfg.range_key.iter().map(|s| Identifier::parse(s)).collect(),
+        }
+    }
 }
 
 impl RedisConfig {
     pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
         let missed_requests = register_counter!("cache_miss");
 
+        let mut caching_schema: HashMap<FQName, TableCacheSchema> = HashMap::new();
+        self.caching_schema.iter().for_each(|(k, v)| {
+            caching_schema.insert(FQName::parse(k), v.into());
+        });
+
         Ok(Transforms::RedisCache(SimpleRedisCache {
             cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, topics)
                 .await?,
-            caching_schema: self.caching_schema.clone(),
+            caching_schema,
             missed_requests,
         }))
     }
@@ -99,7 +123,7 @@ impl RedisConfig {
 #[derive(Clone)]
 pub struct SimpleRedisCache {
     cache_chain: TransformChain,
-    caching_schema: HashMap<String, TableCacheSchema>,
+    caching_schema: HashMap<FQName, TableCacheSchema>,
     missed_requests: Counter,
 }
 
@@ -122,9 +146,7 @@ impl SimpleRedisCache {
                         let mut state = is_cacheable(statement);
                         if let CacheableState::Read { table_name } = &mut state {
                             debug!("build_cache_query processing cacheable state");
-                            if let Some(table_cache_schema) =
-                                self.caching_schema.get(table_name.as_str())
-                            {
+                            if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
                                 match build_redis_key_from_cql3(statement, table_cache_schema) {
                                     Ok((redis_key, hash_key)) => {
                                         trace!(
@@ -368,7 +390,7 @@ impl SimpleRedisCache {
                 }
             })
             .next();
-        let result_messages = &mut message_wrapper.call_next_transform().await?;
+        let mut result_messages = message_wrapper.call_next_transform().await?;
         if let Some(orig_cql) = orig_cql {
             let mut cache_messages: Vec<Message> = vec![];
             for (response, statement) in result_messages.iter_mut().zip(orig_cql.statements.iter())
@@ -397,9 +419,7 @@ impl SimpleRedisCache {
                             self.clear_table_cache();
                         }
                         CacheableState::Read { table_name } => {
-                            if let Some(table_cache_schema) =
-                                self.caching_schema.get(table_name.as_str())
-                            {
+                            if let Some(table_cache_schema) = self.caching_schema.get(&table_name) {
                                 if let Ok((redis_key, hash_key)) =
                                     build_redis_key_from_cql3(statement, table_cache_schema)
                                 {
@@ -439,7 +459,7 @@ impl SimpleRedisCache {
                 }
             }
         }
-        Ok(result_messages.to_vec())
+        Ok(result_messages)
     }
 }
 
@@ -458,7 +478,7 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
             CassandraStatement::Select(select) => {
                 if has_params {
                     CacheableState::Delete {
-                        table_name: table_name.into(),
+                        table_name: table_name.clone(),
                     }
                 } else if select.filtering {
                     CacheableState::Skip {
@@ -470,28 +490,28 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
                     }
                 } else {
                     CacheableState::Read {
-                        table_name: table_name.to_string(),
+                        table_name: table_name.clone(),
                     }
                 }
             }
             CassandraStatement::Insert(insert) => {
                 if has_params || insert.if_not_exists {
                     CacheableState::Delete {
-                        table_name: table_name.into(),
+                        table_name: table_name.clone(),
                     }
                 } else {
                     CacheableState::Update {
-                        table_name: table_name.into(),
+                        table_name: table_name.clone(),
                     }
                 }
             }
             CassandraStatement::DropTable(_) => CacheableState::Drop {
-                table_name: table_name.into(),
+                table_name: table_name.clone(),
             },
             CassandraStatement::Update(update) => {
                 if has_params || update.if_exists {
                     CacheableState::Delete {
-                        table_name: table_name.into(),
+                        table_name: table_name.clone(),
                     }
                 } else {
                     for assignment_element in &update.assignments {
@@ -501,7 +521,7 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
                                 update.table_name, assignment_element.name
                             );
                             return CacheableState::Delete {
-                                table_name: table_name.into(),
+                                table_name: table_name.clone(),
                             };
                         }
                         if assignment_element.name.idx.is_some() {
@@ -510,12 +530,12 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
                                 update.table_name, assignment_element.name
                             );
                             return CacheableState::Delete {
-                                table_name: table_name.into(),
+                                table_name: table_name.clone(),
                             };
                         }
                     }
                     CacheableState::Update {
-                        table_name: table_name.into(),
+                        table_name: table_name.clone(),
                     }
                 }
             }
@@ -536,14 +556,13 @@ fn is_cacheable(statement: &CassandraStatement) -> CacheableState {
 /// the cassandra range key (may be partially specified)
 fn build_query_redis_key_from_value_map(
     table_cache_schema: &TableCacheSchema,
-    query_values: &BTreeMap<String, Vec<RelationElement>>,
+    query_values: &BTreeMap<Operand, Vec<RelationElement>>,
     table_name: &str,
 ) -> Result<Bytes, CacheableState> {
     let mut key = table_name.as_bytes().to_vec();
-    for c_name in &table_cache_schema.partition_key {
-        let column_name = c_name.to_lowercase();
+    for column_name in &table_cache_schema.partition_key {
         debug!("processing partition key segment: {}", column_name);
-        match query_values.get(column_name.as_str()) {
+        match query_values.get(&Operand::Column(column_name.clone())) {
             None => {
                 return Err(CacheableState::Skip {
                     reason: format!(
@@ -572,9 +591,8 @@ fn build_query_redis_key_from_value_map(
     }
     let mut skipping = false;
 
-    for c_name in &table_cache_schema.range_key {
-        let column_name = c_name.to_lowercase();
-        match query_values.get(column_name.as_str()) {
+    for column_name in &table_cache_schema.range_key {
+        match query_values.get(&Operand::Column(column_name.clone())) {
             None => {
                 skipping = true;
             }
@@ -611,37 +629,21 @@ fn build_query_redis_key_from_value_map(
 /// the cassandra range key (may be partially specified)
 fn build_query_redis_hash_from_value_map(
     table_cache_schema: &TableCacheSchema,
-    query_values: &BTreeMap<String, Vec<RelationElement>>,
+    query_values: &BTreeMap<Operand, Vec<RelationElement>>,
     select: &Select,
 ) -> Result<Bytes, CacheableState> {
     let mut my_values = query_values.clone();
-    for c_name in &table_cache_schema.partition_key {
-        let column_name = c_name.to_lowercase();
-        my_values.remove(&column_name);
+    for column_name in &table_cache_schema.partition_key {
+        my_values.remove(&Operand::Column(column_name.clone()));
     }
-    for c_name in &table_cache_schema.range_key {
-        let column_name = c_name.to_lowercase();
-        my_values.remove(&column_name);
+    for column_name in &table_cache_schema.range_key {
+        my_values.remove(&Operand::Column(column_name.clone()));
     }
 
     let mut str = if select.columns.is_empty() {
         String::from("WHERE ")
     } else {
-        let mut tmp = select
-            .columns
-            .iter()
-            .map(|select_element| match select_element {
-                SelectElement::Star => SelectElement::Star,
-                SelectElement::Column(named) => SelectElement::Column(Named {
-                    name: named.name.to_lowercase(),
-                    alias: named.alias.as_ref().map(|name| name.to_lowercase()),
-                }),
-                SelectElement::Function(named) => SelectElement::Function(Named {
-                    name: named.name.to_lowercase(),
-                    alias: named.alias.as_ref().map(|name| name.to_lowercase()),
-                }),
-            })
-            .join(", ");
+        let mut tmp = select.columns.iter().join(", ");
         tmp.push_str(" WHERE ");
         tmp
     };
@@ -658,16 +660,15 @@ fn build_query_redis_hash_from_value_map(
 }
 
 fn populate_value_map_from_where_clause(
-    value_map: &mut BTreeMap<String, Vec<RelationElement>>,
+    value_map: &mut BTreeMap<Operand, Vec<RelationElement>>,
     where_clause: &[RelationElement],
 ) {
     for relation_element in where_clause {
-        let column_name = relation_element.obj.to_string().to_lowercase();
-        let value = value_map.get_mut(column_name.as_str());
+        let value = value_map.get_mut(&relation_element.obj);
         if let Some(vec) = value {
             vec.push(relation_element.clone())
         } else {
-            value_map.insert(column_name, vec![relation_element.clone()]);
+            value_map.insert(relation_element.obj.clone(), vec![relation_element.clone()]);
         };
     }
 }
@@ -676,7 +677,7 @@ fn build_redis_key_from_cql3(
     statement: &CassandraStatement,
     table_cache_schema: &TableCacheSchema,
 ) -> Result<(Bytes, Bytes), CacheableState> {
-    let mut value_map: BTreeMap<String, Vec<RelationElement>> = BTreeMap::new();
+    let mut value_map: BTreeMap<Operand, Vec<RelationElement>> = BTreeMap::new();
     match statement {
         CassandraStatement::Select(select) => {
             populate_value_map_from_where_clause(&mut value_map, &select.where_clause);
@@ -691,18 +692,18 @@ fn build_redis_key_from_cql3(
         }
 
         CassandraStatement::Insert(insert) => {
-            for (c_name, operand) in insert.get_value_map().into_iter() {
-                let column_name = c_name.to_lowercase();
+            for (column_name, operand) in insert.get_value_map().into_iter() {
                 let relation_element = RelationElement {
                     obj: Operand::Column(column_name.clone()),
                     oper: RelationOperator::Equal,
                     value: operand.clone(),
                 };
-                let value = value_map.get_mut(column_name.as_str());
+                let key = Operand::Column(column_name.clone());
+                let value = value_map.get_mut(&key);
                 if let Some(vec) = value {
                     vec.push(relation_element)
                 } else {
-                    value_map.insert(column_name, vec![relation_element]);
+                    value_map.insert(key, vec![relation_element]);
                 };
             }
             Ok((
@@ -811,6 +812,7 @@ mod test {
     use crate::transforms::{Transform, Transforms};
     use bytes::{Bytes, BytesMut};
     use cql3_parser::cassandra_statement::CassandraStatement;
+    use cql3_parser::common::Identifier;
     use metrics::register_counter;
     use std::collections::HashMap;
 
@@ -825,8 +827,8 @@ mod test {
     #[test]
     fn equal_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
-            range_key: vec!["x".to_string(), "y".to_string()],
+            partition_key: vec![Identifier::parse("z")],
+            range_key: vec![Identifier::parse("x"), Identifier::parse("y")],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
@@ -842,7 +844,7 @@ mod test {
     #[test]
     fn insert_simple_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
+            partition_key: vec![Identifier::parse("z")],
             range_key: vec![],
         };
 
@@ -859,8 +861,8 @@ mod test {
     #[test]
     fn insert_simple_clustering_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
-            range_key: vec!["c".to_string()],
+            partition_key: vec![Identifier::parse("z")],
+            range_key: vec![Identifier::parse("c")],
         };
 
         let ast = build_query("INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)");
@@ -875,7 +877,7 @@ mod test {
     #[test]
     fn update_simple_clustering_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
+            partition_key: vec![Identifier::parse("z")],
             range_key: vec![],
         };
 
@@ -891,8 +893,8 @@ mod test {
     #[test]
     fn check_deterministic_order_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
-            range_key: vec!["x".to_string(), "y".to_string()],
+            partition_key: vec![Identifier::parse("z")],
+            range_key: vec![Identifier::parse("x"), Identifier::parse("y")],
         };
 
         let ast = build_query("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
@@ -915,7 +917,7 @@ mod test {
     #[test]
     fn range_exclusive_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
+            partition_key: vec![Identifier::parse("z")],
             range_key: vec![],
         };
 
@@ -932,7 +934,7 @@ mod test {
     #[test]
     fn range_inclusive_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
+            partition_key: vec![Identifier::parse("z")],
             range_key: vec![],
         };
 
@@ -949,7 +951,7 @@ mod test {
     #[test]
     fn single_pk_only_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["id".to_string()],
+            partition_key: vec![Identifier::parse("id")],
             range_key: vec![],
         };
 
@@ -970,7 +972,7 @@ mod test {
     #[test]
     fn compound_pk_only_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string(), "y".to_string()],
+            partition_key: vec![Identifier::parse("z"), Identifier::parse("y")],
             range_key: vec![],
         };
 
@@ -987,7 +989,7 @@ mod test {
     #[test]
     fn open_range_test() {
         let table_cache_schema = TableCacheSchema {
-            partition_key: vec!["z".to_string()],
+            partition_key: vec![Identifier::parse("z")],
             range_key: vec![],
         };
 

@@ -22,7 +22,7 @@ use cassandra_protocol::types::cassandra_type::CassandraType;
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{FQName, Operand};
+use cql3_parser::common::{FQName, Identifier, Operand};
 use itertools::Itertools;
 use nonzero_ext::nonzero;
 use sodiumoxide::hex;
@@ -308,7 +308,7 @@ impl CassandraFrame {
     }
 
     /// returns a list of unique keyspace (namespace) from the table names in the statement(s).
-    pub fn namespace(&mut self) -> Vec<String> {
+    pub fn namespace(&mut self) -> Vec<Identifier> {
         self.get_table_names()
             .into_iter()
             .filter_map(|fq_name| fq_name.keyspace.clone())
@@ -855,7 +855,7 @@ mod test {
     use cassandra_protocol::types::cassandra_type::CassandraType;
     use cassandra_protocol::types::prelude::Blob;
     use cql3_parser::cassandra_statement::CassandraStatement;
-    use cql3_parser::common::Operand;
+    use cql3_parser::common::{Identifier, Operand};
     use std::net::IpAddr;
     use std::str::FromStr;
     use uuid::Uuid;
@@ -1136,11 +1136,11 @@ mod test {
     pub fn test_to_cassandra_type_for_misc_operands() {
         assert_eq!(
             CassandraType::Ascii("Hello".to_string()),
-            Operand::Column("Hello".to_string()).as_cassandra_type()
+            Operand::Column(Identifier::parse("Hello")).as_cassandra_type()
         );
         assert_eq!(
             CassandraType::Ascii("Hello".to_string()),
-            Operand::Func("Hello".to_string()).as_cassandra_type()
+            Operand::Func(Identifier::parse("Hello")).as_cassandra_type()
         );
         assert_eq!(CassandraType::Null, Operand::Null.as_cassandra_type());
         assert_eq!(

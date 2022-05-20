@@ -19,7 +19,7 @@ use cassandra_protocol::{
         CBytes,
     },
 };
-use cql3_parser::common::{DataTypeName, Operand};
+use cql3_parser::common::{DataTypeName, Identifier, Operand};
 use itertools::Itertools;
 use nonzero_ext::nonzero;
 use num::BigInt;
@@ -199,7 +199,7 @@ impl Message {
     }
 
     /// Returns None when fails to parse the message
-    pub fn namespace(&mut self) -> Option<Vec<String>> {
+    pub fn namespace(&mut self) -> Option<Vec<Identifier>> {
         match self.frame()? {
             Frame::Cassandra(cassandra) => Some(cassandra.namespace()),
             Frame::Redis(_) => unimplemented!(),

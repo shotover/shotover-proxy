@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Result;
 use async_trait::async_trait;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::FQName;
+use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -45,7 +45,7 @@ impl Transform for CassandraPeersRewrite {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of queries to system.peers & system.peers_v2
         // we need to know which columns in which CQL queries in which messages have system peers
-        let column_names: HashMap<usize, Vec<String>> = message_wrapper
+        let column_names: HashMap<usize, Vec<Identifier>> = message_wrapper
             .messages
             .iter_mut()
             .enumerate()
@@ -71,8 +71,9 @@ impl Transform for CassandraPeersRewrite {
 
 /// determine if the message contains a SELECT from `system.peers_v2` that includes the `native_port` column
 /// return a list of column names (or their alias) for each `native_port`.
-fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec<String> {
-    let mut result: Vec<String> = vec![];
+fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec<Identifier> {
+    let mut result: Vec<Identifier> = vec![];
+    let native_port = Identifier::parse("native_port");
     if let Some(Frame::Cassandra(cassandra)) = message.frame() {
         if let CassandraOperation::Query { query, .. } = &cassandra.operation {
             for statement in &query.statements {
@@ -81,11 +82,11 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
                         for select_element in &select.columns {
                             match select_element {
                                 SelectElement::Column(col_name) => {
-                                    if col_name.name == "native_port" {
-                                        result.push(col_name.alias_or_name().to_string());
+                                    if col_name.name == native_port {
+                                        result.push(col_name.alias_or_name().clone());
                                     }
                                 }
-                                SelectElement::Star => result.push("native_port".to_string()),
+                                SelectElement::Star => result.push(native_port.clone()),
                                 _ => {}
                             }
                         }
@@ -99,7 +100,7 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
 
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
-fn rewrite_port(message: &mut Message, column_names: &[String], new_port: u32) {
+fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u32) {
     if let Some(Frame::Cassandra(frame)) = message.frame() {
         if let CassandraOperation::Result(CassandraResult::Rows { value, metadata }) =
             &mut frame.operation
@@ -109,7 +110,7 @@ fn rewrite_port(message: &mut Message, column_names: &[String], new_port: u32) {
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, col)| {
-                    if column_names.contains(&col.name) {
+                    if column_names.contains(&Identifier::parse(&col.name)) {
                         Some(idx)
                     } else {
                         None
@@ -198,12 +199,15 @@ mod test {
 
     #[test]
     fn test_is_system_peers_v2() {
+        let native_port = Identifier::parse("native_port");
+        let foo = Identifier::parse("foo");
+
         let peer_table = FQName::new("system", "peers_v2");
         let v = extract_native_port_column(
             &peer_table,
             &mut create_query_message("SELECT * FROM system.peers_v2;"),
         );
-        assert_eq!(vec!("native_port".to_string()), v);
+        assert_eq!(vec!(native_port.clone()), v);
 
         let v = extract_native_port_column(
             &peer_table,
@@ -215,7 +219,7 @@ mod test {
             &peer_table,
             &mut create_query_message("SELECT native_port as foo from system.peers_v2"),
         );
-        assert_eq!(vec!("foo".to_string()), v);
+        assert_eq!(vec!(foo.clone()), v);
 
         let v = extract_native_port_column(
             &peer_table,
@@ -223,7 +227,7 @@ mod test {
                 "SELECT native_port as foo, native_port from system.peers_v2",
             ),
         );
-        assert_eq!(vec!["foo".to_string(), "native_port".to_string()], v);
+        assert_eq!(vec![foo, native_port], v);
     }
 
     #[test]
@@ -246,7 +250,7 @@ mod test {
             ],
         );
 
-        rewrite_port(&mut message, &["native_port".to_string()], 9043);
+        rewrite_port(&mut message, &[Identifier::parse("native_port")], 9043);
 
         let expected = create_response_message(
             &col_spec,
@@ -288,7 +292,10 @@ mod test {
 
         rewrite_port(
             &mut original,
-            &["native_port".to_string(), "alias_port".to_string()],
+            &[
+                Identifier::parse("native_port"),
+                Identifier::parse("alias_port"),
+            ],
             9043,
         );
 
@@ -358,7 +365,10 @@ mod test {
 
         rewrite_port(
             &mut original,
-            &["native_port".to_string(), "alias_port".to_string()],
+            &[
+                Identifier::parse("native_port"),
+                Identifier::parse("alias_port"),
+            ],
             9043,
         );
 
