@@ -35,7 +35,7 @@ pub struct Protect {
 }
 
 impl Protect {
-    /// encodes a Protected object into a byte array.  This is here to centeralize the serde for
+    /// encodes a Protected object into a byte array.  This is here to centralize the serde for
     /// the Protected object.
     /// Returns an error if a Plaintext Protected object is passed
     fn encode(protected: &Protected) -> Result<Vec<u8>> {
@@ -54,7 +54,7 @@ impl Protect {
     /// get the list of protected columns for the specified table name.  Will return `None` if no columns
     /// are defined for the table.
     fn get_protected_columns(&self, table_name: &FQName) -> Option<&Vec<Identifier>> {
-        // TODO replace "" with cached keyspace name
+        // TODO replace `Identifier::default()` with cached keyspace name
         if let Some(tables) = self
             .keyspace_table_columns
             .get(table_name.extract_keyspace(&Identifier::default()))
@@ -65,7 +65,7 @@ impl Protect {
         }
     }
 
-    /// extractes the protected object from the message value.  Resulting object is a Protected::Ciphertext
+    /// extracts the protected object from the message value.  Resulting object is a Protected::Ciphertext
     fn extract_protected(&self, value: &MessageValue) -> Result<Protected> {
         match value {
             MessageValue::Bytes(b) => Protect::decode(&b[..]),
@@ -82,9 +82,6 @@ impl Protect {
 
     /// determines if columns in the CassandraStatement need to be encrypted and encrypts them.  Returns `true` if any columns were changed.
     ///  * `statement` the statement to encrypt.
-    ///  * `columns` the column names to encrypt.
-    ///  * `key_source` the key manager with encryption keys.
-    ///  * `key_id` the key within the manager to use.
     async fn encrypt_columns(&self, statement: &mut CassandraStatement) -> Result<bool> {
         let mut data_changed = false;
         if let Some(table_name) = cql_statement::get_table_name(statement) {
@@ -235,7 +232,6 @@ fn decrypt(ciphertext: Vec<u8>, nonce: Nonce, sym_key: &Key) -> Result<MessageVa
     Ok(decrypted_value)
 }
 
-// TODO: Switch to something smaller/more efficient like bincode - Need the new cassandra AST first so we can create Blob's in the ast
 impl From<Protected> for MessageValue {
     fn from(p: Protected) -> Self {
         match p {
@@ -243,7 +239,6 @@ impl From<Protected> for MessageValue {
                 "tried to move unencrypted value to plaintext without explicitly calling decrypt"
             ),
             Protected::Ciphertext { .. } => {
-                //MessageValue::Bytes(Bytes::from(serde_json::to_vec(&p).unwrap()))
                 MessageValue::Bytes(Bytes::from(bincode::serialize(&p).unwrap()))
             }
         }

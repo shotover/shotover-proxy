@@ -121,3 +121,20 @@ results may modify the cache.  Any command with a cacheable state of
 Read, Update or Delete is processed again on return and the cache updated 
 appropriately.
 
+### Conceptual process flow
+
+Conceptually the code has 4 vectors of messages, each vec can be considered its own stage of processing.
+ 1. `messages_cass_request`:
+     * the cassandra requests that the transform receives.
+ 2. `messages_redis_request`:
+     * each query in each cassandra request in `messages_cass_request`, if it is cacheable, is transformed into a redis request
+     * each request gets sent to the redis server
+ 3. `messages_redis_response`:
+     * the redis responses we get back from the server
+ 4. `messages_cass_response`:
+     * for cached queries we return the result from the cache.
+     * otherwise we forward the request to the source and return the result while monitoring for:
+       * Queries that cause eviction of data from the cache: delete, insert, update, etc.
+       * Queries that update data in the cache: Select.
+    
+

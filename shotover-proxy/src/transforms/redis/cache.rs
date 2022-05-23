@@ -230,39 +230,34 @@ impl SimpleRedisCache {
                         match redis_response.frame() {
                             Some(Frame::Redis(redis_frame)) => {
                                 match redis_frame {
-                                    RedisFrame::SimpleString(_) => Err(CacheableState::Err {
-                                        reason: "Redis returned a simple string".into(),
-                                    }),
                                     RedisFrame::Error(e) => {
                                         return Err(CacheableState::Err {
                                             reason: e.to_string(),
                                         })
                                     }
-                                    RedisFrame::Integer(_) => Err(CacheableState::Err {
-                                        reason: "Redis returned an int value".into(),
-                                    }),
                                     RedisFrame::BulkString(redis_bytes) => {
                                         // Redis response contains serialized version of result struct from CassandraOperation::Result( result )
                                         let mut cursor = Cursor::new(redis_bytes.as_ref());
-                                        let answer =
-                                            CassandraResult::from_cursor(&mut cursor, Version::V4);
-                                        if let Ok(result) = answer {
-                                            Ok(result)
-                                        } else {
-                                            Err(CacheableState::Err {
-                                                reason: answer.unwrap_err().to_string(),
+                                        CassandraResult::from_cursor(&mut cursor, Version::V4)
+                                            .map_err(|err| CacheableState::Err {
+                                                reason: err.to_string(),
                                             })
-                                        }
                                     }
-                                    RedisFrame::Array(_) => Err(CacheableState::Err {
-                                        reason: "Redis returned an array value".into(),
-                                    }),
                                     RedisFrame::Null => {
                                         self.missed_requests.increment(1);
                                         Err(CacheableState::Skip {
                                             reason: "No cache results".into(),
                                         })
                                     }
+                                    RedisFrame::SimpleString(_) => Err(CacheableState::Err {
+                                        reason: "Redis returned a simple string".into(),
+                                    }),
+                                    RedisFrame::Integer(_) => Err(CacheableState::Err {
+                                        reason: "Redis returned an int value".into(),
+                                    }),
+                                    RedisFrame::Array(_) => Err(CacheableState::Err {
+                                        reason: "Redis returned an array value".into(),
+                                    }),
                                 }
                             }
 
@@ -300,24 +295,6 @@ impl SimpleRedisCache {
         &mut self,
         mut cassandra_messages: Messages,
     ) -> Result<Messages, CacheableState> {
-        // This function is a little hard to follow, so here's an overview.
-        // We have 4 vecs of messages, each vec can be considered its own stage of processing.
-        // 1. messages_cass_request:
-        //     * the cassandra requests that the function receives.
-        // 2. messages_redis_request:
-        //     * each query in each cassandra request in messages_cass_request is transformed into a redis request
-        //     * each request gets sent to the redis server
-        // 3. messages_redis_response:
-        //     * the redis responses we get back from the server
-        // 4. messages_cass_response:
-        //     * Well messages_cass_response is what we would have called this, in reality we reuse the messages_cass_request vec because its cheaper.
-        //     * To create each response we go through each request in messages_cass_request:
-        //         + if the request is a CassandraOperation::Batch then we consume a message from messages_redis_response for each query in the batch
-        //             - if any of the messages are errors then generate a cassandra ERROR otherwise generate a VOID RESULT.
-        //                  - we can get away with this because batches can only contain INSERT/UPDATE/DELETE and therefore always contain either an ERROR or a VOID RESULT
-        //         + if the request is a CassandraOperation::Query then we consume a single message from messages_redis_response converting it to a cassandra response
-        //     * These are the cassandra responses that we return from the function.
-
         debug!("read_from_cache called");
 
         // build the cache query
