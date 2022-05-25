@@ -14,21 +14,21 @@ use tracing::{debug, error, info, trace, Instrument};
 type InnerChain = Vec<Transforms>;
 
 #[derive(Debug)]
-pub struct BufferedChainMessage {
+pub struct BufferedChainMessages {
     pub messages: Messages,
     pub return_chan: Option<oneshot::Sender<crate::error::ChainResponse>>,
 }
 
-impl BufferedChainMessage {
+impl BufferedChainMessages {
     pub fn new_with_no_return(m: Messages) -> Self {
-        BufferedChainMessage {
+        BufferedChainMessages {
             messages: m,
             return_chan: None,
         }
     }
 
     pub fn new(m: Messages, return_chan: oneshot::Sender<ChainResponse>) -> Self {
-        BufferedChainMessage {
+        BufferedChainMessages {
             messages: m,
             return_chan: Some(return_chan),
         }
@@ -58,7 +58,7 @@ pub struct TransformChain {
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
     pub original_chain: TransformChain,
-    send_handle: mpsc::Sender<BufferedChainMessage>,
+    send_handle: mpsc::Sender<BufferedChainMessages>,
     #[cfg(test)]
     pub count: std::sync::Arc<tokio::sync::Mutex<usize>>,
 }
@@ -88,14 +88,14 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(BufferedChainMessage::new(wrapper.messages, one_tx))
+                    .send(BufferedChainMessages::new(wrapper.messages, one_tx))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        BufferedChainMessage::new(wrapper.messages, one_tx),
+                        BufferedChainMessages::new(wrapper.messages, one_tx),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -114,14 +114,14 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(BufferedChainMessage::new_with_no_return(wrapper.messages))
+                    .send(BufferedChainMessages::new_with_no_return(wrapper.messages))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        BufferedChainMessage::new_with_no_return(wrapper.messages),
+                        BufferedChainMessages::new_with_no_return(wrapper.messages),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -134,7 +134,7 @@ impl BufferedChain {
 
 impl TransformChain {
     pub fn into_buffered_chain(self, buffer_size: usize) -> BufferedChain {
-        let (tx, mut rx) = mpsc::channel::<BufferedChainMessage>(buffer_size);
+        let (tx, mut rx) = mpsc::channel::<BufferedChainMessages>(buffer_size);
 
         #[cfg(test)]
         let count = std::sync::Arc::new(tokio::sync::Mutex::new(0_usize));
@@ -146,7 +146,7 @@ impl TransformChain {
         let mut chain = self.clone();
         let _jh = tokio::spawn(
             async move {
-                while let Some(BufferedChainMessage {
+                while let Some(BufferedChainMessages {
                     return_chan,
                     messages,
                 }) = rx.recv().await
