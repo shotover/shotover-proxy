@@ -1,5 +1,3 @@
-use crate::error::ChainResponse;
-use crate::message::Messages;
 use crate::sources::{Sources, SourcesConfig};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
@@ -7,7 +5,6 @@ use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::HashMap;
-use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::watch;
 use tracing::info;
 
@@ -23,28 +20,6 @@ pub struct TopologyConfig {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
     pub source_to_chain_mapping: HashMap<String, String>,
-}
-
-#[derive(Debug)]
-pub struct ChannelMessage {
-    pub messages: Messages,
-    pub return_chan: Option<OneSender<ChainResponse>>,
-}
-
-impl ChannelMessage {
-    pub fn new_with_no_return(m: Messages) -> Self {
-        ChannelMessage {
-            messages: m,
-            return_chan: None,
-        }
-    }
-
-    pub fn new(m: Messages, return_chan: OneSender<ChainResponse>) -> Self {
-        ChannelMessage {
-            messages: m,
-            return_chan: Some(return_chan),
-        }
-    }
 }
 
 impl Topology {
