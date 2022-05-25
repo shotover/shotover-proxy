@@ -8,7 +8,5 @@ chain_config:
     - Null
     - Printer
     - Null
-named_topics:
-  testtopic: 5
 source_to_chain_mapping:
   redis_prod: redis_chain

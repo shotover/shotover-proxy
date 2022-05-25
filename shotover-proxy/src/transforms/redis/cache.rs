@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame, RedisFrame};
 use crate::message::{Message, MessageValue, Messages, QueryType};
@@ -32,10 +31,9 @@ pub struct TableCacheSchema {
 }
 
 impl RedisConfig {
-    pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<Transforms> {
         Ok(Transforms::RedisCache(SimpleRedisCache {
-            cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain, topics)
-                .await?,
+            cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain).await?,
             caching_schema: self.caching_schema.clone(),
         }))
     }

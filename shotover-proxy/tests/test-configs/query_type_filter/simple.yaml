@@ -10,7 +10,5 @@ chain_config:
         filter: Write
     - DebugReturner:
         Redis: "42"
-named_topics:
-  example: 10
 source_to_chain_mapping:
   redis_prod: redis_chain

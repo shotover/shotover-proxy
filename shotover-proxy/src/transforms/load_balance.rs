@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::transforms::chain::{BufferedChain, TransformChain};
 use crate::transforms::{
@@ -18,8 +17,8 @@ pub struct ConnectionBalanceAndPoolConfig {
 }
 
 impl ConnectionBalanceAndPoolConfig {
-    pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let chain = build_chain_from_config(self.name.clone(), &self.chain, topics).await?;
+    pub async fn get_transform(&self) -> Result<Transforms> {
+        let chain = build_chain_from_config(self.name.clone(), &self.chain).await?;
 
         Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
             active_connection: None,

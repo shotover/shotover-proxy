@@ -1,5 +1,4 @@
 use crate::codec::cassandra::CassandraCodec;
-use crate::config::topology::TopicHolder;
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsConfig};
@@ -25,7 +24,6 @@ impl CassandraConfig {
     pub async fn get_source(
         &self,
         chain: &TransformChain,
-        _topics: &mut TopicHolder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Cassandra(

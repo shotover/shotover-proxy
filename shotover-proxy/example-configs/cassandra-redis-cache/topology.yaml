@@ -18,7 +18,5 @@ chain_config:
               remote_address: "127.0.0.1:6379"
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
-named_topics:
-  testtopic: 5
 source_to_chain_mapping:
   cassandra_prod: main_chain

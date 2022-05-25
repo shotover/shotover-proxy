@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
@@ -255,18 +254,14 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     #[async_recursion]
     /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transform(
-        &self,
-        topics: &TopicHolder,
-        chain_name: String,
-    ) -> Result<Transforms> {
+    pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
             TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
-            TransformsConfig::RedisCache(r) => r.get_transform(topics).await,
-            TransformsConfig::Tee(t) => t.get_transform(topics).await,
+            TransformsConfig::RedisCache(r) => r.get_transform().await,
+            TransformsConfig::Tee(t) => t.get_transform().await,
             TransformsConfig::RedisSinkSingle(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ConsistentScatter(c) => c.get_transform(topics).await,
+            TransformsConfig::ConsistentScatter(c) => c.get_transform().await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger::new()))
             }
@@ -281,8 +276,8 @@ impl TransformsConfig {
             #[cfg(feature = "alpha-transforms")]
             TransformsConfig::DebugForceParse(d) => d.get_transform().await,
             TransformsConfig::RedisSinkCluster(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ParallelMap(s) => s.get_transform(topics).await,
-            //TransformsConfig::PoolConnections(s) => s.get_transform(topics).await,
+            TransformsConfig::ParallelMap(s) => s.get_transform().await,
+            //TransformsConfig::PoolConnections(s) => s.get_transform().await,
             TransformsConfig::Coalesce(s) => s.get_transform().await,
             TransformsConfig::QueryTypeFilter(s) => s.get_transform().await,
             TransformsConfig::QueryCounter(s) => s.get_transform().await,
@@ -294,11 +289,10 @@ impl TransformsConfig {
 pub async fn build_chain_from_config(
     name: String,
     transform_configs: &[TransformsConfig],
-    topics: &TopicHolder,
 ) -> Result<TransformChain> {
     let mut transforms: Vec<Transforms> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_transform(topics, name.clone()).await?)
+        transforms.push(tc.get_transform(name.clone()).await?)
     }
     Ok(TransformChain::new(transforms, name))
 }

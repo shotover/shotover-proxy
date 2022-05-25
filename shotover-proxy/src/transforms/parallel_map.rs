@@ -1,4 +1,3 @@
-use crate::config::topology::TopicHolder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::chain::TransformChain;
@@ -69,9 +68,8 @@ pub struct ParallelMapConfig {
 }
 
 impl ParallelMapConfig {
-    pub async fn get_transform(&self, topics: &TopicHolder) -> Result<Transforms> {
-        let chain =
-            build_chain_from_config("parallel_map_chain".into(), &self.chain, topics).await?;
+    pub async fn get_transform(&self) -> Result<Transforms> {
+        let chain = build_chain_from_config("parallel_map_chain".into(), &self.chain).await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
             chains: std::iter::repeat(chain)

@@ -7,7 +7,6 @@ use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::HashMap;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot::Sender as OneSender;
 use tokio::sync::watch;
 use tracing::info;
@@ -16,7 +15,6 @@ use tracing::info;
 pub struct Topology {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
-    pub named_topics: HashMap<String, usize>,
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
@@ -24,7 +22,6 @@ pub struct Topology {
 pub struct TopologyConfig {
     pub sources: HashMap<String, SourcesConfig>,
     pub chain_config: HashMap<String, Vec<TransformsConfig>>,
-    pub named_topics: Option<HashMap<String, Option<usize>>>,
     pub source_to_chain_mapping: HashMap<String, String>,
 }
 
@@ -50,24 +47,6 @@ impl ChannelMessage {
     }
 }
 
-#[derive(Default)]
-pub struct TopicHolder {
-    pub topics_rx: HashMap<String, Receiver<ChannelMessage>>,
-    pub topics_tx: HashMap<String, Sender<ChannelMessage>>,
-}
-
-impl TopicHolder {
-    pub fn get_rx(&mut self, name: &str) -> Option<Receiver<ChannelMessage>> {
-        let rx = self.topics_rx.remove(name)?;
-        Some(rx)
-    }
-
-    pub fn get_tx(&self, name: &str) -> Option<Sender<ChannelMessage>> {
-        let tx = self.topics_tx.get(name)?;
-        Some(tx.clone())
-    }
-}
-
 impl Topology {
     pub fn new_from_yaml(yaml_contents: String) -> Topology {
         let config: TopologyConfig = serde_yaml::from_str(&yaml_contents)
@@ -76,26 +55,12 @@ impl Topology {
         Topology::topology_from_config(config)
     }
 
-    fn build_topics(&self) -> TopicHolder {
-        let mut topics_rx: HashMap<String, Receiver<ChannelMessage>> = HashMap::new();
-        let mut topics_tx: HashMap<String, Sender<ChannelMessage>> = HashMap::new();
-        for (name, size) in &self.named_topics {
-            let (tx, rx) = channel::<ChannelMessage>(*size);
-            topics_rx.insert(name.clone(), rx);
-            topics_tx.insert(name.clone(), tx);
-        }
-        TopicHolder {
-            topics_rx,
-            topics_tx,
-        }
-    }
-
-    async fn build_chains(&self, topics: &TopicHolder) -> Result<HashMap<String, TransformChain>> {
+    async fn build_chains(&self) -> Result<HashMap<String, TransformChain>> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in &self.chain_config {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key.clone(), value, topics).await?,
+                build_chain_from_config(key.clone(), value).await?,
             );
         }
         Ok(temp)
@@ -105,12 +70,9 @@ impl Topology {
         &self,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
-        let mut topics = self.build_topics();
-        info!("Loaded topics {:?}", topics.topics_tx.keys());
-
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let chains = self.build_chains(&topics).await?;
+        let chains = self.build_chains().await?;
         info!("Loaded chains {:?}", chains.keys());
 
         let mut chain_errors = String::new();
@@ -132,7 +94,7 @@ impl Topology {
                 if let Some(chain) = chains.get(chain_name.as_str()) {
                     sources_list.append(
                         &mut source_config
-                            .get_source(chain, &mut topics, trigger_shutdown_rx.clone())
+                            .get_source(chain, trigger_shutdown_rx.clone())
                             .await?,
                     );
                 } else {
@@ -172,21 +134,9 @@ impl Topology {
     }
 
     pub fn topology_from_config(config: TopologyConfig) -> Topology {
-        let topics = config.named_topics.unwrap_or_else(|| {
-            let mut default_topic = HashMap::new();
-            default_topic.insert("testtopic".to_owned(), Some(5));
-            default_topic
-        });
-
-        let built_topics = topics
-            .iter()
-            .map(|(k, v)| (k.to_owned(), v.unwrap_or(5)))
-            .collect();
-
         Topology {
             sources: config.sources,
             chain_config: config.chain_config,
-            named_topics: built_topics,
             source_to_chain_mapping: config.source_to_chain_mapping,
         }
     }
@@ -227,7 +177,6 @@ mod topology_tests {
         let config = TopologyConfig {
             sources,
             chain_config,
-            named_topics: None,
             source_to_chain_mapping: HashMap::new(), // Leave source to chain mapping empty so it doesn't build and run the transform chains
         };
 

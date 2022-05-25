@@ -9,7 +9,5 @@ chain_config:
          new_port: 6380
     - RedisSinkSingle:
         remote_address: "0.0.0.0:6379"
-named_topics:
-  testtopic: 5
 source_to_chain_mapping:
   redis_prod: redis_chain
