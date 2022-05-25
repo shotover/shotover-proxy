@@ -3,7 +3,7 @@ use crate::codec::cassandra::CassandraCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::cassandra;
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::tls::TlsConfig;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
@@ -44,16 +44,20 @@ pub struct CassandraSinkSingle {
     chain_name: String,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
+    pushed_messages_tx: Option<tokio::sync::mpsc::Sender<Message>>,
 }
 
 impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
+        tracing::info!("cloned!");
+
         CassandraSinkSingle {
             address: self.address.clone(),
             outbound: None,
             chain_name: self.chain_name.clone(),
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
+            pushed_messages_tx: None,
         }
     }
 }
@@ -72,6 +76,7 @@ impl CassandraSinkSingle {
             chain_name,
             failed_requests,
             tls,
+            pushed_messages_tx: None,
         }
     }
 }
@@ -87,6 +92,7 @@ impl CassandraSinkSingle {
                             self.address.clone(),
                             CassandraCodec::new(),
                             self.tls.clone(),
+                            self.pushed_messages_tx.as_ref().unwrap().clone(),
                         )
                         .await?,
                     );
@@ -166,5 +172,10 @@ impl Transform for CassandraSinkSingle {
 
     fn is_terminating(&self) -> bool {
         true
+    }
+
+    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: tokio::sync::mpsc::Sender<Message>) {
+        tracing::info!("added pushed_messgaes_tx");
+        self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }

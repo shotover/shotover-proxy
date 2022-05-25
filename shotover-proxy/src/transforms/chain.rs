@@ -1,5 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
+use crate::message::Message;
 use crate::transforms::{Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
@@ -304,6 +305,24 @@ impl TransformChain {
 
         histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone());
         result
+    }
+
+    pub fn clone_with_pushed_messages_tx(
+        &self,
+        pushed_messages_tx: tokio::sync::mpsc::Sender<Message>,
+    ) -> Self {
+        let mut cloned_chain = self.chain.clone();
+
+        cloned_chain
+            .iter_mut()
+            .for_each(|x| x.add_pushed_messages_tx(pushed_messages_tx.clone()));
+
+        TransformChain {
+            name: self.name.clone(),
+            chain: cloned_chain,
+            chain_total: self.chain_total.clone(),
+            chain_failures: self.chain_failures.clone(),
+        }
     }
 }
 

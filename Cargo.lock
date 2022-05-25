@@ -109,6 +109,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ce4f10ea3abcd6617873bae9f91d1c5332b4a778bd9ce34d0cd517474c1de82"
 
 [[package]]
+name = "atomic"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b88d82667eca772c4aa12f0f1348b3ae643424c8876448f3f7bd5787032e234c"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "atomic-shim"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -323,6 +332,27 @@ name = "cc"
 version = "1.0.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fff2a6927b3bb87f9595d67196a70493f627687a71d87a0d692242c33f58c11"
+
+[[package]]
+name = "cdrs-tokio"
+version = "6.2.0"
+source = "git+https://github.com/krojew/cdrs-tokio#bd881e491daf908a51fb6f51cc9de9989057eda1"
+dependencies = [
+ "arc-swap",
+ "atomic",
+ "bytes",
+ "cassandra-protocol",
+ "derive_more",
+ "futures",
+ "fxhash",
+ "itertools",
+ "lazy_static",
+ "rand",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid 1.0.0",
+]
 
 [[package]]
 name = "cfg-if"
@@ -933,6 +963,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -2547,6 +2586,7 @@ dependencies = [
  "cached",
  "cassandra-cpp",
  "cassandra-protocol",
+ "cdrs-tokio",
  "chacha20poly1305",
  "clap 3.2.6",
  "cql3-parser",

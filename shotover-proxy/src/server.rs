@@ -1,19 +1,19 @@
-use crate::message::Messages;
+use crate::message::{Message, Messages};
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
+use futures::sink::SinkExt;
 use futures::StreamExt;
 use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
@@ -211,8 +211,11 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // Create the necessary per-connection handler state.
             socket.set_nodelay(true)?;
 
+            let (pushed_messages_tx, pushed_messages_rx) =
+                tokio::sync::mpsc::channel::<Message>(100);
+
             let mut handler = Handler {
-                chain: self.chain.clone(),
+                chain: self.chain.clone_with_pushed_messages_tx(pushed_messages_tx),
                 client_details: peer,
                 conn_details: conn_string,
                 source_details: self.source_name.clone(),
@@ -239,7 +242,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                     tracing::debug!("New connection from {}", handler.conn_details);
 
                     // Process the connection. If an error is encountered, log it.
-                    if let Err(err) = handler.run(socket).await {
+                    if let Err(err) = handler.run(socket, pushed_messages_rx).await {
                         error!(
                             "{:?}",
                             err.context("connection was unexpectedly terminated")
@@ -366,11 +369,12 @@ fn spawn_read_write_tasks<
     rx: R,
     tx: W,
     in_tx: UnboundedSender<Messages>,
-    out_rx: UnboundedReceiver<Messages>,
+    mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
+    mut pushed_messages_rx: Receiver<Message>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
-    let writer = FramedWrite::new(tx, codec);
+    let mut writer = FramedWrite::new(tx, codec);
 
     tokio::spawn(
         async move {
@@ -396,15 +400,37 @@ fn spawn_read_write_tasks<
         .in_current_span(),
     );
 
-    tokio::spawn(
-        async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-            if let Err(err) = rx_stream.forward(writer).await {
-                error!("Stream ended with error {:?}", err);
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                val = out_rx.recv() => {
+                    if let Some(val) = val{
+                        writer.send(val).await.unwrap();
+                    }
+                },
+                val = pushed_messages_rx.recv() => {
+                    if let Some(val) = val{
+                        writer.send(vec![val]).await.unwrap();
+                    }
+                }
             }
         }
-        .in_current_span(),
-    );
+        // async move {
+        //     let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+        //     if let Err(err) = rx_stream.forward(writer).await {
+        //         error!("Stream ended with error {:?}", err);
+        //     }
+        // }
+        // .in_current_span(),
+    });
+
+    // tokio::spawn(async move {
+    //     loop {
+    //         if let Some(msg) = pushed_messages_rx.recv().await {
+    //             tracing::info!("recevied pushed message {:?}", msg);
+    //         }
+    //     }
+    // });
 }
 
 impl<C: Codec + 'static> Handler<C> {
@@ -415,7 +441,11 @@ impl<C: Codec + 'static> Handler<C> {
     ///
     /// When the shutdown signal is received, the connection is processed until
     /// it reaches a safe state, at which point it is terminated.
-    pub async fn run(&mut self, stream: TcpStream) -> Result<()> {
+    pub async fn run(
+        &mut self,
+        stream: TcpStream,
+        pushed_messages_rx: Receiver<Message>,
+    ) -> Result<()> {
         debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
         // new request frame.
@@ -427,10 +457,26 @@ impl<C: Codec + 'static> Handler<C> {
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+            spawn_read_write_tasks(
+                self.codec.clone(),
+                rx,
+                tx,
+                in_tx,
+                out_rx,
+                out_tx.clone(),
+                pushed_messages_rx,
+            );
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+            spawn_read_write_tasks(
+                self.codec.clone(),
+                rx,
+                tx,
+                in_tx,
+                out_rx,
+                out_tx.clone(),
+                pushed_messages_rx,
+            );
         };
 
         while !self.shutdown.is_shutdown() {
