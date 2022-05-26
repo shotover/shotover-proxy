@@ -172,23 +172,20 @@ impl RedisSinkCluster {
                             } else {
                                 match response {
                                     Ok(Response {
-                                        response: Ok(mut messages),
+                                        response: Ok(mut message),
                                         ..
-                                    }) => Some(messages.pop().map_or(
-                                        RedisFrame::Null,
-                                        |mut message| match message.frame().unwrap() {
-                                            Frame::Redis(frame) => {
-                                                let new_frame = frame.take();
-                                                match acc {
-                                                    Some(prev_frame) => routing_info
-                                                        .response_join()
-                                                        .join(prev_frame, new_frame),
-                                                    None => new_frame,
-                                                }
+                                    }) => Some(match message.frame().unwrap() {
+                                        Frame::Redis(frame) => {
+                                            let new_frame = frame.take();
+                                            match acc {
+                                                Some(prev_frame) => routing_info
+                                                    .response_join()
+                                                    .join(prev_frame, new_frame),
+                                                None => new_frame,
                                             }
-                                            _ => unreachable!("direct response from a redis sink"),
-                                        },
-                                    )),
+                                        }
+                                        _ => unreachable!("direct response from a redis sink"),
+                                    }),
                                     Ok(Response {
                                         response: Err(e), ..
                                     }) => Some(RedisFrame::Error(e.to_string().into())),
@@ -200,9 +197,7 @@ impl RedisSinkCluster {
 
                     Ok(Response {
                         original: message,
-                        response: ChainResponse::Ok(vec![Message::from_frame(Frame::Redis(
-                            response.unwrap(),
-                        ))]),
+                        response: Ok(Message::from_frame(Frame::Redis(response.unwrap()))),
                     })
                 })
             }
@@ -850,10 +845,7 @@ fn send_frame_request(
 async fn receive_frame_response(receiver: oneshot::Receiver<Response>) -> Result<RedisFrame> {
     let Response { response, .. } = receiver.await?;
 
-    // Exactly one Redis response is guaranteed by the codec on success.
-    let mut message = response?.pop().unwrap();
-
-    match message.frame() {
+    match response?.frame() {
         Some(Frame::Redis(frame)) => Ok(frame.take()),
         None => Err(anyhow!("Failed to parse redis frame")),
         response => Err(anyhow!("Unexpected redis response: {response:?}")),
@@ -867,7 +859,7 @@ fn send_frame_response(
 ) -> Result<(), Response> {
     one_tx.send(Response {
         original: Message::from_frame(Frame::None),
-        response: Ok(vec![Message::from_frame(Frame::Redis(frame))]),
+        response: Ok(Message::from_frame(Frame::Redis(frame))),
     })
 }
 
@@ -915,17 +907,15 @@ impl Transform for RedisSinkCluster {
             let Response { original, response } = s.or_else(|_| -> Result<Response> {
                 Ok(Response {
                     original: Message::from_frame(Frame::None),
-                    response: Ok(vec![Message::from_frame(Frame::Redis(RedisFrame::Error(
+                    response: Ok(Message::from_frame(Frame::Redis(RedisFrame::Error(
                         Str::from_inner(Bytes::from_static(b"ERR Could not route request"))
                             .unwrap(),
-                    )))]),
+                    )))),
                 })
             })?;
 
             let mut response = response?;
-            assert_eq!(response.len(), 1);
-            let mut response_m = response.remove(0);
-            match response_m.frame() {
+            match response.frame() {
                 Some(Frame::Redis(frame)) => {
                     match frame.to_redirection() {
                         Some(Redirection::Moved { slot, server }) => {
@@ -951,10 +941,10 @@ impl Transform for RedisSinkCluster {
                                 one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
                             ));
                         }
-                        None => response_buffer.push(response_m),
+                        None => response_buffer.push(response),
                     }
                 }
-                _ => response_buffer.push(response_m),
+                _ => response_buffer.push(response),
             }
         }
         Ok(response_buffer)

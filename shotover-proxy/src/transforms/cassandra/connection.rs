@@ -114,7 +114,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                                         return_message_map.insert(stream_id, m);
                                     },
                                     Some((return_tx, original)) => {
-                                        return_tx.send(Response {original, response: Ok(vec![m]) })
+                                        return_tx.send(Response {original, response: Ok(m) })
                                         .map_err(|_| anyhow!("couldn't send message"))?;
                                     }
                                 }
@@ -134,7 +134,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                         return_channel_map.insert(message_id, (return_chan, message));
                     }
                     Some(m) => {
-                        return_chan.send(Response { original: message, response: Ok(vec![m]) })
+                        return_chan.send(Response { original: message, response: Ok(m) })
                             .map_err(|_| anyhow!("couldn't send message"))?;
                     }
                 };

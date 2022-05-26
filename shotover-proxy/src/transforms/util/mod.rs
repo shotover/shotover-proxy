@@ -1,8 +1,7 @@
-use anyhow::Error;
+use anyhow::{Error, Result};
 use std::fmt;
 use std::io;
 
-use crate::error::ChainResponse;
 use crate::message::Message;
 
 pub mod cluster_connection_pool;
@@ -17,8 +16,8 @@ pub struct Request {
 /// Represents a `Response` to a `Request`
 #[derive(Debug)]
 pub struct Response {
-    pub original: Message,       // Original `Message` that this `Response` is to
-    pub response: ChainResponse, // Response to the original `Message`
+    pub original: Message,         // Original `Message` that this `Response` is to
+    pub response: Result<Message>, // Response to the original `Message`
 }
 
 #[derive(thiserror::Error, Debug)]

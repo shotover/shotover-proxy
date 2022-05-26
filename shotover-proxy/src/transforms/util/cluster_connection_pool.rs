@@ -271,7 +271,7 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
                         // If the receiver hangs up, just silently ignore
                         let _ = ret.send(Response {
                             original: message,
-                            response: Ok(vec![m]),
+                            response: Ok(m),
                         });
                     }
                 }
