@@ -495,7 +495,7 @@ impl RedisSinkCluster {
         warn!("Could not route request - short circuiting");
         if let Err(e) = self.send_error_response(
             one_tx,
-            "ERR Shotover RedisSinkCluster does not not support this command used in this way",
+            "ERR unknown command - Shotover RedisSinkCluster does not not support this command",
         ) {
             trace!("short circuiting - couldn't send error - {:?}", e);
         }
@@ -664,6 +664,7 @@ impl RoutingInfo {
             // We just need a single redis node to handle this for us so shotover can pretend to be a single node.
             // So we just pick a node at random.
             b"ECHO" | b"PING" => RoutingInfo::Random,
+            b"HELLO" => RoutingInfo::Unsupported,
             _ => match args.get(1) {
                 Some(key) => RoutingInfo::for_key(key).unwrap_or(RoutingInfo::Unsupported),
                 None => RoutingInfo::Random,

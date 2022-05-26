@@ -150,7 +150,20 @@ async fn test_time_cluster(connection: &mut Connection) {
             .unwrap_err()
             .detail()
             .unwrap(),
-        "Shotover RedisSinkCluster does not not support this command used in this way".to_string(),
+        "unknown command - Shotover RedisSinkCluster does not not support this command".to_string(),
+    );
+}
+
+async fn test_hello_cluster(connection: &mut Connection) {
+    // The Lettuce client relies on the error message here containing the string "unknown" to detect that shotover does not support RESP3
+    assert_eq!(
+        redis::cmd("HELLO")
+            .query_async::<_, ()>(connection)
+            .await
+            .unwrap_err()
+            .detail()
+            .unwrap(),
+        "unknown command - Shotover RedisSinkCluster does not not support this command".to_string(),
     );
 }
 
@@ -1423,6 +1436,7 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_save(connection).await;
     test_ping_echo(connection).await;
     test_time_cluster(connection).await;
+    test_hello_cluster(connection).await;
 }
 
 async fn run_all(connection: &mut Connection) {
