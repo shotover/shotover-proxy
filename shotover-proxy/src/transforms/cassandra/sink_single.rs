@@ -87,12 +87,16 @@ impl CassandraSinkSingle {
             match self.outbound {
                 None => {
                     trace!("creating outbound connection {:?}", self.address);
+                    tracing::info!(
+                        "creating outbound connection, status: {:?}",
+                        self.pushed_messages_tx
+                    );
                     self.outbound = Some(
                         CassandraConnection::new(
                             self.address.clone(),
                             CassandraCodec::new(),
                             self.tls.clone(),
-                            self.pushed_messages_tx.as_ref().unwrap().clone(),
+                            self.pushed_messages_tx.clone(),
                         )
                         .await?,
                     );
@@ -175,7 +179,8 @@ impl Transform for CassandraSinkSingle {
     }
 
     fn add_pushed_messages_tx(&mut self, pushed_messages_tx: tokio::sync::mpsc::Sender<Message>) {
-        tracing::info!("added pushed_messgaes_tx");
+        tracing::info!("existing: {:?}", self.pushed_messages_tx);
+        tracing::info!("added pushed_messgaes_tx: {:?}", pushed_messages_tx);
         self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }

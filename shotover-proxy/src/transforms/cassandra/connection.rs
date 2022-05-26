@@ -6,15 +6,13 @@ use crate::server::CodecWriteHalf;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
 use anyhow::{anyhow, Result};
+use cassandra_protocol::frame::Opcode;
 use derivative::Derivative;
 use futures::StreamExt;
 use halfbrown::HashMap;
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
-
-use cassandra_protocol::frame::Opcode;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, Instrument};
@@ -39,7 +37,7 @@ impl CassandraConnection {
         host: String,
         codec: C,
         mut tls: Option<TlsConnector>,
-        pushed_messages_tx: tokio::sync::mpsc::Sender<Message>,
+        pushed_messages_tx: Option<mpsc::Sender<Message>>,
     ) -> Result<Self> {
         let tcp_stream: TcpStream = TcpStream::connect(&host).await?;
 
@@ -104,7 +102,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
     read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<Request>,
     codec: C,
-    pushed_messages_tx: tokio::sync::mpsc::Sender<Message>,
+    pushed_messages_tx: Option<mpsc::Sender<Message>>,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec);
     let mut return_channel_map: HashMap<i16, (oneshot::Sender<Response>, Message)> = HashMap::new();
@@ -117,27 +115,23 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
-                            let mut got_event = false;
-                            if let Some(raw_bytes) = m.as_raw_bytes() {
-                                if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(raw_bytes) {
-                                    tracing::info!("got event");
-                                    got_event = true;
-                                }
+                            if let Some(ref pushed_messages_tx) = pushed_messages_tx {
+                                if let Some(raw_bytes) = m.as_raw_bytes() {
+                                    if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(raw_bytes) {
+                                        pushed_messages_tx.send(m).await.unwrap();
+                                        continue;
+                                    };
+                                };
                             };
 
                             if let Some(stream_id) = m.stream_id() {
-                                if got_event {
-                                    tracing::info!("event stream_id {:?}", stream_id);
-                                    pushed_messages_tx.send(m).await.unwrap();
-                                } else {
                                     match return_channel_map.remove(&stream_id) {
                                         None => {
                                             return_message_map.insert(stream_id, m);
                                         },
                                         Some((return_tx, original)) => {
-                                            return_tx.send(Response {original, response: Ok(vec![m]) })
+                                            return_tx.send(Response {original, response: Ok(m) })
                                                      .map_err(|_| anyhow!("couldn't send message"))?;
-                                        }
                                     }
                                 }
                             }

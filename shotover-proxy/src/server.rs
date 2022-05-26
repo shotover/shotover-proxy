@@ -194,7 +194,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
-            debug!("got socket");
+            info!("got socket");
             self.available_connections_gauge
                 .set(self.limit_connections.available_permits() as f64);
 
@@ -400,29 +400,32 @@ fn spawn_read_write_tasks<
         .in_current_span(),
     );
 
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                val = out_rx.recv() => {
-                    if let Some(val) = val{
-                        writer.send(val).await.unwrap();
-                    }
-                },
-                val = pushed_messages_rx.recv() => {
-                    if let Some(val) = val{
-                        writer.send(vec![val]).await.unwrap();
+    tokio::spawn(
+        async move {
+            loop {
+                tokio::select! {
+                    val = out_rx.recv() => {
+                        if let Some(val) = val{
+                            writer.send(val).await.unwrap();
+                        }
+                    },
+                    val = pushed_messages_rx.recv() => {
+                        if let Some(val) = val{
+                            writer.send(vec![val]).await.unwrap();
+                        }
                     }
                 }
             }
+            // async move {
+            //     let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+            //     if let Err(err) = rx_stream.forward(writer).await {
+            //         error!("Stream ended with error {:?}", err);
+            //     }
+            // }
+            // .in_current_span(),
         }
-        // async move {
-        //     let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-        //     if let Err(err) = rx_stream.forward(writer).await {
-        //         error!("Stream ended with error {:?}", err);
-        //     }
-        // }
-        // .in_current_span(),
-    });
+        .in_current_span(),
+    );
 
     // tokio::spawn(async move {
     //     loop {
@@ -558,6 +561,7 @@ impl<C: Codec> Drop for Handler<C> {
         // bug causes a panic. The permit would never be returned to the
         // semaphore.
 
+        tracing::info!("dropped handler");
         self.limit_connections.add_permits(1);
     }
 }
