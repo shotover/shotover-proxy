@@ -6,6 +6,9 @@ use crate::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
+use cql3_parser::cassandra_statement::CassandraStatement;
+use cql3_parser::common::{FQName, Identifier};
+use cql3_parser::select::SelectElement;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -24,11 +27,15 @@ impl CassandraPeersRewriteConfig {
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
     port: u16,
+    peer_table: FQName,
 }
 
 impl CassandraPeersRewrite {
     pub fn new(port: u16) -> Self {
-        CassandraPeersRewrite { port }
+        CassandraPeersRewrite {
+            port,
+            peer_table: FQName::new("system", "peers_v2"),
+        }
     }
 }
 
@@ -36,38 +43,60 @@ impl CassandraPeersRewrite {
 impl Transform for CassandraPeersRewrite {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of queries to system.peers & system.peers_v2
-        let system_peers: Vec<usize> = message_wrapper
+        // we need to know which columns in which CQL queries in which messages have system peers
+        let column_names: Vec<(usize, Vec<Identifier>)> = message_wrapper
             .messages
             .iter_mut()
             .enumerate()
-            .filter_map(|(i, m)| if is_system_peers(m) { Some(i) } else { None })
+            .filter_map(|(i, m)| {
+                let sys_peers = extract_native_port_column(&self.peer_table, m);
+                if sys_peers.is_empty() {
+                    None
+                } else {
+                    Some((i, sys_peers))
+                }
+            })
             .collect();
 
         let mut response = message_wrapper.call_next_transform().await?;
 
-        for i in system_peers {
-            rewrite_port(&mut response[i], self.port);
+        for (i, name_list) in column_names {
+            rewrite_port(&mut response[i], &name_list, self.port);
         }
 
         Ok(response)
     }
 }
 
-fn is_system_peers(message: &mut Message) -> bool {
-    if let Some(Frame::Cassandra(_)) = message.frame() {
-        if let Some(namespace) = message.namespace() {
-            if namespace.len() > 1 {
-                return namespace[0] == "system" && namespace[1] == "peers_v2";
+/// determine if the message contains a SELECT from `system.peers_v2` that includes the `native_port` column
+/// return a list of column names (or their alias) for each `native_port`.
+fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec<Identifier> {
+    let mut result = vec![];
+    let native_port = Identifier::parse("native_port");
+    if let Some(Frame::Cassandra(cassandra)) = message.frame() {
+        // No need to handle Batch as selects can only occur on Query
+        if let CassandraOperation::Query { query, .. } = &cassandra.operation {
+            if let CassandraStatement::Select(select) = query.as_ref() {
+                if peer_table == &select.table_name {
+                    for select_element in &select.columns {
+                        match select_element {
+                            SelectElement::Column(col_name) if col_name.name == native_port => {
+                                result.push(col_name.alias_or_name().clone());
+                            }
+                            SelectElement::Star => result.push(native_port.clone()),
+                            _ => {}
+                        }
+                    }
+                }
             }
         }
     }
-
-    false
+    result
 }
 
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
-fn rewrite_port(message: &mut Message, new_port: u16) {
+fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u16) {
     if let Some(Frame::Cassandra(frame)) = message.frame() {
         // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
         if let CassandraOperation::Result(CassandraResult::Rows {
@@ -76,7 +105,7 @@ fn rewrite_port(message: &mut Message, new_port: u16) {
         }) = &mut frame.operation
         {
             for (i, col) in metadata.col_specs.iter().enumerate() {
-                if col.name == "native_port" {
+                if column_names.contains(&Identifier::parse(&col.name)) {
                     for row in rows.iter_mut() {
                         row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
                     }
@@ -90,29 +119,24 @@ fn rewrite_port(message: &mut Message, new_port: u16) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::{CassandraFrame, CQL};
+    use crate::frame::cassandra::parse_statement;
+    use crate::frame::CassandraFrame;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
-    use cassandra_protocol::{
-        consistency::Consistency,
-        frame::{
-            message_result::{
-                ColSpec,
-                ColType::{Inet, Int},
-                ColTypeOption, RowsMetadata, RowsMetadataFlags, TableSpec,
-            },
-            Version,
-        },
-        query::QueryParams,
+    use cassandra_protocol::consistency::Consistency;
+    use cassandra_protocol::frame::message_result::{
+        ColSpec, ColType, ColTypeOption, RowsMetadata, RowsMetadataFlags, TableSpec,
     };
+    use cassandra_protocol::frame::Version;
+    use cassandra_protocol::query::QueryParams;
 
-    fn create_query_message(query: String) -> Message {
-        let original = Frame::Cassandra(CassandraFrame {
+    fn create_query_message(query: &str) -> Message {
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::parse_from_string(query),
+                query: Box::new(parse_statement(query)),
                 params: Box::new(QueryParams {
                     keyspace: None,
                     now_in_seconds: None,
@@ -125,13 +149,11 @@ mod test {
                     timestamp: Some(1643855761086585),
                 }),
             },
-        });
-
-        Message::from_frame(original)
+        }))
     }
 
-    fn create_response_message(rows: Vec<Vec<MessageValue>>) -> Message {
-        let original = Frame::Cassandra(CassandraFrame {
+    fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<MessageValue>>) -> Message {
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
             tracing_id: None,
@@ -147,92 +169,194 @@ mod test {
                         ks_name: "system".into(),
                         table_name: "peers_v2".into(),
                     }),
-                    col_specs: vec![ColSpec {
-                        table_spec: None,
-                        name: "native_port".into(),
-                        col_type: ColTypeOption {
-                            id: Int,
-                            value: None,
-                        },
-                    }],
+                    col_specs: col_specs.to_owned(),
                 }),
             }),
-        });
-
-        Message::from_frame(original)
+        }))
     }
 
     #[test]
-    fn test_is_system_peers_v2() {
-        assert!(is_system_peers(&mut create_query_message(
-            "SELECT * FROM system.peers_v2;".into()
-        )));
+    fn test_extract_native_port_column() {
+        let native_port = Identifier::parse("native_port");
+        let foo = Identifier::parse("foo");
+        let peer_table = FQName::new("system", "peers_v2");
 
-        assert!(!is_system_peers(&mut create_query_message(
-            "SELECT * FROM not_system.peers_v2;".into()
-        )));
+        assert_eq!(
+            vec![native_port.clone()],
+            extract_native_port_column(
+                &peer_table,
+                &mut create_query_message("SELECT * FROM system.peers_v2;"),
+            )
+        );
 
-        assert!(!is_system_peers(&mut create_query_message("".into())));
+        assert_eq!(
+            Vec::<Identifier>::new(),
+            extract_native_port_column(
+                &peer_table,
+                &mut create_query_message("SELECT * FROM not_system.peers_v2;"),
+            )
+        );
+
+        assert_eq!(
+            vec![foo.clone()],
+            extract_native_port_column(
+                &peer_table,
+                &mut create_query_message("SELECT native_port as foo from system.peers_v2"),
+            )
+        );
+
+        assert_eq!(
+            vec![foo, native_port],
+            extract_native_port_column(
+                &peer_table,
+                &mut create_query_message(
+                    "SELECT native_port as foo, native_port from system.peers_v2",
+                ),
+            )
+        );
     }
 
     #[test]
-    fn test_rewrite_port() {
-        //Test rewrites `native_port` column when included
-        {
-            let mut message = create_response_message(vec![
+    fn test_rewrite_port_match() {
+        let col_spec = vec![ColSpec {
+            table_spec: None,
+            name: "native_port".into(),
+            col_type: ColTypeOption {
+                id: ColType::Int,
+                value: None,
+            },
+        }];
+
+        let mut message = create_response_message(
+            &col_spec,
+            vec![
                 vec![MessageValue::Integer(9042, IntSize::I32)],
                 vec![MessageValue::Integer(9042, IntSize::I32)],
-            ]);
+            ],
+        );
 
-            rewrite_port(&mut message, 9043);
-
-            let expected = create_response_message(vec![
+        let expected = create_response_message(
+            &col_spec,
+            vec![
                 vec![MessageValue::Integer(9043, IntSize::I32)],
                 vec![MessageValue::Integer(9043, IntSize::I32)],
-            ]);
+            ],
+        );
 
-            assert_eq!(message, expected);
-        }
+        rewrite_port(&mut message, &[Identifier::parse("native_port")], 9043);
 
-        // Test does not rewrite anything when `native_port` column not included
-        {
-            let frame = Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
-                stream_id: 0,
-                tracing_id: None,
-                warnings: vec![],
-                operation: CassandraOperation::Result(Rows {
-                    value: MessageValue::Rows(vec![vec![MessageValue::Inet(
-                        "127.0.0.1".parse().unwrap(),
-                    )]]),
-                    metadata: Box::new(RowsMetadata {
-                        flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
-                        columns_count: 1,
-                        paging_state: None,
-                        new_metadata_id: None,
-                        global_table_spec: Some(TableSpec {
-                            ks_name: "system".into(),
-                            table_name: "peers_v2".into(),
-                        }),
-                        col_specs: vec![ColSpec {
-                            table_spec: None,
-                            name: "peer".into(),
-                            col_type: ColTypeOption {
-                                id: Inet,
-                                value: None,
-                            },
-                        }],
-                    }),
-                }),
-            });
+        assert_eq!(message, expected);
+    }
 
-            let mut original = Message::from_frame(frame);
+    #[test]
+    fn test_rewrite_port_no_match() {
+        let col_spec = vec![ColSpec {
+            table_spec: None,
+            name: "peer".into(),
+            col_type: ColTypeOption {
+                id: ColType::Inet,
+                value: None,
+            },
+        }];
 
-            let expected = original.clone();
+        let mut original = create_response_message(
+            &col_spec,
+            vec![
+                vec![MessageValue::Inet("127.0.0.1".parse().unwrap())],
+                vec![MessageValue::Inet("10.123.56.1".parse().unwrap())],
+            ],
+        );
 
-            rewrite_port(&mut original, 9043);
+        let expected = create_response_message(
+            &col_spec,
+            vec![
+                vec![MessageValue::Inet("127.0.0.1".parse().unwrap())],
+                vec![MessageValue::Inet("10.123.56.1".parse().unwrap())],
+            ],
+        );
 
-            assert_eq!(original, expected);
-        }
+        rewrite_port(
+            &mut original,
+            &[
+                Identifier::parse("native_port"),
+                Identifier::parse("alias_port"),
+            ],
+            9043,
+        );
+
+        assert_eq!(original, expected);
+    }
+
+    #[test]
+    fn test_rewrite_port_alias() {
+        let col_spec = vec![
+            ColSpec {
+                table_spec: None,
+                name: "native_port".into(),
+                col_type: ColTypeOption {
+                    id: ColType::Int,
+                    value: None,
+                },
+            },
+            ColSpec {
+                table_spec: None,
+                name: "some_text".into(),
+                col_type: ColTypeOption {
+                    id: ColType::Varchar,
+                    value: None,
+                },
+            },
+            ColSpec {
+                table_spec: None,
+                name: "alias_port".into(),
+                col_type: ColTypeOption {
+                    id: ColType::Int,
+                    value: None,
+                },
+            },
+        ];
+
+        let mut original = create_response_message(
+            &col_spec,
+            vec![
+                vec![
+                    MessageValue::Integer(9042, IntSize::I32),
+                    MessageValue::Strings("Hello".into()),
+                    MessageValue::Integer(9042, IntSize::I32),
+                ],
+                vec![
+                    MessageValue::Integer(9042, IntSize::I32),
+                    MessageValue::Strings("World".into()),
+                    MessageValue::Integer(9042, IntSize::I32),
+                ],
+            ],
+        );
+
+        let expected = create_response_message(
+            &col_spec,
+            vec![
+                vec![
+                    MessageValue::Integer(9043, IntSize::I32),
+                    MessageValue::Strings("Hello".into()),
+                    MessageValue::Integer(9043, IntSize::I32),
+                ],
+                vec![
+                    MessageValue::Integer(9043, IntSize::I32),
+                    MessageValue::Strings("World".into()),
+                    MessageValue::Integer(9043, IntSize::I32),
+                ],
+            ],
+        );
+
+        rewrite_port(
+            &mut original,
+            &[
+                Identifier::parse("native_port"),
+                Identifier::parse("alias_port"),
+            ],
+            9043,
+        );
+
+        assert_eq!(original, expected);
     }
 }

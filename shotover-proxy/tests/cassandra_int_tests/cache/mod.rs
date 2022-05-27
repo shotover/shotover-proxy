@@ -1,0 +1,129 @@
+mod assert;
+
+use crate::helpers::cassandra::{run_query, ResultValue};
+use cassandra_cpp::Session;
+use metrics_util::debugging::Snapshotter;
+use redis::Commands;
+use std::collections::HashSet;
+
+pub fn test(
+    cassandra_session: &Session,
+    redis_connection: &mut redis::Connection,
+    snapshotter: &Snapshotter,
+) {
+    redis::cmd("FLUSHDB").execute(redis_connection);
+
+    run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+    run_query(
+            cassandra_session,
+            "CREATE TABLE test_cache_keyspace_simple.test_table (id int PRIMARY KEY, x int, name varchar);",
+        );
+
+    run_query(
+        cassandra_session,
+        "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (1, 11, 'foo');",
+    );
+    run_query(
+        cassandra_session,
+        "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (2, 12, 'bar');",
+    );
+    run_query(
+        cassandra_session,
+        "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (3, 13, 'baz');",
+    );
+
+    // selects without where clauses do not hit the cache
+    assert::assert_query_is_uncacheable(
+        snapshotter,
+        cassandra_session,
+        "SELECT id, x, name FROM test_cache_keyspace_simple.test_table",
+        &[
+            &[
+                ResultValue::Int(1),
+                ResultValue::Int(11),
+                ResultValue::Varchar("foo".into()),
+            ],
+            &[
+                ResultValue::Int(2),
+                ResultValue::Int(12),
+                ResultValue::Varchar("bar".into()),
+            ],
+            &[
+                ResultValue::Int(3),
+                ResultValue::Int(13),
+                ResultValue::Varchar("baz".into()),
+            ],
+        ],
+    );
+
+    // query against the primary key
+    assert::assert_query_is_cached(
+        snapshotter,
+        cassandra_session,
+        "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=1",
+        &[&[
+            ResultValue::Int(1),
+            ResultValue::Int(11),
+            ResultValue::Varchar("foo".into()),
+        ]],
+    );
+
+    // ensure key 2 and 3 are also loaded
+    assert::assert_query_is_cached(
+        snapshotter,
+        cassandra_session,
+        "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=2",
+        &[&[
+            ResultValue::Int(2),
+            ResultValue::Int(12),
+            ResultValue::Varchar("bar".into()),
+        ]],
+    );
+
+    assert::assert_query_is_cached(
+        snapshotter,
+        cassandra_session,
+        "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=3",
+        &[&[
+            ResultValue::Int(3),
+            ResultValue::Int(13),
+            ResultValue::Varchar("baz".into()),
+        ]],
+    );
+
+    // query without primary key does not hit the cache
+    assert::assert_query_is_uncacheable(
+        snapshotter,
+        cassandra_session,
+        "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE x=11 ALLOW FILTERING",
+        &[&[
+            ResultValue::Int(1),
+            ResultValue::Int(11),
+            ResultValue::Varchar("foo".into()),
+        ]],
+    );
+
+    let result: HashSet<String> = redis_connection.keys("*").unwrap();
+    let expected = HashSet::from([
+        "test_cache_keyspace_simple.test_table:1".to_string(),
+        "test_cache_keyspace_simple.test_table:2".to_string(),
+        "test_cache_keyspace_simple.test_table:3".to_string(),
+    ]);
+    assert_eq!(result, expected);
+
+    assert::assert_sorted_set_equals(
+        redis_connection,
+        "test_cache_keyspace_simple.test_table:1",
+        &["id, x, name WHERE "],
+    );
+    assert::assert_sorted_set_equals(
+        redis_connection,
+        "test_cache_keyspace_simple.test_table:2",
+        &["id, x, name WHERE "],
+    );
+    assert::assert_sorted_set_equals(
+        redis_connection,
+        "test_cache_keyspace_simple.test_table:3",
+        &["id, x, name WHERE "],
+    );
+}

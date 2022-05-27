@@ -1,7 +1,7 @@
 use crate::codec::redis::redis_query_type;
 use crate::frame::{
     cassandra,
-    cassandra::{CassandraMetadata, CassandraOperation},
+    cassandra::{to_cassandra_type, CassandraMetadata, CassandraOperation},
 };
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
@@ -20,12 +20,12 @@ use cassandra_protocol::{
         CBytes,
     },
 };
+use cql3_parser::common::Operand;
 use itertools::Itertools;
 use nonzero_ext::nonzero;
 use num::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-use sqlparser::ast::Value as SQLValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::num::NonZeroU32;
@@ -181,15 +181,6 @@ impl Message {
         match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes { bytes, .. } => Some(bytes),
             _ => None,
-        }
-    }
-
-    /// Returns None when fails to parse the message
-    pub fn namespace(&mut self) -> Option<Vec<String>> {
-        match self.frame()? {
-            Frame::Cassandra(cassandra) => Some(cassandra.namespace()),
-            Frame::Redis(_) => unimplemented!(),
-            Frame::None => Some(vec![]),
         }
     }
 
@@ -473,32 +464,9 @@ pub struct Duration {
     pub nanoseconds: i64,
 }
 
-impl From<&MessageValue> for SQLValue {
-    fn from(v: &MessageValue) -> Self {
-        match v {
-            MessageValue::Null => SQLValue::Null,
-            MessageValue::Bytes(b) => {
-                SQLValue::SingleQuotedString(String::from_utf8(b.to_vec()).unwrap())
-            } // TODO: this is definitely wrong
-            MessageValue::Strings(s) => SQLValue::SingleQuotedString(s.clone()),
-            MessageValue::Integer(i, _) => SQLValue::Number(i.to_string(), false),
-            MessageValue::Float(f) => SQLValue::Number(f.to_string(), false),
-            MessageValue::Boolean(b) => SQLValue::Boolean(*b),
-            _ => SQLValue::Null,
-        }
-    }
-}
-
-impl From<&SQLValue> for MessageValue {
-    fn from(v: &SQLValue) -> Self {
-        match v {
-            SQLValue::Number(v, false)
-            | SQLValue::SingleQuotedString(v)
-            | SQLValue::NationalStringLiteral(v) => MessageValue::Strings(v.clone()),
-            SQLValue::HexStringLiteral(v) => MessageValue::Strings(v.to_string()),
-            SQLValue::Boolean(v) => MessageValue::Boolean(*v),
-            _ => MessageValue::Strings("NULL".to_string()),
-        }
+impl From<&Operand> for MessageValue {
+    fn from(operand: &Operand) -> Self {
+        MessageValue::create_element(to_cassandra_type(operand))
     }
 }
 
@@ -518,6 +486,7 @@ impl From<RedisFrame> for MessageValue {
         }
     }
 }
+
 impl From<&RedisFrame> for MessageValue {
     fn from(f: &RedisFrame) -> Self {
         match f.clone() {
@@ -656,39 +625,6 @@ impl MessageValue {
                 MessageValue::Tuple(value_list)
             }
             CassandraType::Null => MessageValue::Null,
-        }
-    }
-
-    pub fn into_str_bytes(self) -> Bytes {
-        match self {
-            MessageValue::Null => Bytes::from("".to_string()),
-            MessageValue::Bytes(b) => b,
-            MessageValue::Strings(s) => Bytes::from(s),
-            MessageValue::Integer(i, _) => Bytes::from(format!("{i}")),
-            MessageValue::Float(f) => Bytes::from(format!("{f}")),
-            MessageValue::Boolean(b) => Bytes::from(format!("{b}")),
-            MessageValue::Inet(i) => Bytes::from(format!("{i}")),
-            MessageValue::FragmentedResponse(_) => unimplemented!(),
-            MessageValue::Document(_) => unimplemented!(),
-            MessageValue::NamedRows(_) => unimplemented!(),
-            MessageValue::List(_) => unimplemented!(),
-            MessageValue::Rows(_) => unimplemented!(),
-            MessageValue::Ascii(_) => unimplemented!(),
-            MessageValue::Double(_) => unimplemented!(),
-            MessageValue::Set(_) => unimplemented!(),
-            MessageValue::Map(_) => unimplemented!(),
-            MessageValue::Varint(_) => unimplemented!(),
-            MessageValue::Decimal(_) => unimplemented!(),
-            MessageValue::Date(_) => unimplemented!(),
-            MessageValue::Timestamp(_) => unimplemented!(),
-            MessageValue::Timeuuid(_) => unimplemented!(),
-            MessageValue::Varchar(_) => unimplemented!(),
-            MessageValue::Uuid(_) => unimplemented!(),
-            MessageValue::Time(_) => unimplemented!(),
-            MessageValue::Counter(_) => unimplemented!(),
-            MessageValue::Tuple(_) => unimplemented!(),
-            MessageValue::Udt(_) => unimplemented!(),
-            MessageValue::Duration(_) => unimplemented!(),
         }
     }
 }

@@ -14,6 +14,7 @@ use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, R
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use futures::future::{join_all, try_join_all};
+use metrics_util::debugging::DebuggingRecorder;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
@@ -74,10 +75,14 @@ fn test_source_tls_and_single_tls() {
 #[test]
 #[serial]
 fn test_cassandra_redis_cache() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    recorder.install().unwrap();
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yml");
 
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-redis-cache/topology.yaml");
+    let shotover_manager = ShotoverManager::from_topology_file_without_observability(
+        "example-configs/cassandra-redis-cache/topology.yaml",
+    );
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
@@ -86,7 +91,7 @@ fn test_cassandra_redis_cache() {
     table::test(&connection);
     udt::test(&connection);
     functions::test(&connection);
-    cache::test(&connection, &mut redis_connection);
+    cache::test(&connection, &mut redis_connection, &snapshotter);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -170,6 +175,12 @@ fn test_cassandra_peers_rewrite() {
                 "SELECT native_port FROM system.peers_v2;",
                 &[&[ResultValue::Int(9042)]],
             );
+
+            assert_query_result(
+                &normal_connection,
+                "SELECT native_port as foo FROM system.peers_v2;",
+                &[&[ResultValue::Int(9042)]],
+            );
         }
 
         {
@@ -192,7 +203,7 @@ fn test_cassandra_peers_rewrite() {
             assert_query_result(
                 &rewrite_port_connection,
                 "SELECT native_port as foo FROM system.peers_v2;",
-                &[&[ResultValue::Int(9042)]],
+                &[&[ResultValue::Int(9044)]],
             );
 
             assert_query_result(
@@ -204,7 +215,7 @@ fn test_cassandra_peers_rewrite() {
             assert_query_result(
                 &rewrite_port_connection,
                 "SELECT native_port, native_port as some_port FROM system.peers_v2;",
-                &[&[ResultValue::Int(9044), ResultValue::Int(9042)]],
+                &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
             );
 
             let result = execute_query(&rewrite_port_connection, "SELECT * FROM system.peers_v2;");

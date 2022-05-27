@@ -242,7 +242,7 @@ This transform will drop messages that match the specified filter.
 
 ### RedisCache
 
-This transform will attempt to cache values for a given primary key in a Redis hash set. It is a primarily implemented as a write through cache. It currently expects an SQL based AST to figure out what to cache (e.g. CQL, PGSQL) and updates to the cache and the backing datastore are performed sequentially.
+This transform will attempt to cache values for a given primary key in a Redis hash set. It is a primarily implemented as a read behind cache. It currently expects an SQL based AST to figure out what to cache (e.g. CQL, PGSQL) and updates to the cache and the backing datastore are performed sequentially.
 
 ```yaml
 - RedisCache:

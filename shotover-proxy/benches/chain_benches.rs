@@ -4,8 +4,9 @@ use cassandra_protocol::{
 };
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use hex_literal::hex;
+use shotover_proxy::frame::cassandra::parse_statement;
 use shotover_proxy::frame::RedisFrame;
-use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType, CQL};
+use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType};
 use shotover_proxy::message::{Message, QueryType};
 use shotover_proxy::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover_proxy::transforms::chain::TransformChain;
@@ -226,9 +227,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     tracing_id: None,
                     warnings: vec![],
                     operation: CassandraOperation::Query {
-                        query: CQL::parse_from_string(
-                            "INSERT INTO foo (z, v) VALUES (1, 123)".into(),
-                        ),
+                        query: Box::new(parse_statement("INSERT INTO foo (z, v) VALUES (1, 123)")),
                         params: Box::new(QueryParams {
                             consistency: Consistency::One,
                             with_names: false,
