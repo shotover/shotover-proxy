@@ -114,19 +114,17 @@ impl CassandraSinkSingle {
                             Ok(Some(prelim)) => {
                                 match prelim? {
                                     Response {
-                                        response: Ok(mut resp),
+                                        response: Ok(message),
                                         ..
                                     } => {
-                                        for message in &resp {
-                                            if let Some(raw_bytes) = message.as_raw_bytes() {
-                                                if let Ok(Opcode::Error) =
-                                                    cassandra::raw_frame::get_opcode(raw_bytes)
-                                                {
-                                                    self.failed_requests.increment(1);
-                                                }
+                                        if let Some(raw_bytes) = message.as_raw_bytes() {
+                                            if let Ok(Opcode::Error) =
+                                                cassandra::raw_frame::get_opcode(raw_bytes)
+                                            {
+                                                self.failed_requests.increment(1);
                                             }
                                         }
-                                        responses.append(&mut resp);
+                                        responses.push(message);
                                     }
                                     Response {
                                         mut original,
