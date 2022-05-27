@@ -1480,7 +1480,7 @@ pub async fn test_events() {
     let password = "cassandra";
     let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
     let config = NodeTcpConfigBuilder::new()
-        .with_contact_point("127.0.0.1:9043".into())
+        .with_contact_point("127.0.0.1:9042".into())
         .with_authenticator_provider(Arc::new(auth))
         .build()
         .await

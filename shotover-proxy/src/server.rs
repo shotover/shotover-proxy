@@ -194,7 +194,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             // error here is non-recoverable.
             let socket = self.accept().await?;
 
-            info!("got socket");
+            debug!("got socket");
             self.available_connections_gauge
                 .set(self.limit_connections.available_permits() as f64);
 
@@ -416,24 +416,9 @@ fn spawn_read_write_tasks<
                     }
                 }
             }
-            // async move {
-            //     let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-            //     if let Err(err) = rx_stream.forward(writer).await {
-            //         error!("Stream ended with error {:?}", err);
-            //     }
-            // }
-            // .in_current_span(),
         }
         .in_current_span(),
     );
-
-    // tokio::spawn(async move {
-    //     loop {
-    //         if let Some(msg) = pushed_messages_rx.recv().await {
-    //             tracing::info!("recevied pushed message {:?}", msg);
-    //         }
-    //     }
-    // });
 }
 
 impl<C: Codec + 'static> Handler<C> {
@@ -561,7 +546,6 @@ impl<C: Codec> Drop for Handler<C> {
         // bug causes a panic. The permit would never be returned to the
         // semaphore.
 
-        tracing::info!("dropped handler");
         self.limit_connections.add_permits(1);
     }
 }

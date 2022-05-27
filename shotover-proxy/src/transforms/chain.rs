@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
-use crate::message::Messages;
 use crate::message::Message;
+use crate::message::Messages;
 use crate::transforms::{Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;

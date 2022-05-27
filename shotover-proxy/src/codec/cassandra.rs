@@ -1,4 +1,3 @@
-use crate::frame::cassandra;
 use crate::frame::cassandra::CassandraOperation;
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages};
@@ -74,15 +73,6 @@ impl Decoder for CassandraCodec {
                         "incoming cassandra message:\n{}",
                         pretty_hex::pretty_hex(&bytes)
                     );
-
-                    if cassandra::raw_frame::get_opcode(&bytes).unwrap() == Opcode::Register {
-                        let mut message =
-                            Message::from_bytes(bytes.clone().freeze(), MessageType::Cassandra);
-
-                        if let Frame::Cassandra(cassandra) = message.frame().unwrap() {
-                            tracing::info!("{:?}", cassandra.operation);
-                        }
-                    };
 
                     self.messages
                         .push(Message::from_bytes(bytes.freeze(), MessageType::Cassandra));
