@@ -336,12 +336,13 @@ checksum = "2fff2a6927b3bb87f9595d67196a70493f627687a71d87a0d692242c33f58c11"
 [[package]]
 name = "cdrs-tokio"
 version = "6.2.0"
-source = "git+https://github.com/krojew/cdrs-tokio#bd881e491daf908a51fb6f51cc9de9989057eda1"
+source = "git+https://github.com/conorbros/cdrs-tokio#007ae1ad47444193a42c74e02b33d74d8d09514d"
 dependencies = [
  "arc-swap",
  "atomic",
  "bytes",
  "cassandra-protocol",
+ "derivative",
  "derive_more",
  "futures",
  "fxhash",

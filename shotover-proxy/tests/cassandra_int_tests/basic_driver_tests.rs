@@ -5,12 +5,14 @@ use cassandra_protocol::events::ServerEvent;
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
 use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
 use cdrs_tokio::cluster::NodeTcpConfigBuilder;
-//use cdrs_tokio::frame::events::SchemaChange;
 use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
 use futures::future::{join_all, try_join_all};
+use rand::Rng;
 use serial_test::serial;
 use std::sync::Arc;
 use test_helpers::docker_compose::DockerCompose;
+use tokio::time::timeout;
+use tokio::time::{sleep, Duration};
 
 mod keyspace {
     use crate::helpers::cassandra::{
@@ -1470,6 +1472,8 @@ fn test_source_tls_and_single_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 pub async fn test_events() {
+    let mut rng = rand::thread_rng();
+
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
@@ -1487,20 +1491,37 @@ pub async fn test_events() {
         .unwrap();
 
     let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config).build();
-
     let mut event_recv = session.create_event_receiver();
 
-    let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_ks WITH REPLICATION = { \
-                                   'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
-    session
-        .query(create_ks)
-        .await
-        .expect("Keyspace creation error");
+    let mut tries = 0;
+    loop {
+        if tries > 3 {
+            panic!("did not receive the event after 3 tries.");
+        }
 
-    let event = event_recv.recv().await.unwrap();
-    println!("{:?}", event);
+        let n: u8 = rng.gen();
+        let create_ks = format!("CREATE KEYSPACE IF NOT EXISTS test_ks_{} WITH REPLICATION = {{ 'class' : 'SimpleStrategy', 'replication_factor' : 1 }};", n);
 
-    assert!(matches!(event, ServerEvent::SchemaChange { .. }));
+        session
+            .query(create_ks)
+            .await
+            .expect("Keyspace creation error");
+
+        match timeout(Duration::from_secs(10), event_recv.recv()).await {
+            Ok(recvd) => {
+                match recvd {
+                    Ok(event) => {
+                        assert!(matches!(event, ServerEvent::SchemaChange { .. }));
+                        break;
+                    }
+                    Err(_) => {}
+                };
+            }
+            Err(err) => {
+                tries += 1;
+            }
+        }
+    }
 }
 
 #[test]
