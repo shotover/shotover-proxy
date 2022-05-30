@@ -85,10 +85,6 @@ impl CassandraSinkSingle {
             match self.outbound {
                 None => {
                     trace!("creating outbound connection {:?}", self.address);
-                    tracing::info!(
-                        "creating outbound connection, status: {:?}",
-                        self.pushed_messages_tx
-                    );
                     self.outbound = Some(
                         CassandraConnection::new(
                             self.address.clone(),

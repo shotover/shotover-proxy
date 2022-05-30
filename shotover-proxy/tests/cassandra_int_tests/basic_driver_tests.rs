@@ -12,7 +12,7 @@ use serial_test::serial;
 use std::sync::Arc;
 use test_helpers::docker_compose::DockerCompose;
 use tokio::time::timeout;
-use tokio::time::{sleep, Duration};
+use tokio::time::Duration;
 
 mod keyspace {
     use crate::helpers::cassandra::{
@@ -1509,15 +1509,12 @@ pub async fn test_events() {
 
         match timeout(Duration::from_secs(10), event_recv.recv()).await {
             Ok(recvd) => {
-                match recvd {
-                    Ok(event) => {
-                        assert!(matches!(event, ServerEvent::SchemaChange { .. }));
-                        break;
-                    }
-                    Err(_) => {}
+                if let Ok(event) = recvd {
+                    assert!(matches!(event, ServerEvent::SchemaChange { .. }));
+                    break;
                 };
             }
-            Err(err) => {
+            Err(_) => {
                 tries += 1;
             }
         }
