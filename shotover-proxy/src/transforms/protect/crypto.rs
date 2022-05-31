@@ -48,19 +48,19 @@ pub async fn decrypt(
     key_management: &KeyManager,
     key_id: &str,
 ) -> Result<MessageValue> {
-    let varchar = match value {
-        MessageValue::Varchar(varchar) => varchar,
+    let bytes = match value {
+        MessageValue::Bytes(bytes) => bytes,
         _ => bail!("expected varchar to decrypt but was {:?}", value),
     };
-    let protected: Protected = serde_json::from_str(varchar)?;
+    let protected: Protected = serde_json::from_slice(bytes)?;
 
     let sym_key = key_management
         .cached_get_key(key_id, Some(protected.enc_dek), Some(protected.kek_id))
         .await?;
 
     let decrypted_bytes = secretbox::open(&protected.cipher, &protected.nonce, &sym_key.plaintext)
-        .map_err(|_| anyhow!("couldn't open box"))?;
+        .map_err(|_| anyhow!("couldn't decrypt value"))?;
 
     //TODO make error handing better here - failure here indicates an authenticity failure
-    bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't open box"))
+    bincode::deserialize(&decrypted_bytes).map_err(|_| anyhow!("couldn't decrypt value"))
 }
