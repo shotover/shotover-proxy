@@ -538,4 +538,4 @@ pub trait Transform: Send {
     }
 }
 
-pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + std::marker::Send>>;
+pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;

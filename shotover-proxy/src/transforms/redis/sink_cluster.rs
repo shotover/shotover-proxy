@@ -8,16 +8,15 @@ use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::ResponseFuture;
-use crate::transforms::CONTEXT_CHAIN_NAME;
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{ResponseFuture, Transform, Transforms, Wrapper, CONTEXT_CHAIN_NAME};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytes_utils::string::Str;
 use derivative::Derivative;
 use futures::stream::FuturesUnordered;
-use futures::{Future, StreamExt, TryFutureExt};
+use futures::{StreamExt, TryFutureExt};
+use itertools::Itertools;
 use metrics::{counter, register_counter};
 use rand::rngs::SmallRng;
 use rand::seq::IteratorRandom;
@@ -27,8 +26,7 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
-use tokio::time::timeout;
-use tokio::time::Duration;
+use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, trace, warn};
 
 const SLOT_SIZE: usize = 16384;
@@ -124,37 +122,46 @@ impl RedisSinkCluster {
         };
 
         let routing_info = RoutingInfo::for_command_frame(command)?;
-        let channels = match self.get_channels(routing_info) {
-            ChannelResult::Channels(channels) => channels,
-            ChannelResult::Auth => {
-                return self.on_auth(command).await;
-            }
-            ChannelResult::ShortCircuit(frame) => {
-                let (one_tx, one_rx) = immediate_responder();
-                send_frame_response(one_tx, frame)
-                    .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
-                return Ok(Box::pin(one_rx));
-            }
-        };
+        self.dispatch_message_hiding(routing_info, message).await
+    }
 
-        Ok(match channels.len() {
+    async fn send_message_to_slot(
+        &mut self,
+        slot: u16,
+        message: Message,
+    ) -> Result<ResponseFuture> {
+        if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
+            let lookup = lookup.to_string();
+            let one_rx = self.choose_and_send(&lookup, message).await?;
+            Ok(Box::pin(
+                one_rx.map_err(|_| anyhow!("no response from single channel")),
+            ))
+        } else {
+            self.send_error_response(
+                self.reason_for_no_nodes
+                    .unwrap_or("ERR Shotover RedisSinkCluster does not know of a node containing the required slot")
+            )
+        }
+    }
+
+    async fn send_message_to_channels(
+        &mut self,
+        channels: &[String],
+        message: Message,
+        routing_info: RoutingInfo,
+    ) -> Result<ResponseFuture> {
+        match channels.len() {
             // Return an error as we cant send anything if there are no channels.
-            0 => {
-                let (one_tx, one_rx) = immediate_responder();
-                match self.reason_for_no_nodes {
-                    Some(message) => {
-                        self.send_error_response(one_tx, message).ok();
-                    }
-                    None => self.short_circuit(one_tx),
-                };
-                Box::pin(one_rx)
-            }
+            0 => self.send_error_response(
+                self.reason_for_no_nodes
+                    .unwrap_or("ERR Shotover RedisSinkCluster does not know of any nodes"),
+            ),
             // Send to the single channel and return its response.
-            1 => {
-                let channel = channels.get(0).unwrap();
-                let one_rx = self.choose_and_send(channel, message).await?;
-                Box::pin(one_rx.map_err(|_| anyhow!("no response from single channel")))
-            }
+            1 => Ok(Box::pin(
+                self.choose_and_send(&channels[0], message)
+                    .await?
+                    .map_err(|_| anyhow!("no response from single channel")),
+            )),
             // Send to all senders.
             // If any of the responses were a failure then return that failure.
             // Otherwise return the first successful result
@@ -162,9 +169,9 @@ impl RedisSinkCluster {
                 let responses = FuturesUnordered::new();
 
                 for channel in channels {
-                    responses.push(self.choose_and_send(&channel, message.clone()).await?);
+                    responses.push(self.choose_and_send(channel, message.clone()).await?);
                 }
-                Box::pin(async move {
+                Ok(Box::pin(async move {
                     let response = responses
                         .fold(None, |acc, response| async move {
                             if let Some(RedisFrame::Error(_)) = acc {
@@ -199,9 +206,9 @@ impl RedisSinkCluster {
                         original: message,
                         response: Ok(Message::from_frame(Frame::Redis(response.unwrap()))),
                     })
-                })
+                }))
             }
-        })
+        }
     }
 
     fn latest_contact_points(&self) -> Vec<String> {
@@ -316,13 +323,7 @@ impl RedisSinkCluster {
     }
 
     #[inline]
-    async fn choose_and_send(
-        &mut self,
-        host: &str,
-        message: Message,
-    ) -> Result<oneshot::Receiver<Response>> {
-        let (one_tx, one_rx) = oneshot::channel::<Response>();
-
+    async fn choose_and_send(&mut self, host: &str, message: Message) -> Result<ResponseFuture> {
         let channel = match self.channels.get_mut(host) {
             Some(channels) if channels.len() == 1 => channels.get_mut(0),
             Some(channels) if channels.len() > 1 => {
@@ -373,66 +374,85 @@ impl RedisSinkCluster {
                 Ok(Err(e)) => {
                     debug!("failed to connect to {}: {}", host, e);
                     self.rebuild_connections = true;
-                    self.short_circuit(one_tx);
-                    return Ok(one_rx);
+                    return self.short_circuit_with_error();
                 }
                 Err(_) => {
                     debug!("timed out connecting to {}", host);
                     self.rebuild_connections = true;
-                    self.short_circuit(one_tx);
-                    return Ok(one_rx);
+                    return self.short_circuit_with_error();
                 }
             }
         };
 
-        if let Err(e) = channel.send(Request {
-            message,
-            return_chan: Some(one_tx),
-        }) {
-            if let Some(error_return) = e.0.return_chan {
-                self.rebuild_connections = true;
-                self.short_circuit(error_return);
-            }
+        let (one_tx, one_rx) = oneshot::channel::<Response>();
+        if channel
+            .send(Request {
+                message,
+                return_chan: Some(one_tx),
+            })
+            .is_err()
+        {
+            self.rebuild_connections = true;
             self.channels.remove(host);
+            return self.short_circuit_with_error();
         }
 
-        Ok(one_rx)
+        Ok(Box::pin(one_rx.map_err(|e| anyhow!(e))))
     }
 
-    #[inline(always)]
-    fn get_channels(&mut self, routing_info: RoutingInfo) -> ChannelResult {
+    async fn dispatch_message_hiding(
+        &mut self,
+        routing_info: RoutingInfo,
+        message: Message,
+    ) -> Result<ResponseFuture> {
         match routing_info {
-            RoutingInfo::Slot(slot) => ChannelResult::Channels(
-                if let Some((_, lookup)) = self.slots.masters.range(&slot..).next() {
-                    vec![lookup.clone()]
-                } else {
-                    vec![]
-                },
-            ),
+            RoutingInfo::Slot(slot) => self.send_message_to_slot(slot, message).await,
             RoutingInfo::AllNodes(_) => {
-                ChannelResult::Channels(self.slots.nodes.iter().cloned().collect())
+                self.send_message_to_channels(
+                    &self.slots.nodes.iter().cloned().collect_vec(),
+                    message,
+                    routing_info,
+                )
+                .await
             }
             RoutingInfo::AllMasters(_) => {
-                ChannelResult::Channels(self.slots.masters.values().cloned().collect())
+                self.send_message_to_channels(
+                    &self.slots.masters.values().cloned().collect_vec(),
+                    message,
+                    routing_info,
+                )
+                .await
             }
-            RoutingInfo::Random => ChannelResult::Channels(
-                self.slots
+            RoutingInfo::Random => {
+                let lookup = self
+                    .slots
                     .masters
                     .values()
                     .choose(&mut self.rng)
-                    .map(|key| vec![key.clone()])
-                    .unwrap_or_default(),
-            ),
-            RoutingInfo::Auth => ChannelResult::Auth,
-            RoutingInfo::Unsupported => ChannelResult::Channels(vec![]),
-            RoutingInfo::ShortCircuitNil => ChannelResult::ShortCircuit(RedisFrame::Null),
+                    .cloned()
+                    .unwrap_or_default();
+                self.choose_and_send(&lookup, message).await
+            }
+            RoutingInfo::Auth => self.on_auth(message).await,
+            RoutingInfo::Unsupported => {
+                short_circuit(RedisFrame::Error(
+                    Str::from_inner(Bytes::from_static(b"ERR unknown command - Shotover RedisSinkCluster does not not support this command")).unwrap(),
+                ))
+            }
+            RoutingInfo::ShortCircuitNil => short_circuit(RedisFrame::Null),
             RoutingInfo::ShortCircuitOk => {
-                ChannelResult::ShortCircuit(RedisFrame::SimpleString(Bytes::from("OK")))
+                short_circuit(RedisFrame::SimpleString(Bytes::from_static(b"OK")))
             }
         }
     }
 
-    async fn on_auth(&mut self, command: &[RedisFrame]) -> Result<ResponseFuture> {
+    async fn on_auth(&mut self, mut message: Message) -> Result<ResponseFuture> {
+        let command = match message.frame() {
+            Some(Frame::Redis(RedisFrame::Array(ref command))) => command,
+            None => bail!("Failed to parse redis frame"),
+            message => bail!("syntax error: bad command: {message:?}"),
+        };
+
         let mut args = command.iter().skip(1).rev().map(|f| match f {
             RedisFrame::BulkString(s) => Ok(s),
             _ => bail!("syntax error: expected bulk string"),
@@ -451,49 +471,36 @@ impl RedisSinkCluster {
 
         let token = UsernamePasswordToken { username, password };
 
-        let (one_tx, one_rx) = immediate_responder();
-
         match self.build_connections(Some(token)).await {
-            Ok(()) => {
-                send_simple_response(one_tx, "OK")?;
-            }
+            Ok(()) => short_circuit(RedisFrame::SimpleString("OK".into())),
             Err(TransformError::Upstream(RedisError::BadCredentials)) => {
-                self.send_error_response(one_tx, "WRONGPASS invalid username-password")?;
+                self.send_error_response("WRONGPASS invalid username-password")
             }
             Err(TransformError::Upstream(RedisError::NotAuthorized)) => {
-                self.send_error_response(one_tx, "NOPERM upstream user lacks required permission")?;
+                self.send_error_response("NOPERM upstream user lacks required permission")
             }
-            Err(TransformError::Upstream(e)) => {
-                self.send_error_response(one_tx, e.to_string().as_str())?;
-            }
-            Err(e) => {
-                return Err(anyhow!(e).context("authentication failed"));
-            }
+            Err(TransformError::Upstream(e)) => self.send_error_response(e.to_string().as_str()),
+            Err(e) => Err(anyhow!(e).context("authentication failed")),
         }
-
-        Ok(Box::pin(one_rx))
     }
 
     #[inline(always)]
-    fn send_error_response(&self, one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
+    fn send_error_response(&self, message: &str) -> Result<ResponseFuture> {
         if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
         counter!("failed_requests", 1, "chain" => chain_name.to_string(), "transform" => self.get_name());
     }) {
         error!("failed to count failed request - missing chain name: {}", e);
     }
-        send_frame_response(one_tx, RedisFrame::Error(message.to_string().into()))
-            .map_err(|_| anyhow!("failed to send error: {}", message))
+        short_circuit(RedisFrame::Error(message.into()))
     }
 
-    #[inline(always)]
-    fn short_circuit(&self, one_tx: oneshot::Sender<Response>) {
+    // TODO: calls to this function should be completely replaced with calls to short_circuit that provide more specific error messages
+    fn short_circuit_with_error(&self) -> Result<ResponseFuture> {
         warn!("Could not route request - short circuiting");
-        if let Err(e) = self.send_error_response(
-            one_tx,
-            "ERR unknown command - Shotover RedisSinkCluster does not not support this command",
-        ) {
-            trace!("short circuiting - couldn't send error - {:?}", e);
-        }
+        short_circuit(RedisFrame::Error(
+            "ERR Shotover RedisSinkCluster does not not support this command used in this way"
+                .into(),
+        ))
     }
 }
 
@@ -561,12 +568,6 @@ pub enum ResponseJoin {
     ArrayJoin,
     IntegerSum,
     IntegerMin,
-}
-
-enum ChannelResult {
-    Channels(Vec<String>),
-    Auth,
-    ShortCircuit(RedisFrame),
 }
 
 impl RoutingInfo {
@@ -821,12 +822,6 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 }
 
 #[inline(always)]
-fn send_simple_response(one_tx: oneshot::Sender<Response>, message: &str) -> Result<()> {
-    send_frame_response(one_tx, RedisFrame::SimpleString(message.to_string().into()))
-        .map_err(|_| anyhow!("failed to send simple: {}", message))
-}
-
-#[inline(always)]
 fn send_frame_request(
     sender: &UnboundedSender<Request>,
     frame: RedisFrame,
@@ -852,27 +847,21 @@ async fn receive_frame_response(receiver: oneshot::Receiver<Response>) -> Result
     }
 }
 
-#[inline(always)]
-fn send_frame_response(
-    one_tx: oneshot::Sender<Response>,
-    frame: RedisFrame,
-) -> Result<(), Response> {
-    one_tx.send(Response {
-        original: Message::from_frame(Frame::None),
-        response: Ok(Message::from_frame(Frame::Redis(frame))),
-    })
-}
-
-fn immediate_responder() -> (
-    oneshot::Sender<Response>,
-    impl Future<Output = Result<Response>>,
-) {
+fn short_circuit(frame: RedisFrame) -> Result<ResponseFuture> {
     let (one_tx, one_rx) = oneshot::channel::<Response>();
-    (one_tx, async {
+
+    one_tx
+        .send(Response {
+            original: Message::from_frame(Frame::None),
+            response: Ok(Message::from_frame(Frame::Redis(frame))),
+        })
+        .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
+
+    Ok(Box::pin(async {
         one_rx
             .await
             .map_err(|_| panic!("immediate responder must be used"))
-    })
+    }))
 }
 
 #[async_trait]
@@ -891,12 +880,8 @@ impl Transform for RedisSinkCluster {
         for message in message_wrapper.messages {
             responses.push(match self.dispatch_message(message).await {
                 Ok(response) => response,
-                Err(e) => {
-                    let (one_tx, one_rx) = immediate_responder();
-                    self.send_error_response(one_tx, &format!("ERR {e}"))?;
-                    Box::pin(one_rx)
-                }
-            });
+                Err(e) => short_circuit(RedisFrame::Error(format!("ERR {e}").into())).unwrap(),
+            })
         }
 
         trace!("Processing response");
@@ -904,12 +889,11 @@ impl Transform for RedisSinkCluster {
 
         while let Some(s) = responses.next().await {
             trace!("Got resp {:?}", s);
-            let Response { original, response } = s.or_else(|_| -> Result<Response> {
+            let Response { original, response } = s.or_else(|e| -> Result<Response> {
                 Ok(Response {
                     original: Message::from_frame(Frame::None),
                     response: Ok(Message::from_frame(Frame::Redis(RedisFrame::Error(
-                        Str::from_inner(Bytes::from_static(b"ERR Could not route request"))
-                            .unwrap(),
+                        format!("ERR Could not route request - {e}").into(),
                     )))),
                 })
             })?;
@@ -926,19 +910,19 @@ impl Transform for RedisSinkCluster {
 
                             self.rebuild_connections = true;
 
-                            let one_rx = self.choose_and_send(&server, original).await?;
-
                             responses.prepend(Box::pin(
-                                one_rx.map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
+                                self.choose_and_send(&server, original)
+                                    .await?
+                                    .map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
                             ));
                         }
                         Some(Redirection::Ask { slot, server }) => {
                             debug!("Got ASK {} {}", slot, server);
 
-                            let one_rx = self.choose_and_send(&server, original).await?;
-
                             responses.prepend(Box::pin(
-                                one_rx.map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
+                                self.choose_and_send(&server, original)
+                                    .await?
+                                    .map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
                             ));
                         }
                         None => response_buffer.push(response),
