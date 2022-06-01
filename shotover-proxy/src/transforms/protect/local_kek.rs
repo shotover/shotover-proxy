@@ -1,6 +1,5 @@
-use crate::transforms::protect::KeyMaterial;
-use anyhow::anyhow;
-use anyhow::Result;
+use crate::transforms::protect::key_management::KeyMaterial;
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::secretbox;

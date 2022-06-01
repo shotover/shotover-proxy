@@ -1254,7 +1254,7 @@ mod protect {
             "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
         );
         if let ResultValue::Varchar(value) = &result[0][2] {
-            assert!(value.starts_with("{\"Ciphertext"));
+            assert!(value.starts_with("{\"cipher"), "but was {:?}", value);
         } else {
             panic!("expectected 3rd column to be ResultValue::Varchar in {result:?}");
         }
@@ -1269,7 +1269,7 @@ mod protect {
         assert_eq!(result[0][0], ResultValue::Varchar("pk1".into()));
         assert_eq!(result[0][1], ResultValue::Varchar("cluster".into()));
         if let ResultValue::Varchar(value) = &result[0][2] {
-            assert!(value.starts_with("{\"Ciphertext"));
+            assert!(value.starts_with("{\"cipher"), "but was {:?}", value);
         } else {
             panic!("expectected 3rd column to be ResultValue::Varchar in {result:?}");
         }

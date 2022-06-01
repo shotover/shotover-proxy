@@ -1,8 +1,8 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
-use crate::transforms::protect::KeyMaterial;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use bytes::Bytes;
 use cached::proc_macro::cached;
 use rusoto_kms::KmsClient;
 use rusoto_signature::Region;
@@ -90,11 +90,11 @@ impl KeyManagement for KeyManager {
 impl KeyManager {
     pub async fn cached_get_key(
         &self,
-        _key_id: String,
+        key_id: &str,
         dek: Option<Vec<u8>>,
         kek_alt: Option<String>,
     ) -> Result<KeyMaterial> {
-        private_cached_fetch(_key_id, self, dek, kek_alt).await
+        private_cached_fetch(key_id, self, dek, kek_alt).await
     }
 }
 
@@ -106,10 +106,17 @@ impl KeyManager {
     convert = r#"{ format!("{}", _key_id) }"#
 )]
 async fn private_cached_fetch(
-    _key_id: String,
+    _key_id: &str,
     km: &KeyManager,
     dek: Option<Vec<u8>>,
     kek_alt: Option<String>,
 ) -> Result<KeyMaterial> {
     km.get_key(dek, kek_alt).await
+}
+
+#[derive(Clone)]
+pub struct KeyMaterial {
+    pub ciphertext_blob: Bytes,
+    pub key_id: String,
+    pub plaintext: Key,
 }
