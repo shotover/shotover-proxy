@@ -401,17 +401,21 @@ fn spawn_read_write_tasks<
         .in_current_span(),
     );
 
-    tokio::spawn(async move {
-        let out_rx_stream = tokio_stream::StreamExt::map(UnboundedReceiverStream::new(out_rx), Ok);
-        let pushed_messages_rx_stream =
-            tokio_stream::StreamExt::map(UnboundedReceiverStream::new(pushed_messages_rx), Ok);
+    tokio::spawn(
+        async move {
+            let out_rx_stream =
+                tokio_stream::StreamExt::map(UnboundedReceiverStream::new(out_rx), Ok);
+            let pushed_messages_rx_stream =
+                tokio_stream::StreamExt::map(UnboundedReceiverStream::new(pushed_messages_rx), Ok);
 
-        let rx_stream = out_rx_stream.merge(pushed_messages_rx_stream);
+            let rx_stream = out_rx_stream.merge(pushed_messages_rx_stream);
 
-        if let Err(err) = rx_stream.forward(writer).await {
-            error!("Stream ended with error {:?}", err);
+            if let Err(err) = rx_stream.forward(writer).await {
+                error!("Stream ended with error {:?}", err);
+            }
         }
-    });
+        .in_current_span(),
+    );
 }
 
 impl<C: Codec + 'static> Handler<C> {
