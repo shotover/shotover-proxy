@@ -1,19 +1,20 @@
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
-use futures::sink::SinkExt;
 use futures::StreamExt;
 use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::StreamExt as TokioStreamExt;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
@@ -212,7 +213,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             socket.set_nodelay(true)?;
 
             let (pushed_messages_tx, pushed_messages_rx) =
-                tokio::sync::mpsc::channel::<Message>(100);
+                tokio::sync::mpsc::unbounded_channel::<Messages>();
 
             let mut handler = Handler {
                 chain: self.chain.clone_with_pushed_messages_tx(pushed_messages_tx),
@@ -369,16 +370,16 @@ fn spawn_read_write_tasks<
     rx: R,
     tx: W,
     in_tx: UnboundedSender<Messages>,
-    mut out_rx: UnboundedReceiver<Messages>,
+    out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
-    mut pushed_messages_rx: Receiver<Message>,
+    pushed_messages_rx: UnboundedReceiver<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
-    let mut writer = FramedWrite::new(tx, codec);
+    let writer = FramedWrite::new(tx, codec);
 
     tokio::spawn(
         async move {
-            while let Some(message) = reader.next().await {
+            while let Some(message) = futures::StreamExt::next(&mut reader).await {
                 match message {
                     Ok(message) => {
                         let remaining_messages =
@@ -400,25 +401,17 @@ fn spawn_read_write_tasks<
         .in_current_span(),
     );
 
-    tokio::spawn(
-        async move {
-            loop {
-                tokio::select! {
-                    val = out_rx.recv() => {
-                        if let Some(val) = val{
-                            writer.send(val).await.unwrap();
-                        }
-                    },
-                    val = pushed_messages_rx.recv() => {
-                        if let Some(val) = val{
-                            writer.send(vec![val]).await.unwrap();
-                        }
-                    }
-                }
-            }
+    tokio::spawn(async move {
+        let out_rx_stream = tokio_stream::StreamExt::map(UnboundedReceiverStream::new(out_rx), Ok);
+        let pushed_messages_rx_stream =
+            tokio_stream::StreamExt::map(UnboundedReceiverStream::new(pushed_messages_rx), Ok);
+
+        let rx_stream = out_rx_stream.merge(pushed_messages_rx_stream);
+
+        if let Err(err) = rx_stream.forward(writer).await {
+            error!("Stream ended with error {:?}", err);
         }
-        .in_current_span(),
-    );
+    });
 }
 
 impl<C: Codec + 'static> Handler<C> {
@@ -432,7 +425,7 @@ impl<C: Codec + 'static> Handler<C> {
     pub async fn run(
         &mut self,
         stream: TcpStream,
-        pushed_messages_rx: Receiver<Message>,
+        pushed_messages_rx: UnboundedReceiver<Messages>,
     ) -> Result<()> {
         debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a

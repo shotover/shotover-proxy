@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
@@ -248,7 +248,10 @@ impl Transforms {
         }
     }
 
-    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: tokio::sync::mpsc::Sender<Message>) {
+    fn add_pushed_messages_tx(
+        &mut self,
+        pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
+    ) {
         if let Transforms::CassandraSinkSingle(c) = self {
             c.add_pushed_messages_tx(pushed_messages_tx)
         }
@@ -602,7 +605,11 @@ pub trait Transform: Send {
         vec![]
     }
 
-    fn add_pushed_messages_tx(&mut self, _pushed_messages_tx: tokio::sync::mpsc::Sender<Message>) {}
+    fn add_pushed_messages_tx(
+        &mut self,
+        _pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
+    ) {
+    }
 }
 
 pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;

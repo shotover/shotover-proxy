@@ -5,6 +5,7 @@ use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
+use crate::transforms::Messages;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Opcode;
 use derivative::Derivative;
@@ -37,7 +38,7 @@ impl CassandraConnection {
         host: String,
         codec: C,
         mut tls: Option<TlsConnector>,
-        pushed_messages_tx: Option<mpsc::Sender<Message>>,
+        pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
         let tcp_stream: TcpStream = TcpStream::connect(&host).await?;
 
@@ -102,7 +103,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
     read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<Request>,
     codec: C,
-    pushed_messages_tx: Option<mpsc::Sender<Message>>,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec);
     let mut return_channel_map: HashMap<i16, (oneshot::Sender<Response>, Message)> = HashMap::new();
@@ -118,7 +119,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                             if let Some(ref pushed_messages_tx) = pushed_messages_tx {
                                 if let Some(raw_bytes) = m.as_raw_bytes() {
                                     if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(raw_bytes) {
-                                        pushed_messages_tx.send(m).await.unwrap();
+                                        pushed_messages_tx.send(vec![m]).unwrap();
                                         continue;
                                     };
                                 };

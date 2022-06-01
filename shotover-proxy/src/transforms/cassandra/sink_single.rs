@@ -3,7 +3,7 @@ use crate::codec::cassandra::CassandraCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::cassandra;
-use crate::message::{Message, Messages};
+use crate::message::Messages;
 use crate::tls::TlsConfig;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
@@ -44,7 +44,7 @@ pub struct CassandraSinkSingle {
     chain_name: String,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
-    pushed_messages_tx: Option<tokio::sync::mpsc::Sender<Message>>,
+    pushed_messages_tx: Option<tokio::sync::mpsc::UnboundedSender<Messages>>,
 }
 
 impl Clone for CassandraSinkSingle {
@@ -172,7 +172,10 @@ impl Transform for CassandraSinkSingle {
         true
     }
 
-    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: tokio::sync::mpsc::Sender<Message>) {
+    fn add_pushed_messages_tx(
+        &mut self,
+        pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
+    ) {
         self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }

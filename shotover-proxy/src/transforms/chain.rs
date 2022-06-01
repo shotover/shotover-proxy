@@ -1,5 +1,4 @@
 use crate::error::ChainResponse;
-use crate::message::Message;
 use crate::message::Messages;
 use crate::transforms::{Transforms, Wrapper};
 use anyhow::{anyhow, Result};
@@ -309,7 +308,7 @@ impl TransformChain {
 
     pub fn clone_with_pushed_messages_tx(
         &self,
-        pushed_messages_tx: tokio::sync::mpsc::Sender<Message>,
+        pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
     ) -> Self {
         let mut cloned_chain = self.chain.clone();
 
