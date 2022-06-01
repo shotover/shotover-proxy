@@ -65,8 +65,7 @@ impl RedisSinkClusterConfig {
     }
 }
 
-#[derive(Derivative, Clone)]
-#[derivative(Debug)]
+#[derive(Clone, Debug)]
 pub struct RedisSinkCluster {
     pub slots: SlotMap,
     pub channels: ChannelMap,
@@ -211,13 +210,16 @@ impl RedisSinkCluster {
         }
     }
 
-    fn latest_contact_points(&self) -> Vec<String> {
+    fn latest_contact_points(&self) -> Vec<&str> {
         if !self.slots.nodes.is_empty() {
             // Use latest node addresses as contact points.
-            self.slots.nodes.iter().cloned().collect::<Vec<_>>()
+            self.slots.nodes.iter().map(|x| x.as_str()).collect()
         } else {
             // Fallback to initial contact points.
-            self.first_contact_points.clone()
+            self.first_contact_points
+                .iter()
+                .map(|x| x.as_str())
+                .collect()
         }
     }
 
@@ -229,9 +231,7 @@ impl RedisSinkCluster {
 
         let addresses = self.latest_contact_points();
 
-        let mut errors = Vec::new();
         let mut results = FuturesUnordered::new();
-
         for address in &addresses {
             results.push(
                 self.connection_pool
@@ -248,6 +248,7 @@ impl RedisSinkCluster {
             );
         }
 
+        let mut errors = Vec::new();
         while let Some(result) = results.next().await {
             match result {
                 Ok(slots) => return Ok(slots),
