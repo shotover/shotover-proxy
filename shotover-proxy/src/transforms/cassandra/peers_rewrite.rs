@@ -66,6 +66,12 @@ impl Transform for CassandraPeersRewrite {
 
         Ok(response)
     }
+
+    async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        tracing::info!("{:?}", message_wrapper);
+        let response = message_wrapper.call_next_transform_rev().await?;
+        Ok(response)
+    }
 }
 
 /// determine if the message contains a SELECT from `system.peers_v2` that includes the `native_port` column

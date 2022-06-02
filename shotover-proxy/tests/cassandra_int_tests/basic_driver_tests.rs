@@ -10,7 +10,7 @@ use futures::future::{join_all, try_join_all};
 use rand::Rng;
 use serial_test::serial;
 use std::sync::Arc;
-use test_helpers::docker_compose::DockerCompose;
+use test_helpers::docker_compose::{run_command, DockerCompose};
 use tokio::time::timeout;
 use tokio::time::Duration;
 
@@ -1471,7 +1471,7 @@ fn test_source_tls_and_single_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-pub async fn test_events() {
+async fn test_events() {
     let mut rng = rand::thread_rng();
 
     let _docker_compose =
@@ -1513,6 +1513,55 @@ pub async fn test_events() {
                     assert!(matches!(event, ServerEvent::SchemaChange { .. }));
                     break;
                 };
+            }
+            Err(_) => {
+                tries += 1;
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_events_node() {
+    let _docker_compose = DockerCompose::new(
+        "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
+    );
+
+    let _shotover_manager = ShotoverManager::from_topology_file(
+        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
+    );
+
+    let user = "cassandra";
+    let password = "cassandra";
+    let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
+    let config = NodeTcpConfigBuilder::new()
+        .with_contact_point("127.0.0.1:9044".into())
+        .with_authenticator_provider(Arc::new(auth))
+        .build()
+        .await
+        .unwrap();
+
+    let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config).build();
+
+    let mut event_recv = session.create_event_receiver();
+
+    run_command(
+        "docker",
+        &["kill", "cassandra-peers-rewrite-cassandra-three-1"],
+    )
+    .unwrap();
+
+    let mut tries = 0;
+    loop {
+        if tries > 3 {
+            panic!("did not receive the event after 3 tries.");
+        }
+
+        match timeout(Duration::from_secs(10), event_recv.recv()).await {
+            Ok(recvd) => {
+                println!("{:?}", recvd);
+                break;
             }
             Err(_) => {
                 tries += 1;

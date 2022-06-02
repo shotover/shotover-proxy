@@ -415,6 +415,8 @@ impl<'a> Wrapper<'a> {
         let transform_name = transform.get_name();
         let chain_name = self.chain_name.clone();
 
+        println!("here");
+
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME
             .scope(chain_name, transform.transform_rev(self))
@@ -584,6 +586,16 @@ pub trait Transform: Send {
     /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
+    /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
+    /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
+    /// in a `[Vec<Message]`(crate::message::Message).
+    ///
+    /// TODO in this transform there is no request/response model. only pushed messages
+    ///
+    /// TODO the messages can be modified before and after call_next_transform_rev is called
+    /// TODO invariants: non-terminating, terminating, message count
+    ///
+    /// TODO basic example
     async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let response = message_wrapper.call_next_transform_rev().await?;
         Ok(response)
