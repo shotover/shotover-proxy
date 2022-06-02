@@ -1,5 +1,6 @@
 use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue};
+use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::{
     error::ChainResponse,
     transforms::{Transform, Transforms, Wrapper},
@@ -9,6 +10,7 @@ use async_trait::async_trait;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
+use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -67,8 +69,17 @@ impl Transform for CassandraPeersRewrite {
         Ok(response)
     }
 
-    async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        tracing::info!("{:?}", message_wrapper);
+    async fn transform_rev<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        for message in message_wrapper.messages.iter_mut() {
+            if let Some(Frame::Cassandra(frame)) = message.frame() {
+                if let Event(ServerEvent::StatusChange(StatusChange { mut addr, .. })) =
+                    frame.operation
+                {
+                    addr.addr.set_port(self.port);
+                }
+            }
+        }
+
         let response = message_wrapper.call_next_transform_rev().await?;
         Ok(response)
     }
