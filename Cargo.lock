@@ -336,7 +336,7 @@ checksum = "2fff2a6927b3bb87f9595d67196a70493f627687a71d87a0d692242c33f58c11"
 [[package]]
 name = "cdrs-tokio"
 version = "6.2.0"
-source = "git+https://github.com/conorbros/cdrs-tokio#007ae1ad47444193a42c74e02b33d74d8d09514d"
+source = "git+https://github.com/krojew/cdrs-tokio#614ff15e85a5e467243dde01efd7bbd06c6b2e04"
 dependencies = [
  "arc-swap",
  "atomic",
