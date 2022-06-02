@@ -70,13 +70,14 @@ impl Transform for CassandraPeersRewrite {
     }
 
     async fn transform_rev<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        for message in message_wrapper.messages.iter_mut() {
+        for message in &mut message_wrapper.messages {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
-                if let Event(ServerEvent::StatusChange(StatusChange { mut addr, .. })) =
-                    frame.operation
+                if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
+                    &mut frame.operation
                 {
                     addr.addr.set_port(self.port);
                 }
+                message.invalidate_cache();
             }
         }
 
