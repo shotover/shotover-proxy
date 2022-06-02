@@ -2,6 +2,7 @@ use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, R
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind, Session};
 use cassandra_protocol::events::ServerEvent;
+use cassandra_protocol::frame::events::StatusChange;
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
 use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
 use cdrs_tokio::cluster::NodeTcpConfigBuilder;
@@ -1560,7 +1561,11 @@ async fn test_events_node() {
 
         match timeout(Duration::from_secs(10), event_recv.recv()).await {
             Ok(recvd) => {
-                println!("{:?}", recvd);
+                if let Ok(ServerEvent::StatusChange(StatusChange { addr, .. })) = recvd {
+                    assert_eq!(addr.addr.port(), 9044);
+                } else {
+                    panic!("expected ServerEvent::StatusChange, got {:?}", recvd);
+                }
                 break;
             }
             Err(_) => {
