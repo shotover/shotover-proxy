@@ -14,7 +14,6 @@ use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_stream::StreamExt as TokioStreamExt;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
@@ -216,7 +215,9 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 tokio::sync::mpsc::unbounded_channel::<Messages>();
 
             let mut handler = Handler {
-                chain: self.chain.clone_with_pushed_messages_tx(pushed_messages_tx),
+                chain: self
+                    .chain
+                    .clone_with_pushed_messages_tx(pushed_messages_tx.clone()),
                 client_details: peer,
                 conn_details: conn_string,
                 source_details: self.source_name.clone(),
@@ -372,14 +373,13 @@ fn spawn_read_write_tasks<
     in_tx: UnboundedSender<Messages>,
     out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
-    pushed_messages_rx: UnboundedReceiver<Messages>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
     let writer = FramedWrite::new(tx, codec);
 
     tokio::spawn(
         async move {
-            while let Some(message) = futures::StreamExt::next(&mut reader).await {
+            while let Some(message) = reader.next().await {
                 match message {
                     Ok(message) => {
                         let remaining_messages =
@@ -403,13 +403,7 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(
         async move {
-            let out_rx_stream =
-                tokio_stream::StreamExt::map(UnboundedReceiverStream::new(out_rx), Ok);
-            let pushed_messages_rx_stream =
-                tokio_stream::StreamExt::map(UnboundedReceiverStream::new(pushed_messages_rx), Ok);
-
-            let rx_stream = out_rx_stream.merge(pushed_messages_rx_stream);
-
+            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
             if let Err(err) = rx_stream.forward(writer).await {
                 error!("Stream ended with error {:?}", err);
             }
@@ -429,7 +423,7 @@ impl<C: Codec + 'static> Handler<C> {
     pub async fn run(
         &mut self,
         stream: TcpStream,
-        pushed_messages_rx: UnboundedReceiver<Messages>,
+        mut pushed_messages_rx: UnboundedReceiver<Messages>,
     ) -> Result<()> {
         debug!("Handler run() started");
         // As long as the shutdown signal has not been received, try to read a
@@ -439,34 +433,21 @@ impl<C: Codec + 'static> Handler<C> {
         let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
+        // let pushed_messages_chain =
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(
-                self.codec.clone(),
-                rx,
-                tx,
-                in_tx,
-                out_rx,
-                out_tx.clone(),
-                pushed_messages_rx,
-            );
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(
-                self.codec.clone(),
-                rx,
-                tx,
-                in_tx,
-                out_rx,
-                out_tx.clone(),
-                pushed_messages_rx,
-            );
+            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
         };
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
             debug!("Waiting for message");
+            let mut reverse_chain = false;
+
             let messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
@@ -491,6 +472,10 @@ impl<C: Codec + 'static> Handler<C> {
                         }
                     }
                 },
+                Some(res) = pushed_messages_rx.recv() => {
+                    reverse_chain = true;
+                    res
+                },
                 _ = self.shutdown.recv() => {
                     // If a shutdown signal is received, return from `run`.
                     // This will result in the task terminating.
@@ -501,18 +486,28 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("Received raw message {:?}", messages);
             debug!("client details: {:?}", &self.client_details);
 
-            match self
-                .chain
-                .process_request(
-                    Wrapper::new_with_client_details(
+            let chain_result = if reverse_chain {
+                self.chain
+                    .process_request_rev(Wrapper::new_with_client_details(
                         messages,
                         self.client_details.clone(),
                         self.chain.name.clone(),
-                    ),
-                    self.client_details.clone(),
-                )
-                .await
-            {
+                    ))
+                    .await
+            } else {
+                self.chain
+                    .process_request(
+                        Wrapper::new_with_client_details(
+                            messages,
+                            self.client_details.clone(),
+                            self.chain.name.clone(),
+                        ),
+                        self.client_details.clone(),
+                    )
+                    .await
+            };
+
+            match chain_result {
                 Ok(modified_messages) => {
                     debug!("sending message: {:?}", modified_messages);
                     // send the result of the process up stream
