@@ -415,8 +415,6 @@ impl<'a> Wrapper<'a> {
         let transform_name = transform.get_name();
         let chain_name = self.chain_name.clone();
 
-        println!("here");
-
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME
             .scope(chain_name, transform.transform_rev(self))

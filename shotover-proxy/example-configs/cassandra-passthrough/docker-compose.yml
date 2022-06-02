@@ -1,7 +1,7 @@
 version: "3.3"
 services:
   cassandra-one:
-    image: bitnami/cassandra:4.0
+    image: bitnami/cassandra:3.11
     ports:
       - "9043:9042"
     environment:

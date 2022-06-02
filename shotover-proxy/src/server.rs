@@ -433,7 +433,6 @@ impl<C: Codec + 'static> Handler<C> {
         let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
-        // let pushed_messages_chain =
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
