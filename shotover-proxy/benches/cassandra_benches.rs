@@ -82,7 +82,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/cassandra-passthrough/topology.yaml",
-                "example-configs/cassandra-passthrough/docker-compose.yml",
+                "example-configs/cassandra-passthrough/docker-compose-3.11.yml",
             )
         });
         for query in &queries {

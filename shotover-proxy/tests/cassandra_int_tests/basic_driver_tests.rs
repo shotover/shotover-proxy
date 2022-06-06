@@ -1419,7 +1419,8 @@ APPLY BATCH;"
 #[test]
 #[serial]
 fn test_passthrough() {
-    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+    let _compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose-3.11.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
@@ -1472,11 +1473,11 @@ fn test_source_tls_and_single_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_events() {
+async fn test_events_keyspace() {
     let mut rng = rand::thread_rng();
 
     let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose-4.0.yml");
 
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
@@ -1745,7 +1746,7 @@ fn test_cassandra_peers_rewrite() {
 #[serial]
 async fn test_cassandra_request_throttling() {
     let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose-3.11.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
