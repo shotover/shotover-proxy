@@ -588,10 +588,16 @@ pub trait Transform: Send {
     /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
     /// in a `[Vec<Message]`(crate::message::Message).
     ///
-    /// TODO in this transform there is no request/response model. only pushed messages
+    /// This transform method is not the same request/response model as the other transform method.
+    /// This method processes one pushed message before sending it in reverse on the chain back to the source.
     ///
-    /// TODO the messages can be modified before and after call_next_transform_rev is called
-    /// TODO invariants: non-terminating, terminating, message count
+    /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform can
+    /// also modify the response from `message_wrapper.call_next_transform_rev` if it needs to. As long as the message
+    /// carries on through the chain, it will function correctly.
+    ///
+    /// ## Invariants
+    /// * _Non-terminating_ - Your `transform_rev` method should not be terminating as the messages should get passed back to the source, where they will terminate.
+    /// * _Message count_ - you can modify pushed messages but you should not remove or add them.
     ///
     /// TODO basic example
     async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
