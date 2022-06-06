@@ -3,14 +3,17 @@ use test_helpers::docker_compose::DockerCompose;
 use test_helpers::shotover_process::ShotoverProcess;
 
 /// e.g.
-/// cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough -r 1000
+/// cargo run --release --example cassandra_bench -- --docker-compose example-configs/cassandra-passthrough/docker-compose-4.0.yml --topology example-configs/cassandra-passthrough/topology.yaml -r 1000
 /// or
-/// cargo run --release --example cassandra_bench -- --config-dir tests/test-configs/cassandra-passthrough-parse-request -r 1000
+/// cargo run --release --example cassandra_bench -- --docker-compose tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yml --topology tests/test-configs/cassandra-passthrough-parse-request/topology.yaml -r 1000
 #[derive(Parser, Clone)]
 #[clap(name = "cassandra_bench", arg_required_else_help = true)]
 pub struct Args {
     #[clap(short, long)]
-    pub config_dir: String,
+    pub docker_compose: String,
+
+    #[clap(short, long)]
+    pub topology: String,
 
     #[clap(short, long)]
     pub rate: u64,
@@ -30,10 +33,10 @@ fn main() {
 
     let latte = Latte::new(args.rate);
     {
-        let _compose = DockerCompose::new(&format!("{}/docker-compose.yml", args.config_dir));
+        let _compose = DockerCompose::new(&args.docker_compose);
 
         // Uses ShotoverProcess instead of ShotoverManager for a more accurate benchmark
-        let shotover_manager = ShotoverProcess::new(&format!("{}/topology.yaml", args.config_dir));
+        let shotover_manager = ShotoverProcess::new(&args.topology);
 
         println!("Benching Shotover ...");
         bench_read(&latte, "localhost:9043", "localhost:9042");

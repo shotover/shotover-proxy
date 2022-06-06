@@ -1548,11 +1548,7 @@ async fn test_events_node() {
 
     let mut event_recv = session.create_event_receiver();
 
-    run_command(
-        "docker",
-        &["kill", "cassandra-peers-rewrite-cassandra-three-1"],
-    )
-    .unwrap();
+    run_command("docker", &["kill", "cassandra-three"]).unwrap();
 
     let mut tries = 0;
     loop {

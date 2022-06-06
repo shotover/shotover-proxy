@@ -11,6 +11,7 @@ networks:
 
 services:
   cassandra-one:
+    container_name: cassandra-one
     image: bitnami/cassandra:3.11
     networks:
       cluster_subnet:
@@ -36,6 +37,7 @@ services:
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
 
   cassandra-two:
+    container_name: cassandra-two
     image: bitnami/cassandra:3.11
     networks:
       cluster_subnet:
@@ -44,6 +46,7 @@ services:
     environment: *environment
 
   cassandra-three:
+    container_name: cassandra-three
     image: bitnami/cassandra:4.0
     networks:
       cluster_subnet:
