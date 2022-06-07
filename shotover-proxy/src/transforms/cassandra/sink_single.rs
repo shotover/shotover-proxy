@@ -14,8 +14,7 @@ use cassandra_protocol::frame::Opcode;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::time::Duration;
-use tokio::sync::oneshot;
-use tokio::sync::oneshot::Receiver;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tracing::{info, trace};
@@ -44,7 +43,7 @@ pub struct CassandraSinkSingle {
     chain_name: String,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
-    pushed_messages_tx: Option<tokio::sync::mpsc::UnboundedSender<Messages>>,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 }
 
 impl Clone for CassandraSinkSingle {
@@ -100,7 +99,7 @@ impl CassandraSinkSingle {
                     trace!("sending frame upstream");
 
                     let expected_size = messages.len();
-                    let results: Result<FuturesOrdered<Receiver<Response>>> = messages
+                    let results: Result<FuturesOrdered<oneshot::Receiver<Response>>> = messages
                         .into_iter()
                         .map(|m| {
                             let (return_chan_tx, return_chan_rx) = oneshot::channel();
