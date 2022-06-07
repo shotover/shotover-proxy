@@ -57,7 +57,7 @@ keytool -importkeystore -destkeystore keystore.jks -srcstoretype PKCS12 -srckeys
 openssl pkcs12 -export -out truststore.p12 -inkey localhost.key -in localhost.crt -passout pass:password
 keytool -importkeystore -destkeystore truststore.jks -srcstoretype PKCS12 -srckeystore truststore.p12 -deststorepass "password" -srcstorepass "password"
 
-sudo chown -R 1001 keystore.p12
-sudo chown -R 1001 truststore.p12
+chmod o+rwx keystore.p12
+chmod o+rwx truststore.p12
 
 echo "finished generating certs"
