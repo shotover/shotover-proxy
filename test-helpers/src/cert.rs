@@ -1,6 +1,5 @@
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa};
 use std::env::{current_dir, set_current_dir};
-use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Command;
 
@@ -42,12 +41,7 @@ pub fn generate_cassandra_test_certs() {
     let current_path = current_dir().unwrap();
     set_current_dir("example-configs/cassandra-tls/certs").unwrap();
 
-    if let Err(ErrorKind::NotFound) = Command::new("./gen_certs.sh")
-        .output()
-        .map_err(|e| e.kind())
-    {
-        panic!("Could not generate test certs");
-    }
+    Command::new("./gen_certs.sh").output().unwrap();
 
     set_current_dir(current_path).unwrap();
 }
