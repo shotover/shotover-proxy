@@ -10,15 +10,23 @@ help()
    echo
 }
 
+clear()
+{
+   rm -f *.p12 *.jks *.key *.csr *.srl *.crt
+}
+
 OVERWRITE=false
 
-while getopts ":ho" option; do
+while getopts ":hoc" option; do
    case $option in
       h) # display Help
          help
          exit;;
       o)
           OVERWRITE=true;;
+      c)
+         clear
+         exit;;
       \?)
          echo "Error: Invalid option"
          exit;;
@@ -32,7 +40,7 @@ if [ -f "$TRUSTSTORE" ] && [ -f "$KEYSTORE" ] && [ "$OVERWRITE" = false ]; then
     exit 0
 fi
 
-rm -f *.p12 *.jks *.key *.csr *.srl *.crt
+clear
 
 # Generate localhost_CA and localhost certs/keys
 openssl genrsa -out localhost_CA.key 4096
@@ -51,3 +59,5 @@ keytool -importkeystore -destkeystore truststore.jks -srcstoretype PKCS12 -srcke
 
 sudo chown -R 1001 keystore.p12
 sudo chown -R 1001 truststore.p12
+
+echo "finished generating certs"

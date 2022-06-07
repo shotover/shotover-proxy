@@ -1,5 +1,6 @@
 use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
+use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 
@@ -270,6 +271,7 @@ impl BenchResources {
     }
 
     fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
+        generate_cassandra_test_certs();
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
