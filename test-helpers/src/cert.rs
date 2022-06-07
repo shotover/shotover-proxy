@@ -1,5 +1,4 @@
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa};
-use std::env::{current_dir, set_current_dir};
 use std::path::Path;
 use std::process::Command;
 
@@ -38,10 +37,7 @@ pub fn generate_redis_test_certs(path: &Path) {
 }
 
 pub fn generate_cassandra_test_certs() {
-    let current_path = current_dir().unwrap();
-    set_current_dir("example-configs/cassandra-tls/certs").unwrap();
-
-    Command::new("./gen_certs.sh").output().unwrap();
-
-    set_current_dir(current_path).unwrap();
+    Command::new("example-configs/cassandra-tls/certs/gen_certs.sh")
+        .output()
+        .unwrap();
 }

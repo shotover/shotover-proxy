@@ -7,6 +7,7 @@ help()
    echo "Syntax: gen_certs [-o]"
    echo "options:"
    echo "o     Overwrite the existing keyfiles"
+   echo "c     Clear the existing keyfiles"
    echo
 }
 
@@ -32,6 +33,10 @@ while getopts ":hoc" option; do
          exit;;
    esac
 done
+
+CURRENT_DIR="$PWD"
+SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$SCRIPT_DIR"
 
 KEYSTORE=keystore.p12
 TRUSTSTORE=truststore.p12
@@ -59,5 +64,7 @@ keytool -importkeystore -destkeystore truststore.jks -srcstoretype PKCS12 -srcke
 
 chmod o+rwx keystore.p12
 chmod o+rwx truststore.p12
+
+cd "$CURRENT_DIR"
 
 echo "finished generating certs"
