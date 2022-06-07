@@ -1419,8 +1419,7 @@ APPLY BATCH;"
 #[test]
 #[serial]
 fn test_passthrough() {
-    let _compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose-3.11.yml");
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
@@ -1476,17 +1475,19 @@ fn test_source_tls_and_single_tls() {
 async fn test_events_keyspace() {
     let mut rng = rand::thread_rng();
 
-    let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose-4.0.yml");
+    let _docker_compose = DockerCompose::new(
+        "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
+    );
 
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
+    let _shotover_manager = ShotoverManager::from_topology_file(
+        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
+    );
 
     let user = "cassandra";
     let password = "cassandra";
     let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
     let config = NodeTcpConfigBuilder::new()
-        .with_contact_point("127.0.0.1:9042".into())
+        .with_contact_point("127.0.0.1:9044".into())
         .with_authenticator_provider(Arc::new(auth))
         .build()
         .await
@@ -1512,11 +1513,13 @@ async fn test_events_keyspace() {
         match timeout(Duration::from_secs(10), event_recv.recv()).await {
             Ok(recvd) => {
                 if let Ok(event) = recvd {
+                    println!("{:?}", event);
                     assert!(matches!(event, ServerEvent::SchemaChange { .. }));
                     break;
                 };
             }
-            Err(_) => {
+            Err(err) => {
+                println!("plus tries {}", err);
                 tries += 1;
             }
         }
@@ -1742,7 +1745,7 @@ fn test_cassandra_peers_rewrite() {
 #[serial]
 async fn test_cassandra_request_throttling() {
     let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose-3.11.yml");
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");

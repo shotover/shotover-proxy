@@ -110,8 +110,7 @@ impl DockerCompose {
             "example-configs/redis-cluster-dr/docker-compose.yml" => {
                 self.wait_for_log("Cluster state changed", 12, 110)
             }
-            "example-configs/cassandra-passthrough/docker-compose-3.11.yml"
-            | "example-configs/cassandra-passthrough/docker-compose-4.0.yml"
+            "example-configs/cassandra-passthrough/docker-compose.yml"
             | "example-configs/cassandra-tls/docker-compose.yml"
             | "example-configs/cassandra-redis-cache/docker-compose.yml"
             | "example-configs/cassandra-protect-local/docker-compose.yml"
