@@ -39,9 +39,7 @@ pub fn generate_redis_test_certs(path: &Path) {
 }
 
 pub fn generate_cassandra_test_certs() {
-    println!("starting {:?}", current_dir().unwrap());
     let current_path = current_dir().unwrap();
-
     set_current_dir("example-configs/cassandra-tls/certs").unwrap();
 
     if let Err(ErrorKind::NotFound) = Command::new("./gen_certs.sh")
@@ -51,9 +49,5 @@ pub fn generate_cassandra_test_certs() {
         panic!("Could not generate test certs");
     }
 
-    println!("{:?}", Command::new("ls").output());
-
     set_current_dir(current_path).unwrap();
-
-    println!("finished {:?}", current_dir().unwrap());
 }
