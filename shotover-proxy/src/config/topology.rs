@@ -30,12 +30,12 @@ impl Topology {
         Topology::topology_from_config(config)
     }
 
-    async fn build_chains(&self) -> Result<HashMap<String, TransformChain>> {
+    async fn build_chains(&self, enable_metrics: bool) -> Result<HashMap<String, TransformChain>> {
         let mut temp: HashMap<String, TransformChain> = HashMap::new();
         for (key, value) in &self.chain_config {
             temp.insert(
                 key.clone(),
-                build_chain_from_config(key.clone(), value).await?,
+                build_chain_from_config(key.clone(), value, enable_metrics).await?,
             );
         }
         Ok(temp)
@@ -48,7 +48,7 @@ impl Topology {
     ) -> Result<Vec<Sources>> {
         let mut sources_list: Vec<Sources> = Vec::new();
 
-        let chains = self.build_chains().await?;
+        let chains = self.build_chains(enable_metrics).await?;
         info!("Loaded chains {:?}", chains.keys());
 
         let mut chain_errors = String::new();

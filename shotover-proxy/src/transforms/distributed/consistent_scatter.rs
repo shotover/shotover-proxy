@@ -27,13 +27,13 @@ pub struct ConsistentScatterConfig {
 }
 
 impl ConsistentScatterConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self, enable_metrics: bool) -> Result<Transforms> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
         for (key, value) in &self.route_map {
             route_map.push(
-                build_chain_from_config(key.clone(), value)
+                build_chain_from_config(key.clone(), value, enable_metrics)
                     .await?
                     .into_buffered_chain(10),
             );

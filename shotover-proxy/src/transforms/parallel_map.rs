@@ -68,8 +68,10 @@ pub struct ParallelMapConfig {
 }
 
 impl ParallelMapConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        let chain = build_chain_from_config("parallel_map_chain".into(), &self.chain).await?;
+    pub async fn get_transform(&self, enable_metrics: bool) -> Result<Transforms> {
+        let chain =
+            build_chain_from_config("parallel_map_chain".into(), &self.chain, enable_metrics)
+                .await?;
 
         Ok(Transforms::ParallelMap(ParallelMap {
             chains: std::iter::repeat(chain)

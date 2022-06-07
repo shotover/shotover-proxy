@@ -50,19 +50,24 @@ pub struct TeeConfig {
 }
 
 impl TeeConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self, enable_metrics: bool) -> Result<Transforms> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let mismatch_chain =
             if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
                 Some(
-                    build_chain_from_config("mismatch_chain".to_string(), mismatch_chain)
-                        .await?
-                        .into_buffered_chain(buffer_size),
+                    build_chain_from_config(
+                        "mismatch_chain".to_string(),
+                        mismatch_chain,
+                        enable_metrics,
+                    )
+                    .await?
+                    .into_buffered_chain(buffer_size),
                 )
             } else {
                 None
             };
-        let tee_chain = build_chain_from_config("tee_chain".to_string(), &self.chain).await?;
+        let tee_chain =
+            build_chain_from_config("tee_chain".to_string(), &self.chain, enable_metrics).await?;
 
         Ok(Transforms::Tee(Tee::new(
             tee_chain.into_buffered_chain(buffer_size),
@@ -193,7 +198,7 @@ mod tests {
                 chain: vec![TransformsConfig::Null],
                 buffer_size: None,
             };
-            let transform = config.get_transform().await.unwrap();
+            let transform = config.get_transform(false).await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -205,7 +210,7 @@ mod tests {
                 chain: vec![TransformsConfig::Null],
                 buffer_size: None,
             };
-            let transform = config.get_transform().await.unwrap();
+            let transform = config.get_transform(false).await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -223,7 +228,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_transform().await.unwrap();
+        let transform = config.get_transform(false).await.unwrap();
         let result = transform.validate();
         let expected = vec!["Tee:", "  mismatch_chain:", "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain."];
         assert_eq!(result, expected);
@@ -240,7 +245,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_transform().await.unwrap();
+        let transform = config.get_transform(false).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }

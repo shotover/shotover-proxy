@@ -17,8 +17,8 @@ pub struct ConnectionBalanceAndPoolConfig {
 }
 
 impl ConnectionBalanceAndPoolConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        let chain = build_chain_from_config(self.name.clone(), &self.chain).await?;
+    pub async fn get_transform(&self, enable_metrics: bool) -> Result<Transforms> {
+        let chain = build_chain_from_config(self.name.clone(), &self.chain, enable_metrics).await?;
 
         Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
             active_connection: None,

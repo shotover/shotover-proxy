@@ -223,6 +223,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 Transforms::Null(Null::default()),
             ],
             "bench".into(),
+            false,
         );
 
         let wrapper = Wrapper::new_with_chain_name(

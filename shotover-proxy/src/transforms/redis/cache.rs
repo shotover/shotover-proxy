@@ -31,9 +31,14 @@ pub struct TableCacheSchema {
 }
 
 impl RedisConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self, enable_metrics: bool) -> Result<Transforms> {
         Ok(Transforms::RedisCache(SimpleRedisCache {
-            cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain).await?,
+            cache_chain: build_chain_from_config(
+                "cache_chain".to_string(),
+                &self.chain,
+                enable_metrics,
+            )
+            .await?,
             caching_schema: self.caching_schema.clone(),
         }))
     }

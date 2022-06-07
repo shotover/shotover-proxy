@@ -254,16 +254,20 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     #[async_recursion]
     /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
+    pub async fn get_transform(
+        &self,
+        chain_name: String,
+        enable_metrics: bool,
+    ) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => {
                 c.get_transform(chain_name, enable_metrics).await
             }
             TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
-            TransformsConfig::RedisCache(r) => r.get_transform().await,
-            TransformsConfig::Tee(t) => t.get_transform().await,
+            TransformsConfig::RedisCache(r) => r.get_transform(enable_metrics).await,
+            TransformsConfig::Tee(t) => t.get_transform(enable_metrics).await,
             TransformsConfig::RedisSinkSingle(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ConsistentScatter(c) => c.get_transform().await,
+            TransformsConfig::ConsistentScatter(c) => c.get_transform(enable_metrics).await,
             TransformsConfig::RedisTimestampTagger => {
                 Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger::new()))
             }
@@ -278,7 +282,7 @@ impl TransformsConfig {
             #[cfg(feature = "alpha-transforms")]
             TransformsConfig::DebugForceParse(d) => d.get_transform().await,
             TransformsConfig::RedisSinkCluster(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ParallelMap(s) => s.get_transform().await,
+            TransformsConfig::ParallelMap(s) => s.get_transform(enable_metrics).await,
             //TransformsConfig::PoolConnections(s) => s.get_transform().await,
             TransformsConfig::Coalesce(s) => s.get_transform().await,
             TransformsConfig::QueryTypeFilter(s) => s.get_transform().await,
@@ -291,10 +295,11 @@ impl TransformsConfig {
 pub async fn build_chain_from_config(
     name: String,
     transform_configs: &[TransformsConfig],
+    enable_metrics: bool,
 ) -> Result<TransformChain> {
     let mut transforms: Vec<Transforms> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_transform(name.clone()).await?)
+        transforms.push(tc.get_transform(name.clone(), enable_metrics).await?)
     }
     Ok(TransformChain::new(transforms, name, enable_metrics))
 }
