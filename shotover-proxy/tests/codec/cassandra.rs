@@ -33,7 +33,10 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[serial]
 async fn test_cassandra_packet_capture() {
+    use std::env::current_dir;
+    println!("current dir: {:?}", current_dir().unwrap());
     let test_data = std::path::PathBuf::from("../test_data");
     let cql_mixed = test_data.join("cql_mixed.pcap");
     if !test_data.exists() {
