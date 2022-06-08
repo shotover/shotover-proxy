@@ -12,10 +12,10 @@ In this example, we will be connecting to a Cassandra cluster that has the follo
 
 ### Rewriting the peer ports
 
-Shotover will be deployed as a sidecar to each node in the Cassandra cluster, listening on `9043`. Use the following [docker-compose.yml](https://raw.githubusercontent.com/shotover/shotover-proxy/cassandra-docs/shotover-proxy/example-configs-docker/cassandra-rewrite-peers/docker-compose.yml) to run the Cassandra cluster and Shotover sidecars. In this example we want to ensure that all our traffic to Cassandra goes through Shotover.
+Shotover will be deployed as a sidecar to each node in the Cassandra cluster, listening on `9043`. Use the following [docker-compose.yml](https://raw.githubusercontent.com/shotover/shotover-proxy/cassandra-docs/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yml) to run the Cassandra cluster and Shotover sidecars. In this example we want to ensure that all our traffic to Cassandra goes through Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/cassandra-rewrite-peers/docker-compose.yml --output docker-compose.yml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yml --output docker-compose.yml
 ```
 
 Below we can see an example of a Cassandra node and it's Shotover sidecar, notice that they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
@@ -55,7 +55,7 @@ First we will modify our `topology.yaml` file to have a single Cassandra source.
 * Connect our Cassandra source to our Cassandra sink (transform).
 
 ```yaml
-{{#include ../../../shotover-proxy/example-configs-docker/cassandra-rewrite-peers/topology.yaml}}
+{{#include ../../../shotover-proxy/example-configs-docker/cassandra-peers-rewrite/topology.yaml}}
 ```
 
 Modify an existing `topology.yaml` or create a new one and place the above example as the file's contents.
