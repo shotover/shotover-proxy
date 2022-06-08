@@ -28,9 +28,7 @@ Below we can see an example of a Cassandra node and it's Shotover sidecar, notic
         ipv4_address: 172.16.1.3
     healthcheck: *healthcheck
     environment: *environment
-    depends_on:
-      - cassandra-one
-
+    
   shotover-one:
     restart: always
     depends_on:
