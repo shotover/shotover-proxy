@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use futures::SinkExt;
+use serial_test::serial;
 use shotover_proxy::codec::cassandra::CassandraCodec;
-
 use tokio::io::BufWriter;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
@@ -33,6 +33,7 @@ async fn check_vec_of_bytes(packet_stream: Vec<Bytes>) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[serial]
 async fn test_cassandra_packet_capture() {
     let test_data = std::path::PathBuf::from("../test_data");
     let cql_mixed = test_data.join("cql_mixed.pcap");

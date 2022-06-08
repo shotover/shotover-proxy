@@ -1,7 +1,8 @@
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa};
 use std::path::Path;
+use std::process::Command;
 
-pub fn generate_test_certs(path: &Path) {
+pub fn generate_redis_test_certs(path: &Path) {
     let mut params = CertificateParams::default();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     // This must be "Certificate Authority"
@@ -33,4 +34,10 @@ pub fn generate_test_certs(path: &Path) {
     )
     .unwrap();
     std::fs::write(path.join("redis.key"), cert.serialize_private_key_pem()).unwrap();
+}
+
+pub fn generate_cassandra_test_certs() {
+    Command::new("example-configs/cassandra-tls/certs/gen_certs.sh")
+        .output()
+        .unwrap();
 }
