@@ -155,10 +155,6 @@ impl ShotoverManager {
 
 impl Drop for ShotoverManager {
     fn drop(&mut self) {
-        // Must clear the recorder before skipping a shutdown on panic; if one test panics and the recorder is not cleared,
-        // the following tests will panic because they will try to set another recorder
-        metrics::clear_recorder();
-
         if std::thread::panicking() {
             // If already panicking do not panic while attempting to shutdown shotover in order to avoid a double panic.
             if let Err(err) = self.shutdown_shotover() {
