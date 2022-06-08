@@ -12,8 +12,7 @@ use rand::Rng;
 use serial_test::serial;
 use std::sync::Arc;
 use test_helpers::docker_compose::{run_command, DockerCompose};
-use tokio::time::timeout;
-use tokio::time::Duration;
+use tokio::time::{timeout, Duration};
 
 mod keyspace {
     use crate::helpers::cassandra::{
