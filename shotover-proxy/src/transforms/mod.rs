@@ -44,6 +44,7 @@ use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
 use strum_macros::IntoStaticStr;
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 pub mod cassandra;
@@ -248,10 +249,7 @@ impl Transforms {
         }
     }
 
-    fn add_pushed_messages_tx(
-        &mut self,
-        pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
-    ) {
+    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         if let Transforms::CassandraSinkSingle(c) = self {
             c.add_pushed_messages_tx(pushed_messages_tx)
         }
@@ -621,11 +619,7 @@ pub trait Transform: Send {
         vec![]
     }
 
-    fn add_pushed_messages_tx(
-        &mut self,
-        _pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
-    ) {
-    }
+    fn add_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}
 }
 
 pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;

@@ -171,10 +171,7 @@ impl Transform for CassandraSinkSingle {
         true
     }
 
-    fn add_pushed_messages_tx(
-        &mut self,
-        pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
-    ) {
+    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }
