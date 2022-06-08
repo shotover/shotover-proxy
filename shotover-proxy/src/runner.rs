@@ -77,11 +77,7 @@ impl Runner {
     pub fn with_observability_interface(self) -> Result<Self> {
         let recorder = PrometheusBuilder::new().build_recorder();
         let handle = recorder.handle();
-
-        // Result::Err can only occur when set_boxed_recorder has already been called.
-        // So we just ignore the error with .ok() as integration tests will cause shotover
-        // to be initialized multiple times thus recalling this function.
-        metrics::set_boxed_recorder(Box::new(recorder)).ok();
+        metrics::set_boxed_recorder(Box::new(recorder))?;
 
         let socket: SocketAddr = self.config.observability_interface.parse()?;
         let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());

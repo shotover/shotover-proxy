@@ -155,6 +155,13 @@ impl ShotoverManager {
 
 impl Drop for ShotoverManager {
     fn drop(&mut self) {
+        // Must clear the recorder before skipping a shutdown on panic; if one test panics and the recorder is not cleared,
+        // the following tests will panic because they will try to set another recorder
+        // TODO: This is unsafe due to a possible race condition and we are doing nothing to prevent that race condition.
+        // It is left as is because there are no reasonable solutions to this problem at the moment.
+        // A possible way to trigger this issue would be creating a ShotoverManager instance in one thread while dropping a ShotoverManager instance in another thread.
+        unsafe { metrics::clear_recorder() };
+
         if std::thread::panicking() {
             // If already panicking do not panic while attempting to shutdown shotover in order to avoid a double panic.
             if let Err(err) = self.shutdown_shotover() {
