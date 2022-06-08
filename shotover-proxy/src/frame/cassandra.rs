@@ -3,8 +3,10 @@ use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::consistency::Consistency;
 use cassandra_protocol::events::SchemaChange;
+use cassandra_protocol::frame::events::ServerEvent;
 use cassandra_protocol::frame::frame_batch::{BatchQuery, BatchQuerySubj, BatchType, BodyReqBatch};
 use cassandra_protocol::frame::frame_error::ErrorBody;
+use cassandra_protocol::frame::frame_event::BodyResEvent;
 use cassandra_protocol::frame::frame_query::BodyReqQuery;
 use cassandra_protocol::frame::frame_request::RequestBody;
 use cassandra_protocol::frame::frame_response::ResponseBody;
@@ -204,7 +206,13 @@ impl CassandraFrame {
             Opcode::Prepare => CassandraOperation::Prepare(frame.body),
             Opcode::Execute => CassandraOperation::Execute(frame.body),
             Opcode::Register => CassandraOperation::Register(frame.body),
-            Opcode::Event => CassandraOperation::Event(frame.body),
+            Opcode::Event => {
+                if let ResponseBody::Event(BodyResEvent { event }) = frame.response_body()? {
+                    CassandraOperation::Event(event)
+                } else {
+                    unreachable!("we already know this is an event");
+                }
+            }
             Opcode::Batch => {
                 if let RequestBody::Batch(body) = frame.request_body()? {
                     CassandraOperation::Batch(CassandraBatch {
@@ -324,7 +332,7 @@ pub enum CassandraOperation {
     Prepare(Vec<u8>),
     Execute(Vec<u8>),
     Register(Vec<u8>),
-    Event(Vec<u8>),
+    Event(ServerEvent),
     Batch(CassandraBatch),
     AuthChallenge(Vec<u8>),
     AuthResponse(Vec<u8>),
@@ -422,7 +430,7 @@ impl CassandraOperation {
             CassandraOperation::Prepare(bytes) => bytes.to_vec(),
             CassandraOperation::Execute(bytes) => bytes.to_vec(),
             CassandraOperation::Register(bytes) => bytes.to_vec(),
-            CassandraOperation::Event(bytes) => bytes.to_vec(),
+            CassandraOperation::Event(bytes) => bytes.serialize_to_vec(),
             CassandraOperation::Batch(batch) => BodyReqBatch {
                 batch_type: batch.ty,
                 consistency: batch.consistency,
