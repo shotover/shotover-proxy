@@ -35,7 +35,8 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisSinkClusterConfig {
-    pub destination: Destination,
+    pub first_contact_points: Vec<String>,
+    pub direct_destination: Option<String>,
     pub tls: Option<TlsConfig>,
     connection_count: Option<usize>,
 }
@@ -43,7 +44,8 @@ pub struct RedisSinkClusterConfig {
 impl RedisSinkClusterConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
         let mut cluster = RedisSinkCluster::new(
-            self.destination.clone(),
+            self.first_contact_points.clone(),
+            self.direct_destination.clone(),
             self.connection_count.unwrap_or(1),
             self.tls.clone(),
             chain_name,
@@ -65,14 +67,6 @@ impl RedisSinkClusterConfig {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub enum Destination {
-    /// Contains a single instance to connect to
-    Handling(String),
-    /// Contains a list of initial instances to query for the full list of instances
-    Hiding(Vec<String>),
-}
-
 #[derive(Clone, Debug)]
 pub struct RedisSinkCluster {
     pub slots: SlotMap,
@@ -84,13 +78,15 @@ pub struct RedisSinkCluster {
     connection_pool: ConnectionPool<RedisCodec, RedisAuthenticator, UsernamePasswordToken>,
     reason_for_no_nodes: Option<&'static str>,
     rebuild_connections: bool,
-    destination: Destination,
+    first_contact_points: Vec<String>,
+    direct_destination: Option<String>,
     token: Option<UsernamePasswordToken>,
 }
 
 impl RedisSinkCluster {
     pub fn new(
-        destination: Destination,
+        first_contact_points: Vec<String>,
+        direct_destination: Option<String>,
         connection_count: usize,
         tls: Option<TlsConfig>,
         chain_name: String,
@@ -100,7 +96,8 @@ impl RedisSinkCluster {
         let connection_pool = ConnectionPool::new_with_auth(RedisCodec::new(), authenticator, tls)?;
 
         let sink_cluster = RedisSinkCluster {
-            destination,
+            first_contact_points,
+            direct_destination,
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
             direct_connection: None,
@@ -120,8 +117,8 @@ impl RedisSinkCluster {
 
     async fn direct_connection(&mut self) -> Result<&UnboundedSender<Request>> {
         if self.direct_connection.is_none() {
-            match &self.destination {
-                Destination::Handling(address) => {
+            match &self.direct_destination {
+                Some(address) => {
                     self.direct_connection = Some(
                         self.connection_pool
                             .get_connections(address, &self.token, 1)
@@ -129,8 +126,8 @@ impl RedisSinkCluster {
                             .remove(0),
                     );
                 }
-                Destination::Hiding(_) => {
-                    bail!("Cannot call direct_connection when configured as Destination::Hiding")
+                None => {
+                    bail!("Cannot call direct_connection when direct_destination is configured as None")
                 }
             }
         }
@@ -150,9 +147,9 @@ impl RedisSinkCluster {
         };
 
         let routing_info = RoutingInfo::for_command_frame(command)?;
-        match self.destination {
-            Destination::Handling(_) => self.dispatch_message_handling(routing_info, message).await,
-            Destination::Hiding(_) => self.dispatch_message_hiding(routing_info, message).await,
+        match self.direct_destination {
+            Some(_) => self.dispatch_message_handling(routing_info, message).await,
+            None => self.dispatch_message_hiding(routing_info, message).await,
         }
     }
 
@@ -248,10 +245,10 @@ impl RedisSinkCluster {
             self.slots.nodes.iter().map(|x| x.as_str()).collect()
         } else {
             // Fallback to initial contact points.
-            match &self.destination {
-                Destination::Handling(destination) => vec![destination],
-                Destination::Hiding(points) => points.iter().map(|x| x.as_str()).collect(),
-            }
+            self.first_contact_points
+                .iter()
+                .map(|x| x.as_str())
+                .collect()
         }
     }
 
