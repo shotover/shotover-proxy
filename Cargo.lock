@@ -336,7 +336,7 @@ checksum = "2fff2a6927b3bb87f9595d67196a70493f627687a71d87a0d692242c33f58c11"
 [[package]]
 name = "cdrs-tokio"
 version = "6.2.0"
-source = "git+https://github.com/krojew/cdrs-tokio#614ff15e85a5e467243dde01efd7bbd06c6b2e04"
+source = "git+https://github.com/krojew/cdrs-tokio#dd564cbb6e348952c8b8a9c5c87ff4f98c28077e"
 dependencies = [
  "arc-swap",
  "atomic",
@@ -352,7 +352,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
- "uuid 1.1.1",
+ "uuid 1.1.2",
 ]
 
 [[package]]
@@ -2719,9 +2719,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "strum_macros"
-version = "0.24.0"
+version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6878079b17446e4d3eba6192bb0a2950d5b14f0ed8424b852310e5a94345d0ef"
+checksum = "9550962e7cf70d9980392878dfaf1dcc3ece024f4cf3bf3c46b978d0bad61d6c"
 dependencies = [
  "heck",
  "proc-macro2",

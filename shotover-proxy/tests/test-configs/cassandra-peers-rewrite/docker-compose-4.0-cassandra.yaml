@@ -44,12 +44,3 @@ services:
         ipv4_address: 172.16.1.3
     healthcheck: *healthcheck
     environment: *environment
-
-  cassandra-three:
-    container_name: cassandra-three
-    image: bitnami/cassandra:4.0
-    networks:
-      cluster_subnet:
-        ipv4_address: 172.16.1.4
-    healthcheck: *healthcheck
-    environment: *environment
