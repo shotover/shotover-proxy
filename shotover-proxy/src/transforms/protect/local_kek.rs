@@ -1,19 +1,20 @@
+use crate::transforms::protect::crypto::{gen_key, gen_nonce};
 use crate::transforms::protect::key_management::KeyMaterial;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
+use chacha20poly1305::aead::{Aead, NewAead};
+use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use serde::{Deserialize, Serialize};
-use sodiumoxide::crypto::secretbox;
-use sodiumoxide::crypto::secretbox::{Key, Nonce};
 
 #[derive(Clone)]
 pub struct LocalKeyManagement {
-    pub kek: Key,
+    pub kek: Vec<u8>,
     pub kek_id: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DEKStructure {
-    pub nonce: Nonce,
+    pub nonce: Vec<u8>,
     pub key: Vec<u8>,
 }
 
@@ -21,30 +22,39 @@ impl LocalKeyManagement {
     pub async fn get_key(&self, dek: Option<Vec<u8>>) -> Result<KeyMaterial> {
         match dek {
             None => {
-                let plaintext_dek = secretbox::gen_key();
-                let nonce = secretbox::gen_nonce();
-                let encrypted_dek = secretbox::seal(&plaintext_dek.0, &nonce, &self.kek);
+                let plaintext_dek = gen_key();
+                let nonce = gen_nonce();
+
+                let cipher = ChaCha20Poly1305::new(Key::from_slice(&plaintext_dek));
+
+                let encrypted_dek = cipher
+                    .encrypt(&nonce, &*plaintext_dek)
+                    .map_err(|_| anyhow!("couldn't encrypt value"))?;
+
                 let dek_struct = DEKStructure {
-                    nonce,
+                    nonce: nonce.to_vec(),
                     key: encrypted_dek,
                 };
                 let cipher_blob = serde_json::to_string(&dek_struct)?;
                 Ok(KeyMaterial {
                     ciphertext_blob: Bytes::from(cipher_blob),
                     key_id: self.kek_id.clone(),
-                    plaintext: plaintext_dek,
+                    plaintext: plaintext_dek.to_vec(),
                 })
             }
             Some(dek) => {
                 let dek_struct: DEKStructure = serde_json::from_slice(dek.as_slice())?;
-                let plaintext_dek =
-                    secretbox::open(dek_struct.key.as_slice(), &dek_struct.nonce, &self.kek)
-                        .map_err(|_| anyhow!("couldn't decrypt DEK"))?;
+
+                let cipher = ChaCha20Poly1305::new(Key::from_slice(&self.kek));
+
+                let plaintext_dek = cipher
+                    .decrypt(Nonce::from_slice(&dek_struct.nonce), &*dek_struct.key)
+                    .map_err(|_| anyhow!("couldn't decrypt DEK"))?;
+
                 Ok(KeyMaterial {
                     ciphertext_blob: Bytes::from(dek),
                     key_id: self.kek_id.clone(),
-                    plaintext: Key::from_slice(plaintext_dek.as_slice())
-                        .ok_or_else(|| anyhow!("could not build key"))?,
+                    plaintext: Key::from_slice(plaintext_dek.as_slice()).to_vec(),
                 })
             }
         }

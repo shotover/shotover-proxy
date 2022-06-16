@@ -68,11 +68,12 @@ crc16 = "0.4.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 
 #Crypto
-sodiumoxide = "0.2.5"
 rusoto_kms = "0.48.0"
 rusoto_signature = "0.48.0"
 csv = "1.1.6"
 strum_macros = "0.24"
+chacha20poly1305 = "0.9.0"
+rand_core = "0.6"
 
 [dev-dependencies]
 rayon = "1.5.1"

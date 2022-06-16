@@ -2,8 +2,8 @@ use crate::transforms::protect::key_management::KeyMaterial;
 use anyhow::anyhow;
 use anyhow::Result;
 use bytes::Bytes;
+use chacha20poly1305::Key;
 use rusoto_kms::{DecryptRequest, GenerateDataKeyRequest, Kms, KmsClient};
-use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -70,7 +70,7 @@ impl AWSKeyManagement {
                             .plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
                     )
-                    .ok_or_else(|| anyhow!("couldn't create secretbox key from dek bytes"))?,
+                    .to_vec(),
                 })
             }
             DecOrGen::Dec(d) => {
@@ -85,7 +85,7 @@ impl AWSKeyManagement {
                             .plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
                     )
-                    .ok_or_else(|| anyhow!("couldn't create secretbox key from dek bytes"))?,
+                    .to_vec(),
                 })
             }
         }

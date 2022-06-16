@@ -1,13 +1,13 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use cached::proc_macro::cached;
+use chacha20poly1305::Key;
 use rusoto_kms::KmsClient;
 use rusoto_signature::Region;
 use serde::Deserialize;
-use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -69,9 +69,11 @@ impl KeyManagerConfig {
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
                 let decoded_base64 = base64::decode(&kek)?;
-                let kek =
-                    Key::from_slice(&decoded_base64).ok_or_else(|| anyhow!("Not a valid key"))?;
-                Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
+                let kek = Key::from_slice(&decoded_base64);
+                Ok(KeyManager::Local(LocalKeyManagement {
+                    kek: kek.to_vec(),
+                    kek_id,
+                }))
             }
         }
     }
@@ -118,5 +120,5 @@ async fn private_cached_fetch(
 pub struct KeyMaterial {
     pub ciphertext_blob: Bytes,
     pub key_id: String,
-    pub plaintext: Key,
+    pub plaintext: Vec<u8>,
 }
