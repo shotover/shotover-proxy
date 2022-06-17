@@ -2554,7 +2554,6 @@ dependencies = [
  "pktparse",
  "pretty-hex",
  "rand",
- "rand_core",
  "rand_distr",
  "rayon",
  "redis",

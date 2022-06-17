@@ -77,14 +77,12 @@ pub fn gen_key() -> Key {
     let mut key_bytes = [0; 32];
     let mut rng = rand::thread_rng();
     rng.fill_bytes(&mut key_bytes);
-    let key = Key::from_slice(&key_bytes);
-    *key
+    *Key::from_slice(&key_bytes)
 }
 
 pub fn gen_nonce() -> Nonce {
     let mut rng = rand::thread_rng();
     let mut nonce_bytes = [0; 12];
     rng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    *nonce
+    *Nonce::from_slice(&nonce_bytes)
 }
