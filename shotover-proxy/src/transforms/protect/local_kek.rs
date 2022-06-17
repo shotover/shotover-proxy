@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct LocalKeyManagement {
-    pub kek: Vec<u8>,
+    pub kek: Key,
     pub kek_id: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DEKStructure {
-    pub nonce: Vec<u8>,
+    pub nonce: Nonce,
     pub key: Vec<u8>,
 }
 
@@ -32,7 +32,7 @@ impl LocalKeyManagement {
                     .map_err(|_| anyhow!("couldn't encrypt value"))?;
 
                 let dek_struct = DEKStructure {
-                    nonce: nonce.to_vec(),
+                    nonce,
                     key: encrypted_dek,
                 };
                 let cipher_blob = serde_json::to_string(&dek_struct)?;

@@ -14,7 +14,7 @@ use sqlparser::ast::Value as SQLValue;
 #[derive(Serialize, Deserialize)]
 struct Protected {
     cipher: Vec<u8>,
-    nonce: Vec<u8>,
+    nonce: Nonce,
     enc_dek: Vec<u8>,
     kek_id: String,
 }
@@ -37,7 +37,7 @@ pub async fn encrypt(
 
     let protected = Protected {
         cipher: ciphertext,
-        nonce: nonce.to_vec(),
+        nonce,
         enc_dek: sym_key.ciphertext_blob.to_vec(),
         kek_id: sym_key.key_id,
     };

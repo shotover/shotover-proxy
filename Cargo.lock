@@ -931,6 +931,7 @@ version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd48d33ec7f05fbfa152300fdad764757cbded343c1aa1cff2fbaf4134851803"
 dependencies = [
+ "serde",
  "typenum",
  "version_check",
 ]
@@ -2537,6 +2538,7 @@ dependencies = [
  "derivative",
  "futures",
  "futures-core",
+ "generic-array",
  "governor",
  "halfbrown",
  "hex-literal",

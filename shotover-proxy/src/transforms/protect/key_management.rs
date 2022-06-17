@@ -70,10 +70,7 @@ impl KeyManagerConfig {
             KeyManagerConfig::Local { kek, kek_id } => {
                 let decoded_base64 = base64::decode(&kek)?;
                 let kek = Key::from_slice(&decoded_base64);
-                Ok(KeyManager::Local(LocalKeyManagement {
-                    kek: kek.to_vec(),
-                    kek_id,
-                }))
+                Ok(KeyManager::Local(LocalKeyManagement { kek: *kek, kek_id }))
             }
         }
     }
