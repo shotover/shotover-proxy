@@ -39,7 +39,7 @@ impl LocalKeyManagement {
                 Ok(KeyMaterial {
                     ciphertext_blob: Bytes::from(cipher_blob),
                     key_id: self.kek_id.clone(),
-                    plaintext: plaintext_dek.to_vec(),
+                    plaintext: plaintext_dek,
                 })
             }
             Some(dek) => {
@@ -54,7 +54,7 @@ impl LocalKeyManagement {
                 Ok(KeyMaterial {
                     ciphertext_blob: Bytes::from(dek),
                     key_id: self.kek_id.clone(),
-                    plaintext: Key::from_slice(plaintext_dek.as_slice()).to_vec(),
+                    plaintext: *Key::from_slice(plaintext_dek.as_slice()),
                 })
             }
         }

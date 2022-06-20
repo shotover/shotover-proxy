@@ -65,12 +65,11 @@ impl AWSKeyManagement {
                         .ciphertext_blob
                         .ok_or_else(|| anyhow!("no ciphertext DEK found"))?,
                     key_id: resp.key_id.ok_or_else(|| anyhow!("no CMK id found"))?,
-                    plaintext: Key::from_slice(
+                    plaintext: *Key::from_slice(
                         &resp
                             .plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
-                    )
-                    .to_vec(),
+                    ),
                 })
             }
             DecOrGen::Dec(d) => {
@@ -80,12 +79,11 @@ impl AWSKeyManagement {
                     key_id: d
                         .key_id
                         .ok_or_else(|| anyhow!("seemed to have lost cmk id on the way???"))?,
-                    plaintext: Key::from_slice(
+                    plaintext: *Key::from_slice(
                         &resp
                             .plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
-                    )
-                    .to_vec(),
+                    ),
                 })
             }
         }

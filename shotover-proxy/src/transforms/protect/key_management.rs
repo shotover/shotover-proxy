@@ -117,5 +117,5 @@ async fn private_cached_fetch(
 pub struct KeyMaterial {
     pub ciphertext_blob: Bytes,
     pub key_id: String,
-    pub plaintext: Vec<u8>,
+    pub plaintext: Key,
 }
