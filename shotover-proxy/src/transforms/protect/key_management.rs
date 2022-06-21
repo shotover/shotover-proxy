@@ -1,6 +1,6 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use cached::proc_macro::cached;
@@ -16,7 +16,7 @@ pub trait KeyManagement {
     async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum KeyManager {
     AWSKms(AWSKeyManagement),
     Local(LocalKeyManagement),
@@ -69,6 +69,11 @@ impl KeyManagerConfig {
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
                 let decoded_base64 = base64::decode(&kek)?;
+
+                if decoded_base64.len() != 32 {
+                    return Err(anyhow!("Invalid key length"));
+                }
+
                 let kek = Key::from_slice(&decoded_base64);
                 Ok(KeyManager::Local(LocalKeyManagement { kek: *kek, kek_id }))
             }
@@ -80,8 +85,8 @@ impl KeyManagerConfig {
 impl KeyManagement for KeyManager {
     async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial> {
         match &self {
-            KeyManager::AWSKms(aws) => aws.get_aws_key(dek, kek_alt).await,
-            KeyManager::Local(local) => local.get_key(dek).await,
+            KeyManager::AWSKms(aws) => aws.get_key(dek, kek_alt).await,
+            KeyManager::Local(local) => local.get_key(dek, kek_alt).await,
         }
     }
 }

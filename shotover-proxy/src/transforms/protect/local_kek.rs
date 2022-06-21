@@ -1,6 +1,7 @@
 use crate::transforms::protect::crypto::{gen_key, gen_nonce};
-use crate::transforms::protect::key_management::KeyMaterial;
+use crate::transforms::protect::key_management::{KeyManagement, KeyMaterial};
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use bytes::Bytes;
 use chacha20poly1305::aead::{Aead, NewAead};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
@@ -18,8 +19,9 @@ pub struct DEKStructure {
     pub key: Vec<u8>,
 }
 
-impl LocalKeyManagement {
-    pub async fn get_key(&self, dek: Option<Vec<u8>>) -> Result<KeyMaterial> {
+#[async_trait]
+impl KeyManagement for LocalKeyManagement {
+    async fn get_key(&self, dek: Option<Vec<u8>>, _kek_alt: Option<String>) -> Result<KeyMaterial> {
         match dek {
             None => {
                 let plaintext_dek = gen_key();

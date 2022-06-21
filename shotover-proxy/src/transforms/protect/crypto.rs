@@ -27,7 +27,7 @@ pub async fn encrypt(
 
     let ser = bincode::serialize(&value)?;
     let nonce = gen_nonce();
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&sym_key.plaintext));
+    let cipher = ChaCha20Poly1305::new(&sym_key.plaintext);
     let ciphertext = cipher
         .encrypt(&nonce, &*ser)
         .map_err(|_| anyhow!("couldn't encrypt value"))?;
@@ -60,7 +60,7 @@ pub async fn decrypt(
         .await?;
 
     let nonce = Nonce::from_slice(&protected.nonce);
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&sym_key.plaintext));
+    let cipher = ChaCha20Poly1305::new(&sym_key.plaintext);
 
     let decrypted_bytes = cipher
         .decrypt(nonce, &*protected.cipher)
