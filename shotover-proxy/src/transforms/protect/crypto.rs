@@ -8,10 +8,6 @@ use chacha20poly1305::{
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::Value as SQLValue;
 
-// A protected value meets the following properties:
-// https://doc.libsodium.org/secret-key_cryptography/secretbox
-// This all relies on crypto_secretbox_easy which takes care of
-// all padding, copying and timing issues associated with crypto
 #[derive(Serialize, Deserialize)]
 struct Protected {
     cipher: Vec<u8>,
