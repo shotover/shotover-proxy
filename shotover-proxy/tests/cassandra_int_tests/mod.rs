@@ -198,7 +198,7 @@ fn test_cassandra_peers_rewrite() {
             assert_query_result(
                 &rewrite_port_connection,
                 "SELECT native_port, native_port FROM system.peers_v2;",
-                &[&[ResultValue::Int(9044), ResultValue::Int(9042)]],
+                &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
             );
 
             assert_query_result(

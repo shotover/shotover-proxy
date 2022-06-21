@@ -36,12 +36,12 @@ impl CassandraPeersRewrite {
 impl Transform for CassandraPeersRewrite {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Find the indices of queries to system.peers & system.peers_v2
-        let system_peers = message_wrapper
+        let system_peers: Vec<usize> = message_wrapper
             .messages
             .iter_mut()
             .enumerate()
             .filter_map(|(i, m)| if is_system_peers(m) { Some(i) } else { None })
-            .collect::<Vec<_>>();
+            .collect();
 
         let mut response = message_wrapper.call_next_transform().await?;
 
@@ -69,24 +69,21 @@ fn is_system_peers(message: &mut Message) -> bool {
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
 fn rewrite_port(message: &mut Message, new_port: u32) {
     if let Some(Frame::Cassandra(frame)) = message.frame() {
-        if let CassandraOperation::Result(CassandraResult::Rows { value, metadata }) =
-            &mut frame.operation
+        // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
+        if let CassandraOperation::Result(CassandraResult::Rows {
+            value: MessageValue::Rows(rows),
+            metadata,
+        }) = &mut frame.operation
         {
-            let port_column_index = metadata
-                .col_specs
-                .iter()
-                .position(|col| col.name.as_str() == "native_port");
-
-            if let Some(i) = port_column_index {
-                if let MessageValue::Rows(rows) = &mut *value {
+            for (i, col) in metadata.col_specs.iter().enumerate() {
+                if col.name == "native_port" {
                     for row in rows.iter_mut() {
                         row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
                     }
-                    message.invalidate_cache();
                 }
             }
+            message.invalidate_cache();
         }
-        // if we didn't get a CassandraOperation::Result(Rows) we should ignore it as it will be an error
     }
 }
 
