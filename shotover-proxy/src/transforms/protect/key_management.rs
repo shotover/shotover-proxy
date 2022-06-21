@@ -124,3 +124,43 @@ pub struct KeyMaterial {
     pub key_id: String,
     pub plaintext: Key,
 }
+
+#[cfg(test)]
+mod key_manager_tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_local() {
+        let config = KeyManagerConfig::Local {
+            kek: "Ht8M1nDO/7fay+cft71M2Xy7j30EnLAsA84hSUMCm1k=".into(),
+            kek_id: "".into(),
+        };
+
+        let _ = config.build().unwrap();
+    }
+
+    #[test]
+    fn test_invalid_key_length_local() {
+        let config = KeyManagerConfig::Local {
+            kek: "dGVzdHRlc3R0ZXN0".into(),
+            kek_id: "".into(),
+        };
+
+        let result = config.build().unwrap_err();
+        assert_eq!(result.to_string(), "Invalid key length".to_string());
+    }
+
+    #[test]
+    fn test_invalid_key_base64_local() {
+        let config = KeyManagerConfig::Local {
+            kek: "Ht8M1nDO/7fay+cft71M2Xy7j30EnLAsA84hSUMCm1k=blahblahblah".into(),
+            kek_id: "".into(),
+        };
+
+        let result = config.build().unwrap_err();
+        assert_eq!(
+            result.to_string(),
+            "Invalid byte 61, offset 43.".to_string()
+        );
+    }
+}

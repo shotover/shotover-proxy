@@ -7,7 +7,7 @@ use chacha20poly1305::aead::{Aead, NewAead};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LocalKeyManagement {
     pub kek: Key,
     pub kek_id: String,
