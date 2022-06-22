@@ -1,22 +1,16 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use bytes::Bytes;
 use cached::proc_macro::cached;
+use chacha20poly1305::Key;
 use rusoto_kms::KmsClient;
 use rusoto_signature::Region;
 use serde::Deserialize;
-use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-#[async_trait]
-pub trait KeyManagement {
-    async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial>;
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum KeyManager {
     AWSKms(AWSKeyManagement),
     Local(LocalKeyManagement),
@@ -69,19 +63,22 @@ impl KeyManagerConfig {
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
                 let decoded_base64 = base64::decode(&kek)?;
-                let kek =
-                    Key::from_slice(&decoded_base64).ok_or_else(|| anyhow!("Not a valid key"))?;
-                Ok(KeyManager::Local(LocalKeyManagement { kek, kek_id }))
+
+                if decoded_base64.len() != 32 {
+                    return Err(anyhow!("Invalid key length"));
+                }
+
+                let kek = Key::from_slice(&decoded_base64);
+                Ok(KeyManager::Local(LocalKeyManagement { kek: *kek, kek_id }))
             }
         }
     }
 }
 
-#[async_trait]
-impl KeyManagement for KeyManager {
+impl KeyManager {
     async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial> {
         match &self {
-            KeyManager::AWSKms(aws) => aws.get_aws_key(dek, kek_alt).await,
+            KeyManager::AWSKms(aws) => aws.get_key(dek, kek_alt).await,
             KeyManager::Local(local) => local.get_key(dek).await,
         }
     }
@@ -119,4 +116,44 @@ pub struct KeyMaterial {
     pub ciphertext_blob: Bytes,
     pub key_id: String,
     pub plaintext: Key,
+}
+
+#[cfg(test)]
+mod key_manager_tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_local() {
+        let config = KeyManagerConfig::Local {
+            kek: "Ht8M1nDO/7fay+cft71M2Xy7j30EnLAsA84hSUMCm1k=".into(),
+            kek_id: "".into(),
+        };
+
+        let _ = config.build().unwrap();
+    }
+
+    #[test]
+    fn test_invalid_key_length_local() {
+        let config = KeyManagerConfig::Local {
+            kek: "dGVzdHRlc3R0ZXN0".into(),
+            kek_id: "".into(),
+        };
+
+        let result = config.build().unwrap_err();
+        assert_eq!(result.to_string(), "Invalid key length".to_string());
+    }
+
+    #[test]
+    fn test_invalid_key_base64_local() {
+        let config = KeyManagerConfig::Local {
+            kek: "Ht8M1nDO/7fay+cft71M2Xy7j30EnLAsA84hSUMCm1k=blahblahblah".into(),
+            kek_id: "".into(),
+        };
+
+        let result = config.build().unwrap_err();
+        assert_eq!(
+            result.to_string(),
+            "Invalid byte 61, offset 43.".to_string()
+        );
+    }
 }
