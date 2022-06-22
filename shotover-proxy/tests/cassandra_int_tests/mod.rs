@@ -2,12 +2,12 @@ use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, R
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use cassandra_protocol::events::ServerEvent;
+use cassandra_protocol::frame::events::StatusChange;
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
 use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
 use cdrs_tokio::cluster::NodeTcpConfigBuilder;
 use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
 use futures::future::{join_all, try_join_all};
-use rand::Rng;
 use serial_test::serial;
 use std::sync::Arc;
 use test_helpers::docker_compose::{run_command, DockerCompose};
@@ -361,8 +361,6 @@ async fn test_cassandra_request_throttling() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_events_keyspace() {
-    let mut rng = rand::thread_rng();
-
     let _docker_compose = DockerCompose::new(
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
     );
@@ -384,20 +382,14 @@ async fn test_events_keyspace() {
     let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config).build();
     let mut event_recv = session.create_event_receiver();
 
-    println!("created");
-
     sleep(Duration::from_secs(3)).await; // let the driver finish connecting to the cluster and registering for the events
-    println!("1");
 
-    let n: u8 = rng.gen();
-    let create_ks = format!("CREATE KEYSPACE IF NOT EXISTS test_ks_{} WITH REPLICATION = {{ 'class' : 'SimpleStrategy', 'replication_factor' : 1 }};", n);
+    let create_ks = "CREATE KEYSPACE IF NOT EXISTS test_events_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
 
     session
         .query(create_ks)
         .await
         .expect("Keyspace creation error");
-
-    println!("created keyspace");
 
     match timeout(Duration::from_secs(10), event_recv.recv()).await {
         Ok(recvd) => {
@@ -433,26 +425,40 @@ async fn test_events_node() {
         .unwrap();
 
     let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config).build();
-    let mut _event_recv = session.create_event_receiver();
+    let mut event_recv = session.create_event_receiver();
 
     println!("created cluster, starting sleep");
 
     sleep(Duration::from_secs(3)).await; // let the driver finish connecting to the cluster and registering for the events
     println!("slept");
 
+    run_command_to_stdout("docker", &["container", "ls"]);
     run_command("docker", &["kill", "cassandra-two"]).unwrap();
     println!("killed docker");
+    run_command_to_stdout("docker", &["container", "ls"]);
 
-    // match timeout(Duration::from_secs(20), event_recv.recv()).await {
-    //     Ok(recvd) => {
-    //         if let Ok(ServerEvent::StatusChange(StatusChange { addr, .. })) = recvd {
-    //             assert_eq!(addr.addr.port(), 9044);
-    //         } else {
-    //             panic!("expected ServerEvent::StatusChange, got {:?}", recvd);
-    //         }
-    //     }
-    //     Err(err) => {
-    //         panic!("{}", err)
-    //     }
-    // }
+    match timeout(Duration::from_secs(20), event_recv.recv()).await {
+        Ok(recvd) => {
+            if let Ok(ServerEvent::StatusChange(StatusChange { addr, .. })) = recvd {
+                assert_eq!(addr.addr.port(), 9044);
+            } else {
+                panic!("expected ServerEvent::StatusChange, got {:?}", recvd);
+            };
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+}
+
+/// unlike test_helpers::docker_compose::run_command stdout of the command is sent to the stdout of the application
+fn run_command_to_stdout(command: &str, args: &[&str]) {
+    assert!(
+        std::process::Command::new(command)
+            .args(args)
+            .status()
+            .unwrap()
+            .success(),
+        "Failed to run: {command} {args:?}"
+    );
 }
