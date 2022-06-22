@@ -1,14 +1,17 @@
 use crate::transforms::protect::key_management::KeyMaterial;
-use anyhow::anyhow;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
+use chacha20poly1305::Key;
+use derivative::Derivative;
 use rusoto_kms::{DecryptRequest, GenerateDataKeyRequest, Kms, KmsClient};
-use sodiumoxide::crypto::secretbox::Key;
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct AWSKeyManagement {
+    #[derivative(Debug = "ignore")]
     pub client: KmsClient,
+
     pub cmk_id: String,
     pub encryption_context: Option<HashMap<String, String>>,
     pub key_spec: Option<String>,
@@ -24,7 +27,7 @@ enum DecOrGen {
 // See https://docs.rs/rusoto_kms/0.44.0/rusoto_kms/trait.Kms.html#tymethod.generate_data_key
 
 impl AWSKeyManagement {
-    pub async fn get_aws_key(
+    pub async fn get_key(
         &self,
         dek: Option<Vec<u8>>,
         kek_alt: Option<String>,
@@ -55,7 +58,9 @@ impl AWSKeyManagement {
         );
         self.fetch_key(dog).await
     }
+}
 
+impl AWSKeyManagement {
     async fn fetch_key(&self, dog: DecOrGen) -> Result<KeyMaterial> {
         match dog {
             DecOrGen::Gen(g) => {
@@ -65,12 +70,11 @@ impl AWSKeyManagement {
                         .ciphertext_blob
                         .ok_or_else(|| anyhow!("no ciphertext DEK found"))?,
                     key_id: resp.key_id.ok_or_else(|| anyhow!("no CMK id found"))?,
-                    plaintext: Key::from_slice(
+                    plaintext: *Key::from_slice(
                         &resp
                             .plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
-                    )
-                    .ok_or_else(|| anyhow!("couldn't create secretbox key from dek bytes"))?,
+                    ),
                 })
             }
             DecOrGen::Dec(d) => {
@@ -80,12 +84,11 @@ impl AWSKeyManagement {
                     key_id: d
                         .key_id
                         .ok_or_else(|| anyhow!("seemed to have lost cmk id on the way???"))?,
-                    plaintext: Key::from_slice(
+                    plaintext: *Key::from_slice(
                         &resp
                             .plaintext
                             .ok_or_else(|| anyhow!("no plaintext DEK provided"))?,
-                    )
-                    .ok_or_else(|| anyhow!("couldn't create secretbox key from dek bytes"))?,
+                    ),
                 })
             }
         }
