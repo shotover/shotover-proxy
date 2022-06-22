@@ -95,7 +95,7 @@ mod test {
     use cassandra_protocol::{
         consistency::Consistency,
         frame::{
-            frame_result::{
+            message_result::{
                 ColSpec,
                 ColType::{Inet, Int},
                 ColTypeOption, RowsMetadata, RowsMetadataFlags, TableSpec,
@@ -113,7 +113,9 @@ mod test {
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: CQL::parse_from_string(query),
-                params: QueryParams {
+                params: Box::new(QueryParams {
+                    keyspace: None,
+                    now_in_seconds: None,
                     consistency: Consistency::One,
                     with_names: false,
                     values: None,
@@ -121,7 +123,7 @@ mod test {
                     paging_state: None,
                     serial_consistency: None,
                     timestamp: Some(1643855761086585),
-                },
+                }),
             },
         });
 
@@ -136,10 +138,11 @@ mod test {
             warnings: vec![],
             operation: CassandraOperation::Result(Rows {
                 value: MessageValue::Rows(rows),
-                metadata: RowsMetadata {
+                metadata: Box::new(RowsMetadata {
                     flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
                     columns_count: 1,
                     paging_state: None,
+                    new_metadata_id: None,
                     global_table_spec: Some(TableSpec {
                         ks_name: "system".into(),
                         table_name: "peers_v2".into(),
@@ -152,7 +155,7 @@ mod test {
                             value: None,
                         },
                     }],
-                },
+                }),
             }),
         });
 
@@ -202,10 +205,11 @@ mod test {
                     value: MessageValue::Rows(vec![vec![MessageValue::Inet(
                         "127.0.0.1".parse().unwrap(),
                     )]]),
-                    metadata: RowsMetadata {
+                    metadata: Box::new(RowsMetadata {
                         flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
                         columns_count: 1,
                         paging_state: None,
+                        new_metadata_id: None,
                         global_table_spec: Some(TableSpec {
                             ks_name: "system".into(),
                             table_name: "peers_v2".into(),
@@ -218,7 +222,7 @@ mod test {
                                 value: None,
                             },
                         }],
-                    },
+                    }),
                 }),
             });
 
