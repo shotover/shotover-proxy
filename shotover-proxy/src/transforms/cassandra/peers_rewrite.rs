@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraPeersRewriteConfig {
-    pub port: u32,
+    pub port: u16,
 }
 
 impl CassandraPeersRewriteConfig {
@@ -23,11 +23,11 @@ impl CassandraPeersRewriteConfig {
 
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
-    port: u32,
+    port: u16,
 }
 
 impl CassandraPeersRewrite {
-    pub fn new(port: u32) -> Self {
+    pub fn new(port: u16) -> Self {
         CassandraPeersRewrite { port }
     }
 }
@@ -67,7 +67,7 @@ fn is_system_peers(message: &mut Message) -> bool {
 
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
-fn rewrite_port(message: &mut Message, new_port: u32) {
+fn rewrite_port(message: &mut Message, new_port: u16) {
     if let Some(Frame::Cassandra(frame)) = message.frame() {
         // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
         if let CassandraOperation::Result(CassandraResult::Rows {
