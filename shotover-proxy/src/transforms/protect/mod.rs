@@ -1,5 +1,4 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::cql_statement;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
@@ -64,7 +63,7 @@ pub struct Protect {
 impl Protect {
     fn get_protected_columns(&self, statement: &CassandraStatement) -> &[Identifier] {
         // TODO replace `Identifier::default()` with cached keyspace name
-        if let Some(table_name) = cql_statement::get_table_name(statement) {
+        if let Some(table_name) = statement.get_table_name() {
             if let Some(tables) = self.keyspace_table_columns.get(
                 table_name
                     .keyspace

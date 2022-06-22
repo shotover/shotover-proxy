@@ -1,5 +1,4 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::cql_statement;
 use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::TransformChain;
@@ -123,7 +122,7 @@ impl SimpleRedisCache {
                 })) = message.frame()
                 {
                     if let CacheableState::CacheRow = is_cacheable(query) {
-                        if let Some(table_name) = cql_statement::get_table_name(query) {
+                        if let Some(table_name) = query.get_table_name() {
                             if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
                                 match build_redis_key_from_cql3(query, table_cache_schema) {
                                     Ok(address) => {
@@ -234,7 +233,7 @@ impl SimpleRedisCache {
 
     /// clear the cache for the single row specified by the redis_key
     fn delete_row(&mut self, statement: &CassandraStatement) -> Option<Message> {
-        if let Some(table_name) = cql_statement::get_table_name(statement) {
+        if let Some(table_name) = statement.get_table_name() {
             if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
                 if let Ok(address) =
                     // TODO: handle errors
@@ -255,7 +254,7 @@ impl SimpleRedisCache {
         statement: &CassandraStatement,
         response: &mut Message,
     ) -> Result<Option<Message>> {
-        if let Some(table_name) = cql_statement::get_table_name(statement) {
+        if let Some(table_name) = statement.get_table_name() {
             if let Some(table_cache_schema) = self.caching_schema.get(table_name) {
                 if let Ok(address) =
                     // TODO: handle errors

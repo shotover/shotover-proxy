@@ -263,7 +263,7 @@ impl CassandraFrame {
 
     pub fn get_query_type(&self) -> QueryType {
         match &self.operation {
-            CassandraOperation::Query { query, .. } => cql_statement::get_query_type(query),
+            CassandraOperation::Query { query, .. } => get_query_type(query),
             CassandraOperation::Batch { .. } => QueryType::Write,
             _ => QueryType::Read,
         }
@@ -461,70 +461,46 @@ impl CassandraOperation {
     }
 }
 
-pub mod cql_statement {
-    use crate::message::QueryType;
-    use cql3_parser::cassandra_statement::CassandraStatement;
-    use cql3_parser::common::FQName;
-
-    pub fn get_query_type(statement: &CassandraStatement) -> QueryType {
-        match statement {
-            CassandraStatement::AlterKeyspace(_) => QueryType::SchemaChange,
-            CassandraStatement::AlterMaterializedView(_) => QueryType::SchemaChange,
-            CassandraStatement::AlterRole(_) => QueryType::SchemaChange,
-            CassandraStatement::AlterTable(_) => QueryType::SchemaChange,
-            CassandraStatement::AlterType(_) => QueryType::SchemaChange,
-            CassandraStatement::AlterUser(_) => QueryType::SchemaChange,
-            CassandraStatement::ApplyBatch => QueryType::ReadWrite,
-            CassandraStatement::CreateAggregate(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateFunction(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateIndex(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateKeyspace(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateMaterializedView(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateRole(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateTable(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateTrigger(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateType(_) => QueryType::SchemaChange,
-            CassandraStatement::CreateUser(_) => QueryType::SchemaChange,
-            CassandraStatement::Delete(_) => QueryType::Write,
-            CassandraStatement::DropAggregate(_) => QueryType::SchemaChange,
-            CassandraStatement::DropFunction(_) => QueryType::SchemaChange,
-            CassandraStatement::DropIndex(_) => QueryType::SchemaChange,
-            CassandraStatement::DropKeyspace(_) => QueryType::SchemaChange,
-            CassandraStatement::DropMaterializedView(_) => QueryType::SchemaChange,
-            CassandraStatement::DropRole(_) => QueryType::SchemaChange,
-            CassandraStatement::DropTable(_) => QueryType::SchemaChange,
-            CassandraStatement::DropTrigger(_) => QueryType::SchemaChange,
-            CassandraStatement::DropType(_) => QueryType::SchemaChange,
-            CassandraStatement::DropUser(_) => QueryType::SchemaChange,
-            CassandraStatement::Grant(_) => QueryType::SchemaChange,
-            CassandraStatement::Insert(_) => QueryType::Write,
-            CassandraStatement::ListPermissions(_) => QueryType::Read,
-            CassandraStatement::ListRoles(_) => QueryType::Read,
-            CassandraStatement::Revoke(_) => QueryType::SchemaChange,
-            CassandraStatement::Select(_) => QueryType::Read,
-            CassandraStatement::Truncate(_) => QueryType::Write,
-            CassandraStatement::Update(_) => QueryType::Write,
-            CassandraStatement::Use(_) => QueryType::SchemaChange,
-            CassandraStatement::Unknown(_) => QueryType::Read,
-        }
-    }
-
-    /// returns the table name specified in the command if one is present.
-    pub fn get_table_name(statement: &CassandraStatement) -> Option<&FQName> {
-        match statement {
-            CassandraStatement::AlterTable(t) => Some(&t.name),
-            CassandraStatement::CreateIndex(i) => Some(&i.table),
-            CassandraStatement::CreateMaterializedView(m) => Some(&m.table),
-            CassandraStatement::CreateTable(t) => Some(&t.name),
-            CassandraStatement::Delete(d) => Some(&d.table_name),
-            CassandraStatement::DropTable(t) => Some(&t.name),
-            CassandraStatement::DropTrigger(t) => Some(&t.table),
-            CassandraStatement::Insert(i) => Some(&i.table_name),
-            CassandraStatement::Select(s) => Some(&s.table_name),
-            CassandraStatement::Truncate(t) => Some(t),
-            CassandraStatement::Update(u) => Some(&u.table_name),
-            _ => None,
-        }
+fn get_query_type(statement: &CassandraStatement) -> QueryType {
+    match statement {
+        CassandraStatement::AlterKeyspace(_) => QueryType::SchemaChange,
+        CassandraStatement::AlterMaterializedView(_) => QueryType::SchemaChange,
+        CassandraStatement::AlterRole(_) => QueryType::SchemaChange,
+        CassandraStatement::AlterTable(_) => QueryType::SchemaChange,
+        CassandraStatement::AlterType(_) => QueryType::SchemaChange,
+        CassandraStatement::AlterUser(_) => QueryType::SchemaChange,
+        CassandraStatement::ApplyBatch => QueryType::ReadWrite,
+        CassandraStatement::CreateAggregate(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateFunction(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateIndex(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateKeyspace(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateMaterializedView(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateRole(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateTable(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateTrigger(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateType(_) => QueryType::SchemaChange,
+        CassandraStatement::CreateUser(_) => QueryType::SchemaChange,
+        CassandraStatement::Delete(_) => QueryType::Write,
+        CassandraStatement::DropAggregate(_) => QueryType::SchemaChange,
+        CassandraStatement::DropFunction(_) => QueryType::SchemaChange,
+        CassandraStatement::DropIndex(_) => QueryType::SchemaChange,
+        CassandraStatement::DropKeyspace(_) => QueryType::SchemaChange,
+        CassandraStatement::DropMaterializedView(_) => QueryType::SchemaChange,
+        CassandraStatement::DropRole(_) => QueryType::SchemaChange,
+        CassandraStatement::DropTable(_) => QueryType::SchemaChange,
+        CassandraStatement::DropTrigger(_) => QueryType::SchemaChange,
+        CassandraStatement::DropType(_) => QueryType::SchemaChange,
+        CassandraStatement::DropUser(_) => QueryType::SchemaChange,
+        CassandraStatement::Grant(_) => QueryType::SchemaChange,
+        CassandraStatement::Insert(_) => QueryType::Write,
+        CassandraStatement::ListPermissions(_) => QueryType::Read,
+        CassandraStatement::ListRoles(_) => QueryType::Read,
+        CassandraStatement::Revoke(_) => QueryType::SchemaChange,
+        CassandraStatement::Select(_) => QueryType::Read,
+        CassandraStatement::Truncate(_) => QueryType::Write,
+        CassandraStatement::Update(_) => QueryType::Write,
+        CassandraStatement::Use(_) => QueryType::SchemaChange,
+        CassandraStatement::Unknown(_) => QueryType::Read,
     }
 }
 
