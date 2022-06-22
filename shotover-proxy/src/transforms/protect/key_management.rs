@@ -1,7 +1,6 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use bytes::Bytes;
 use cached::proc_macro::cached;
 use chacha20poly1305::Key;
@@ -10,11 +9,6 @@ use rusoto_signature::Region;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::str::FromStr;
-
-#[async_trait]
-pub trait KeyManagement {
-    async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial>;
-}
 
 #[derive(Clone, Debug)]
 pub enum KeyManager {
@@ -81,12 +75,11 @@ impl KeyManagerConfig {
     }
 }
 
-#[async_trait]
-impl KeyManagement for KeyManager {
+impl KeyManager {
     async fn get_key(&self, dek: Option<Vec<u8>>, kek_alt: Option<String>) -> Result<KeyMaterial> {
         match &self {
             KeyManager::AWSKms(aws) => aws.get_key(dek, kek_alt).await,
-            KeyManager::Local(local) => local.get_key(dek, kek_alt).await,
+            KeyManager::Local(local) => local.get_key(dek).await,
         }
     }
 }

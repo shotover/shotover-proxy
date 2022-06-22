@@ -1,6 +1,5 @@
-use crate::transforms::protect::key_management::{KeyManagement, KeyMaterial};
+use crate::transforms::protect::key_management::KeyMaterial;
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use bytes::Bytes;
 use chacha20poly1305::Key;
 use derivative::Derivative;
@@ -27,9 +26,8 @@ enum DecOrGen {
 
 // See https://docs.rs/rusoto_kms/0.44.0/rusoto_kms/trait.Kms.html#tymethod.generate_data_key
 
-#[async_trait]
-impl KeyManagement for AWSKeyManagement {
-    async fn get_key(
+impl AWSKeyManagement {
+    pub async fn get_key(
         &self,
         dek: Option<Vec<u8>>,
         kek_alt: Option<String>,
