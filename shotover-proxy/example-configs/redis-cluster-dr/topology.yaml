@@ -15,7 +15,8 @@ chain_config:
               filter: Read
           - Coalesce:
               flush_when_buffered_message_count: 2000
-              flush_when_millis_since_last_flush: 10000
+              # Use an unreasonably large timeout here so that integration tests dont break on slow hardware or a performance regression
+              flush_when_millis_since_last_flush: 1000000000
           - QueryCounter:
               name: "DR chain"
           - RedisSinkCluster:
