@@ -36,6 +36,7 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisSinkClusterConfig {
     pub first_contact_points: Vec<String>,
+    pub direct_destination: Option<String>,
     pub tls: Option<TlsConfig>,
     connection_count: Option<usize>,
 }
@@ -44,6 +45,7 @@ impl RedisSinkClusterConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
         let mut cluster = RedisSinkCluster::new(
             self.first_contact_points.clone(),
+            self.direct_destination.clone(),
             self.connection_count.unwrap_or(1),
             self.tls.clone(),
             chain_name,
@@ -69,6 +71,7 @@ impl RedisSinkClusterConfig {
 pub struct RedisSinkCluster {
     pub slots: SlotMap,
     pub channels: ChannelMap,
+    direct_connection: Option<UnboundedSender<Request>>,
     load_scores: HashMap<(String, usize), usize>,
     rng: SmallRng,
     connection_count: usize,
@@ -76,12 +79,14 @@ pub struct RedisSinkCluster {
     reason_for_no_nodes: Option<&'static str>,
     rebuild_connections: bool,
     first_contact_points: Vec<String>,
+    direct_destination: Option<String>,
     token: Option<UsernamePasswordToken>,
 }
 
 impl RedisSinkCluster {
     pub fn new(
         first_contact_points: Vec<String>,
+        direct_destination: Option<String>,
         connection_count: usize,
         tls: Option<TlsConfig>,
         chain_name: String,
@@ -91,11 +96,13 @@ impl RedisSinkCluster {
         let connection_pool = ConnectionPool::new_with_auth(RedisCodec::new(), authenticator, tls)?;
 
         let sink_cluster = RedisSinkCluster {
+            first_contact_points,
+            direct_destination,
             slots: SlotMap::new(),
             channels: ChannelMap::new(),
+            direct_connection: None,
             load_scores: HashMap::new(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            first_contact_points,
             connection_count,
             connection_pool,
             reason_for_no_nodes: None,
@@ -106,6 +113,25 @@ impl RedisSinkCluster {
         register_counter!("failed_requests", "chain" => chain_name, "transform" => sink_cluster.get_name());
 
         Ok(sink_cluster)
+    }
+
+    async fn direct_connection(&mut self) -> Result<&UnboundedSender<Request>> {
+        if self.direct_connection.is_none() {
+            match &self.direct_destination {
+                Some(address) => {
+                    self.direct_connection = Some(
+                        self.connection_pool
+                            .get_connections(address, &self.token, 1)
+                            .await?
+                            .remove(0),
+                    );
+                }
+                None => {
+                    bail!("Cannot call direct_connection when direct_destination is configured as None")
+                }
+            }
+        }
+        Ok(self.direct_connection.as_ref().unwrap())
     }
 
     fn get_name(&self) -> &'static str {
@@ -121,7 +147,10 @@ impl RedisSinkCluster {
         };
 
         let routing_info = RoutingInfo::for_command_frame(command)?;
-        self.dispatch_message_hiding(routing_info, message).await
+        match self.direct_destination {
+            Some(_) => self.dispatch_message_handling(routing_info, message).await,
+            None => self.dispatch_message_hiding(routing_info, message).await,
+        }
     }
 
     async fn send_message_to_slot(
@@ -447,6 +476,29 @@ impl RedisSinkCluster {
         }
     }
 
+    async fn dispatch_message_handling(
+        &mut self,
+        routing_info: RoutingInfo,
+        message: Message,
+    ) -> Result<ResponseFuture> {
+        match routing_info {
+            RoutingInfo::Slot(slot) => self.send_message_to_slot(slot, message).await,
+            RoutingInfo::AllNodes(_)
+            | RoutingInfo::AllMasters(_)
+            | RoutingInfo::Random
+            | RoutingInfo::Unsupported
+            | RoutingInfo::ShortCircuitNil
+            | RoutingInfo::ShortCircuitOk => {
+                let connection = self.direct_connection().await?;
+                Ok(Box::pin(
+                    send_message_request(connection, message)?
+                        .map_err(|_| anyhow!("no response from direct connection")),
+                ))
+            }
+            RoutingInfo::Auth => self.on_auth(message).await,
+        }
+    }
+
     async fn on_auth(&mut self, mut message: Message) -> Result<ResponseFuture> {
         let command = match message.frame() {
             Some(Frame::Redis(RedisFrame::Array(ref command))) => command,
@@ -553,13 +605,19 @@ impl SlotMap {
 
 #[derive(Debug, Clone, Copy)]
 pub enum RoutingInfo {
-    AllNodes(ResponseJoin),
-    AllMasters(ResponseJoin),
-    Random,
     Slot(u16),
     Auth,
+    /// In handling mode falls back to sending to the destination address
+    AllNodes(ResponseJoin),
+    /// In handling mode falls back to sending to the destination address
+    AllMasters(ResponseJoin),
+    /// In handling mode falls back to sending to the destination address
+    Random,
+    /// In handling mode falls back to sending to the destination address
     Unsupported,
+    /// In handling mode falls back to sending to the destination address
     ShortCircuitOk,
+    /// In handling mode falls back to sending to the destination address
     ShortCircuitNil,
 }
 
@@ -788,12 +846,12 @@ pub fn parse_slots(results: &[RedisFrame]) -> Result<SlotMap> {
 async fn get_topology_from_node(
     sender: UnboundedSender<Request>,
 ) -> Result<SlotMap, TransformError> {
-    let return_chan_rx = send_frame_request(
+    let return_chan_rx = send_message_request(
         &sender,
-        RedisFrame::Array(vec![
+        Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
             RedisFrame::BulkString("CLUSTER".into()),
             RedisFrame::BulkString("SLOTS".into()),
-        ]),
+        ]))),
     )?;
 
     match receive_frame_response(return_chan_rx).await? {
@@ -823,14 +881,14 @@ fn get_hashtag(key: &[u8]) -> Option<&[u8]> {
 }
 
 #[inline(always)]
-fn send_frame_request(
+fn send_message_request(
     sender: &UnboundedSender<Request>,
-    frame: RedisFrame,
+    message: Message,
 ) -> Result<oneshot::Receiver<Response>> {
     let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
     sender.send(Request {
-        message: Message::from_frame(Frame::Redis(frame)),
+        message,
         return_chan: Some(return_chan_tx),
     })?;
 
@@ -967,7 +1025,10 @@ impl Authenticator<UsernamePasswordToken> for RedisAuthenticator {
 
         auth_args.push(RedisFrame::BulkString(token.password.clone()));
 
-        let return_rx = send_frame_request(sender, RedisFrame::Array(auth_args))?;
+        let return_rx = send_message_request(
+            sender,
+            Message::from_frame(Frame::Redis(RedisFrame::Array(auth_args))),
+        )?;
 
         match receive_frame_response(return_rx).await? {
             RedisFrame::SimpleString(s) if s == "OK" => {

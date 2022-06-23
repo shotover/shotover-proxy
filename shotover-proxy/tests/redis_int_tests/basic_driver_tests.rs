@@ -74,8 +74,8 @@ async fn test_info(connection: &mut Connection) {
     assert!(info.contains_key(&"role"));
 }
 
-async fn test_keys(connection: &mut Connection) {
-    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+async fn test_keys_hiding(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
     assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
     assert_ok(redis::cmd("SET").arg("bar").arg(42), connection).await;
     assert_ok(redis::cmd("SET").arg("baz").arg(42), connection).await;
@@ -89,6 +89,27 @@ async fn test_keys(connection: &mut Connection) {
     assert_eq!(keys, expected);
 
     assert_eq!(redis::cmd("DBSIZE").query_async(connection).await, Ok(3u64));
+}
+
+async fn test_keys_handling(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
+    assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
+    assert_ok(redis::cmd("SET").arg("bar").arg(42), connection).await;
+    assert_ok(redis::cmd("SET").arg("baz").arg(42), connection).await;
+
+    let keys: HashSet<String> = redis::cmd("KEYS")
+        .arg("*")
+        .query_async(connection)
+        .await
+        .unwrap();
+    let expected = HashSet::from(["foo".to_string(), "bar".to_string(), "baz".to_string()]);
+    assert!(
+        keys.is_subset(&expected),
+        "expected: {expected:?} was: {keys:?}"
+    );
+
+    let size: u64 = redis::cmd("DBSIZE").query_async(connection).await.unwrap();
+    assert!(size <= 3, "expected <= 3 but was {size}");
 }
 
 async fn test_client_name(connection: &mut Connection) {
@@ -173,8 +194,8 @@ async fn test_client_name_cluster(connection: &mut Connection) {
     assert_nil(redis::cmd("CLIENT").arg("GETNAME"), connection).await;
 }
 
-async fn test_hash_ops(connection: &mut Connection) {
-    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+async fn test_hash_ops(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
     assert_int(
         redis::cmd("HSET").arg("foo").arg("key_1").arg(1),
         connection,
@@ -197,8 +218,8 @@ async fn test_hash_ops(connection: &mut Connection) {
     assert_eq!(result, expected);
 }
 
-async fn test_set_ops(connection: &mut Connection) {
-    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+async fn test_set_ops(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
     assert_int(redis::cmd("SADD").arg("foo").arg(1), connection, 1).await;
     assert_int(redis::cmd("SADD").arg("foo").arg(2), connection, 1).await;
     assert_int(redis::cmd("SADD").arg("foo").arg(3), connection, 1).await;
@@ -212,8 +233,8 @@ async fn test_set_ops(connection: &mut Connection) {
     assert_eq!(result, expected);
 }
 
-async fn test_scan(connection: &mut Connection) {
-    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+async fn test_scan(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
     assert_int(redis::cmd("SADD").arg("foo").arg(1), connection, 1).await;
     assert_int(redis::cmd("SADD").arg("foo").arg(2), connection, 1).await;
     assert_int(redis::cmd("SADD").arg("foo").arg(3), connection, 1).await;
@@ -250,8 +271,8 @@ async fn test_optionals(connection: &mut Connection) {
     assert_eq!(a, 0i32);
 }
 
-async fn test_scanning(connection: &mut Connection) {
-    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+async fn test_scanning(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
     let mut unseen = HashSet::<usize>::new();
 
     for x in 0..100 * STRESS_TEST_MULTIPLIER {
@@ -281,8 +302,8 @@ async fn test_scanning(connection: &mut Connection) {
     assert_eq!(unseen.len(), 0);
 }
 
-async fn test_filtered_scanning(connection: &mut Connection) {
-    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+async fn test_filtered_scanning(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
     let mut unseen = HashSet::<usize>::new();
 
     for x in 0..3000 {
@@ -531,8 +552,8 @@ async fn test_script(connection: &mut Connection) {
     assert_eq!(response, Ok(("foo".to_string(), 42)));
 }
 
-async fn test_tuple_args(connection: &mut Connection) {
-    assert_ok(&mut redis::cmd("FLUSHDB"), connection).await;
+async fn test_tuple_args(connection: &mut Connection, flusher: &mut Flusher) {
+    flusher.flush().await;
     assert_ok(
         redis::cmd("HMSET")
             .arg("my_key")
@@ -1195,8 +1216,10 @@ async fn test_passthrough() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut flusher =
+        Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
 
-    run_all(&mut connection).await;
+    run_all(&mut connection, &mut flusher).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1209,8 +1232,9 @@ async fn test_cluster_tls() {
         ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
 
-    run_all_cluster_safe(&mut connection).await;
+    run_all_cluster_hiding(&mut connection, &mut flusher).await;
     test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
 }
 
@@ -1230,10 +1254,16 @@ async fn test_source_tls_and_single_tls() {
     };
 
     let mut connection = shotover_manager
-        .redis_connection_async_tls(6380, tls_config)
+        .redis_connection_async_tls(6380, tls_config.clone())
         .await;
+    let mut flusher = Flusher::new_single_connection(
+        shotover_manager
+            .redis_connection_async_tls(6380, tls_config)
+            .await,
+    )
+    .await;
 
-    run_all(&mut connection).await;
+    run_all(&mut connection, &mut flusher).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1246,11 +1276,12 @@ async fn test_cluster_ports_rewrite() {
     );
 
     let mut connection = shotover_manager.redis_connection_async(6380).await;
+    let mut flusher =
+        Flusher::new_single_connection(shotover_manager.redis_connection_async(6380).await).await;
 
-    run_all_cluster_safe(&mut connection).await;
+    run_all_cluster_hiding(&mut connection, &mut flusher).await;
 
     test_cluster_ports_rewrite_slots(&mut connection, 6380).await;
-
     test_cluster_ports_rewrite_nodes(&mut connection, 6380).await;
 }
 
@@ -1261,8 +1292,10 @@ async fn test_redis_multi() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut flusher =
+        Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
 
-    run_all_multi_safe(&mut connection).await;
+    run_all_multi_safe(&mut connection, &mut flusher).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1279,15 +1312,33 @@ async fn test_cluster_auth_redis() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cluster_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster/docker-compose.yml");
+async fn test_cluster_hiding_redis() {
+    let _compose = DockerCompose::new("example-configs/redis-cluster-hiding/docker-compose.yml");
     let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-cluster/topology.yaml");
+        ShotoverManager::from_topology_file("example-configs/redis-cluster-hiding/topology.yaml");
+
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let connection = &mut connection;
+    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
+
+    run_all_cluster_hiding(connection, &mut flusher).await;
+    test_cluster_ports_rewrite_slots(connection, 6379).await;
+    test_cluster_ports_rewrite_nodes(connection, 6379).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cluster_handling_redis() {
+    let _compose = DockerCompose::new("example-configs/redis-cluster-handling/docker-compose.yml");
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/redis-cluster-handling/topology.yaml");
 
     let mut connection = shotover_manager.redis_connection_async(6379).await;
     let connection = &mut connection;
 
-    run_all_cluster_safe(connection).await;
+    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
+
+    run_all_cluster_handling(connection, &mut flusher).await;
     test_cluster_ports_rewrite_slots(connection, 6379).await;
     test_cluster_ports_rewrite_nodes(connection, 6379).await;
 }
@@ -1348,20 +1399,27 @@ async fn test_cluster_dr_redis() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-dr/topology.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    redis::cmd("AUTH")
-        .arg("default")
-        .arg("shotover")
-        .query_async::<_, ()>(&mut connection)
-        .await
-        .unwrap();
+    async fn new_connection(shotover_manager: &ShotoverManager) -> Connection {
+        let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+        redis::cmd("AUTH")
+            .arg("default")
+            .arg("shotover")
+            .query_async::<_, ()>(&mut connection)
+            .await
+            .unwrap();
+
+        connection
+    }
+    let mut connection = new_connection(&shotover_manager).await;
+    let mut flusher = Flusher::new_single_connection(new_connection(&shotover_manager).await).await;
 
     test_cluster_replication(&mut connection, &mut replication_connection).await;
     test_dr_auth(&shotover_manager).await;
-    run_all_cluster_safe(&mut connection).await;
+    run_all_cluster_hiding(&mut connection, &mut flusher).await;
 }
 
-async fn run_all_multi_safe(connection: &mut Connection) {
+async fn run_all_multi_safe(connection: &mut Connection, flusher: &mut Flusher) {
     test_cluster_basics(connection).await;
     test_cluster_eval(connection).await;
     test_cluster_script(connection).await; //TODO: script does not seem to be loading in the server?
@@ -1369,10 +1427,10 @@ async fn run_all_multi_safe(connection: &mut Connection) {
     test_getset(connection).await;
     test_incr(connection).await;
     test_info(connection).await;
-    test_keys(connection).await;
+    test_keys_hiding(connection, flusher).await;
     // test_hash_ops(connection).await;
-    test_set_ops(connection).await;
-    test_scan(connection).await;
+    test_set_ops(connection, flusher).await;
+    test_scan(connection, flusher).await;
     test_optionals(connection).await;
     // test_scanning(connection).await;
     // test_filtered_scanning(connection).await;
@@ -1387,7 +1445,7 @@ async fn run_all_multi_safe(connection: &mut Connection) {
     // test_pipeline_reuse_query_clear(connection).await;
     // test_real_transaction(connection).await;
     test_script(connection).await;
-    test_tuple_args(connection).await;
+    test_tuple_args(connection, flusher).await;
     // test_nice_api(connection).await;
     test_auto_m_versions(connection).await;
     test_nice_hash_api(connection).await;
@@ -1400,10 +1458,10 @@ async fn run_all_multi_safe(connection: &mut Connection) {
     test_time(connection).await;
 }
 
-async fn run_all_cluster_safe(connection: &mut Connection) {
+async fn run_all_cluster_hiding(connection: &mut Connection, flusher: &mut Flusher) {
     test_cluster_pipe(connection).await;
     test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
-    for _i in 0..1999 {
+    for _ in 0..1999 {
         test_script(connection).await;
     }
 
@@ -1413,13 +1471,13 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_getset(connection).await;
     test_incr(connection).await;
     // test_info().await;
-    test_keys(connection).await;
+    test_keys_hiding(connection, flusher).await;
     // test_hash_ops().await;
-    test_set_ops(connection).await;
-    test_scan(connection).await;
+    test_set_ops(connection, flusher).await;
+    test_scan(connection, flusher).await;
     // test_optionals().await;
-    test_scanning(connection).await;
-    test_filtered_scanning(connection).await;
+    test_scanning(connection, flusher).await;
+    test_filtered_scanning(connection, flusher).await;
     test_pipeline(connection).await; // NGET Issues
     test_empty_pipeline(connection).await;
     // TODO: Pipeline transactions currently don't work (though it tries very hard)
@@ -1430,8 +1488,7 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_pipeline_reuse_query(connection).await;
     test_pipeline_reuse_query_clear(connection).await;
     // test_real_transaction().await;
-    test_script(connection).await;
-    test_tuple_args(connection).await;
+    test_tuple_args(connection, flusher).await;
     // test_nice_api().await;
     // test_auto_m_versions().await;
     test_nice_hash_api(connection).await;
@@ -1445,18 +1502,57 @@ async fn run_all_cluster_safe(connection: &mut Connection) {
     test_hello_cluster(connection).await;
 }
 
-async fn run_all(connection: &mut Connection) {
+async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut Flusher) {
+    test_cluster_pipe(connection).await;
+    test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
+    test_cluster_basics(connection).await;
+    test_cluster_eval(connection).await;
+    //test_cluster_script(connection).await; //TODO: script does not seem to be loading in the server?
+    test_getset(connection).await;
+    test_incr(connection).await;
+    test_info(connection).await;
+    test_keys_handling(connection, flusher).await;
+    // test_hash_ops().await;
+    test_set_ops(connection, flusher).await;
+    test_scan(connection, flusher).await;
+    // test_optionals(connection).await;
+    test_scanning(connection, flusher).await;
+    test_filtered_scanning(connection, flusher).await;
+    test_pipeline(connection).await; // NGET Issues
+    test_empty_pipeline(connection).await;
+    // TODO: Pipeline transactions currently don't work (though it tries very hard)
+    // Current each cmd in a pipeline is treated as a single request, which means on a cluster
+    // basis they end up getting routed to different masters. This results in very occasionally will
+    // the transaction resolve (the exec and the multi both go to the right server).
+    // test_pipeline_transaction().await;
+    test_pipeline_reuse_query(connection).await;
+    test_pipeline_reuse_query_clear(connection).await;
+    // test_real_transaction().await;
+    test_tuple_args(connection, flusher).await;
+    // test_nice_api().await;
+    // test_auto_m_versions().await;
+    test_nice_hash_api(connection).await;
+    test_nice_list_api(connection).await;
+    test_tuple_decoding_regression(connection).await;
+    test_bit_operations(connection).await;
+    test_client_name(connection).await;
+    test_save(connection).await;
+    test_ping_echo(connection).await;
+    test_time(connection).await;
+}
+
+async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
     test_args(connection).await;
     test_getset(connection).await;
     test_incr(connection).await;
     test_info(connection).await;
-    test_keys(connection).await;
-    test_hash_ops(connection).await;
-    test_set_ops(connection).await;
-    test_scan(connection).await;
+    test_keys_hiding(connection, flusher).await;
+    test_hash_ops(connection, flusher).await;
+    test_set_ops(connection, flusher).await;
+    test_scan(connection, flusher).await;
     test_optionals(connection).await;
-    test_scanning(connection).await;
-    test_filtered_scanning(connection).await;
+    test_scanning(connection, flusher).await;
+    test_filtered_scanning(connection, flusher).await;
     test_pipeline(connection).await;
     test_empty_pipeline(connection).await;
     test_pipeline_transaction(connection).await;
@@ -1470,7 +1566,7 @@ async fn run_all(connection: &mut Connection) {
     // test_pubsub_unsubscribe_one_sub_one_psub().await;
     // scoped_pubsub();
     test_script(connection).await;
-    test_tuple_args(connection).await;
+    test_tuple_args(connection, flusher).await;
     test_nice_api(connection).await;
     test_auto_m_versions(connection).await;
     test_nice_hash_api(connection).await;
@@ -1481,4 +1577,47 @@ async fn run_all(connection: &mut Connection) {
     test_save(connection).await;
     test_ping_echo(connection).await;
     test_time(connection).await;
+}
+
+struct Flusher {
+    connections: Vec<Connection>,
+}
+
+impl Flusher {
+    /// Use the standard ports for cluster integration tests
+    pub async fn new_cluster(shotover_manager: &ShotoverManager) -> Self {
+        Flusher {
+            connections: vec![
+                // shotover - shotover might have internal handling for flush that we want to run
+                shotover_manager.redis_connection_async(6379).await,
+                // redis cluster instances - shotover may or may not run flush on all cluster instances
+                shotover_manager.redis_connection_async(2220).await,
+                shotover_manager.redis_connection_async(2221).await,
+                shotover_manager.redis_connection_async(2222).await,
+                shotover_manager.redis_connection_async(2223).await,
+                shotover_manager.redis_connection_async(2224).await,
+                shotover_manager.redis_connection_async(2225).await,
+            ],
+        }
+    }
+
+    /// Many integration tests can get away with just running flush on the shotover connection
+    /// Its not ideal because a shotover bug could lead to hard to diagnose test failure
+    /// but it also makes the test implementations simpler so...
+    pub async fn new_single_connection(connection: Connection) -> Self {
+        Flusher {
+            connections: vec![connection],
+        }
+    }
+
+    pub async fn flush(&mut self) {
+        for connection in &mut self.connections {
+            // This command is expected to fail when run against a read only replica.
+            // This is unfortunate but we we have no way to determine if its read only before sending the FLUSHDB
+            redis::cmd("FLUSHDB")
+                .query_async::<_, ()>(connection)
+                .await
+                .ok();
+        }
+    }
 }

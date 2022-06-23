@@ -275,10 +275,18 @@ This transform is a full featured Redis driver that will connect to a Redis clus
 - RedisSinkCluster:
     # A list of IP address and ports of the upstream redis nodes/services.
     first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
+
+    # By default RedisSinkCluster will attempt to emulate a single non-clustered redis node by completely hiding the fact that redis is a cluster.
+    # However, when this field is provided, this cluster hiding is disabled.
+    # Instead other nodes in the cluster will only be accessed when performing a command that accesses a slot.
+    # All other commands will be passed directly to the direct_connection node.
+    # direct_connection: "127.0.0.1:2220"
+
     # The number of connections in the connection pool for each node.
     # e.g. if connection_count is 4 and there are 4 nodes there will be a total of 16 connections.
     # When this field is not provided connection_count defaults to 1.
     connection_count: 1
+
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
     tls:
