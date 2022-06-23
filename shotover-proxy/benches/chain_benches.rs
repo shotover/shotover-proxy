@@ -229,7 +229,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         query: CQL::parse_from_string(
                             "INSERT INTO foo (z, v) VALUES (1, 123)".into(),
                         ),
-                        params: QueryParams {
+                        params: Box::new(QueryParams {
                             consistency: Consistency::One,
                             with_names: false,
                             values: None,
@@ -237,7 +237,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                             paging_state: None,
                             serial_consistency: None,
                             timestamp: Some(1643855761086585),
-                        },
+                            keyspace: None,
+                            now_in_seconds: None,
+                        }),
                     },
                 }
                 .encode()

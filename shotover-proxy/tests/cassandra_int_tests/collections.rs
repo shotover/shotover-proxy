@@ -1,6 +1,6 @@
 use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use cassandra_cpp::Session;
-use cassandra_protocol::frame::frame_result::ColType;
+use cassandra_protocol::frame::message_result::ColType;
 
 fn get_map_example(value: &str) -> String {
     format!("{{0 : {}}}", value)
@@ -57,6 +57,7 @@ fn get_type_str(col_type: ColType) -> &'static str {
         ColType::Udt => "udt",
         ColType::Tuple => "tuple",
         ColType::Null => "null",
+        ColType::Duration => "duration",
     }
 }
 
