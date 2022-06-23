@@ -31,14 +31,14 @@ impl Topology {
     }
 
     async fn build_chains(&self) -> Result<HashMap<String, TransformChain>> {
-        let mut temp: HashMap<String, TransformChain> = HashMap::new();
+        let mut result = HashMap::new();
         for (key, value) in &self.chain_config {
-            temp.insert(
+            result.insert(
                 key.clone(),
                 build_chain_from_config(key.clone(), value).await?,
             );
         }
-        Ok(temp)
+        Ok(result)
     }
 
     pub async fn run_chains(
