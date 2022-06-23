@@ -1105,10 +1105,16 @@ async fn test_cluster_replication(
     replication_connection: &mut ClusterConnection,
 ) {
     // According to the coalesce config the writes are only flushed to the replication cluster after 2000 total writes pass through shotover
-    for _ in 0..1000 {
+    for i in 0..1000 {
         // 2000 writes havent occured yet so this must be true
-        assert!(replication_connection.get::<&str, i32>("foo").is_err());
-        assert!(replication_connection.get::<&str, i32>("bar").is_err());
+        assert!(
+            replication_connection.get::<&str, i32>("foo").is_err(),
+            "expected foo to be unset but was set after {i} iterations"
+        );
+        assert!(
+            replication_connection.get::<&str, i32>("bar").is_err(),
+            "expected bar to be unset but was set after {i} iterations"
+        );
 
         assert_ok(redis::cmd("SET").arg("foo").arg(42), connection).await;
         assert_eq!(
