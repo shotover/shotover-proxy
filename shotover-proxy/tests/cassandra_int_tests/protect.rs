@@ -1,4 +1,4 @@
-use crate::helpers::cassandra::{execute_query, run_query, ResultValue};
+use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
 use cassandra_cpp::Session;
 
 pub fn test(shotover_session: &Session, direct_session: &Session) {
@@ -14,27 +14,17 @@ pub fn test(shotover_session: &Session, direct_session: &Session) {
         );
 
     // assert that data is decrypted by shotover
-    // assert_query_result(
-    //     shotover_session,
-    //     "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
-    //     &[&[
-    //         ResultValue::Varchar("pk1".into()),
-    //         ResultValue::Varchar("cluster".into()),
-    //         ResultValue::Varchar("I am gonna get encrypted!!".into()),
-    //         ResultValue::Int(42),
-    //         ResultValue::Boolean(true),
-    //     ]],
-    // );
-    // TODO: this should fail, protect currently manages to write the encrypted value but fails to decrypt it.
-    let result = execute_query(
+    assert_query_result(
         shotover_session,
         "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
+        &[&[
+            ResultValue::Varchar("pk1".into()),
+            ResultValue::Varchar("cluster".into()),
+            ResultValue::Varchar("I am gonna get encrypted!!".into()),
+            ResultValue::Int(42),
+            ResultValue::Boolean(true),
+        ]],
     );
-    if let ResultValue::Varchar(value) = &result[0][2] {
-        assert!(value.starts_with("{\"cipher"), "but was {:?}", value);
-    } else {
-        panic!("expectected 3rd column to be ResultValue::Varchar in {result:?}");
-    }
 
     // assert that data is encrypted on cassandra side
     let result = execute_query(
@@ -48,7 +38,7 @@ pub fn test(shotover_session: &Session, direct_session: &Session) {
     if let ResultValue::Varchar(value) = &result[0][2] {
         assert!(value.starts_with("{\"cipher"), "but was {:?}", value);
     } else {
-        panic!("expectected 3rd column to be ResultValue::Varchar in {result:?}");
+        panic!("expected 3rd column to be ResultValue::Varchar in {result:?}");
     }
     assert_eq!(result[0][3], ResultValue::Int(42));
     assert_eq!(result[0][4], ResultValue::Boolean(true));
