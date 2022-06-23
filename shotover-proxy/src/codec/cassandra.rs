@@ -137,7 +137,9 @@ impl Encoder<Messages> for CassandraCodec {
 #[cfg(test)]
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodec;
-    use crate::frame::cassandra::{CassandraFrame, CassandraOperation, CassandraResult, CQL};
+    use crate::frame::cassandra::{
+        parse_statement, CassandraFrame, CassandraOperation, CassandraResult,
+    };
     use crate::frame::Frame;
     use crate::message::{Message, MessageValue};
     use bytes::BytesMut;
@@ -148,12 +150,6 @@ mod cassandra_protocol_tests {
     use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
     use hex_literal::hex;
-    use sqlparser::ast::Expr::BinaryOp;
-    use sqlparser::ast::Value::SingleQuotedString;
-    use sqlparser::ast::{
-        BinaryOperator, Expr, Ident, ObjectName, Query, Select, SelectItem, SetExpr, Statement,
-        TableFactor, TableWithJoins, Value as SQLValue, Values,
-    };
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame_codec_roundtrip(
@@ -371,60 +367,16 @@ mod cassandra_protocol_tests {
             "0400000307000000350000002e53454c454354202a2046524f4d20737973
             74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
         );
+
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 3,
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::Parsed(Box::new(Statement::Query(Box::new(Query {
-                    with: None,
-                    body: SetExpr::Select(Box::new(Select {
-                        distinct: false,
-                        top: None,
-                        projection: vec![SelectItem::Wildcard],
-                        from: vec![TableWithJoins {
-                            relation: TableFactor::Table {
-                                name: ObjectName(vec![
-                                    Ident {
-                                        value: "system".into(),
-                                        quote_style: None,
-                                    },
-                                    Ident {
-                                        value: "local".into(),
-                                        quote_style: None,
-                                    },
-                                ]),
-                                alias: None,
-                                args: vec![],
-                                with_hints: vec![],
-                            },
-                            joins: vec![],
-                        }],
-                        lateral_views: vec![],
-                        selection: Some(BinaryOp {
-                            left: Box::new(Expr::Identifier(Ident {
-                                value: "key".into(),
-                                quote_style: None,
-                            })),
-                            op: BinaryOperator::Eq,
-                            right: Box::new(Expr::Value(SQLValue::SingleQuotedString(
-                                "local".into(),
-                            ))),
-                        }),
-                        group_by: vec![],
-                        cluster_by: vec![],
-                        distribute_by: vec![],
-                        sort_by: vec![],
-                        having: None,
-                        into: None,
-                    })),
-                    order_by: vec![],
-                    limit: None,
-                    offset: None,
-                    fetch: None,
-                    lock: None,
-                })))),
+                query: Box::new(parse_statement(
+                    "SELECT * FROM system.local WHERE key = 'local'",
+                )),
                 params: Box::new(QueryParams::default()),
             },
         }))];
@@ -445,39 +397,9 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: CQL::Parsed(Box::new(Statement::Insert {
-                    or: None,
-                    table_name: ObjectName(vec![
-                        Ident {
-                            value: "system".into(),
-                            quote_style: None,
-                        },
-                        Ident {
-                            value: "foo".into(),
-                            quote_style: None,
-                        },
-                    ]),
-                    columns: (vec![Ident {
-                        value: "bar".into(),
-                        quote_style: None,
-                    }]),
-                    overwrite: false,
-                    source: Box::new(Query {
-                        with: None,
-                        body: (SetExpr::Values(Values(vec![vec![sqlparser::ast::Expr::Value(
-                            SingleQuotedString("bar2".to_string()),
-                        )]]))),
-                        order_by: vec![],
-                        limit: None,
-                        offset: None,
-                        fetch: None,
-                        lock: None,
-                    }),
-                    partitioned: None,
-                    after_columns: (vec![]),
-                    table: false,
-                    on: None,
-                })),
+                query: Box::new(parse_statement(
+                    "INSERT INTO system.foo (bar) VALUES ('bar2')",
+                )),
                 params: Box::new(QueryParams::default()),
             },
         }))];

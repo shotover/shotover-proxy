@@ -5,8 +5,8 @@ use chacha20poly1305::{
     aead::{rand_core::RngCore, Aead, NewAead},
     {ChaCha20Poly1305, Key, Nonce},
 };
+use cql3_parser::common::Operand;
 use serde::{Deserialize, Serialize};
-use sqlparser::ast::Value as SQLValue;
 
 #[derive(Serialize, Deserialize)]
 struct Protected {
@@ -17,10 +17,10 @@ struct Protected {
 }
 
 pub async fn encrypt(
-    value: &SQLValue,
+    value: &Operand,
     key_management: &KeyManager,
     key_id: &str,
-) -> Result<SQLValue> {
+) -> Result<Operand> {
     let value = MessageValue::from(&*value);
 
     let sym_key = key_management.cached_get_key(key_id, None, None).await?;
@@ -39,9 +39,12 @@ pub async fn encrypt(
         kek_id: sym_key.key_id,
     };
 
-    Ok(SQLValue::SingleQuotedString(serde_json::to_string(
-        &protected,
-    )?))
+    // TODO: investigate using storing as blob instead of text and then use textAsBlob here
+    // We should functionally verify which has better performance before sticking with one.
+    Ok(Operand::Const(format!(
+        "'{}'",
+        serde_json::to_string(&protected)?
+    )))
 }
 
 pub async fn decrypt(
@@ -49,11 +52,11 @@ pub async fn decrypt(
     key_management: &KeyManager,
     key_id: &str,
 ) -> Result<MessageValue> {
-    let bytes = match value {
-        MessageValue::Bytes(bytes) => bytes,
+    let varchar = match value {
+        MessageValue::Varchar(varchar) => varchar,
         _ => bail!("expected varchar to decrypt but was {:?}", value),
     };
-    let protected: Protected = serde_json::from_slice(bytes)?;
+    let protected: Protected = serde_json::from_str(varchar)?;
 
     let sym_key = key_management
         .cached_get_key(key_id, Some(protected.enc_dek), Some(protected.kek_id))
