@@ -308,6 +308,7 @@ pub enum CassandraOperation {
 }
 
 pub enum QueryIterator<'a> {
+    Batch(std::iter::FilterMap<std::slice::IterMut<'a, BatchStatement>, FilterFn>),
     Query(std::iter::Once<&'a mut CassandraStatement>),
     None,
 }
@@ -317,20 +318,31 @@ impl<'a> Iterator for QueryIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
+            QueryIterator::Batch(batch) => batch.next(),
             QueryIterator::Query(once) => once.next(),
             QueryIterator::None => None,
         }
     }
 }
 
+type FilterFn = fn(&mut BatchStatement) -> Option<&mut CassandraStatement>;
+
+fn filter_batch_queries(batch: &mut BatchStatement) -> Option<&mut CassandraStatement> {
+    match &mut batch.ty {
+        BatchStatementType::Statement(cql) => Some(&mut *cql),
+        BatchStatementType::PreparedId(_) => None,
+    }
+}
+
 impl CassandraOperation {
     /// Return all queries contained within CassandaOperation::Query and CassandraOperation::Batch
     pub fn queries(&mut self) -> QueryIterator {
-        if let CassandraOperation::Query { query, .. } = self {
-            QueryIterator::Query(std::iter::once(query))
-        } else {
-            // TODO: add BATCH support
-            QueryIterator::None
+        match self {
+            CassandraOperation::Query { query, .. } => QueryIterator::Query(std::iter::once(query)),
+            CassandraOperation::Batch(batch) => {
+                QueryIterator::Batch(batch.queries.iter_mut().filter_map(filter_batch_queries))
+            }
+            _ => QueryIterator::None,
         }
     }
 
