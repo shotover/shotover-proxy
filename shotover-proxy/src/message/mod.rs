@@ -11,8 +11,9 @@ use bytes::{Buf, Bytes};
 use bytes_utils::Str;
 use cassandra_protocol::{
     frame::{
-        frame_error::{AdditionalErrorInfo, ErrorBody},
-        frame_result::{ColSpec, ColTypeOption},
+        message_error::{AdditionalErrorInfo, ErrorBody},
+        message_result::{ColSpec, ColTypeOption},
+        Version,
     },
     types::{
         cassandra_type::{wrapper_fn, CassandraType},
@@ -446,6 +447,7 @@ pub enum MessageValue {
     Decimal(BigDecimal),
     Date(i32),
     Timestamp(i64),
+    Duration(Duration),
     Timeuuid(Uuid),
     Varchar(String),
     Uuid(Uuid),
@@ -461,6 +463,14 @@ pub enum IntSize {
     I32, // Int
     I16, // Smallint
     I8,  // Tinyint
+}
+
+// TODO: This is tailored directly to cassandras Duration and will need to be adjusted once we add another protocol that uses it
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
+pub struct Duration {
+    pub months: i32,
+    pub days: i32,
+    pub nanoseconds: i64,
 }
 
 impl From<&MessageValue> for SQLValue {
@@ -561,6 +571,7 @@ impl From<MessageValue> for RedisFrame {
             MessageValue::Counter(_c) => todo!(),
             MessageValue::Tuple(_) => todo!(),
             MessageValue::Udt(_) => todo!(),
+            MessageValue::Duration(_) => todo!(),
         }
     }
 }
@@ -581,7 +592,7 @@ impl MessageValue {
 
     fn into_cassandra_type(col_type: &ColTypeOption, data: &CBytes) -> CassandraType {
         let wrapper = wrapper_fn(&col_type.id);
-        wrapper(data, col_type).unwrap()
+        wrapper(data, col_type, Version::V4).unwrap()
     }
 
     fn create_element(element: CassandraType) -> MessageValue {
@@ -606,6 +617,11 @@ impl MessageValue {
             CassandraType::Inet(i) => MessageValue::Inet(i),
             CassandraType::Date(d) => MessageValue::Date(d),
             CassandraType::Time(d) => MessageValue::Time(d),
+            CassandraType::Duration(d) => MessageValue::Duration(Duration {
+                months: d.months(),
+                days: d.days(),
+                nanoseconds: d.nanoseconds(),
+            }),
             CassandraType::Smallint(d) => MessageValue::Integer(d.into(), IntSize::I16),
             CassandraType::Tinyint(d) => MessageValue::Integer(d.into(), IntSize::I8),
             CassandraType::List(list) => {
@@ -672,6 +688,7 @@ impl MessageValue {
             MessageValue::Counter(_) => unimplemented!(),
             MessageValue::Tuple(_) => unimplemented!(),
             MessageValue::Udt(_) => unimplemented!(),
+            MessageValue::Duration(_) => unimplemented!(),
         }
     }
 }
@@ -725,6 +742,12 @@ impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
             }
             MessageValue::Date(d) => d.into(),
             MessageValue::Timestamp(t) => t.into(),
+            MessageValue::Duration(d) => {
+                // TODO: Either this function should be made fallible or we Duration should have validated setters
+                cassandra_protocol::types::duration::Duration::new(d.months, d.days, d.nanoseconds)
+                    .unwrap()
+                    .into()
+            }
             MessageValue::Timeuuid(t) => t.into(),
             MessageValue::Varchar(v) => v.into(),
             MessageValue::Uuid(u) => u.into(),

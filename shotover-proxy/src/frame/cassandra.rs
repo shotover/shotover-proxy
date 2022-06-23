@@ -4,18 +4,20 @@ use cassandra_protocol::compression::Compression;
 use cassandra_protocol::consistency::Consistency;
 use cassandra_protocol::events::SchemaChange;
 use cassandra_protocol::frame::events::ServerEvent;
-use cassandra_protocol::frame::frame_batch::{BatchQuery, BatchQuerySubj, BatchType, BodyReqBatch};
-use cassandra_protocol::frame::frame_error::ErrorBody;
-use cassandra_protocol::frame::frame_event::BodyResEvent;
-use cassandra_protocol::frame::frame_query::BodyReqQuery;
-use cassandra_protocol::frame::frame_request::RequestBody;
-use cassandra_protocol::frame::frame_response::ResponseBody;
-use cassandra_protocol::frame::frame_result::{
+use cassandra_protocol::frame::message_batch::{
+    BatchQuery, BatchQuerySubj, BatchType, BodyReqBatch,
+};
+use cassandra_protocol::frame::message_error::ErrorBody;
+use cassandra_protocol::frame::message_event::BodyResEvent;
+use cassandra_protocol::frame::message_query::BodyReqQuery;
+use cassandra_protocol::frame::message_request::RequestBody;
+use cassandra_protocol::frame::message_response::ResponseBody;
+use cassandra_protocol::frame::message_result::{
     BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ResResultBody,
     RowsMetadata, RowsMetadataFlags,
 };
 use cassandra_protocol::frame::{
-    Direction, Flags, Frame as RawCassandraFrame, Opcode, Serialize, StreamId, Version,
+    Direction, Envelope as RawCassandraFrame, Flags, Opcode, Serialize, StreamId, Version,
 };
 use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
@@ -56,7 +58,7 @@ pub mod raw_frame {
     pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
         let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
-            .frame;
+            .envelope;
 
         Ok(CassandraMetadata {
             version: frame.version,
@@ -69,7 +71,7 @@ pub mod raw_frame {
     pub(crate) fn cell_count(bytes: &[u8]) -> Result<NonZeroU32> {
         let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
-            .frame;
+            .envelope;
 
         Ok(match frame.opcode {
             Opcode::Batch => get_batch_len(&frame.body)?,
@@ -124,13 +126,13 @@ impl CassandraFrame {
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {
         let frame = RawCassandraFrame::from_buffer(&bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
-            .frame;
+            .envelope;
         let operation = match frame.opcode {
             Opcode::Query => {
                 if let RequestBody::Query(body) = frame.request_body()? {
                     CassandraOperation::Query {
                         query: CQL::parse_from_string(body.query),
-                        params: body.query_params,
+                        params: Box::new(body.query_params),
                     }
                 } else {
                     unreachable!("We already know the operation is a query")
@@ -173,7 +175,7 @@ impl CassandraFrame {
                                 };
                             CassandraOperation::Result(CassandraResult::Rows {
                                 value: MessageValue::Rows(converted_rows),
-                                metadata: rows.metadata,
+                                metadata: Box::new(rows.metadata),
                             })
                         }
                         ResResultBody::SetKeyspace(set_keyspace) => CassandraOperation::Result(
@@ -182,9 +184,9 @@ impl CassandraFrame {
                         ResResultBody::Prepared(prepared) => CassandraOperation::Result(
                             CassandraResult::Prepared(Box::new(prepared)),
                         ),
-                        ResResultBody::SchemaChange(schema_change) => {
-                            CassandraOperation::Result(CassandraResult::SchemaChange(schema_change))
-                        }
+                        ResResultBody::SchemaChange(schema_change) => CassandraOperation::Result(
+                            CassandraResult::SchemaChange(Box::new(schema_change)),
+                        ),
                         ResResultBody::Void => CassandraOperation::Result(CassandraResult::Void),
                     }
                 } else {
@@ -320,7 +322,10 @@ impl CassandraFrame {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum CassandraOperation {
-    Query { query: CQL, params: QueryParams },
+    Query {
+        query: CQL,
+        params: Box<QueryParams>,
+    },
     Result(CassandraResult),
     Error(ErrorBody),
     // operations for protocol negotiation, should be ignored by transforms
@@ -404,24 +409,24 @@ impl CassandraOperation {
         match self {
             CassandraOperation::Query { query, params } => BodyReqQuery {
                 query: query.to_query_string(),
-                query_params: params,
+                query_params: *params,
             }
-            .serialize_to_vec(),
+            .serialize_to_vec(Version::V4),
             CassandraOperation::Result(result) => match result {
                 CassandraResult::Rows { value, metadata } => {
-                    Self::build_cassandra_result_body(value, metadata)
+                    Self::build_cassandra_result_body(value, *metadata)
                 }
                 CassandraResult::SetKeyspace(set_keyspace) => {
                     ResResultBody::SetKeyspace(*set_keyspace)
                 }
                 CassandraResult::Prepared(prepared) => ResResultBody::Prepared(*prepared),
                 CassandraResult::SchemaChange(schema_change) => {
-                    ResResultBody::SchemaChange(schema_change)
+                    ResResultBody::SchemaChange(*schema_change)
                 }
                 CassandraResult::Void => ResResultBody::Void,
             }
-            .serialize_to_vec(),
-            CassandraOperation::Error(error) => error.serialize_to_vec(),
+            .serialize_to_vec(Version::V4),
+            CassandraOperation::Error(error) => error.serialize_to_vec(Version::V4),
             CassandraOperation::Startup(bytes) => bytes.to_vec(),
             CassandraOperation::Ready(bytes) => bytes.to_vec(),
             CassandraOperation::Authenticate(bytes) => bytes.to_vec(),
@@ -430,10 +435,12 @@ impl CassandraOperation {
             CassandraOperation::Prepare(bytes) => bytes.to_vec(),
             CassandraOperation::Execute(bytes) => bytes.to_vec(),
             CassandraOperation::Register(bytes) => bytes.to_vec(),
-            CassandraOperation::Event(bytes) => bytes.serialize_to_vec(),
+            CassandraOperation::Event(bytes) => bytes.serialize_to_vec(Version::V4),
             CassandraOperation::Batch(batch) => BodyReqBatch {
                 batch_type: batch.ty,
                 consistency: batch.consistency,
+                keyspace: None,
+                now_in_seconds: None,
                 queries: batch
                     .queries
                     .into_iter()
@@ -450,7 +457,7 @@ impl CassandraOperation {
                 serial_consistency: batch.serial_consistency,
                 timestamp: batch.timestamp,
             }
-            .serialize_to_vec(),
+            .serialize_to_vec(Version::V4),
             CassandraOperation::AuthChallenge(bytes) => bytes.to_vec(),
             CassandraOperation::AuthResponse(bytes) => bytes.to_vec(),
             CassandraOperation::AuthSuccess(bytes) => bytes.to_vec(),
@@ -474,6 +481,7 @@ impl CassandraOperation {
                 .collect();
 
             return ResResultBody::Rows(BodyResResultRows {
+                protocol_version: Version::V4,
                 metadata,
                 rows_count,
                 rows_content,
@@ -522,14 +530,14 @@ impl CQL {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum CassandraResult {
+    // values are boxed so that Void takes minimal stack space
     Rows {
         value: MessageValue,
-        metadata: RowsMetadata,
+        metadata: Box<RowsMetadata>,
     },
-    // SetKeyspace and Prepared are boxed because they take up a lot more stack space than Void.
     SetKeyspace(Box<BodyResResultSetKeyspace>),
     Prepared(Box<BodyResResultPrepared>),
-    SchemaChange(SchemaChange),
+    SchemaChange(Box<SchemaChange>),
     Void,
 }
 
