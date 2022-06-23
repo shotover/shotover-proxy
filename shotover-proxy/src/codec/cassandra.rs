@@ -4,8 +4,8 @@ use crate::message::{Encodable, Message, Messages};
 use anyhow::{anyhow, Error, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
-use cassandra_protocol::frame::frame_error::{AdditionalErrorInfo, ErrorBody};
-use cassandra_protocol::frame::{CheckFrameSizeError, Frame as RawCassandraFrame, Version};
+use cassandra_protocol::frame::message_error::{AdditionalErrorInfo, ErrorBody};
+use cassandra_protocol::frame::{CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Version};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, info};
 
@@ -65,7 +65,7 @@ impl Decoder for CassandraCodec {
         }
 
         loop {
-            match RawCassandraFrame::check_frame_size(src) {
+            match RawCassandraFrame::check_envelope_size(src) {
                 Ok(frame_len) => {
                     // Clear the read bytes from the FramedReader
                     let bytes = src.split_to(frame_len);
@@ -77,14 +77,14 @@ impl Decoder for CassandraCodec {
                     self.messages
                         .push(Message::from_bytes(bytes.freeze(), MessageType::Cassandra));
                 }
-                Err(CheckFrameSizeError::NotEnoughBytes) => {
+                Err(CheckEnvelopeSizeError::NotEnoughBytes) => {
                     if self.messages.is_empty() || src.remaining() != 0 {
                         return Ok(None);
                     } else {
                         return Ok(Some(std::mem::take(&mut self.messages)));
                     }
                 }
-                Err(CheckFrameSizeError::UnsupportedVersion(version)) => {
+                Err(CheckEnvelopeSizeError::UnsupportedVersion(version)) => {
                     // if we got an error force the close on the next read.
                     // We can not immediately close as we are gong to queue a message
                     // back to the client and we have to allow time for the message
@@ -141,7 +141,7 @@ mod cassandra_protocol_tests {
     use crate::frame::Frame;
     use crate::message::{Message, MessageValue};
     use bytes::BytesMut;
-    use cassandra_protocol::frame::frame_result::{
+    use cassandra_protocol::frame::message_result::{
         ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags,
         TableSpec,
     };
@@ -269,10 +269,11 @@ mod cassandra_protocol_tests {
             version: Version::V4,
             operation: CassandraOperation::Result(CassandraResult::Rows {
                 value: MessageValue::Rows(vec![]),
-                metadata: RowsMetadata {
+                metadata: Box::new(RowsMetadata {
                     flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
                     columns_count: 9,
                     paging_state: None,
+                    new_metadata_id: None,
                     global_table_spec: Some(TableSpec {
                         ks_name: "system".into(),
                         table_name: "peers".into(),
@@ -354,7 +355,7 @@ mod cassandra_protocol_tests {
                             },
                         },
                     ],
-                },
+                }),
             }),
             stream_id: 2,
             tracing_id: None,
@@ -424,7 +425,7 @@ mod cassandra_protocol_tests {
                     fetch: None,
                     lock: None,
                 })))),
-                params: QueryParams::default(),
+                params: Box::new(QueryParams::default()),
             },
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -477,7 +478,7 @@ mod cassandra_protocol_tests {
                     table: false,
                     on: None,
                 })),
-                params: QueryParams::default(),
+                params: Box::new(QueryParams::default()),
             },
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
