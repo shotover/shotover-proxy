@@ -24,6 +24,7 @@ use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::blob::Blob;
 use cassandra_protocol::types::cassandra_type::CassandraType;
 use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
+use cql3_parser::begin_batch::{BatchType as ParserBatchType, BeginBatch};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
@@ -133,9 +134,32 @@ impl CassandraFrame {
         let operation = match frame.opcode {
             Opcode::Query => {
                 if let RequestBody::Query(body) = frame.request_body()? {
-                    CassandraOperation::Query {
-                        query: Box::new(parse_statement(&body.query)),
-                        params: Box::new(body.query_params),
+                    match parse_statement_query(&body.query) {
+                        StatementResult::Query(query) => CassandraOperation::Query {
+                            query,
+                            params: Box::new(body.query_params),
+                        },
+                        StatementResult::Batch(statements, meta) => {
+                            let ty = match meta.ty {
+                                ParserBatchType::Logged => BatchType::Logged,
+                                ParserBatchType::Unlogged => BatchType::Unlogged,
+                                ParserBatchType::Counter => BatchType::Counter,
+                            };
+                            let queries = statements
+                                .into_iter()
+                                .map(|query| BatchStatement {
+                                    ty: BatchStatementType::Statement(Box::new(query)),
+                                    values: QueryValues::SimpleValues(vec![]),
+                                })
+                                .collect();
+                            CassandraOperation::Batch(CassandraBatch {
+                                ty,
+                                queries,
+                                consistency: body.query_params.consistency,
+                                serial_consistency: body.query_params.serial_consistency,
+                                timestamp: body.query_params.timestamp,
+                            })
+                        }
                     }
                 } else {
                     unreachable!("We already know the operation is a query")
@@ -228,9 +252,9 @@ impl CassandraFrame {
                             .map(|query| BatchStatement {
                                 ty: match query.subject {
                                     BatchQuerySubj::QueryString(query) => {
-                                        BatchStatementType::Statement(Box::new(parse_statement(
-                                            &query,
-                                        )))
+                                        BatchStatementType::Statement(Box::new(
+                                            parse_statement_single(&query),
+                                        ))
                                     }
                                     BatchQuerySubj::PreparedId(id) => {
                                         BatchStatementType::PreparedId(id)
@@ -516,12 +540,55 @@ fn get_query_type(statement: &CassandraStatement) -> QueryType {
     }
 }
 
-pub fn parse_statement(cql_query_str: &str) -> CassandraStatement {
-    let mut ast = CassandraAST::new(cql_query_str);
+pub enum StatementResult {
+    Query(Box<CassandraStatement>),
+    /// Since this is already specified as a batch, CassandraStatement batch values must not be used in the Vec.
+    /// Specifically CassandraStatement::ApplyBatch and begin_batch fields must not be used.
+    Batch(Vec<CassandraStatement>, BeginBatch),
+}
 
-    // TODO: implement batch support, currently batch messages are discarded as Unknown
+/// Will parse both:
+/// * a single statement
+/// * a single BATCH statement containing multiple statements
+pub fn parse_statement_query(cql: &str) -> StatementResult {
+    let mut ast = CassandraAST::new(cql);
+
+    if ast.has_error() || ast.statements.is_empty() {
+        StatementResult::Query(Box::new(CassandraStatement::Unknown(cql.to_string())))
+    } else if ast.statements.len() > 1 {
+        let begin_batch = match &mut ast.statements[0].statement {
+            CassandraStatement::Update(x) => x.begin_batch.take(),
+            CassandraStatement::Insert(x) => x.begin_batch.take(),
+            CassandraStatement::Delete(x) => x.begin_batch.take(),
+            _ => None,
+        };
+
+        if let Some(begin_batch) = begin_batch {
+            StatementResult::Batch(
+                ast.statements
+                    .into_iter()
+                    .map(|x| x.statement)
+                    .filter(|x| !matches!(x, CassandraStatement::ApplyBatch))
+                    .collect(),
+                begin_batch,
+            )
+        } else {
+            // A batch statement with no `BEGIN BATCH`.
+            // The parser will accept this but we should reject it because its not a valid statement.
+            StatementResult::Query(Box::new(CassandraStatement::Unknown(cql.to_string())))
+        }
+    } else {
+        StatementResult::Query(Box::new(ast.statements.remove(0).statement))
+    }
+}
+
+/// Will only parse a single statement
+/// BATCH statements are rejected
+pub fn parse_statement_single(cql: &str) -> CassandraStatement {
+    let mut ast = CassandraAST::new(cql);
+
     if ast.has_error() || ast.statements.len() != 1 {
-        CassandraStatement::Unknown(cql_query_str.to_string())
+        CassandraStatement::Unknown(cql.to_string())
     } else {
         ast.statements.remove(0).statement
     }
@@ -616,7 +683,7 @@ pub struct CassandraBatch {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::cassandra::{parse_statement, to_cassandra_type};
+    use crate::frame::cassandra::{parse_statement_single, to_cassandra_type};
     use cassandra_protocol::types::cassandra_type::CassandraType;
     use cassandra_protocol::types::prelude::Blob;
     use cql3_parser::cassandra_statement::CassandraStatement;
@@ -630,7 +697,7 @@ mod test {
     #[test]
     fn cql_insert() {
         let query = r#"INSERT INTO test_cache_keyspace_batch_insert.test_table (id, x, name) VALUES (1, 11, 'foo')"#;
-        let cql = parse_statement(query);
+        let cql = parse_statement_single(query);
 
         let intermediate = CassandraStatement::Insert(Insert {
             begin_batch: None,
@@ -660,7 +727,7 @@ mod test {
     #[test]
     fn cql_select() {
         let query = r#"SELECT * FROM foo WHERE bar ( baz ) = 1"#;
-        let cql = parse_statement(query);
+        let cql = parse_statement_single(query);
 
         let intermediate = CassandraStatement::Select(Select {
             table_name: FQName {
@@ -699,7 +766,7 @@ mod test {
 
     fn assert_unknown(query: &str) {
         assert_eq!(
-            parse_statement(query),
+            parse_statement_single(query),
             CassandraStatement::Unknown(query.to_string())
         );
     }

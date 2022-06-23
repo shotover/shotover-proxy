@@ -568,7 +568,7 @@ impl Transform for SimpleRedisCache {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::cassandra::parse_statement;
+    use crate::frame::cassandra::parse_statement_single;
     use crate::transforms::chain::TransformChain;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
@@ -588,7 +588,7 @@ mod test {
             range_key: vec![Identifier::parse("x"), Identifier::parse("y")],
         };
 
-        let ast = parse_statement("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
+        let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -606,7 +606,7 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = parse_statement("INSERT INTO foo (z, v) VALUES (1, 123)");
+        let ast = parse_statement_single("INSERT INTO foo (z, v) VALUES (1, 123)");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -624,7 +624,7 @@ mod test {
             range_key: vec![Identifier::parse("c")],
         };
 
-        let ast = parse_statement("INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)");
+        let ast = parse_statement_single("INSERT INTO foo (z, c, v) VALUES (1, 'yo' , 123)");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -642,7 +642,7 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = parse_statement("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1");
+        let ast = parse_statement_single("UPDATE foo SET c = 'yo', v = 123 WHERE z = 1");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -660,10 +660,10 @@ mod test {
             range_key: vec![Identifier::parse("x"), Identifier::parse("y")],
         };
 
-        let ast = parse_statement("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
+        let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x = 123 AND y = 965");
         let query_one = build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap();
 
-        let ast = parse_statement("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123");
+        let ast = parse_statement_single("SELECT * FROM foo WHERE y = 965 AND z = 1 AND x = 123");
         let query_two = build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap();
 
         // Semantically databases treat the order of AND clauses differently, Cassandra however requires clustering key predicates be in order
@@ -678,7 +678,7 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = parse_statement("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999");
+        let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x > 123 AND x < 999");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -696,7 +696,7 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = parse_statement("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999");
+        let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x >= 123 AND x <= 999");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -714,7 +714,7 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = parse_statement(
+        let ast = parse_statement_single(
             "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=1",
         );
 
@@ -734,7 +734,7 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = parse_statement("SELECT thing FROM foo WHERE z = 1 AND y = 2");
+        let ast = parse_statement_single("SELECT thing FROM foo WHERE z = 1 AND y = 2");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -752,7 +752,7 @@ mod test {
             range_key: vec![],
         };
 
-        let ast = parse_statement("SELECT * FROM foo WHERE z = 1 AND x >= 123");
+        let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x >= 123");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
@@ -762,7 +762,7 @@ mod test {
             }
         );
 
-        let ast = parse_statement("SELECT * FROM foo WHERE z = 1 AND x <= 123");
+        let ast = parse_statement_single("SELECT * FROM foo WHERE z = 1 AND x <= 123");
 
         assert_eq!(
             build_redis_key_from_cql3(&ast, &table_cache_schema).unwrap(),
