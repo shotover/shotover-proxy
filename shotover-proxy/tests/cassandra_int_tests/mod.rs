@@ -1,16 +1,16 @@
 use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
-use cassandra_protocol::events::ServerEvent;
-use cassandra_protocol::frame::events::StatusChange;
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
 use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
 use cdrs_tokio::cluster::NodeTcpConfigBuilder;
+use cdrs_tokio::frame::events::ServerEvent;
 use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
 use futures::future::{join_all, try_join_all};
+use metrics_util::debugging::DebuggingRecorder;
 use serial_test::serial;
 use std::sync::Arc;
-use test_helpers::docker_compose::{run_command, DockerCompose};
+use test_helpers::docker_compose::DockerCompose;
 use tokio::time::{sleep, timeout, Duration};
 
 mod batch_statements;
@@ -24,14 +24,6 @@ mod prepared_statements;
 mod protect;
 mod table;
 mod udt;
-
-use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
-use crate::helpers::ShotoverManager;
-use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
-use futures::future::{join_all, try_join_all};
-use metrics_util::debugging::DebuggingRecorder;
-use serial_test::serial;
-use test_helpers::docker_compose::DockerCompose;
 
 #[test]
 #[serial]
@@ -361,35 +353,33 @@ async fn test_cassandra_request_throttling() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_events_keyspace() {
-    let _docker_compose = DockerCompose::new(
-        "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
-    );
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
-    let _shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
-    );
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
     let user = "cassandra";
     let password = "cassandra";
     let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
     let config = NodeTcpConfigBuilder::new()
-        .with_contact_point("127.0.0.1:9044".into())
+        .with_contact_point("127.0.0.1:9042".into())
         .with_authenticator_provider(Arc::new(auth))
         .build()
         .await
         .unwrap();
 
-    let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config).build();
+    let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
+        .build()
+        .unwrap();
+
     let mut event_recv = session.create_event_receiver();
 
     sleep(Duration::from_secs(3)).await; // let the driver finish connecting to the cluster and registering for the events
 
     let create_ks = "CREATE KEYSPACE IF NOT EXISTS test_events_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
 
-    session
-        .query(create_ks)
-        .await
-        .expect("Keyspace creation error");
+    session.query(create_ks).await.unwrap();
 
     match timeout(Duration::from_secs(10), event_recv.recv()).await {
         Ok(recvd) => {
@@ -401,64 +391,4 @@ async fn test_events_keyspace() {
             panic!("{}", err);
         }
     }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_events_node() {
-    let _docker_compose = DockerCompose::new(
-        "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
-    );
-
-    let _shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
-    );
-
-    let user = "cassandra";
-    let password = "cassandra";
-    let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
-    let config = NodeTcpConfigBuilder::new()
-        .with_contact_point("127.0.0.1:9044".into())
-        .with_authenticator_provider(Arc::new(auth))
-        .build()
-        .await
-        .unwrap();
-
-    let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config).build();
-    let mut event_recv = session.create_event_receiver();
-
-    println!("created cluster, starting sleep");
-
-    sleep(Duration::from_secs(3)).await; // let the driver finish connecting to the cluster and registering for the events
-    println!("slept");
-
-    run_command_to_stdout("docker", &["container", "ls"]);
-    run_command("docker", &["kill", "cassandra-two"]).unwrap();
-    println!("killed docker");
-    run_command_to_stdout("docker", &["container", "ls"]);
-
-    match timeout(Duration::from_secs(20), event_recv.recv()).await {
-        Ok(recvd) => {
-            if let Ok(ServerEvent::StatusChange(StatusChange { addr, .. })) = recvd {
-                assert_eq!(addr.addr.port(), 9044);
-            } else {
-                panic!("expected ServerEvent::StatusChange, got {:?}", recvd);
-            };
-        }
-        Err(err) => {
-            panic!("{}", err)
-        }
-    }
-}
-
-/// unlike test_helpers::docker_compose::run_command stdout of the command is sent to the stdout of the application
-fn run_command_to_stdout(command: &str, args: &[&str]) {
-    assert!(
-        std::process::Command::new(command)
-            .args(args)
-            .status()
-            .unwrap()
-            .success(),
-        "Failed to run: {command} {args:?}"
-    );
 }

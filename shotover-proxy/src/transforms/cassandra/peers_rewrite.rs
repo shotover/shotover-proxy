@@ -7,10 +7,10 @@ use crate::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
+use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
-use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
