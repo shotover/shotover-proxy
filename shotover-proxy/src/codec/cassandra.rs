@@ -138,7 +138,7 @@ impl Encoder<Messages> for CassandraCodec {
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodec;
     use crate::frame::cassandra::{
-        parse_statement, CassandraFrame, CassandraOperation, CassandraResult,
+        parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult,
     };
     use crate::frame::Frame;
     use crate::message::{Message, MessageValue};
@@ -374,7 +374,7 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: Box::new(parse_statement(
+                query: Box::new(parse_statement_single(
                     "SELECT * FROM system.local WHERE key = 'local'",
                 )),
                 params: Box::new(QueryParams::default()),
@@ -397,7 +397,7 @@ mod cassandra_protocol_tests {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: Box::new(parse_statement(
+                query: Box::new(parse_statement_single(
                     "INSERT INTO system.foo (bar) VALUES ('bar2')",
                 )),
                 params: Box::new(QueryParams::default()),

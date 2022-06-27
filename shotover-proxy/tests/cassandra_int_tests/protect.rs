@@ -22,6 +22,14 @@ pub fn test(shotover_session: &Session, direct_session: &Session) {
     )).unwrap();
     shotover_session.execute_batch(&batch).wait().unwrap();
 
+    let insert_statement = stmt!(
+        "BEGIN BATCH
+INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk4', 'cluster', 'encrypted4', 424, true);
+INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk5', 'cluster', 'encrypted5', 425, false);
+APPLY BATCH;"
+    );
+    shotover_session.execute(&insert_statement).wait().unwrap();
+
     // assert that data is decrypted by shotover
     assert_query_result(
         shotover_session,
@@ -48,6 +56,20 @@ pub fn test(shotover_session: &Session, direct_session: &Session) {
                 ResultValue::Int(423),
                 ResultValue::Boolean(false),
             ],
+            &[
+                ResultValue::Varchar("pk4".into()),
+                ResultValue::Varchar("cluster".into()),
+                ResultValue::Varchar("encrypted4".into()),
+                ResultValue::Int(424),
+                ResultValue::Boolean(true),
+            ],
+            &[
+                ResultValue::Varchar("pk5".into()),
+                ResultValue::Varchar("cluster".into()),
+                ResultValue::Varchar("encrypted5".into()),
+                ResultValue::Int(425),
+                ResultValue::Boolean(false),
+            ],
         ],
     );
 
@@ -56,7 +78,7 @@ pub fn test(shotover_session: &Session, direct_session: &Session) {
         direct_session,
         "SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table",
     );
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 5);
     for row in result {
         assert_eq!(row.len(), 5);
 

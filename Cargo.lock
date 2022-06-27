@@ -481,8 +481,9 @@ dependencies = [
 
 [[package]]
 name = "cql3-parser"
-version = "0.2.0"
-source = "git+https://github.com/shotover/rust_cql3_parser#c2fd7ba5ccdf39af7e2944edf0e74cb58ac99cf4"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c9662338ec83ade685bf4e5e70d11a505033a3715dc6b1b7b0650a950857778"
 dependencies = [
  "bigdecimal",
  "bytes",
@@ -3060,9 +3061,9 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-cql"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63dc88db52bfcb5717eeb265142722530a63e315d28c74f5f59d35da0d17b99f"
+checksum = "447825d5fce9738ac880421aa703cf1b45afd4143a79bd4339b781455e3fd2bb"
 dependencies = [
  "cc",
  "regex",
