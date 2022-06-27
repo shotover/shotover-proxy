@@ -192,7 +192,7 @@ fn cassandra(c: &mut Criterion) {
             resources
                 .connection
                 .execute(&stmt!(
-                    "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 varchar, col2 int, col3 boolean);"
+                    "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);"
                 ))
                 .wait()
                 .unwrap();
