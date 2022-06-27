@@ -381,14 +381,9 @@ async fn test_events_keyspace() {
 
     session.query(create_ks).await.unwrap();
 
-    match timeout(Duration::from_secs(10), event_recv.recv()).await {
-        Ok(recvd) => {
-            if let Ok(event) = recvd {
-                assert!(matches!(event, ServerEvent::SchemaChange { .. }));
-            };
-        }
-        Err(err) => {
-            panic!("{}", err);
-        }
-    }
+    let event = timeout(Duration::from_secs(10), event_recv.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(event, ServerEvent::SchemaChange { .. }));
 }
