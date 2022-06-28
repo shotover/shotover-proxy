@@ -7,8 +7,7 @@ use futures::TryFutureExt;
 use itertools::Itertools;
 use metrics::{histogram, register_counter, register_histogram, Counter};
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::Duration;
-use tokio::time::Instant;
+use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, trace, Instrument};
 
 type InnerChain = Vec<Transforms>;
@@ -306,22 +305,18 @@ impl TransformChain {
         result
     }
 
+    /// Clone the chain while adding a producer for the pushed messages channel
     pub fn clone_with_pushed_messages_tx(
         &self,
-        pushed_messages_tx: tokio::sync::mpsc::UnboundedSender<Messages>,
+        pushed_messages_tx: mpsc::UnboundedSender<Messages>,
     ) -> Self {
-        let mut cloned_chain = self.chain.clone();
+        let mut result = self.clone();
 
-        cloned_chain
-            .iter_mut()
-            .for_each(|x| x.add_pushed_messages_tx(pushed_messages_tx.clone()));
-
-        TransformChain {
-            name: self.name.clone(),
-            chain: cloned_chain,
-            chain_total: self.chain_total.clone(),
-            chain_failures: self.chain_failures.clone(),
+        for transform in &mut result.chain {
+            transform.add_pushed_messages_tx(pushed_messages_tx.clone());
         }
+
+        result
     }
 }
 
