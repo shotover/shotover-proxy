@@ -487,7 +487,7 @@ impl<'a> Wrapper<'a> {
 /// however it also includes a setup and naming method.
 ///
 /// Transforms are cloned on a per TCP connection basis from a copy of the struct originally created
-/// by the call to [TransformsConfig::get_transforms].
+/// by the call to the `get_transform` method on each transform's config struct.
 /// This means that each member of your struct that implements this trait can be considered private for
 /// each TCP connection or connected client. If you wish to share data between all copies of your struct
 /// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that.
@@ -524,7 +524,7 @@ pub trait Transform: Send {
     /// do. This type of transform is called an non-terminating transform.
     /// * _Terminating_ - Your transform can also choose not to call `message_wrapper.call_next_transform()` if it sends the
     /// messages to an external system or generates its own response to the query e.g.
-    /// [`crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingle`]. This type of transform
+    /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`]. This type of transform
     /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
     /// * _Message count_ - message_wrapper.messages will contain 0 or more messages.
     /// Your transform should return the same number of responses as messages received in message_wrapper.messages. Transforms that
@@ -584,20 +584,57 @@ pub trait Transform: Send {
 
     /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
     /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
-    /// in a `[Vec<Message]`(crate::message::Message).
+    /// in a [`Vec<Message`](crate::message::Message).
     ///
     /// This transform method is not the same request/response model as the other transform method.
     /// This method processes one pushed message before sending it in reverse on the chain back to the source.
     ///
     /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform can
     /// also modify the response from `message_wrapper.call_next_transform_rev` if it needs to. As long as the message
-    /// carries on through the chain, it will function correctly.
+    /// carries on through the chain, it will function correctly. You are able to add or remove messages as this method is not expecting
+    /// request/response pairs.
     ///
     /// ## Invariants
     /// * _Non-terminating_ - Your `transform_rev` method should not be terminating as the messages should get passed back to the source, where they will terminate.
-    /// * _Message count_ - you can modify pushed messages but you should not remove or add them.
     ///
-    /// TODO basic example
+    ///
+    /// A basic reverse transform that logs event data and counts the number of events it sees could be defined like so:
+    /// ```
+    /// use shotover_proxy::transforms::{Transform, Wrapper};
+    /// use async_trait::async_trait;
+    /// use tracing::info;
+    /// use shotover_proxy::error::ChainResponse;
+    ///
+    /// #[derive(Debug, Clone)]
+    /// pub struct Printer {
+    ///     counter: i32,
+    /// }
+    ///
+    /// impl Default for Printer {
+    ///     fn default() -> Self {
+    ///         Self::new()
+    ///     }
+    /// }
+    ///
+    /// impl Printer {
+    ///     pub fn new() -> Printer {
+    ///         Printer { counter: 0 }
+    ///     }
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl Transform for Printer {
+    ///     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    ///         self.counter += 1;
+    ///         info!("{} Event content: {:?}", self.counter, message_wrapper.messages);
+    ///         let response = message_wrapper.call_next_transform_rev().await;
+    ///         response
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// In this example `counter` will contain the count of the number of messages seen for this connection.
+    /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let response = message_wrapper.call_next_transform_rev().await?;
         Ok(response)
