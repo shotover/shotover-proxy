@@ -69,7 +69,7 @@ impl Transform for CassandraPeersRewrite {
         Ok(response)
     }
 
-    async fn transform_rev<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         for message in &mut message_wrapper.messages {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
                 if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
@@ -81,7 +81,7 @@ impl Transform for CassandraPeersRewrite {
             }
         }
 
-        let response = message_wrapper.call_next_transform_rev().await?;
+        let response = message_wrapper.call_next_transform_pushed().await?;
         Ok(response)
     }
 }

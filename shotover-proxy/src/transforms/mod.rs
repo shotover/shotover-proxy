@@ -133,31 +133,31 @@ impl Transforms {
         }
     }
 
-    async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
-            Transforms::CassandraSinkSingle(c) => c.transform_rev(message_wrapper).await,
-            Transforms::CassandraPeersRewrite(c) => c.transform_rev(message_wrapper).await,
-            Transforms::RedisCache(r) => r.transform_rev(message_wrapper).await,
-            Transforms::Tee(m) => m.transform_rev(message_wrapper).await,
-            Transforms::DebugPrinter(p) => p.transform_rev(message_wrapper).await,
-            Transforms::DebugForceParse(p) => p.transform_rev(message_wrapper).await,
-            Transforms::Null(n) => n.transform_rev(message_wrapper).await,
+            Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
+            Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
+            Transforms::RedisCache(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
+            Transforms::DebugPrinter(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::DebugForceParse(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::Null(n) => n.transform_pushed(message_wrapper).await,
             #[cfg(test)]
-            Transforms::Loopback(n) => n.transform_rev(message_wrapper).await,
-            Transforms::Protect(p) => p.transform_rev(message_wrapper).await,
-            Transforms::DebugReturner(p) => p.transform_rev(message_wrapper).await,
-            Transforms::DebugRandomDelay(p) => p.transform_rev(message_wrapper).await,
-            Transforms::ConsistentScatter(tc) => tc.transform_rev(message_wrapper).await,
-            Transforms::RedisSinkSingle(r) => r.transform_rev(message_wrapper).await,
-            Transforms::RedisTimestampTagger(r) => r.transform_rev(message_wrapper).await,
-            Transforms::RedisClusterPortsRewrite(r) => r.transform_rev(message_wrapper).await,
-            Transforms::RedisSinkCluster(r) => r.transform_rev(message_wrapper).await,
-            Transforms::ParallelMap(s) => s.transform_rev(message_wrapper).await,
-            Transforms::PoolConnections(s) => s.transform_rev(message_wrapper).await,
-            Transforms::Coalesce(s) => s.transform_rev(message_wrapper).await,
-            Transforms::QueryTypeFilter(s) => s.transform_rev(message_wrapper).await,
-            Transforms::QueryCounter(s) => s.transform_rev(message_wrapper).await,
-            Transforms::RequestThrottling(s) => s.transform_rev(message_wrapper).await,
+            Transforms::Loopback(n) => n.transform_pushed(message_wrapper).await,
+            Transforms::Protect(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::DebugReturner(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::DebugRandomDelay(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::ConsistentScatter(tc) => tc.transform_pushed(message_wrapper).await,
+            Transforms::RedisSinkSingle(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::RedisTimestampTagger(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::RedisSinkCluster(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::ParallelMap(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::PoolConnections(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::Coalesce(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::QueryTypeFilter(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::QueryCounter(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::RequestThrottling(s) => s.transform_pushed(message_wrapper).await,
         }
     }
 
@@ -404,7 +404,7 @@ impl<'a> Wrapper<'a> {
         result
     }
 
-    pub async fn call_next_transform_rev(mut self) -> ChainResponse {
+    pub async fn call_next_transform_pushed(mut self) -> ChainResponse {
         let transform = match self.transforms.next() {
             Some(transform) => transform,
             None => return Ok(self.messages),
@@ -415,7 +415,7 @@ impl<'a> Wrapper<'a> {
 
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME
-            .scope(chain_name, transform.transform_rev(self))
+            .scope(chain_name, transform.transform_pushed(self))
             .await;
         counter!("shotover_transform_total", 1, "transform" => transform_name);
         if result.is_err() {
@@ -474,7 +474,7 @@ impl<'a> Wrapper<'a> {
         self.transforms = transforms.iter_mut();
     }
 
-    pub fn reset_rev(&mut self, transforms: &'a mut [Transforms]) {
+    pub fn reset_reverse(&mut self, transforms: &'a mut [Transforms]) {
         transforms.reverse();
         self.transforms = transforms.iter_mut();
     }
@@ -590,12 +590,12 @@ pub trait Transform: Send {
     /// This method processes one pushed message before sending it in reverse on the chain back to the source.
     ///
     /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform can
-    /// also modify the response from `message_wrapper.call_next_transform_rev` if it needs to. As long as the message
+    /// also modify the response from `message_wrapper.call_next_transform_pushed` if it needs to. As long as the message
     /// carries on through the chain, it will function correctly. You are able to add or remove messages as this method is not expecting
     /// request/response pairs.
     ///
     /// ## Invariants
-    /// * _Non-terminating_ - Your `transform_rev` method should not be terminating as the messages should get passed back to the source, where they will terminate.
+    /// * _Non-terminating_ - Your `transform_pushed` method should not be terminating as the messages should get passed back to the source, where they will terminate.
     ///
     ///
     /// A basic reverse transform that logs event data and counts the number of events it sees could be defined like so:
@@ -627,7 +627,7 @@ pub trait Transform: Send {
     ///     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
     ///         self.counter += 1;
     ///         info!("{} Event content: {:?}", self.counter, message_wrapper.messages);
-    ///         let response = message_wrapper.call_next_transform_rev().await;
+    ///         let response = message_wrapper.call_next_transform_pushed().await;
     ///         response
     ///     }
     /// }
@@ -635,8 +635,8 @@ pub trait Transform: Send {
     ///
     /// In this example `counter` will contain the count of the number of messages seen for this connection.
     /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
-    async fn transform_rev<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        let response = message_wrapper.call_next_transform_rev().await?;
+    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        let response = message_wrapper.call_next_transform_pushed().await?;
         Ok(response)
     }
 
