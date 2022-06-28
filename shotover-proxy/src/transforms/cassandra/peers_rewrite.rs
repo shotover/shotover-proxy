@@ -76,8 +76,8 @@ impl Transform for CassandraPeersRewrite {
                     &mut frame.operation
                 {
                     addr.addr.set_port(self.port);
+                    message.invalidate_cache();
                 }
-                message.invalidate_cache();
             }
         }
 
