@@ -473,11 +473,6 @@ impl<'a> Wrapper<'a> {
     pub fn reset(&mut self, transforms: &'a mut [Transforms]) {
         self.transforms = transforms.iter_mut();
     }
-
-    pub fn reset_reverse(&mut self, transforms: &'a mut [Transforms]) {
-        transforms.reverse();
-        self.transforms = transforms.iter_mut();
-    }
 }
 
 /// This trait is the primary extension point for Shotover-proxy.

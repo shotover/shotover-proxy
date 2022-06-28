@@ -293,7 +293,9 @@ impl TransformChain {
 
     pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> ChainResponse {
         let start = Instant::now();
-        wrapper.reset_reverse(&mut self.chain);
+
+        let mut chain: Vec<_> = self.chain.iter().cloned().rev().collect();
+        wrapper.reset(&mut chain);
 
         let result = wrapper.call_next_transform_pushed().await;
         self.chain_total.increment(1);

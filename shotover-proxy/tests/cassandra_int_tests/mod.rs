@@ -4,7 +4,9 @@ use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
 use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
 use cdrs_tokio::cluster::NodeTcpConfigBuilder;
-use cdrs_tokio::frame::events::ServerEvent;
+use cdrs_tokio::frame::events::{
+    SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
+};
 use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
 use futures::future::{join_all, try_join_all};
 use metrics_util::debugging::DebuggingRecorder;
@@ -385,5 +387,13 @@ async fn test_events_keyspace() {
         .await
         .unwrap()
         .unwrap();
-    assert!(matches!(event, ServerEvent::SchemaChange { .. }));
+
+    assert_eq!(
+        event,
+        ServerEvent::SchemaChange(SchemaChange {
+            change_type: SchemaChangeType::Created,
+            target: SchemaChangeTarget::Keyspace,
+            options: SchemaChangeOptions::Keyspace("test_events_ks".to_string())
+        })
+    );
 }
