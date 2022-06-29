@@ -536,45 +536,6 @@ pub trait Transform: Send {
     /// * Transforms that do call subsquent chains via `message_wrapper.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transforms that is both non-terminating and a sink.
-    ///
-    /// A basic transform that logs query data and counts the number requests it sees could be defined like so:
-    /// ```
-    /// use shotover_proxy::transforms::{Transform, Wrapper};
-    /// use async_trait::async_trait;
-    /// use tracing::info;
-    /// use shotover_proxy::error::ChainResponse;
-    ///
-    /// #[derive(Debug, Clone)]
-    /// pub struct Printer {
-    ///     counter: i32,
-    /// }
-    ///
-    /// impl Default for Printer {
-    ///     fn default() -> Self {
-    ///         Self::new()
-    ///     }
-    /// }
-    ///
-    /// impl Printer {
-    ///     pub fn new() -> Printer {
-    ///         Printer { counter: 0 }
-    ///     }
-    /// }
-    ///
-    /// #[async_trait]
-    /// impl Transform for Printer {
-    ///     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-    ///         self.counter += 1;
-    ///         info!("{} Request content: {:?}", self.counter, message_wrapper.messages);
-    ///         let response = message_wrapper.call_next_transform().await;
-    ///         info!("Response content: {:?}", response);
-    ///         response
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// In this example `counter` will contain the count of the number of messages seen for this connection.
-    /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
 
     /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
@@ -591,45 +552,6 @@ pub trait Transform: Send {
     ///
     /// ## Invariants
     /// * _Non-terminating_ - Your `transform_pushed` method should not be terminating as the messages should get passed back to the source, where they will terminate.
-    ///
-    ///
-    /// A basic reverse transform that logs event data and counts the number of events it sees could be defined like so:
-    /// ```
-    /// use shotover_proxy::transforms::{Transform, Wrapper};
-    /// use async_trait::async_trait;
-    /// use tracing::info;
-    /// use shotover_proxy::error::ChainResponse;
-    ///
-    /// #[derive(Debug, Clone)]
-    /// pub struct Printer {
-    ///     counter: i32,
-    /// }
-    ///
-    /// impl Default for Printer {
-    ///     fn default() -> Self {
-    ///         Self::new()
-    ///     }
-    /// }
-    ///
-    /// impl Printer {
-    ///     pub fn new() -> Printer {
-    ///         Printer { counter: 0 }
-    ///     }
-    /// }
-    ///
-    /// #[async_trait]
-    /// impl Transform for Printer {
-    ///     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-    ///         self.counter += 1;
-    ///         info!("{} Event content: {:?}", self.counter, message_wrapper.messages);
-    ///         let response = message_wrapper.call_next_transform_pushed().await;
-    ///         response
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// In this example `counter` will contain the count of the number of messages seen for this connection.
-    /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let response = message_wrapper.call_next_transform_pushed().await?;
         Ok(response)
