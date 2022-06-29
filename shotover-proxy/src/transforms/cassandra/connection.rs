@@ -116,23 +116,18 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
-                            if let Some(ref pushed_messages_tx) = pushed_messages_tx {
-                                if let Some(raw_bytes) = m.as_raw_bytes() {
-                                    if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(raw_bytes) {
-                                        pushed_messages_tx.send(vec![m]).unwrap();
-                                        continue;
-                                    };
-                                };
-                            };
-
-                            if let Some(stream_id) = m.stream_id() {
-                                    match return_channel_map.remove(&stream_id) {
-                                        None => {
-                                            return_message_map.insert(stream_id, m);
-                                        },
-                                        Some((return_tx, original)) => {
-                                            return_tx.send(Response {original, response: Ok(m) })
-                                                     .map_err(|_| anyhow!("couldn't send message"))?;
+                            if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(m.as_raw_bytes().unwrap()) {
+                                if let Some(ref pushed_messages_tx) = pushed_messages_tx {
+                                    pushed_messages_tx.send(vec![m]).unwrap();
+                                }
+                            } else if let Some(stream_id) = m.stream_id() {
+                                match return_channel_map.remove(&stream_id) {
+                                    None => {
+                                        return_message_map.insert(stream_id, m);
+                                    },
+                                    Some((return_tx, original)) => {
+                                        return_tx.send(Response {original, response: Ok(m) })
+                                            .map_err(|_| anyhow!("couldn't send message"))?;
                                     }
                                 }
                             }

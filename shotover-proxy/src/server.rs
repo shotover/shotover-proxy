@@ -485,24 +485,17 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("Received raw message {:?}", messages);
             debug!("client details: {:?}", &self.client_details);
 
+            let wrapper = Wrapper::new_with_client_details(
+                messages,
+                self.client_details.clone(),
+                self.chain.name.clone(),
+            );
+
             let chain_result = if reverse_chain {
-                self.chain
-                    .process_request_rev(Wrapper::new_with_client_details(
-                        messages,
-                        self.client_details.clone(),
-                        self.chain.name.clone(),
-                    ))
-                    .await
+                self.chain.process_request_rev(wrapper).await
             } else {
                 self.chain
-                    .process_request(
-                        Wrapper::new_with_client_details(
-                            messages,
-                            self.client_details.clone(),
-                            self.chain.name.clone(),
-                        ),
-                        self.client_details.clone(),
-                    )
+                    .process_request(wrapper, self.client_details.clone())
                     .await
             };
 

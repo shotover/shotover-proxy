@@ -417,11 +417,11 @@ impl<'a> Wrapper<'a> {
         let result = CONTEXT_CHAIN_NAME
             .scope(chain_name, transform.transform_pushed(self))
             .await;
-        counter!("shotover_transform_total", 1, "transform" => transform_name);
+        counter!("shotover_transform_pushed_total", 1, "transform" => transform_name);
         if result.is_err() {
-            counter!("shotover_transform_failures", 1, "transform" => transform_name)
+            counter!("shotover_transform_pushed_failures", 1, "transform" => transform_name)
         }
-        histogram!("shotover_transform_latency", start.elapsed(),  "transform" => transform_name);
+        histogram!("shotover_transform_pushed_latency", start.elapsed(),  "transform" => transform_name);
         result
     }
 
