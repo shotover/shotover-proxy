@@ -1,7 +1,8 @@
 use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
-use crate::transforms::protect::key_management::{KeyManager, KeyManagerConfig};
+use crate::transforms::protect::key_management::KeyManager;
+pub use crate::transforms::protect::key_management::KeyManagerConfig;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
