@@ -97,7 +97,7 @@ APPLY BATCH;"
 
         // protected values are stored encrypted
         if let ResultValue::Blob(value) = &row[2] {
-            let _: Protected = bincode::deserialize(&hex::decode(value).unwrap()).unwrap();
+            let _: Protected = bincode::deserialize(value).unwrap();
         } else {
             panic!("expected 3rd column to be ResultValue::Varchar in {row:?}");
         }
