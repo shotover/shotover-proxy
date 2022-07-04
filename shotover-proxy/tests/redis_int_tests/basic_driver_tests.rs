@@ -308,7 +308,7 @@ async fn test_filtered_scanning(connection: &mut Connection, flusher: &mut Flush
 
     for x in 0..3000 {
         connection
-            .hset::<&'_ str, String, usize, ()>("foo", format!("key_{}_{}", x % 100, x), x)
+            .hset::<_, _, _, ()>("foo", format!("key_{}_{}", x % 100, x), x)
             .await
             .unwrap();
         if x % 100 == 0 {
@@ -388,11 +388,11 @@ async fn test_empty_pipeline(connection: &mut Connection) {
     redis::pipe()
         .cmd("PING")
         .ignore()
-        .query_async::<Connection, ()>(connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
     redis::pipe()
-        .query_async::<Connection, ()>(connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
 }
@@ -503,14 +503,14 @@ async fn test_real_transaction(connection: &mut Connection) {
     redis::cmd("SET")
         .arg(key)
         .arg(42)
-        .query_async::<Connection, ()>(connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
 
     loop {
         redis::cmd("WATCH")
             .arg(key)
-            .query_async::<Connection, ()>(connection)
+            .query_async::<_, ()>(connection)
             .await
             .unwrap();
         let val: isize = redis::cmd("GET")
@@ -547,7 +547,7 @@ async fn test_script(connection: &mut Connection) {
     redis::cmd("SET")
         .arg("my_key")
         .arg("foo")
-        .query_async::<Connection, ()>(connection)
+        .query_async::<_, ()>(connection)
         .await
         .unwrap();
     let response = script.key("my_key").arg(42).invoke_async(connection).await;
