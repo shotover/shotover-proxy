@@ -59,7 +59,7 @@ pub struct BufferedChain {
     pub original_chain: TransformChain,
     send_handle: mpsc::Sender<BufferedChainMessages>,
     #[cfg(test)]
-    pub count: std::sync::Arc<tokio::sync::Mutex<usize>>,
+    pub count: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl BufferedChain {
@@ -136,7 +136,7 @@ impl TransformChain {
         let (tx, mut rx) = mpsc::channel::<BufferedChainMessages>(buffer_size);
 
         #[cfg(test)]
-        let count = std::sync::Arc::new(tokio::sync::Mutex::new(0_usize));
+        let count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
         #[cfg(test)]
         let count_clone = count.clone();
 
@@ -152,8 +152,7 @@ impl TransformChain {
                 {
                     #[cfg(test)]
                     {
-                        let mut count = count.lock().await;
-                        *count += 1;
+                        count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
 
                     let chain_response = chain
@@ -164,24 +163,20 @@ impl TransformChain {
                         .await;
 
                     if let Err(e) = &chain_response {
-                        error!("Internal error in buffered chain: {:?}", e);
+                        error!("Internal error in buffered chain: {e:?}");
                     };
 
                     match return_chan {
                         None => trace!("Ignoring response due to lack of return chan"),
-                        Some(tx) => match tx.send(chain_response) {
-                            Ok(_) => {}
-                            Err(e) => trace!(
-                                "Dropping response message {:?} as not needed by ConsistentScatter",
-                                e
-                            ),
-                        },
+                        Some(tx) => {
+                            if let Err(message) = tx.send(chain_response) {
+                                trace!("Failed to send response message over return chan. Message was: {message:?}");
+                            }
+                        }
                     };
                 }
 
-                debug!(
-                    "buffered chain processing thread exiting, stopping chain loop and dropping"
-                );
+                debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
 
                 match chain
                     .process_request(
@@ -203,7 +198,7 @@ impl TransformChain {
         BufferedChain {
             send_handle: tx,
             #[cfg(test)]
-            count: count_clone,
+            count,
             original_chain: self,
         }
     }
