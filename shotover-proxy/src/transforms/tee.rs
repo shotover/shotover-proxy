@@ -130,12 +130,9 @@ impl Transform for Tee {
                         .process_request_no_return(message_wrapper.clone(), self.timeout_micros),
                     message_wrapper.call_next_transform()
                 );
-                match tee_result {
-                    Ok(_) => {}
-                    Err(e) => {
-                        self.dropped_messages.increment(1);
-                        trace!("MPSC error {}", e);
-                    }
+                if let Err(e) = tee_result {
+                    self.dropped_messages.increment(1);
+                    trace!("Tee Ignored error {e}");
                 }
                 chain_result
             }
@@ -151,7 +148,7 @@ impl Transform for Tee {
                 if !chain_response.eq(&tee_response) {
                     for message in &mut chain_response {
                         message.set_error(
-                                "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into())
+                            "ERR The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch".into())
                     }
                 }
                 Ok(chain_response)
