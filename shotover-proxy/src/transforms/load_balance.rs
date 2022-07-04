@@ -118,8 +118,7 @@ mod test {
                 let all_connections = p.all_connections.lock().await;
                 assert_eq!(all_connections.len(), 3);
                 for bc in all_connections.iter() {
-                    let count = bc.count.lock().await;
-                    assert_eq!(*count, 30);
+                    assert_eq!(bc.count.load(std::sync::atomic::Ordering::Relaxed), 30);
                 }
             }
             _ => panic!("whoops"),
