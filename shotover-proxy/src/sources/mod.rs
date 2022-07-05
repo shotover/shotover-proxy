@@ -16,7 +16,7 @@ pub enum Sources {
 }
 
 impl Sources {
-    pub fn into_join_handle(self) -> JoinHandle<Result<()>> {
+    pub fn into_join_handle(self) -> JoinHandle<()> {
         match self {
             Sources::Cassandra(c) => c.join_handle,
             Sources::Redis(r) => r.join_handle,
