@@ -1,3 +1,20 @@
+use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
+use crate::helpers::ShotoverManager;
+use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
+use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
+use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
+use cdrs_tokio::cluster::NodeTcpConfigBuilder;
+use cdrs_tokio::frame::events::{
+    SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
+};
+use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
+use futures::future::{join_all, try_join_all};
+use metrics_util::debugging::DebuggingRecorder;
+use serial_test::serial;
+use std::sync::Arc;
+use test_helpers::docker_compose::DockerCompose;
+use tokio::time::{sleep, timeout, Duration};
+
 mod batch_statements;
 mod cache;
 mod collections;
@@ -9,14 +26,6 @@ mod prepared_statements;
 mod protect;
 mod table;
 mod udt;
-
-use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
-use crate::helpers::ShotoverManager;
-use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
-use futures::future::{join_all, try_join_all};
-use metrics_util::debugging::DebuggingRecorder;
-use serial_test::serial;
-use test_helpers::docker_compose::DockerCompose;
 
 #[test]
 #[serial]
@@ -341,4 +350,50 @@ async fn test_cassandra_request_throttling() {
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
 
     batch_statements::test(&connection);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_events_keyspace() {
+    let _docker_compose =
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
+
+    let user = "cassandra";
+    let password = "cassandra";
+    let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
+    let config = NodeTcpConfigBuilder::new()
+        .with_contact_point("127.0.0.1:9042".into())
+        .with_authenticator_provider(Arc::new(auth))
+        .build()
+        .await
+        .unwrap();
+
+    let session = TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
+        .build()
+        .unwrap();
+
+    let mut event_recv = session.create_event_receiver();
+
+    sleep(Duration::from_secs(3)).await; // let the driver finish connecting to the cluster and registering for the events
+
+    let create_ks = "CREATE KEYSPACE IF NOT EXISTS test_events_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
+
+    session.query(create_ks).await.unwrap();
+
+    let event = timeout(Duration::from_secs(10), event_recv.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        event,
+        ServerEvent::SchemaChange(SchemaChange {
+            change_type: SchemaChangeType::Created,
+            target: SchemaChangeTarget::Keyspace,
+            options: SchemaChangeOptions::Keyspace("test_events_ks".to_string())
+        })
+    );
 }

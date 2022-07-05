@@ -1,11 +1,13 @@
 use crate::frame::{CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue};
+use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::{
     error::ChainResponse,
     transforms::{Transform, Transforms, Wrapper},
 };
 use anyhow::Result;
 use async_trait::async_trait;
+use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
@@ -64,6 +66,22 @@ impl Transform for CassandraPeersRewrite {
             rewrite_port(&mut response[i], &name_list, self.port);
         }
 
+        Ok(response)
+    }
+
+    async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        for message in &mut message_wrapper.messages {
+            if let Some(Frame::Cassandra(frame)) = message.frame() {
+                if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
+                    &mut frame.operation
+                {
+                    addr.addr.set_port(self.port);
+                    message.invalidate_cache();
+                }
+            }
+        }
+
+        let response = message_wrapper.call_next_transform_pushed().await?;
         Ok(response)
     }
 }

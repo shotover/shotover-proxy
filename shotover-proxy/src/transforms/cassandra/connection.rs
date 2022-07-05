@@ -1,17 +1,19 @@
+use crate::frame::cassandra;
 use crate::message::Message;
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
+use crate::transforms::Messages;
 use anyhow::{anyhow, Result};
+use cassandra_protocol::frame::Opcode;
 use derivative::Derivative;
 use futures::StreamExt;
 use halfbrown::HashMap;
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, Instrument};
@@ -36,6 +38,7 @@ impl CassandraConnection {
         host: String,
         codec: C,
         mut tls: Option<TlsConnector>,
+        pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
         let tcp_stream: TcpStream = TcpStream::connect(&host).await?;
 
@@ -46,11 +49,15 @@ impl CassandraConnection {
             let tls_stream = tls.connect(tcp_stream).await?;
             let (read, write) = split(tls_stream);
             tokio::spawn(tx_process(write, out_rx, return_tx, codec.clone()).in_current_span());
-            tokio::spawn(rx_process(read, return_rx, codec.clone()).in_current_span());
+            tokio::spawn(
+                rx_process(read, return_rx, codec.clone(), pushed_messages_tx).in_current_span(),
+            );
         } else {
             let (read, write) = split(tcp_stream);
             tokio::spawn(tx_process(write, out_rx, return_tx, codec.clone()).in_current_span());
-            tokio::spawn(rx_process(read, return_rx, codec.clone()).in_current_span());
+            tokio::spawn(
+                rx_process(read, return_rx, codec.clone(), pushed_messages_tx).in_current_span(),
+            );
         };
 
         Ok(CassandraConnection {
@@ -96,6 +103,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
     read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<Request>,
     codec: C,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec);
     let mut return_channel_map: HashMap<i16, (oneshot::Sender<Response>, Message)> = HashMap::new();
@@ -108,14 +116,18 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
-                            if let Some(stream_id) = m.stream_id() {
+                            if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(m.as_raw_bytes().unwrap()) {
+                                if let Some(ref pushed_messages_tx) = pushed_messages_tx {
+                                    pushed_messages_tx.send(vec![m]).unwrap();
+                                }
+                            } else if let Some(stream_id) = m.stream_id() {
                                 match return_channel_map.remove(&stream_id) {
                                     None => {
                                         return_message_map.insert(stream_id, m);
                                     },
                                     Some((return_tx, original)) => {
                                         return_tx.send(Response {original, response: Ok(m) })
-                                        .map_err(|_| anyhow!("couldn't send message"))?;
+                                            .map_err(|_| anyhow!("couldn't send message"))?;
                                     }
                                 }
                             }
