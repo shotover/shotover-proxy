@@ -658,7 +658,7 @@ impl RoutingInfo {
                 RoutingInfo::AllNodes(ResponseJoin::First)
             }
             b"SCRIPT" => match args.get(1) {
-                Some(RedisFrame::BulkString(a)) if a.to_ascii_uppercase() == b"KILL" => {
+                Some(RedisFrame::BulkString(a)) if a.eq_ignore_ascii_case(b"KILL") => {
                     RoutingInfo::Unsupported
                 }
                 _ => RoutingInfo::AllMasters(ResponseJoin::First),
@@ -671,8 +671,7 @@ impl RoutingInfo {
             //     - We just pretend to handle CLIENT GETNAME always returning nil without hitting any nodes
             b"CLIENT" => match args.get(1) {
                 Some(RedisFrame::BulkString(sub_command)) => {
-                    let sub_command = sub_command.to_ascii_uppercase();
-                    match sub_command.as_slice() {
+                    match sub_command.to_ascii_uppercase().as_slice() {
                         b"SETNAME" => RoutingInfo::ShortCircuitOk,
                         b"GETNAME" => RoutingInfo::ShortCircuitNil,
                         _ => RoutingInfo::Unsupported,
@@ -706,7 +705,7 @@ impl RoutingInfo {
             b"XREAD" | b"XREADGROUP" => args
                 .iter()
                 .position(|a| match a {
-                    RedisFrame::BulkString(a) => a.to_ascii_uppercase() == b"STREAMS",
+                    RedisFrame::BulkString(a) => a.eq_ignore_ascii_case(b"STREAMS"),
                     _ => false,
                 })
                 .and_then(|streams_position| {

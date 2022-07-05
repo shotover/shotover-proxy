@@ -183,7 +183,7 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
 fn is_cluster_message(frame: &Frame) -> bool {
     if let Frame::Redis(RedisFrame::Array(array)) = frame {
         if let RedisFrame::BulkString(b) = &array[0] {
-            return b.to_ascii_uppercase() == b"CLUSTER";
+            return b.eq_ignore_ascii_case(b"CLUSTER");
         }
     }
     false
@@ -192,39 +192,31 @@ fn is_cluster_message(frame: &Frame) -> bool {
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
 /// or `CLUSTER REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &Frame) -> bool {
-    let args = if let Frame::Redis(RedisFrame::Array(array)) = frame {
-        array
-            .iter()
-            .map(|f| match f {
-                RedisFrame::BulkString(b) => Some(b.to_ascii_uppercase()),
-                _ => None,
-            })
-            .take_while(Option::is_some)
-            .map(Option::unwrap)
-            .collect::<Vec<Vec<u8>>>()
+    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+        match array.as_slice() {
+            [RedisFrame::BulkString(one), RedisFrame::BulkString(two), ..] => {
+                one.eq_ignore_ascii_case(b"CLUSTER")
+                    && (two.eq_ignore_ascii_case(b"NODES") || two.eq_ignore_ascii_case(b"REPLICAS"))
+            }
+            [..] => false,
+        }
     } else {
-        return false;
-    };
-
-    args[0] == b"CLUSTER" && (args[1] == b"REPLICAS" || args[1] == b"NODES")
+        false
+    }
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
 fn is_cluster_slots(frame: &Frame) -> bool {
-    let args = if let Frame::Redis(RedisFrame::Array(array)) = frame {
-        array
-            .iter()
-            .map(|f| match f {
-                RedisFrame::BulkString(b) => Some(b.to_ascii_uppercase()),
-                _ => None,
-            })
-            .take_while(Option::is_some)
-            .map(Option::unwrap)
+    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+        match array.as_slice() {
+            [RedisFrame::BulkString(one), RedisFrame::BulkString(two), ..] => {
+                one.eq_ignore_ascii_case(b"CLUSTER") && two.eq_ignore_ascii_case(b"SLOTS")
+            }
+            [..] => false,
+        }
     } else {
-        return false;
-    };
-
-    args.eq([b"CLUSTER", b"SLOTS" as &[u8]])
+        false
+    }
 }
 
 #[cfg(test)]
