@@ -37,15 +37,6 @@ impl RedisClusterPortsRewrite {
 #[async_trait]
 impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        // Optimization for when messages are not cluster messages (e.g. SET key, or GET key)
-        if message_wrapper
-            .messages
-            .iter_mut()
-            .all(|m| m.frame().map(|f| !is_cluster_message(f)).unwrap_or(true))
-        {
-            return message_wrapper.call_next_transform().await;
-        }
-
         // Find the indices of cluster slot messages
         let mut cluster_slots_indices = vec![];
         let mut cluster_nodes_indices = vec![];
@@ -180,15 +171,6 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
     Ok(())
 }
 
-fn is_cluster_message(frame: &Frame) -> bool {
-    if let Frame::Redis(RedisFrame::Array(array)) = frame {
-        if let RedisFrame::BulkString(b) = &array[0] {
-            return b.eq_ignore_ascii_case(b"CLUSTER");
-        }
-    }
-    false
-}
-
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
 /// or `CLUSTER REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &Frame) -> bool {
@@ -225,23 +207,6 @@ mod test {
     use crate::codec::redis::RedisCodec;
     use crate::transforms::redis::sink_cluster::parse_slots;
     use tokio_util::codec::Decoder;
-
-    #[test]
-    fn test_is_cluster_message() {
-        let cluster_messages = [b"cluster", b"CLUSTER"];
-
-        for msg in cluster_messages {
-            let frame = Frame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
-                Bytes::from_static(msg),
-            )]));
-            assert!(is_cluster_message(&frame));
-        }
-
-        let frame = Frame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
-            Bytes::from_static(b"notcluster"),
-        )]));
-        assert!(!is_cluster_message(&frame));
-    }
 
     #[test]
     fn test_is_cluster_slots() {
