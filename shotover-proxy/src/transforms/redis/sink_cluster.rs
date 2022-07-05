@@ -784,7 +784,8 @@ fn build_slot_to_server(
     ensure!(frames.len() >= 2, "expected at least two fields");
 
     let ip = if let RedisFrame::BulkString(ref ip) = frames[0] {
-        String::from_utf8_lossy(ip.as_ref()).to_string()
+        std::str::from_utf8(ip.as_ref())
+            .map_err(|e| anyhow!("Failed to parse IP address as utf8 {e}"))?
     } else {
         bail!("unexpected type for ip");
     };

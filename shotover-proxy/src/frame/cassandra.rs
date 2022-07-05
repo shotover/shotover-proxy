@@ -37,7 +37,7 @@ use uuid::Uuid;
 /// Functions for operations on an unparsed Cassandra frame
 pub mod raw_frame {
     use super::{CassandraMetadata, RawCassandraFrame};
-    use anyhow::{anyhow, Result};
+    use anyhow::{anyhow, bail, Result};
     use cassandra_protocol::{compression::Compression, frame::Opcode};
     use nonzero_ext::nonzero;
     use std::convert::TryInto;
@@ -45,9 +45,8 @@ pub mod raw_frame {
 
     /// Extract the length of a BATCH statement (count of requests) from the body bytes
     fn get_batch_len(bytes: &[u8]) -> Result<NonZeroU32> {
-        let len = bytes.len();
-        if len < 2 {
-            return Err(anyhow!("BATCH statement body is not long enough"));
+        if bytes.len() < 2 {
+            bail!("BATCH statement body is not long enough");
         }
 
         let short_bytes = &bytes[1..3];
@@ -84,6 +83,9 @@ pub mod raw_frame {
     }
 
     pub(crate) fn get_opcode(bytes: &[u8]) -> Result<Opcode> {
+        if bytes.len() < 9 {
+            bail!("Cassandra frame too short, needs at least 9 bytes for header");
+        }
         let opcode = Opcode::try_from(bytes[4])?;
         Ok(opcode)
     }

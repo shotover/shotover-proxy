@@ -155,6 +155,9 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
 
                 let split = ip.split(|c| c == ':' || c == '@').collect::<Vec<&str>>();
 
+                if split.len() < 3 {
+                    bail!("IP address not in valid format: {ip}");
+                }
                 let new_ip = format!("{}:{}@{}", split[0], new_port, split[2]);
 
                 writer.write_field(&*new_ip)?;
@@ -335,12 +338,9 @@ f9553ea7fc23905476efec1f949b4b3e41a44103 :1234@0 slave,noaddr c852007a1c3b726534
         let mut raw_frame = Frame::Redis(RedisFrame::BulkString(Bytes::from_static(bulk_string)));
         rewrite_port_node(&mut raw_frame, 1234).unwrap();
 
-        let rewritten = if let Frame::Redis(RedisFrame::BulkString(string)) = raw_frame.clone() {
-            string
-        } else {
-            panic!("bad input: {raw_frame:?}")
-        };
-
-        assert_eq!(rewritten, Bytes::from_static(expected_string));
+        assert_eq!(
+            raw_frame,
+            Frame::Redis(RedisFrame::BulkString(Bytes::from_static(expected_string)))
+        );
     }
 }
