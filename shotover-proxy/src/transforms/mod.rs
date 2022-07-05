@@ -44,6 +44,7 @@ use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
 use strum_macros::IntoStaticStr;
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 pub mod cassandra;
@@ -132,6 +133,34 @@ impl Transforms {
         }
     }
 
+    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        match self {
+            Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
+            Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
+            Transforms::RedisCache(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
+            Transforms::DebugPrinter(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::DebugForceParse(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::Null(n) => n.transform_pushed(message_wrapper).await,
+            #[cfg(test)]
+            Transforms::Loopback(n) => n.transform_pushed(message_wrapper).await,
+            Transforms::Protect(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::DebugReturner(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::DebugRandomDelay(p) => p.transform_pushed(message_wrapper).await,
+            Transforms::ConsistentScatter(tc) => tc.transform_pushed(message_wrapper).await,
+            Transforms::RedisSinkSingle(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::RedisTimestampTagger(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::RedisClusterPortsRewrite(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::RedisSinkCluster(r) => r.transform_pushed(message_wrapper).await,
+            Transforms::ParallelMap(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::PoolConnections(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::Coalesce(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::QueryTypeFilter(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::QueryCounter(s) => s.transform_pushed(message_wrapper).await,
+            Transforms::RequestThrottling(s) => s.transform_pushed(message_wrapper).await,
+        }
+    }
+
     fn get_name(&self) -> &'static str {
         self.into()
     }
@@ -217,6 +246,12 @@ impl Transforms {
             Transforms::DebugReturner(d) => d.is_terminating(),
             Transforms::DebugRandomDelay(d) => d.is_terminating(),
             Transforms::RequestThrottling(d) => d.is_terminating(),
+        }
+    }
+
+    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
+        if let Transforms::CassandraSinkSingle(c) = self {
+            c.add_pushed_messages_tx(pushed_messages_tx)
         }
     }
 }
@@ -369,6 +404,27 @@ impl<'a> Wrapper<'a> {
         result
     }
 
+    pub async fn call_next_transform_pushed(mut self) -> ChainResponse {
+        let transform = match self.transforms.next() {
+            Some(transform) => transform,
+            None => return Ok(self.messages),
+        };
+
+        let transform_name = transform.get_name();
+        let chain_name = self.chain_name.clone();
+
+        let start = Instant::now();
+        let result = CONTEXT_CHAIN_NAME
+            .scope(chain_name, transform.transform_pushed(self))
+            .await;
+        counter!("shotover_transform_pushed_total", 1, "transform" => transform_name);
+        if result.is_err() {
+            counter!("shotover_transform_pushed_failures", 1, "transform" => transform_name)
+        }
+        histogram!("shotover_transform_pushed_latency", start.elapsed(),  "transform" => transform_name);
+        result
+    }
+
     #[cfg(test)]
     pub fn new(m: Messages) -> Self {
         Wrapper {
@@ -426,7 +482,7 @@ impl<'a> Wrapper<'a> {
 /// however it also includes a setup and naming method.
 ///
 /// Transforms are cloned on a per TCP connection basis from a copy of the struct originally created
-/// by the call to [TransformsConfig::get_transforms].
+/// by the call to the `get_transform` method on each transform's config struct.
 /// This means that each member of your struct that implements this trait can be considered private for
 /// each TCP connection or connected client. If you wish to share data between all copies of your struct
 /// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that.
@@ -463,7 +519,7 @@ pub trait Transform: Send {
     /// do. This type of transform is called an non-terminating transform.
     /// * _Terminating_ - Your transform can also choose not to call `message_wrapper.call_next_transform()` if it sends the
     /// messages to an external system or generates its own response to the query e.g.
-    /// [`crate::transforms::cassandra::cassandra_sink_single::CassandraSinkSingle`]. This type of transform
+    /// [`crate::transforms::cassandra::sink_single::CassandraSinkSingle`]. This type of transform
     /// is called a Terminating transform (as no subsequent transforms in the chain will be called).
     /// * _Message count_ - message_wrapper.messages will contain 0 or more messages.
     /// Your transform should return the same number of responses as messages received in message_wrapper.messages. Transforms that
@@ -480,46 +536,26 @@ pub trait Transform: Send {
     /// * Transforms that do call subsquent chains via `message_wrapper.call_next_transform()` are non-terminating transforms.
     ///
     /// You can have have a transforms that is both non-terminating and a sink.
-    ///
-    /// A basic transform that logs query data and counts the number requests it sees could be defined like so:
-    /// ```
-    /// use shotover_proxy::transforms::{Transform, Wrapper};
-    /// use async_trait::async_trait;
-    /// use tracing::info;
-    /// use shotover_proxy::error::ChainResponse;
-    ///
-    /// #[derive(Debug, Clone)]
-    /// pub struct Printer {
-    ///     counter: i32,
-    /// }
-    ///
-    /// impl Default for Printer {
-    ///     fn default() -> Self {
-    ///         Self::new()
-    ///     }
-    /// }
-    ///
-    /// impl Printer {
-    ///     pub fn new() -> Printer {
-    ///         Printer { counter: 0 }
-    ///     }
-    /// }
-    ///
-    /// #[async_trait]
-    /// impl Transform for Printer {
-    ///     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-    ///         self.counter += 1;
-    ///         info!("{} Request content: {:?}", self.counter, message_wrapper.messages);
-    ///         let response = message_wrapper.call_next_transform().await;
-    ///         info!("Response content: {:?}", response);
-    ///         response
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// In this example `counter` will contain the count of the number of messages seen for this connection.
-    /// Wrapping it in an [`Arc<Mutex<_>>`](std::sync::Mutex) would make it a global count of all messages seen by this transform.
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse;
+
+    /// This method should be should be implemented by your transform if it is required to process pushed messages (typically events
+    /// or messages that your source is subscribed to. The wrapper object contains the queries/frames
+    /// in a [`Vec<Message`](crate::message::Message).
+    ///
+    /// This transform method is not the same request/response model as the other transform method.
+    /// This method processes one pushed message before sending it in reverse on the chain back to the source.
+    ///
+    /// You can modify the messages in the wrapper struct to achieve your own designs. Your transform can
+    /// also modify the response from `message_wrapper.call_next_transform_pushed` if it needs to. As long as the message
+    /// carries on through the chain, it will function correctly. You are able to add or remove messages as this method is not expecting
+    /// request/response pairs.
+    ///
+    /// ## Invariants
+    /// * _Non-terminating_ - Your `transform_pushed` method should not be terminating as the messages should get passed back to the source, where they will terminate.
+    async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
+        let response = message_wrapper.call_next_transform_pushed().await?;
+        Ok(response)
+    }
 
     /// This method provides a hook into chain setup that allows you to perform any chain setup
     /// needed before receiving traffic. It is generally recommended to do any setup on the first query
@@ -536,6 +572,8 @@ pub trait Transform: Send {
     fn validate(&self) -> Vec<String> {
         vec![]
     }
+
+    fn add_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}
 }
 
 pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;

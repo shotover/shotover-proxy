@@ -14,8 +14,7 @@ use cassandra_protocol::frame::Opcode;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::time::Duration;
-use tokio::sync::oneshot;
-use tokio::sync::oneshot::Receiver;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tracing::{info, trace};
@@ -44,6 +43,7 @@ pub struct CassandraSinkSingle {
     chain_name: String,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 }
 
 impl Clone for CassandraSinkSingle {
@@ -54,6 +54,7 @@ impl Clone for CassandraSinkSingle {
             chain_name: self.chain_name.clone(),
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
+            pushed_messages_tx: None,
         }
     }
 }
@@ -72,6 +73,7 @@ impl CassandraSinkSingle {
             chain_name,
             failed_requests,
             tls,
+            pushed_messages_tx: None,
         }
     }
 }
@@ -87,6 +89,7 @@ impl CassandraSinkSingle {
                             self.address.clone(),
                             CassandraCodec::new(),
                             self.tls.clone(),
+                            self.pushed_messages_tx.clone(),
                         )
                         .await?,
                     );
@@ -96,7 +99,7 @@ impl CassandraSinkSingle {
                     trace!("sending frame upstream");
 
                     let expected_size = messages.len();
-                    let results: Result<FuturesOrdered<Receiver<Response>>> = messages
+                    let results: Result<FuturesOrdered<oneshot::Receiver<Response>>> = messages
                         .into_iter()
                         .map(|m| {
                             let (return_chan_tx, return_chan_rx) = oneshot::channel();
@@ -166,5 +169,9 @@ impl Transform for CassandraSinkSingle {
 
     fn is_terminating(&self) -> bool {
         true
+    }
+
+    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
+        self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }
