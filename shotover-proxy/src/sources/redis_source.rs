@@ -43,7 +43,7 @@ impl RedisConfig {
 #[derive(Debug)]
 pub struct RedisSource {
     pub name: &'static str,
-    pub join_handle: JoinHandle<Result<()>>,
+    pub join_handle: JoinHandle<()>,
     pub listen_addr: String,
 }
 
@@ -88,8 +88,6 @@ impl RedisSource {
                     }
                 }
             }
-
-            Ok(())
         });
 
         Ok(RedisSource {
