@@ -6,7 +6,6 @@ use crate::frame::{
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
-use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{Buf, Bytes};
 use bytes_utils::Str;
 use cassandra_protocol::{
@@ -636,24 +635,12 @@ impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
             MessageValue::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
             MessageValue::Strings(s) => s.into(),
             MessageValue::Integer(x, size) => {
-                let mut temp: Vec<u8> = Vec::new();
-
-                match size {
-                    IntSize::I64 => {
-                        temp.write_i64::<BigEndian>(x).unwrap();
-                    }
-                    IntSize::I32 => {
-                        temp.write_i32::<BigEndian>(x as i32).unwrap();
-                    }
-                    IntSize::I16 => {
-                        temp.write_i16::<BigEndian>(x as i16).unwrap();
-                    }
-                    IntSize::I8 => {
-                        temp.write_i8(x as i8).unwrap();
-                    }
-                }
-
-                cassandra_protocol::types::value::Bytes::new(temp)
+                cassandra_protocol::types::value::Bytes::new(match size {
+                    IntSize::I64 => (x as i64).to_be_bytes().to_vec(),
+                    IntSize::I32 => (x as i32).to_be_bytes().to_vec(),
+                    IntSize::I16 => (x as i16).to_be_bytes().to_vec(),
+                    IntSize::I8 => (x as i8).to_be_bytes().to_vec(),
+                })
             }
             MessageValue::Float(f) => f.into_inner().into(),
             MessageValue::Boolean(b) => b.into(),

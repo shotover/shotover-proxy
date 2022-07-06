@@ -2582,7 +2582,6 @@ dependencies = [
  "base64",
  "bigdecimal",
  "bincode",
- "byteorder",
  "bytes",
  "bytes-utils",
  "cached",
