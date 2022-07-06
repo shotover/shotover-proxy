@@ -39,11 +39,9 @@ pub async fn encrypt(
         kek_id: sym_key.key_id,
     };
 
-    // TODO: investigate using storing as blob instead of text and then use textAsBlob here
-    // We should functionally verify which has better performance before sticking with one.
     Ok(Operand::Const(format!(
-        "'{}'",
-        serde_json::to_string(&protected)?
+        "0x{}",
+        hex::encode(bincode::serialize(&protected)?)
     )))
 }
 
@@ -52,11 +50,11 @@ pub async fn decrypt(
     key_management: &KeyManager,
     key_id: &str,
 ) -> Result<MessageValue> {
-    let varchar = match value {
-        MessageValue::Varchar(varchar) => varchar,
+    let bytes = match value {
+        MessageValue::Bytes(bytes) => bytes,
         _ => bail!("expected varchar to decrypt but was {:?}", value),
     };
-    let protected: Protected = serde_json::from_str(varchar)?;
+    let protected: Protected = bincode::deserialize(bytes)?;
 
     let sym_key = key_management
         .cached_get_key(key_id, Some(protected.enc_dek), Some(protected.kek_id))
