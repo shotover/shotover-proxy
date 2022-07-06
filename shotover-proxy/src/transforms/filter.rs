@@ -49,7 +49,12 @@ impl Transform for QueryTypeFilter {
             .await
             .map(|mut messages| {
                 for (i, message) in removed_indexes.into_iter() {
-                    messages.insert(i, message);
+                    if i <= messages.len() {
+                        messages.insert(i, message);
+                    }
+                    else {
+                        tracing::error!("The current filter transform implementation does not obey the current transform invariants. see https://github.com/shotover/shotover-proxy/issues/499")
+                    }
                 }
                 messages
             })
