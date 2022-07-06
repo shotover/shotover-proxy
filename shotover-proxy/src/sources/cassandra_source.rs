@@ -44,7 +44,7 @@ impl CassandraConfig {
 #[derive(Debug)]
 pub struct CassandraSource {
     pub name: &'static str,
-    pub join_handle: JoinHandle<Result<()>>,
+    pub join_handle: JoinHandle<()>,
     pub listen_addr: String,
 }
 
@@ -90,8 +90,6 @@ impl CassandraSource {
                     }
                 }
             }
-
-            Ok(())
         });
 
         Ok(CassandraSource {
