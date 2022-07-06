@@ -27,7 +27,7 @@ use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
 use cql3_parser::begin_batch::{BatchType as ParserBatchType, BeginBatch};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::Operand;
+use cql3_parser::common::{FQName, Identifier, Operand};
 use nonzero_ext::nonzero;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
@@ -127,6 +127,27 @@ impl CassandraFrame {
             }
             _ => nonzero!(1u32),
         })
+    }
+
+    pub fn namespace(&self) -> Vec<String> {
+        match &self.operation {
+            CassandraOperation::Query { query, .. } => {
+                let mut result = vec![];
+
+                let keyspace = query.get_keyspace(&Identifier::parse("")).to_string();
+                if !keyspace.is_empty() {
+                    result.push(keyspace);
+                }
+
+                let table = query.get_table_name();
+
+                if let Some(FQName { name, .. }) = table {
+                    result.push(name.to_string());
+                }
+                result
+            }
+            _ => vec![],
+        }
     }
 
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {

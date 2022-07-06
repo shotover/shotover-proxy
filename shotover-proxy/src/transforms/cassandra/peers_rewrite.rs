@@ -9,7 +9,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use cassandra_protocol::frame::events::{ServerEvent, StatusChange};
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{FQName, Identifier};
+use cql3_parser::common::Identifier;
 use cql3_parser::select::SelectElement;
 use serde::Deserialize;
 
@@ -29,14 +29,14 @@ impl CassandraPeersRewriteConfig {
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
     port: u16,
-    peer_table: FQName,
+    peer_table: Vec<String>,
 }
 
 impl CassandraPeersRewrite {
     pub fn new(port: u16) -> Self {
         CassandraPeersRewrite {
             port,
-            peer_table: FQName::new("system", "peers_v2"),
+            peer_table: vec!["system".into(), "peers_v2".into()],
         }
     }
 }
@@ -88,14 +88,15 @@ impl Transform for CassandraPeersRewrite {
 
 /// determine if the message contains a SELECT from `system.peers_v2` that includes the `native_port` column
 /// return a list of column names (or their alias) for each `native_port`.
-fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec<Identifier> {
+fn extract_native_port_column(peer_table: &Vec<String>, message: &mut Message) -> Vec<Identifier> {
     let mut result = vec![];
     let native_port = Identifier::parse("native_port");
-    if let Some(Frame::Cassandra(cassandra)) = message.frame() {
+
+    if let Some(Frame::Cassandra(cassandra)) = message.clone().frame() {
         // No need to handle Batch as selects can only occur on Query
         if let CassandraOperation::Query { query, .. } = &cassandra.operation {
             if let CassandraStatement::Select(select) = query.as_ref() {
-                if peer_table == &select.table_name {
+                if Some(peer_table) == message.namespace().as_ref() {
                     for select_element in &select.columns {
                         match select_element {
                             SelectElement::Column(col_name) if col_name.name == native_port => {
@@ -197,7 +198,7 @@ mod test {
     fn test_extract_native_port_column() {
         let native_port = Identifier::parse("native_port");
         let foo = Identifier::parse("foo");
-        let peer_table = FQName::new("system", "peers_v2");
+        let peer_table = vec!["system".into(), "peers_v2".into()];
 
         assert_eq!(
             vec![native_port.clone()],

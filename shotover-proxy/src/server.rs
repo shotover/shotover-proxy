@@ -1,8 +1,12 @@
+use crate::frame::{CassandraOperation, Frame};
+use crate::message::connection_state::{CassandraConnectionState, ConnectionState};
 use crate::message::Messages;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
+use cql3_parser::cassandra_statement::CassandraStatement;
+use cql3_parser::common::Identifier;
 use futures::StreamExt;
 use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
@@ -234,6 +238,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 tls: self.tls.clone(),
 
                 timeout: self.timeout,
+
+                connection_state: ConnectionState::Cassandra(CassandraConnectionState::default()),
             };
 
             self.message_count = self.message_count.wrapping_add(1);
@@ -360,6 +366,9 @@ pub struct Handler<C: Codec> {
 
     /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<u64>,
+
+    /// Source-specific state for this connection
+    connection_state: ConnectionState,
 }
 
 fn spawn_read_write_tasks<
@@ -447,7 +456,7 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("Waiting for message");
             let mut reverse_chain = false;
 
-            let messages = tokio::select! {
+            let mut messages = tokio::select! {
                 res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
@@ -483,6 +492,44 @@ impl<C: Codec + 'static> Handler<C> {
             };
 
             debug!("Received raw message {:?}", messages);
+
+            {
+                let mut already_modified = false;
+
+                for i in 0..messages.len() {
+                    if let Some(Frame::Cassandra(cassandra)) = &messages[i].frame() {
+                        // No need to handle Batch as selects can only occur on Query
+                        if let CassandraOperation::Query { query, .. } = &cassandra.operation {
+                            if let CassandraStatement::Use(use_stmt) = query.as_ref() {
+                                let keyspace = match use_stmt {
+                                    Identifier::Quoted(s) => s,
+                                    Identifier::Unquoted(s) => s,
+                                };
+
+                                if let ConnectionState::Cassandra(ref mut connection_state) =
+                                    &mut self.connection_state
+                                {
+                                    connection_state.used_keyspace = Some(keyspace.clone());
+                                }
+
+                                // After we reset the connection state, set it for all remaning messages
+                                for message in messages.iter_mut().skip(i) {
+                                    message.connection_state = self.connection_state.clone();
+                                }
+
+                                already_modified = true;
+                            }
+                        }
+                    }
+                }
+
+                if !already_modified {
+                    for message in messages.iter_mut() {
+                        message.connection_state = self.connection_state.clone();
+                    }
+                }
+            }
+
             debug!("client details: {:?}", &self.client_details);
 
             let wrapper = Wrapper::new_with_client_details(

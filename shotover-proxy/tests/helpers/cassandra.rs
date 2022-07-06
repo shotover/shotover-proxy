@@ -1,7 +1,7 @@
 use cassandra_cpp::{stmt, Cluster, Error, Session, Value, ValueType};
 use ordered_float::OrderedFloat;
 
-pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
+pub fn cassandra_connection(contact_points: &str, port: u16, keyspace: Option<&str>) -> Session {
     for contact_point in contact_points.split(',') {
         test_helpers::wait_for_socket_to_open(contact_point, port);
     }
@@ -10,9 +10,22 @@ pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
     cluster.set_credentials("cassandra", "cassandra").unwrap();
     cluster.set_port(port).ok();
     cluster.set_load_balance_round_robin();
+
     // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
     // So we instead force the Display formatter `{}` on the error.
-    cluster.connect().map_err(|err| format!("{err}")).unwrap()
+    if let Some(keyspace) = keyspace {
+        let session = Session::new();
+
+        session
+            .connect_keyspace(&cluster, keyspace)
+            .unwrap()
+            .wait()
+            .unwrap();
+
+        session
+    } else {
+        cluster.connect().map_err(|err| format!("{err}")).unwrap()
+    }
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]

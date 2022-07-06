@@ -4,6 +4,7 @@ use crate::frame::{
     cassandra::{to_cassandra_type, CassandraMetadata, CassandraOperation},
 };
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
+use crate::message::connection_state::{CassandraConnectionState, ConnectionState};
 use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
 use bytes::{Buf, Bytes};
@@ -29,6 +30,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use uuid::Uuid;
+
+pub mod connection_state;
 
 enum Metadata {
     Cassandra(CassandraMetadata),
@@ -58,6 +61,9 @@ pub struct Message {
     // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of ConsistentScatter
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
     pub meta_timestamp: Option<i64>,
+
+    /// State of connection that sent or received this message
+    pub(crate) connection_state: ConnectionState,
 }
 
 /// `from_*` methods for `Message`
@@ -73,6 +79,7 @@ impl Message {
             }),
             return_to_sender: false,
             meta_timestamp: None,
+            connection_state: ConnectionState::Cassandra(CassandraConnectionState::default()),
         }
     }
 
@@ -84,6 +91,7 @@ impl Message {
             inner: Some(MessageInner::Parsed { bytes, frame }),
             return_to_sender: false,
             meta_timestamp: None,
+            connection_state: ConnectionState::Cassandra(CassandraConnectionState::default()),
         }
     }
 
@@ -95,6 +103,7 @@ impl Message {
             inner: Some(MessageInner::Modified { frame }),
             return_to_sender: false,
             meta_timestamp: None,
+            connection_state: ConnectionState::Cassandra(CassandraConnectionState::default()),
         }
     }
 }
@@ -127,6 +136,27 @@ impl Message {
             }
             MessageInner::Parsed { frame, .. } => Some(frame),
             MessageInner::Modified { frame } => Some(frame),
+        }
+    }
+
+    /// Returns None when fails to parse the message
+    pub fn namespace(&mut self) -> Option<Vec<String>> {
+        let connection_state = self.connection_state.clone();
+        match self.frame()? {
+            Frame::Cassandra(cassandra) => {
+                if let Some(keyspace) = match connection_state {
+                    ConnectionState::Cassandra(cf) => cf.used_keyspace,
+                    _ => None,
+                } {
+                    let mut result = vec![keyspace];
+                    result.extend(cassandra.namespace());
+                    Some(result)
+                } else {
+                    Some(cassandra.namespace())
+                }
+            }
+            Frame::Redis(_) => unimplemented!(),
+            Frame::None => Some(vec![]),
         }
     }
 

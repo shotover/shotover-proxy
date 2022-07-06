@@ -148,8 +148,18 @@ impl ShotoverManager {
     }
 
     #[allow(unused)]
+    pub fn cassandra_connection_keyspace(
+        &self,
+        contact_points: &str,
+        port: u16,
+        keyspace: &str,
+    ) -> Session {
+        cassandra_connection(contact_points, port, Some(keyspace))
+    }
+
+    #[allow(unused)]
     pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> Session {
-        cassandra_connection(contact_points, port)
+        cassandra_connection(contact_points, port, None)
     }
 
     #[allow(unused)]
