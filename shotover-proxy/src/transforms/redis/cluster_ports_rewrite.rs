@@ -37,15 +37,6 @@ impl RedisClusterPortsRewrite {
 #[async_trait]
 impl Transform for RedisClusterPortsRewrite {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        // Optimization for when messages are not cluster messages (e.g. SET key, or GET key)
-        if message_wrapper
-            .messages
-            .iter_mut()
-            .all(|m| m.frame().map(|f| !is_cluster_message(f)).unwrap_or(true))
-        {
-            return message_wrapper.call_next_transform().await;
-        }
-
         // Find the indices of cluster slot messages
         let mut cluster_slots_indices = vec![];
         let mut cluster_nodes_indices = vec![];
@@ -180,51 +171,34 @@ fn rewrite_port_node(frame: &mut Frame, new_port: u16) -> Result<()> {
     Ok(())
 }
 
-fn is_cluster_message(frame: &Frame) -> bool {
-    if let Frame::Redis(RedisFrame::Array(array)) = frame {
-        if let RedisFrame::BulkString(b) = &array[0] {
-            return b.to_ascii_uppercase() == b"CLUSTER";
-        }
-    }
-    false
-}
-
 /// Determines if the supplied Redis Frame is a `CLUSTER NODES` request
 /// or `CLUSTER REPLICAS` which returns the same response as `CLUSTER NODES`
 fn is_cluster_nodes(frame: &Frame) -> bool {
-    let args = if let Frame::Redis(RedisFrame::Array(array)) = frame {
-        array
-            .iter()
-            .map(|f| match f {
-                RedisFrame::BulkString(b) => Some(b.to_ascii_uppercase()),
-                _ => None,
-            })
-            .take_while(Option::is_some)
-            .map(Option::unwrap)
-            .collect::<Vec<Vec<u8>>>()
+    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+        match array.as_slice() {
+            [RedisFrame::BulkString(one), RedisFrame::BulkString(two), ..] => {
+                one.eq_ignore_ascii_case(b"CLUSTER")
+                    && (two.eq_ignore_ascii_case(b"NODES") || two.eq_ignore_ascii_case(b"REPLICAS"))
+            }
+            [..] => false,
+        }
     } else {
-        return false;
-    };
-
-    args[0] == b"CLUSTER" && (args[1] == b"REPLICAS" || args[1] == b"NODES")
+        false
+    }
 }
 
 /// Determines if the supplied Redis Frame is a `CLUSTER SLOTS` request
 fn is_cluster_slots(frame: &Frame) -> bool {
-    let args = if let Frame::Redis(RedisFrame::Array(array)) = frame {
-        array
-            .iter()
-            .map(|f| match f {
-                RedisFrame::BulkString(b) => Some(b.to_ascii_uppercase()),
-                _ => None,
-            })
-            .take_while(Option::is_some)
-            .map(Option::unwrap)
+    if let Frame::Redis(RedisFrame::Array(array)) = frame {
+        match array.as_slice() {
+            [RedisFrame::BulkString(one), RedisFrame::BulkString(two), ..] => {
+                one.eq_ignore_ascii_case(b"CLUSTER") && two.eq_ignore_ascii_case(b"SLOTS")
+            }
+            [..] => false,
+        }
     } else {
-        return false;
-    };
-
-    args.eq([b"CLUSTER", b"SLOTS" as &[u8]])
+        false
+    }
 }
 
 #[cfg(test)]
@@ -233,23 +207,6 @@ mod test {
     use crate::codec::redis::RedisCodec;
     use crate::transforms::redis::sink_cluster::parse_slots;
     use tokio_util::codec::Decoder;
-
-    #[test]
-    fn test_is_cluster_message() {
-        let cluster_messages = [b"cluster", b"CLUSTER"];
-
-        for msg in cluster_messages {
-            let frame = Frame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
-                Bytes::from_static(msg),
-            )]));
-            assert!(is_cluster_message(&frame));
-        }
-
-        let frame = Frame::Redis(RedisFrame::Array(vec![RedisFrame::BulkString(
-            Bytes::from_static(b"notcluster"),
-        )]));
-        assert!(!is_cluster_message(&frame));
-    }
 
     #[test]
     fn test_is_cluster_slots() {
