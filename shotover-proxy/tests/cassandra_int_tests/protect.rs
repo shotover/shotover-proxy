@@ -1,11 +1,21 @@
 use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
 use cassandra_cpp::{stmt, Batch, BatchType, Session};
+use chacha20poly1305::Nonce;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Protected {
+    _cipher: Vec<u8>,
+    _nonce: Nonce,
+    _enc_dek: Vec<u8>,
+    _kek_id: String,
+}
 
 pub fn test(shotover_session: &Session, direct_session: &Session) {
     run_query(shotover_session, "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
     run_query(
             shotover_session,
-            "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 varchar, col2 int, col3 boolean);",
+            "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);",
         );
 
     run_query(
@@ -38,35 +48,35 @@ APPLY BATCH;"
             &[
                 ResultValue::Varchar("pk1".into()),
                 ResultValue::Varchar("cluster".into()),
-                ResultValue::Varchar("I am gonna get encrypted!!".into()),
+                ResultValue::Blob("I am gonna get encrypted!!".into()),
                 ResultValue::Int(42),
                 ResultValue::Boolean(true),
             ],
             &[
                 ResultValue::Varchar("pk2".into()),
                 ResultValue::Varchar("cluster".into()),
-                ResultValue::Varchar("encrypted2".into()),
+                ResultValue::Blob("encrypted2".into()),
                 ResultValue::Int(422),
                 ResultValue::Boolean(true),
             ],
             &[
                 ResultValue::Varchar("pk3".into()),
                 ResultValue::Varchar("cluster".into()),
-                ResultValue::Varchar("encrypted3".into()),
+                ResultValue::Blob("encrypted3".into()),
                 ResultValue::Int(423),
                 ResultValue::Boolean(false),
             ],
             &[
                 ResultValue::Varchar("pk4".into()),
                 ResultValue::Varchar("cluster".into()),
-                ResultValue::Varchar("encrypted4".into()),
+                ResultValue::Blob("encrypted4".into()),
                 ResultValue::Int(424),
                 ResultValue::Boolean(true),
             ],
             &[
                 ResultValue::Varchar("pk5".into()),
                 ResultValue::Varchar("cluster".into()),
-                ResultValue::Varchar("encrypted5".into()),
+                ResultValue::Blob("encrypted5".into()),
                 ResultValue::Int(425),
                 ResultValue::Boolean(false),
             ],
@@ -86,8 +96,8 @@ APPLY BATCH;"
         assert_eq!(row[1], ResultValue::Varchar("cluster".into()));
 
         // protected values are stored encrypted
-        if let ResultValue::Varchar(value) = &row[2] {
-            assert!(value.starts_with("{\"cipher"), "but was {:?}", value);
+        if let ResultValue::Blob(value) = &row[2] {
+            let _: Protected = bincode::deserialize(value).unwrap();
         } else {
             panic!("expected 3rd column to be ResultValue::Varchar in {row:?}");
         }
