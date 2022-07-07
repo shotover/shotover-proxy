@@ -553,14 +553,22 @@ impl MessageValue {
         MessageValue::Bytes(Bytes::from(str))
     }
 
-    pub fn build_value_from_cstar_col_type(spec: &ColSpec, data: &CBytes) -> MessageValue {
-        let cassandra_type = MessageValue::into_cassandra_type(&spec.col_type, data);
+    pub fn build_value_from_cstar_col_type(
+        version: Version,
+        spec: &ColSpec,
+        data: &CBytes,
+    ) -> MessageValue {
+        let cassandra_type = MessageValue::into_cassandra_type(version, &spec.col_type, data);
         MessageValue::create_element(cassandra_type)
     }
 
-    fn into_cassandra_type(col_type: &ColTypeOption, data: &CBytes) -> CassandraType {
+    fn into_cassandra_type(
+        version: Version,
+        col_type: &ColTypeOption,
+        data: &CBytes,
+    ) -> CassandraType {
         let wrapper = wrapper_fn(&col_type.id);
-        wrapper(data, col_type, Version::V4).unwrap()
+        wrapper(data, col_type, version).unwrap()
     }
 
     fn create_element(element: CassandraType) -> MessageValue {

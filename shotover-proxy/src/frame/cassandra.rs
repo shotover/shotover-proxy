@@ -194,6 +194,7 @@ impl CassandraFrame {
                                                 .map(|(i, row_content)| {
                                                     let col_spec = &rows.metadata.col_specs[i];
                                                     MessageValue::build_value_from_cstar_col_type(
+                                                        frame.version,
                                                         col_spec,
                                                         &row_content,
                                                     )
@@ -302,7 +303,7 @@ impl CassandraFrame {
             flags: Flags::default(),
             opcode: self.operation.to_opcode(),
             stream_id: self.stream_id,
-            body: self.operation.into_body(),
+            body: self.operation.into_body(self.version),
             tracing_id: self.tracing_id,
             warnings: self.warnings,
         }
@@ -413,16 +414,16 @@ impl CassandraOperation {
         }
     }
 
-    fn into_body(self) -> Vec<u8> {
+    fn into_body(self, version: Version) -> Vec<u8> {
         match self {
             CassandraOperation::Query { query, params } => BodyReqQuery {
                 query: query.to_string(),
                 query_params: *params,
             }
-            .serialize_to_vec(Version::V4),
+            .serialize_to_vec(version),
             CassandraOperation::Result(result) => match result {
                 CassandraResult::Rows { value, metadata } => {
-                    Self::build_cassandra_result_body(value, *metadata)
+                    Self::build_cassandra_result_body(version, value, *metadata)
                 }
                 CassandraResult::SetKeyspace(set_keyspace) => {
                     ResResultBody::SetKeyspace(*set_keyspace)
@@ -433,8 +434,8 @@ impl CassandraOperation {
                 }
                 CassandraResult::Void => ResResultBody::Void,
             }
-            .serialize_to_vec(Version::V4),
-            CassandraOperation::Error(error) => error.serialize_to_vec(Version::V4),
+            .serialize_to_vec(version),
+            CassandraOperation::Error(error) => error.serialize_to_vec(version),
             CassandraOperation::Startup(bytes) => bytes.to_vec(),
             CassandraOperation::Ready(bytes) => bytes.to_vec(),
             CassandraOperation::Authenticate(bytes) => bytes.to_vec(),
@@ -443,7 +444,7 @@ impl CassandraOperation {
             CassandraOperation::Prepare(bytes) => bytes.to_vec(),
             CassandraOperation::Execute(bytes) => bytes.to_vec(),
             CassandraOperation::Register(bytes) => bytes.to_vec(),
-            CassandraOperation::Event(bytes) => bytes.serialize_to_vec(Version::V4),
+            CassandraOperation::Event(bytes) => bytes.serialize_to_vec(version),
             CassandraOperation::Batch(batch) => BodyReqBatch {
                 batch_type: batch.ty,
                 consistency: batch.consistency,
@@ -465,14 +466,18 @@ impl CassandraOperation {
                 serial_consistency: batch.serial_consistency,
                 timestamp: batch.timestamp,
             }
-            .serialize_to_vec(Version::V4),
+            .serialize_to_vec(version),
             CassandraOperation::AuthChallenge(bytes) => bytes.to_vec(),
             CassandraOperation::AuthResponse(bytes) => bytes.to_vec(),
             CassandraOperation::AuthSuccess(bytes) => bytes.to_vec(),
         }
     }
 
-    fn build_cassandra_result_body(result: MessageValue, metadata: RowsMetadata) -> ResResultBody {
+    fn build_cassandra_result_body(
+        protocol_version: Version,
+        result: MessageValue,
+        metadata: RowsMetadata,
+    ) -> ResResultBody {
         if let MessageValue::Rows(rows) = result {
             let rows_count = rows.len() as CInt;
             let rows_content = rows
@@ -489,7 +494,7 @@ impl CassandraOperation {
                 .collect();
 
             return ResResultBody::Rows(BodyResResultRows {
-                protocol_version: Version::V4,
+                protocol_version,
                 metadata,
                 rows_count,
                 rows_content,
