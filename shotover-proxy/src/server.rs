@@ -3,7 +3,7 @@ use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Result};
-use futures::StreamExt;
+use futures_util::StreamExt;
 use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -14,6 +14,7 @@ use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::StreamExt as TokioStreamExt;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
@@ -379,7 +380,7 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(
         async move {
-            while let Some(message) = reader.next().await {
+            while let Some(message) = TokioStreamExt::next(&mut reader).await {
                 match message {
                     Ok(message) => {
                         let remaining_messages =
@@ -403,7 +404,7 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(
         async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+            let rx_stream = TokioStreamExt::map(UnboundedReceiverStream::new(out_rx), Ok);
             if let Err(err) = rx_stream.forward(writer).await {
                 error!("failed to send or encode message: {:?}", err);
             }

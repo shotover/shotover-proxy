@@ -1,5 +1,4 @@
 use crate::codec::redis::RedisCodec;
-use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::Message;
@@ -14,6 +13,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use bytes_utils::string::Str;
 use derivative::Derivative;
+use futures::stream::FuturesOrdered;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
@@ -936,7 +936,7 @@ impl Transform for RedisSinkCluster {
         let mut responses = FuturesOrdered::new();
 
         for message in message_wrapper.messages {
-            responses.push(match self.dispatch_message(message).await {
+            responses.push_front(match self.dispatch_message(message).await {
                 Ok(response) => response,
                 Err(e) => short_circuit(RedisFrame::Error(format!("ERR {e}").into())).unwrap(),
             })
@@ -968,7 +968,7 @@ impl Transform for RedisSinkCluster {
 
                             self.rebuild_connections = true;
 
-                            responses.prepend(Box::pin(
+                            responses.push_front(Box::pin(
                                 self.choose_and_send(&server, original)
                                     .await?
                                     .map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
@@ -977,7 +977,7 @@ impl Transform for RedisSinkCluster {
                         Some(Redirection::Ask { slot, server }) => {
                             debug!("Got ASK {} {}", slot, server);
 
-                            responses.prepend(Box::pin(
+                            responses.push_front(Box::pin(
                                 self.choose_and_send(&server, original)
                                     .await?
                                     .map_err(|e| anyhow!("Error while retrying ASK - {}", e)),

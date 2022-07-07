@@ -18,7 +18,6 @@
 //! * [`transforms::TransformsConfig`], the enum to register with (add a variant) for configuring your own transform.
 
 pub mod codec;
-mod concurrency;
 pub mod config;
 pub mod error;
 pub mod frame;

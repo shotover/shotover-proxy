@@ -6,7 +6,7 @@ use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use futures::{FutureExt, SinkExt};
+use futures_util::{FutureExt, SinkExt};
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::fmt::Debug;

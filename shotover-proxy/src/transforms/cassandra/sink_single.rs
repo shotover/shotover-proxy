@@ -1,6 +1,5 @@
 use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
-use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::cassandra;
 use crate::message::Messages;
@@ -11,12 +10,13 @@ use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use cassandra_protocol::frame::Opcode;
+use futures::stream::FuturesOrdered;
+use futures::StreamExt;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
-use tokio_stream::StreamExt;
 use tracing::{info, trace};
 
 #[derive(Deserialize, Debug, Clone)]
