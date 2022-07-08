@@ -21,7 +21,6 @@ tokio-stream = "0.1.2"
 bytes = "1.0.0"
 bytes-utils = "0.1.1"
 futures = { git = "https://github.com/rust-lang/futures-rs" }
-futures-core = "0.3.1"
 futures-util = "0.3.21"
 async-trait = "0.1.30"
 clap = { version = "3.0.4", features = ["cargo", "derive"] }
@@ -30,7 +29,6 @@ itertools = "0.10.1"
 rand = { version = "0.8.4" }
 rand_distr = "0.4.1"
 cached = "0.36"
-pin-project-lite = "0.2"
 tokio-openssl = "0.6.2"
 openssl = { version = "0.10.36", features = ["vendored"] }
 async-recursion = "1.0"
