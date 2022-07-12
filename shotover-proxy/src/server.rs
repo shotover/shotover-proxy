@@ -386,13 +386,13 @@ fn spawn_read_write_tasks<
                             process_return_to_sender_messages(message, &out_tx);
                         if !remaining_messages.is_empty() {
                             if let Err(error) = in_tx.send(remaining_messages) {
-                                warn!("failed to send message: {}", error);
+                                warn!("failed to pass on received message: {}", error);
                                 return;
                             }
                         }
                     }
                     Err(error) => {
-                        warn!("failed to decode message: {}", error);
+                        warn!("failed to receive or decode message: {:?}", error);
                         return;
                     }
                 }
@@ -405,7 +405,7 @@ fn spawn_read_write_tasks<
         async move {
             let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
             if let Err(err) = rx_stream.forward(writer).await {
-                error!("Stream ended with error {:?}", err);
+                error!("failed to send or encode message: {:?}", err);
             }
         }
         .in_current_span(),

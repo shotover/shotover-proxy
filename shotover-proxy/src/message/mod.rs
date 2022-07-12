@@ -401,7 +401,9 @@ impl MessageInner {
 
 #[derive(Debug)]
 pub enum Encodable {
+    /// The raw bytes the protocol should send
     Bytes(Bytes),
+    /// The Frame that should be processed into bytes and then sent
     Frame(Frame),
 }
 
