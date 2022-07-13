@@ -49,6 +49,10 @@ impl Decoder for RedisCodec {
         loop {
             match decode_mut(src).map_err(|e| anyhow!(e).context("Error decoding redis frame"))? {
                 Some((frame, _size, bytes)) => {
+                    tracing::debug!(
+                        "incoming redis message:\n{}",
+                        pretty_hex::pretty_hex(&bytes)
+                    );
                     self.messages
                         .push(Message::from_bytes_and_frame(bytes, Frame::Redis(frame)));
                 }
@@ -68,8 +72,9 @@ impl Encoder<Messages> for RedisCodec {
     type Error = anyhow::Error;
 
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<()> {
-        item.into_iter()
-            .try_for_each(|m| match m.into_encodable(MessageType::Redis)? {
+        item.into_iter().try_for_each(|m| {
+            let start = dst.len();
+            let result = match m.into_encodable(MessageType::Redis)? {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
                     Ok(())
@@ -80,7 +85,13 @@ impl Encoder<Messages> for RedisCodec {
                         .map(|_| ())
                         .map_err(|e| anyhow!("Redis encoding error: {} - {:#?}", e, item))
                 }
-            })
+            };
+            tracing::debug!(
+                "outgoing redis message:\n{}",
+                pretty_hex::pretty_hex(&&dst[start..])
+            );
+            result
+        })
     }
 }
 
