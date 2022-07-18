@@ -8,6 +8,7 @@ use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
 use shotover_proxy::tls::TlsConfig;
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
@@ -1212,6 +1213,55 @@ async fn test_dr_auth(shotover_manager: &ShotoverManager) {
     );
 }
 
+/// A driver variant of this test case is provided so that we can ensure that
+/// at least one driver handles this as we expect.
+async fn test_trigger_transform_failure_driver(connection: &mut Connection) {
+    assert_eq!(
+        redis::cmd("SET")
+            .arg("foo")
+            .arg(42)
+            .query_async::<_, ()>(connection)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "unexpected end of file".to_string()
+    );
+}
+
+/// A raw variant of this test case is provided so that we can make a strong assertion about the way shotover handles this case.
+///
+/// CAREFUL: This lacks any kind of check that shotover is ready,
+/// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
+fn test_trigger_transform_failure_raw() {
+    // Send invalid redis command
+    // To correctly handle this shotover should close the connection
+    let mut connection = std::net::TcpStream::connect("127.0.0.1:6379").unwrap();
+    connection.write_all(b"*1\r\n$4\r\nping\r\n").unwrap();
+    connection
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    // If the connection was closed by shotover then we will succesfully read 0 bytes.
+    // If the connection was not closed by shotover then read will block for 10 seconds until the time is hit and then the unwrap will panic.
+    let amount = connection.read(&mut [0; 1]).unwrap();
+    assert_eq!(amount, 0);
+}
+
+/// CAREFUL: This lacks any kind of check that shotover is ready,
+/// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
+fn test_invalid_frame() {
+    // Send invalid redis command
+    // To correctly handle this shotover should close the connection
+    let mut connection = std::net::TcpStream::connect("127.0.0.1:6379").unwrap();
+    connection.write_all(b"invalid_redis_frame\r\n").unwrap();
+    connection
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    // If the connection was closed by shotover then we will succesfully read 0 bytes.
+    // If the connection was not closed by shotover then read will block for 10 seconds until the time is hit and then the unwrap will panic.
+    let amount = connection.read(&mut [0; 1]).unwrap();
+    assert_eq!(amount, 0);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough() {
@@ -1223,6 +1273,19 @@ async fn test_passthrough() {
         Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
 
     run_all(&mut connection, &mut flusher).await;
+    test_invalid_frame();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_passthrough_redis_down() {
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
+    let mut connection = shotover_manager.redis_connection_async(6379).await;
+
+    test_trigger_transform_failure_driver(&mut connection).await;
+    test_trigger_transform_failure_raw();
+    test_invalid_frame();
 }
 
 #[tokio::test(flavor = "multi_thread")]
