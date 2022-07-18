@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use redis::Cmd;
+use redis::{Client, Cmd};
 use std::path::Path;
+use std::time::Duration;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 
@@ -96,6 +97,27 @@ fn redis(c: &mut Criterion) {
                 },
             );
         }
+        group.bench_with_input(
+            "passthrough_new_connection",
+            &resources,
+            move |b, _resources| {
+                b.iter(|| {
+                    // Need to create our own client manually because ShotoverManager first
+                    // creates an extra initial connection to check that the port is open.
+                    let mut connection = Client::open(("127.0.0.1", 6379))
+                        .unwrap()
+                        .get_connection()
+                        .unwrap();
+                    connection
+                        .set_read_timeout(Some(Duration::from_secs(10)))
+                        .unwrap();
+                    redis::cmd("SET")
+                        .arg("foo")
+                        .arg(42)
+                        .execute(&mut connection);
+                })
+            },
+        );
     }
 
     // Only need to test one case here as the type of command shouldnt affect TLS
