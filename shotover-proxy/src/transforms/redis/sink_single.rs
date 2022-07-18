@@ -1,4 +1,4 @@
-use crate::codec::redis::RedisCodec;
+use crate::codec::redis::{RedisCodec, RedisDirection};
 use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
@@ -88,15 +88,15 @@ impl Transform for RedisSinkSingle {
             } else {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             };
-            self.outbound = Some(Framed::new(generic_stream, RedisCodec::new()));
+            self.outbound = Some(Framed::new(
+                generic_stream,
+                RedisCodec::new(RedisDirection::Sink),
+            ));
         }
 
         // self.outbound is gauranteed to be Some by the previous block
         let outbound_framed_codec = self.outbound.as_mut().unwrap();
-        outbound_framed_codec
-            .send(message_wrapper.messages)
-            .await
-            .ok();
+        outbound_framed_codec.send(message_wrapper.messages).await?;
 
         match outbound_framed_codec.next().fuse().await {
             Some(mut a) => {
