@@ -187,19 +187,46 @@ If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C
 
 This transform will encrypt specific fields before passing them down-chain, it will also decrypt those same fields from a response. The transform will create a data encryption key on an user defined basis (e.g. per primary key, per value, per table etc).
 
-The data encryption key is encrypted by a key encryption key and persisted alongside the encrypted value (alongside other needed cryptographic material). This transform provides the basis for in-application cryptography with unified key management between datastores. The encrypted value is serialised using bincode and should then be written to a blob or bytes field by a down-chain transform.
+The data encryption key is encrypted by a key encryption key and persisted alongside the encrypted value (alongside other needed cryptographic material). This transform provides the basis for in-application cryptography with unified key management between datastores. The encrypted value is serialised using bincode and should then be written to a blob field by a down-chain transform.
 
-Fields are protected using a NaCL secretbox (xsalsa20-poly1305). Modification of the field is also detected and raised as an error. DEK protection is dependent on the key manager being used.
+Fields are protected using ChaCha20-Poly1305. Modification of the field is also detected and raised as an error. DEK protection is dependent on the key manager being used.
+
+#### Local
 
 ```yaml
-- Protect
-  # A mapping of keyspaces, tables and columns to encrypt.
-  keyspace_table_columns
-  # A KeyManagerConfig that configures the protect transform with how to look up keys.
-  key_manager
+- Protect:
+    # A key_manager config that configures the protect transform with how to look up keys.
+    key_manager:
+      Local: 
+        kek: Ht8M1nDO/7fay+cft71M2Xy7j30EnLAsA84hSUMCm1k=
+        kek_id: ""
+
+    # A mapping of keyspaces, tables and columns to encrypt.
+    keyspace_table_columns:
+      test_protect_keyspace:
+        test_table:
+          - col1
 ```
 
-Currently the Protect transform supports AWS KMS and or using a local Key Encryption Key on disk.
+
+#### AWS
+
+```yaml
+- Protect:
+    # A key_manager config that configures the protect transform with how to look up keys.
+    key_manager:
+      AWSKms:
+        endpoint: "http://localhost:5000"
+        region: "us-east-1"
+        cmk_id: "alias/aws/secretsmanager"
+        number_of_bytes: 32
+            
+    # A mapping of keyspaces, tables and columns to encrypt.
+    keyspace_table_columns:
+      test_protect_keyspace:
+        test_table:
+          - col1
+```
 
 Note: Currently the data encryption key ID function is just defined as a static string, this will be replaced by a user defined script shortly.
 
