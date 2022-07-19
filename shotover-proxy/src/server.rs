@@ -3,7 +3,7 @@ use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -13,7 +13,6 @@ use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
@@ -372,12 +371,12 @@ fn spawn_read_write_tasks<
     rx: R,
     tx: W,
     in_tx: UnboundedSender<Messages>,
-    out_rx: UnboundedReceiver<Messages>,
+    mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
     mut terminate_tasks_rx: watch::Receiver<()>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
-    let writer = FramedWrite::new(tx, codec);
+    let mut writer = FramedWrite::new(tx, codec);
 
     tokio::spawn(
         async move {
@@ -405,13 +404,42 @@ fn spawn_read_write_tasks<
 
     tokio::spawn(
         async move {
-            let rx_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
-            tokio::select! {
-                Err(err) = rx_stream.forward(writer) => {
-                    error!("failed to send or encode message: {:?}", err);
+            loop {
+                tokio::select! {
+                    result = out_rx.recv() => {
+                        if let Some(message) = result {
+                            if let Err(err) = writer.send(message).await {
+                                error!("failed to send or encode message: {:?}", err);
+                            }
+                        } else {
+                            debug!("main task shutdown"); // TODO: hang on... why do we need terminate_tasks_rx then
+                            break;
+                        }
+                    }
+                    _ = terminate_tasks_rx.changed() => {
+                        debug!("main task is signalling this task to end, first flush out any remaining messages");
+                        while let Ok(message) = out_rx.try_recv() {
+                            if let Err(err) = writer.send(message).await {
+                                error!("while flushing messages: failed to send or encode message: {:?}", err);
+                            }
+                        }
+                        break;
+                    }
                 }
-                _ = terminate_tasks_rx.changed() => { }
             }
+            // The cassandra protocol needs to:
+            // 1. receive bad version init
+            // 2. reply with error
+            // 3. receive another message
+            // 4. kill the connection:
+            //     1. codec returns Err
+            //     2. rx task receives Err, logging it and returning
+            //     3. rx task ends dropping the in_tx
+            //     4. main task receives None from in_rx causing it to return
+            //     5. main task ends resulting in drop running terminate_tasks_tx.send(())
+            //
+            // I suspect that:
+            // Sender is backlogged and gets killed before it can process everything so 2 never occurs
         }
         .in_current_span(),
     );
