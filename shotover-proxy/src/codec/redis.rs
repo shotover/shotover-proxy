@@ -37,7 +37,7 @@ pub fn redis_query_type(frame: &RedisFrame) -> QueryType {
 }
 
 impl RedisCodec {
-    pub fn new(direction: RedisDirection) -> RedisCodec {
+    pub fn new(direction: RedisDirection) -> Self {
         RedisCodec {
             messages: vec![],
             direction,
@@ -62,7 +62,7 @@ impl Decoder for RedisCodec {
                         if let Some(frame) = message.frame() {
                             validate_command(frame)?;
                         } else {
-                            return Err(anyhow!("redis message could not be parsed as a message"));
+                            return Err(anyhow!("redis frame could not be parsed"));
                         }
                     }
                     self.messages.push(message);
@@ -95,7 +95,7 @@ fn validate_command(frame: &Frame) -> Result<()> {
             }
             frame => Err(anyhow!("Redis command must be an array but was {frame:?}")),
         },
-        _ => unreachable!("Message from a redis codec must be a redis message"),
+        _ => unreachable!("Message from a redis codec will always be a redis message"),
     }
 }
 
