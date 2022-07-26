@@ -976,7 +976,7 @@ async fn get_master_id(connection: &mut Connection) -> String {
 }
 
 async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
-    let mut res = redis::cmd("CLUSTER")
+    let res = redis::cmd("CLUSTER")
         .arg("NODES")
         .query_async(connection)
         .await
@@ -985,15 +985,14 @@ async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port:
     assert_cluster_ports_rewrite_nodes(res, new_port);
 
     // Get an id to use for cluster replicas test
-    let id = get_master_id(connection).await;
+    let master_id = get_master_id(connection).await;
 
-    res = redis::cmd("CLUSTER")
+    let res = redis::cmd("CLUSTER")
         .arg("REPLICAS")
-        .arg(id)
+        .arg(&master_id)
         .query_async(connection)
         .await
         .unwrap();
-
     assert_cluster_ports_rewrite_nodes(res, new_port);
 
     let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
@@ -1016,16 +1015,16 @@ async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port:
 fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     let mut assertion_run = false;
 
-    let data = if let Value::Bulk(data) = &res {
-        if let Value::Data(item) = &data[0] {
-            item.to_vec()
-        } else {
-            panic!("Invalid response from Redis")
+    let data = match res {
+        Value::Bulk(data) => {
+            if let Value::Data(item) = &data[0] {
+                item.to_vec()
+            } else {
+                panic!("Invalid response from Redis")
+            }
         }
-    } else if let Value::Data(data) = &res {
-        data.to_vec()
-    } else {
-        panic!("Invalid response from Redis");
+        Value::Data(data) => data.to_vec(),
+        _ => panic!("Invalid response from Redis"),
     };
 
     let read_cursor = std::io::Cursor::new(data);
