@@ -93,10 +93,7 @@ impl Transform for RedisSinkSingle {
 
         // self.outbound is gauranteed to be Some by the previous block
         let outbound_framed_codec = self.outbound.as_mut().unwrap();
-        outbound_framed_codec
-            .send(message_wrapper.messages)
-            .await
-            .ok();
+        outbound_framed_codec.send(message_wrapper.messages).await?;
 
         match outbound_framed_codec.next().fuse().await {
             Some(mut a) => {
