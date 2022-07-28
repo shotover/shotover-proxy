@@ -49,6 +49,27 @@ fn test_passthrough() {
 
 #[test]
 #[serial]
+#[cfg(feature = "alpha-transforms")]
+fn test_cluster() {
+    let _compose = DockerCompose::new("example-configs/cassandra-cluster/docker-compose.yml");
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology.yaml");
+
+    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+
+    keyspace::test(&connection);
+    table::test(&connection);
+    udt::test(&connection);
+    native_types::test(&connection);
+    collections::test(&connection);
+    functions::test(&connection);
+    prepared_statements::test(&connection);
+    batch_statements::test(&connection);
+}
+
+#[test]
+#[serial]
 fn test_source_tls_and_single_tls() {
     test_helpers::cert::generate_cassandra_test_certs();
     let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yml");
