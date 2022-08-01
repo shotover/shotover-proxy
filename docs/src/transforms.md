@@ -54,6 +54,16 @@ This transform will take a query, serialise it into a CQL4 compatible format and
 - CassandraSinkSingle:
     # The IP address and port of the upstream cassandra node/service.
     remote_address: "127.0.0.1:9042"
+
+    # When this field is provided TLS is used when connecting to the remote address.
+    # Removing this field will disable TLS.
+    #tls:
+    #  # Path to the certificate authority file, typically named with a .crt extension.
+    #  certificate_authority_path: "tls/localhost_CA.crt"
+    #  # Path to the certificate file, typically named with a .crt extension.
+    #  certificate_path: "tls/localhost.crt"
+    #  # Path to the private key file, typically named with a .key extension.
+    #  private_key_path: "tls/localhost.key"
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
@@ -208,7 +218,6 @@ Fields are protected using ChaCha20-Poly1305. Modification of the field is also 
           - col1
 ```
 
-
 #### AWS
 
 ```yaml
@@ -316,13 +325,13 @@ This transform is a full featured Redis driver that will connect to a Redis clus
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
-    tls:
-      # Path to the certificate file, typically named with a .crt extension.
-      certificate_authority_path: "example-configs/redis-tls/certs/ca.crt"
-      # Path to the private key file, typically named with a .key extension.
-      certificate_path: "example-configs/redis-tls/certs/redis.crt"
-      # Path to the certificate authority file typically named ca.crt.
-      private_key_path: "example-configs/redis-tls/certs/redis.key"
+    #tls:
+    #  # Path to the certificate authority file, typically named ca.crt.
+    #  certificate_authority_path: "tls/ca.crt"
+    #  # Path to the certificate file, typically named with a .crt extension.
+    #  certificate_path: "tls/redis.crt"
+    #  # Path to the private key file, typically named with a .key extension.
+    #  private_key_path: "tls/redis.key"
 ```
 
 Unlike other Redis cluster drivers, this transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
@@ -353,13 +362,13 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
-    tls:
-      # Path to the certificate file, typically named with a .crt extension.
-      certificate_path: "tls/redis.crt"
-      # Path to the private key file, typically named with a .key extension.
-      private_key_path: "tls/redis.key"
-      # Path to the certificate authority file typically named ca.crt.
-      certificate_authority_path: "tls/ca.crt"
+    #tls:
+    #  # Path to the certificate authority file, typically named ca.crt.
+    #  certificate_authority_path: "tls/ca.crt"
+    #  # Path to the certificate file, typically named with a .crt extension.
+    #  certificate_path: "tls/redis.crt"
+    #  # Path to the private key file, typically named with a .key extension.
+    #  private_key_path: "tls/redis.key"
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
