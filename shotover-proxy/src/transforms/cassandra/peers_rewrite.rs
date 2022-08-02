@@ -1,4 +1,4 @@
-use crate::frame::{CassandraOperation, CassandraResult, Frame};
+use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::{
@@ -71,13 +71,13 @@ impl Transform for CassandraPeersRewrite {
 
     async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         for message in &mut message_wrapper.messages {
-            if let Some(Frame::Cassandra(frame)) = message.frame() {
-                if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
-                    &mut frame.operation
-                {
-                    addr.addr.set_port(self.port);
-                    message.invalidate_cache();
-                }
+            if let Some(Frame::Cassandra(CassandraFrame {
+                operation: Event(ServerEvent::StatusChange(StatusChange { addr, .. })),
+                ..
+            })) = message.frame()
+            {
+                addr.addr.set_port(self.port);
+                message.invalidate_cache();
             }
         }
 
@@ -91,19 +91,22 @@ impl Transform for CassandraPeersRewrite {
 fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec<Identifier> {
     let mut result = vec![];
     let native_port = Identifier::parse("native_port");
-    if let Some(Frame::Cassandra(cassandra)) = message.frame() {
+
+    if let Some(Frame::Cassandra(CassandraFrame {
+        operation: CassandraOperation::Query { query, .. },
+        ..
+    })) = message.frame()
+    {
         // No need to handle Batch as selects can only occur on Query
-        if let CassandraOperation::Query { query, .. } = &cassandra.operation {
-            if let CassandraStatement::Select(select) = query.as_ref() {
-                if peer_table == &select.table_name {
-                    for select_element in &select.columns {
-                        match select_element {
-                            SelectElement::Column(col_name) if col_name.name == native_port => {
-                                result.push(col_name.alias_or_name().clone());
-                            }
-                            SelectElement::Star => result.push(native_port.clone()),
-                            _ => {}
+        if let CassandraStatement::Select(select) = query.as_ref() {
+            if peer_table == &select.table_name {
+                for select_element in &select.columns {
+                    match select_element {
+                        SelectElement::Column(col_name) if col_name.name == native_port => {
+                            result.push(col_name.alias_or_name().clone());
                         }
+                        SelectElement::Star => result.push(native_port.clone()),
+                        _ => {}
                     }
                 }
             }
@@ -115,22 +118,24 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
 /// Rewrite the `native_port` field in the results from a query to `system.peers_v2` table
 /// Only Cassandra queries to the `system.peers` table found via the `is_system_peers` function should be passed to this
 fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u16) {
-    if let Some(Frame::Cassandra(frame)) = message.frame() {
-        // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
-        if let CassandraOperation::Result(CassandraResult::Rows {
-            value: MessageValue::Rows(rows),
-            metadata,
-        }) = &mut frame.operation
-        {
-            for (i, col) in metadata.col_specs.iter().enumerate() {
-                if column_names.contains(&Identifier::parse(&col.name)) {
-                    for row in rows.iter_mut() {
-                        row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
-                    }
+    // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
+    if let Some(Frame::Cassandra(CassandraFrame {
+        operation:
+            CassandraOperation::Result(CassandraResult::Rows {
+                value: MessageValue::Rows(rows),
+                metadata,
+            }),
+        ..
+    })) = message.frame()
+    {
+        for (i, col) in metadata.col_specs.iter().enumerate() {
+            if column_names.contains(&Identifier::parse(&col.name)) {
+                for row in rows.iter_mut() {
+                    row[i] = MessageValue::Integer(new_port as i64, IntSize::I32);
                 }
             }
-            message.invalidate_cache();
         }
+        message.invalidate_cache();
     }
 }
 
