@@ -14,7 +14,7 @@ use futures::StreamExt;
 use halfbrown::HashMap;
 use std::time::Duration;
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -36,8 +36,8 @@ pub struct CassandraConnection {
 }
 
 impl CassandraConnection {
-    pub async fn new<C: Codec + 'static>(
-        host: String,
+    pub async fn new<C: Codec + 'static, A: ToSocketAddrs>(
+        host: A,
         codec: C,
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
