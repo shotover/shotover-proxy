@@ -124,7 +124,8 @@ impl DockerCompose {
             | "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml" => {
                 self.wait_for_log("Startup complete", 2, 110)
             }
-            "example-configs-docker/cassandra-peers-rewrite/docker-compose.yml" => {
+            "example-configs-docker/cassandra-peers-rewrite/docker-compose.yml"
+            | "example-configs/cassandra-cluster/docker-compose.yml" => {
                 self.wait_for_log("Startup complete", 3, 180)
             }
             path => unimplemented!(

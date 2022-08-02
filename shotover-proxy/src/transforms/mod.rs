@@ -2,6 +2,9 @@ use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
+use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::cassandra::sink_cluster::CassandraSinkClusterConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
@@ -74,6 +77,7 @@ pub mod util;
 #[derive(Clone, IntoStaticStr)]
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
+    CassandraSinkCluster(CassandraSinkCluster),
     RedisSinkSingle(RedisSinkSingle),
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),
@@ -108,6 +112,7 @@ impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
+            Transforms::CassandraSinkCluster(c) => c.transform(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
@@ -136,6 +141,7 @@ impl Transforms {
     async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
             Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
+            Transforms::CassandraSinkCluster(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform_pushed(message_wrapper).await,
             Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
@@ -168,6 +174,7 @@ impl Transforms {
     async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
         match self {
             Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
+            Transforms::CassandraSinkCluster(a) => a.prep_transform_chain(t).await,
             Transforms::CassandraPeersRewrite(c) => c.prep_transform_chain(t).await,
             Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
@@ -196,6 +203,7 @@ impl Transforms {
     fn validate(&self) -> Vec<String> {
         match self {
             Transforms::CassandraSinkSingle(c) => c.validate(),
+            Transforms::CassandraSinkCluster(c) => c.validate(),
             Transforms::CassandraPeersRewrite(c) => c.validate(),
             Transforms::RedisCache(r) => r.validate(),
             Transforms::Tee(t) => t.validate(),
@@ -224,6 +232,7 @@ impl Transforms {
     fn is_terminating(&self) -> bool {
         match self {
             Transforms::CassandraSinkSingle(c) => c.is_terminating(),
+            Transforms::CassandraSinkCluster(c) => c.is_terminating(),
             Transforms::CassandraPeersRewrite(c) => c.is_terminating(),
             Transforms::RedisCache(r) => r.is_terminating(),
             Transforms::Tee(t) => t.is_terminating(),
@@ -252,6 +261,7 @@ impl Transforms {
     fn add_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         match self {
             Transforms::CassandraSinkSingle(c) => c.add_pushed_messages_tx(pushed_messages_tx),
+            Transforms::CassandraSinkCluster(c) => c.add_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraPeersRewrite(c) => c.add_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisCache(r) => r.add_pushed_messages_tx(pushed_messages_tx),
             Transforms::Tee(t) => t.add_pushed_messages_tx(pushed_messages_tx),
@@ -283,6 +293,8 @@ impl Transforms {
 #[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
+    #[cfg(feature = "alpha-transforms")]
+    CassandraSinkCluster(CassandraSinkClusterConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
     CassandraPeersRewrite(CassandraPeersRewriteConfig),
     RedisCache(RedisConfig),
@@ -314,6 +326,8 @@ impl TransformsConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
+            #[cfg(feature = "alpha-transforms")]
+            TransformsConfig::CassandraSinkCluster(c) => c.get_transform(chain_name).await,
             TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
             TransformsConfig::RedisCache(r) => r.get_transform().await,
             TransformsConfig::Tee(t) => t.get_transform().await,
