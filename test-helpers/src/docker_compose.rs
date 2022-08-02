@@ -104,7 +104,8 @@ impl DockerCompose {
             | "tests/test-configs/redis-cluster-auth/docker-compose.yml"
             | "example-configs/redis-cluster-handling/docker-compose.yml"
             | "example-configs/redis-cluster-hiding/docker-compose.yml"
-            | "example-configs/redis-cluster-tls/docker-compose.yml" => {
+            | "example-configs/redis-cluster-tls/docker-compose.yml"
+            | "example-configs/redis-cluster-tls/docker-compose-with-key.yml" => {
                 self.wait_for_log("Cluster state changed", 6, 110)
             }
             "example-configs/redis-cluster-dr/docker-compose.yml" => {

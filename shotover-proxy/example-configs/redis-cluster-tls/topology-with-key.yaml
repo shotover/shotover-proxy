@@ -10,5 +10,6 @@ chain_config:
         tls:
           certificate_authority_path: "example-configs/redis-tls/certs/ca.crt"
           certificate_path: "example-configs/redis-tls/certs/redis.crt"
+          private_key_path: "example-configs/redis-tls/certs/redis.key"
 source_to_chain_mapping:
   redis_prod: redis_chain
