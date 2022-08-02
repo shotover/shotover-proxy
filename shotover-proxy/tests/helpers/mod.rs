@@ -3,7 +3,7 @@ use cassandra_cpp::{Cluster, Session, Ssl};
 use redis::aio::AsyncStream;
 use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};
-use shotover_proxy::tls::{TlsConfig, TlsConnector};
+use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use std::fs::read_to_string;
 use std::pin::Pin;
 use std::sync::mpsc;
@@ -113,7 +113,7 @@ impl ShotoverManager {
     pub async fn redis_connection_async_tls(
         &self,
         port: u16,
-        config: TlsConfig,
+        config: TlsConnectorConfig,
     ) -> redis::aio::Connection {
         let address = "127.0.0.1";
         test_helpers::wait_for_socket_to_open(address, port);

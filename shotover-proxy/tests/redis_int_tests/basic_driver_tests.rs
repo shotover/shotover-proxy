@@ -6,7 +6,7 @@ use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
-use shotover_proxy::tls::TlsConfig;
+use shotover_proxy::tls::TlsConnectorConfig;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -1312,10 +1312,10 @@ async fn test_source_tls_and_single_tls() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
-    let tls_config = TlsConfig {
+    let tls_config = TlsConnectorConfig {
         certificate_authority_path: "example-configs/redis-tls/certs/ca.crt".into(),
         certificate_path: "example-configs/redis-tls/certs/redis.crt".into(),
-        private_key_path: "example-configs/redis-tls/certs/redis.key".into(),
+        private_key_path: Some("example-configs/redis-tls/certs/redis.key".into()),
     };
 
     let mut connection = shotover_manager
