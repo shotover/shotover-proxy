@@ -332,7 +332,7 @@ mod test {
 
     #[test]
     fn test_rewrite_port_match() {
-        let col_spec = vec![ColSpec {
+        let col_spec = &[ColSpec {
             table_spec: None,
             name: "native_port".into(),
             col_type: ColTypeOption {
@@ -342,7 +342,7 @@ mod test {
         }];
 
         let mut message = create_response_message(
-            &col_spec,
+            col_spec,
             vec![
                 vec![MessageValue::Integer(9042, IntSize::I32)],
                 vec![MessageValue::Integer(9042, IntSize::I32)],
@@ -350,7 +350,7 @@ mod test {
         );
 
         let expected = create_response_message(
-            &col_spec,
+            col_spec,
             vec![
                 vec![MessageValue::Integer(9043, IntSize::I32)],
                 vec![MessageValue::Integer(9043, IntSize::I32)],
@@ -364,7 +364,7 @@ mod test {
 
     #[test]
     fn test_rewrite_port_no_match() {
-        let col_spec = vec![ColSpec {
+        let col_spec = &[ColSpec {
             table_spec: None,
             name: "peer".into(),
             col_type: ColTypeOption {
@@ -374,7 +374,7 @@ mod test {
         }];
 
         let mut original = create_response_message(
-            &col_spec,
+            col_spec,
             vec![
                 vec![MessageValue::Inet("127.0.0.1".parse().unwrap())],
                 vec![MessageValue::Inet("10.123.56.1".parse().unwrap())],
@@ -382,7 +382,7 @@ mod test {
         );
 
         let expected = create_response_message(
-            &col_spec,
+            col_spec,
             vec![
                 vec![MessageValue::Inet("127.0.0.1".parse().unwrap())],
                 vec![MessageValue::Inet("10.123.56.1".parse().unwrap())],
@@ -403,7 +403,7 @@ mod test {
 
     #[test]
     fn test_rewrite_port_alias() {
-        let col_spec = vec![
+        let col_spec = &[
             ColSpec {
                 table_spec: None,
                 name: "native_port".into(),
@@ -431,7 +431,7 @@ mod test {
         ];
 
         let mut original = create_response_message(
-            &col_spec,
+            col_spec,
             vec![
                 vec![
                     MessageValue::Integer(9042, IntSize::I32),
@@ -447,7 +447,7 @@ mod test {
         );
 
         let expected = create_response_message(
-            &col_spec,
+            col_spec,
             vec![
                 vec![
                     MessageValue::Integer(9043, IntSize::I32),
@@ -472,5 +472,89 @@ mod test {
         );
 
         assert_eq!(original, expected);
+    }
+
+    #[test]
+    fn test_is_selecting_peers_table() {
+        let peers = &FQName::new("system", "peers");
+        let peers_v2 = &FQName::new("system", "peers_v2");
+
+        let selecting = [
+            create_query_message("SELECT * FROM system.peers"),
+            create_query_message("SELECT * FROM system.peers_v2"),
+            create_query_message("SELECT native_port from system.peers"),
+            create_query_message("SELECT native_port from system.peers_v2"),
+        ];
+
+        let not_selecting = [
+            create_query_message("SELECT * FROM system.not_peers"),
+            create_query_message("SELECT * FROM system.not_peers_v2"),
+            create_query_message("SELECT * FROM not_system.peers"),
+            create_query_message("SEELCT * FROM not_system.peers_v2"),
+            create_response_message(
+                &[ColSpec {
+                    table_spec: None,
+                    name: "native_port".into(),
+                    col_type: ColTypeOption {
+                        id: ColType::Int,
+                        value: None,
+                    },
+                }],
+                vec![
+                    vec![MessageValue::Integer(9042, IntSize::I32)],
+                    vec![MessageValue::Integer(9042, IntSize::I32)],
+                ],
+            ),
+        ];
+
+        for mut msg in selecting {
+            assert!(
+                is_selecting_peers_table(&mut msg, peers, peers_v2),
+                "{msg:?}"
+            );
+        }
+
+        for mut msg in not_selecting {
+            assert!(!is_selecting_peers_table(&mut msg, peers, peers_v2));
+        }
+    }
+
+    #[test]
+    fn test_clear_rows() {
+        let col_spec = &[ColSpec {
+            table_spec: None,
+            name: "native_port".into(),
+            col_type: ColTypeOption {
+                id: ColType::Int,
+                value: None,
+            },
+        }];
+
+        {
+            let mut original = create_response_message(
+                col_spec,
+                vec![
+                    vec![MessageValue::Integer(9042, IntSize::I32)],
+                    vec![MessageValue::Integer(9042, IntSize::I32)],
+                ],
+            );
+            let expected = create_response_message(col_spec, vec![]);
+            clear_rows(&mut original);
+            assert_eq!(original, expected);
+        }
+
+        {
+            let mut original = create_response_message(col_spec, vec![]);
+            let expected = create_response_message(col_spec, vec![]);
+            clear_rows(&mut original);
+            assert_eq!(original, expected);
+        }
+
+        {
+            let mut original = create_query_message("SELECT * FROM system.peers");
+            let expected = original.clone();
+            clear_rows(&mut original);
+            assert_eq!(original, expected);
+        }
     }
 }
