@@ -84,7 +84,6 @@ services:
       - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/certs/redis.crt'
       - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/certs/redis.key'
       - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/certs/ca.crt'
-      - 'REDIS_TLS_AUTH_CLIENTS=false'
 
 volumes:
   redis-cluster_data-0:

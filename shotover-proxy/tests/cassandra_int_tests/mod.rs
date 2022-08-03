@@ -119,7 +119,7 @@ fn test_source_tls_and_cluster_tls() {
         let direct_connection =
             shotover_manager.cassandra_connection_tls("172.16.1.2", 9042, ca_cert);
         assert_query_result(
-            &connection,
+            &direct_connection,
             "SELECT bootstrapped FROM system.local",
             &[&[ResultValue::Varchar("COMPLETED".into())]],
         );
