@@ -1,4 +1,4 @@
-use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
+use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
@@ -21,6 +21,7 @@ mod collections;
 mod functions;
 mod keyspace;
 mod native_types;
+mod peers_rewrite;
 mod prepared_statements;
 #[cfg(feature = "alpha-transforms")]
 mod protect;
@@ -184,76 +185,20 @@ fn test_cassandra_peers_rewrite_cassandra4() {
     );
 
     let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let peers_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+    let peers_token_connection = shotover_manager.cassandra_connection("127.0.0.1", 9045);
 
-    let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
-    table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
+    // run some basic tests to confirm it works as normal
+    table::test(&peers_port_connection);
+    keyspace::test(&peers_token_connection);
 
-    {
-        assert_query_result(
-            &normal_connection,
-            "SELECT data_center, native_port, rack FROM system.peers_v2;",
-            &[&[
-                ResultValue::Varchar("dc1".into()),
-                ResultValue::Int(9042),
-                ResultValue::Varchar("West".into()),
-            ]],
-        );
-        assert_query_result(
-            &normal_connection,
-            "SELECT native_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9042)]],
-        );
-
-        assert_query_result(
-            &normal_connection,
-            "SELECT native_port as foo FROM system.peers_v2;",
-            &[&[ResultValue::Int(9042)]],
-        );
-    }
-
-    {
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT data_center, native_port, rack FROM system.peers_v2;",
-            &[&[
-                ResultValue::Varchar("dc1".into()),
-                ResultValue::Int(9044),
-                ResultValue::Varchar("West".into()),
-            ]],
-        );
-
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044)]],
-        );
-
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port as foo FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044)]],
-        );
-
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port, native_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
-        );
-
-        assert_query_result(
-            &rewrite_port_connection,
-            "SELECT native_port, native_port as some_port FROM system.peers_v2;",
-            &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
-        );
-
-        let result = execute_query(&rewrite_port_connection, "SELECT * FROM system.peers_v2;");
-        assert_eq!(result[0][5], ResultValue::Int(9044));
-    }
+    peers_rewrite::test_rewrite_port(&normal_connection, &peers_port_connection);
+    peers_rewrite::test_assign_token_range(&normal_connection, &peers_token_connection);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test]
 #[serial]
-async fn test_cassandra_peers_rewrite_cassandra3() {
+fn test_cassandra_peers_rewrite_cassandra3() {
     let _docker_compose = DockerCompose::new(
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml",
     );

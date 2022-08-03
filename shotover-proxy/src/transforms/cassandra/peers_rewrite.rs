@@ -16,12 +16,13 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraPeersRewriteConfig {
     pub port: u16,
+    pub assign_token_range: Option<bool>,
 }
 
 impl CassandraPeersRewriteConfig {
     pub async fn get_transform(&self) -> Result<Transforms> {
         Ok(Transforms::CassandraPeersRewrite(
-            CassandraPeersRewrite::new(self.port),
+            CassandraPeersRewrite::new(self.port, self.assign_token_range.unwrap_or(false)),
         ))
     }
 }
@@ -29,14 +30,18 @@ impl CassandraPeersRewriteConfig {
 #[derive(Clone)]
 pub struct CassandraPeersRewrite {
     port: u16,
-    peer_table: FQName,
+    peers_table: FQName,
+    peers_table_v2: FQName,
+    assign_token_range: bool,
 }
 
 impl CassandraPeersRewrite {
-    pub fn new(port: u16) -> Self {
+    pub fn new(port: u16, assign_token_range: bool) -> Self {
         CassandraPeersRewrite {
             port,
-            peer_table: FQName::new("system", "peers_v2"),
+            peers_table: FQName::new("system", "peers"),
+            peers_table_v2: FQName::new("system", "peers_v2"),
+            assign_token_range,
         }
     }
 }
@@ -44,49 +49,96 @@ impl CassandraPeersRewrite {
 #[async_trait]
 impl Transform for CassandraPeersRewrite {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        // Find the indices of queries to system.peers & system.peers_v2
-        // we need to know which columns in which CQL queries in which messages have system peers
-        let column_names: Vec<(usize, Vec<Identifier>)> = message_wrapper
-            .messages
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, m)| {
-                let sys_peers = extract_native_port_column(&self.peer_table, m);
-                if sys_peers.is_empty() {
-                    None
-                } else {
-                    Some((i, sys_peers))
-                }
-            })
-            .collect();
+        Ok(if self.assign_token_range {
+            // Find the indices of queries to system.peers or system.peers_v2 in order
+            // to know what messages we need to clear the rows from.
+            let peers_queries: Vec<usize> = message_wrapper
+                .messages
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(i, message)| {
+                    if is_selecting_peers_table(message, &self.peers_table, &self.peers_table_v2) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
-        let mut response = message_wrapper.call_next_transform().await?;
+            let mut response = message_wrapper.call_next_transform().await?;
 
-        for (i, name_list) in column_names {
-            rewrite_port(&mut response[i], &name_list, self.port);
-        }
+            for i in peers_queries {
+                clear_rows(&mut response[i]);
+            }
 
-        Ok(response)
+            response
+        } else {
+            // Find the indices of queries to system.peers_v2
+            // we need to know which columns in which CQL queries in which messages have system peers
+            let column_names: Vec<(usize, Vec<Identifier>)> = message_wrapper
+                .messages
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(i, m)| {
+                    let sys_peers = extract_native_port_column(&self.peers_table_v2, m);
+                    if sys_peers.is_empty() {
+                        None
+                    } else {
+                        Some((i, sys_peers))
+                    }
+                })
+                .collect();
+
+            let mut response = message_wrapper.call_next_transform().await?;
+
+            for (i, name_list) in column_names {
+                rewrite_port(&mut response[i], &name_list, self.port);
+            }
+
+            response
+        })
     }
 
     async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        for message in &mut message_wrapper.messages {
-            if let Some(Frame::Cassandra(CassandraFrame {
-                operation: Event(ServerEvent::StatusChange(StatusChange { addr, .. })),
-                ..
-            })) = message.frame()
-            {
-                addr.addr.set_port(self.port);
-                message.invalidate_cache();
-            }
-        }
+        Ok(if self.assign_token_range {
+            message_wrapper.messages.retain_mut(|message| {
+                if let Some(Frame::Cassandra(CassandraFrame {
+                    operation: Event(event),
+                    ..
+                })) = message.frame()
+                {
+                    // exhaustive match to protect against new events being added
+                    //
+                    // If we are giving Shotover the entire token range the drivers
+                    // should not receive any topology information
+                    match event {
+                        ServerEvent::SchemaChange(_) => true,
+                        ServerEvent::TopologyChange(_) | ServerEvent::StatusChange(_) => false,
+                    }
+                } else {
+                    true
+                }
+            });
 
-        let response = message_wrapper.call_next_transform_pushed().await?;
-        Ok(response)
+            message_wrapper.call_next_transform_pushed().await?
+        } else {
+            for message in &mut message_wrapper.messages {
+                if let Some(Frame::Cassandra(CassandraFrame {
+                    operation: Event(ServerEvent::StatusChange(StatusChange { addr, .. })),
+                    ..
+                })) = message.frame()
+                {
+                    addr.addr.set_port(self.port);
+                    message.invalidate_cache();
+                }
+            }
+
+            message_wrapper.call_next_transform_pushed().await?
+        })
     }
 }
 
-/// determine if the message contains a SELECT from `system.peers_v2` that includes the `native_port` column
+/// Determine if the message contains a SELECT from `system.peers_v2` that includes the `native_port` column
 /// return a list of column names (or their alias) for each `native_port`.
 fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec<Identifier> {
     let mut result = vec![];
@@ -137,6 +189,45 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
         }
         message.invalidate_cache();
     }
+}
+
+// Determine if the message contains a SELECT from the `system.peers` or `system.peers_v2` tables.
+// Similar to the other function but doesn't need to check columns, only the table name.
+fn is_selecting_peers_table(
+    message: &mut Message,
+    peers_table: &FQName,
+    peers_table_v2: &FQName,
+) -> bool {
+    if let Some(Frame::Cassandra(CassandraFrame {
+        operation: CassandraOperation::Query { query, .. },
+        ..
+    })) = message.frame()
+    {
+        if let CassandraStatement::Select(select) = query.as_ref() {
+            if peers_table == &select.table_name || peers_table_v2 == &select.table_name {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+// Clear the rows from a CassandraResult response
+fn clear_rows(message: &mut Message) {
+    if let Some(Frame::Cassandra(CassandraFrame {
+        operation:
+            CassandraOperation::Result(CassandraResult::Rows {
+                value: MessageValue::Rows(rows),
+                ..
+            }),
+        ..
+    })) = message.frame()
+    {
+        rows.clear();
+    }
+
+    message.invalidate_cache();
 }
 
 #[cfg(test)]

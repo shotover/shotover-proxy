@@ -214,7 +214,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChain::new(
             vec![
-                Transforms::CassandraPeersRewrite(CassandraPeersRewrite::new(9042)),
+                Transforms::CassandraPeersRewrite(CassandraPeersRewrite::new(9042, false)),
                 Transforms::Null(Null::default()),
             ],
             "bench".into(),

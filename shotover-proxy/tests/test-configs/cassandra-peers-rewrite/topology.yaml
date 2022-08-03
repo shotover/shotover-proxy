@@ -8,15 +8,29 @@ sources:
     Cassandra:
       listen_addr: "127.0.0.1:9044"
 
+  cassandra_prod_3:
+    Cassandra:
+      listen_addr: "127.0.0.1:9045"
+
 chain_config:
   main_chain:
     - CassandraSinkSingle:
         remote_address: "172.16.1.2:9042"
+
   peers_rewrite_port:
     - CassandraPeersRewrite:
         port: 9044
     - CassandraSinkSingle:
         remote_address: "172.16.1.2:9042"
+
+  peers_assign_token_range:
+    - CassandraPeersRewrite:
+        port: 9044
+        assign_token_range: true
+    - CassandraSinkSingle:
+        remote_address: "172.16.1.2:9042"
+
 source_to_chain_mapping:
   cassandra_prod_1: main_chain
   cassandra_prod_2: peers_rewrite_port
+  cassandra_prod_3: peers_assign_token_range
