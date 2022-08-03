@@ -17,7 +17,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
-use tracing::{info, trace};
+use tracing::{error, trace};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkSingleConfig {
@@ -130,7 +130,6 @@ impl CassandraSinkSingle {
                             mut original,
                             response: Err(err),
                         } => {
-                            // TODO: This is wrong: need to have a response for each incoming message
                             original.set_error(err.to_string());
                             responses.push(original);
                         }
@@ -138,14 +137,10 @@ impl CassandraSinkSingle {
                 }
                 Ok(None) => break,
                 Err(_) => {
-                    info!(
-                        "timed out waiting for results got - {:?} expected - {:?}",
+                    error!(
+                        "timed out waiting for responses, received {:?} responses but expected {:?} responses",
                         responses.len(),
                         expected_size
-                    );
-                    info!(
-                        "timed out waiting for results - {:?} - {:?}",
-                        responses, results
                     );
                 }
             }
