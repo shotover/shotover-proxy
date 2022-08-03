@@ -1328,7 +1328,7 @@ async fn test_source_tls_and_single_tls() {
 
     let tls_config = TlsConnectorConfig {
         certificate_authority_path: "example-configs/redis-tls/certs/ca.crt".into(),
-        certificate_path: "example-configs/redis-tls/certs/redis.crt".into(),
+        certificate_path: Some("example-configs/redis-tls/certs/redis.crt".into()),
         private_key_path: Some("example-configs/redis-tls/certs/redis.key".into()),
     };
 

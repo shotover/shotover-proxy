@@ -53,7 +53,7 @@ pub struct TlsConnectorConfig {
     /// Path to the certificate authority in PEM format
     pub certificate_authority_path: String,
     /// Path to the certificate in PEM format
-    pub certificate_path: String,
+    pub certificate_path: Option<String>,
     /// Path to the private key in PEM format
     pub private_key_path: Option<String>,
 }
@@ -72,7 +72,9 @@ impl TlsConnector {
             builder.set_private_key_file(private_key_path, SslFiletype::PEM)?;
         }
 
-        builder.set_certificate_chain_file(tls_config.certificate_path)?;
+        if let Some(certificate_path) = tls_config.certificate_path {
+            builder.set_certificate_chain_file(certificate_path)?;
+        }
 
         Ok(TlsConnector {
             connector: Arc::new(builder.build()),
