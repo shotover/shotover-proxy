@@ -2,8 +2,8 @@ use crate::transforms::protect::crypto::{gen_key, gen_nonce};
 use crate::transforms::protect::key_management::KeyMaterial;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use chacha20poly1305::aead::{Aead, NewAead};
-use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
+use chacha20poly1305::aead::Aead;
+use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]

@@ -75,6 +75,7 @@ allow = [
     "Apache-2.0",
     "BSD-3-Clause",
     "BSD-2-Clause",
+    "Unicode-DFS-2016"
 ]
 # List of explictly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
