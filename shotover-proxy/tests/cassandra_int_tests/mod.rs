@@ -114,6 +114,17 @@ fn test_source_tls_and_cluster_tls() {
 
     let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
 
+    {
+        // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
+        let direct_connection =
+            shotover_manager.cassandra_connection_tls("172.16.1.2", 9042, ca_cert);
+        assert_query_result(
+            &direct_connection,
+            "SELECT bootstrapped FROM system.local",
+            &[&[ResultValue::Varchar("COMPLETED".into())]],
+        );
+    }
+
     let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
 
     keyspace::test(&connection);
