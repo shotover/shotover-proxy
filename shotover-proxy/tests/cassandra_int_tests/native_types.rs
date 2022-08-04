@@ -1,7 +1,6 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
-use cassandra_cpp::Session;
+use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 
-fn select(session: &Session) {
+fn select(session: &CassandraConnection) {
     assert_query_result(
         session,
         "SELECT * from test_native_types_keyspace.native_types_table WHERE id=1",
@@ -33,7 +32,7 @@ fn select(session: &Session) {
     )
 }
 
-fn insert(session: &Session) {
+fn insert(session: &CassandraConnection) {
     for i in 0..10 {
         run_query(
             session,
@@ -85,7 +84,7 @@ true,
     }
 }
 
-pub fn test(session: &Session) {
+pub fn test(session: &CassandraConnection) {
     run_query(session, "CREATE KEYSPACE test_native_types_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
     run_query(
         session,

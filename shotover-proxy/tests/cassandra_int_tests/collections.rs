@@ -1,5 +1,4 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
-use cassandra_cpp::Session;
+use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 use cassandra_protocol::frame::message_result::ColType;
 
 fn get_map_example(value: &str) -> String {
@@ -119,7 +118,7 @@ fn get_type_example_result_value(col_type: ColType) -> ResultValue {
 mod list {
     use super::*;
 
-    fn create(session: &Session) {
+    fn create(session: &CassandraConnection) {
         // create lists of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
@@ -164,7 +163,7 @@ mod list {
         }
     }
 
-    fn insert(session: &Session) {
+    fn insert(session: &CassandraConnection) {
         // insert lists of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -218,7 +217,7 @@ mod list {
         }
     }
 
-    fn select(session: &Session) {
+    fn select(session: &CassandraConnection) {
         // select lists of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -282,7 +281,7 @@ mod list {
         }
     }
 
-    pub fn test(session: &Session) {
+    pub fn test(session: &CassandraConnection) {
         create(session);
         insert(session);
         select(session);
@@ -292,7 +291,7 @@ mod list {
 mod set {
     use super::*;
 
-    fn create(session: &Session) {
+    fn create(session: &CassandraConnection) {
         // create sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
@@ -329,7 +328,7 @@ mod set {
         }
     }
 
-    fn insert(session: &Session) {
+    fn insert(session: &CassandraConnection) {
         // insert sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -384,7 +383,7 @@ mod set {
         }
     }
 
-    fn select(session: &Session) {
+    fn select(session: &CassandraConnection) {
         // select sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -448,7 +447,7 @@ mod set {
         }
     }
 
-    pub fn test(session: &Session) {
+    pub fn test(session: &CassandraConnection) {
         create(session);
         insert(session);
         select(session);
@@ -458,7 +457,7 @@ mod set {
 mod map {
     use super::*;
 
-    fn create(session: &Session) {
+    fn create(session: &CassandraConnection) {
         // create maps of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
@@ -503,7 +502,7 @@ mod map {
         }
     }
 
-    fn insert(session: &Session) {
+    fn insert(session: &CassandraConnection) {
         // insert maps of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -558,7 +557,7 @@ mod map {
         }
     }
 
-    fn select(session: &Session) {
+    fn select(session: &CassandraConnection) {
         // select sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -628,14 +627,14 @@ mod map {
         }
     }
 
-    pub fn test(session: &Session) {
+    pub fn test(session: &CassandraConnection) {
         create(session);
         insert(session);
         select(session);
     }
 }
 
-pub fn test(session: &Session) {
+pub fn test(session: &CassandraConnection) {
     run_query(session, "CREATE KEYSPACE test_collections_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
 
     list::test(session);

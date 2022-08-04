@@ -1,9 +1,9 @@
 use crate::helpers::cassandra::{
-    assert_query_result, assert_query_result_contains_row, run_query, ResultValue,
+    assert_query_result, assert_query_result_contains_row, run_query, CassandraConnection,
+    ResultValue,
 };
-use cassandra_cpp::Session;
 
-fn test_create_keyspace(session: &Session) {
+fn test_create_keyspace(session: &CassandraConnection) {
     run_query(session, "CREATE KEYSPACE keyspace_tests_create WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
     assert_query_result(
         session,
@@ -17,7 +17,7 @@ fn test_create_keyspace(session: &Session) {
     );
 }
 
-fn test_use_keyspace(session: &Session) {
+fn test_use_keyspace(session: &CassandraConnection) {
     run_query(session, "USE system");
 
     assert_query_result(
@@ -27,7 +27,7 @@ fn test_use_keyspace(session: &Session) {
     );
 }
 
-fn test_drop_keyspace(session: &Session) {
+fn test_drop_keyspace(session: &CassandraConnection) {
     run_query(session, "CREATE KEYSPACE keyspace_tests_delete_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
     assert_query_result(
             session,
@@ -41,7 +41,7 @@ fn test_drop_keyspace(session: &Session) {
         );
 }
 
-fn test_alter_keyspace(session: &Session) {
+fn test_alter_keyspace(session: &CassandraConnection) {
     run_query(session, "CREATE KEYSPACE keyspace_tests_alter_me WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 } AND DURABLE_WRITES = false;");
     run_query(
         session,
@@ -54,7 +54,7 @@ fn test_alter_keyspace(session: &Session) {
         );
 }
 
-pub fn test(session: &Session) {
+pub fn test(session: &CassandraConnection) {
     test_create_keyspace(session);
     test_use_keyspace(session);
     test_drop_keyspace(session);

@@ -1,5 +1,4 @@
-use crate::helpers::cassandra::{assert_query_result, ResultValue};
-use cassandra_cpp::Session;
+use crate::helpers::cassandra::{assert_query_result, CassandraConnection, ResultValue};
 use metrics_util::debugging::{DebugValue, Snapshotter};
 use redis::Commands;
 use std::collections::HashSet;
@@ -19,7 +18,7 @@ fn get_cache_miss_value(snapshotter: &Snapshotter) -> u64 {
 
 fn assert_increment(
     snapshotter: &Snapshotter,
-    session: &Session,
+    session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
@@ -35,7 +34,7 @@ fn assert_increment(
 
 fn assert_unchanged(
     snapshotter: &Snapshotter,
-    session: &Session,
+    session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
@@ -51,7 +50,7 @@ fn assert_unchanged(
 
 pub fn assert_query_is_cached(
     snapshotter: &Snapshotter,
-    session: &Session,
+    session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
@@ -62,7 +61,7 @@ pub fn assert_query_is_cached(
 
 pub fn assert_query_is_uncacheable(
     snapshotter: &Snapshotter,
-    session: &Session,
+    session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
