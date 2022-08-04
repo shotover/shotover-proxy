@@ -3,7 +3,7 @@ use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::Message;
-use crate::tls::TlsConfig;
+use crate::tls::TlsConnectorConfig;
 use crate::transforms::redis::RedisError;
 use crate::transforms::redis::TransformError;
 use crate::transforms::util::cluster_connection_pool::{Authenticator, ConnectionPool};
@@ -37,7 +37,7 @@ type ChannelMap = HashMap<String, Vec<UnboundedSender<Request>>>;
 pub struct RedisSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub direct_destination: Option<String>,
-    pub tls: Option<TlsConfig>,
+    pub tls: Option<TlsConnectorConfig>,
     connection_count: Option<usize>,
 }
 
@@ -88,7 +88,7 @@ impl RedisSinkCluster {
         first_contact_points: Vec<String>,
         direct_destination: Option<String>,
         connection_count: usize,
-        tls: Option<TlsConfig>,
+        tls: Option<TlsConnectorConfig>,
         chain_name: String,
     ) -> Result<Self> {
         let authenticator = RedisAuthenticator {};

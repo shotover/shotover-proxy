@@ -6,7 +6,7 @@ use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
 use serial_test::serial;
-use shotover_proxy::tls::TlsConfig;
+use shotover_proxy::tls::TlsConnectorConfig;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -1292,15 +1292,29 @@ async fn test_passthrough_redis_down() {
 async fn test_cluster_tls() {
     test_helpers::cert::generate_redis_test_certs(Path::new("example-configs/redis-tls/certs"));
 
-    let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
+    {
+        let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
+        let shotover_manager =
+            ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
+        let mut connection = shotover_manager.redis_connection_async(6379).await;
+        let mut flusher = Flusher::new_cluster(&shotover_manager).await;
 
-    run_all_cluster_hiding(&mut connection, &mut flusher).await;
-    test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
+        run_all_cluster_hiding(&mut connection, &mut flusher).await;
+        test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
+    }
+
+    // Quick test to verify it works with private key
+    {
+        let _compose =
+            DockerCompose::new("example-configs/redis-cluster-tls/docker-compose-with-key.yml");
+        let shotover_manager = ShotoverManager::from_topology_file(
+            "example-configs/redis-cluster-tls/topology-with-key.yaml",
+        );
+
+        let mut connection = shotover_manager.redis_connection_async(6379).await;
+        test_cluster_basics(&mut connection).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1312,10 +1326,10 @@ async fn test_source_tls_and_single_tls() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
-    let tls_config = TlsConfig {
+    let tls_config = TlsConnectorConfig {
         certificate_authority_path: "example-configs/redis-tls/certs/ca.crt".into(),
-        certificate_path: "example-configs/redis-tls/certs/redis.crt".into(),
-        private_key_path: "example-configs/redis-tls/certs/redis.key".into(),
+        certificate_path: Some("example-configs/redis-tls/certs/redis.crt".into()),
+        private_key_path: Some("example-configs/redis-tls/certs/redis.key".into()),
     };
 
     let mut connection = shotover_manager

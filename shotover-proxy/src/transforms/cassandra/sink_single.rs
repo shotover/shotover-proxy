@@ -4,8 +4,7 @@ use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::cassandra;
 use crate::message::Messages;
-use crate::tls::TlsConfig;
-use crate::tls::TlsConnector;
+use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
@@ -23,7 +22,7 @@ use tracing::{error, trace};
 pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
-    pub tls: Option<TlsConfig>,
+    pub tls: Option<TlsConnectorConfig>,
 }
 
 impl CassandraSinkSingleConfig {

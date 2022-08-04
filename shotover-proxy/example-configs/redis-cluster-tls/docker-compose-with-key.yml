@@ -16,7 +16,7 @@ services:
       - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/certs/redis.crt'
       - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/certs/redis.key'
       - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/certs/ca.crt'
-      - 'REDIS_TLS_AUTH_CLIENTS=no'
+      - 'REDIS_TLS_AUTH_CLIENTS=yes'
 
   redis-node-1:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
