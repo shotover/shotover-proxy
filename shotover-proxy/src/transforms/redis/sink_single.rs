@@ -2,7 +2,7 @@ use crate::codec::redis::RedisCodec;
 use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
-use crate::tls::{AsyncStream, TlsConfig, TlsConnector};
+use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -19,7 +19,7 @@ use tokio_util::codec::Framed;
 pub struct RedisSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
-    pub tls: Option<TlsConfig>,
+    pub tls: Option<TlsConnectorConfig>,
 }
 
 impl RedisSinkSingleConfig {

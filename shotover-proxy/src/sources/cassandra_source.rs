@@ -1,7 +1,7 @@
 use crate::codec::cassandra::CassandraCodec;
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
-use crate::tls::{TlsAcceptor, TlsConfig};
+use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
 use crate::transforms::chain::TransformChain;
 use anyhow::Result;
 use serde::Deserialize;
@@ -16,7 +16,7 @@ pub struct CassandraConfig {
     pub listen_addr: String,
     pub connection_limit: Option<usize>,
     pub hard_connection_limit: Option<bool>,
-    pub tls: Option<TlsConfig>,
+    pub tls: Option<TlsAcceptorConfig>,
     pub timeout: Option<u64>,
 }
 
@@ -56,7 +56,7 @@ impl CassandraSource {
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
         hard_connection_limit: Option<bool>,
-        tls: Option<TlsConfig>,
+        tls: Option<TlsAcceptorConfig>,
         timeout: Option<u64>,
     ) -> Result<CassandraSource> {
         let name = "CassandraSource";
