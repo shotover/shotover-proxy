@@ -10,6 +10,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tracing::trace;
 
@@ -18,6 +19,7 @@ pub struct CassandraSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub data_center: String,
     pub tls: Option<TlsConnectorConfig>,
+    pub read_timeout: Option<u64>,
 }
 
 impl CassandraSinkClusterConfig {
@@ -27,6 +29,7 @@ impl CassandraSinkClusterConfig {
             self.first_contact_points.clone(),
             chain_name,
             tls,
+            self.read_timeout,
         )))
     }
 }
@@ -38,6 +41,7 @@ pub struct CassandraSinkCluster {
     failed_requests: Counter,
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+    read_timeout: Option<Duration>,
 }
 
 impl Clone for CassandraSinkCluster {
@@ -49,6 +53,7 @@ impl Clone for CassandraSinkCluster {
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
+            read_timeout: self.read_timeout,
         }
     }
 }
@@ -58,8 +63,10 @@ impl CassandraSinkCluster {
         contact_points: Vec<String>,
         chain_name: String,
         tls: Option<TlsConnector>,
+        timeout: Option<u64>,
     ) -> CassandraSinkCluster {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
+        let receive_timeout = timeout.map(Duration::from_secs);
 
         CassandraSinkCluster {
             contact_points,
@@ -68,6 +75,7 @@ impl CassandraSinkCluster {
             failed_requests,
             tls,
             pushed_messages_tx: None,
+            read_timeout: receive_timeout,
         }
     }
 }
@@ -98,7 +106,8 @@ impl CassandraSinkCluster {
             })
             .collect();
 
-        super::connection::receive(&self.failed_requests, responses_future?).await
+        super::connection::receive(self.read_timeout, &self.failed_requests, responses_future?)
+            .await
     }
 }
 

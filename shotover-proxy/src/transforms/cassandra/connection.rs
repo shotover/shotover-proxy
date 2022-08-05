@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{error, info, Instrument};
+use tracing::{info, Instrument};
 
 /// Represents a `Request` to a `CassandraConnection`
 #[derive(Debug)]
@@ -159,44 +159,63 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
 }
 
 pub async fn receive(
+    timeout_duration: Option<Duration>,
     failed_requests: &metrics::Counter,
     mut results: FuturesOrdered<oneshot::Receiver<Response>>,
 ) -> Result<Messages> {
     let expected_size = results.len();
     let mut responses = Vec::with_capacity(expected_size);
-    loop {
-        match timeout(Duration::from_secs(5), results.next()).await {
-            Ok(Some(prelim)) => {
-                match prelim? {
-                    Response {
-                        response: Ok(message),
-                        ..
-                    } => {
-                        if let Some(raw_bytes) = message.as_raw_bytes() {
-                            if let Ok(Opcode::Error) = cassandra::raw_frame::get_opcode(raw_bytes) {
-                                failed_requests.increment(1);
-                            }
-                        }
-                        responses.push(message);
-                    }
-                    Response {
-                        mut original,
-                        response: Err(err),
-                    } => {
-                        original.set_error(err.to_string());
-                        responses.push(original);
-                    }
-                };
+    while responses.len() < expected_size {
+        if let Some(timeout_duration) = timeout_duration {
+            match timeout(
+                timeout_duration,
+                receive_message(failed_requests, &mut results),
+            )
+            .await
+            {
+                Ok(response) => {
+                    responses.push(response?);
+                }
+                Err(_) => {
+                    return Err(anyhow!(
+                        "timed out waiting for responses, received {:?} responses but expected {:?} responses",
+                        responses.len(),
+                        expected_size
+                    ));
+                }
             }
-            Ok(None) => break,
-            Err(_) => {
-                error!(
-                    "timed out waiting for responses, received {:?} responses but expected {:?} responses",
-                    responses.len(),
-                    expected_size
-                );
-            }
+        } else {
+            responses.push(receive_message(failed_requests, &mut results).await?);
         }
     }
     Ok(responses)
+}
+
+pub async fn receive_message(
+    failed_requests: &metrics::Counter,
+    results: &mut FuturesOrdered<oneshot::Receiver<Response>>,
+) -> Result<Message> {
+    match results.next().await {
+        Some(result) => match result? {
+            Response {
+                response: Ok(message),
+                ..
+            } => {
+                if let Some(raw_bytes) = message.as_raw_bytes() {
+                    if let Ok(Opcode::Error) = cassandra::raw_frame::get_opcode(raw_bytes) {
+                        failed_requests.increment(1);
+                    }
+                }
+                Ok(message)
+            }
+            Response {
+                mut original,
+                response: Err(err),
+            } => {
+                original.set_error(err.to_string());
+                Ok(original)
+            }
+        },
+        None => unreachable!("Ran out of responses"),
+    }
 }

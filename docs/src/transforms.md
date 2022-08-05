@@ -64,6 +64,11 @@ This transform will take a query, serialise it into a CQL4 compatible format and
     #  certificate_path: "tls/localhost.crt"
     #  # Path to the private key file, typically named with a .key extension.
     #  private_key_path: "tls/localhost.key"
+
+  # Timeout in seconds after which to give up waiting for a response from the destination.
+  # This field is optional, if not provided, timeout will never occur.
+  # When a timeout occurs the connection to the client is immediately closed.
+  # read_timeout: 60
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
