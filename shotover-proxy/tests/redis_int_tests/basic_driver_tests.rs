@@ -1,5 +1,6 @@
 use crate::helpers::ShotoverManager;
 use crate::redis_int_tests::assert::*;
+use futures::StreamExt;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
@@ -1261,6 +1262,131 @@ fn test_invalid_frame() {
     assert_eq!(amount, 0);
 }
 
+async fn test_pubsub(pub_connection: &mut Connection, sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("phonewave").await.unwrap();
+    let mut pubsub_stream = pubsub_conn.on_message();
+    pub_connection
+        .publish::<_, _, ()>("phonewave", "banana")
+        .await
+        .unwrap();
+
+    let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload().unwrap();
+    assert_eq!("banana".to_string(), msg_payload);
+}
+
+async fn test_pubsub_2subs(pub_connection: &mut Connection, sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("s1").await.unwrap();
+    pubsub_conn.subscribe("s2").await.unwrap();
+    let mut pubsub_stream = pubsub_conn.on_message();
+    pub_connection
+        .publish::<_, _, ()>("s1", "an arbitrary string")
+        .await
+        .unwrap();
+
+    let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload().unwrap();
+    assert_eq!("an arbitrary string".to_string(), msg_payload);
+}
+
+async fn test_pubsub_unused(sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("some_key").await.unwrap();
+}
+
+async fn test_pubsub_unsubscription(pub_connection: &mut Connection, sub_connection: Connection) {
+    const SUBSCRIPTION_KEY: &str = "phonewave-pub-sub-unsubscription";
+
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe(SUBSCRIPTION_KEY).await.unwrap();
+
+    pubsub_conn.unsubscribe(SUBSCRIPTION_KEY).await.unwrap();
+
+    let subscriptions_counts: HashMap<String, u32> = redis::cmd("PUBSUB")
+        .arg("NUMSUB")
+        .arg(SUBSCRIPTION_KEY)
+        .query_async(pub_connection)
+        .await
+        .unwrap();
+    let subscription_count = *subscriptions_counts.get(SUBSCRIPTION_KEY).unwrap();
+    assert_eq!(subscription_count, 0);
+}
+
+async fn test_pubsub_automatic_unsubscription(
+    numsub_connection: &mut Connection,
+    sub_connection: Connection,
+) {
+    const SUBSCRIPTION_KEY: &str = "phonewave-automatic-unsubscription";
+
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe(SUBSCRIPTION_KEY).await.unwrap();
+    // Dropping the connection is whats significant here.
+    // Redis detects the closed connection and closes the appropriate subscriptions
+    drop(pubsub_conn);
+
+    let mut subscription_count = 1;
+    // Allow for the unsubscription to occur within 5 seconds
+    for _ in 0..100 {
+        let subscriptions_counts: HashMap<String, u32> = redis::cmd("PUBSUB")
+            .arg("NUMSUB")
+            .arg(SUBSCRIPTION_KEY)
+            .query_async(numsub_connection)
+            .await
+            .unwrap();
+        subscription_count = *subscriptions_counts.get(SUBSCRIPTION_KEY).unwrap();
+        if subscription_count == 0 {
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(subscription_count, 0);
+}
+
+async fn test_pubsub_conn_reuse_simple(sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("phonewave").await.unwrap();
+
+    let mut conn = pubsub_conn.into_connection().await;
+    redis::cmd("SET")
+        .arg("foo")
+        .arg("bar")
+        .query_async::<_, ()>(&mut conn)
+        .await
+        .unwrap();
+
+    let res: String = redis::cmd("GET")
+        .arg("foo")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(&res, "bar");
+}
+
+async fn test_pubsub_conn_reuse_multisub(sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("phonewave").await.unwrap();
+    // TODO: handle all subscription messages
+    //pubsub_conn.subscribe("blah").await.unwrap();
+    //pubsub_conn.subscribe("blah2").await.unwrap();
+    pubsub_conn.psubscribe("*").await.unwrap();
+
+    let mut conn = pubsub_conn.into_connection().await;
+    redis::cmd("SET")
+        .arg("foo")
+        .arg("bar")
+        .query_async::<_, ()>(&mut conn)
+        .await
+        .unwrap();
+
+    let res: String = redis::cmd("GET")
+        .arg("foo")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(&res, "bar");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough() {
@@ -1271,7 +1397,7 @@ async fn test_passthrough() {
     let mut flusher =
         Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
 
-    run_all(&mut connection, &mut flusher).await;
+    run_all(&mut connection, &mut flusher, &shotover_manager).await;
     test_invalid_frame();
 }
 
@@ -1342,7 +1468,7 @@ async fn test_source_tls_and_single_tls() {
     )
     .await;
 
-    run_all(&mut connection, &mut flusher).await;
+    run_all(&mut connection, &mut flusher, &shotover_manager).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1620,7 +1746,11 @@ async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut Flu
     test_time(connection).await;
 }
 
-async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
+async fn run_all(
+    connection: &mut Connection,
+    flusher: &mut Flusher,
+    shotover_manager: &ShotoverManager,
+) {
     test_args(connection).await;
     test_getset(connection).await;
     test_incr(connection).await;
@@ -1638,12 +1768,6 @@ async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
     test_pipeline_reuse_query(connection).await;
     test_pipeline_reuse_query_clear(connection).await;
     test_real_transaction(connection).await;
-    // test_pubsub().await;
-    // test_pubsub_unsubscribe().await;
-    // test_pubsub_unsubscribe_no_subs().await;
-    // test_pubsub_unsubscribe_one_sub().await;
-    // test_pubsub_unsubscribe_one_sub_one_psub().await;
-    // scoped_pubsub();
     test_script(connection).await;
     test_tuple_args(connection, flusher).await;
     test_nice_api(connection).await;
@@ -1656,6 +1780,31 @@ async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
     test_save(connection).await;
     test_ping_echo(connection).await;
     test_time(connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub(connection, sub_connection).await;
+
+    // test again!
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_2subs(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_unused(sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_unsubscription(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_automatic_unsubscription(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_conn_reuse_simple(sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_conn_reuse_multisub(sub_connection).await;
 }
 
 struct Flusher {
