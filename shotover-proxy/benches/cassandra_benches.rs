@@ -6,6 +6,7 @@ use test_helpers::lazy::new_lazy_shared;
 
 #[path = "../tests/helpers/mod.rs"]
 mod helpers;
+use helpers::cassandra::CassandraConnection;
 use helpers::ShotoverManager;
 
 struct Query {
@@ -259,7 +260,8 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+        let CassandraConnection::Datastax(connection) =
+            shotover_manager.cassandra_connection("127.0.0.1", 9042);
 
         let bench_resources = Self {
             _compose: compose,
@@ -277,7 +279,8 @@ impl BenchResources {
 
         let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
 
-        let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+        let CassandraConnection::Datastax(connection) =
+            shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
 
         let bench_resources = Self {
             _compose: compose,

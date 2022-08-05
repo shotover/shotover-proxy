@@ -1,4 +1,4 @@
-use crate::helpers::cassandra::{assert_query_result, execute_query, run_query, ResultValue};
+use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
@@ -156,9 +156,9 @@ fn test_cassandra_redis_cache() {
     table::test(&connection);
     udt::test(&connection);
     functions::test(&connection);
-    cache::test(&connection, &mut redis_connection, &snapshotter);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
+    cache::test(&connection, &mut redis_connection, &snapshotter);
 }
 
 #[test]
@@ -180,8 +180,8 @@ fn test_cassandra_protect_transform_local() {
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
     functions::test(&shotover_connection);
-    protect::test(&shotover_connection, &direct_connection);
     batch_statements::test(&shotover_connection);
+    protect::test(&shotover_connection, &direct_connection);
 }
 
 #[test]
@@ -203,8 +203,8 @@ fn test_cassandra_protect_transform_aws() {
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
     functions::test(&shotover_connection);
-    protect::test(&shotover_connection, &direct_connection);
     batch_statements::test(&shotover_connection);
+    protect::test(&shotover_connection, &direct_connection);
 }
 
 #[test]
@@ -281,7 +281,7 @@ fn test_cassandra_peers_rewrite_cassandra4() {
             &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
         );
 
-        let result = execute_query(&rewrite_port_connection, "SELECT * FROM system.peers_v2;");
+        let result = rewrite_port_connection.execute("SELECT * FROM system.peers_v2;");
         assert_eq!(result[0][5], ResultValue::Int(9044));
     }
 }
@@ -302,8 +302,8 @@ async fn test_cassandra_peers_rewrite_cassandra3() {
 
     // Assert that the error cassandra gives because system.peers_v2 does not exist on cassandra v3
     // is passed through shotover unchanged.
-    let statement = stmt!("SELECT data_center, native_port, rack FROM system.peers_v2;");
-    let result = connection.execute(&statement).wait().unwrap_err();
+    let statement = "SELECT data_center, native_port, rack FROM system.peers_v2;";
+    let result = connection.execute_expect_err(statement);
     assert!(matches!(
         result,
         Error(
@@ -327,14 +327,14 @@ async fn test_cassandra_request_throttling() {
     let connection_2 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window again
 
-    let statement = stmt!("SELECT * FROM system.peers");
+    let statement = "SELECT * FROM system.peers";
 
     // these should all be let through the request throttling
     {
         let mut futures = vec![];
         for _ in 0..25 {
-            futures.push(connection.execute(&statement));
-            futures.push(connection_2.execute(&statement));
+            futures.push(connection.execute_async(statement));
+            futures.push(connection_2.execute_async(statement));
         }
         try_join_all(futures).await.unwrap();
     }
@@ -346,8 +346,8 @@ async fn test_cassandra_request_throttling() {
     {
         let mut futures = vec![];
         for _ in 0..50 {
-            futures.push(connection.execute(&statement));
-            futures.push(connection_2.execute(&statement));
+            futures.push(connection.execute_async(statement));
+            futures.push(connection_2.execute_async(statement));
         }
         let mut results = join_all(futures).await;
         results.retain(|result| match result {
@@ -381,7 +381,7 @@ async fn test_cassandra_request_throttling() {
             let statement = format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
-        connection.execute_batch(&batch).wait().unwrap();
+        connection.execute_batch(&batch);
     }
 
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
@@ -393,7 +393,7 @@ async fn test_cassandra_request_throttling() {
             let statement = format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
-        let result = connection.execute_batch(&batch).wait().unwrap_err();
+        let result = connection.execute_batch_expect_err(&batch);
         assert!(matches!(
             result,
             Error(

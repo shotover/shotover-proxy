@@ -1,7 +1,7 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
-use cassandra_cpp::{stmt, Batch, BatchType, Session};
+use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
+use cassandra_cpp::{stmt, Batch, BatchType};
 
-pub fn test(connection: &Session) {
+pub fn test(connection: &CassandraConnection) {
     // setup keyspace and table for the batch statement tests
     {
         run_query(connection, "CREATE KEYSPACE batch_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
@@ -14,7 +14,7 @@ pub fn test(connection: &Session) {
             let statement = format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text1', 'text2')", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
-        connection.execute_batch(&batch).wait().unwrap();
+        connection.execute_batch(&batch);
 
         assert_query_result(
             connection,
@@ -43,7 +43,7 @@ pub fn test(connection: &Session) {
             );
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
-        connection.execute_batch(&batch).wait().unwrap();
+        connection.execute_batch(&batch);
 
         assert_query_result(
             connection,
@@ -69,25 +69,22 @@ pub fn test(connection: &Session) {
             let statement = format!("DELETE FROM batch_keyspace.batch_table WHERE id = {};", i);
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
-        connection.execute_batch(&batch).wait().unwrap();
+        connection.execute_batch(&batch);
         assert_query_result(connection, "SELECT * FROM batch_keyspace.batch_table;", &[]);
     }
 
     {
         let batch = Batch::new(BatchType::LOGGED);
-        connection.execute_batch(&batch).wait().unwrap();
+        connection.execute_batch(&batch);
     }
 
     // test batch statements over QUERY PROTOCOL
     {
-        let insert_statement = stmt!(
-            "BEGIN BATCH
+        let insert_statement = "BEGIN BATCH
 INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (2, 'text1', 'text2');
 INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (3, 'text1', 'text2');
-APPLY BATCH;"
-        );
-
-        connection.execute(&insert_statement).wait().unwrap();
+APPLY BATCH;";
+        run_query(connection, insert_statement);
 
         assert_query_result(
             connection,
@@ -106,9 +103,8 @@ APPLY BATCH;"
             ],
         );
 
-        let select_statement = stmt!("BEGIN BATCH UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 2; UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 3; APPLY BATCH;");
-
-        connection.execute(&select_statement).wait().unwrap();
+        let update_statement = "BEGIN BATCH UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 2; UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 3; APPLY BATCH;";
+        run_query(connection, update_statement);
 
         assert_query_result(
             connection,
