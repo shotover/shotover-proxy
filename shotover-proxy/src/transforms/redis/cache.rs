@@ -228,7 +228,9 @@ impl SimpleRedisCache {
     /// Clears the cache for the entire table
     /// TODO make this drop only the specified keys not the entire cache
     fn drop_table(&self, _statement: &CassandraStatement) -> Message {
-        Message::from_frame(Frame::Redis(RedisFrame::BulkString("FLUSHDB".into())))
+        Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
+            RedisFrame::BulkString("FLUSHDB".into()),
+        ])))
     }
 
     /// clear the cache for the single row specified by the redis_key
