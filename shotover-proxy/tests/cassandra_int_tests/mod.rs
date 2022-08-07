@@ -1,3 +1,4 @@
+use crate::cassandra_int_tests::direct_connection::DirectConnections;
 use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
@@ -18,6 +19,7 @@ use tokio::time::{sleep, timeout, Duration};
 mod batch_statements;
 mod cache;
 mod collections;
+mod direct_connection;
 mod functions;
 mod keyspace;
 mod native_types;
@@ -36,13 +38,14 @@ fn test_passthrough() {
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let direct_connections = DirectConnections::new();
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &direct_connections);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -70,13 +73,14 @@ fn test_source_tls_and_single_tls() {
     }
 
     let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9043, ca_cert);
+    let direct_connections = DirectConnections::new();
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &direct_connections);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -91,13 +95,14 @@ fn test_cluster() {
         ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let direct_connections = DirectConnections::new_cluster();
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &direct_connections);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -126,13 +131,14 @@ fn test_source_tls_and_cluster_tls() {
     }
 
     let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+    let direct_connections = DirectConnections::new();
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &direct_connections);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -151,11 +157,12 @@ fn test_cassandra_redis_cache() {
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let direct_connections = DirectConnections::new();
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &direct_connections);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
     cache::test(&connection, &mut redis_connection, &snapshotter);
@@ -173,13 +180,14 @@ fn test_cassandra_protect_transform_local() {
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let direct_connections = DirectConnections::new();
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
     udt::test(&shotover_connection);
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
-    functions::test(&shotover_connection);
+    functions::test(&shotover_connection, &direct_connections);
     batch_statements::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
 }
@@ -196,13 +204,14 @@ fn test_cassandra_protect_transform_aws() {
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let direct_connections = DirectConnections::new();
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
     udt::test(&shotover_connection);
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
-    functions::test(&shotover_connection);
+    functions::test(&shotover_connection, &direct_connections);
     batch_statements::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
 }
