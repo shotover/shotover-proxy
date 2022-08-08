@@ -2,27 +2,24 @@ use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
 use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
-use crate::frame::cassandra;
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use cassandra_protocol::frame::Opcode;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::timeout;
-use tokio_stream::StreamExt;
-use tracing::{error, trace};
+use tracing::trace;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub tls: Option<TlsConnectorConfig>,
+    pub read_timeout: Option<u64>,
 }
 
 impl CassandraSinkSingleConfig {
@@ -32,6 +29,7 @@ impl CassandraSinkSingleConfig {
             self.address.clone(),
             chain_name,
             tls,
+            self.read_timeout,
         )))
     }
 }
@@ -43,6 +41,7 @@ pub struct CassandraSinkSingle {
     failed_requests: Counter,
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+    read_timeout: Option<Duration>,
 }
 
 impl Clone for CassandraSinkSingle {
@@ -54,6 +53,7 @@ impl Clone for CassandraSinkSingle {
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
+            read_timeout: self.read_timeout,
         }
     }
 }
@@ -63,8 +63,10 @@ impl CassandraSinkSingle {
         address: String,
         chain_name: String,
         tls: Option<TlsConnector>,
+        timeout: Option<u64>,
     ) -> CassandraSinkSingle {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
+        let receive_timeout = timeout.map(Duration::from_secs);
 
         CassandraSinkSingle {
             address,
@@ -73,6 +75,7 @@ impl CassandraSinkSingle {
             failed_requests,
             tls,
             pushed_messages_tx: None,
+            read_timeout: receive_timeout,
         }
     }
 }
@@ -94,8 +97,7 @@ impl CassandraSinkSingle {
         trace!("sending frame upstream");
 
         let outbound = self.outbound.as_mut().unwrap();
-        let expected_size = messages.len();
-        let results: Result<FuturesOrdered<oneshot::Receiver<Response>>> = messages
+        let responses_future: Result<FuturesOrdered<oneshot::Receiver<Response>>> = messages
             .into_iter()
             .map(|m| {
                 let (return_chan_tx, return_chan_rx) = oneshot::channel();
@@ -105,47 +107,8 @@ impl CassandraSinkSingle {
             })
             .collect();
 
-        let mut responses = Vec::with_capacity(expected_size);
-        let mut results = results?;
-
-        loop {
-            match timeout(Duration::from_secs(5), results.next()).await {
-                Ok(Some(prelim)) => {
-                    match prelim? {
-                        Response {
-                            response: Ok(message),
-                            ..
-                        } => {
-                            if let Some(raw_bytes) = message.as_raw_bytes() {
-                                if let Ok(Opcode::Error) =
-                                    cassandra::raw_frame::get_opcode(raw_bytes)
-                                {
-                                    self.failed_requests.increment(1);
-                                }
-                            }
-                            responses.push(message);
-                        }
-                        Response {
-                            mut original,
-                            response: Err(err),
-                        } => {
-                            original.set_error(err.to_string());
-                            responses.push(original);
-                        }
-                    };
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    error!(
-                        "timed out waiting for responses, received {:?} responses but expected {:?} responses",
-                        responses.len(),
-                        expected_size
-                    );
-                }
-            }
-        }
-
-        Ok(responses)
+        super::connection::receive(self.read_timeout, &self.failed_requests, responses_future?)
+            .await
     }
 }
 
