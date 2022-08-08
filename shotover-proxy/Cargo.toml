@@ -91,6 +91,7 @@ nix = "0.24.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
+scylla = "0.4.7"
 
 [[bench]]
 name = "redis_benches"
