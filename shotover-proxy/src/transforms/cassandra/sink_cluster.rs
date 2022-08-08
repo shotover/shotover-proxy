@@ -204,7 +204,7 @@ impl CassandraSinkCluster {
     }
 }
 
-fn create_topology_task(
+pub fn create_topology_task(
     tls: Option<TlsConnector>,
     nodes: Arc<RwLock<Vec<CassandraNode>>>,
     mut handshake_rx: mpsc::Receiver<TaskHandshake>,
@@ -352,16 +352,17 @@ impl Transform for CassandraSinkCluster {
 }
 
 #[derive(Debug, Clone)]
-struct CassandraNode {
-    address: IpAddr,
-    _rack: String,
-    _tokens: Vec<String>,
+pub struct CassandraNode {
+    pub address: IpAddr,
+    pub _rack: String,
+    pub _tokens: Vec<String>,
     outbound: Option<CassandraConnection>,
 }
 
-struct TaskHandshake {
-    handshake: Vec<Message>,
-    address: String,
+#[derive(Debug)]
+pub struct TaskHandshake {
+    pub handshake: Vec<Message>,
+    pub address: String,
 }
 
 impl CassandraNode {
