@@ -18,6 +18,8 @@ use tokio::time::{sleep, timeout, Duration};
 
 mod batch_statements;
 mod cache;
+#[cfg(feature = "alpha-transforms")]
+mod cluster;
 mod collections;
 mod functions;
 mod keyspace;
@@ -89,20 +91,28 @@ fn test_source_tls_and_single_tls() {
 async fn test_cluster() {
     let _compose = DockerCompose::new("example-configs/cassandra-cluster/docker-compose.yml");
 
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology.yaml");
+    {
+        let shotover_manager =
+            ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology.yaml");
 
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    let schema_awaiter = SchemaAwaiter::new("172.16.1.2:9042").await;
+        let connection1 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+        let schema_awaiter = SchemaAwaiter::new("172.16.1.2:9042").await;
+        // TODO: uncomment once we implement `USE` routing
+        //keyspace::test(&connection1);
+        table::test(&connection1);
+        udt::test(&connection1);
+        native_types::test(&connection1);
+        collections::test(&connection1);
+        functions::test(&connection1, &schema_awaiter).await;
+        prepared_statements::test(&connection1);
+        batch_statements::test(&connection1);
 
-    keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
-    native_types::test(&connection);
-    collections::test(&connection);
-    functions::test(&connection, &schema_awaiter).await;
-    prepared_statements::test(&connection);
-    batch_statements::test(&connection);
+        //Check for bugs in cross connection state
+        let connection2 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+        native_types::test(&connection2);
+    }
+
+    cluster::test().await;
 }
 
 #[test]
@@ -130,7 +140,8 @@ fn test_source_tls_and_cluster_tls() {
 
     let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
 
-    keyspace::test(&connection);
+    // TODO: uncomment once we implement `USE` routing
+    //keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);

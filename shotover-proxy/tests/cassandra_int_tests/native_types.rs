@@ -113,4 +113,5 @@ date_test date,
 
     insert(session);
     select(session);
+    run_query(session, "DROP KEYSPACE test_native_types_keyspace");
 }
