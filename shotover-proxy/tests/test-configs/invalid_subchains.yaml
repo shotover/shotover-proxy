@@ -1,27 +1,27 @@
 ---
 sources:
   redis_prod:
-    Redis:
+    !Redis
       listen_addr: "127.0.0.1:6379"
 chain_config:
   a_first_chain:
-    - Null
-    - Null
-    - DebugPrinter
+    - !Null
+    - !Null
+    - !DebugPrinter
   b_second_chain:
-    - DebugPrinter
-    - ConsistentScatter:
+    - !DebugPrinter
+    - !ConsistentScatter
         read_consistency: 1
         write_consistency: 1
         route_map:
           a_chain_1:
-            - Null
-            - DebugPrinter
+            - !Null
+            - !DebugPrinter
           b_chain_2:
-            - Null
-            - Null
+            - !Null
+            - !Null
           c_chain_3:
-            - ConsistentScatter:
+            - !ConsistentScatter
                 read_consistency: 1
                 write_consistency: 1
                 route_map:
