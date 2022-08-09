@@ -10,7 +10,6 @@ use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use cassandra_protocol::consistency::Consistency;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -262,8 +261,15 @@ pub fn create_topology_task(
 ) {
     tokio::spawn(async move {
         while let Some(handshake) = handshake_rx.recv().await {
-            if let Err(err) = topology_task_process(&tls, &nodes, handshake, &data_center).await {
+            let mut attempts = 0;
+            while let Err(err) = topology_task_process(&tls, &nodes, &handshake, &data_center).await
+            {
                 tracing::error!("{err:?}");
+                attempts += 1;
+                if attempts > 3 {
+                    // 3 attempts have failed, lets try a new handshake
+                    break;
+                }
             }
 
             // Sleep for an hour.
@@ -279,37 +285,46 @@ pub fn create_topology_task(
 async fn topology_task_process(
     tls: &Option<TlsConnector>,
     nodes: &Arc<RwLock<Vec<CassandraNode>>>,
-    handshake: TaskHandshake,
+    handshake: &TaskHandshake,
     data_center: &str,
 ) -> Result<()> {
-    let outbound = new_connection(handshake.address, &handshake.handshake, tls, &None).await?;
+    let outbound = new_connection(&handshake.address, &handshake.handshake, tls, &None).await?;
 
-    let (return_chan_tx, return_chan_rx) = oneshot::channel();
+    let (peers_tx, peers_rx) = oneshot::channel();
     outbound.send(
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            stream_id: 0,
+            stream_id: 1000,
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single("SELECT * FROM system.peers")),
-                params: Box::new(QueryParams {
-                    consistency: Consistency::One,
-                    with_names: false,
-                    values: None,
-                    page_size: Some(5000),
-                    paging_state: None,
-                    serial_consistency: None,
-                    timestamp: Some(1643855761086585),
-                    keyspace: None,
-                    now_in_seconds: None,
-                }),
+                params: Box::new(QueryParams::default()),
             },
         })),
-        return_chan_tx,
+        peers_tx,
     )?;
-    let mut response = return_chan_rx.await?.response?;
-    let new_nodes = get_nodes_from_system_peers(&mut response, data_center);
+
+    let (local_tx, local_rx) = oneshot::channel();
+    outbound.send(
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            stream_id: 1001,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single("SELECT * FROM system.local")),
+                params: Box::new(QueryParams::default()),
+            },
+        })),
+        local_tx,
+    )?;
+
+    let peers_response = peers_rx.await?.response?;
+    let mut new_nodes = system_peers_into_nodes(peers_response, data_center)?;
+
+    let local_response = local_rx.await?.response?;
+    new_nodes.push(system_local_into_node(local_response, data_center)?);
 
     let mut write_lock = nodes.write().await;
     let expensive_drop = std::mem::replace(&mut *write_lock, new_nodes);
@@ -321,69 +336,169 @@ async fn topology_task_process(
     Ok(())
 }
 
-fn get_nodes_from_system_peers(
-    response: &mut Message,
+fn system_local_into_node(
+    mut response: Message,
     config_data_center: &str,
-) -> Vec<CassandraNode> {
-    let mut new_nodes = vec![];
+) -> Result<CassandraNode> {
+    let listen_addr_ident = Identifier::Unquoted("listen_address".into());
+    let rack_ident = Identifier::Unquoted("rack".into());
+    let data_center_ident = Identifier::Unquoted("data_center".into());
+    let tokens_ident = Identifier::Unquoted("tokens".into());
+
+    if let Some(Frame::Cassandra(frame)) = response.frame() {
+        match &mut frame.operation {
+            CassandraOperation::Result(CassandraResult::Rows {
+                value: MessageValue::Rows(rows),
+                metadata,
+            }) => {
+                if rows.len() > 1 {
+                    tracing::error!("system.local returned more than one row");
+                }
+                if let Some(row) = rows.first_mut() {
+                    let mut address = None;
+                    let mut rack = None;
+                    let mut data_center = None;
+                    let mut tokens = vec![];
+                    for (col_meta, col_value) in metadata.col_specs.iter().zip(row.drain(..)) {
+                        let ident = Identifier::parse(&col_meta.name);
+                        if ident == listen_addr_ident {
+                            if let MessageValue::Inet(value) = col_value {
+                                address = Some(value);
+                            }
+                        } else if ident == rack_ident {
+                            if let MessageValue::Varchar(value) = col_value {
+                                rack = Some(value);
+                            }
+                        } else if ident == data_center_ident {
+                            if let MessageValue::Varchar(value) = col_value {
+                                data_center = Some(value);
+                            }
+                        } else if ident == tokens_ident {
+                            if let MessageValue::List(list) = col_value {
+                                tokens = list
+                                    .iter()
+                                    .filter_map(|x| match x {
+                                        MessageValue::Varchar(a) => Some(a.clone()),
+                                        _ => None,
+                                    })
+                                    .collect();
+                            }
+                        }
+                    }
+
+                    let address = address.ok_or_else(|| {
+                        anyhow!("system.local did not contain valid listen_address")
+                    })?;
+                    let rack =
+                        rack.ok_or_else(|| anyhow!("system.local did not contain valid rack"))?;
+                    let data_center = data_center
+                        .ok_or_else(|| anyhow!("system.local did not contain valid data_center"))?;
+
+                    if data_center == config_data_center {
+                        Ok(CassandraNode {
+                            address,
+                            _rack: rack,
+                            _tokens: tokens,
+                            outbound: None,
+                        })
+                    } else {
+                        Err(anyhow!(
+                            "topology node from wrong data center, expected {} but was {}.",
+                            config_data_center,
+                            data_center,
+                        ))
+                    }
+                } else {
+                    Err(anyhow!("system.local returned no rows"))
+                }
+            }
+            operation => Err(anyhow!(
+                "system.local returned unexpected cassandra operation: {:?}",
+                operation
+            )),
+        }
+    } else {
+        Err(anyhow!(
+            "Failed to parse system.local response {:?}",
+            response
+        ))
+    }
+}
+
+fn system_peers_into_nodes(
+    mut response: Message,
+    config_data_center: &str,
+) -> Result<Vec<CassandraNode>> {
     let peer_ident = Identifier::Unquoted("peer".into());
     let rack_ident = Identifier::Unquoted("rack".into());
     let data_center_ident = Identifier::Unquoted("data_center".into());
     let tokens_ident = Identifier::Unquoted("tokens".into());
 
     if let Some(Frame::Cassandra(frame)) = response.frame() {
-        // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
-        if let CassandraOperation::Result(CassandraResult::Rows {
-            value: MessageValue::Rows(rows),
-            metadata,
-        }) = &mut frame.operation
-        {
-            for row in rows.iter() {
-                let mut address = None;
-                let mut rack = None;
-                let mut data_center = None;
-                let mut tokens = vec![];
-                for (i, col) in metadata.col_specs.iter().enumerate() {
-                    let ident = Identifier::parse(&col.name);
-                    if ident == peer_ident {
-                        if let Some(MessageValue::Inet(value)) = row.get(i) {
-                            address = Some(*value);
-                        }
-                    } else if ident == rack_ident {
-                        if let Some(MessageValue::Varchar(value)) = row.get(i) {
-                            rack = Some(value.clone());
-                        }
-                    } else if ident == data_center_ident {
-                        if let Some(MessageValue::Varchar(value)) = row.get(i) {
-                            data_center = Some(value.clone());
-                        }
-                    } else if ident == tokens_ident {
-                        if let Some(MessageValue::List(list)) = row.get(i) {
-                            tokens = list
-                                .iter()
-                                .filter_map(|x| match x {
-                                    MessageValue::Varchar(a) => Some(a.clone()),
-                                    _ => None,
-                                })
-                                .collect();
+        match &mut frame.operation {
+            CassandraOperation::Result(CassandraResult::Rows {
+                value: MessageValue::Rows(rows),
+                metadata,
+            }) => Ok(rows
+                .iter_mut()
+                .filter_map(|row| {
+                    let mut address = None;
+                    let mut rack = None;
+                    let mut data_center = None;
+                    let mut tokens = vec![];
+                    for (col_meta, col_value) in metadata.col_specs.iter().zip(row.drain(..)) {
+                        let ident = Identifier::parse(&col_meta.name);
+                        if ident == peer_ident {
+                            if let MessageValue::Inet(value) = col_value {
+                                address = Some(value);
+                            }
+                        } else if ident == rack_ident {
+                            if let MessageValue::Varchar(value) = col_value {
+                                rack = Some(value);
+                            }
+                        } else if ident == data_center_ident {
+                            if let MessageValue::Varchar(value) = col_value {
+                                data_center = Some(value);
+                            }
+                        } else if ident == tokens_ident {
+                            if let MessageValue::List(list) = col_value {
+                                tokens = list
+                                    .iter()
+                                    .filter_map(|x| match x {
+                                        MessageValue::Varchar(a) => Some(a.clone()),
+                                        _ => None,
+                                    })
+                                    .collect();
+                            }
                         }
                     }
-                }
-                if let (Some(address), Some(rack), Some(data_center)) = (address, rack, data_center)
-                {
+                    let address = address?;
+                    let rack = rack?;
+                    let data_center = data_center?;
+
                     if data_center == config_data_center {
-                        new_nodes.push(CassandraNode {
+                        Some(CassandraNode {
                             address,
                             _rack: rack,
                             _tokens: tokens,
                             outbound: None,
-                        });
+                        })
+                    } else {
+                        None
                     }
-                }
-            }
+                })
+                .collect()),
+            operation => Err(anyhow!(
+                "system.peers returned unexpected cassandra operation: {:?}",
+                operation
+            )),
         }
+    } else {
+        Err(anyhow!(
+            "Failed to parse system.peers response {:?}",
+            response
+        ))
     }
-    new_nodes
 }
 
 fn is_use_statement(request: &mut Message) -> bool {
