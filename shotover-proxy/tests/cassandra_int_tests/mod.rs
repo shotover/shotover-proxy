@@ -1,3 +1,4 @@
+use crate::cassandra_int_tests::schema_awaiter::SchemaAwaiter;
 use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
@@ -24,25 +25,27 @@ mod native_types;
 mod prepared_statements;
 #[cfg(feature = "alpha-transforms")]
 mod protect;
+mod schema_awaiter;
 mod table;
 mod udt;
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
-fn test_passthrough() {
+async fn test_passthrough() {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &schema_awaiter).await;
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -76,28 +79,28 @@ fn test_source_tls_and_single_tls() {
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[cfg(feature = "alpha-transforms")]
-fn test_cluster() {
+async fn test_cluster() {
     let _compose = DockerCompose::new("example-configs/cassandra-cluster/docker-compose.yml");
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology.yaml");
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let schema_awaiter = SchemaAwaiter::new("172.16.1.2:9042").await;
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &schema_awaiter).await;
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -132,14 +135,13 @@ fn test_source_tls_and_cluster_tls() {
     udt::test(&connection);
     native_types::test(&connection);
     collections::test(&connection);
-    functions::test(&connection);
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
-fn test_cassandra_redis_cache() {
+async fn test_cassandra_redis_cache() {
     let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
     recorder.install().unwrap();
@@ -151,20 +153,21 @@ fn test_cassandra_redis_cache() {
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&connection);
     table::test(&connection);
     udt::test(&connection);
-    functions::test(&connection);
+    functions::test(&connection, &schema_awaiter).await;
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
     cache::test(&connection, &mut redis_connection, &snapshotter);
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[cfg(feature = "alpha-transforms")]
-fn test_cassandra_protect_transform_local() {
+async fn test_cassandra_protect_transform_local() {
     let _compose = DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yml");
 
     let shotover_manager = ShotoverManager::from_topology_file(
@@ -173,21 +176,22 @@ fn test_cassandra_protect_transform_local() {
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
     udt::test(&shotover_connection);
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
-    functions::test(&shotover_connection);
+    functions::test(&shotover_connection, &schema_awaiter).await;
     batch_statements::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[cfg(feature = "alpha-transforms")]
-fn test_cassandra_protect_transform_aws() {
+async fn test_cassandra_protect_transform_aws() {
     let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yml");
     let _compose_aws = DockerCompose::new_moto();
 
@@ -196,13 +200,14 @@ fn test_cassandra_protect_transform_aws() {
 
     let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
     let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&shotover_connection);
     table::test(&shotover_connection);
     udt::test(&shotover_connection);
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
-    functions::test(&shotover_connection);
+    functions::test(&shotover_connection, &schema_awaiter).await;
     batch_statements::test(&shotover_connection);
     protect::test(&shotover_connection, &direct_connection);
 }
