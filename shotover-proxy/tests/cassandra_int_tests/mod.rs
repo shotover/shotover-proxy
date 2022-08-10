@@ -43,8 +43,8 @@ async fn test_passthrough() {
     let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
+    table::test(&connection, &schema_awaiter).await;
+    udt::test(&connection, &schema_awaiter).await;
     native_types::test(&connection);
     collections::test(&connection);
     functions::test(&connection, &schema_awaiter).await;
@@ -52,9 +52,9 @@ async fn test_passthrough() {
     batch_statements::test(&connection);
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
-fn test_source_tls_and_single_tls() {
+async fn test_source_tls_and_single_tls() {
     test_helpers::cert::generate_cassandra_test_certs();
     let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yml");
 
@@ -75,12 +75,14 @@ fn test_source_tls_and_single_tls() {
     }
 
     let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9043, ca_cert);
+    let schema_awaiter = SchemaAwaiter::new_noop();
 
     keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
+    table::test(&connection, &schema_awaiter).await;
+    udt::test(&connection, &schema_awaiter).await;
     native_types::test(&connection);
     collections::test(&connection);
+    functions::test(&connection, &schema_awaiter).await;
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
 }
@@ -99,8 +101,8 @@ async fn test_cluster() {
         let schema_awaiter = SchemaAwaiter::new("172.16.1.2:9042").await;
         // TODO: uncomment once we implement `USE` routing
         //keyspace::test(&connection1);
-        table::test(&connection1);
-        udt::test(&connection1);
+        table::test(&connection1, &schema_awaiter).await;
+        udt::test(&connection1, &schema_awaiter).await;
         native_types::test(&connection1);
         collections::test(&connection1);
         functions::test(&connection1, &schema_awaiter).await;
@@ -115,10 +117,10 @@ async fn test_cluster() {
     cluster::test().await;
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[cfg(feature = "alpha-transforms")]
-fn test_source_tls_and_cluster_tls() {
+async fn test_source_tls_and_cluster_tls() {
     test_helpers::cert::generate_cassandra_test_certs();
     let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yml");
 
@@ -139,11 +141,12 @@ fn test_source_tls_and_cluster_tls() {
     }
 
     let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+    let schema_awaiter = SchemaAwaiter::new_noop();
 
     // TODO: uncomment once we implement `USE` routing
     //keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
+    table::test(&connection, &schema_awaiter).await;
+    udt::test(&connection, &schema_awaiter).await;
     native_types::test(&connection);
     collections::test(&connection);
     prepared_statements::test(&connection);
@@ -167,8 +170,8 @@ async fn test_cassandra_redis_cache() {
     let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&connection);
-    table::test(&connection);
-    udt::test(&connection);
+    table::test(&connection, &schema_awaiter).await;
+    udt::test(&connection, &schema_awaiter).await;
     functions::test(&connection, &schema_awaiter).await;
     prepared_statements::test(&connection);
     batch_statements::test(&connection);
@@ -190,8 +193,8 @@ async fn test_cassandra_protect_transform_local() {
     let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&shotover_connection);
-    table::test(&shotover_connection);
-    udt::test(&shotover_connection);
+    table::test(&shotover_connection, &schema_awaiter).await;
+    udt::test(&shotover_connection, &schema_awaiter).await;
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
     functions::test(&shotover_connection, &schema_awaiter).await;
@@ -214,8 +217,8 @@ async fn test_cassandra_protect_transform_aws() {
     let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
 
     keyspace::test(&shotover_connection);
-    table::test(&shotover_connection);
-    udt::test(&shotover_connection);
+    table::test(&shotover_connection, &schema_awaiter).await;
+    udt::test(&shotover_connection, &schema_awaiter).await;
     native_types::test(&shotover_connection);
     collections::test(&shotover_connection);
     functions::test(&shotover_connection, &schema_awaiter).await;
@@ -223,9 +226,9 @@ async fn test_cassandra_protect_transform_aws() {
     protect::test(&shotover_connection, &direct_connection);
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
-fn test_cassandra_peers_rewrite_cassandra4() {
+async fn test_cassandra_peers_rewrite_cassandra4() {
     let _docker_compose = DockerCompose::new(
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
     );
@@ -237,7 +240,10 @@ fn test_cassandra_peers_rewrite_cassandra4() {
     let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
 
     let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
-    table::test(&rewrite_port_connection); // run some basic tests to confirm it works as normal
+
+    // run some basic tests to confirm it works as normal
+    let schema_awaiter = SchemaAwaiter::new_noop();
+    table::test(&normal_connection, &schema_awaiter).await;
 
     {
         assert_query_result(
@@ -314,7 +320,9 @@ async fn test_cassandra_peers_rewrite_cassandra3() {
     );
 
     let connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
-    table::test(&connection); // run some basic tests to confirm it works as normal
+    // run some basic tests to confirm it works as normal
+    let schema_awaiter = SchemaAwaiter::new_noop();
+    table::test(&connection, &schema_awaiter).await;
 
     // Assert that the error cassandra gives because system.peers_v2 does not exist on cassandra v3
     // is passed through shotover unchanged.

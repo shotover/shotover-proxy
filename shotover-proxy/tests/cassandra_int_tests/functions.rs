@@ -18,12 +18,12 @@ fn drop_function(session: &CassandraConnection) {
     );
 }
 
-async fn create_function(session: &CassandraConnection, direct_connections: &SchemaAwaiter) {
+async fn create_function(session: &CassandraConnection, schema_awaiter: &SchemaAwaiter) {
     run_query(
         session,
         "CREATE FUNCTION test_function_keyspace.my_function (a int, b int) RETURNS NULL ON NULL INPUT RETURNS int LANGUAGE javascript AS 'a * b';",
     );
-    direct_connections.await_schema_agreement().await;
+    schema_awaiter.await_schema_agreement().await;
     assert_query_result(
         session,
         "SELECT test_function_keyspace.my_function(x, y) FROM test_function_keyspace.test_function_table;",
@@ -31,7 +31,7 @@ async fn create_function(session: &CassandraConnection, direct_connections: &Sch
     );
 }
 
-pub async fn test(session: &CassandraConnection, direct_connections: &SchemaAwaiter) {
+pub async fn test(session: &CassandraConnection, schema_awaiter: &SchemaAwaiter) {
     run_query(
         session,
         "CREATE KEYSPACE test_function_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
@@ -49,6 +49,6 @@ INSERT INTO test_function_keyspace.test_function_table (id, x, y) VALUES (3, 4, 
 APPLY BATCH;"#,
     );
 
-    create_function(session, direct_connections).await;
+    create_function(session, schema_awaiter).await;
     drop_function(session);
 }
