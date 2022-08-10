@@ -1,4 +1,3 @@
-use crate::cassandra_int_tests::schema_awaiter::SchemaAwaiter;
 use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
@@ -27,7 +26,6 @@ mod native_types;
 mod prepared_statements;
 #[cfg(feature = "alpha-transforms")]
 mod protect;
-mod schema_awaiter;
 mod table;
 mod udt;
 
@@ -39,17 +37,18 @@ async fn test_passthrough() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
+    let connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9042)
+        .await;
 
-    keyspace::test(&connection);
-    table::test(&connection, &schema_awaiter).await;
-    udt::test(&connection, &schema_awaiter).await;
-    native_types::test(&connection);
-    collections::test(&connection);
-    functions::test(&connection, &schema_awaiter).await;
-    prepared_statements::test(&connection);
-    batch_statements::test(&connection);
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    native_types::test(&connection).await;
+    collections::test(&connection).await;
+    functions::test(&connection).await;
+    prepared_statements::test(&connection).await;
+    batch_statements::test(&connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -71,20 +70,20 @@ async fn test_source_tls_and_single_tls() {
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
             &[&[ResultValue::Varchar("COMPLETED".into())]],
-        );
+        )
+        .await;
     }
 
     let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9043, ca_cert);
-    let schema_awaiter = SchemaAwaiter::new_noop();
 
-    keyspace::test(&connection);
-    table::test(&connection, &schema_awaiter).await;
-    udt::test(&connection, &schema_awaiter).await;
-    native_types::test(&connection);
-    collections::test(&connection);
-    functions::test(&connection, &schema_awaiter).await;
-    prepared_statements::test(&connection);
-    batch_statements::test(&connection);
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    native_types::test(&connection).await;
+    collections::test(&connection).await;
+    functions::test(&connection).await;
+    prepared_statements::test(&connection).await;
+    batch_statements::test(&connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -97,21 +96,30 @@ async fn test_cluster() {
         let shotover_manager =
             ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology.yaml");
 
-        let connection1 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-        let schema_awaiter = SchemaAwaiter::new("172.16.1.2:9042").await;
+        let mut connection1 = shotover_manager
+            .cassandra_connection("127.0.0.1", 9042)
+            .await;
+        connection1
+            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .await;
         // TODO: uncomment once we implement `USE` routing
         //keyspace::test(&connection1);
-        table::test(&connection1, &schema_awaiter).await;
-        udt::test(&connection1, &schema_awaiter).await;
-        native_types::test(&connection1);
-        collections::test(&connection1);
-        functions::test(&connection1, &schema_awaiter).await;
-        prepared_statements::test(&connection1);
-        batch_statements::test(&connection1);
+        table::test(&connection1).await;
+        udt::test(&connection1).await;
+        native_types::test(&connection1).await;
+        collections::test(&connection1).await;
+        functions::test(&connection1).await;
+        prepared_statements::test(&connection1).await;
+        batch_statements::test(&connection1).await;
 
         //Check for bugs in cross connection state
-        let connection2 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-        native_types::test(&connection2);
+        let mut connection2 = shotover_manager
+            .cassandra_connection("127.0.0.1", 9042)
+            .await;
+        connection2
+            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .await;
+        native_types::test(&connection2).await;
     }
 
     cluster::test().await;
@@ -137,20 +145,24 @@ async fn test_source_tls_and_cluster_tls() {
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
             &[&[ResultValue::Varchar("COMPLETED".into())]],
-        );
+        )
+        .await;
     }
 
-    let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
-    let schema_awaiter = SchemaAwaiter::new_noop();
+    let mut connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+    connection
+        .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
+        .await;
 
     // TODO: uncomment once we implement `USE` routing
     //keyspace::test(&connection);
-    table::test(&connection, &schema_awaiter).await;
-    udt::test(&connection, &schema_awaiter).await;
-    native_types::test(&connection);
-    collections::test(&connection);
-    prepared_statements::test(&connection);
-    batch_statements::test(&connection);
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    native_types::test(&connection).await;
+    functions::test(&connection).await;
+    collections::test(&connection).await;
+    prepared_statements::test(&connection).await;
+    batch_statements::test(&connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -166,16 +178,17 @@ async fn test_cassandra_redis_cache() {
     );
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
+    let connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9042)
+        .await;
 
-    keyspace::test(&connection);
-    table::test(&connection, &schema_awaiter).await;
-    udt::test(&connection, &schema_awaiter).await;
-    functions::test(&connection, &schema_awaiter).await;
-    prepared_statements::test(&connection);
-    batch_statements::test(&connection);
-    cache::test(&connection, &mut redis_connection, &snapshotter);
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    functions::test(&connection).await;
+    prepared_statements::test(&connection).await;
+    batch_statements::test(&connection).await;
+    cache::test(&connection, &mut redis_connection, &snapshotter).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -188,18 +201,21 @@ async fn test_cassandra_protect_transform_local() {
         "example-configs/cassandra-protect-local/topology.yaml",
     );
 
-    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
-    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
+    let shotover_connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9042)
+        .await;
+    let direct_connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9043)
+        .await;
 
-    keyspace::test(&shotover_connection);
-    table::test(&shotover_connection, &schema_awaiter).await;
-    udt::test(&shotover_connection, &schema_awaiter).await;
-    native_types::test(&shotover_connection);
-    collections::test(&shotover_connection);
-    functions::test(&shotover_connection, &schema_awaiter).await;
-    batch_statements::test(&shotover_connection);
-    protect::test(&shotover_connection, &direct_connection);
+    keyspace::test(&shotover_connection).await;
+    table::test(&shotover_connection).await;
+    udt::test(&shotover_connection).await;
+    native_types::test(&shotover_connection).await;
+    collections::test(&shotover_connection).await;
+    functions::test(&shotover_connection).await;
+    batch_statements::test(&shotover_connection).await;
+    protect::test(&shotover_connection, &direct_connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -212,18 +228,21 @@ async fn test_cassandra_protect_transform_aws() {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-protect-aws/topology.yaml");
 
-    let shotover_connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
-    let direct_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
-    let schema_awaiter = SchemaAwaiter::new("127.0.0.1:9043").await;
+    let shotover_connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9042)
+        .await;
+    let direct_connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9043)
+        .await;
 
-    keyspace::test(&shotover_connection);
-    table::test(&shotover_connection, &schema_awaiter).await;
-    udt::test(&shotover_connection, &schema_awaiter).await;
-    native_types::test(&shotover_connection);
-    collections::test(&shotover_connection);
-    functions::test(&shotover_connection, &schema_awaiter).await;
-    batch_statements::test(&shotover_connection);
-    protect::test(&shotover_connection, &direct_connection);
+    keyspace::test(&shotover_connection).await;
+    table::test(&shotover_connection).await;
+    udt::test(&shotover_connection).await;
+    native_types::test(&shotover_connection).await;
+    collections::test(&shotover_connection).await;
+    functions::test(&shotover_connection).await;
+    batch_statements::test(&shotover_connection).await;
+    protect::test(&shotover_connection, &direct_connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -237,13 +256,16 @@ async fn test_cassandra_peers_rewrite_cassandra4() {
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let normal_connection = shotover_manager.cassandra_connection("127.0.0.1", 9043);
+    let normal_connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9043)
+        .await;
 
-    let rewrite_port_connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+    let rewrite_port_connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9044)
+        .await;
 
     // run some basic tests to confirm it works as normal
-    let schema_awaiter = SchemaAwaiter::new_noop();
-    table::test(&normal_connection, &schema_awaiter).await;
+    table::test(&normal_connection).await;
 
     {
         assert_query_result(
@@ -254,18 +276,21 @@ async fn test_cassandra_peers_rewrite_cassandra4() {
                 ResultValue::Int(9042),
                 ResultValue::Varchar("West".into()),
             ]],
-        );
+        )
+        .await;
         assert_query_result(
             &normal_connection,
             "SELECT native_port FROM system.peers_v2;",
             &[&[ResultValue::Int(9042)]],
-        );
+        )
+        .await;
 
         assert_query_result(
             &normal_connection,
             "SELECT native_port as foo FROM system.peers_v2;",
             &[&[ResultValue::Int(9042)]],
-        );
+        )
+        .await;
     }
 
     {
@@ -277,33 +302,40 @@ async fn test_cassandra_peers_rewrite_cassandra4() {
                 ResultValue::Int(9044),
                 ResultValue::Varchar("West".into()),
             ]],
-        );
+        )
+        .await;
 
         assert_query_result(
             &rewrite_port_connection,
             "SELECT native_port FROM system.peers_v2;",
             &[&[ResultValue::Int(9044)]],
-        );
+        )
+        .await;
 
         assert_query_result(
             &rewrite_port_connection,
             "SELECT native_port as foo FROM system.peers_v2;",
             &[&[ResultValue::Int(9044)]],
-        );
+        )
+        .await;
 
         assert_query_result(
             &rewrite_port_connection,
             "SELECT native_port, native_port FROM system.peers_v2;",
             &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
-        );
+        )
+        .await;
 
         assert_query_result(
             &rewrite_port_connection,
             "SELECT native_port, native_port as some_port FROM system.peers_v2;",
             &[&[ResultValue::Int(9044), ResultValue::Int(9044)]],
-        );
+        )
+        .await;
 
-        let result = rewrite_port_connection.execute("SELECT * FROM system.peers_v2;");
+        let result = rewrite_port_connection
+            .execute("SELECT * FROM system.peers_v2;")
+            .await;
         assert_eq!(result[0][5], ResultValue::Int(9044));
     }
 }
@@ -319,10 +351,11 @@ async fn test_cassandra_peers_rewrite_cassandra3() {
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9044);
+    let connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9044)
+        .await;
     // run some basic tests to confirm it works as normal
-    let schema_awaiter = SchemaAwaiter::new_noop();
-    table::test(&connection, &schema_awaiter).await;
+    table::test(&connection).await;
 
     // Assert that the error cassandra gives because system.peers_v2 does not exist on cassandra v3
     // is passed through shotover unchanged.
@@ -346,9 +379,13 @@ async fn test_cassandra_request_throttling() {
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
 
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9042)
+        .await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window and not trigger the rate limiter with client's startup reqeusts
-    let connection_2 = shotover_manager.cassandra_connection("127.0.0.1", 9042);
+    let connection_2 = shotover_manager
+        .cassandra_connection("127.0.0.1", 9042)
+        .await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window again
 
     let statement = "SELECT * FROM system.peers";
@@ -394,8 +431,8 @@ async fn test_cassandra_request_throttling() {
 
     // setup keyspace and table for the batch statement tests
     {
-        run_query(&connection, "CREATE KEYSPACE test_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
-        run_query(&connection, "CREATE TABLE test_keyspace.my_table (id int PRIMARY KEY, lastname text, firstname text);");
+        run_query(&connection, "CREATE KEYSPACE test_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
+        run_query(&connection, "CREATE TABLE test_keyspace.my_table (id int PRIMARY KEY, lastname text, firstname text);").await;
     }
 
     // this batch set should be allowed through
@@ -429,7 +466,7 @@ async fn test_cassandra_request_throttling() {
 
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
 
-    batch_statements::test(&connection);
+    batch_statements::test(&connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

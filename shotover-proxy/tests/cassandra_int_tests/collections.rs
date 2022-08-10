@@ -118,18 +118,18 @@ fn get_type_example_result_value(col_type: ColType) -> ResultValue {
 mod list {
     use super::*;
 
-    fn create(session: &CassandraConnection) {
+    async fn create(session: &CassandraConnection) {
         // create lists of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "CREATE TABLE test_collections_keyspace.test_list_table_{} (id int PRIMARY KEY, my_list list<{}>);",
-                        i,
-                        get_type_str(*col_type)
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "CREATE TABLE test_collections_keyspace.test_list_table_{} (id int PRIMARY KEY, my_list list<{}>);",
+                    i,
+                    get_type_str(*col_type)
+                )
+                .as_str(),
+            ).await;
         }
 
         // create lists of lists and sets
@@ -145,79 +145,79 @@ mod list {
                         get_type_str(*native_col_type)
                     )
                     .as_str(),
-                );
+                ).await;
             }
         }
 
         // create lists of maps
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "CREATE TABLE test_collections_keyspace.test_list_table_map_{} (id int PRIMARY KEY, my_list frozen<list<frozen<map<int, {}>>>>);",
-                        i,
-                        get_type_str(*col_type)
-                    )
-                    .as_str()
-                );
+                session,
+                format!(
+                    "CREATE TABLE test_collections_keyspace.test_list_table_map_{} (id int PRIMARY KEY, my_list frozen<list<frozen<map<int, {}>>>>);",
+                    i,
+                    get_type_str(*col_type)
+                )
+                .as_str()
+            ).await;
         }
     }
 
-    fn insert(session: &CassandraConnection) {
+    async fn insert(session: &CassandraConnection) {
         // insert lists of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
-                    "INSERT INTO test_collections_keyspace.test_list_table_{} (id, my_list) VALUES ({}, [{}]);",
-                    i,
-                    i,
-                    get_type_example(*col_type)
-                );
-            run_query(session, query.as_str());
+                "INSERT INTO test_collections_keyspace.test_list_table_{} (id, my_list) VALUES ({}, [{}]);",
+                i,
+                i,
+                get_type_example(*col_type)
+            );
+            run_query(session, query.as_str()).await;
         }
 
         // test inserting list of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_list_table_{}_0 (id, my_list) VALUES ({}, [{{{}}}]);",
-                        i,
-                        i,
-                        get_type_example(*native_col_type)
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_list_table_{}_0 (id, my_list) VALUES ({}, [{{{}}}]);",
+                    i,
+                    i,
+                    get_type_example(*native_col_type)
+                )
+                .as_str(),
+            ).await;
         }
 
         // test inserting list of lists
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_list_table_{}_1 (id, my_list) VALUES ({}, [[{}]]);",
-                        i,
-                        i,
-                        get_type_example(*native_col_type)
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_list_table_{}_1 (id, my_list) VALUES ({}, [[{}]]);",
+                    i,
+                    i,
+                    get_type_example(*native_col_type)
+                )
+                .as_str(),
+            ).await;
         }
         // test inserting list of maps
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_list_table_map_{} (id, my_list) VALUES ({}, [{}]);",
-                        i,
-                        i,
-                        get_map_example(get_type_example(*native_col_type))
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_list_table_map_{} (id, my_list) VALUES ({}, [{}]);",
+                    i,
+                    i,
+                    get_map_example(get_type_example(*native_col_type))
+                )
+                .as_str(),
+            ).await;
         }
     }
 
-    fn select(session: &CassandraConnection) {
+    async fn select(session: &CassandraConnection) {
         // select lists of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -231,7 +231,8 @@ mod list {
                 &[&[ResultValue::List(vec![get_type_example_result_value(
                     *col_type,
                 )])]],
-            );
+            )
+            .await;
         }
 
         // test selecting list of sets
@@ -246,7 +247,8 @@ mod list {
                 &[&[ResultValue::List(vec![ResultValue::Set(vec![
                     get_type_example_result_value(*native_col_type),
                 ])])]],
-            );
+            )
+            .await;
         }
 
         // test selecting list of lists
@@ -261,7 +263,8 @@ mod list {
                 &[&[ResultValue::List(vec![ResultValue::List(vec![
                     get_type_example_result_value(*native_col_type),
                 ])])]],
-            );
+            )
+            .await;
         }
 
         // test selecting list of maps
@@ -277,113 +280,114 @@ mod list {
                     ResultValue::Int(0),
                     get_type_example_result_value(*native_col_type),
                 )])])]],
-            );
+            )
+            .await;
         }
     }
 
-    pub fn test(session: &CassandraConnection) {
-        create(session);
-        insert(session);
-        select(session);
+    pub async fn test(session: &CassandraConnection) {
+        create(session).await;
+        insert(session).await;
+        select(session).await;
     }
 }
 
 mod set {
     use super::*;
 
-    fn create(session: &CassandraConnection) {
+    async fn create(session: &CassandraConnection) {
         // create sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "CREATE TABLE test_collections_keyspace.test_set_table_{} (id int PRIMARY KEY, my_set set<{}>);",
-                        i,
-                        get_type_str(*col_type)
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "CREATE TABLE test_collections_keyspace.test_set_table_{} (id int PRIMARY KEY, my_set set<{}>);",
+                    i,
+                    get_type_str(*col_type)
+                )
+                .as_str(),
+            ).await;
         }
 
         // create sets of lists and sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             for (j, collection_col_type) in COLLECTION_COL_TYPES.iter().enumerate() {
                 run_query(
-                        session,
-                        format!(
-                            "CREATE TABLE test_collections_keyspace.test_set_table_{}_{} (id int PRIMARY KEY, my_set frozen<set<{}<{}>>>);",
-                            i,
-                            j,
-                            get_type_str(*collection_col_type),
-                            get_type_str(*native_col_type)
-                        )
-                        .as_str(),
-                );
+                    session,
+                    format!(
+                        "CREATE TABLE test_collections_keyspace.test_set_table_{}_{} (id int PRIMARY KEY, my_set frozen<set<{}<{}>>>);",
+                        i,
+                        j,
+                        get_type_str(*collection_col_type),
+                        get_type_str(*native_col_type)
+                    )
+                    .as_str(),
+                ).await;
             }
         }
 
         // create sets of maps
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-            run_query(session, format!("CREATE TABLE test_collections_keyspace.test_set_table_map_{} (id int PRIMARY KEY, my_set frozen<set<frozen<map<int, {}>>>>);", i, get_type_str(*col_type)).as_str());
+            run_query(session, format!("CREATE TABLE test_collections_keyspace.test_set_table_map_{} (id int PRIMARY KEY, my_set frozen<set<frozen<map<int, {}>>>>);", i, get_type_str(*col_type)).as_str()).await;
         }
     }
 
-    fn insert(session: &CassandraConnection) {
+    async fn insert(session: &CassandraConnection) {
         // insert sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
-                    "INSERT INTO test_collections_keyspace.test_set_table_{} (id, my_set) VALUES ({}, {{{}}});",
-                    i,
-                    i,
-                    get_type_example(*col_type)
-                );
-            run_query(session, query.as_str());
+                "INSERT INTO test_collections_keyspace.test_set_table_{} (id, my_set) VALUES ({}, {{{}}});",
+                i,
+                i,
+                get_type_example(*col_type)
+            );
+            run_query(session, query.as_str()).await;
         }
 
         // test inserting sets of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_set_table_{}_0 (id, my_set) VALUES ({}, {{{{{}}}}});",
-                        i,
-                        i,
-                        get_type_example(*native_col_type)
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_set_table_{}_0 (id, my_set) VALUES ({}, {{{{{}}}}});",
+                    i,
+                    i,
+                    get_type_example(*native_col_type)
+                )
+                .as_str(),
+            ).await;
         }
 
         // test inserting set of lists
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_set_table_{}_1 (id, my_set) VALUES ({}, {{[{}]}});",
-                        i,
-                        i,
-                        get_type_example(*native_col_type)
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_set_table_{}_1 (id, my_set) VALUES ({}, {{[{}]}});",
+                    i,
+                    i,
+                    get_type_example(*native_col_type)
+                )
+                .as_str(),
+            ).await;
         }
 
         // test inserting set of maps
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_set_table_map_{} (id, my_set) VALUES ({}, {{{}}});",
-                        i,
-                        i,
-                        get_map_example(get_type_example(*native_col_type))
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_set_table_map_{} (id, my_set) VALUES ({}, {{{}}});",
+                    i,
+                    i,
+                    get_map_example(get_type_example(*native_col_type))
+                )
+                .as_str(),
+            ).await;
         }
     }
 
-    fn select(session: &CassandraConnection) {
+    async fn select(session: &CassandraConnection) {
         // select sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -397,7 +401,8 @@ mod set {
                 &[&[ResultValue::Set(vec![get_type_example_result_value(
                     *col_type,
                 )])]],
-            );
+            )
+            .await;
         }
 
         // test selecting set of sets
@@ -412,7 +417,8 @@ mod set {
                 &[&[ResultValue::Set(vec![ResultValue::Set(vec![
                     get_type_example_result_value(*native_col_type),
                 ])])]],
-            );
+            )
+            .await;
         }
 
         // test selecting set of lists
@@ -427,7 +433,8 @@ mod set {
                 &[&[ResultValue::Set(vec![ResultValue::List(vec![
                     get_type_example_result_value(*native_col_type),
                 ])])]],
-            );
+            )
+            .await;
         }
 
         // test selecting set of maps
@@ -443,121 +450,122 @@ mod set {
                     ResultValue::Int(0),
                     get_type_example_result_value(*native_col_type),
                 )])])]],
-            );
+            )
+            .await;
         }
     }
 
-    pub fn test(session: &CassandraConnection) {
-        create(session);
-        insert(session);
-        select(session);
+    pub async fn test(session: &CassandraConnection) {
+        create(session).await;
+        insert(session).await;
+        select(session).await;
     }
 }
 
 mod map {
     use super::*;
 
-    fn create(session: &CassandraConnection) {
+    async fn create(session: &CassandraConnection) {
         // create maps of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "CREATE TABLE test_collections_keyspace.test_map_table_{} (id int PRIMARY KEY, my_map map<int, {}>);",
-                        i,
-                        get_type_str(*col_type)
-                    )
-                    .as_str(),
-                );
+                session,
+                format!(
+                    "CREATE TABLE test_collections_keyspace.test_map_table_{} (id int PRIMARY KEY, my_map map<int, {}>);",
+                    i,
+                    get_type_str(*col_type)
+                )
+                .as_str(),
+            ).await;
         }
 
         // create maps of lists and sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             for (j, collection_col_type) in COLLECTION_COL_TYPES.iter().enumerate() {
                 run_query(
-                        session,
-                        format!(
-                            "CREATE TABLE test_collections_keyspace.test_map_table_{}_{} (id int PRIMARY KEY, my_map frozen<map<int, {}<{}>>>);",
-                            i,
-                            j,
-                            get_type_str(*collection_col_type),
-                            get_type_str(*native_col_type)
-                        )
-                        .as_str(),
-                    );
+                    session,
+                    format!(
+                        "CREATE TABLE test_collections_keyspace.test_map_table_{}_{} (id int PRIMARY KEY, my_map frozen<map<int, {}<{}>>>);",
+                        i,
+                        j,
+                        get_type_str(*collection_col_type),
+                        get_type_str(*native_col_type)
+                    )
+                    .as_str(),
+                ).await;
             }
         }
 
         // create maps of maps
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "CREATE TABLE test_collections_keyspace.test_map_table_map_{} (id int PRIMARY KEY, my_map frozen<map<int, frozen<map<int, {}>>>>);",
-                        i,
-                        get_type_str(*col_type)
-                    )
-                    .as_str()
-                );
+                session,
+                format!(
+                    "CREATE TABLE test_collections_keyspace.test_map_table_map_{} (id int PRIMARY KEY, my_map frozen<map<int, frozen<map<int, {}>>>>);",
+                    i,
+                    get_type_str(*col_type)
+                )
+                .as_str()
+            ).await;
         }
     }
 
-    fn insert(session: &CassandraConnection) {
+    async fn insert(session: &CassandraConnection) {
         // insert maps of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
-                    "INSERT INTO test_collections_keyspace.test_map_table_{} (id, my_map) VALUES ({}, {});",
-                    i,
-                    i,
-                    get_map_example(get_type_example(*col_type))
-                );
-            run_query(session, query.as_str());
+                "INSERT INTO test_collections_keyspace.test_map_table_{} (id, my_map) VALUES ({}, {});",
+                i,
+                i,
+                get_map_example(get_type_example(*col_type))
+            );
+            run_query(session, query.as_str()).await;
         }
 
         // test inserting map of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_map_table_{}_0 (id, my_map) VALUES ({}, {});",
-                        i,
-                        i,
-                        get_map_example(format!("{{{}}}", get_type_example(*native_col_type)).as_str())
-                    )
-                    .as_str()
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_map_table_{}_0 (id, my_map) VALUES ({}, {});",
+                    i,
+                    i,
+                    get_map_example(format!("{{{}}}", get_type_example(*native_col_type)).as_str())
+                )
+                .as_str()
+            ).await;
         }
 
         // test inserting map of lists
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_map_table_{}_1 (id, my_map) VALUES ({}, {});",
-                        i,
-                        i,
-                        get_map_example(format!("[{}]", get_type_example(*native_col_type)).as_str())
-                    )
-                    .as_str()
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_map_table_{}_1 (id, my_map) VALUES ({}, {});",
+                    i,
+                    i,
+                    get_map_example(format!("[{}]", get_type_example(*native_col_type)).as_str())
+                )
+                .as_str()
+            ).await;
         }
 
         // test inserting map of maps
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             run_query(
-                    session,
-                    format!(
-                        "INSERT INTO test_collections_keyspace.test_map_table_map_{} (id, my_map) VALUES ({}, {{0: {}}});",
-                        i,
-                        i,
-                        get_map_example(get_type_example(*native_col_type))
-                    )
-                    .as_str()
-                );
+                session,
+                format!(
+                    "INSERT INTO test_collections_keyspace.test_map_table_map_{} (id, my_map) VALUES ({}, {{0: {}}});",
+                    i,
+                    i,
+                    get_map_example(get_type_example(*native_col_type))
+                )
+                .as_str()
+            ).await;
         }
     }
 
-    fn select(session: &CassandraConnection) {
+    async fn select(session: &CassandraConnection) {
         // select sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -572,7 +580,8 @@ mod map {
                     ResultValue::Int(0),
                     get_type_example_result_value(*col_type),
                 )])]],
-            );
+            )
+            .await;
         }
 
         // test selecting map of sets
@@ -588,7 +597,8 @@ mod map {
                     ResultValue::Int(0),
                     ResultValue::Set(vec![get_type_example_result_value(*native_col_type)]),
                 )])]],
-            );
+            )
+            .await;
         }
 
         // test selecting map of lists
@@ -604,7 +614,8 @@ mod map {
                     ResultValue::Int(0),
                     ResultValue::List(vec![get_type_example_result_value(*native_col_type)]),
                 )])]],
-            );
+            )
+            .await;
         }
 
         // test selecting map of maps
@@ -623,21 +634,22 @@ mod map {
                         get_type_example_result_value(*native_col_type),
                     )]),
                 )])]],
-            );
+            )
+            .await;
         }
     }
 
-    pub fn test(session: &CassandraConnection) {
-        create(session);
-        insert(session);
-        select(session);
+    pub async fn test(session: &CassandraConnection) {
+        create(session).await;
+        insert(session).await;
+        select(session).await;
     }
 }
 
-pub fn test(session: &CassandraConnection) {
-    run_query(session, "CREATE KEYSPACE test_collections_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+pub async fn test(session: &CassandraConnection) {
+    run_query(session, "CREATE KEYSPACE test_collections_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
 
-    list::test(session);
-    set::test(session);
-    map::test(session);
+    list::test(session).await;
+    set::test(session).await;
+    map::test(session).await;
 }
