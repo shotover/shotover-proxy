@@ -110,6 +110,7 @@ async fn test_cluster() {
         functions::test(&connection1).await;
         prepared_statements::test(&connection1).await;
         batch_statements::test(&connection1).await;
+        cluster::test(&connection1).await;
 
         //Check for bugs in cross connection state
         let mut connection2 = shotover_manager
@@ -161,6 +162,7 @@ async fn test_source_tls_and_cluster_tls() {
         collections::test(&connection).await;
         prepared_statements::test(&connection).await;
         batch_statements::test(&connection).await;
+        cluster::test(&connection).await;
     }
 
     cluster::test_topology_task(Some(ca_cert)).await;

@@ -2,27 +2,35 @@ use crate::codec::cassandra::CassandraCodec;
 use crate::error::ChainResponse;
 use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use crate::message::{Message, MessageValue, Messages};
+use crate::message::{IntSize, Message, MessageValue, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::CassandraConnection;
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use cassandra_protocol::frame::message_result::{
+    ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags, TableSpec,
+};
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::FQName;
+use cql3_parser::common::{FQName, Identifier};
+use cql3_parser::select::SelectElement;
 use futures::stream::FuturesOrdered;
+use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use node::CassandraNode;
 use rand::prelude::*;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
+use uuid::Uuid;
 
 mod node;
 
@@ -59,6 +67,7 @@ pub struct CassandraSinkCluster {
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     read_timeout: Option<Duration>,
+    local_table: FQName,
     peer_table: FQName,
     data_center: String,
     /// A local clone of topology_task_nodes
@@ -85,6 +94,7 @@ impl Clone for CassandraSinkCluster {
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
             read_timeout: self.read_timeout,
+            local_table: self.local_table.clone(),
             peer_table: self.peer_table.clone(),
             data_center: self.data_center.clone(),
             local_nodes: vec![],
@@ -128,6 +138,7 @@ impl CassandraSinkCluster {
             tls,
             pushed_messages_tx: None,
             read_timeout: receive_timeout,
+            local_table: FQName::new("system", "local"),
             peer_table: FQName::new("system", "peers"),
             data_center,
             local_nodes: vec![],
@@ -144,6 +155,16 @@ impl CassandraSinkCluster {
         if self.local_nodes.is_empty() {
             let nodes_shared = self.topology_task_nodes.read().await;
             self.local_nodes = nodes_shared.clone();
+        }
+
+        let tables_to_rewrite: Vec<TableToRewrite> = messages
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, m)| self.get_rewrite_table(m, i))
+            .collect();
+
+        for table_to_rewrite in tables_to_rewrite.iter().rev() {
+            messages.remove(table_to_rewrite.index);
         }
 
         // Create the initial connection.
@@ -266,7 +287,421 @@ impl CassandraSinkCluster {
             }
         }
 
+        for table_to_rewrite in tables_to_rewrite {
+            responses.insert(
+                table_to_rewrite.index,
+                self.rewrite_table(table_to_rewrite).await?,
+            );
+        }
+
         Ok(responses)
+    }
+
+    fn get_rewrite_table(&self, request: &mut Message, index: usize) -> Option<TableToRewrite> {
+        if let Some(Frame::Cassandra(cassandra)) = request.frame() {
+            // No need to handle Batch as selects can only occur on Query
+            if let CassandraOperation::Query { query, .. } = &cassandra.operation {
+                if let CassandraStatement::Select(select) = query.as_ref() {
+                    let ty = if self.local_table == select.table_name {
+                        RewriteTableTy::Local
+                    } else if self.peer_table == select.table_name {
+                        RewriteTableTy::Peers
+                    } else {
+                        return None;
+                    };
+
+                    return Some(TableToRewrite {
+                        index,
+                        ty,
+                        stream_id: cassandra.stream_id,
+                        selects: select.columns.clone(),
+                        version: cassandra.version,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    async fn rewrite_table(&mut self, table: TableToRewrite) -> Result<Message> {
+        let version = table.version;
+        let stream_id = table.stream_id;
+        let table_name = match table.ty {
+            RewriteTableTy::Local => "local".into(),
+            RewriteTableTy::Peers => "peers".into(),
+        };
+        let (rows, col_specs) = match table.ty {
+            RewriteTableTy::Local => self.rewrite_table_local(table).await?,
+            RewriteTableTy::Peers => self.rewrite_table_peers(table).await?,
+        };
+
+        Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version,
+            stream_id,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::Result(CassandraResult::Rows {
+                value: MessageValue::Rows(rows),
+                // TODO: A bunch of these are just hardcoded with the assumption that the client didnt request any exotic features.
+                // We should implement them eventually but I cant imagine drivers would bother using them when querying the topology.
+                // TODO: flags and columns_count should be removed upstream and just derived from the other fields at serialization time.
+                metadata: Box::new(RowsMetadata {
+                    flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
+                    columns_count: col_specs.len() as i32,
+                    paging_state: None,
+                    new_metadata_id: None,
+                    global_table_spec: Some(TableSpec {
+                        ks_name: "system".into(),
+                        table_name,
+                    }),
+                    col_specs,
+                }),
+            }),
+        })))
+    }
+
+    async fn rewrite_table_peers(
+        &mut self,
+        table: TableToRewrite,
+    ) -> Result<(Vec<Vec<MessageValue>>, Vec<ColSpec>)> {
+        let mut col_specs = vec![];
+        let rows = vec![];
+
+        let peer_ident = Identifier::Unquoted("peer".into());
+        let data_center_ident = Identifier::Unquoted("data_center".into());
+        let host_id_ident = Identifier::Unquoted("host_id".into());
+        let preferred_ip = Identifier::Unquoted("preferred_ip".into());
+        let rack_ident = Identifier::Unquoted("rack".into());
+        let release_version_ident = Identifier::Unquoted("release_version".into());
+        let rpc_address_ident = Identifier::Unquoted("rpc_address".into());
+        let schema_version_ident = Identifier::Unquoted("schema_version".into());
+        let tokens_ident = Identifier::Unquoted("tokens".into());
+
+        for select in table.selects {
+            match select {
+                SelectElement::Star => {
+                    col_specs.extend([
+                        meta("peer".into(), ColType::Inet),
+                        meta("data_center".into(), ColType::Varchar),
+                        meta("host_id".into(), ColType::Uuid),
+                        meta("preferred_ip".into(), ColType::Inet),
+                        meta("rack".into(), ColType::Varchar),
+                        meta("release_version".into(), ColType::Varchar),
+                        meta("rpc_address".into(), ColType::Inet),
+                        meta("schema_version".into(), ColType::Uuid),
+                        meta_tokens("tokens".into()),
+                    ]);
+                }
+                SelectElement::Function(name) => {
+                    // TODO: 90% sure SelectElement::Function(name) is not actually a name but the entire function call stuffed in a name LOL
+                    col_specs.push(meta(name.to_string(), ColType::Varchar));
+                }
+                SelectElement::Column(name) => {
+                    if name.name == peer_ident {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
+                    } else if name.name == data_center_ident {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == host_id_ident {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Uuid));
+                    } else if name.name == preferred_ip {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
+                    } else if name.name == rack_ident {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == rpc_address_ident {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
+                    } else if name.name == release_version_ident {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == schema_version_ident {
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Uuid));
+                    } else if name.name == tokens_ident {
+                        col_specs.push(meta_tokens(name.alias_or_name().to_string()));
+                    } else {
+                        tracing::error!("Unknown system.peer column requested {:?}", name)
+                    }
+                }
+            }
+        }
+
+        // TODO: generate rows for shotover peers
+        //       the current implementation will at least direct all traffic through shotover
+
+        // TODO: schema_version and gossip_generation should be obtained by querying all nodes
+
+        Ok((rows, col_specs))
+    }
+
+    async fn rewrite_table_local(
+        &mut self,
+        table: TableToRewrite,
+    ) -> Result<(Vec<Vec<MessageValue>>, Vec<ColSpec>)> {
+        let mut schema_version: Option<Uuid> = None;
+        let mut gossip_generation: Option<i64> = None;
+        let mut rack: HashSet<String> = HashSet::new();
+        let mut partitioner: HashSet<String> = HashSet::new();
+        let mut cluster_name: HashSet<String> = HashSet::new();
+        let mut tokens = vec![];
+        if self.local_nodes.is_empty() {
+            // TODO: maybe we should query the handshake connection rather than asuming worst case values?
+            schema_version = Some(Uuid::new_v4());
+            gossip_generation = Some(0);
+        } else {
+            let mut futures = FuturesUnordered::new();
+            for node in &mut self.local_nodes {
+                futures.push(async {
+                    let connection = node
+                        .get_connection(&self.init_handshake, &self.tls, &None)
+                        .await?;
+                    let (return_chan_tx, return_chan_rx) = oneshot::channel();
+                    connection.send(
+                        Message::from_frame(Frame::Cassandra(CassandraFrame {
+                            version: Version::V4,
+                            stream_id: 0,
+                            tracing_id: None,
+                            warnings: vec![],
+                            operation: CassandraOperation::Query {
+                                query: Box::new(parse_statement_single(
+                                    "SELECT cluster_name, partitioner, rack, schema_version, gossip_generation, tokens FROM system.local",
+                                )),
+                                params: Box::new(QueryParams::default()),
+                            },
+                        })),
+                        return_chan_tx,
+                    )?;
+                    let response = return_chan_rx.await?.response?;
+                    parse_system_local(response)
+                });
+            }
+            while let Some(system_local) = futures.next().await {
+                let system_local = system_local?;
+                match &mut schema_version {
+                    Some(schema_version) => {
+                        if *schema_version != system_local.schema_version {
+                            // TODO: could optimize this by avoiding repeating the random number generation
+                            *schema_version = Uuid::new_v4();
+                        }
+                    }
+                    None => schema_version = Some(system_local.schema_version),
+                }
+
+                match &mut gossip_generation {
+                    Some(gossip_generation) => {
+                        if *gossip_generation < system_local.gossip_generation {
+                            *gossip_generation = system_local.gossip_generation;
+                        }
+                    }
+                    None => gossip_generation = Some(system_local.gossip_generation),
+                }
+                rack.insert(system_local.rack);
+                partitioner.insert(system_local.partitioner);
+                cluster_name.insert(system_local.cluster_name);
+                tokens.extend(system_local.tokens)
+            }
+        }
+
+        let rack = rack.into_iter().sorted().join("|");
+        let partitioner = partitioner.into_iter().sorted().join("|");
+        let cluster_name = cluster_name.into_iter().sorted().join("|");
+
+        let version = match table.version {
+            Version::V3 => "3".to_string(),
+            Version::V4 => "4".to_string(),
+            Version::V5 => "5".to_string(),
+        };
+
+        let key_ident = Identifier::Unquoted("key".into());
+        let bootstrapped_ident = Identifier::Unquoted("bootstrapped".into());
+        let broadcast_address_ident = Identifier::Unquoted("broadcast_address".into());
+        let cluster_name_ident = Identifier::Unquoted("cluster_name".into());
+        let cql_version_ident = Identifier::Unquoted("cql_version".into());
+        let data_center_ident = Identifier::Unquoted("data_center".into());
+        let gossip_generation_ident = Identifier::Unquoted("gossip_generation".into());
+        let host_id_ident = Identifier::Unquoted("host_id".into());
+        let listen_address_ident = Identifier::Unquoted("listen_address".into());
+        let native_protocol_version_ident = Identifier::Unquoted("native_protocol_version".into());
+        let partitioner_ident = Identifier::Unquoted("partitioner".into());
+        let rack_ident = Identifier::Unquoted("rack".into());
+        let release_version_ident = Identifier::Unquoted("release_version".into());
+        let rpc_address_ident = Identifier::Unquoted("rpc_address".into());
+        let schema_version_ident = Identifier::Unquoted("schema_version".into());
+        let tokens_ident = Identifier::Unquoted("tokens".into());
+        let truncated_at_ident = Identifier::Unquoted("truncated_at".into());
+        let mut col_specs = vec![];
+        let mut row = vec![];
+        for select in table.selects {
+            match select {
+                SelectElement::Star => {
+                    row.extend([
+                        MessageValue::Varchar("local".into()),
+                        MessageValue::Varchar("COMPLETED".into()),
+                        MessageValue::Inet("127.0.0.1".parse().unwrap()),
+                        MessageValue::Varchar(cluster_name.clone()),
+                        MessageValue::Varchar("3.4.4".into()),
+                        MessageValue::Varchar(self.data_center.clone()),
+                        MessageValue::Integer(gossip_generation.unwrap(), IntSize::I32),
+                        MessageValue::Uuid(Uuid::new_v4()),
+                        MessageValue::Inet("127.0.0.1".parse().unwrap()),
+                        MessageValue::Varchar(version.clone()),
+                        MessageValue::Varchar(partitioner.clone()),
+                        MessageValue::Varchar(rack.clone()),
+                        MessageValue::Varchar("3.11.13".into()),
+                        MessageValue::Inet("0.0.0.0".parse().unwrap()),
+                        MessageValue::Uuid(schema_version.unwrap()),
+                        MessageValue::List(vec![]),
+                        MessageValue::Null,
+                    ]);
+                    col_specs.extend([
+                        meta("key".into(), ColType::Varchar),
+                        meta("bootstrapped".into(), ColType::Varchar),
+                        meta("broadcast_address".into(), ColType::Inet),
+                        //meta("broadcast_port".into(), ColType::Int),
+                        meta("cluster_name".into(), ColType::Varchar),
+                        meta("cql_version".into(), ColType::Varchar),
+                        meta("data_center".into(), ColType::Varchar),
+                        meta("gossip_generation".into(), ColType::Int),
+                        meta("host_id".into(), ColType::Uuid),
+                        meta("listen_address".into(), ColType::Inet),
+                        //meta("listen_port".into(), ColType::Int),
+                        meta("native_protocol_version".into(), ColType::Varchar),
+                        meta("partitioner".into(), ColType::Varchar),
+                        meta("rack".into(), ColType::Varchar),
+                        meta("release_version".into(), ColType::Varchar),
+                        meta("rpc_address".into(), ColType::Inet),
+                        //meta("rpc_port".into(), ColType::Int),
+                        meta("schema_version".into(), ColType::Uuid),
+                        meta_tokens("tokens".into()),
+                        meta_truncated_at("truncated_at".into()),
+                    ]);
+                }
+                SelectElement::Function(name) => {
+                    row.push(MessageValue::Varchar(
+                        "ERROR: Functions are not supported by shotover".into(),
+                    ));
+                    // TODO: 90% sure SelectElement::Function(name) is not actually a name but the entire function call stuffed in a name LOL
+                    col_specs.push(meta(name.to_string(), ColType::Varchar));
+                }
+                SelectElement::Column(name) => {
+                    if name.name == key_ident {
+                        row.push(MessageValue::Varchar("local".into()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == bootstrapped_ident {
+                        row.push(MessageValue::Varchar("COMPLETED".into()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == broadcast_address_ident {
+                        row.push(MessageValue::Inet("127.0.0.1".parse().unwrap()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
+                    } else if name.name == cluster_name_ident {
+                        row.push(MessageValue::Varchar(cluster_name.clone()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == cql_version_ident {
+                        row.push(MessageValue::Varchar("3.4.4".into()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == data_center_ident {
+                        row.push(MessageValue::Varchar(self.data_center.clone()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == gossip_generation_ident {
+                        row.push(MessageValue::Integer(
+                            gossip_generation.unwrap(),
+                            IntSize::I32,
+                        ));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Int));
+                    } else if name.name == host_id_ident {
+                        row.push(MessageValue::Uuid(Uuid::new_v4()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Uuid));
+                    } else if name.name == listen_address_ident {
+                        row.push(MessageValue::Inet("127.0.0.1".parse().unwrap()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
+                    } else if name.name == native_protocol_version_ident {
+                        row.push(MessageValue::Varchar(version.clone()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == partitioner_ident {
+                        row.push(MessageValue::Varchar(partitioner.clone()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == rack_ident {
+                        row.push(MessageValue::Varchar(rack.clone()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == release_version_ident {
+                        row.push(MessageValue::Varchar("3.11.13".into()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
+                    } else if name.name == rpc_address_ident {
+                        row.push(MessageValue::Inet("0.0.0.0".parse().unwrap()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
+                    } else if name.name == schema_version_ident {
+                        row.push(MessageValue::Uuid(schema_version.unwrap()));
+                        col_specs.push(meta(name.alias_or_name().to_string(), ColType::Uuid));
+                    } else if name.name == tokens_ident {
+                        row.push(MessageValue::List(vec![]));
+                        col_specs.push(meta_tokens(name.alias_or_name().to_string()));
+                    } else if name.name == truncated_at_ident {
+                        row.push(MessageValue::Null);
+                        col_specs.push(meta_truncated_at(name.alias_or_name().to_string()));
+                    } else {
+                        tracing::error!("Unknown system.local column requested {:?}", name)
+                    }
+                }
+            }
+        }
+
+        // TODO: schema_version and gossip_generation should be obtained by querying all nodes
+
+        Ok((vec![row], col_specs))
+    }
+}
+
+struct TableToRewrite {
+    index: usize,
+    ty: RewriteTableTy,
+    stream_id: i16,
+    version: Version,
+    selects: Vec<SelectElement>,
+}
+
+enum RewriteTableTy {
+    Local,
+    Peers,
+}
+
+fn meta(name: String, col_type: ColType) -> ColSpec {
+    ColSpec {
+        name,
+        table_spec: None,
+        col_type: ColTypeOption {
+            id: col_type,
+            value: None,
+        },
+    }
+}
+
+fn meta_tokens(name: String) -> ColSpec {
+    ColSpec {
+        name,
+        table_spec: None,
+        col_type: ColTypeOption {
+            id: ColType::Set,
+            value: Some(ColTypeOptionValue::CSet(Box::new(ColTypeOption {
+                id: ColType::Varchar,
+                value: None,
+            }))),
+        },
+    }
+}
+
+fn meta_truncated_at(name: String) -> ColSpec {
+    ColSpec {
+        name,
+        table_spec: None,
+        col_type: ColTypeOption {
+            id: ColType::Map,
+            value: Some(ColTypeOptionValue::CMap(
+                Box::new(ColTypeOption {
+                    id: ColType::Uuid,
+                    value: None,
+                }),
+                Box::new(ColTypeOption {
+                    id: ColType::Blob,
+                    value: None,
+                }),
+            )),
+        },
     }
 }
 
@@ -452,6 +887,98 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
         }
     }
     false
+}
+
+struct SystemLocal {
+    schema_version: Uuid,
+    gossip_generation: i64,
+    tokens: Vec<String>,
+    rack: String,
+    partitioner: String,
+    cluster_name: String,
+}
+
+fn parse_system_local(mut response: Message) -> Result<SystemLocal> {
+    if let Some(Frame::Cassandra(frame)) = response.frame() {
+        match &mut frame.operation {
+            CassandraOperation::Result(CassandraResult::Rows {
+                value: MessageValue::Rows(rows),
+                ..
+            }) => {
+                if rows.len() > 1 {
+                    tracing::error!("system.local returned more than one row");
+                }
+                if let Some(row) = rows.first_mut() {
+                    if row.len() != 6 {
+                        return Err(anyhow!("expected 6 columns but was {}", row.len()));
+                    }
+
+                    let tokens = if let Some(MessageValue::List(value)) = row.pop() {
+                        value
+                            .into_iter()
+                            .map(|x| match x {
+                                MessageValue::Varchar(a) => Ok(a),
+                                _ => Err(anyhow!("tokens value not a varchar")),
+                            })
+                            .collect::<Result<Vec<String>>>()?
+                    } else {
+                        return Err(anyhow!("tokens not a list"));
+                    };
+
+                    let gossip_generation = if let Some(MessageValue::Integer(value, _)) = row.pop()
+                    {
+                        value
+                    } else {
+                        return Err(anyhow!("gossip_generation not an int"));
+                    };
+
+                    let schema_version = if let Some(MessageValue::Uuid(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("schema_version not a uuid"));
+                    };
+
+                    let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("rack not a varchar"));
+                    };
+
+                    let partitioner = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("partitioner not a varchar"));
+                    };
+
+                    let cluster_name = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("cluster_name not a varchar"));
+                    };
+
+                    Ok(SystemLocal {
+                        schema_version,
+                        gossip_generation,
+                        tokens,
+                        rack,
+                        partitioner,
+                        cluster_name,
+                    })
+                } else {
+                    Err(anyhow!("system.local returned no rows"))
+                }
+            }
+            operation => Err(anyhow!(
+                "system.local returned unexpected cassandra operation: {:?}",
+                operation
+            )),
+        }
+    } else {
+        Err(anyhow!(
+            "Failed to parse system.local response {:?}",
+            response
+        ))
+    }
 }
 
 #[async_trait]
