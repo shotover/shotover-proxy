@@ -244,7 +244,7 @@ impl CassandraSinkCluster {
                 .await
                 .map(|x| x.map_err(|e| anyhow!(e)));
             // If any errors occurred close the connection as we can no
-            // longer make any gaurantees about the current state of the connection
+            // longer make any guarantees about the current state of the connection
             if !is_use_statement_successful(response) {
                 self.local_nodes[node_index].outbound = None;
             }
