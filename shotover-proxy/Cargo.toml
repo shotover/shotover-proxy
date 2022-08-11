@@ -15,7 +15,7 @@ alpha-transforms = []
 [dependencies]
 pretty-hex = "0.3.0"
 hex = "0.4.3"
-tokio = { version = "1.14.0", features = ["full", "macros"] }
+tokio = { version = "=1.19.2", features = ["full", "macros"] }
 tokio-util = { version = "0.7.0", features = ["full"] }
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
@@ -28,7 +28,7 @@ derivative = "2.1.1"
 itertools = "0.10.1"
 rand = { version = "0.8.4" }
 rand_distr = "0.4.1"
-cached = "0.37"
+cached = "0.38"
 pin-project-lite = "0.2"
 tokio-openssl = "0.6.2"
 openssl = { version = "0.10.36", features = ["vendored"] }
@@ -72,7 +72,7 @@ rusoto_kms = "0.48.0"
 rusoto_signature = "0.48.0"
 csv = "1.1.6"
 strum_macros = "0.24"
-chacha20poly1305 = { version = "0.9.0", features = ["std"] }
+chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
 
 [dev-dependencies]
@@ -90,7 +90,7 @@ hex-literal = "0.3.3"
 nix = "0.24.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
-cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
+cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", rev = "7d6d8fee723a232f17b4173de61e6fd9eb4d4505" }
 scylla = "0.4.7"
 
 [[bench]]
