@@ -278,9 +278,9 @@ impl Message {
                 bytes,
                 message_type,
             } => match message_type {
-                MessageType::Cassandra => Ok(Metadata::Cassandra(cassandra::raw_frame::metadata(
-                    &*bytes,
-                )?)),
+                MessageType::Cassandra => {
+                    Ok(Metadata::Cassandra(cassandra::raw_frame::metadata(bytes)?))
+                }
                 MessageType::Redis => Ok(Metadata::Redis),
                 MessageType::None => Ok(Metadata::None),
             },
