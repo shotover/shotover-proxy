@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{FQName, Identifier};
+use cql3_parser::common::FQName;
 use futures::StreamExt;
 use metrics::{register_counter, Counter};
 use rand::prelude::*;
@@ -294,7 +294,7 @@ async fn topology_task_process(
     outbound.send(
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            stream_id: 1000,
+            stream_id: 0,
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
@@ -311,7 +311,7 @@ async fn topology_task_process(
     outbound.send(
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            stream_id: 1001,
+            stream_id: 1,
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
@@ -324,11 +324,12 @@ async fn topology_task_process(
         local_tx,
     )?;
 
-    let peers_response = peers_rx.await?.response?;
-    let mut new_nodes = system_peers_into_nodes(peers_response, data_center)?;
-
-    let local_response = local_rx.await?.response?;
-    new_nodes.extend(system_peers_into_nodes(local_response, data_center)?);
+    let (new_nodes, more_nodes) = tokio::join!(
+        async { system_peers_into_nodes(peers_rx.await?.response?, data_center) },
+        async { system_peers_into_nodes(local_rx.await?.response?, data_center) }
+    );
+    let mut new_nodes = new_nodes?;
+    new_nodes.extend(more_nodes?);
 
     let mut write_lock = nodes.write().await;
     let expensive_drop = std::mem::replace(&mut *write_lock, new_nodes);
