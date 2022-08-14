@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 use tokio_openssl::SslStream;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TlsConfig {
+pub struct TlsAcceptorConfig {
     /// Path to the certificate authority in PEM format
     pub certificate_authority_path: String,
     /// Path to the certificate in PEM format
@@ -24,7 +24,7 @@ pub struct TlsAcceptor {
 }
 
 impl TlsAcceptor {
-    pub fn new(tls_config: TlsConfig) -> Result<TlsAcceptor> {
+    pub fn new(tls_config: TlsAcceptorConfig) -> Result<TlsAcceptor> {
         let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
         builder.set_ca_file(tls_config.certificate_authority_path)?;
         builder.set_private_key_file(tls_config.private_key_path, SslFiletype::PEM)?;
@@ -48,17 +48,33 @@ impl TlsAcceptor {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TlsConnectorConfig {
+    /// Path to the certificate authority in PEM format
+    pub certificate_authority_path: String,
+    /// Path to the certificate in PEM format
+    pub certificate_path: Option<String>,
+    /// Path to the private key in PEM format
+    pub private_key_path: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct TlsConnector {
     connector: Arc<SslConnector>,
 }
 
 impl TlsConnector {
-    pub fn new(tls_config: TlsConfig) -> Result<TlsConnector> {
+    pub fn new(tls_config: TlsConnectorConfig) -> Result<TlsConnector> {
         let mut builder = SslConnector::builder(SslMethod::tls())?;
         builder.set_ca_file(tls_config.certificate_authority_path)?;
-        builder.set_private_key_file(tls_config.private_key_path, SslFiletype::PEM)?;
-        builder.set_certificate_chain_file(tls_config.certificate_path)?;
+
+        if let Some(private_key_path) = tls_config.private_key_path {
+            builder.set_private_key_file(private_key_path, SslFiletype::PEM)?;
+        }
+
+        if let Some(certificate_path) = tls_config.certificate_path {
+            builder.set_certificate_chain_file(certificate_path)?;
+        }
 
         Ok(TlsConnector {
             connector: Arc::new(builder.build()),

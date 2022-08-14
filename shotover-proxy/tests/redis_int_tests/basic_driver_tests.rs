@@ -1,17 +1,15 @@
 use crate::helpers::ShotoverManager;
 use crate::redis_int_tests::assert::*;
+use futures::StreamExt;
 use rand::{thread_rng, Rng};
 use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
-use serial_test::serial;
-use shotover_proxy::tls::TlsConfig;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::io::{Read, Write};
 use std::thread::sleep;
 use std::time::Duration;
-use test_helpers::docker_compose::DockerCompose;
 use tracing::trace;
 
 // Debug rust is pretty slow, so keep the stress test small.
@@ -686,7 +684,7 @@ async fn test_bit_operations(connection: &mut Connection) {
     assert_eq!(connection.getbit("bitvec", 10).await, Ok(true));
 }
 
-async fn test_cluster_basics(connection: &mut Connection) {
+pub async fn test_cluster_basics(connection: &mut Connection) {
     assert_ok(redis::cmd("SET").arg("{x}key1").arg(b"foo"), connection).await;
     assert_ok(redis::cmd("SET").arg("{x}key2").arg(b"bar"), connection).await;
 
@@ -734,7 +732,7 @@ async fn test_cluster_script(connection: &mut Connection) {
     assert_eq!(rv, Ok(("1".to_string(), "2".to_string())));
 }
 
-async fn test_auth(connection: &mut Connection) {
+pub async fn test_auth(connection: &mut Connection) {
     // Command should fail on unauthenticated connection.
     assert_eq!(
         redis::cmd("GET")
@@ -841,7 +839,7 @@ async fn test_auth(connection: &mut Connection) {
     );
 }
 
-async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mut Connection) {
+pub async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mut Connection) {
     // ensure we are authenticated as the default superuser to setup for the auth isolation test.
     assert_ok(redis::cmd("AUTH").arg("shotover"), connection).await;
 
@@ -897,7 +895,7 @@ async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mu
     }
 }
 
-async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16) {
+pub async fn test_cluster_ports_rewrite_slots(connection: &mut Connection, port: u16) {
     let res: Value = redis::cmd("CLUSTER")
         .arg("SLOTS")
         .query_async(connection)
@@ -974,8 +972,8 @@ async fn get_master_id(connection: &mut Connection) -> String {
     panic!("Could not find master node in cluster");
 }
 
-async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
-    let mut res = redis::cmd("CLUSTER")
+pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
+    let res = redis::cmd("CLUSTER")
         .arg("NODES")
         .query_async(connection)
         .await
@@ -984,15 +982,14 @@ async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port:
     assert_cluster_ports_rewrite_nodes(res, new_port);
 
     // Get an id to use for cluster replicas test
-    let id = get_master_id(connection).await;
+    let master_id = get_master_id(connection).await;
 
-    res = redis::cmd("CLUSTER")
+    let res = redis::cmd("CLUSTER")
         .arg("REPLICAS")
-        .arg(id)
+        .arg(&master_id)
         .query_async(connection)
         .await
         .unwrap();
-
     assert_cluster_ports_rewrite_nodes(res, new_port);
 
     let (r1, r2, r3): (Value, Value, Value) = redis::pipe()
@@ -1015,16 +1012,16 @@ async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port:
 fn assert_cluster_ports_rewrite_nodes(res: Value, new_port: u16) {
     let mut assertion_run = false;
 
-    let data = if let Value::Bulk(data) = &res {
-        if let Value::Data(item) = &data[0] {
-            item.to_vec()
-        } else {
-            panic!("Invalid response from Redis")
+    let data = match res {
+        Value::Bulk(data) => {
+            if let Value::Data(item) = &data[0] {
+                item.to_vec()
+            } else {
+                panic!("Invalid response from Redis")
+            }
         }
-    } else if let Value::Data(data) = &res {
-        data.to_vec()
-    } else {
-        panic!("Invalid response from Redis");
+        Value::Data(data) => data.to_vec(),
+        _ => panic!("Invalid response from Redis"),
     };
 
     let read_cursor = std::io::Cursor::new(data);
@@ -1103,7 +1100,7 @@ async fn test_cluster_pipe(connection: &mut Connection) {
     }
 }
 
-async fn test_cluster_replication(
+pub async fn test_cluster_replication(
     connection: &mut Connection,
     replication_connection: &mut ClusterConnection,
 ) {
@@ -1149,7 +1146,7 @@ async fn test_cluster_replication(
 }
 
 // This test case is picky about the ordering of connection auth so we take a ShotoverManager and make all the connections ourselves
-async fn test_dr_auth(shotover_manager: &ShotoverManager) {
+pub async fn test_dr_auth(shotover_manager: &ShotoverManager) {
     // setup 3 different connections in different states
     let mut connection_shotover_noauth = shotover_manager.redis_connection_async(6379).await;
 
@@ -1212,217 +1209,181 @@ async fn test_dr_auth(shotover_manager: &ShotoverManager) {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_passthrough() {
-    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let mut flusher =
-        Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
-
-    run_all(&mut connection, &mut flusher).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_tls() {
-    test_helpers::cert::generate_redis_test_certs(Path::new("example-configs/redis-tls/certs"));
-
-    let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
-
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
-
-    run_all_cluster_hiding(&mut connection, &mut flusher).await;
-    test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_source_tls_and_single_tls() {
-    test_helpers::cert::generate_redis_test_certs(Path::new("example-configs/redis-tls/certs"));
-
-    let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
-
-    let tls_config = TlsConfig {
-        certificate_authority_path: "example-configs/redis-tls/certs/ca.crt".into(),
-        certificate_path: "example-configs/redis-tls/certs/redis.crt".into(),
-        private_key_path: "example-configs/redis-tls/certs/redis.key".into(),
-    };
-
-    let mut connection = shotover_manager
-        .redis_connection_async_tls(6380, tls_config.clone())
-        .await;
-    let mut flusher = Flusher::new_single_connection(
-        shotover_manager
-            .redis_connection_async_tls(6380, tls_config)
-            .await,
-    )
-    .await;
-
-    run_all(&mut connection, &mut flusher).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_ports_rewrite() {
-    let _compose =
-        DockerCompose::new("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml");
-    let shotover_manager = ShotoverManager::from_topology_file(
-        "tests/test-configs/redis-cluster-ports-rewrite/topology.yaml",
-    );
-
-    let mut connection = shotover_manager.redis_connection_async(6380).await;
-    let mut flusher =
-        Flusher::new_single_connection(shotover_manager.redis_connection_async(6380).await).await;
-
-    run_all_cluster_hiding(&mut connection, &mut flusher).await;
-
-    test_cluster_ports_rewrite_slots(&mut connection, 6380).await;
-    test_cluster_ports_rewrite_nodes(&mut connection, 6380).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_redis_multi() {
-    let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let mut flusher =
-        Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
-
-    run_all_multi_safe(&mut connection, &mut flusher).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_auth_redis() {
-    let _compose = DockerCompose::new("tests/test-configs/redis-cluster-auth/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-configs/redis-cluster-auth/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-
-    test_auth(&mut connection).await;
-    test_auth_isolation(&shotover_manager, &mut connection).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_hiding_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-hiding/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-cluster-hiding/topology.yaml");
-
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let connection = &mut connection;
-    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
-
-    run_all_cluster_hiding(connection, &mut flusher).await;
-    test_cluster_ports_rewrite_slots(connection, 6379).await;
-    test_cluster_ports_rewrite_nodes(connection, 6379).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_handling_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-handling/docker-compose.yml");
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-cluster-handling/topology.yaml");
-
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let connection = &mut connection;
-
-    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
-
-    run_all_cluster_handling(connection, &mut flusher).await;
-    test_cluster_ports_rewrite_slots(connection, 6379).await;
-    test_cluster_ports_rewrite_nodes(connection, 6379).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn test_cluster_dr_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-dr/docker-compose.yml");
-
-    let nodes = vec![
-        "redis://127.0.0.1:2120/",
-        "redis://127.0.0.1:2121/",
-        "redis://127.0.0.1:2122/",
-        "redis://127.0.0.1:2123/",
-        "redis://127.0.0.1:2124/",
-        "redis://127.0.0.1:2125/",
-    ];
-    let client = redis::cluster::ClusterClientBuilder::new(nodes)
-        .password("shotover".to_string())
-        .open()
-        .unwrap();
-    let mut replication_connection = client.get_connection().unwrap();
-
-    // test coalesce sends messages on shotover shutdown
-    {
-        let shotover_manager =
-            ShotoverManager::from_topology_file("example-configs/redis-cluster-dr/topology.yaml");
-        let mut connection = shotover_manager.redis_connection_async(6379).await;
-        redis::cmd("AUTH")
-            .arg("default")
-            .arg("shotover")
-            .query_async::<_, ()>(&mut connection)
-            .await
-            .unwrap();
-
-        redis::cmd("SET")
-            .arg("key1")
-            .arg(42)
-            .query_async::<_, ()>(&mut connection)
-            .await
-            .unwrap();
-        redis::cmd("SET")
-            .arg("key2")
-            .arg(358)
-            .query_async::<_, ()>(&mut connection)
-            .await
-            .unwrap();
-
-        // shotover is shutdown here because shotover_manager goes out of scope and is dropped.
-    }
-    sleep(Duration::from_secs(1));
-    assert_eq!(replication_connection.get::<&str, i32>("key1").unwrap(), 42);
+/// A driver variant of this test case is provided so that we can ensure that
+/// at least one driver handles this as we expect.
+pub async fn test_trigger_transform_failure_driver(connection: &mut Connection) {
     assert_eq!(
-        replication_connection.get::<&str, i32>("key2").unwrap(),
-        358
-    );
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/redis-cluster-dr/topology.yaml");
-
-    async fn new_connection(shotover_manager: &ShotoverManager) -> Connection {
-        let mut connection = shotover_manager.redis_connection_async(6379).await;
-
-        redis::cmd("AUTH")
-            .arg("default")
-            .arg("shotover")
-            .query_async::<_, ()>(&mut connection)
+        redis::cmd("SET")
+            .arg("foo")
+            .arg(42)
+            .query_async::<_, ()>(connection)
             .await
-            .unwrap();
-
-        connection
-    }
-    let mut connection = new_connection(&shotover_manager).await;
-    let mut flusher = Flusher::new_single_connection(new_connection(&shotover_manager).await).await;
-
-    test_cluster_replication(&mut connection, &mut replication_connection).await;
-    test_dr_auth(&shotover_manager).await;
-    run_all_cluster_hiding(&mut connection, &mut flusher).await;
+            .unwrap_err()
+            .to_string(),
+        "unexpected end of file".to_string()
+    );
 }
 
-async fn run_all_multi_safe(connection: &mut Connection, flusher: &mut Flusher) {
+/// A raw variant of this test case is provided so that we can make a strong assertion about the way shotover handles this case.
+///
+/// CAREFUL: This lacks any kind of check that shotover is ready,
+/// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
+pub fn test_trigger_transform_failure_raw() {
+    // Send invalid redis command
+    // To correctly handle this shotover should close the connection
+    let mut connection = std::net::TcpStream::connect("127.0.0.1:6379").unwrap();
+    connection.write_all(b"*1\r\n$4\r\nping\r\n").unwrap();
+    connection
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    // If the connection was closed by shotover then we will succesfully read 0 bytes.
+    // If the connection was not closed by shotover then read will block for 10 seconds until the time is hit and then the unwrap will panic.
+    let amount = connection.read(&mut [0; 1]).unwrap();
+    assert_eq!(amount, 0);
+}
+
+/// CAREFUL: This lacks any kind of check that shotover is ready,
+/// so make sure shotover_manager.redis_connection is run on 6379 before calling this.
+pub fn test_invalid_frame() {
+    // Send invalid redis command
+    // To correctly handle this shotover should close the connection
+    let mut connection = std::net::TcpStream::connect("127.0.0.1:6379").unwrap();
+    connection.write_all(b"invalid_redis_frame\r\n").unwrap();
+    connection
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    // If the connection was closed by shotover then we will succesfully read 0 bytes.
+    // If the connection was not closed by shotover then read will block for 10 seconds until the time is hit and then the unwrap will panic.
+    let amount = connection.read(&mut [0; 1]).unwrap();
+    assert_eq!(amount, 0);
+}
+
+async fn test_pubsub(pub_connection: &mut Connection, sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("phonewave").await.unwrap();
+    let mut pubsub_stream = pubsub_conn.on_message();
+    pub_connection
+        .publish::<_, _, ()>("phonewave", "banana")
+        .await
+        .unwrap();
+
+    let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload().unwrap();
+    assert_eq!("banana".to_string(), msg_payload);
+}
+
+async fn test_pubsub_2subs(pub_connection: &mut Connection, sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("s1").await.unwrap();
+    pubsub_conn.subscribe("s2").await.unwrap();
+    let mut pubsub_stream = pubsub_conn.on_message();
+    pub_connection
+        .publish::<_, _, ()>("s1", "an arbitrary string")
+        .await
+        .unwrap();
+
+    let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload().unwrap();
+    assert_eq!("an arbitrary string".to_string(), msg_payload);
+}
+
+async fn test_pubsub_unused(sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("some_key").await.unwrap();
+}
+
+async fn test_pubsub_unsubscription(pub_connection: &mut Connection, sub_connection: Connection) {
+    const SUBSCRIPTION_KEY: &str = "phonewave-pub-sub-unsubscription";
+
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe(SUBSCRIPTION_KEY).await.unwrap();
+
+    pubsub_conn.unsubscribe(SUBSCRIPTION_KEY).await.unwrap();
+
+    let subscriptions_counts: HashMap<String, u32> = redis::cmd("PUBSUB")
+        .arg("NUMSUB")
+        .arg(SUBSCRIPTION_KEY)
+        .query_async(pub_connection)
+        .await
+        .unwrap();
+    let subscription_count = *subscriptions_counts.get(SUBSCRIPTION_KEY).unwrap();
+    assert_eq!(subscription_count, 0);
+}
+
+async fn test_pubsub_automatic_unsubscription(
+    numsub_connection: &mut Connection,
+    sub_connection: Connection,
+) {
+    const SUBSCRIPTION_KEY: &str = "phonewave-automatic-unsubscription";
+
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe(SUBSCRIPTION_KEY).await.unwrap();
+    // Dropping the connection is whats significant here.
+    // Redis detects the closed connection and closes the appropriate subscriptions
+    drop(pubsub_conn);
+
+    let mut subscription_count = 1;
+    // Allow for the unsubscription to occur within 5 seconds
+    for _ in 0..100 {
+        let subscriptions_counts: HashMap<String, u32> = redis::cmd("PUBSUB")
+            .arg("NUMSUB")
+            .arg(SUBSCRIPTION_KEY)
+            .query_async(numsub_connection)
+            .await
+            .unwrap();
+        subscription_count = *subscriptions_counts.get(SUBSCRIPTION_KEY).unwrap();
+        if subscription_count == 0 {
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(subscription_count, 0);
+}
+
+async fn test_pubsub_conn_reuse_simple(sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("phonewave").await.unwrap();
+
+    let mut conn = pubsub_conn.into_connection().await;
+    redis::cmd("SET")
+        .arg("foo")
+        .arg("bar")
+        .query_async::<_, ()>(&mut conn)
+        .await
+        .unwrap();
+
+    let res: String = redis::cmd("GET")
+        .arg("foo")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(&res, "bar");
+}
+
+async fn test_pubsub_conn_reuse_multisub(sub_connection: Connection) {
+    let mut pubsub_conn = sub_connection.into_pubsub();
+    pubsub_conn.subscribe("phonewave").await.unwrap();
+    // TODO: handle all subscription messages
+    //pubsub_conn.subscribe("blah").await.unwrap();
+    //pubsub_conn.subscribe("blah2").await.unwrap();
+    pubsub_conn.psubscribe("*").await.unwrap();
+
+    let mut conn = pubsub_conn.into_connection().await;
+    redis::cmd("SET")
+        .arg("foo")
+        .arg("bar")
+        .query_async::<_, ()>(&mut conn)
+        .await
+        .unwrap();
+
+    let res: String = redis::cmd("GET")
+        .arg("foo")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(&res, "bar");
+}
+
+pub async fn run_all_multi_safe(connection: &mut Connection, flusher: &mut Flusher) {
     test_cluster_basics(connection).await;
     test_cluster_eval(connection).await;
     test_cluster_script(connection).await; //TODO: script does not seem to be loading in the server?
@@ -1461,7 +1422,7 @@ async fn run_all_multi_safe(connection: &mut Connection, flusher: &mut Flusher) 
     test_time(connection).await;
 }
 
-async fn run_all_cluster_hiding(connection: &mut Connection, flusher: &mut Flusher) {
+pub async fn run_all_cluster_hiding(connection: &mut Connection, flusher: &mut Flusher) {
     test_cluster_pipe(connection).await;
     test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
     for _ in 0..1999 {
@@ -1505,7 +1466,7 @@ async fn run_all_cluster_hiding(connection: &mut Connection, flusher: &mut Flush
     test_hello_cluster(connection).await;
 }
 
-async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut Flusher) {
+pub async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut Flusher) {
     test_cluster_pipe(connection).await;
     test_pipeline_error(connection).await; //TODO: script does not seem to be loading in the server?
     test_cluster_basics(connection).await;
@@ -1544,7 +1505,11 @@ async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut Flu
     test_time(connection).await;
 }
 
-async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
+pub async fn run_all(
+    connection: &mut Connection,
+    flusher: &mut Flusher,
+    shotover_manager: &ShotoverManager,
+) {
     test_args(connection).await;
     test_getset(connection).await;
     test_incr(connection).await;
@@ -1562,12 +1527,6 @@ async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
     test_pipeline_reuse_query(connection).await;
     test_pipeline_reuse_query_clear(connection).await;
     test_real_transaction(connection).await;
-    // test_pubsub().await;
-    // test_pubsub_unsubscribe().await;
-    // test_pubsub_unsubscribe_no_subs().await;
-    // test_pubsub_unsubscribe_one_sub().await;
-    // test_pubsub_unsubscribe_one_sub_one_psub().await;
-    // scoped_pubsub();
     test_script(connection).await;
     test_tuple_args(connection, flusher).await;
     test_nice_api(connection).await;
@@ -1580,9 +1539,34 @@ async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
     test_save(connection).await;
     test_ping_echo(connection).await;
     test_time(connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub(connection, sub_connection).await;
+
+    // test again!
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_2subs(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_unused(sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_unsubscription(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_automatic_unsubscription(connection, sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_conn_reuse_simple(sub_connection).await;
+
+    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    test_pubsub_conn_reuse_multisub(sub_connection).await;
 }
 
-struct Flusher {
+pub struct Flusher {
     connections: Vec<Connection>,
 }
 

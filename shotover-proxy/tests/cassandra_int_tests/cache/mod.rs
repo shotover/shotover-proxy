@@ -1,13 +1,12 @@
 mod assert;
 
-use crate::helpers::cassandra::{run_query, ResultValue};
-use cassandra_cpp::Session;
+use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
 use metrics_util::debugging::Snapshotter;
 use redis::Commands;
 use std::collections::HashSet;
 
 pub fn test(
-    cassandra_session: &Session,
+    cassandra_session: &CassandraConnection,
     redis_connection: &mut redis::Connection,
     snapshotter: &Snapshotter,
 ) {

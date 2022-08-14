@@ -1,18 +1,110 @@
-use cassandra_cpp::{stmt, Cluster, Error, Session, Value, ValueType};
+use cassandra_cpp::Error as CassandraError;
+use cassandra_cpp::{
+    stmt, Batch, CassFuture, CassResult, Cluster, Error, PreparedStatement, Session, Statement,
+    Value, ValueType,
+};
 use ordered_float::OrderedFloat;
 
-pub fn cassandra_connection(contact_points: &str, port: u16) -> Session {
-    for contact_point in contact_points.split(',') {
-        test_helpers::wait_for_socket_to_open(contact_point, port);
+pub enum CassandraConnection {
+    Datastax(Session),
+}
+
+impl CassandraConnection {
+    #[allow(unused)]
+    pub fn new(contact_points: &str, port: u16) -> CassandraConnection {
+        for contact_point in contact_points.split(',') {
+            test_helpers::wait_for_socket_to_open(contact_point, port);
+        }
+        let mut cluster = Cluster::default();
+        cluster.set_contact_points(contact_points).unwrap();
+        cluster.set_credentials("cassandra", "cassandra").unwrap();
+        cluster.set_port(port).ok();
+        cluster.set_load_balance_round_robin();
+        // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
+        // So we instead force the Display formatter `{}` on the error.
+        CassandraConnection::Datastax(cluster.connect().map_err(|err| format!("{err}")).unwrap())
     }
-    let mut cluster = Cluster::default();
-    cluster.set_contact_points(contact_points).unwrap();
-    cluster.set_credentials("cassandra", "cassandra").unwrap();
-    cluster.set_port(port).ok();
-    cluster.set_load_balance_round_robin();
-    // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
-    // So we instead force the Display formatter `{}` on the error.
-    cluster.connect().map_err(|err| format!("{err}")).unwrap()
+
+    #[allow(unused)]
+    pub fn execute(&self, query: &str) -> Vec<Vec<ResultValue>> {
+        match self {
+            CassandraConnection::Datastax(session) => {
+                let statement = stmt!(query);
+                match session.execute(&statement).wait() {
+                    Ok(result) => result
+                        .into_iter()
+                        .map(|x| x.into_iter().map(ResultValue::new).collect())
+                        .collect(),
+                    Err(Error(err, _)) => panic!("The CQL query: {query}\nFailed with: {err}"),
+                }
+            }
+        }
+    }
+
+    #[allow(unused)]
+    pub fn execute_async(&self, query: &str) -> CassFuture<CassResult> {
+        match self {
+            CassandraConnection::Datastax(session) => {
+                let statement = stmt!(query);
+                session.execute(&statement)
+            }
+        }
+    }
+
+    #[allow(unused)]
+    pub fn execute_expect_err(&self, query: &str) -> CassandraError {
+        match self {
+            CassandraConnection::Datastax(session) => {
+                let statement = stmt!(query);
+                session.execute(&statement).wait().unwrap_err()
+            }
+        }
+    }
+
+    #[allow(unused)]
+    pub fn prepare(&self, query: &str) -> PreparedStatement {
+        match self {
+            CassandraConnection::Datastax(session) => {
+                session.prepare(query).unwrap().wait().unwrap()
+            }
+        }
+    }
+
+    #[allow(unused)]
+    pub fn execute_prepared(&self, statement: &Statement) -> Vec<Vec<ResultValue>> {
+        match self {
+            CassandraConnection::Datastax(session) => match session.execute(statement).wait() {
+                Ok(result) => result
+                    .into_iter()
+                    .map(|x| x.into_iter().map(ResultValue::new).collect())
+                    .collect(),
+                Err(Error(err, _)) => panic!("The statement: {statement:?}\nFailed with: {err}"),
+            },
+        }
+    }
+
+    #[allow(unused)]
+    pub fn execute_batch(&self, batch: &Batch) {
+        match self {
+            CassandraConnection::Datastax(session) => match session.execute_batch(batch).wait() {
+                Ok(result) => assert_eq!(
+                    result.into_iter().count(),
+                    0,
+                    "Batches should never return results",
+                ),
+                Err(Error(err, _)) => panic!("The batch: {batch:?}\nFailed with: {err}"),
+            },
+        }
+    }
+
+    #[allow(unused)]
+    pub fn execute_batch_expect_err(&self, batch: &Batch) -> CassandraError {
+        match self {
+            CassandraConnection::Datastax(session) => {
+                session.execute_batch(batch).wait().unwrap_err()
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
@@ -116,8 +208,12 @@ pub fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
 #[allow(unused)]
-pub fn assert_query_result(session: &Session, query: &str, expected_rows: &[&[ResultValue]]) {
-    let mut result_rows = execute_query(session, query);
+pub fn assert_query_result(
+    session: &CassandraConnection,
+    query: &str,
+    expected_rows: &[&[ResultValue]],
+) {
+    let mut result_rows = session.execute(query);
     result_rows.sort();
     assert_rows(result_rows, expected_rows);
 }
@@ -133,8 +229,12 @@ pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[Result
 
 /// Execute a `query` against the `session` and assert the result rows contain `row`
 #[allow(unused)]
-pub fn assert_query_result_contains_row(session: &Session, query: &str, row: &[ResultValue]) {
-    let result_rows = execute_query(session, query);
+pub fn assert_query_result_contains_row(
+    session: &CassandraConnection,
+    query: &str,
+    row: &[ResultValue],
+) {
+    let result_rows = session.execute(query);
     if !result_rows.contains(&row.to_vec()) {
         panic!(
             "expected row: {:?} missing from actual rows: {:?}",
@@ -145,8 +245,12 @@ pub fn assert_query_result_contains_row(session: &Session, query: &str, row: &[R
 
 /// Execute a `query` against the `session` and assert the result rows does not contain `row`
 #[allow(unused)]
-pub fn assert_query_result_not_contains_row(session: &Session, query: &str, row: &[ResultValue]) {
-    let result_rows = execute_query(session, query);
+pub fn assert_query_result_not_contains_row(
+    session: &CassandraConnection,
+    query: &str,
+    row: &[ResultValue],
+) {
+    let result_rows = session.execute(query);
     if result_rows.contains(&row.to_vec()) {
         panic!(
             "unexpected row: {:?} was found in actual rows: {:?}",
@@ -155,8 +259,7 @@ pub fn assert_query_result_not_contains_row(session: &Session, query: &str, row:
     }
 }
 
-/// Execute a `query` against the `session` and assert that no rows were returned
 #[allow(unused)]
-pub fn run_query(session: &Session, query: &str) {
+pub fn run_query(session: &CassandraConnection, query: &str) {
     assert_query_result(session, query, &[]);
 }

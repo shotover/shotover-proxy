@@ -1,9 +1,9 @@
 use anyhow::Result;
-use cassandra_cpp::{Cluster, Session, Ssl};
+use cassandra_cpp::{Cluster, Ssl};
 use redis::aio::AsyncStream;
 use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};
-use shotover_proxy::tls::{TlsConfig, TlsConnector};
+use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use std::fs::read_to_string;
 use std::pin::Pin;
 use std::sync::mpsc;
@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use tokio_io_timeout::TimeoutStream;
 
 pub mod cassandra;
-use cassandra::cassandra_connection;
+use cassandra::CassandraConnection;
 
 #[must_use]
 pub struct ShotoverManager {
@@ -113,7 +113,7 @@ impl ShotoverManager {
     pub async fn redis_connection_async_tls(
         &self,
         port: u16,
-        config: TlsConfig,
+        config: TlsConnectorConfig,
     ) -> redis::aio::Connection {
         let address = "127.0.0.1";
         test_helpers::wait_for_socket_to_open(address, port);
@@ -148,8 +148,8 @@ impl ShotoverManager {
     }
 
     #[allow(unused)]
-    pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> Session {
-        cassandra_connection(contact_points, port)
+    pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> CassandraConnection {
+        CassandraConnection::new(contact_points, port)
     }
 
     #[allow(unused)]
@@ -158,7 +158,7 @@ impl ShotoverManager {
         contact_points: &str,
         port: u16,
         ca_cert_path: &str,
-    ) -> Session {
+    ) -> CassandraConnection {
         let ca_cert = read_to_string(ca_cert_path).unwrap();
         let mut ssl = Ssl::default();
         Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
@@ -173,7 +173,8 @@ impl ShotoverManager {
         cluster.set_port(port).ok();
         cluster.set_load_balance_round_robin();
         cluster.set_ssl(&mut ssl);
-        cluster.connect().unwrap()
+
+        CassandraConnection::Datastax(cluster.connect().unwrap())
     }
 
     fn shutdown_shotover(&mut self) -> Result<()> {

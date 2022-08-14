@@ -104,7 +104,8 @@ impl DockerCompose {
             | "tests/test-configs/redis-cluster-auth/docker-compose.yml"
             | "example-configs/redis-cluster-handling/docker-compose.yml"
             | "example-configs/redis-cluster-hiding/docker-compose.yml"
-            | "example-configs/redis-cluster-tls/docker-compose.yml" => {
+            | "example-configs/redis-cluster-tls/docker-compose.yml"
+            | "example-configs/redis-cluster-tls/docker-compose-with-key.yml" => {
                 self.wait_for_log("Cluster state changed", 6, 110)
             }
             "example-configs/redis-cluster-dr/docker-compose.yml" => {
@@ -124,7 +125,9 @@ impl DockerCompose {
             | "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml" => {
                 self.wait_for_log("Startup complete", 2, 110)
             }
-            "example-configs-docker/cassandra-peers-rewrite/docker-compose.yml" => {
+            "example-configs-docker/cassandra-peers-rewrite/docker-compose.yml"
+            | "example-configs/cassandra-cluster/docker-compose.yml"
+            | "example-configs/cassandra-cluster-tls/docker-compose.yml" => {
                 self.wait_for_log("Startup complete", 3, 180)
             }
             path => unimplemented!(

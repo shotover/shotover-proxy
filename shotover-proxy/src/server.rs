@@ -2,8 +2,8 @@ use crate::message::Messages;
 use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
-use anyhow::{anyhow, Result};
-use futures_util::StreamExt;
+use anyhow::{anyhow, Context, Result};
+use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -232,8 +232,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 // Receive shutdown notifications.
                 shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
 
+                terminate_tasks: None,
                 tls: self.tls.clone(),
-
                 timeout: self.timeout,
             };
 
@@ -357,6 +357,7 @@ pub struct Handler<C: Codec> {
     /// which point the connection is terminated.
     shutdown: Shutdown,
 
+    terminate_tasks: Option<watch::Sender<()>>,
     tls: Option<TlsAcceptor>,
 
     /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
@@ -372,28 +373,54 @@ fn spawn_read_write_tasks<
     rx: R,
     tx: W,
     in_tx: UnboundedSender<Messages>,
-    out_rx: UnboundedReceiver<Messages>,
+    mut out_rx: UnboundedReceiver<Messages>,
     out_tx: UnboundedSender<Messages>,
+    mut terminate_tasks_rx: watch::Receiver<()>,
 ) {
     let mut reader = FramedRead::new(rx, codec.clone());
-    let writer = FramedWrite::new(tx, codec);
+    let mut writer = FramedWrite::new(tx, codec);
 
+    // Shutdown flows
+    //
+    // main task shuts down due to transform error:
+    // 1. The main task terminates, sending terminate_tasks_tx and dropping the first out_tx
+    // 2. The reader task detects change on terminate_tasks_rx and terminates, the last out_tx instance is dropped
+    // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
+    //
+    // client closes connection:
+    // 1. The reader task detects that the client has closed the connection via reader returning None and terminates, dropping in_tx and the first out_tx
+    // 2. The main task detects that in_tx is dropped by in_rx returning None and terminates, dropping the last out_tx
+    // 3. The writer task detects that the last out_tx is dropped by out_rx returning None and terminates
+
+    // reader task
     tokio::spawn(
         async move {
-            while let Some(message) = TokioStreamExt::next(&mut reader).await {
-                match message {
-                    Ok(message) => {
-                        let remaining_messages =
-                            process_return_to_sender_messages(message, &out_tx);
-                        if !remaining_messages.is_empty() {
-                            if let Err(error) = in_tx.send(remaining_messages) {
-                                warn!("failed to pass on received message: {}", error);
-                                return;
+            loop {
+                tokio::select! {
+                    result = TokioStreamExt::next(&mut reader) => {
+                        if let Some(message) = result {
+                            match message {
+                                Ok(message) => {
+                                    let remaining_messages =
+                                        process_return_to_sender_messages(message, &out_tx);
+                                    if !remaining_messages.is_empty() {
+                                        if let Err(error) = in_tx.send(remaining_messages) {
+                                            warn!("failed to pass on received message: {}", error);
+                                            return;
+                                        }
+                                    }
+                                }
+                                Err(error) => {
+                                    warn!("failed to receive or decode message: {:?}", error);
+                                    return;
+                                }
                             }
+                        } else {
+                            debug!("client has closed the connection");
+                            return;
                         }
                     }
-                    Err(error) => {
-                        warn!("failed to receive or decode message: {:?}", error);
+                    _ = terminate_tasks_rx.changed() => {
                         return;
                     }
                 }
@@ -402,11 +429,27 @@ fn spawn_read_write_tasks<
         .in_current_span(),
     );
 
+    // sender task
     tokio::spawn(
         async move {
-            let rx_stream = TokioStreamExt::map(UnboundedReceiverStream::new(out_rx), Ok);
-            if let Err(err) = rx_stream.forward(writer).await {
-                error!("failed to send or encode message: {:?}", err);
+            loop {
+                if let Some(message) = out_rx.recv().await {
+                    if let Err(err) = writer.send(message).await {
+                        error!("failed to send or encode message: {:?}", err);
+                    }
+                } else {
+                    // Main task has ended.
+                    // First flush out any remaining messages.
+                    // Then end the task thus closing the connection by dropping the write half
+                    while let Ok(message) = out_rx.try_recv() {
+                        if let Err(err) = writer.send(message).await {
+                            error!(
+                                "while flushing messages: failed to send or encode message: {err:?}",
+                            );
+                        }
+                    }
+                    break;
+                }
             }
         }
         .in_current_span(),
@@ -431,16 +474,35 @@ impl<C: Codec + 'static> Handler<C> {
         // new request frame.
         let mut idle_time_seconds: u64 = 1;
 
+        let (terminate_tx, terminate_rx) = watch::channel::<()>(());
+        self.terminate_tasks = Some(terminate_tx);
+
         let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
         if let Some(tls) = &self.tls {
             let tls_stream = tls.accept(stream).await?;
             let (rx, tx) = tokio::io::split(tls_stream);
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+            spawn_read_write_tasks(
+                self.codec.clone(),
+                rx,
+                tx,
+                in_tx,
+                out_rx,
+                out_tx.clone(),
+                terminate_rx,
+            );
         } else {
             let (rx, tx) = stream.into_split();
-            spawn_read_write_tasks(self.codec.clone(), rx, tx, in_tx, out_rx, out_tx.clone());
+            spawn_read_write_tasks(
+                self.codec.clone(),
+                rx,
+                tx,
+                in_tx,
+                out_rx,
+                out_tx.clone(),
+                terminate_rx,
+            );
         };
 
         while !self.shutdown.is_shutdown() {
@@ -449,7 +511,7 @@ impl<C: Codec + 'static> Handler<C> {
             let mut reverse_chain = false;
 
             let messages = tokio::select! {
-                res = timeout(Duration::from_secs(idle_time_seconds) , in_rx.recv()) => {
+                res = timeout(Duration::from_secs(idle_time_seconds), in_rx.recv()) => {
                     match res {
                         Ok(maybe_message) => {
                             idle_time_seconds = 1;
@@ -492,27 +554,18 @@ impl<C: Codec + 'static> Handler<C> {
                 self.chain.name.clone(),
             );
 
-            let chain_result = if reverse_chain {
+            let modified_messages = if reverse_chain {
                 self.chain.process_request_rev(wrapper).await
             } else {
                 self.chain
                     .process_request(wrapper, self.client_details.clone())
                     .await
-            };
-
-            match chain_result {
-                Ok(modified_messages) => {
-                    debug!("sending message: {:?}", modified_messages);
-                    // send the result of the process up stream
-                    out_tx.send(modified_messages)?;
-                }
-                Err(e) => {
-                    error!(
-                        "{:?}",
-                        e.context("chain failed to send and/or receive messages")
-                    );
-                }
             }
+            .context("chain failed to send and/or receive messages")?;
+
+            debug!("sending message: {:?}", modified_messages);
+            // send the result of the process up stream
+            out_tx.send(modified_messages)?;
         }
         Ok(())
     }
@@ -532,6 +585,10 @@ impl<C: Codec> Drop for Handler<C> {
         // semaphore.
 
         self.limit_connections.add_permits(1);
+
+        if let Some(terminate_tasks) = &self.terminate_tasks {
+            terminate_tasks.send(()).ok();
+        }
     }
 }
 /// Listens for the server shutdown signal.

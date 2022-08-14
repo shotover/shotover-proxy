@@ -2,12 +2,12 @@ use super::Response;
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
-use crate::tls::{TlsConfig, TlsConnector};
+use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use derivative::Derivative;
-use futures_util::StreamExt;
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -66,13 +66,17 @@ pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
 }
 
 impl<C: Codec + 'static> ConnectionPool<C, NoopAuthenticator, ()> {
-    pub fn new(codec: C, tls: Option<TlsConfig>) -> Result<Self> {
+    pub fn new(codec: C, tls: Option<TlsConnectorConfig>) -> Result<Self> {
         ConnectionPool::new_with_auth(codec, NoopAuthenticator {}, tls)
     }
 }
 
 impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
-    pub fn new_with_auth(codec: C, authenticator: A, tls: Option<TlsConfig>) -> Result<Self> {
+    pub fn new_with_auth(
+        codec: C,
+        authenticator: A,
+        tls: Option<TlsConnectorConfig>,
+    ) -> Result<Self> {
         Ok(Self {
             lanes: Arc::new(Mutex::new(HashMap::new())),
             tls: tls.map(TlsConnector::new).transpose()?,

@@ -2,16 +2,19 @@
 sources:
   cassandra_prod:
     Cassandra:
-      listen_addr: "127.0.0.1:9043"
+      listen_addr: "127.0.0.1:9042"
       tls:
         certificate_authority_path: "example-configs/cassandra-tls/certs/localhost_CA.crt"
         certificate_path: "example-configs/cassandra-tls/certs/localhost.crt"
         private_key_path: "example-configs/cassandra-tls/certs/localhost.key"
 chain_config:
   main_chain:
-    - CassandraSinkSingle:
-        remote_address: "127.0.0.1:9042"
+    - CassandraSinkCluster:
+        first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
+        data_center: "dc1"
         tls:
           certificate_authority_path: "example-configs/cassandra-tls/certs/localhost_CA.crt"
+          certificate_path: "example-configs/cassandra-tls/certs/localhost.crt"
+          private_key_path: "example-configs/cassandra-tls/certs/localhost.key"
 source_to_chain_mapping:
   cassandra_prod: main_chain
