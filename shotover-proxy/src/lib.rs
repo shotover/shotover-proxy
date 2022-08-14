@@ -17,6 +17,8 @@
 //! * [`transforms::Transforms`], the enum to register with (add a variant) for enabling your own transform.
 //! * [`transforms::TransformsConfig`], the enum to register with (add a variant) for configuring your own transform.
 
+#![allow(clippy::derive_partial_eq_without_eq)]
+
 pub mod codec;
 mod concurrency;
 pub mod config;
