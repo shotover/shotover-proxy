@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures_util::sink::SinkExt;
+use futures::sink::SinkExt;
 use serial_test::serial;
 use shotover_proxy::codec::cassandra::CassandraCodec;
 use tokio::io::BufWriter;

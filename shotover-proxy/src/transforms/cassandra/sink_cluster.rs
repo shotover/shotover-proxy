@@ -1,6 +1,5 @@
 use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
-use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
@@ -13,6 +12,7 @@ use cassandra_protocol::consistency::Consistency;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
 use cql3_parser::common::{FQName, Identifier};
+use futures::stream::FuturesOrdered;
 use metrics::{register_counter, Counter};
 use rand::prelude::*;
 use serde::Deserialize;
@@ -193,7 +193,7 @@ impl CassandraSinkCluster {
             }
             .send(message, return_chan_tx)?;
 
-            responses_future.push(return_chan_rx)
+            responses_future.push_back(return_chan_rx)
         }
 
         let responses =

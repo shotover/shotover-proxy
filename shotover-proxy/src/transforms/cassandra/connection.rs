@@ -1,4 +1,3 @@
-use crate::concurrency::FuturesOrdered;
 use crate::frame::cassandra;
 use crate::message::Message;
 use crate::server::Codec;
@@ -10,7 +9,8 @@ use crate::transforms::Messages;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Opcode;
 use derivative::Derivative;
-use futures_util::StreamExt;
+use futures::stream::FuturesOrdered;
+use futures::StreamExt;
 use halfbrown::HashMap;
 use std::time::Duration;
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
@@ -196,7 +196,7 @@ pub async fn receive_message(
     failed_requests: &metrics::Counter,
     results: &mut FuturesOrdered<oneshot::Receiver<Response>>,
 ) -> Result<Message> {
-    match results.next().await {
+    match tokio_stream::StreamExt::next(results).await {
         Some(result) => match result? {
             Response {
                 response: Ok(message),

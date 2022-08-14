@@ -7,15 +7,12 @@ use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
-use cassandra_protocol::frame::Opcode;
 use futures::stream::FuturesOrdered;
-use futures::StreamExt;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::timeout;
-use tracing::{info, trace};
+use tracing::trace;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkSingleConfig {
