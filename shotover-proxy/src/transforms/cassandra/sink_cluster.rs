@@ -6,13 +6,16 @@ use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
+use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::consistency::Consistency;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
+use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
+use futures::StreamExt;
 use metrics::{register_counter, Counter};
 use rand::prelude::*;
 use serde::Deserialize;
@@ -49,6 +52,7 @@ pub struct CassandraSinkCluster {
     init_handshake: Vec<Message>,
     init_handshake_address: Option<SocketAddr>,
     init_handshake_complete: bool,
+    init_handshake_use_received: bool,
     chain_name: String,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
@@ -74,6 +78,7 @@ impl Clone for CassandraSinkCluster {
             init_handshake: vec![],
             init_handshake_address: None,
             init_handshake_complete: false,
+            init_handshake_use_received: false,
             chain_name: self.chain_name.clone(),
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
@@ -116,6 +121,7 @@ impl CassandraSinkCluster {
             init_handshake: vec![],
             init_handshake_address: None,
             init_handshake_complete: false,
+            init_handshake_use_received: false,
             chain_name,
             failed_requests,
             tls,
@@ -187,11 +193,34 @@ impl CassandraSinkCluster {
         }
 
         let mut responses_future = FuturesOrdered::new();
-        for message in messages {
+        let mut responses_future_use = FuturesOrdered::new();
+        let mut use_future_index_to_node_index = vec![];
+        for mut message in messages {
             let (return_chan_tx, return_chan_rx) = oneshot::channel();
             if self.local_nodes.is_empty() || !self.init_handshake_complete {
-                // If the handshake is incomplete then we need to keep sending down this connection until we have formed a complete handshake.
-                // If the handshake is complete but the nodes list isnt ready yet then this connection will make do until we have a nodes list.
+                self.init_handshake_connection.as_mut().unwrap()
+            } else if is_use_statement(&mut message) {
+                // If we have already received a USE statement then pop it off the handshakes list to avoid infinite growth
+                if self.init_handshake_use_received {
+                    self.init_handshake.pop();
+                }
+                self.init_handshake_use_received = true;
+
+                // Adding the USE statement to the handshake ensures that any new connection
+                // created will have the correct keyspace setup.
+                self.init_handshake.push(message.clone());
+
+                // Send the USE statement to all open connections to ensure they are all in sync
+                for (node_index, node) in self.local_nodes.iter().enumerate() {
+                    if let Some(outbound) = &node.outbound {
+                        let (return_chan_tx, return_chan_rx) = oneshot::channel();
+                        outbound.send(message.clone(), return_chan_tx)?;
+                        responses_future_use.push(return_chan_rx);
+                        use_future_index_to_node_index.push(node_index);
+                    }
+                }
+
+                // Send the USE statement to the handshake connection and use the response as shotovers response
                 self.init_handshake_connection.as_mut().unwrap()
             } else {
                 // We have a full nodes list and handshake, so we can do proper routing now.
@@ -208,6 +237,18 @@ impl CassandraSinkCluster {
         let responses =
             super::connection::receive(self.read_timeout, &self.failed_requests, responses_future)
                 .await?;
+
+        for node_index in use_future_index_to_node_index {
+            let response = responses_future_use
+                .next()
+                .await
+                .map(|x| x.map_err(|e| anyhow!(e)));
+            // If any errors occurred close the connection as we can no
+            // longer make any guarantees about the current state of the connection
+            if !is_use_statement_successful(response) {
+                self.local_nodes[node_index].outbound = None;
+            }
+        }
 
         Ok(responses)
     }
@@ -345,6 +386,35 @@ fn get_nodes_from_system_peers(
     new_nodes
 }
 
+fn is_use_statement(request: &mut Message) -> bool {
+    if let Some(Frame::Cassandra(frame)) = request.frame() {
+        // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
+        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+            if let CassandraStatement::Use(_) = query.as_mut() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
+    if let Some(Ok(Response {
+        response: Ok(mut response),
+        ..
+    })) = response
+    {
+        if let Some(Frame::Cassandra(CassandraFrame {
+            operation: CassandraOperation::Result(CassandraResult::SetKeyspace(_)),
+            ..
+        })) = response.frame()
+        {
+            return true;
+        }
+    }
+    false
+}
+
 #[async_trait]
 impl Transform for CassandraSinkCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
@@ -365,7 +435,7 @@ pub struct CassandraNode {
     pub address: IpAddr,
     pub _rack: String,
     pub _tokens: Vec<String>,
-    outbound: Option<CassandraConnection>,
+    pub outbound: Option<CassandraConnection>,
 }
 
 #[derive(Debug)]

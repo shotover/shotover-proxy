@@ -102,8 +102,7 @@ async fn test_cluster() {
         connection1
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
-        // TODO: uncomment once we implement `USE` routing
-        //keyspace::test(&connection1);
+        keyspace::test(&connection1).await;
         table::test(&connection1).await;
         udt::test(&connection1).await;
         native_types::test(&connection1).await;
@@ -154,8 +153,7 @@ async fn test_source_tls_and_cluster_tls() {
         .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
         .await;
 
-    // TODO: uncomment once we implement `USE` routing
-    //keyspace::test(&connection);
+    keyspace::test(&connection).await;
     table::test(&connection).await;
     udt::test(&connection).await;
     native_types::test(&connection).await;
