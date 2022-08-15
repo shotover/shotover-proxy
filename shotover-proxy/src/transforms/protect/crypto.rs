@@ -20,7 +20,7 @@ pub async fn encrypt(
     key_management: &KeyManager,
     key_id: &str,
 ) -> Result<Operand> {
-    let value = MessageValue::from(&*value);
+    let value = MessageValue::from(value);
 
     let sym_key = key_management.cached_get_key(key_id, None, None).await?;
 
