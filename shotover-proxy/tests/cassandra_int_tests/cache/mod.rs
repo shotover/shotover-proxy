@@ -5,31 +5,34 @@ use metrics_util::debugging::Snapshotter;
 use redis::Commands;
 use std::collections::HashSet;
 
-pub fn test(
+pub async fn test(
     cassandra_session: &CassandraConnection,
     redis_connection: &mut redis::Connection,
     snapshotter: &Snapshotter,
 ) {
     redis::cmd("FLUSHDB").execute(redis_connection);
 
-    run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+    run_query(cassandra_session, "CREATE KEYSPACE test_cache_keyspace_simple WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(
-            cassandra_session,
-            "CREATE TABLE test_cache_keyspace_simple.test_table (id int PRIMARY KEY, x int, name varchar);",
-        );
+        cassandra_session,
+        "CREATE TABLE test_cache_keyspace_simple.test_table (id int PRIMARY KEY, x int, name varchar);",
+    ).await;
 
     run_query(
         cassandra_session,
         "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (1, 11, 'foo');",
-    );
+    )
+    .await;
     run_query(
         cassandra_session,
         "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (2, 12, 'bar');",
-    );
+    )
+    .await;
     run_query(
         cassandra_session,
         "INSERT INTO test_cache_keyspace_simple.test_table (id, x, name) VALUES (3, 13, 'baz');",
-    );
+    )
+    .await;
 
     // selects without where clauses do not hit the cache
     assert::assert_query_is_uncacheable(
@@ -53,7 +56,8 @@ pub fn test(
                 ResultValue::Varchar("baz".into()),
             ],
         ],
-    );
+    )
+    .await;
 
     // query against the primary key
     assert::assert_query_is_cached(
@@ -65,7 +69,8 @@ pub fn test(
             ResultValue::Int(11),
             ResultValue::Varchar("foo".into()),
         ]],
-    );
+    )
+    .await;
 
     // ensure key 2 and 3 are also loaded
     assert::assert_query_is_cached(
@@ -77,7 +82,8 @@ pub fn test(
             ResultValue::Int(12),
             ResultValue::Varchar("bar".into()),
         ]],
-    );
+    )
+    .await;
 
     assert::assert_query_is_cached(
         snapshotter,
@@ -88,7 +94,8 @@ pub fn test(
             ResultValue::Int(13),
             ResultValue::Varchar("baz".into()),
         ]],
-    );
+    )
+    .await;
 
     // query without primary key does not hit the cache
     assert::assert_query_is_uncacheable(
@@ -100,7 +107,8 @@ pub fn test(
             ResultValue::Int(11),
             ResultValue::Varchar("foo".into()),
         ]],
-    );
+    )
+    .await;
 
     let result: HashSet<String> = redis_connection.keys("*").unwrap();
     let expected = HashSet::from([

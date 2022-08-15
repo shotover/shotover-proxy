@@ -148,8 +148,12 @@ impl ShotoverManager {
     }
 
     #[allow(unused)]
-    pub fn cassandra_connection(&self, contact_points: &str, port: u16) -> CassandraConnection {
-        CassandraConnection::new(contact_points, port)
+    pub async fn cassandra_connection(
+        &self,
+        contact_points: &str,
+        port: u16,
+    ) -> CassandraConnection {
+        CassandraConnection::new(contact_points, port).await
     }
 
     #[allow(unused)]
@@ -174,7 +178,10 @@ impl ShotoverManager {
         cluster.set_load_balance_round_robin();
         cluster.set_ssl(&mut ssl);
 
-        CassandraConnection::Datastax(cluster.connect().unwrap())
+        CassandraConnection::Datastax {
+            session: cluster.connect().unwrap(),
+            schema_awaiter: None,
+        }
     }
 
     fn shutdown_shotover(&mut self) -> Result<()> {
