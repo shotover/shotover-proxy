@@ -18,7 +18,6 @@ use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_stream::StreamExt as TokioStreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{info, Instrument};
 
@@ -90,7 +89,7 @@ async fn tx_process<C: CodecWriteHalf, T: AsyncWrite>(
     codec: C,
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec);
-    let rx_stream = TokioStreamExt::map(UnboundedReceiverStream::new(out_rx), |x| {
+    let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
         let ret = Ok(vec![x.message.clone()]);
         return_tx.send(x)?;
         ret
@@ -112,7 +111,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
 
     loop {
         tokio::select! {
-            Some(maybe_req) = TokioStreamExt::next(&mut in_r) => {
+            Some(maybe_req) = in_r.next() => {
                 match maybe_req {
                     Ok(req) => {
                         for m in req {
@@ -196,7 +195,7 @@ pub async fn receive_message(
     failed_requests: &metrics::Counter,
     results: &mut FuturesOrdered<oneshot::Receiver<Response>>,
 ) -> Result<Message> {
-    match tokio_stream::StreamExt::next(results).await {
+    match results.next().await {
         Some(result) => match result? {
             Response {
                 response: Ok(message),

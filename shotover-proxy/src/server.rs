@@ -3,7 +3,7 @@ use crate::tls::TlsAcceptor;
 use crate::transforms::chain::TransformChain;
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
-use futures::SinkExt;
+use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -13,7 +13,6 @@ use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_stream::StreamExt as TokioStreamExt;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
@@ -396,7 +395,7 @@ fn spawn_read_write_tasks<
         async move {
             loop {
                 tokio::select! {
-                    result = TokioStreamExt::next(&mut reader) => {
+                    result = reader.next() => {
                         if let Some(message) = result {
                             match message {
                                 Ok(message) => {

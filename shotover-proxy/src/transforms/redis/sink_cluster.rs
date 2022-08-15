@@ -936,7 +936,7 @@ impl Transform for RedisSinkCluster {
         let mut responses = FuturesOrdered::new();
 
         for message in message_wrapper.messages {
-            responses.push_front(match self.dispatch_message(message).await {
+            responses.push_back(match self.dispatch_message(message).await {
                 Ok(response) => response,
                 Err(e) => short_circuit(RedisFrame::Error(format!("ERR {e}").into())).unwrap(),
             })
