@@ -21,7 +21,7 @@ pub async fn test() {
     // Normally the handshake is the handshake that the client gave shotover.
     task_handshake_tx
         .send(TaskHandshake {
-            address: "172.16.1.2:9042".to_string(),
+            address: "172.16.1.2:9042".parse().unwrap(),
             handshake: create_handshake(),
         })
         .await
