@@ -2,7 +2,7 @@ use crate::helpers::cassandra::{
     assert_query_result, assert_rows, run_query, CassandraConnection, ResultValue,
 };
 
-fn delete(session: &CassandraConnection) {
+async fn delete(session: &CassandraConnection) {
     let prepared = session.prepare("DELETE FROM test_prepare_statements.table_1 WHERE id = ?;");
 
     let mut statement = prepared.bind();
@@ -16,10 +16,11 @@ fn delete(session: &CassandraConnection) {
         session,
         "SELECT * FROM test_prepare_statements.table_1 where id = 1;",
         &[],
-    );
+    )
+    .await;
 }
 
-fn insert(session: &CassandraConnection) {
+async fn insert(session: &CassandraConnection) {
     let prepared = session
         .prepare("INSERT INTO test_prepare_statements.table_1 (id, x, name) VALUES (?, ?, ?);");
 
@@ -51,7 +52,7 @@ fn insert(session: &CassandraConnection) {
     );
 }
 
-fn select(session: &CassandraConnection) {
+async fn select(session: &CassandraConnection) {
     let prepared =
         session.prepare("SELECT id, x, name FROM test_prepare_statements.table_1 WHERE id = ?");
 
@@ -70,14 +71,15 @@ fn select(session: &CassandraConnection) {
     );
 }
 
-pub fn test(session: &CassandraConnection) {
-    run_query(session, "CREATE KEYSPACE test_prepare_statements WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+pub async fn test(session: &CassandraConnection) {
+    run_query(session, "CREATE KEYSPACE test_prepare_statements WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(
         session,
         "CREATE TABLE test_prepare_statements.table_1 (id int PRIMARY KEY, x int, name varchar);",
-    );
+    )
+    .await;
 
-    insert(session);
-    select(session);
-    delete(session);
+    insert(session).await;
+    select(session).await;
+    delete(session).await;
 }

@@ -2559,6 +2559,7 @@ dependencies = [
  "lz4_flex",
  "num-bigint 0.3.3",
  "num_enum",
+ "openssl",
  "rand",
  "scylla-macros",
  "smallvec",
@@ -2567,6 +2568,7 @@ dependencies = [
  "strum_macros 0.23.1",
  "thiserror",
  "tokio",
+ "tokio-openssl",
  "tracing",
  "uuid 1.1.2",
 ]

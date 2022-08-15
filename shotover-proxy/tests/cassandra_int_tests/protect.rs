@@ -11,17 +11,17 @@ pub struct Protected {
     _kek_id: String,
 }
 
-pub fn test(shotover_session: &CassandraConnection, direct_session: &CassandraConnection) {
-    run_query(shotover_session, "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+pub async fn test(shotover_session: &CassandraConnection, direct_session: &CassandraConnection) {
+    run_query(shotover_session, "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(
-            shotover_session,
-            "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);",
-        );
+        shotover_session,
+        "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);",
+    ).await;
 
     run_query(
         shotover_session,
         "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
-    );
+    ).await;
 
     let mut batch = Batch::new(BatchType::LOGGED);
     batch.add_statement(&stmt!(
@@ -36,7 +36,7 @@ pub fn test(shotover_session: &CassandraConnection, direct_session: &CassandraCo
 INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk4', 'cluster', 'encrypted4', 424, true);
 INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk5', 'cluster', 'encrypted5', 425, false);
 APPLY BATCH;";
-    run_query(shotover_session, insert_statement);
+    run_query(shotover_session, insert_statement).await;
 
     // assert that data is decrypted by shotover
     assert_query_result(
@@ -79,11 +79,13 @@ APPLY BATCH;";
                 ResultValue::Boolean(false),
             ],
         ],
-    );
+    )
+    .await;
 
     // assert that data is encrypted on cassandra side
     let result = direct_session
-        .execute("SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table");
+        .execute("SELECT pk, cluster, col1, col2, col3 FROM test_protect_keyspace.test_table")
+        .await;
     assert_eq!(result.len(), 5);
     for row in result {
         assert_eq!(row.len(), 5);

@@ -90,7 +90,7 @@ nix = "0.24.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", rev = "7d6d8fee723a232f17b4173de61e6fd9eb4d4505" }
-scylla = "0.4.7"
+scylla = { version = "0.4.7", features = ["ssl"] }
 
 [[bench]]
 name = "redis_benches"

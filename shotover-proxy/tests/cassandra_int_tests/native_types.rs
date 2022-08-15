@@ -1,6 +1,6 @@
 use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 
-fn select(session: &CassandraConnection) {
+async fn select(session: &CassandraConnection) {
     assert_query_result(
         session,
         "SELECT * from test_native_types_keyspace.native_types_table WHERE id=1",
@@ -30,9 +30,10 @@ fn select(session: &CassandraConnection) {
             ResultValue::VarInt(vec![3, 5, 233]),
         ]],
     )
+    .await
 }
 
-fn insert(session: &CassandraConnection) {
+async fn insert(session: &CassandraConnection) {
     for i in 0..10 {
         run_query(
             session,
@@ -80,12 +81,13 @@ true,
                 i
             )
             .as_str(),
-        );
+        )
+        .await;
     }
 }
 
-pub fn test(session: &CassandraConnection) {
-    run_query(session, "CREATE KEYSPACE test_native_types_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
+pub async fn test(session: &CassandraConnection) {
+    run_query(session, "CREATE KEYSPACE test_native_types_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(
         session,
         "CREATE TABLE test_native_types_keyspace.native_types_table (
@@ -109,9 +111,10 @@ varchar_test varchar,
 varint_test varint,
 date_test date,
 );",
-    );
+    )
+    .await;
 
-    insert(session);
-    select(session);
-    run_query(session, "DROP KEYSPACE test_native_types_keyspace");
+    insert(session).await;
+    select(session).await;
+    run_query(session, "DROP KEYSPACE test_native_types_keyspace").await;
 }
