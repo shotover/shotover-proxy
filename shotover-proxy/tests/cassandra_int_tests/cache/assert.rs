@@ -16,14 +16,14 @@ fn get_cache_miss_value(snapshotter: &Snapshotter) -> u64 {
     result
 }
 
-fn assert_increment(
+async fn assert_increment(
     snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
     let before = get_cache_miss_value(snapshotter);
-    assert_query_result(session, query, expected_rows);
+    assert_query_result(session, query, expected_rows).await;
     let after = get_cache_miss_value(snapshotter);
     assert_eq!(
         before + 1,
@@ -32,14 +32,14 @@ fn assert_increment(
     );
 }
 
-fn assert_unchanged(
+async fn assert_unchanged(
     snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
     let before = get_cache_miss_value(snapshotter);
-    assert_query_result(session, query, expected_rows);
+    assert_query_result(session, query, expected_rows).await;
     let after = get_cache_miss_value(snapshotter);
     assert_eq!(
         before,
@@ -48,26 +48,26 @@ fn assert_unchanged(
     );
 }
 
-pub fn assert_query_is_cached(
+pub async fn assert_query_is_cached(
     snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
     // A query can be demonstrated as being cached if it is first recorded as a cache miss and then not recorded as a cache miss
-    assert_increment(snapshotter, session, query, expected_rows);
-    assert_unchanged(snapshotter, session, query, expected_rows);
+    assert_increment(snapshotter, session, query, expected_rows).await;
+    assert_unchanged(snapshotter, session, query, expected_rows).await;
 }
 
-pub fn assert_query_is_uncacheable(
+pub async fn assert_query_is_uncacheable(
     snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
     // A query can be demonstrated as not being cached if it never shows up as a cache miss
-    assert_unchanged(snapshotter, session, query, expected_rows);
-    assert_unchanged(snapshotter, session, query, expected_rows);
+    assert_unchanged(snapshotter, session, query, expected_rows).await;
+    assert_unchanged(snapshotter, session, query, expected_rows).await;
 }
 
 pub fn assert_sorted_set_equals(

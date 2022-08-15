@@ -1,11 +1,11 @@
 use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 use cassandra_cpp::{stmt, Batch, BatchType};
 
-pub fn test(connection: &CassandraConnection) {
+pub async fn test(connection: &CassandraConnection) {
     // setup keyspace and table for the batch statement tests
     {
-        run_query(connection, "CREATE KEYSPACE batch_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };");
-        run_query(connection, "CREATE TABLE batch_keyspace.batch_table (id int PRIMARY KEY, lastname text, firstname text);");
+        run_query(connection, "CREATE KEYSPACE batch_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
+        run_query(connection, "CREATE TABLE batch_keyspace.batch_table (id int PRIMARY KEY, lastname text, firstname text);").await;
     }
 
     {
@@ -31,7 +31,8 @@ pub fn test(connection: &CassandraConnection) {
                     ResultValue::Varchar("text2".into()),
                 ],
             ],
-        );
+        )
+        .await;
     }
 
     {
@@ -60,7 +61,8 @@ pub fn test(connection: &CassandraConnection) {
                     ResultValue::Varchar("text2".into()),
                 ],
             ],
-        );
+        )
+        .await;
     }
 
     {
@@ -70,7 +72,7 @@ pub fn test(connection: &CassandraConnection) {
             batch.add_statement(&stmt!(statement.as_str())).unwrap();
         }
         connection.execute_batch(&batch);
-        assert_query_result(connection, "SELECT * FROM batch_keyspace.batch_table;", &[]);
+        assert_query_result(connection, "SELECT * FROM batch_keyspace.batch_table;", &[]).await;
     }
 
     {
@@ -84,7 +86,7 @@ pub fn test(connection: &CassandraConnection) {
 INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (2, 'text1', 'text2');
 INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (3, 'text1', 'text2');
 APPLY BATCH;";
-        run_query(connection, insert_statement);
+        run_query(connection, insert_statement).await;
 
         assert_query_result(
             connection,
@@ -101,10 +103,11 @@ APPLY BATCH;";
                     ResultValue::Varchar("text2".into()),
                 ],
             ],
-        );
+        )
+        .await;
 
         let update_statement = "BEGIN BATCH UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 2; UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = 3; APPLY BATCH;";
-        run_query(connection, update_statement);
+        run_query(connection, update_statement).await;
 
         assert_query_result(
             connection,
@@ -121,6 +124,7 @@ APPLY BATCH;";
                     ResultValue::Varchar("text2".into()),
                 ],
             ],
-        );
+        )
+        .await;
     }
 }
