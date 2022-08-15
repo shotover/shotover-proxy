@@ -215,7 +215,7 @@ impl CassandraSinkCluster {
                     if let Some(outbound) = &node.outbound {
                         let (return_chan_tx, return_chan_rx) = oneshot::channel();
                         outbound.send(message.clone(), return_chan_tx)?;
-                        responses_future_use.push(return_chan_rx);
+                        responses_future_use.push_back(return_chan_rx);
                         use_future_index_to_node_index.push(node_index);
                     }
                 }
