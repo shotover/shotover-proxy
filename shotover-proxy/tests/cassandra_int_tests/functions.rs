@@ -8,12 +8,9 @@ async fn drop_function(session: &CassandraConnection) {
     ).await;
     run_query(session, "DROP FUNCTION test_function_keyspace.my_function").await;
 
-    let statement = "SELECT test_function_keyspace.my_function(x) FROM test_function_keyspace.test_function_table WHERE id=1;";
-    let result = session.execute_expect_err(statement).to_string();
-
-    assert_eq!(
-        result,
-        "Cassandra detailed error SERVER_INVALID_QUERY: Unknown function 'test_function_keyspace.my_function'"
+    session.execute_expect_err_contains(
+        "SELECT test_function_keyspace.my_function(x) FROM test_function_keyspace.test_function_table WHERE id=1;",
+        "Unknown function 'test_function_keyspace.my_function'",
     );
 }
 
