@@ -110,6 +110,15 @@ impl CassandraConnection {
     }
 
     #[allow(unused)]
+    pub fn execute_expect_err_contains(&self, query: &str, contains: &str) {
+        let result = self.execute_expect_err(query).to_string();
+        assert!(
+            result.contains(contains),
+            "Expected the error to contain '{contains}' but it did not and was instead '{result}'"
+        );
+    }
+
+    #[allow(unused)]
     pub fn prepare(&self, query: &str) -> PreparedStatement {
         match self {
             CassandraConnection::Datastax { session, .. } => {
