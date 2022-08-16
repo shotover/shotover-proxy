@@ -68,8 +68,10 @@ async fn test_info(connection: &mut Connection) {
     );
     assert_eq!(info.get("role"), Some("master".to_string()));
     assert_eq!(info.get("loading"), Some(false));
-    assert!(!info.is_empty());
-    assert!(info.contains_key(&"role"));
+    assert!(
+        info.contains_key(&"role"),
+        "expected info to contain key 'role' but was {info:?}"
+    );
 }
 
 async fn test_keys_hiding(connection: &mut Connection, flusher: &mut Flusher) {
@@ -134,9 +136,18 @@ async fn test_save(connection: &mut Connection) {
         .await
         .unwrap();
 
-    assert!(lastsave1 > 0);
-    assert!(lastsave2 > 0);
-    assert!(lastsave2 > lastsave1);
+    assert!(
+        lastsave1 > 0,
+        "expected lastsave1 > 0, but lastsave was {lastsave1}"
+    );
+    assert!(
+        lastsave2 > 0,
+        "expected lastsave2 > 0, but lastsave was {lastsave2}"
+    );
+    assert!(
+        lastsave2 > lastsave1,
+        "expected lastsave2 > lastsave1, but was {lastsave2} > {lastsave1}"
+    );
 }
 
 async fn test_ping_echo(connection: &mut Connection) {
@@ -157,8 +168,14 @@ async fn test_time(connection: &mut Connection) {
     let (time_seconds, extra_ms): (u64, u64) =
         redis::cmd("TIME").query_async(connection).await.unwrap();
 
-    assert!(time_seconds > 0);
-    assert!(extra_ms < 1_000_000);
+    assert!(
+        time_seconds > 0,
+        "expected time_seconds > 0, but time_seconds was {time_seconds}"
+    );
+    assert!(
+        extra_ms < 1_000_000,
+        "expected extra_ms < 1_000_000, but extra_ms was {extra_ms}"
+    );
 }
 
 async fn test_time_cluster(connection: &mut Connection) {
@@ -640,9 +657,10 @@ async fn test_nice_hash_api(connection: &mut Connection) {
         found.insert(item);
     }
 
-    assert_eq!(found.len(), 2);
-    assert!(found.contains(&("f3".to_string(), 4)));
-    assert!(found.contains(&("f4".to_string(), 8)));
+    assert_eq!(
+        found,
+        HashSet::from([("f3".to_string(), 4), ("f4".to_string(), 8)])
+    );
 }
 
 async fn test_nice_list_api(connection: &mut Connection) {
