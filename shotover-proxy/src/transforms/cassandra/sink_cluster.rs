@@ -137,7 +137,7 @@ impl CassandraSinkCluster {
 }
 
 impl CassandraSinkCluster {
-    async fn send_message(&mut self, messages: Messages) -> ChainResponse {
+    async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
         // Attempt to populate nodes list if we still dont have one yet
         if self.local_nodes.is_empty() {
             let nodes_shared = self.topology_task_nodes.read().await;
@@ -168,26 +168,18 @@ impl CassandraSinkCluster {
         }
 
         if !self.init_handshake_complete {
-            for message in &messages {
-                if let Some(last) = self.init_handshake.last_mut() {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::AuthResponse(_),
-                        ..
-                    })) = last.frame()
-                    {
-                        // Only send a handshake if the task really needs it
-                        // i.e. when the channel of size 1 is empty
-                        if let Ok(permit) = self.task_handshake_tx.try_reserve() {
-                            permit.send(TaskHandshake {
-                                handshake: self.init_handshake.clone(),
-                                address: self.init_handshake_address.unwrap(),
-                            })
-                        }
-                        self.init_handshake_complete = true;
-                        break;
-                    }
+            for message in &mut messages {
+                // Filter operation types so we are only left with messages relevant to the handshake.
+                // Due to shotover pipelining we could receive non-handshake messages while !self.init_handshake_complete.
+                // Despite being used by the client in a handshake, CassandraOperation::Options is not included
+                // because it doesnt dont alter the state of the server and so it isnt needed.
+                if let Some(Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Startup(_) | CassandraOperation::AuthResponse(_),
+                    ..
+                })) = message.frame()
+                {
+                    self.init_handshake.push(message.clone());
                 }
-                self.init_handshake.push(message.clone());
             }
         }
 
@@ -233,9 +225,32 @@ impl CassandraSinkCluster {
             responses_future.push_back(return_chan_rx)
         }
 
-        let responses =
+        let mut responses =
             super::connection::receive(self.read_timeout, &self.failed_requests, responses_future)
                 .await?;
+
+        // When the server indicates that it is ready for normal operation via Ready or AuthSuccess,
+        // we have succesfully collected an entire handshake so we mark the handshake as complete.
+        if !self.init_handshake_complete {
+            for response in &mut responses {
+                if let Some(Frame::Cassandra(CassandraFrame {
+                    operation: CassandraOperation::Ready(_) | CassandraOperation::AuthSuccess(_),
+                    ..
+                })) = response.frame()
+                {
+                    // Only send a handshake if the task really needs it
+                    // i.e. when the channel of size 1 is empty
+                    if let Ok(permit) = self.task_handshake_tx.try_reserve() {
+                        permit.send(TaskHandshake {
+                            handshake: self.init_handshake.clone(),
+                            address: self.init_handshake_address.unwrap(),
+                        })
+                    }
+                    self.init_handshake_complete = true;
+                    break;
+                }
+            }
+        }
 
         for node_index in use_future_index_to_node_index {
             let response = responses_future_use
