@@ -29,7 +29,7 @@ impl PacketCapture {
     pub fn save_to_file(&mut self, mut cap_handle: Capture<Active>, file_name: &str) {
         match cap_handle.savefile(&file_name) {
             Ok(mut file) => {
-                while let Ok(packet) = cap_handle.next() {
+                while let Ok(packet) = cap_handle.next_packet() {
                     file.write(&packet);
                 }
             }
@@ -42,7 +42,7 @@ impl PacketCapture {
     pub fn print_to_console(&mut self, mut cap_handle: Capture<Active>) {
         self.print_headers();
 
-        while let Ok(packet) = cap_handle.next() {
+        while let Ok(packet) = cap_handle.next_packet() {
             let packet = OwnedPcapPacket::from(packet);
             let packet_parse = PacketParse::default();
             let parsed_packet = packet_parse.parse_packet(&packet);
@@ -136,7 +136,8 @@ impl PacketCapture {
         }
 
         let packets: Vec<_> =
-            std::iter::from_fn(move || cap_handle.next().ok().map(OwnedPcapPacket::from)).collect();
+            std::iter::from_fn(move || cap_handle.next_packet().ok().map(OwnedPcapPacket::from))
+                .collect();
 
         packets
             .par_iter()
