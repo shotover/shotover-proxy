@@ -41,7 +41,7 @@ pub async fn test() {
     }
 
     // make assertions on the nodes list
-    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes.len(), 3);
     let mut possible_addresses: Vec<IpAddr> = vec![
         "172.16.1.2".parse().unwrap(),
         "172.16.1.3".parse().unwrap(),
