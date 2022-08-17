@@ -1,4 +1,3 @@
-use crate::concurrency::FuturesOrdered;
 use crate::frame::cassandra;
 use crate::message::Message;
 use crate::server::Codec;
@@ -10,6 +9,7 @@ use crate::transforms::Messages;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Opcode;
 use derivative::Derivative;
+use futures::stream::FuturesOrdered;
 use futures::StreamExt;
 use halfbrown::HashMap;
 use std::time::Duration;

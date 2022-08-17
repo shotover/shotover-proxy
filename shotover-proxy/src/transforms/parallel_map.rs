@@ -9,11 +9,11 @@ use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::task::{Context, Poll};
 use futures::Stream;
+use futures::StreamExt;
 use itertools::Itertools;
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
-use tokio_stream::StreamExt;
 
 #[derive(Debug, Clone)]
 pub struct ParallelMap {
@@ -40,7 +40,7 @@ where
 
     pub fn push(&mut self, future: T) {
         match self {
-            UOFutures::Ordered(o) => o.push(future),
+            UOFutures::Ordered(o) => o.push_back(future),
             UOFutures::Unordered(u) => u.push(future),
         }
     }

@@ -7,9 +7,9 @@ use crate::transforms::{
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use serde::Deserialize;
 use std::collections::HashMap;
-use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
 
 #[derive(Clone)]
