@@ -293,16 +293,14 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
 
 #[cfg(test)]
 mod test {
+    use super::spawn_read_write_tasks;
+    use crate::codec::redis::RedisCodec;
     use std::mem;
     use std::time::Duration;
-
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
     use tokio::net::TcpStream;
     use tokio::time::timeout;
-
-    use super::spawn_read_write_tasks;
-    use crate::codec::redis::RedisCodec;
 
     #[tokio::test]
     async fn test_remote_shutdown() {

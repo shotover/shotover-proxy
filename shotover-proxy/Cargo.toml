@@ -20,8 +20,7 @@ tokio-util = { version = "0.7.0", features = ["full"] }
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
 bytes-utils = "0.1.1"
-futures = "0.3.12"
-futures-core = "0.3.1"
+futures = "0.3"
 async-trait = "0.1.30"
 clap = { version = "3.0.4", features = ["cargo", "derive"] }
 derivative = "2.1.1"

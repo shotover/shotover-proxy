@@ -20,7 +20,6 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 
 pub mod codec;
-mod concurrency;
 pub mod config;
 pub mod error;
 pub mod frame;

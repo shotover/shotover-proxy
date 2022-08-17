@@ -1,6 +1,5 @@
 use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
-use crate::concurrency::FuturesOrdered;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -8,6 +7,7 @@ use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::stream::FuturesOrdered;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::time::Duration;
