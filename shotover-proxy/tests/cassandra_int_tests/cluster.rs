@@ -21,7 +21,7 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Varchar("3.4.4".into()),
         ResultValue::Varchar("dc1".into()),
         ResultValue::Any,
-        ResultValue::Any,
+        ResultValue::Uuid("2dd022d6-2937-4754-89d6-02d2933a8f7a".parse().unwrap()),
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Varchar("4".into()),
         ResultValue::Varchar("org.apache.cassandra.dht.Murmur3Partitioner".into()),
@@ -29,7 +29,9 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Varchar("3.11.13".into()),
         ResultValue::Inet("0.0.0.0".parse().unwrap()),
         ResultValue::Any,
-        ResultValue::Any,
+        // Unfortunately token generation appears to be non-deterministic but we can at least assert that
+        // there are 128 tokens per node
+        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
         ResultValue::Map(vec![]),
     ];
 

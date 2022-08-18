@@ -30,6 +30,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::None)],
             chain.name.clone(),
+            "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("null", |b| {
@@ -68,6 +69,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 ]))),
             ],
             chain.name.clone(),
+            "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("redis_filter", |b| {
@@ -103,6 +105,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 RedisFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
             chain.name.clone(),
+            "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("redis_timestamp_tagger_untagged", |b| {
@@ -123,6 +126,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 RedisFrame::BulkString(Bytes::from_static(b"foo")),
             ])))],
             chain.name.clone(),
+            "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("redis_timestamp_tagger_tagged", |b| {
@@ -153,6 +157,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 RedisFrame::BulkString(Bytes::from_static(b"bar")),
             ])))],
             chain.name.clone(),
+            "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("redis_cluster_ports_rewrite", |b| {
@@ -196,6 +201,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 MessageType::Cassandra,
             )],
             chain.name.clone(),
+            "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
@@ -251,6 +257,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 MessageType::Cassandra,
             )],
             "bench".into(),
+            "127.0.0.1:6379".parse().unwrap(),
         );
 
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
@@ -349,6 +356,7 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
             },
         }))],
         "bench".into(),
+        "127.0.0.1:6379".parse().unwrap(),
     )
 }
 

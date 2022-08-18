@@ -18,19 +18,17 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
 use futures::stream::FuturesOrdered;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use node::CassandraNode;
 use rand::prelude::*;
 use serde::Deserialize;
-use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
+use version_compare::Cmp;
 
 mod node;
 
@@ -38,6 +36,8 @@ mod node;
 pub struct CassandraSinkClusterConfig {
     pub first_contact_points: Vec<String>,
     pub data_center: String,
+    pub rack: String,
+    pub host_id: Uuid,
     pub tls: Option<TlsConnectorConfig>,
     pub read_timeout: Option<u64>,
 }
@@ -49,6 +49,8 @@ impl CassandraSinkClusterConfig {
             self.first_contact_points.clone(),
             chain_name,
             self.data_center.clone(),
+            self.rack.clone(),
+            self.host_id,
             tls,
             self.read_timeout,
         )))
@@ -70,6 +72,8 @@ pub struct CassandraSinkCluster {
     local_table: FQName,
     peer_table: FQName,
     data_center: String,
+    rack: String,
+    host_id: Uuid,
     /// A local clone of topology_task_nodes
     /// Internally stores connections to the nodes
     local_nodes: Vec<CassandraNode>,
@@ -97,6 +101,8 @@ impl Clone for CassandraSinkCluster {
             local_table: self.local_table.clone(),
             peer_table: self.peer_table.clone(),
             data_center: self.data_center.clone(),
+            rack: self.rack.clone(),
+            host_id: self.host_id,
             local_nodes: vec![],
             topology_task_nodes: self.topology_task_nodes.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
@@ -110,6 +116,8 @@ impl CassandraSinkCluster {
         contact_points: Vec<String>,
         chain_name: String,
         data_center: String,
+        rack: String,
+        host_id: Uuid,
         tls: Option<TlsConnector>,
         timeout: Option<u64>,
     ) -> CassandraSinkCluster {
@@ -141,6 +149,8 @@ impl CassandraSinkCluster {
             local_table: FQName::new("system", "local"),
             peer_table: FQName::new("system", "peers"),
             data_center,
+            rack,
+            host_id,
             local_nodes: vec![],
             topology_task_nodes: nodes_shared,
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
@@ -150,7 +160,11 @@ impl CassandraSinkCluster {
 }
 
 impl CassandraSinkCluster {
-    async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
+    async fn send_message(
+        &mut self,
+        mut messages: Messages,
+        local_addr: SocketAddr,
+    ) -> ChainResponse {
         // Attempt to populate nodes list if we still dont have one yet
         if self.local_nodes.is_empty() {
             let nodes_shared = self.topology_task_nodes.read().await;
@@ -211,7 +225,12 @@ impl CassandraSinkCluster {
         let mut use_future_index_to_node_index = vec![];
         for mut message in messages {
             let (return_chan_tx, return_chan_rx) = oneshot::channel();
-            if self.local_nodes.is_empty() || !self.init_handshake_complete {
+            if self.local_nodes.is_empty()
+                || !self.init_handshake_complete
+                // DDL statements must be routed through the handshake connection so that later system.local queries are directed to the same node (they also go to the handshake connection)
+                // They must be the same node so that schema_version changes appear immediately in system.local
+                || is_ddl_statement(&mut message)
+            {
                 self.init_handshake_connection.as_mut().unwrap()
             } else if is_use_statement(&mut message) {
                 // If we have already received a USE statement then pop it off the handshakes list to avoid infinite growth
@@ -290,7 +309,7 @@ impl CassandraSinkCluster {
         for table_to_rewrite in tables_to_rewrite {
             responses.insert(
                 table_to_rewrite.index,
-                self.rewrite_table(table_to_rewrite).await?,
+                self.rewrite_table(table_to_rewrite, local_addr).await?,
             );
         }
 
@@ -323,7 +342,11 @@ impl CassandraSinkCluster {
         None
     }
 
-    async fn rewrite_table(&mut self, table: TableToRewrite) -> Result<Message> {
+    async fn rewrite_table(
+        &mut self,
+        table: TableToRewrite,
+        local_addr: SocketAddr,
+    ) -> Result<Message> {
         let version = table.version;
         let stream_id = table.stream_id;
         let table_name = match table.ty {
@@ -331,7 +354,7 @@ impl CassandraSinkCluster {
             RewriteTableTy::Peers => "peers".into(),
         };
         let (rows, col_specs) = match table.ty {
-            RewriteTableTy::Local => self.rewrite_table_local(table).await?,
+            RewriteTableTy::Local => self.rewrite_table_local(table, local_addr).await?,
             RewriteTableTy::Peers => self.rewrite_table_peers(table).await?,
         };
 
@@ -344,7 +367,7 @@ impl CassandraSinkCluster {
                 value: MessageValue::Rows(rows),
                 // TODO: A bunch of these are just hardcoded with the assumption that the client didnt request any exotic features.
                 // We should implement them eventually but I cant imagine drivers would bother using them when querying the topology.
-                // TODO: flags and columns_count should be removed upstream and just derived from the other fields at serialization time.
+                // TODO: flags should be removed upstream and just derived from the other fields at serialization time.
                 metadata: Box::new(RowsMetadata {
                     flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
                     columns_count: col_specs.len() as i32,
@@ -433,74 +456,65 @@ impl CassandraSinkCluster {
     async fn rewrite_table_local(
         &mut self,
         table: TableToRewrite,
+        local_address: SocketAddr,
     ) -> Result<(Vec<Vec<MessageValue>>, Vec<ColSpec>)> {
-        let mut schema_version: Option<Uuid> = None;
-        let mut gossip_generation: Option<i64> = None;
-        let mut rack: HashSet<String> = HashSet::new();
-        let mut partitioner: HashSet<String> = HashSet::new();
-        let mut cluster_name: HashSet<String> = HashSet::new();
-        let mut tokens = vec![];
-        if self.local_nodes.is_empty() {
-            // TODO: maybe we should query the handshake connection rather than asuming worst case values?
-            schema_version = Some(Uuid::new_v4());
-            gossip_generation = Some(0);
-        } else {
-            let mut futures = FuturesUnordered::new();
-            for node in &mut self.local_nodes {
-                futures.push(async {
-                    let connection = node
-                        .get_connection(&self.init_handshake, &self.tls, &None)
-                        .await?;
-                    let (return_chan_tx, return_chan_rx) = oneshot::channel();
-                    connection.send(
-                        Message::from_frame(Frame::Cassandra(CassandraFrame {
-                            version: Version::V4,
-                            stream_id: 0,
-                            tracing_id: None,
-                            warnings: vec![],
-                            operation: CassandraOperation::Query {
-                                query: Box::new(parse_statement_single(
-                                    "SELECT cluster_name, partitioner, rack, schema_version, gossip_generation, tokens FROM system.local",
-                                )),
-                                params: Box::new(QueryParams::default()),
-                            },
-                        })),
-                        return_chan_tx,
-                    )?;
-                    let response = return_chan_rx.await?.response?;
-                    parse_system_local(response)
-                });
-            }
-            while let Some(system_local) = futures.next().await {
-                let system_local = system_local?;
-                match &mut schema_version {
-                    Some(schema_version) => {
-                        if *schema_version != system_local.schema_version {
-                            // TODO: could optimize this by avoiding repeating the random number generation
-                            *schema_version = Uuid::new_v4();
-                        }
-                    }
-                    None => schema_version = Some(system_local.schema_version),
-                }
+        let outbound = self.init_handshake_connection.as_ref().unwrap();
+        let (peers_tx, peers_rx) = oneshot::channel();
+        outbound.send(
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
+                version: Version::V4,
+                stream_id: 0,
+                tracing_id: None,
+                warnings: vec![],
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(
+                        "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers",
+                    )),
+                    params: Box::new(QueryParams::default()),
+                },
+            })),
+            peers_tx,
+        )?;
 
-                match &mut gossip_generation {
-                    Some(gossip_generation) => {
-                        if *gossip_generation < system_local.gossip_generation {
-                            *gossip_generation = system_local.gossip_generation;
-                        }
-                    }
-                    None => gossip_generation = Some(system_local.gossip_generation),
-                }
-                rack.insert(system_local.rack);
-                partitioner.insert(system_local.partitioner);
-                cluster_name.insert(system_local.cluster_name);
-                tokens.extend(system_local.tokens)
+        let (local_tx, local_rx) = oneshot::channel();
+        outbound.send(
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
+                version: Version::V4,
+                stream_id: 1,
+                tracing_id: None,
+                warnings: vec![],
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(
+                        "SELECT cql_version, release_version, cluster_name, partitioner, schema_version, gossip_generation, tokens FROM system.local",
+                    )),
+                    params: Box::new(QueryParams::default()),
+                },
+            })),
+            local_tx,
+        )?;
+
+        let (peers, local) = tokio::join!(
+            async { parse_system_peers(peers_rx.await?.response?, &self.data_center, &self.rack) },
+            async { parse_system_local(local_rx.await?.response?) },
+        );
+        let mut local = local?;
+        let mut peers = peers?;
+
+        for peer in &mut peers {
+            local.tokens.append(&mut peer.tokens);
+            if let Ok(Cmp::Lt) =
+                version_compare::compare(&peer.release_version, &local.release_version)
+            {
+                std::mem::swap(&mut local.release_version, &mut peer.release_version);
             }
         }
-
-        let rack = rack.into_iter().sorted().join("|");
-        let partitioner = partitioner.into_iter().sorted().join("|");
-        let cluster_name = cluster_name.into_iter().sorted().join("|");
+        local.tokens.sort();
+        for peer in &peers {
+            if local.schema_version != peer.schema_version {
+                local.schema_version = Uuid::new_v4();
+                break;
+            }
+        }
 
         let version = match table.version {
             Version::V3 => "3".to_string(),
@@ -533,20 +547,20 @@ impl CassandraSinkCluster {
                     row.extend([
                         MessageValue::Varchar("local".into()),
                         MessageValue::Varchar("COMPLETED".into()),
-                        MessageValue::Inet("127.0.0.1".parse().unwrap()),
-                        MessageValue::Varchar(cluster_name.clone()),
-                        MessageValue::Varchar("3.4.4".into()),
+                        MessageValue::Inet(local_address.ip()),
+                        MessageValue::Varchar(local.cluster_name.clone()),
+                        MessageValue::Varchar(local.cql_version.clone()),
                         MessageValue::Varchar(self.data_center.clone()),
-                        MessageValue::Integer(gossip_generation.unwrap(), IntSize::I32),
-                        MessageValue::Uuid(Uuid::new_v4()),
-                        MessageValue::Inet("127.0.0.1".parse().unwrap()),
+                        MessageValue::Integer(local.gossip_generation, IntSize::I32),
+                        MessageValue::Uuid(self.host_id),
+                        MessageValue::Inet(local_address.ip()),
                         MessageValue::Varchar(version.clone()),
-                        MessageValue::Varchar(partitioner.clone()),
-                        MessageValue::Varchar(rack.clone()),
-                        MessageValue::Varchar("3.11.13".into()),
+                        MessageValue::Varchar(local.partitioner.clone()),
+                        MessageValue::Varchar(self.rack.clone()),
+                        MessageValue::Varchar(local.release_version.clone()),
                         MessageValue::Inet("0.0.0.0".parse().unwrap()),
-                        MessageValue::Uuid(schema_version.unwrap()),
-                        MessageValue::List(vec![]),
+                        MessageValue::Uuid(local.schema_version),
+                        MessageValue::List(local.tokens.clone()),
                         MessageValue::Null,
                     ]);
                     col_specs.extend([
@@ -587,49 +601,46 @@ impl CassandraSinkCluster {
                         row.push(MessageValue::Varchar("COMPLETED".into()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == broadcast_address_ident {
-                        row.push(MessageValue::Inet("127.0.0.1".parse().unwrap()));
+                        row.push(MessageValue::Inet(local_address.ip()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
                     } else if name.name == cluster_name_ident {
-                        row.push(MessageValue::Varchar(cluster_name.clone()));
+                        row.push(MessageValue::Varchar(local.cluster_name.clone()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == cql_version_ident {
-                        row.push(MessageValue::Varchar("3.4.4".into()));
+                        row.push(MessageValue::Varchar(local.cql_version.clone()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == data_center_ident {
                         row.push(MessageValue::Varchar(self.data_center.clone()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == gossip_generation_ident {
-                        row.push(MessageValue::Integer(
-                            gossip_generation.unwrap(),
-                            IntSize::I32,
-                        ));
+                        row.push(MessageValue::Integer(local.gossip_generation, IntSize::I32));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Int));
                     } else if name.name == host_id_ident {
-                        row.push(MessageValue::Uuid(Uuid::new_v4()));
+                        row.push(MessageValue::Uuid(self.host_id));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Uuid));
                     } else if name.name == listen_address_ident {
-                        row.push(MessageValue::Inet("127.0.0.1".parse().unwrap()));
+                        row.push(MessageValue::Inet(local_address.ip()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
                     } else if name.name == native_protocol_version_ident {
                         row.push(MessageValue::Varchar(version.clone()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == partitioner_ident {
-                        row.push(MessageValue::Varchar(partitioner.clone()));
+                        row.push(MessageValue::Varchar(local.partitioner.clone()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == rack_ident {
-                        row.push(MessageValue::Varchar(rack.clone()));
+                        row.push(MessageValue::Varchar(self.rack.clone()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == release_version_ident {
-                        row.push(MessageValue::Varchar("3.11.13".into()));
+                        row.push(MessageValue::Varchar(local.release_version.clone()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Varchar));
                     } else if name.name == rpc_address_ident {
                         row.push(MessageValue::Inet("0.0.0.0".parse().unwrap()));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Inet));
                     } else if name.name == schema_version_ident {
-                        row.push(MessageValue::Uuid(schema_version.unwrap()));
+                        row.push(MessageValue::Uuid(local.schema_version));
                         col_specs.push(meta(name.alias_or_name().to_string(), ColType::Uuid));
                     } else if name.name == tokens_ident {
-                        row.push(MessageValue::List(vec![]));
+                        row.push(MessageValue::List(local.tokens.clone()));
                         col_specs.push(meta_tokens(name.alias_or_name().to_string()));
                     } else if name.name == truncated_at_ident {
                         row.push(MessageValue::Null);
@@ -640,8 +651,6 @@ impl CassandraSinkCluster {
                 }
             }
         }
-
-        // TODO: schema_version and gossip_generation should be obtained by querying all nodes
 
         Ok((vec![row], col_specs))
     }
@@ -862,9 +871,35 @@ fn system_peers_into_nodes(
 
 fn is_use_statement(request: &mut Message) -> bool {
     if let Some(Frame::Cassandra(frame)) = request.frame() {
-        // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
         if let CassandraOperation::Query { query, .. } = &mut frame.operation {
-            if let CassandraStatement::Use(_) = query.as_mut() {
+            if let CassandraStatement::Use(_) = query.as_ref() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_ddl_statement(request: &mut Message) -> bool {
+    if let Some(Frame::Cassandra(frame)) = request.frame() {
+        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+            if let CassandraStatement::CreateAggregate(_)
+            | CassandraStatement::CreateFunction(_)
+            | CassandraStatement::CreateIndex(_)
+            | CassandraStatement::CreateKeyspace(_)
+            | CassandraStatement::CreateMaterializedView(_)
+            | CassandraStatement::CreateRole(_)
+            | CassandraStatement::CreateTable(_)
+            | CassandraStatement::CreateTrigger(_)
+            | CassandraStatement::CreateType(_)
+            | CassandraStatement::CreateUser(_)
+            | CassandraStatement::AlterKeyspace(_)
+            | CassandraStatement::AlterMaterializedView(_)
+            | CassandraStatement::AlterRole(_)
+            | CassandraStatement::AlterTable(_)
+            | CassandraStatement::AlterType(_)
+            | CassandraStatement::AlterUser(_) = query.as_ref()
+            {
                 return true;
             }
         }
@@ -892,10 +927,86 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
 struct SystemLocal {
     schema_version: Uuid,
     gossip_generation: i64,
-    tokens: Vec<String>,
-    rack: String,
+    tokens: Vec<MessageValue>,
     partitioner: String,
     cluster_name: String,
+    release_version: String,
+    cql_version: String,
+}
+
+struct SystemPeer {
+    tokens: Vec<MessageValue>,
+    schema_version: Uuid,
+    release_version: String,
+}
+
+fn parse_system_peers(
+    mut response: Message,
+    config_data_center: &str,
+    config_rack: &str,
+) -> Result<Vec<SystemPeer>> {
+    if let Some(Frame::Cassandra(frame)) = response.frame() {
+        match &mut frame.operation {
+            CassandraOperation::Result(CassandraResult::Rows {
+                value: MessageValue::Rows(rows),
+                ..
+            }) => rows
+                .iter_mut()
+                .filter(|row| {
+                    if let (
+                        Some(MessageValue::Varchar(data_center)),
+                        Some(MessageValue::Varchar(rack)),
+                    ) = (row.get(1), row.get(0))
+                    {
+                        data_center == config_data_center && rack == config_rack
+                    } else {
+                        false
+                    }
+                })
+                .map(|row| {
+                    if row.len() != 5 {
+                        return Err(anyhow!("expected 5 columns but was {}", row.len()));
+                    }
+
+                    let release_version = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("release_version not a list"));
+                    };
+
+                    let tokens = if let Some(MessageValue::List(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("tokens not a list"));
+                    };
+
+                    let schema_version = if let Some(MessageValue::Uuid(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("schema_version not a uuid"));
+                    };
+
+                    let _data_center = row.pop();
+                    let _rack = row.pop();
+
+                    Ok(SystemPeer {
+                        tokens,
+                        schema_version,
+                        release_version,
+                    })
+                })
+                .collect(),
+            operation => Err(anyhow!(
+                "system.local returned unexpected cassandra operation: {:?}",
+                operation
+            )),
+        }
+    } else {
+        Err(anyhow!(
+            "Failed to parse system.local response {:?}",
+            response
+        ))
+    }
 }
 
 fn parse_system_local(mut response: Message) -> Result<SystemLocal> {
@@ -909,18 +1020,12 @@ fn parse_system_local(mut response: Message) -> Result<SystemLocal> {
                     tracing::error!("system.local returned more than one row");
                 }
                 if let Some(row) = rows.first_mut() {
-                    if row.len() != 6 {
-                        return Err(anyhow!("expected 6 columns but was {}", row.len()));
+                    if row.len() != 7 {
+                        return Err(anyhow!("expected 7 columns but was {}", row.len()));
                     }
 
                     let tokens = if let Some(MessageValue::List(value)) = row.pop() {
                         value
-                            .into_iter()
-                            .map(|x| match x {
-                                MessageValue::Varchar(a) => Ok(a),
-                                _ => Err(anyhow!("tokens value not a varchar")),
-                            })
-                            .collect::<Result<Vec<String>>>()?
                     } else {
                         return Err(anyhow!("tokens not a list"));
                     };
@@ -938,12 +1043,6 @@ fn parse_system_local(mut response: Message) -> Result<SystemLocal> {
                         return Err(anyhow!("schema_version not a uuid"));
                     };
 
-                    let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
-                        value
-                    } else {
-                        return Err(anyhow!("rack not a varchar"));
-                    };
-
                     let partitioner = if let Some(MessageValue::Varchar(value)) = row.pop() {
                         value
                     } else {
@@ -956,13 +1055,26 @@ fn parse_system_local(mut response: Message) -> Result<SystemLocal> {
                         return Err(anyhow!("cluster_name not a varchar"));
                     };
 
+                    let release_version = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("release_version not a varchar"));
+                    };
+
+                    let cql_version = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                        value
+                    } else {
+                        return Err(anyhow!("cql_version not a varchar"));
+                    };
+
                     Ok(SystemLocal {
                         schema_version,
                         gossip_generation,
                         tokens,
-                        rack,
                         partitioner,
                         cluster_name,
+                        release_version,
+                        cql_version,
                     })
                 } else {
                     Err(anyhow!("system.local returned no rows"))
@@ -984,7 +1096,8 @@ fn parse_system_local(mut response: Message) -> Result<SystemLocal> {
 #[async_trait]
 impl Transform for CassandraSinkCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        self.send_message(message_wrapper.messages).await
+        self.send_message(message_wrapper.messages, message_wrapper.local_addr)
+            .await
     }
 
     fn is_terminating(&self) -> bool {
