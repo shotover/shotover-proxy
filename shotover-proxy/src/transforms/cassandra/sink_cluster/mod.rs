@@ -1,5 +1,4 @@
 use super::connection::CassandraConnection;
-use crate::codec::cassandra::CassandraCodec;
 use crate::error::ChainResponse;
 use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
@@ -16,7 +15,7 @@ use cql3_parser::common::FQName;
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
 use metrics::{register_counter, Counter};
-use node::{new_connection, CassandraNode};
+use node::{CassandraNode, ConnectionFactory};
 use rand::prelude::*;
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -24,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
-mod node;
+pub mod node;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkClusterConfig {
@@ -50,13 +49,14 @@ impl CassandraSinkClusterConfig {
 pub struct CassandraSinkCluster {
     contact_points: Vec<String>,
     init_handshake_connection: Option<CassandraConnection>,
-    init_handshake: Vec<Message>,
+
+    connection_factory: ConnectionFactory,
+
     init_handshake_address: Option<SocketAddr>,
     init_handshake_complete: bool,
     init_handshake_use_received: bool,
     chain_name: String,
     failed_requests: Counter,
-    tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     read_timeout: Option<Duration>,
     peer_table: FQName,
@@ -76,12 +76,11 @@ impl Clone for CassandraSinkCluster {
         CassandraSinkCluster {
             contact_points: self.contact_points.clone(),
             init_handshake_connection: None,
-            init_handshake: vec![],
+            connection_factory: self.connection_factory.clone_transfrom(),
             init_handshake_address: None,
             init_handshake_complete: false,
             init_handshake_use_received: false,
             chain_name: self.chain_name.clone(),
-            tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
             read_timeout: self.read_timeout,
@@ -109,23 +108,17 @@ impl CassandraSinkCluster {
         let nodes_shared = Arc::new(RwLock::new(vec![]));
 
         let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
-        create_topology_task(
-            tls.clone(),
-            nodes_shared.clone(),
-            task_handshake_rx,
-            data_center.clone(),
-        );
+        create_topology_task(nodes_shared.clone(), task_handshake_rx, data_center.clone());
 
         CassandraSinkCluster {
             contact_points,
             init_handshake_connection: None,
-            init_handshake: vec![],
+            connection_factory: ConnectionFactory::new(tls),
             init_handshake_address: None,
             init_handshake_complete: false,
             init_handshake_use_received: false,
             chain_name,
             failed_requests,
-            tls,
             pushed_messages_tx: None,
             read_timeout: receive_timeout,
             peer_table: FQName::new("system", "peers"),
@@ -157,15 +150,9 @@ impl CassandraSinkCluster {
                     .next()
                     .unwrap()
             };
-            self.init_handshake_connection = Some(
-                CassandraConnection::new(
-                    random_point,
-                    CassandraCodec::new(),
-                    self.tls.clone(),
-                    self.pushed_messages_tx.clone(),
-                )
-                .await?,
-            );
+            self.init_handshake_connection =
+                Some(self.connection_factory.new_connection(random_point).await?);
+
             self.init_handshake_address = Some(random_point);
         }
 
@@ -180,7 +167,7 @@ impl CassandraSinkCluster {
                     ..
                 })) = message.frame()
                 {
-                    self.init_handshake.push(message.clone());
+                    self.connection_factory.init_handshake.push(message.clone());
                 }
             }
         }
@@ -195,13 +182,13 @@ impl CassandraSinkCluster {
             } else if is_use_statement(&mut message) {
                 // If we have already received a USE statement then pop it off the handshakes list to avoid infinite growth
                 if self.init_handshake_use_received {
-                    self.init_handshake.pop();
+                    self.connection_factory.init_handshake.pop();
                 }
                 self.init_handshake_use_received = true;
 
                 // Adding the USE statement to the handshake ensures that any new connection
                 // created will have the correct keyspace setup.
-                self.init_handshake.push(message.clone());
+                self.connection_factory.init_handshake.push(message.clone());
 
                 // Send the USE statement to all open connections to ensure they are all in sync
                 for (node_index, node) in self.local_nodes.iter().enumerate() {
@@ -218,9 +205,7 @@ impl CassandraSinkCluster {
             } else {
                 // We have a full nodes list and handshake, so we can do proper routing now.
                 let random_node = self.local_nodes.choose_mut(&mut self.rng).unwrap();
-                random_node
-                    .get_connection(&self.init_handshake, &self.tls, &self.pushed_messages_tx)
-                    .await?
+                random_node.get_connection(&self.connection_factory).await?
             }
             .send(message, return_chan_tx)?;
 
@@ -244,7 +229,7 @@ impl CassandraSinkCluster {
                     // i.e. when the channel of size 1 is empty
                     if let Ok(permit) = self.task_handshake_tx.try_reserve() {
                         permit.send(TaskHandshake {
-                            handshake: self.init_handshake.clone(),
+                            connection_factory: self.connection_factory.clone(),
                             address: self.init_handshake_address.unwrap(),
                         })
                     }
@@ -271,7 +256,6 @@ impl CassandraSinkCluster {
 }
 
 pub fn create_topology_task(
-    tls: Option<TlsConnector>,
     nodes: Arc<RwLock<Vec<CassandraNode>>>,
     mut handshake_rx: mpsc::Receiver<TaskHandshake>,
     data_center: String,
@@ -279,8 +263,7 @@ pub fn create_topology_task(
     tokio::spawn(async move {
         while let Some(handshake) = handshake_rx.recv().await {
             let mut attempts = 0;
-            while let Err(err) = topology_task_process(&tls, &nodes, &handshake, &data_center).await
-            {
+            while let Err(err) = topology_task_process(&nodes, &handshake, &data_center).await {
                 tracing::error!("topology task failed, retrying, error was: {err:?}");
                 attempts += 1;
                 if attempts > 3 {
@@ -300,12 +283,14 @@ pub fn create_topology_task(
 }
 
 async fn topology_task_process(
-    tls: &Option<TlsConnector>,
     nodes: &Arc<RwLock<Vec<CassandraNode>>>,
-    handshake: &TaskHandshake,
+    task_handshake: &TaskHandshake,
     data_center: &str,
 ) -> Result<()> {
-    let outbound = new_connection(&handshake.address, &handshake.handshake, tls, &None).await?;
+    let outbound = task_handshake
+        .connection_factory
+        .new_connection(&task_handshake.address)
+        .await?;
 
     let (peers_tx, peers_rx) = oneshot::channel();
     outbound.send(
@@ -470,6 +455,6 @@ impl Transform for CassandraSinkCluster {
 
 #[derive(Debug)]
 pub struct TaskHandshake {
-    pub handshake: Vec<Message>,
+    pub connection_factory: ConnectionFactory,
     pub address: SocketAddr,
 }

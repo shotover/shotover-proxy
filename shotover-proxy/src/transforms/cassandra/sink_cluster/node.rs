@@ -18,13 +18,13 @@ pub struct CassandraNode {
 impl CassandraNode {
     pub async fn get_connection(
         &mut self,
-        handshake: &[Message],
-        tls: &Option<TlsConnector>,
-        pushed_messages_tx: &Option<mpsc::UnboundedSender<Messages>>,
+        connection_factory: &ConnectionFactory,
     ) -> Result<&mut CassandraConnection> {
         if self.outbound.is_none() {
             self.outbound = Some(
-                new_connection((self.address, 9042), handshake, tls, pushed_messages_tx).await?,
+                connection_factory
+                    .new_connection((self.address, 9042))
+                    .await?,
             )
         }
 
@@ -32,25 +32,50 @@ impl CassandraNode {
     }
 }
 
-pub async fn new_connection<A: ToSocketAddrs>(
-    address: A,
-    handshake: &[Message],
-    tls: &Option<TlsConnector>,
-    pushed_messages_tx: &Option<mpsc::UnboundedSender<Messages>>,
-) -> Result<CassandraConnection> {
-    let outbound = CassandraConnection::new(
-        address,
-        CassandraCodec::new(),
-        tls.clone(),
-        pushed_messages_tx.clone(),
-    )
-    .await?;
+#[derive(Clone, Debug)]
+pub struct ConnectionFactory {
+    pub init_handshake: Vec<Message>,
+    tls: Option<TlsConnector>,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+}
 
-    for handshake_message in handshake {
-        let (return_chan_tx, return_chan_rx) = oneshot::channel();
-        outbound.send(handshake_message.clone(), return_chan_tx)?;
-        return_chan_rx.await?;
+impl ConnectionFactory {
+    pub fn new(tls: Option<TlsConnector>) -> Self {
+        Self {
+            init_handshake: vec![],
+            tls,
+            pushed_messages_tx: None,
+        }
     }
 
-    Ok(outbound)
+    // When you want to clone from the transform.
+    // you don't want state specific to this connection but you need the config options
+    pub fn clone_transfrom(&self) -> Self {
+        Self {
+            init_handshake: vec![],
+            tls: self.tls.clone(),
+            pushed_messages_tx: None,
+        }
+    }
+
+    pub async fn new_connection<A: ToSocketAddrs>(
+        &self,
+        address: A,
+    ) -> Result<CassandraConnection> {
+        let outbound = CassandraConnection::new(
+            address,
+            CassandraCodec::new(),
+            self.tls.clone(),
+            self.pushed_messages_tx.clone(),
+        )
+        .await?;
+
+        for handshake_message in &self.init_handshake {
+            let (return_chan_tx, return_chan_rx) = oneshot::channel();
+            outbound.send(handshake_message.clone(), return_chan_tx)?;
+            return_chan_rx.await?;
+        }
+
+        Ok(outbound)
+    }
 }
