@@ -78,18 +78,18 @@ generic-array = { version = "0.14", features = ["serde"] }
 rayon = "1.5.1"
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "version-0.4", version = "0.3", features = ["async_tokio", "html_reports"] }
 redis = { version = "0.21.0", features = ["tokio-comp", "cluster"] }
-pcap = "0.9.0"
+pcap = "0.10.0"
 pktparse = { version = "0.7.0", features = ["serde"] }
 tls-parser = "0.11.0"
 tokio-io-timeout = "1.1.1"
-serial_test = "0.8.0"
+serial_test = "0.9.0"
 cassandra-cpp = "1.1.0"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
-nix = "0.24.0"
+nix = "0.25.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
-cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", rev = "7d6d8fee723a232f17b4173de61e6fd9eb4d4505" }
+cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
 scylla = { version = "0.4.7", features = ["ssl"] }
 
 [[bench]]
