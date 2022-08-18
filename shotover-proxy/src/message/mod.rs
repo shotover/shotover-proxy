@@ -1,7 +1,7 @@
 use crate::codec::redis::redis_query_type;
 use crate::frame::{
     cassandra,
-    cassandra::{to_cassandra_type, CassandraMetadata, CassandraOperation},
+    cassandra::{to_cassandra_type, CassandraFrameMetadata, CassandraOperation},
 };
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
@@ -31,7 +31,7 @@ use std::num::NonZeroU32;
 use uuid::Uuid;
 
 enum Metadata {
-    Cassandra(CassandraMetadata),
+    Cassandra(CassandraFrameMetadata),
     Redis,
     None,
 }

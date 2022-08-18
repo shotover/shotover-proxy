@@ -36,7 +36,7 @@ use uuid::Uuid;
 
 /// Functions for operations on an unparsed Cassandra frame
 pub mod raw_frame {
-    use super::{CassandraMetadata, RawCassandraFrame};
+    use super::{CassandraFrameMetadata, RawCassandraFrame};
     use anyhow::{anyhow, bail, Result};
     use cassandra_protocol::{compression::Compression, frame::Opcode};
     use nonzero_ext::nonzero;
@@ -58,12 +58,12 @@ pub mod raw_frame {
     }
 
     /// Parse metadata only from an unparsed Cassandra frame
-    pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
+    pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraFrameMetadata> {
         let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
             .envelope;
 
-        Ok(CassandraMetadata {
+        Ok(CassandraFrameMetadata {
             version: frame.version,
             stream_id: frame.stream_id,
             tracing_id: frame.tracing_id,
@@ -91,7 +91,7 @@ pub mod raw_frame {
     }
 }
 
-pub(crate) struct CassandraMetadata {
+pub(crate) struct CassandraFrameMetadata {
     pub version: Version,
     pub stream_id: StreamId,
     pub tracing_id: Option<Uuid>,
@@ -110,8 +110,8 @@ pub struct CassandraFrame {
 
 impl CassandraFrame {
     /// Return `CassandraMetadata` from this `CassandraFrame`
-    pub(crate) fn metadata(&self) -> CassandraMetadata {
-        CassandraMetadata {
+    pub(crate) fn metadata(&self) -> CassandraFrameMetadata {
+        CassandraFrameMetadata {
             version: self.version,
             stream_id: self.stream_id,
             tracing_id: self.tracing_id,
