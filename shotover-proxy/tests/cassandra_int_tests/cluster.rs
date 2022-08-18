@@ -15,6 +15,7 @@ pub async fn test() {
         nodes_shared.clone(),
         task_handshake_rx,
         "dc1".to_string(),
+        "rack1".to_string(),
     );
 
     // Give the handshake task a hardcoded handshake.
@@ -54,7 +55,6 @@ pub async fn test() {
             .expect("Node did not contain a unique expected address");
         possible_addresses.remove(address_index);
 
-        assert_eq!(node._rack, "rack1");
         assert_eq!(node._tokens.len(), 128);
     }
 }

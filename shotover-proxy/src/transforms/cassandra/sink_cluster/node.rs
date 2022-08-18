@@ -10,7 +10,6 @@ use tokio::sync::{mpsc, oneshot};
 #[derive(Debug, Clone)]
 pub struct CassandraNode {
     pub address: IpAddr,
-    pub _rack: String,
     pub _tokens: Vec<String>,
     pub outbound: Option<CassandraConnection>,
 }
