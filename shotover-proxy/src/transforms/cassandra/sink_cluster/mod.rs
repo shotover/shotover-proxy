@@ -16,13 +16,15 @@ use cql3_parser::common::FQName;
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
 use metrics::{register_counter, Counter};
+use node::{new_connection, CassandraNode};
 use rand::prelude::*;
 use serde::Deserialize;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot, RwLock};
+
+mod node;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkClusterConfig {
@@ -466,56 +468,8 @@ impl Transform for CassandraSinkCluster {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct CassandraNode {
-    pub address: IpAddr,
-    pub _rack: String,
-    pub _tokens: Vec<String>,
-    pub outbound: Option<CassandraConnection>,
-}
-
 #[derive(Debug)]
 pub struct TaskHandshake {
     pub handshake: Vec<Message>,
     pub address: SocketAddr,
-}
-
-impl CassandraNode {
-    async fn get_connection(
-        &mut self,
-        handshake: &[Message],
-        tls: &Option<TlsConnector>,
-        pushed_messages_tx: &Option<mpsc::UnboundedSender<Messages>>,
-    ) -> Result<&mut CassandraConnection> {
-        if self.outbound.is_none() {
-            self.outbound = Some(
-                new_connection((self.address, 9042), handshake, tls, pushed_messages_tx).await?,
-            )
-        }
-
-        Ok(self.outbound.as_mut().unwrap())
-    }
-}
-
-async fn new_connection<A: ToSocketAddrs>(
-    address: A,
-    handshake: &[Message],
-    tls: &Option<TlsConnector>,
-    pushed_messages_tx: &Option<mpsc::UnboundedSender<Messages>>,
-) -> Result<CassandraConnection> {
-    let outbound = CassandraConnection::new(
-        address,
-        CassandraCodec::new(),
-        tls.clone(),
-        pushed_messages_tx.clone(),
-    )
-    .await?;
-
-    for handshake_message in handshake {
-        let (return_chan_tx, return_chan_rx) = oneshot::channel();
-        outbound.send(handshake_message.clone(), return_chan_tx)?;
-        return_chan_rx.await?;
-    }
-
-    Ok(outbound)
 }
