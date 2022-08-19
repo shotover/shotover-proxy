@@ -2,7 +2,8 @@ use cassandra_protocol::frame::Version;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
 use shotover_proxy::transforms::cassandra::sink_cluster::{
-    create_topology_task, node::ConnectionFactory, TaskHandshake,
+    node::ConnectionFactory,
+    node_pool::{create_topology_task, TaskHandshake, TopologyTask},
 };
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -14,17 +15,20 @@ pub async fn test() {
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
 
     let mut connection_factory = ConnectionFactory::new(None);
-    connection_factory.init_handshake = create_handshake();
+    let handshake_messages = create_handshake();
+    for message in handshake_messages {
+        connection_factory.push_handshake_message(message);
+    }
 
     create_topology_task(nodes_shared.clone(), task_handshake_rx, "dc1".to_string());
 
     // Give the handshake task a hardcoded handshake.
     // Normally the handshake is the handshake that the client gave shotover.
     task_handshake_tx
-        .send(TaskHandshake {
+        .send(TopologyTask::TaskHandshake(TaskHandshake {
             address: "172.16.1.2:9042".parse().unwrap(),
             connection_factory: connection_factory.clone(),
-        })
+        }))
         .await
         .unwrap();
 

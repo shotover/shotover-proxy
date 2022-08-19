@@ -2751,6 +2751,7 @@ name = "shotover-proxy"
 version = "0.1.5"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "async-recursion",
  "async-trait",
  "base64",

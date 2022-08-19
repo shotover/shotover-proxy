@@ -34,6 +34,7 @@ openssl = { version = "0.10.36", features = ["vendored"] }
 async-recursion = "1.0"
 governor = { version = "0.4.2", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
+arc-swap = "1.5.1"
 
 # Error handling
 thiserror = "1.0"

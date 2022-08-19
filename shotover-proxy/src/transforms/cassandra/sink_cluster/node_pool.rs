@@ -6,13 +6,15 @@ use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue, Messages};
 use crate::tls::TlsConnector;
+use crate::transforms::util::Response;
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwapOption;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
+use cql3_parser::cassandra_statement::CassandraStatement;
 use futures::stream::FuturesOrdered;
+use futures::StreamExt;
 use metrics::register_counter;
-use rand::prelude::*;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -24,7 +26,7 @@ pub enum TopologyTask {
 }
 
 #[derive(Debug)]
-struct TaskHandshake {
+pub struct TaskHandshake {
     pub address: SocketAddr,
     pub connection_factory: ConnectionFactory,
 }
@@ -32,14 +34,12 @@ struct TaskHandshake {
 pub struct NodePool {
     /// A local clone of topology_task_nodes
     /// Internally stores connections to the nodes
-    nodes: Vec<CassandraNode>,
     contact_points: Vec<String>,
 
     /// Only written to by the topology task
     /// Transform instances should never write to this.
-    topology_task_nodes: Arc<RwLock<Vec<CassandraNode>>>,
-
-    connection_factory: Arc<ConnectionFactory>,
+    _topology_task_nodes: Arc<RwLock<Vec<CassandraNode>>>,
+    connection_factory: Arc<RwLock<ConnectionFactory>>,
     handshake_complete: bool,
 
     control_connection: ArcSwapOption<CassandraConnection>,
@@ -60,11 +60,10 @@ impl NodePool {
         create_topology_task(nodes_shared.clone(), task_rx, data_center);
 
         Self {
-            nodes: vec![],
             contact_points,
-            topology_task_nodes: nodes_shared,
+            _topology_task_nodes: nodes_shared,
 
-            connection_factory: Arc::new(ConnectionFactory::new(tls)),
+            connection_factory: Arc::new(RwLock::new(ConnectionFactory::new(tls))),
 
             control_connection: ArcSwapOption::empty(),
 
@@ -74,44 +73,45 @@ impl NodePool {
         }
     }
 
-    pub fn send_messages(&mut self, messages: Messages) {
-        // if handshake not complete
-        //
-        if !self.handshake_complete {}
-
-        // use statement
-        //
-
-        // other query
+    pub async fn send_messages(&mut self, messages: Messages) -> ChainResponse {
+        if !self.handshake_complete {
+            self.handshake_messages(messages).await
+        } else {
+            self.route_to_node(messages).await
+        }
     }
 
-    pub async fn use_keyspace(&mut self, message: Message) -> ChainResponse {
+    pub async fn use_keyspace(
+        &mut self,
+        message: Message,
+        return_chan_tx: oneshot::Sender<Response>,
+    ) -> Result<()> {
         let control_connection = self.get_control_connection().await?;
 
         // send keyspace handler event
         //
-        self.task_tx.send(TopologyTask::Keyspace(message.clone()));
+        self.task_tx
+            .send(TopologyTask::Keyspace(message.clone()))
+            .await?;
 
-        if self.connection_factory.has_use_message() {
-            // remove it
-
-            self.connection_factory.pop_use_message();
-        }
-        self.connection_factory.add_use_message(message.clone());
-
-        //
         // update connection factory
-        //
-        // return response from connection
-        //
-        let (return_chan_tx, return_chan_rx) = oneshot::channel();
-        control_connection.send(message, return_chan_tx);
-        let mut responses_future = FuturesOrdered::new();
-        responses_future.push_back(return_chan_rx);
-        let failed_requests = register_counter!("failed_requests");
-        let responses = receive(None, &failed_requests, responses_future).await?;
+        {
+            let mut write = self.connection_factory.write().await;
 
-        Ok(responses)
+            if write.has_use_message() {
+                // remove it
+
+                write.pop_use_message();
+            }
+            write.add_use_message(message.clone());
+        }
+
+        //
+        //
+        // send to control connection
+        //
+        control_connection.send(message, return_chan_tx)?;
+        Ok(())
     }
 
     pub async fn route_to_node(&mut self, messages: Messages) -> ChainResponse {
@@ -123,13 +123,19 @@ impl NodePool {
         let control_connection = self.get_control_connection().await?;
 
         let mut responses_future = FuturesOrdered::new();
-        for message in messages {
+        for mut message in messages {
             let (return_chan_tx, return_chan_rx) = oneshot::channel();
-            control_connection.send(message, return_chan_tx);
+            if is_use_statement(&mut message) {
+                self.use_keyspace(message, return_chan_tx).await?;
+            } else {
+                control_connection.send(message, return_chan_tx)?;
+            }
+
             responses_future.push_back(return_chan_rx)
         }
 
         let failed_requests = register_counter!("failed_requests");
+
         let responses = receive(None, &failed_requests, responses_future).await?;
 
         Ok(responses)
@@ -138,17 +144,19 @@ impl NodePool {
     async fn get_control_connection(&mut self) -> Result<Arc<CassandraConnection>> {
         if self.control_connection.load().is_none() {
             let random_point = tokio::net::lookup_host(
-                self.contact_points
-                    .choose(&mut SmallRng::from_rng(rand::thread_rng()).unwrap())
-                    .unwrap(),
+                self.contact_points[0].clone(), // .choose(&mut SmallRng::from_rng(rand::thread_rng()).unwrap())
+                                                // .unwrap(),
             )
             .await?
             .next()
             .unwrap();
 
-            self.control_connection.store(Some(Arc::new(
-                self.connection_factory.new_connection(random_point).await?,
-            )));
+            let connection_factory = self.connection_factory.read().await;
+
+            let control_connection = connection_factory.new_connection(random_point).await?;
+
+            self.control_connection
+                .store(Some(Arc::new(control_connection)));
         }
 
         let control_connection = self.control_connection.load().clone().unwrap();
@@ -173,8 +181,8 @@ impl NodePool {
                 ..
             })) = message.frame()
             {
-                self.connection_factory
-                    .push_handshake_message(message.clone());
+                let mut write = self.connection_factory.write().await;
+                write.push_handshake_message(message.clone());
             }
         }
 
@@ -183,7 +191,7 @@ impl NodePool {
         let mut responses_future = FuturesOrdered::new();
         for message in messages {
             let (return_chan_tx, return_chan_rx) = oneshot::channel();
-            control_connection.send(message, return_chan_tx);
+            control_connection.send(message, return_chan_tx)?;
             responses_future.push_back(return_chan_rx)
         }
 
@@ -199,6 +207,8 @@ impl NodePool {
             })) = response.frame()
             {
                 self.handshake_complete = true;
+                //self.task_tx.send(TopologyTask::TaskHandshake).await?;
+
                 break;
             }
         }
@@ -212,11 +222,11 @@ impl NodePool {
 
 pub fn create_topology_task(
     nodes: Arc<RwLock<Vec<CassandraNode>>>,
-    mut handshake_rx: mpsc::Receiver<TopologyTask>,
+    mut task_rx: mpsc::Receiver<TopologyTask>,
     data_center: String,
 ) {
     tokio::spawn(async move {
-        while let Some(task) = handshake_rx.recv().await {
+        while let Some(task) = task_rx.recv().await {
             match task {
                 TopologyTask::TaskHandshake(handshake) => {
                     let mut attempts = 0;
@@ -239,9 +249,46 @@ pub fn create_topology_task(
                     tokio::time::sleep(std::time::Duration::from_secs(60 * 60)).await;
                 }
                 TopologyTask::Keyspace(message) => {
-
                     // TODO send to all nodes and make sure responses are correct
                     // otherwise remove
+                    //
+                    // let responses_future = FuturesOrdered::new();
+                    let mut responses_future_use = FuturesOrdered::new();
+                    let mut use_future_index_to_node_index = vec![];
+
+                    // Send the USE statement to all open connections to ensure they are all in sync
+                    {
+                        //
+                        let read = nodes.read().await;
+                        for (node_index, node) in read.iter().enumerate() {
+                            if let Some(outbound) = &node.outbound {
+                                let (return_chan_tx, return_chan_rx) = oneshot::channel();
+                                outbound.send(message.clone(), return_chan_tx).unwrap(); // TODO remove from array
+                                responses_future_use.push_back(return_chan_rx);
+                                use_future_index_to_node_index.push(node_index);
+                            }
+                        }
+                    }
+
+                    // let failed_requests = register_counter!("failed_requests");
+                    // let responses = receive(None, &failed_requests, responses_future)
+                    //     .await
+                    //     .unwrap();
+
+                    {
+                        let mut write = nodes.write().await;
+                        for node_index in use_future_index_to_node_index {
+                            let response = responses_future_use
+                                .next()
+                                .await
+                                .map(|x| x.map_err(|e| anyhow!(e)));
+                            // If any errors occurred close the connection as we can no
+                            // longer make any guarantees about the current state of the connection
+                            if !is_use_statement_successful(response) {
+                                write[node_index].outbound = None;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -373,4 +420,33 @@ fn system_peers_into_nodes(
             response
         ))
     }
+}
+
+fn is_use_statement(request: &mut Message) -> bool {
+    if let Some(Frame::Cassandra(frame)) = request.frame() {
+        // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
+        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+            if let CassandraStatement::Use(_) = query.as_mut() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
+    if let Some(Ok(Response {
+        response: Ok(mut response),
+        ..
+    })) = response
+    {
+        if let Some(Frame::Cassandra(CassandraFrame {
+            operation: CassandraOperation::Result(CassandraResult::SetKeyspace(_)),
+            ..
+        })) = response.frame()
+        {
+            return true;
+        }
+    }
+    false
 }
