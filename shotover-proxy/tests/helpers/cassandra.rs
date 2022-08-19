@@ -255,7 +255,10 @@ impl ResultValue {
             ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
             ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
             ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
-            ValueType::INET => ResultValue::Inet(value.get_inet().unwrap().to_string()),
+            ValueType::INET => value
+                .get_inet()
+                .map(|x| ResultValue::Inet(x.to_string()))
+                .unwrap_or_else(|_| ResultValue::Inet("NULL address".to_string())),
             ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
             ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
             ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_i64().unwrap()),
