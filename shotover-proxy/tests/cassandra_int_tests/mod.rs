@@ -492,10 +492,9 @@ async fn test_events_keyspace() {
 
     let mut event_recv = session.create_event_receiver();
 
-    sleep(Duration::from_secs(3)).await; // let the driver finish connecting to the cluster and registering for the events
+    sleep(Duration::from_secs(10)).await; // let the driver finish connecting to the cluster and registering for the events
 
     let create_ks = "CREATE KEYSPACE IF NOT EXISTS test_events_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
-
     session.query(create_ks).await.unwrap();
 
     let event = timeout(Duration::from_secs(10), event_recv.recv())

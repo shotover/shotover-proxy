@@ -990,6 +990,21 @@ async fn get_master_id(connection: &mut Connection) -> String {
     panic!("Could not find master node in cluster");
 }
 
+async fn is_cluster_replicas_ready(connection: &mut Connection, master_id: &str) -> bool {
+    let res = redis::cmd("CLUSTER")
+        .arg("REPLICAS")
+        .arg(&master_id)
+        .query_async(connection)
+        .await
+        .unwrap();
+    if let Value::Bulk(data) = res {
+        if let Some(Value::Data(data)) = data.get(0) {
+            return !data.is_empty();
+        }
+    }
+    false
+}
+
 pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_port: u16) {
     let res = redis::cmd("CLUSTER")
         .arg("NODES")
@@ -1001,6 +1016,16 @@ pub async fn test_cluster_ports_rewrite_nodes(connection: &mut Connection, new_p
 
     // Get an id to use for cluster replicas test
     let master_id = get_master_id(connection).await;
+
+    let mut tries = 0;
+    while !is_cluster_replicas_ready(connection, &master_id).await {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        tries += 1;
+        if tries > 500 {
+            // Log we ran out of retries but let the following "CLUSTER REPLICAS" command give a more specific panic message
+            tracing::error!("CLUSTER REPLICAS never became ready");
+        }
+    }
 
     let res = redis::cmd("CLUSTER")
         .arg("REPLICAS")
