@@ -43,6 +43,7 @@ pub struct CassandraSinkCluster {
     read_timeout: Option<Duration>,
     peer_table: FQName,
     data_center: String,
+    tls: Option<TlsConnector>,
 }
 
 impl Clone for CassandraSinkCluster {
@@ -52,7 +53,7 @@ impl Clone for CassandraSinkCluster {
             node_pool: node_pool::NodePool::new(
                 self.contact_points.clone(),
                 self.data_center.clone(),
-                None,
+                self.tls.clone(),
             ),
             chain_name: self.chain_name.clone(),
             failed_requests: self.failed_requests.clone(),
@@ -60,6 +61,7 @@ impl Clone for CassandraSinkCluster {
             read_timeout: self.read_timeout,
             peer_table: self.peer_table.clone(),
             data_center: self.data_center.clone(),
+            tls: self.tls.clone(),
         }
     }
 }
@@ -75,7 +77,8 @@ impl CassandraSinkCluster {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
         let receive_timeout = timeout.map(Duration::from_secs);
 
-        let node_pool = node_pool::NodePool::new(contact_points.clone(), data_center.clone(), tls);
+        let node_pool =
+            node_pool::NodePool::new(contact_points.clone(), data_center.clone(), tls.clone());
 
         CassandraSinkCluster {
             contact_points,
@@ -86,6 +89,7 @@ impl CassandraSinkCluster {
             read_timeout: receive_timeout,
             peer_table: FQName::new("system", "peers"),
             data_center,
+            tls,
         }
     }
 }

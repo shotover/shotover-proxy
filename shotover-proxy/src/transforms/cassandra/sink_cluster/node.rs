@@ -56,7 +56,7 @@ impl ConnectionFactory {
         Self {
             init_handshake: vec![],
             tls: self.tls.clone(),
-            use_message: self.use_message.clone(),
+            use_message: None,
             pushed_messages_tx: None,
         }
     }
