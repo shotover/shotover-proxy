@@ -379,6 +379,7 @@ pub struct Wrapper<'a> {
     pub messages: Messages,
     transforms: IterMut<'a, Transforms>,
     pub client_details: String,
+    /// Contains the shotover source's ip address and port which the message was received on
     pub local_addr: SocketAddr,
     chain_name: String,
     /// When true transforms must flush any buffered messages into the messages field.
