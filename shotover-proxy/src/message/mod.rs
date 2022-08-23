@@ -43,7 +43,7 @@ pub type Messages = Vec<Message>;
 /// Usually a message is received and starts off containing just raw bytes (or possibly raw bytes + frame)
 /// This can be immediately sent off to the destination without any processing cost.
 ///
-/// However if a transform wants to query the contents of the message it must call `Message::frame()q which will cause the raw bytes to be processed into a raw bytes + Frame.
+/// However if a transform wants to query the contents of the message it must call `Message::frame()` which will cause the raw bytes to be processed into a raw bytes + Frame.
 /// The first call to frame has an expensive one time cost.
 ///
 /// The transform may also go one step further and modify the message's Frame + call `Message::invalidate_cache()`.

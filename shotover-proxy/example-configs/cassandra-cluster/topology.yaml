@@ -8,5 +8,7 @@ chain_config:
     - CassandraSinkCluster:
         first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
         data_center: "dc1"
+        rack: "rack1"
+        host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
 source_to_chain_mapping:
   cassandra_prod: main_chain

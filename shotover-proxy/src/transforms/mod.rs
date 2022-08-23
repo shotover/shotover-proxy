@@ -45,6 +45,7 @@ use futures::Future;
 use metrics::{counter, histogram};
 use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
+use std::net::SocketAddr;
 use std::pin::Pin;
 use strum_macros::IntoStaticStr;
 use tokio::sync::mpsc;
@@ -378,6 +379,8 @@ pub struct Wrapper<'a> {
     pub messages: Messages,
     transforms: IterMut<'a, Transforms>,
     pub client_details: String,
+    /// Contains the shotover source's ip address and port which the message was received on
+    pub local_addr: SocketAddr,
     chain_name: String,
     /// When true transforms must flush any buffered messages into the messages field.
     /// This can occur at any time but will always occur before the transform is destroyed due to either
@@ -395,6 +398,7 @@ impl<'a> Clone for Wrapper<'a> {
             transforms: [].iter_mut(),
             client_details: self.client_details.clone(),
             chain_name: self.chain_name.clone(),
+            local_addr: self.local_addr,
             flush: false,
         }
     }
@@ -467,16 +471,18 @@ impl<'a> Wrapper<'a> {
             messages: m,
             transforms: [].iter_mut(),
             client_details: "".to_string(),
+            local_addr: "127.0.0.1:8000".parse().unwrap(),
             chain_name: "".to_string(),
             flush: false,
         }
     }
 
-    pub fn new_with_chain_name(m: Messages, chain_name: String) -> Self {
+    pub fn new_with_chain_name(m: Messages, chain_name: String, local_addr: SocketAddr) -> Self {
         Wrapper {
             messages: m,
             transforms: [].iter_mut(),
             client_details: "".to_string(),
+            local_addr,
             chain_name,
             flush: false,
         }
@@ -487,6 +493,8 @@ impl<'a> Wrapper<'a> {
             messages: vec![],
             transforms: [].iter_mut(),
             client_details: "".into(),
+            // The connection is closed so we need to just fake an address here
+            local_addr: "127.0.0.1:10000".parse().unwrap(),
             chain_name,
             flush: true,
         }
@@ -496,11 +504,13 @@ impl<'a> Wrapper<'a> {
         m: Messages,
         client_details: String,
         chain_name: String,
+        local_addr: SocketAddr,
     ) -> Self {
         Wrapper {
             messages: m,
             transforms: [].iter_mut(),
             client_details,
+            local_addr,
             chain_name,
             flush: false,
         }

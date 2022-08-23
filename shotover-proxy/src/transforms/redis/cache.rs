@@ -16,6 +16,7 @@ use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
+use std::net::SocketAddr;
 use tracing_log::log::{error, warn};
 
 /// Data is stored in Redis as a Hash (hset/hget) and constructed from the cassandra SELECT statement
@@ -211,13 +212,18 @@ impl SimpleRedisCache {
     async fn read_from_cache(
         &mut self,
         cassandra_requests: &mut Messages,
+        local_addr: SocketAddr,
     ) -> Result<Vec<(Message, usize)>> {
         let (redis_requests, redis_indices) = self.build_cache_query(cassandra_requests);
 
         let redis_responses = self
             .cache_chain
             .process_request(
-                Wrapper::new_with_chain_name(redis_requests, self.cache_chain.name.clone()),
+                Wrapper::new_with_chain_name(
+                    redis_requests,
+                    self.cache_chain.name.clone(),
+                    local_addr,
+                ),
                 "clientdetailstodo".to_string(),
             )
             .await?;
@@ -288,6 +294,7 @@ impl SimpleRedisCache {
         &mut self,
         mut message_wrapper: Wrapper<'a>,
     ) -> ChainResponse {
+        let local_addr = message_wrapper.local_addr;
         let mut request_messages: Vec<_> = message_wrapper
             .messages
             .iter_mut()
@@ -325,7 +332,11 @@ impl SimpleRedisCache {
             let result = self
                 .cache_chain
                 .process_request(
-                    Wrapper::new_with_chain_name(cache_messages, self.cache_chain.name.clone()),
+                    Wrapper::new_with_chain_name(
+                        cache_messages,
+                        self.cache_chain.name.clone(),
+                        local_addr,
+                    ),
                     "clientdetailstodo".to_string(),
                 )
                 .await;
@@ -528,7 +539,7 @@ fn build_redis_key_from_cql3(
 impl Transform for SimpleRedisCache {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         let cache_responses = self
-            .read_from_cache(&mut message_wrapper.messages)
+            .read_from_cache(&mut message_wrapper.messages, message_wrapper.local_addr)
             .await
             .unwrap_or_else(|err| {
                 error!("Failed to fetch from cache: {err:?}");

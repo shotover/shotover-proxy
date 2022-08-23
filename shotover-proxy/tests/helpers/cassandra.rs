@@ -170,7 +170,7 @@ impl CassandraConnection {
     }
 }
 
-#[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Debug, Clone, PartialOrd, Eq, Ord)]
 pub enum ResultValue {
     Text(String),
     Varchar(String),
@@ -186,7 +186,7 @@ pub enum ResultValue {
     Float(OrderedFloat<f32>),
     Inet(String),
     SmallInt(i16),
-    Time(Vec<u8>), // TODO shoulbe be String
+    Time(Vec<u8>), // TODO should be String
     Timestamp(i64),
     TimeUuid(uuid::Uuid),
     Counter(i64),
@@ -196,6 +196,44 @@ pub enum ResultValue {
     List(Vec<ResultValue>),
     Set(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
+    /// Never output by the DB
+    /// Can be used by the user in assertions to allow any value.
+    #[allow(unused)]
+    Any,
+}
+
+impl PartialEq for ResultValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Text(l0), Self::Text(r0)) => l0 == r0,
+            (Self::Varchar(l0), Self::Varchar(r0)) => l0 == r0,
+            (Self::Int(l0), Self::Int(r0)) => l0 == r0,
+            (Self::Boolean(l0), Self::Boolean(r0)) => l0 == r0,
+            (Self::Uuid(l0), Self::Uuid(r0)) => l0 == r0,
+            (Self::Ascii(l0), Self::Ascii(r0)) => l0 == r0,
+            (Self::BigInt(l0), Self::BigInt(r0)) => l0 == r0,
+            (Self::Blob(l0), Self::Blob(r0)) => l0 == r0,
+            (Self::Decimal(l0), Self::Decimal(r0)) => l0 == r0,
+            (Self::Double(l0), Self::Double(r0)) => l0 == r0,
+            (Self::Duration(l0), Self::Duration(r0)) => l0 == r0,
+            (Self::Float(l0), Self::Float(r0)) => l0 == r0,
+            (Self::Inet(l0), Self::Inet(r0)) => l0 == r0,
+            (Self::SmallInt(l0), Self::SmallInt(r0)) => l0 == r0,
+            (Self::Time(l0), Self::Time(r0)) => l0 == r0,
+            (Self::Timestamp(l0), Self::Timestamp(r0)) => l0 == r0,
+            (Self::TimeUuid(l0), Self::TimeUuid(r0)) => l0 == r0,
+            (Self::Counter(l0), Self::Counter(r0)) => l0 == r0,
+            (Self::TinyInt(l0), Self::TinyInt(r0)) => l0 == r0,
+            (Self::VarInt(l0), Self::VarInt(r0)) => l0 == r0,
+            (Self::Date(l0), Self::Date(r0)) => l0 == r0,
+            (Self::List(l0), Self::List(r0)) => l0 == r0,
+            (Self::Set(l0), Self::Set(r0)) => l0 == r0,
+            (Self::Map(l0), Self::Map(r0)) => l0 == r0,
+            (Self::Any, _) => true,
+            (_, Self::Any) => true,
+            _ => false,
+        }
+    }
 }
 
 impl ResultValue {
@@ -217,7 +255,10 @@ impl ResultValue {
             ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
             ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
             ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
-            ValueType::INET => ResultValue::Inet(value.get_inet().unwrap().to_string()),
+            ValueType::INET => value
+                .get_inet()
+                .map(|x| ResultValue::Inet(x.to_string()))
+                .unwrap_or_else(|_| ResultValue::Inet("NULL address".to_string())),
             ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
             ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
             ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_i64().unwrap()),
@@ -238,8 +279,11 @@ impl ResultValue {
             }
             ValueType::MAP => {
                 let mut map = Vec::new();
-                for (k, v) in value.get_map().unwrap() {
-                    map.push((ResultValue::new(k), ResultValue::new(v)));
+                // null value results in empty map
+                if let Ok(kv) = value.get_map() {
+                    for (k, v) in kv {
+                        map.push((ResultValue::new(k), ResultValue::new(v)));
+                    }
                 }
                 ResultValue::Map(map)
             }

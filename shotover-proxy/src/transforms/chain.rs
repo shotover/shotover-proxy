@@ -6,6 +6,7 @@ use derivative::Derivative;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use metrics::{histogram, register_counter, register_histogram, Counter};
+use std::net::SocketAddr;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, trace, Instrument};
@@ -14,20 +15,27 @@ type InnerChain = Vec<Transforms>;
 
 #[derive(Debug)]
 pub struct BufferedChainMessages {
+    pub local_addr: SocketAddr,
     pub messages: Messages,
     pub return_chan: Option<oneshot::Sender<crate::error::ChainResponse>>,
 }
 
 impl BufferedChainMessages {
-    pub fn new_with_no_return(m: Messages) -> Self {
+    pub fn new_with_no_return(m: Messages, local_addr: SocketAddr) -> Self {
         BufferedChainMessages {
+            local_addr,
             messages: m,
             return_chan: None,
         }
     }
 
-    pub fn new(m: Messages, return_chan: oneshot::Sender<ChainResponse>) -> Self {
+    pub fn new(
+        m: Messages,
+        local_addr: SocketAddr,
+        return_chan: oneshot::Sender<ChainResponse>,
+    ) -> Self {
         BufferedChainMessages {
+            local_addr,
             messages: m,
             return_chan: Some(return_chan),
         }
@@ -87,14 +95,18 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(BufferedChainMessages::new(wrapper.messages, one_tx))
+                    .send(BufferedChainMessages::new(
+                        wrapper.messages,
+                        wrapper.local_addr,
+                        one_tx,
+                    ))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        BufferedChainMessages::new(wrapper.messages, one_tx),
+                        BufferedChainMessages::new(wrapper.messages, wrapper.local_addr, one_tx),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -113,14 +125,20 @@ impl BufferedChain {
         match buffer_timeout_micros {
             None => {
                 self.send_handle
-                    .send(BufferedChainMessages::new_with_no_return(wrapper.messages))
+                    .send(BufferedChainMessages::new_with_no_return(
+                        wrapper.messages,
+                        wrapper.local_addr,
+                    ))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
                     .await?
             }
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        BufferedChainMessages::new_with_no_return(wrapper.messages),
+                        BufferedChainMessages::new_with_no_return(
+                            wrapper.messages,
+                            wrapper.local_addr,
+                        ),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -146,6 +164,7 @@ impl TransformChain {
         let _jh = tokio::spawn(
             async move {
                 while let Some(BufferedChainMessages {
+                    local_addr,
                     return_chan,
                     messages,
                 }) = rx.recv().await
@@ -157,7 +176,7 @@ impl TransformChain {
 
                     let chain_response = chain
                         .process_request(
-                            Wrapper::new_with_chain_name(messages, chain.name.clone()),
+                            Wrapper::new_with_chain_name(messages, chain.name.clone(), local_addr),
                             chain.name.clone(),
                         )
                         .await;

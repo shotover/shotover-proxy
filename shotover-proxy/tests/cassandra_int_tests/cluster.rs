@@ -1,3 +1,4 @@
+use crate::helpers::cassandra::{assert_query_result, CassandraConnection, ResultValue};
 use cassandra_protocol::frame::Version;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
@@ -6,6 +7,61 @@ use shotover_proxy::transforms::cassandra::sink_cluster::{create_topology_task, 
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
+
+async fn test_rewrite_system_local(connection: &CassandraConnection) {
+    assert_query_result(connection, "SELECT * FROM system.peers;", &[]).await;
+    assert_query_result(connection, "SELECT peer FROM system.peers;", &[]).await;
+    assert_query_result(connection, "SELECT peer, peer FROM system.peers;", &[]).await;
+
+    let star_results = [
+        ResultValue::Varchar("local".into()),
+        ResultValue::Varchar("COMPLETED".into()),
+        ResultValue::Inet("127.0.0.1".parse().unwrap()),
+        ResultValue::Varchar("TestCluster".into()),
+        ResultValue::Varchar("3.4.4".into()),
+        ResultValue::Varchar("dc1".into()),
+        // gossip_generation is non deterministic cant assert on it
+        ResultValue::Any,
+        ResultValue::Uuid("2dd022d6-2937-4754-89d6-02d2933a8f7a".parse().unwrap()),
+        ResultValue::Inet("127.0.0.1".parse().unwrap()),
+        ResultValue::Varchar("4".into()),
+        ResultValue::Varchar("org.apache.cassandra.dht.Murmur3Partitioner".into()),
+        ResultValue::Varchar("rack1".into()),
+        ResultValue::Varchar("3.11.13".into()),
+        ResultValue::Inet("0.0.0.0".parse().unwrap()),
+        // schema_version is non deterministic so we cant assert on it.
+        ResultValue::Any,
+        // thrift_version isnt used anymore so I dont really care what it maps to
+        ResultValue::Any,
+        // Unfortunately token generation appears to be non-deterministic but we can at least assert that
+        // there are 128 tokens per node
+        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+        ResultValue::Map(vec![]),
+    ];
+
+    let all_columns =
+        "key, bootstrapped, broadcast_address, cluster_name, cql_version, data_center,
+        gossip_generation, host_id, listen_address, native_protocol_version, partitioner, rack,
+        release_version, rpc_address, schema_version, thrift_version, tokens, truncated_at";
+
+    assert_query_result(connection, "SELECT * FROM system.local;", &[&star_results]).await;
+    assert_query_result(
+        connection,
+        &format!("SELECT {all_columns} FROM system.local;"),
+        &[&star_results],
+    )
+    .await;
+    assert_query_result(
+        connection,
+        &format!("SELECT {all_columns}, {all_columns} FROM system.local;"),
+        &[&[star_results.as_slice(), star_results.as_slice()].concat()],
+    )
+    .await;
+}
+
+pub async fn test(connection: &CassandraConnection) {
+    test_rewrite_system_local(connection).await;
+}
 
 pub async fn test_topology_task(ca_path: Option<&str>) {
     // Directly test the internal topology task
