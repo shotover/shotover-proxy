@@ -46,9 +46,51 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [RequestThrottling](#requestthrottling)               |❌           | Alpha                 |
 <!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
 
+### CassandraSinkCluster
+
+This transform will send/receive cassandra messages to a node within a cassandra cluster.
+Messages will be routed according to the configured `data_center` and `rack`.
+
+The fact that shotover is routing to multiple destination nodes will be hidden from the client.
+This is achieved by rewriting `System.local` and `system.peers`/`system.peers_v2` query results.
+The `system.local` will make shotover appear to be its own node.
+While `system.peers`/`system.peers_v2` will be rewritten to list the configured shotover peers as the only over nodes in the cluster.
+
+```yaml
+- CassandraSinkCluster:
+    # contact points must be within the configured data_center and rack.
+    # If this is not followed, shotover will still function correctly but shotover will communicate with a
+    # node outside of the specified data_center and rack.
+    first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
+
+    # Shotover will never route messages outside of this data_center
+    data_center: "dc1"
+    # Shotover will always prefer to route messages to this rack but may route outside of the rack when nodes in the rack are unreachable.
+    rack: "rack1"
+
+    # When this field is provided TLS is used when connecting to the remote address.
+    # Removing this field will disable TLS.
+    #tls:
+    #  # Path to the certificate authority file, typically named with a .crt extension.
+    #  certificate_authority_path: "tls/localhost_CA.crt"
+    #  # Path to the certificate file, typically named with a .crt extension.
+    #  certificate_path: "tls/localhost.crt"
+    #  # Path to the private key file, typically named with a .key extension.
+    #  private_key_path: "tls/localhost.key"
+
+  # Timeout in seconds after which to give up waiting for a response from the destination.
+  # This field is optional, if not provided, timeout will never occur.
+  # When a timeout occurs the connection to the client is immediately closed.
+  # read_timeout: 60
+```
+
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
+
 ### CassandraSinkSingle
 
-This transform will take a query, serialise it into a CQL4 compatible format and send to the Cassandra compatible database at the defined address.
+This transform will send/receive cassandra messages to a single cassandra node.
+This will just pass the query directly to the remote node.
+No cluster discovery or routing occurs with this transform.
 
 ```yaml
 - CassandraSinkSingle:
@@ -70,8 +112,6 @@ This transform will take a query, serialise it into a CQL4 compatible format and
   # When a timeout occurs the connection to the client is immediately closed.
   # read_timeout: 60
 ```
-
-Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
 
