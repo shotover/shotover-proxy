@@ -42,10 +42,6 @@ impl CassandraCodec {
 impl CassandraCodec {
     fn encode_raw(&mut self, item: CassandraFrame, dst: &mut BytesMut) {
         let buffer = item.encode().encode_with(self.compressor).unwrap();
-        tracing::debug!(
-            "outgoing cassandra message:\n{}",
-            pretty_hex::pretty_hex(&buffer)
-        );
         if buffer.is_empty() {
             info!("trying to send 0 length frame");
         }
@@ -124,11 +120,16 @@ impl Encoder<Messages> for CassandraCodec {
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
+            let start = dst.len();
             // TODO: always check if cassandra message
             match m.into_encodable(MessageType::Cassandra)? {
                 Encodable::Bytes(bytes) => dst.extend_from_slice(&bytes),
                 Encodable::Frame(frame) => self.encode_raw(frame.into_cassandra().unwrap(), dst),
             }
+            tracing::debug!(
+                "outgoing cassandra message:\n{}",
+                pretty_hex::pretty_hex(&&dst[start..])
+            );
         }
         Ok(())
     }
