@@ -121,7 +121,7 @@ async fn test_cluster() {
         native_types::test(&connection2).await;
     }
 
-    cluster::test().await;
+    cluster::test_topology_task(None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -129,38 +129,41 @@ async fn test_cluster() {
 #[cfg(feature = "alpha-transforms")]
 async fn test_source_tls_and_cluster_tls() {
     test_helpers::cert::generate_cassandra_test_certs();
-    let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yml");
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster-tls/topology.yaml");
-
     let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
-
+    let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yml");
     {
-        // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-        let direct_connection =
-            shotover_manager.cassandra_connection_tls("172.16.1.2", 9042, ca_cert);
-        assert_query_result(
-            &direct_connection,
-            "SELECT bootstrapped FROM system.local",
-            &[&[ResultValue::Varchar("COMPLETED".into())]],
-        )
-        .await;
+        let shotover_manager = ShotoverManager::from_topology_file(
+            "example-configs/cassandra-cluster-tls/topology.yaml",
+        );
+
+        {
+            // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
+            let direct_connection =
+                shotover_manager.cassandra_connection_tls("172.16.1.2", 9042, ca_cert);
+            assert_query_result(
+                &direct_connection,
+                "SELECT bootstrapped FROM system.local",
+                &[&[ResultValue::Varchar("COMPLETED".into())]],
+            )
+            .await;
+        }
+
+        let mut connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+        connection
+            .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
+            .await;
+
+        keyspace::test(&connection).await;
+        table::test(&connection).await;
+        udt::test(&connection).await;
+        native_types::test(&connection).await;
+        functions::test(&connection).await;
+        collections::test(&connection).await;
+        prepared_statements::test(&connection).await;
+        batch_statements::test(&connection).await;
     }
 
-    let mut connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
-    connection
-        .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
-        .await;
-
-    keyspace::test(&connection).await;
-    table::test(&connection).await;
-    udt::test(&connection).await;
-    native_types::test(&connection).await;
-    functions::test(&connection).await;
-    collections::test(&connection).await;
-    prepared_statements::test(&connection).await;
-    batch_statements::test(&connection).await;
+    cluster::test_topology_task(Some(ca_cert)).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
