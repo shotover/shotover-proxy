@@ -26,6 +26,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 
 | Transform                                             | Terminating | Implementation Status |
 |-------------------------------------------------------|-------------|-----------------------|
+| [CassandraSinkCluster](#cassandrasinkcluster)         | ✅          | Beta                  |
 | [CassandraSinkSingle](#cassandrasinksingle)           | ✅          | Alpha                 |
 | [CassandraPeersRewrite](#cassandrapeersrewrite)       | ❌          | Alpha                 |
 | [Coalesce](#coalesce)                                 | ❌          | Alpha                 |
@@ -48,18 +49,18 @@ Future transforms won't be added to the public API while in alpha. But in these 
 
 ### CassandraSinkCluster
 
-This transform will send/receive cassandra messages to a node within a cassandra cluster.
+This transform will send/receive Cassandra messages to a node within a Cassandra cluster.
 Messages will be routed according to the configured `data_center` and `rack`.
 
-The fact that shotover is routing to multiple destination nodes will be hidden from the client.
-This is achieved by rewriting `System.local` and `system.peers`/`system.peers_v2` query results.
-The `system.local` will make shotover appear to be its own node.
-While `system.peers`/`system.peers_v2` will be rewritten to list the configured shotover peers as the only over nodes in the cluster.
+The fact that Shotover is routing to multiple destination nodes will be hidden from the client.
+This is achieved by rewriting `system.local` and `system.peers`/`system.peers_v2` query results.
+The `system.local` will make Shotover appear to be its own node.
+While `system.peers`/`system.peers_v2` will be rewritten to list the configured Shotover peers as the only other nodes in the cluster.
 
 ```yaml
 - CassandraSinkCluster:
     # contact points must be within the configured data_center and rack.
-    # If this is not followed, shotover will still function correctly but shotover will communicate with a
+    # If this is not followed, Shotover will still function correctly but Shotover will communicate with a
     # node outside of the specified data_center and rack.
     first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
 
@@ -67,6 +68,11 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
     data_center: "dc1"
     # Shotover will always prefer to route messages to this rack but may route outside of the rack when nodes in the rack are unreachable.
     rack: "rack1"
+
+    # The host_id that Shotover will report in system.local results.
+    # Make sure to set this to a unique value for each Shotover instance that is proxying to the same cluster.
+    # Maybe copy one from: https://wasteaguid.info
+    host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
@@ -84,17 +90,17 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
   # read_timeout: 60
 ```
 
-This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkCluster` and `chain` as the name of the chain that this transform is in.
 
 ### CassandraSinkSingle
 
-This transform will send/receive cassandra messages to a single cassandra node.
+This transform will send/receive Cassandra messages to a single Cassandra node.
 This will just pass the query directly to the remote node.
 No cluster discovery or routing occurs with this transform.
 
 ```yaml
 - CassandraSinkSingle:
-    # The IP address and port of the upstream cassandra node/service.
+    # The IP address and port of the upstream Cassandra node/service.
     remote_address: "127.0.0.1:9042"
 
     # When this field is provided TLS is used when connecting to the remote address.
