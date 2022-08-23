@@ -1,17 +1,26 @@
 use cassandra_protocol::frame::Version;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
+use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use shotover_proxy::transforms::cassandra::sink_cluster::{create_topology_task, TaskHandshake};
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
-pub async fn test() {
+pub async fn test_topology_task(ca_path: Option<&str>) {
     // Directly test the internal topology task
     let nodes_shared = Arc::new(RwLock::new(vec![]));
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
+    let tls = ca_path.map(|ca_path| {
+        TlsConnector::new(TlsConnectorConfig {
+            certificate_authority_path: ca_path.into(),
+            certificate_path: None,
+            private_key_path: None,
+        })
+        .unwrap()
+    });
     create_topology_task(
-        None,
+        tls,
         nodes_shared.clone(),
         task_handshake_rx,
         "dc1".to_string(),
