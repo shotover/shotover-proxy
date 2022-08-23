@@ -25,10 +25,14 @@ async fn test_drop_udt(session: &CassandraConnection) {
     )
     .await;
     run_query(session, "DROP TYPE test_udt_keyspace.test_type_drop_me;").await;
-    session.execute_expect_err_contains(
-        "CREATE TABLE test_udt_keyspace.test_delete_table (id int PRIMARY KEY, foo test_type_drop_me);",
-        "Unknown type test_udt_keyspace.test_type_drop_me",
-    );
+    // TODO: This exposes a bug in at least cassandra 3
+    // The error is supposed to be a 0x2200 syntax error but rarely cassandra will return a 0x0000 server error instead.
+    // The cpp driver interprets 0x0000 as different to 0x2200 and considers the node as down and will no longer talk to it.
+    // We should eventually reenable this test when we upgrade to cassandra 4 (the bug may also need to be reported and fixed in cassandra 4)
+    // session.execute_expect_err_contains(
+    //     "CREATE TABLE test_udt_keyspace.test_delete_table (id int PRIMARY KEY, foo test_type_drop_me);",
+    //     "Unknown type test_udt_keyspace.test_type_drop_me",
+    // );
 }
 
 pub async fn test(session: &CassandraConnection) {
