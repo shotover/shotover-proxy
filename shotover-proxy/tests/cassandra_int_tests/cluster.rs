@@ -3,8 +3,11 @@ use cassandra_protocol::frame::Version;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
 use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
-use shotover_proxy::transforms::cassandra::sink_cluster::node::CassandraNode;
-use shotover_proxy::transforms::cassandra::sink_cluster::{create_topology_task, TaskHandshake};
+use shotover_proxy::transforms::cassandra::sink_cluster::{
+    create_topology_task,
+    node::{CassandraNode, ConnectionFactory},
+    TaskConnectionInfo,
+};
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -167,19 +170,20 @@ pub async fn run_topology_task(ca_path: Option<&str>) -> Vec<CassandraNode> {
         })
         .unwrap()
     });
-    create_topology_task(
-        tls,
-        nodes_shared.clone(),
-        task_handshake_rx,
-        "dc1".to_string(),
-    );
+
+    let mut connection_factory = ConnectionFactory::new(tls);
+    for message in create_handshake() {
+        connection_factory.push_handshake_message(message);
+    }
+
+    create_topology_task(nodes_shared.clone(), task_handshake_rx, "dc1".to_string());
 
     // Give the handshake task a hardcoded handshake.
     // Normally the handshake is the handshake that the client gave shotover.
     task_handshake_tx
-        .send(TaskHandshake {
+        .send(TaskConnectionInfo {
+            connection_factory: connection_factory.clone(),
             address: "172.16.1.2:9042".parse().unwrap(),
-            handshake: create_handshake(),
         })
         .await
         .unwrap();
