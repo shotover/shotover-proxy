@@ -14,6 +14,7 @@ chain_config:
         data_center: "dc1"
         rack: "rack1"
         host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
+        shotover_peers: []
         tls:
           certificate_authority_path: "example-configs/cassandra-tls/certs/localhost_CA.crt"
           certificate_path: "example-configs/cassandra-tls/certs/localhost.crt"

@@ -10,5 +10,14 @@ chain_config:
         data_center: "dc1"
         rack: "rack2"
         host_id: "3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4"
+        shotover_peers:
+          - address: "127.0.0.1:9042"
+            data_center: "dc1"
+            rack: "rack1"
+            host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
+          - address: "127.0.0.3:9042"
+            data_center: "dc1"
+            rack: "rack3"
+            host_id: "fa74d7ec-1223-472b-97de-04a32ccdb70b"
 source_to_chain_mapping:
   cassandra_prod: main_chain
