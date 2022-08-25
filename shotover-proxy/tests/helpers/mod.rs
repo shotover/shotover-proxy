@@ -1,4 +1,5 @@
 use anyhow::Result;
+use cassandra::{CassandraConnection, CassandraDriver};
 use redis::aio::AsyncStream;
 use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};

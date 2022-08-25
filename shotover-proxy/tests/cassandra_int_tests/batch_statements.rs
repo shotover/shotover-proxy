@@ -1,5 +1,4 @@
 use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
-use cassandra_cpp::{stmt, Batch, BatchType};
 
 pub async fn test(connection: &CassandraConnection) {
     // setup keyspace and table for the batch statement tests
@@ -9,42 +8,45 @@ pub async fn test(connection: &CassandraConnection) {
     }
 
     {
-        let mut batch = Batch::new(BatchType::LOGGED);
+        let mut queries: Vec<(String, i32)> = vec![];
         for i in 0..2 {
-            let statement = format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text1', 'text2')", i);
-            batch.add_statement(&stmt!(statement.as_str())).unwrap();
-        }
-        connection.execute_batch(&batch);
-
-        assert_query_result(
-            connection,
-            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
-            &[
-                &[
-                    ResultValue::Int(0),
-                    ResultValue::Varchar("text1".into()),
-                    ResultValue::Varchar("text2".into()),
-                ],
-                &[
-                    ResultValue::Int(1),
-                    ResultValue::Varchar("text1".into()),
-                    ResultValue::Varchar("text2".into()),
-                ],
-            ],
-        )
-        .await;
-    }
-
-    {
-        let mut batch = Batch::new(BatchType::LOGGED);
-        for i in 0..2 {
-            let statement = format!(
-                "UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = {};",
+            queries.push((
+                "INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (?, 'text1', 'text2')".into(),
                 i
-            );
-            batch.add_statement(&stmt!(statement.as_str())).unwrap();
+            ));
         }
-        connection.execute_batch(&batch);
+
+        connection.execute_batch(queries);
+
+        assert_query_result(
+            connection,
+            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
+            &[
+                &[
+                    ResultValue::Int(0),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+                &[
+                    ResultValue::Int(1),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+            ],
+        )
+        .await;
+    }
+
+    {
+        let mut queries: Vec<(String, i32)> = vec![];
+        for i in 0..2 {
+            queries.push((
+                "UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = ?;".into(),
+                i,
+            ));
+        }
+
+        connection.execute_batch(queries);
 
         assert_query_result(
             connection,
@@ -66,26 +68,27 @@ pub async fn test(connection: &CassandraConnection) {
     }
 
     {
-        let mut batch = Batch::new(BatchType::LOGGED);
+        let mut queries: Vec<(String, i32)> = vec![];
         for i in 0..2 {
-            let statement = format!("DELETE FROM batch_keyspace.batch_table WHERE id = {};", i);
-            batch.add_statement(&stmt!(statement.as_str())).unwrap();
+            queries.push((
+                "DELETE FROM batch_keyspace.batch_table WHERE id = ?;".into(),
+                i,
+            ));
         }
-        connection.execute_batch(&batch);
+        connection.execute_batch(queries);
         assert_query_result(connection, "SELECT * FROM batch_keyspace.batch_table;", &[]).await;
     }
 
     {
-        let batch = Batch::new(BatchType::LOGGED);
-        connection.execute_batch(&batch);
+        connection.execute_batch(vec![]);
     }
 
     // test batch statements over QUERY PROTOCOL
     {
         let insert_statement = "BEGIN BATCH
-INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (2, 'text1', 'text2');
-INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (3, 'text1', 'text2');
-APPLY BATCH;";
+    INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (2, 'text1', 'text2');
+    INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (3, 'text1', 'text2');
+    APPLY BATCH;";
         run_query(connection, insert_statement).await;
 
         assert_query_result(
