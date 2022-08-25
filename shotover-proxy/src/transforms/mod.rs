@@ -259,32 +259,32 @@ impl Transforms {
         }
     }
 
-    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
+    fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         match self {
-            Transforms::CassandraSinkSingle(c) => c.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::CassandraSinkCluster(c) => c.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::CassandraPeersRewrite(c) => c.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisCache(r) => r.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Tee(t) => t.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisSinkSingle(r) => r.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::ConsistentScatter(c) => c.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisTimestampTagger(r) => r.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisClusterPortsRewrite(r) => r.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugPrinter(p) => p.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugForceParse(p) => p.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Null(n) => n.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RedisSinkCluster(r) => r.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::ParallelMap(s) => s.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::PoolConnections(s) => s.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Coalesce(s) => s.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::QueryTypeFilter(s) => s.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::QueryCounter(s) => s.add_pushed_messages_tx(pushed_messages_tx),
+            Transforms::CassandraSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::CassandraSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::CassandraPeersRewrite(c) => c.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::RedisCache(r) => r.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::Tee(t) => t.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::RedisSinkSingle(r) => r.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::ConsistentScatter(c) => c.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::RedisTimestampTagger(r) => r.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::RedisClusterPortsRewrite(r) => r.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::DebugPrinter(p) => p.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::DebugForceParse(p) => p.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::Null(n) => n.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::RedisSinkCluster(r) => r.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::ParallelMap(s) => s.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::PoolConnections(s) => s.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::Coalesce(s) => s.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::QueryTypeFilter(s) => s.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::QueryCounter(s) => s.set_pushed_messages_tx(pushed_messages_tx),
             #[cfg(test)]
-            Transforms::Loopback(l) => l.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Protect(p) => p.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugReturner(d) => d.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::DebugRandomDelay(d) => d.add_pushed_messages_tx(pushed_messages_tx),
-            Transforms::RequestThrottling(d) => d.add_pushed_messages_tx(pushed_messages_tx),
+            Transforms::Loopback(l) => l.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::Protect(p) => p.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::DebugReturner(d) => d.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::DebugRandomDelay(d) => d.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::RequestThrottling(d) => d.set_pushed_messages_tx(pushed_messages_tx),
         }
     }
 }
@@ -619,7 +619,7 @@ pub trait Transform: Send {
         vec![]
     }
 
-    fn add_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}
+    fn set_pushed_messages_tx(&mut self, _pushed_messages_tx: mpsc::UnboundedSender<Messages>) {}
 }
 
 pub type ResponseFuture = Pin<Box<dyn Future<Output = Result<util::Response>> + Send + Sync>>;

@@ -329,7 +329,7 @@ impl TransformChain {
         let mut result = self.clone();
 
         for transform in &mut result.chain {
-            transform.add_pushed_messages_tx(pushed_messages_tx.clone());
+            transform.set_pushed_messages_tx(pushed_messages_tx.clone());
         }
 
         result

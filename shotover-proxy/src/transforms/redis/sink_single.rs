@@ -170,7 +170,7 @@ impl Transform for RedisSinkSingle {
         Ok(result)
     }
 
-    fn add_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
+    fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         self.pushed_messages_tx = Some(pushed_messages_tx);
     }
 }
