@@ -3,6 +3,7 @@ use cassandra_protocol::frame::Version;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
 use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
+use shotover_proxy::transforms::cassandra::sink_cluster::node::CassandraNode;
 use shotover_proxy::transforms::cassandra::sink_cluster::{create_topology_task, TaskHandshake};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -64,6 +65,27 @@ pub async fn test(connection: &CassandraConnection) {
 }
 
 pub async fn test_topology_task(ca_path: Option<&str>) {
+    let nodes = run_topology_task(ca_path).await;
+
+    assert_eq!(nodes.len(), 3);
+    let mut possible_addresses: Vec<IpAddr> = vec![
+        "172.16.1.2".parse().unwrap(),
+        "172.16.1.3".parse().unwrap(),
+        "172.16.1.4".parse().unwrap(),
+    ];
+    for node in &nodes {
+        let address_index = possible_addresses
+            .iter()
+            .position(|x| *x == node.address)
+            .expect("Node did not contain a unique expected address");
+        possible_addresses.remove(address_index);
+
+        assert_eq!(node._rack, "rack1");
+        assert_eq!(node._tokens.len(), 128);
+    }
+}
+
+pub async fn run_topology_task(ca_path: Option<&str>) -> Vec<CassandraNode> {
     // Directly test the internal topology task
     let nodes_shared = Arc::new(RwLock::new(vec![]));
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
@@ -104,24 +126,7 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
         }
         tries += 1;
     }
-
-    // make assertions on the nodes list
-    assert_eq!(nodes.len(), 3);
-    let mut possible_addresses: Vec<IpAddr> = vec![
-        "172.16.1.2".parse().unwrap(),
-        "172.16.1.3".parse().unwrap(),
-        "172.16.1.4".parse().unwrap(),
-    ];
-    for node in &nodes {
-        let address_index = possible_addresses
-            .iter()
-            .position(|x| *x == node.address)
-            .expect("Node did not contain a unique expected address");
-        possible_addresses.remove(address_index);
-
-        assert_eq!(node._rack, "rack1");
-        assert_eq!(node._tokens.len(), 128);
-    }
+    nodes
 }
 
 fn create_handshake() -> Vec<Message> {
