@@ -44,6 +44,8 @@ impl Transform for QueryTypeFilter {
             message_wrapper.messages.remove(*i);
         }
 
+        let mut shown_error = false;
+
         message_wrapper
             .call_next_transform()
             .await
@@ -52,8 +54,9 @@ impl Transform for QueryTypeFilter {
                     if i <= messages.len() {
                         messages.insert(i, message);
                     }
-                    else {
-                        tracing::error!("The current filter transform implementation does not obey the current transform invariants. see https://github.com/shotover/shotover-proxy/issues/499")
+                    else if !shown_error {
+                        tracing::error!("The current filter transform implementation does not obey the current transform invariants. see https://github.com/shotover/shotover-proxy/issues/499");
+                        shown_error = true;
                     }
                 }
                 messages
