@@ -19,6 +19,8 @@ mod batch_statements;
 mod cache;
 #[cfg(feature = "alpha-transforms")]
 mod cluster;
+#[cfg(feature = "alpha-transforms")]
+mod cluster_multi_rack;
 mod collections;
 mod functions;
 mod keyspace;
@@ -89,7 +91,7 @@ async fn test_source_tls_and_single_tls() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[cfg(feature = "alpha-transforms")]
-async fn test_cluster() {
+async fn test_cluster_single_rack() {
     let _compose = DockerCompose::new("example-configs/cassandra-cluster/docker-compose.yml");
 
     {
@@ -123,6 +125,53 @@ async fn test_cluster() {
     }
 
     cluster::test_topology_task(None).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+#[cfg(feature = "alpha-transforms")]
+async fn test_cluster_multi_rack() {
+    let _compose =
+        DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yml");
+
+    {
+        let shotover_manager_rack1 = ShotoverManager::from_topology_file_without_observability(
+            "example-configs/cassandra-cluster-multi-rack/topology_rack1.yaml",
+        );
+        let _shotover_manager_rack2 = ShotoverManager::from_topology_file_without_observability(
+            "example-configs/cassandra-cluster-multi-rack/topology_rack2.yaml",
+        );
+        let _shotover_manager_rack3 = ShotoverManager::from_topology_file_without_observability(
+            "example-configs/cassandra-cluster-multi-rack/topology_rack3.yaml",
+        );
+
+        let mut connection1 = shotover_manager_rack1
+            .cassandra_connection("127.0.0.1", 9042)
+            .await;
+        connection1
+            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .await;
+        keyspace::test(&connection1).await;
+        table::test(&connection1).await;
+        udt::test(&connection1).await;
+        native_types::test(&connection1).await;
+        collections::test(&connection1).await;
+        functions::test(&connection1).await;
+        prepared_statements::test(&connection1).await;
+        batch_statements::test(&connection1).await;
+        cluster_multi_rack::test(&connection1).await;
+
+        //Check for bugs in cross connection state
+        let mut connection2 = shotover_manager_rack1
+            .cassandra_connection("127.0.0.1", 9042)
+            .await;
+        connection2
+            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .await;
+        native_types::test(&connection2).await;
+    }
+
+    cluster_multi_rack::test_topology_task(None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

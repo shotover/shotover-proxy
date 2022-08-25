@@ -28,7 +28,7 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
 use version_compare::Cmp;
 
-mod node;
+pub mod node;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkClusterConfig {
@@ -458,10 +458,41 @@ impl CassandraSinkCluster {
                 metadata,
             }) = &mut frame.operation
             {
+                // TODO: if rack and data_center not in query then we cant perform this filtering,
+                //       we will need to do an additional system.local query to get that information...
+                let mut is_in_data_center = true;
+                let mut is_in_rack = true;
+                for row in rows.iter_mut() {
+                    for (col, col_meta) in row.iter_mut().zip(metadata.col_specs.iter()) {
+                        if col_meta.name == rack_alias {
+                            if let MessageValue::Varchar(rack) = col {
+                                is_in_rack = rack == &self.rack;
+                                if !is_in_rack {
+                                    *rack = self.rack.clone();
+                                    tracing::warn!("A contact point node is not in the configured rack, this node will receive traffic from outside of its rack");
+                                }
+                            }
+                        } else if col_meta.name == data_center_alias {
+                            if let MessageValue::Varchar(data_center) = col {
+                                is_in_data_center = data_center == &self.data_center;
+                                if !is_in_data_center {
+                                    *data_center = self.data_center.clone();
+                                    tracing::warn!("A contact point node is not in the configured data_center, this node will receive traffic from outside of its data_center");
+                                }
+                            }
+                        }
+                    }
+                }
+
                 for row in rows {
                     for (col, col_meta) in row.iter_mut().zip(metadata.col_specs.iter()) {
                         if col_meta.name == release_version_alias {
                             if let MessageValue::Varchar(release_version) = col {
+                                if !is_in_data_center || !is_in_rack {
+                                    if let Some(peer) = peers.first() {
+                                        *release_version = peer.release_version.clone();
+                                    }
+                                }
                                 for peer in &peers {
                                     if let Ok(Cmp::Lt) = version_compare::compare(
                                         &peer.release_version,
@@ -473,6 +504,9 @@ impl CassandraSinkCluster {
                             }
                         } else if col_meta.name == tokens_alias {
                             if let MessageValue::List(tokens) = col {
+                                if !is_in_data_center || !is_in_rack {
+                                    tokens.clear();
+                                }
                                 for peer in &peers {
                                     tokens.extend(peer.tokens.iter().cloned());
                                 }
@@ -480,6 +514,11 @@ impl CassandraSinkCluster {
                             }
                         } else if col_meta.name == schema_version_alias {
                             if let MessageValue::Uuid(schema_version) = col {
+                                if !is_in_data_center || !is_in_rack {
+                                    if let Some(peer) = peers.first() {
+                                        *schema_version = peer.schema_version;
+                                    }
+                                }
                                 for peer in &peers {
                                     if schema_version != &peer.schema_version {
                                         *schema_version = Uuid::new_v4();
@@ -496,20 +535,6 @@ impl CassandraSinkCluster {
                         } else if col_meta.name == host_id_alias {
                             if let MessageValue::Uuid(host_id) = col {
                                 *host_id = self.host_id;
-                            }
-                        } else if col_meta.name == rack_alias {
-                            if let MessageValue::Varchar(rack) = col {
-                                if rack != &self.rack {
-                                    *rack = self.rack.clone();
-                                    tracing::warn!("A contact point node is not in the configured rack, this node will receive traffic from outside of its rack");
-                                }
-                            }
-                        } else if col_meta.name == data_center_alias {
-                            if let MessageValue::Varchar(data_center) = col {
-                                if data_center != &self.data_center {
-                                    *data_center = self.data_center.clone();
-                                    tracing::warn!("A contact point node is not in the configured data_center, this node will receive traffic from outside of its data_center");
-                                }
                             }
                         }
                     }
