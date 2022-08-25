@@ -74,6 +74,27 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
     # Maybe copy one from: https://wasteaguid.info
     host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
 
+    # A list of every other shotover peer that will be proxying to the same cassandra cluster.
+    # Each entry here will get its own entry in the system.peers table.
+    # If you only have a single shotover instance then leave this as an empty list.
+    shotover_peers: []
+
+    # Otherwise if you have multiple shotover instances then configure as the following.
+    #shotover_peers:
+    #    # The address of the shotover node
+    #  - address: "127.0.0.2:9042"
+    #    # The data center that that the shotover peer will be proxying to
+    #    data_center: "dc1"
+    #    # The rack that the shotover peer will be proxying to
+    #    rack: "rack2"
+    #    # The host_id that the shotover peer will report
+    #    host_id: "3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4"
+    #
+    #  - address: "127.0.0.3:9042"
+    #    data_center: "dc2"
+    #    rack: "rack1"
+    #    host_id: "fa74d7ec-1223-472b-97de-04a32ccdb70b"
+
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
     #tls:
