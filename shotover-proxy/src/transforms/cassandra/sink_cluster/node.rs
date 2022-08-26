@@ -32,12 +32,23 @@ impl CassandraNode {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ConnectionFactory {
     init_handshake: Vec<Message>,
     use_message: Option<Message>,
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+}
+
+impl Clone for ConnectionFactory {
+    fn clone(&self) -> Self {
+        Self {
+            init_handshake: self.init_handshake.clone(),
+            use_message: None,
+            tls: self.tls.clone(),
+            pushed_messages_tx: None,
+        }
+    }
 }
 
 impl ConnectionFactory {
@@ -50,7 +61,10 @@ impl ConnectionFactory {
         }
     }
 
-    pub fn clone_config(&self) -> Self {
+    /// For when you want to clone the config options for creating new connections but none of the state.
+    /// When the transform chain is cloned for a new incoming connection, this method should be used so the state doesn't also get cloned to
+    /// the new connection as aswell.
+    pub fn new_with_same_config(&self) -> Self {
         Self {
             init_handshake: vec![],
             use_message: None,

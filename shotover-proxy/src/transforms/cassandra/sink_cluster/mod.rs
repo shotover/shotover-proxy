@@ -57,13 +57,15 @@ impl CassandraSinkClusterConfig {
             })?;
         let local_node = shotover_nodes.remove(index);
 
-        Ok(Transforms::CassandraSinkCluster(CassandraSinkCluster::new(
-            self.first_contact_points.clone(),
-            shotover_nodes,
-            chain_name,
-            local_node,
-            tls,
-            self.read_timeout,
+        Ok(Transforms::CassandraSinkCluster(Box::new(
+            CassandraSinkCluster::new(
+                self.first_contact_points.clone(),
+                shotover_nodes,
+                chain_name,
+                local_node,
+                tls,
+                self.read_timeout,
+            ),
         )))
     }
 }
@@ -109,7 +111,7 @@ impl Clone for CassandraSinkCluster {
             contact_points: self.contact_points.clone(),
             shotover_peers: self.shotover_peers.clone(),
             init_handshake_connection: None,
-            connection_factory: self.connection_factory.clone_config(),
+            connection_factory: self.connection_factory.new_with_same_config(),
             init_handshake_address: None,
             init_handshake_complete: false,
             chain_name: self.chain_name.clone(),
@@ -143,7 +145,12 @@ impl CassandraSinkCluster {
         let nodes_shared = Arc::new(RwLock::new(vec![]));
 
         let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
-        create_topology_task(nodes_shared.clone(), task_handshake_rx, data_center.clone());
+
+        create_topology_task(
+            nodes_shared.clone(),
+            task_handshake_rx,
+            local_shotover_node.data_center.clone(),
+        );
 
         Self {
             contact_points,
