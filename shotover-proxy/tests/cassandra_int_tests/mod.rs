@@ -18,7 +18,6 @@ use tokio::time::{sleep, timeout, Duration};
 mod batch_statements;
 mod cache;
 mod cluster;
-#[cfg(feature = "alpha-transforms")]
 mod cluster_multi_rack;
 mod collections;
 mod functions;
