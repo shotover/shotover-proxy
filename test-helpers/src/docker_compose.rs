@@ -6,7 +6,7 @@ use std::process::Command;
 use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
-use tracing::{debug, info};
+use tracing::trace;
 
 /// Runs a command and returns the output as a string.
 ///
@@ -17,7 +17,7 @@ use tracing::{debug, info};
 /// * `args` - An array of command line arguments for the command
 ///
 pub fn run_command(command: &str, args: &[&str]) -> Result<String> {
-    debug!("executing {}", command);
+    trace!("executing {}", command);
     let data = Exec::cmd(command)
         .args(args)
         .stdout(Redirection::Pipe)
@@ -150,7 +150,7 @@ impl DockerCompose {
     /// * If `count` occurrences of `log_text` is not found in the log within 90 seconds.
     ///
     fn wait_for_log(&self, log_text: &str, count: usize, timeout_seconds: u64) {
-        info!("wait_for_log: '{log_text}' {count}");
+        trace!("wait_for_log: '{log_text}' {count}");
         let args = ["-f", &self.file_path, "logs"];
         let re = Regex::new(log_text).unwrap();
         let sys_time = time::Instant::now();
@@ -166,11 +166,11 @@ impl DockerCompose {
                     result
                 );
             }
-            debug!("wait_for_log: {log_text:?} looping {my_count}/{count}");
+            trace!("wait_for_log: {log_text:?} looping {my_count}/{count}");
             result = run_command("docker-compose", &args).unwrap();
             my_count = re.find_iter(&result).count();
         }
-        debug!(
+        trace!(
             "wait_for_log: found '{}' {} times in {:?} seconds",
             log_text,
             count,
@@ -183,7 +183,7 @@ impl DockerCompose {
     /// # Arguments
     /// * `file_path` - The path to the docker-compose yaml file that was used to start docker.
     fn clean_up(file_path: &str) -> Result<()> {
-        debug!("bringing down docker compose {}", file_path);
+        trace!("bringing down docker compose {}", file_path);
 
         run_command("docker-compose", &["-f", file_path, "down", "-v"])?;
         run_command("docker-compose", &["-f", file_path, "rm", "-f", "-s", "-v"])?;
