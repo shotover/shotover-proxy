@@ -3,18 +3,58 @@ use crate::helpers::cassandra::{assert_query_result, CassandraConnection, Result
 use std::net::IpAddr;
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
+    let star_results1 = [
+        // peer is non-determistic because we dont know which node this will be
+        ResultValue::Any,
+        ResultValue::Varchar("dc1".into()),
+        // host_id is non-determistic because we dont know which node this will be
+        ResultValue::Any,
+        ResultValue::Inet("255.255.255.255".into()),
+        // rack is non-determistic because we dont know which node this will be
+        ResultValue::Any,
+        ResultValue::Varchar("3.11.13".into()),
+        ResultValue::Inet("255.255.255.255".into()),
+        // schema_version is non deterministic so we cant assert on it.
+        ResultValue::Any,
+        // Unfortunately token generation appears to be non-deterministic but we can at least assert that
+        // there are 128 tokens per node
+        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(128).collect()),
+    ];
+    let star_results2 = [
+        ResultValue::Any,
+        ResultValue::Varchar("dc1".into()),
+        ResultValue::Any,
+        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Any,
+        ResultValue::Varchar("3.11.13".into()),
+        ResultValue::Inet("255.255.255.255".into()),
+        // schema_version is non deterministic so we cant assert on it.
+        ResultValue::Any,
+        // Unfortunately token generation appears to be non-deterministic but we can at least assert that
+        // there are 128 tokens per node
+        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(128).collect()),
+    ];
+
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
-    assert_query_result(connection, "SELECT * FROM system.peers;", &[]).await;
+    assert_query_result(
+        connection,
+        "SELECT * FROM system.peers;",
+        &[&star_results1, &star_results2],
+    )
+    .await;
     assert_query_result(
         connection,
         &format!("SELECT {all_columns} FROM system.peers;"),
-        &[],
+        &[&star_results1, &star_results2],
     )
     .await;
     assert_query_result(
         connection,
         &format!("SELECT {all_columns}, {all_columns} FROM system.peers;"),
-        &[],
+        &[
+            &[star_results1.as_slice(), star_results1.as_slice()].concat(),
+            &[star_results2.as_slice(), star_results2.as_slice()].concat(),
+        ],
     )
     .await;
 }

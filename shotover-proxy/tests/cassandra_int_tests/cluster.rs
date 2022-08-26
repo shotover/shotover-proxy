@@ -9,11 +9,77 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
-async fn test_rewrite_system_local(connection: &CassandraConnection) {
+async fn test_rewrite_system_peers(connection: &CassandraConnection) {
+    let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
     assert_query_result(connection, "SELECT * FROM system.peers;", &[]).await;
-    assert_query_result(connection, "SELECT peer FROM system.peers;", &[]).await;
-    assert_query_result(connection, "SELECT peer, peer FROM system.peers;", &[]).await;
+    assert_query_result(
+        connection,
+        &format!("SELECT {all_columns} FROM system.peers;"),
+        &[],
+    )
+    .await;
+    assert_query_result(
+        connection,
+        &format!("SELECT {all_columns}, {all_columns} FROM system.peers;"),
+        &[],
+    )
+    .await;
+}
+async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection) {
+    let star_results1 = [
+        ResultValue::Inet("127.0.0.1".parse().unwrap()),
+        ResultValue::Varchar("dc1".into()),
+        ResultValue::Uuid("3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4".parse().unwrap()),
+        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Varchar("rack1".into()),
+        ResultValue::Varchar("3.11.13".into()),
+        ResultValue::Inet("255.255.255.255".into()),
+        // schema_version is non deterministic so we cant assert on it.
+        ResultValue::Any,
+        // Unfortunately token generation appears to be non-deterministic but we can at least assert that
+        // there are 128 tokens per node
+        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+    ];
+    let star_results2 = [
+        ResultValue::Inet("127.0.0.1".parse().unwrap()),
+        ResultValue::Varchar("dc1".into()),
+        ResultValue::Uuid("fa74d7ec-1223-472b-97de-04a32ccdb70b".parse().unwrap()),
+        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Varchar("rack1".into()),
+        ResultValue::Varchar("3.11.13".into()),
+        ResultValue::Inet("255.255.255.255".into()),
+        // schema_version is non deterministic so we cant assert on it.
+        ResultValue::Any,
+        // Unfortunately token generation appears to be non-deterministic but we can at least assert that
+        // there are 128 tokens per node
+        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+    ];
 
+    let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
+    assert_query_result(
+        connection,
+        "SELECT * FROM system.peers;",
+        &[&star_results1, &star_results2],
+    )
+    .await;
+    assert_query_result(
+        connection,
+        &format!("SELECT {all_columns} FROM system.peers;"),
+        &[&star_results1, &star_results2],
+    )
+    .await;
+    assert_query_result(
+        connection,
+        &format!("SELECT {all_columns}, {all_columns} FROM system.peers;"),
+        &[
+            &[star_results1.as_slice(), star_results1.as_slice()].concat(),
+            &[star_results2.as_slice(), star_results2.as_slice()].concat(),
+        ],
+    )
+    .await;
+}
+
+async fn test_rewrite_system_local(connection: &CassandraConnection) {
     let star_results = [
         ResultValue::Varchar("local".into()),
         ResultValue::Varchar("COMPLETED".into()),
@@ -62,6 +128,12 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
 
 pub async fn test(connection: &CassandraConnection) {
     test_rewrite_system_local(connection).await;
+    test_rewrite_system_peers(connection).await;
+}
+
+pub async fn test_dummy_peers(connection: &CassandraConnection) {
+    test_rewrite_system_local(connection).await;
+    test_rewrite_system_peers_dummy_peers(connection).await;
 }
 
 pub async fn test_topology_task(ca_path: Option<&str>) {
@@ -84,9 +156,7 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
         assert_eq!(node._tokens.len(), 128);
     }
 }
-
 pub async fn run_topology_task(ca_path: Option<&str>) -> Vec<CassandraNode> {
-    // Directly test the internal topology task
     let nodes_shared = Arc::new(RwLock::new(vec![]));
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
     let tls = ca_path.map(|ca_path| {

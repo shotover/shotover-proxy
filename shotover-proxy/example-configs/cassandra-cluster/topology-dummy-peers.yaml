@@ -13,13 +13,17 @@ chain_config:
             data_center: "dc1"
             rack: "rack1"
             host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
-          - address: "127.0.0.2:9042"
+          # These extra nodes dont really make sense, its pointing at the same address as the local shotover node.
+          # It is however useful for testing the functionality of the system.peers rewriting.
+          # We can make stronger assertions against the values returned by system.peers with this config because
+          # more system.peers fields are static due to always being queried against this one shotover instance.
+          - address: "127.0.0.1:9042"
             data_center: "dc1"
-            rack: "rack2"
+            rack: "rack1"
             host_id: "3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4"
-          - address: "127.0.0.3:9042"
+          - address: "127.0.0.1:9042"
             data_center: "dc1"
-            rack: "rack3"
+            rack: "rack1"
             host_id: "fa74d7ec-1223-472b-97de-04a32ccdb70b"
 source_to_chain_mapping:
   cassandra_prod: main_chain
