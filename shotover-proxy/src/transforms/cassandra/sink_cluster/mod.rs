@@ -36,10 +36,8 @@ pub struct CassandraSinkClusterConfig {
     /// If this is not followed, shotover's invariants will still be upheld but shotover will communicate with a
     /// node outside of the specified data_center and rack.
     pub first_contact_points: Vec<String>,
-    pub data_center: String,
-    pub rack: String,
-    pub host_id: Uuid,
-    pub shotover_peers: Vec<ShotoverPeer>,
+    pub local_shotover_host_id: Uuid,
+    pub shotover_nodes: Vec<ShotoverNode>,
     pub tls: Option<TlsConnectorConfig>,
     pub read_timeout: Option<u64>,
 }
@@ -47,13 +45,24 @@ pub struct CassandraSinkClusterConfig {
 impl CassandraSinkClusterConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+        let mut shotover_nodes = self.shotover_nodes.clone();
+        let index = self
+            .shotover_nodes
+            .iter()
+            .position(|x| x.host_id == self.local_shotover_host_id)
+            .ok_or_else(|| {
+                anyhow!(
+                    "local host_id {} was missing in shotover_nodes",
+                    self.local_shotover_host_id
+                )
+            })?;
+        let local_node = shotover_nodes.remove(index);
+
         Ok(Transforms::CassandraSinkCluster(CassandraSinkCluster::new(
             self.first_contact_points.clone(),
-            self.shotover_peers.clone(),
+            shotover_nodes,
             chain_name,
-            self.data_center.clone(),
-            self.rack.clone(),
-            self.host_id,
+            local_node,
             tls,
             self.read_timeout,
         )))
@@ -61,7 +70,7 @@ impl CassandraSinkClusterConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct ShotoverPeer {
+pub struct ShotoverNode {
     pub address: SocketAddr,
     pub data_center: String,
     pub rack: String,
@@ -70,7 +79,7 @@ pub struct ShotoverPeer {
 
 pub struct CassandraSinkCluster {
     contact_points: Vec<String>,
-    shotover_peers: Vec<ShotoverPeer>,
+    shotover_peers: Vec<ShotoverNode>,
     init_handshake_connection: Option<CassandraConnection>,
     init_handshake: Vec<Message>,
     init_handshake_address: Option<SocketAddr>,
@@ -84,9 +93,7 @@ pub struct CassandraSinkCluster {
     local_table: FQName,
     peers_table: FQName,
     peers_v2_table: FQName,
-    data_center: String,
-    rack: String,
-    host_id: Uuid,
+    local_shotover_node: ShotoverNode,
     /// A local clone of topology_task_nodes
     /// Internally stores connections to the nodes
     local_nodes: Vec<CassandraNode>,
@@ -115,9 +122,7 @@ impl Clone for CassandraSinkCluster {
             local_table: self.local_table.clone(),
             peers_table: self.peers_table.clone(),
             peers_v2_table: self.peers_v2_table.clone(),
-            data_center: self.data_center.clone(),
-            rack: self.rack.clone(),
-            host_id: self.host_id,
+            local_shotover_node: self.local_shotover_node.clone(),
             local_nodes: vec![],
             topology_task_nodes: self.topology_task_nodes.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
@@ -130,11 +135,9 @@ impl CassandraSinkCluster {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         contact_points: Vec<String>,
-        shotover_peers: Vec<ShotoverPeer>,
+        shotover_peers: Vec<ShotoverNode>,
         chain_name: String,
-        data_center: String,
-        rack: String,
-        host_id: Uuid,
+        local_shotover_node: ShotoverNode,
         tls: Option<TlsConnector>,
         timeout: Option<u64>,
     ) -> CassandraSinkCluster {
@@ -148,7 +151,7 @@ impl CassandraSinkCluster {
             tls.clone(),
             nodes_shared.clone(),
             task_handshake_rx,
-            data_center.clone(),
+            local_shotover_node.data_center.clone(),
         );
 
         CassandraSinkCluster {
@@ -167,9 +170,7 @@ impl CassandraSinkCluster {
             local_table: FQName::new("system", "local"),
             peers_table: FQName::new("system", "peers"),
             peers_v2_table: FQName::new("system", "peers_v2"),
-            data_center,
-            rack,
-            host_id,
+            local_shotover_node,
             local_nodes: vec![],
             topology_task_nodes: nodes_shared,
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
@@ -193,11 +194,7 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
 }
 
 impl CassandraSinkCluster {
-    async fn send_message(
-        &mut self,
-        mut messages: Messages,
-        local_addr: SocketAddr,
-    ) -> ChainResponse {
+    async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
         // Attempt to populate nodes list if we still dont have one yet
         if self.local_nodes.is_empty() {
             let nodes_shared = self.topology_task_nodes.read().await;
@@ -352,8 +349,7 @@ impl CassandraSinkCluster {
         }
 
         for table_to_rewrite in tables_to_rewrite {
-            self.rewrite_table(table_to_rewrite, local_addr, &mut responses)
-                .await?;
+            self.rewrite_table(table_to_rewrite, &mut responses).await?;
         }
 
         Ok(responses)
@@ -390,7 +386,6 @@ impl CassandraSinkCluster {
     async fn rewrite_table(
         &mut self,
         table: TableToRewrite,
-        local_addr: SocketAddr,
         responses: &mut Vec<Message>,
     ) -> Result<()> {
         if table.index + 1 < responses.len() {
@@ -398,7 +393,7 @@ impl CassandraSinkCluster {
             match table.ty {
                 RewriteTableTy::Local => {
                     if let Some(local_response) = responses.get_mut(table.index) {
-                        self.rewrite_table_local(table, local_addr, local_response, peers_response)
+                        self.rewrite_table_local(table, local_response, peers_response)
                             .await?;
                         local_response.invalidate_cache();
                     }
@@ -565,12 +560,14 @@ impl CassandraSinkCluster {
     async fn rewrite_table_local(
         &mut self,
         table: TableToRewrite,
-        local_address: SocketAddr,
         local_response: &mut Message,
         peers_response: Message,
     ) -> Result<()> {
         let mut peers = parse_system_nodes(peers_response)?;
-        peers.retain(|node| node.data_center == self.data_center && node.rack == self.rack);
+        peers.retain(|node| {
+            node.data_center == self.local_shotover_node.data_center
+                && node.rack == self.local_shotover_node.rack
+        });
 
         let mut release_version_alias = "release_version";
         let mut tokens_alias = "tokens";
@@ -622,17 +619,18 @@ impl CassandraSinkCluster {
                     for (col, col_meta) in row.iter_mut().zip(metadata.col_specs.iter()) {
                         if col_meta.name == rack_alias {
                             if let MessageValue::Varchar(rack) = col {
-                                is_in_rack = rack == &self.rack;
+                                is_in_rack = rack == &self.local_shotover_node.rack;
                                 if !is_in_rack {
-                                    *rack = self.rack.clone();
+                                    *rack = self.local_shotover_node.rack.clone();
                                     tracing::warn!("A contact point node is not in the configured rack, this node will receive traffic from outside of its rack");
                                 }
                             }
                         } else if col_meta.name == data_center_alias {
                             if let MessageValue::Varchar(data_center) = col {
-                                is_in_data_center = data_center == &self.data_center;
+                                is_in_data_center =
+                                    data_center == &self.local_shotover_node.data_center;
                                 if !is_in_data_center {
-                                    *data_center = self.data_center.clone();
+                                    *data_center = self.local_shotover_node.data_center.clone();
                                     tracing::warn!("A contact point node is not in the configured data_center, this node will receive traffic from outside of its data_center");
                                 }
                             }
@@ -686,11 +684,11 @@ impl CassandraSinkCluster {
                             || col_meta.name == listen_address_alias
                         {
                             if let MessageValue::Inet(address) = col {
-                                *address = local_address.ip();
+                                *address = self.local_shotover_node.address.ip();
                             }
                         } else if col_meta.name == host_id_alias {
                             if let MessageValue::Uuid(host_id) = col {
-                                *host_id = self.host_id;
+                                *host_id = self.local_shotover_node.host_id;
                             }
                         }
                     }
@@ -1032,8 +1030,7 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>> {
 #[async_trait]
 impl Transform for CassandraSinkCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        self.send_message(message_wrapper.messages, message_wrapper.local_addr)
-            .await
+        self.send_message(message_wrapper.messages).await
     }
 
     fn is_terminating(&self) -> bool {
