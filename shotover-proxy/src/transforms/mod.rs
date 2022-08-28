@@ -77,7 +77,7 @@ pub mod util;
 #[derive(Clone, IntoStaticStr)]
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
-    CassandraSinkCluster(CassandraSinkCluster),
+    CassandraSinkCluster(Box<CassandraSinkCluster>),
     RedisSinkSingle(RedisSinkSingle),
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),

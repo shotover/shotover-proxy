@@ -58,7 +58,7 @@ pub struct TlsConnectorConfig {
     pub private_key_path: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TlsConnector {
     connector: Arc<SslConnector>,
 }
