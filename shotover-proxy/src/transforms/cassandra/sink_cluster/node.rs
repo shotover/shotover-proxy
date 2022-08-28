@@ -18,13 +18,13 @@ pub struct CassandraNode {
 impl CassandraNode {
     pub async fn get_connection(
         &mut self,
-        handshake: &[Message],
-        tls: &Option<TlsConnector>,
-        pushed_messages_tx: &Option<mpsc::UnboundedSender<Messages>>,
+        connection_factory: &ConnectionFactory,
     ) -> Result<&mut CassandraConnection> {
         if self.outbound.is_none() {
             self.outbound = Some(
-                new_connection((self.address, 9042), handshake, tls, pushed_messages_tx).await?,
+                connection_factory
+                    .new_connection((self.address, 9042))
+                    .await?,
             )
         }
 
@@ -32,25 +32,86 @@ impl CassandraNode {
     }
 }
 
-pub async fn new_connection<A: ToSocketAddrs>(
-    address: A,
-    handshake: &[Message],
-    tls: &Option<TlsConnector>,
-    pushed_messages_tx: &Option<mpsc::UnboundedSender<Messages>>,
-) -> Result<CassandraConnection> {
-    let outbound = CassandraConnection::new(
-        address,
-        CassandraCodec::new(),
-        tls.clone(),
-        pushed_messages_tx.clone(),
-    )
-    .await?;
+#[derive(Debug)]
+pub struct ConnectionFactory {
+    init_handshake: Vec<Message>,
+    use_message: Option<Message>,
+    tls: Option<TlsConnector>,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+}
 
-    for handshake_message in handshake {
-        let (return_chan_tx, return_chan_rx) = oneshot::channel();
-        outbound.send(handshake_message.clone(), return_chan_tx)?;
-        return_chan_rx.await?;
+impl Clone for ConnectionFactory {
+    fn clone(&self) -> Self {
+        Self {
+            init_handshake: self.init_handshake.clone(),
+            use_message: None,
+            tls: self.tls.clone(),
+            pushed_messages_tx: None,
+        }
+    }
+}
+
+impl ConnectionFactory {
+    pub fn new(tls: Option<TlsConnector>) -> Self {
+        Self {
+            init_handshake: vec![],
+            use_message: None,
+            tls,
+            pushed_messages_tx: None,
+        }
     }
 
-    Ok(outbound)
+    /// For when you want to clone the config options for creating new connections but none of the state.
+    /// When the transform chain is cloned for a new incoming connection, this method should be used so the state doesn't also get cloned to
+    /// the new connection as aswell.
+    pub fn new_with_same_config(&self) -> Self {
+        Self {
+            init_handshake: vec![],
+            use_message: None,
+            tls: self.tls.clone(),
+            pushed_messages_tx: None,
+        }
+    }
+
+    pub async fn new_connection<A: ToSocketAddrs>(
+        &self,
+        address: A,
+    ) -> Result<CassandraConnection> {
+        let outbound = CassandraConnection::new(
+            address,
+            CassandraCodec::new(),
+            self.tls.clone(),
+            self.pushed_messages_tx.clone(),
+        )
+        .await?;
+
+        for handshake_message in &self.init_handshake {
+            let (return_chan_tx, return_chan_rx) = oneshot::channel();
+            outbound.send(handshake_message.clone(), return_chan_tx)?;
+            return_chan_rx.await?;
+        }
+
+        if let Some(use_message) = &self.use_message {
+            let (return_chan_tx, return_chan_rx) = oneshot::channel();
+            outbound.send(use_message.clone(), return_chan_tx)?;
+            return_chan_rx.await?;
+        }
+
+        Ok(outbound)
+    }
+
+    pub fn push_handshake_message(&mut self, message: Message) {
+        self.init_handshake.push(message);
+    }
+
+    /// Add a USE statement to the handshake ensures that any new connection
+    /// created will have the correct keyspace setup.
+    // Existing USE statements should be discarded as we are changing keyspaces
+    pub fn set_use_message(&mut self, message: Message) {
+        self.use_message = Some(message);
+    }
+
+    pub fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
+        self.pushed_messages_tx = Some(pushed_messages_tx);
+    }
 }
