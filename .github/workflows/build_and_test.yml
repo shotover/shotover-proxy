@@ -1,4 +1,4 @@
-name: Testing
+name: Build and Test
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 # Cancel already running jobs
 concurrency:
-  group: testing_${{ github.head_ref }}
+  group: build_and_test_${{ github.head_ref }}
   cancel-in-progress: true
 
 env:
@@ -60,32 +60,3 @@ jobs:
           git status
           exit 1
         fi
-
-  # We purposefully dont cache here as build_and_test takes far longer
-  # so we should leave the cache alone so build_and_test can make more use of it.
-  build_only:
-    strategy:
-      matrix:
-        include:
-          - name: Ubuntu 22.04 - Debug - x86_64
-            runner: ubuntu-22.04
-            cargo_flags:
-          - name: Ubuntu 22.04 - Debug - aarch64
-            runner: ubuntu-22.04
-            cargo_flags: --target aarch64-unknown-linux-gnu
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - name: Install cargo-hack
-        run: cargo install cargo-hack --version 0.5.8
-      - name: Ensure that all crates compile and have no warnings under every possible combination of features
-        # some things to explicitly point out:
-        # * clippy also reports rustc warnings and errors
-        # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
-        run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_flags }} -- -D warnings
-
-  license_check:
-    name: License Check
-      run: |
-        cargo install --locked cargo-deny
-        cargo deny check licenses
