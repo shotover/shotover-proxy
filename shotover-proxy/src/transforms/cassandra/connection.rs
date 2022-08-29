@@ -1,8 +1,6 @@
+use crate::codec::cassandra::CassandraCodec;
 use crate::frame::cassandra;
 use crate::message::Message;
-use crate::server::Codec;
-use crate::server::CodecReadHalf;
-use crate::server::CodecWriteHalf;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
 use crate::transforms::Messages;
@@ -36,9 +34,9 @@ pub struct CassandraConnection {
 }
 
 impl CassandraConnection {
-    pub async fn new<C: Codec + 'static, A: ToSocketAddrs>(
+    pub async fn new<A: ToSocketAddrs>(
         host: A,
-        codec: C,
+        codec: CassandraCodec,
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
@@ -82,11 +80,11 @@ impl CassandraConnection {
     }
 }
 
-async fn tx_process<C: CodecWriteHalf, T: AsyncWrite>(
+async fn tx_process<T: AsyncWrite>(
     write: WriteHalf<T>,
     out_rx: mpsc::UnboundedReceiver<Request>,
     return_tx: mpsc::UnboundedSender<Request>,
-    codec: C,
+    codec: CassandraCodec,
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
@@ -98,10 +96,10 @@ async fn tx_process<C: CodecWriteHalf, T: AsyncWrite>(
     Ok(())
 }
 
-async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
+async fn rx_process<T: AsyncRead>(
     read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<Request>,
-    codec: C,
+    codec: CassandraCodec,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 ) -> Result<()> {
     let mut in_r = FramedRead::new(read, codec);
