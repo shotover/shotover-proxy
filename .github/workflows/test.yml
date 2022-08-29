@@ -16,19 +16,17 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build:
+  build_and_test:
     strategy:
       matrix:
         include:
+          # the cassandra cpp driver is only supported on 18.04
           - name: Ubuntu 18.04 - Release
             runner: ubuntu-18.04
-            cargo_profile: --release
+            cargo_flags: --release
           - name: Ubuntu 18.04 - Debug
             runner: ubuntu-18.04
-            cargo_profile:
-          - name: Ubuntu 20.04 - Debug
-            runner: ubuntu-20.04
-            cargo_profile:
+            cargo_flags:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     steps:
@@ -50,11 +48,9 @@ jobs:
       # some things to explicitly point out:
       # * clippy also reports rustc warnings and errors
       # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
-      run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_profile }} -- -D warnings
+      run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_flags }} -- -D warnings
     - name: Ensure that tests pass
-      run: cargo test ${{ matrix.cargo_profile }} --all-features -- --include-ignored --show-output --nocapture
-      # can not run tests if cpp driver not installed
-      if: ${{ matrix.runner == 'ubuntu-18.04' }}
+      run: cargo test ${{ matrix.cargo_flags }} --all-features -- --include-ignored --show-output --nocapture
     - name: Ensure that custom benches run
       run: cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough --rate 1000
       if: ${{ matrix.name == 'Ubuntu 18.04 - Release' }}
@@ -64,8 +60,32 @@ jobs:
           git status
           exit 1
         fi
-    - name: License Check
+
+  # We purposefully dont cache here as build_and_test takes far longer
+  # so we should leave the cache alone so build_and_test can make more use of it.
+  build_only:
+    strategy:
+      matrix:
+        include:
+          - name: Ubuntu 22.04 - Debug - x86_64
+            runner: ubuntu-22.04
+            cargo_flags:
+          - name: Ubuntu 22.04 - Debug - aarch64
+            runner: ubuntu-22.04
+            cargo_flags: --target aarch64-unknown-linux-gnu
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --version 0.5.8
+      - name: Ensure that all crates compile and have no warnings under every possible combination of features
+        # some things to explicitly point out:
+        # * clippy also reports rustc warnings and errors
+        # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
+        run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_flags }} -- -D warnings
+
+  license_check:
+    name: License Check
       run: |
         cargo install --locked cargo-deny
         cargo deny check licenses
-      if: ${{ matrix.name == 'Ubuntu 20.04 - Debug' }}
