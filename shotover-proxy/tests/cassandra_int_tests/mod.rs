@@ -17,9 +17,7 @@ use tokio::time::{sleep, timeout, Duration};
 
 mod batch_statements;
 mod cache;
-#[cfg(feature = "alpha-transforms")]
 mod cluster;
-#[cfg(feature = "alpha-transforms")]
 mod cluster_multi_rack;
 mod collections;
 mod functions;
@@ -90,7 +88,6 @@ async fn test_source_tls_and_single_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-#[cfg(feature = "alpha-transforms")]
 async fn test_cluster_single_rack() {
     let _compose = DockerCompose::new("example-configs/cassandra-cluster/docker-compose.yml");
 
@@ -124,12 +121,25 @@ async fn test_cluster_single_rack() {
         native_types::test(&connection2).await;
     }
 
+    {
+        let shotover_manager = ShotoverManager::from_topology_file(
+            "example-configs/cassandra-cluster/topology-dummy-peers.yaml",
+        );
+
+        let mut connection = shotover_manager
+            .cassandra_connection("127.0.0.1", 9042)
+            .await;
+        connection
+            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .await;
+        cluster::test_dummy_peers(&connection).await;
+    }
+
     cluster::test_topology_task(None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-#[cfg(feature = "alpha-transforms")]
 async fn test_cluster_multi_rack() {
     let _compose =
         DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yml");
@@ -176,7 +186,6 @@ async fn test_cluster_multi_rack() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-#[cfg(feature = "alpha-transforms")]
 async fn test_source_tls_and_cluster_tls() {
     test_helpers::cert::generate_cassandra_test_certs();
     let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";

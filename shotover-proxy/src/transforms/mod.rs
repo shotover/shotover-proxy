@@ -3,7 +3,6 @@ use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
 use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
-#[cfg(feature = "alpha-transforms")]
 use crate::transforms::cassandra::sink_cluster::CassandraSinkClusterConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::TransformChain;
@@ -78,7 +77,7 @@ pub mod util;
 #[derive(Clone, IntoStaticStr)]
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
-    CassandraSinkCluster(CassandraSinkCluster),
+    CassandraSinkCluster(Box<CassandraSinkCluster>),
     RedisSinkSingle(RedisSinkSingle),
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),
@@ -294,7 +293,6 @@ impl Transforms {
 #[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
     CassandraSinkSingle(CassandraSinkSingleConfig),
-    #[cfg(feature = "alpha-transforms")]
     CassandraSinkCluster(CassandraSinkClusterConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
     CassandraPeersRewrite(CassandraPeersRewriteConfig),
@@ -327,7 +325,6 @@ impl TransformsConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
-            #[cfg(feature = "alpha-transforms")]
             TransformsConfig::CassandraSinkCluster(c) => c.get_transform(chain_name).await,
             TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
             TransformsConfig::RedisCache(r) => r.get_transform().await,

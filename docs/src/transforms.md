@@ -26,6 +26,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 
 | Transform                                             | Terminating | Implementation Status |
 |-------------------------------------------------------|-------------|-----------------------|
+| [CassandraSinkCluster](#cassandrasinkcluster)         | ✅          | Beta                  |
 | [CassandraSinkSingle](#cassandrasinksingle)           | ✅          | Alpha                 |
 | [CassandraPeersRewrite](#cassandrapeersrewrite)       | ❌          | Alpha                 |
 | [Coalesce](#coalesce)                                 | ❌          | Alpha                 |
@@ -46,14 +47,64 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [RequestThrottling](#requestthrottling)               |❌           | Alpha                 |
 <!--| [DebugRandomDelay](#debugrandomdelay)                 | ❌          | Alpha                 |-->
 
-### CassandraSinkSingle
+### CassandraSinkCluster
 
-This transform will take a query, serialise it into a CQL4 compatible format and send to the Cassandra compatible database at the defined address.
+This transform will route Cassandra messages to a node within a Cassandra cluster based on:
+
+* a configured `data_center` and `rack`
+* token aware routing
+
+The fact that Shotover is routing to multiple destination nodes will be hidden from the client.
+Instead shotover will pretend to be either a single cassandra node or part of a cluster of cassandra nodes consisting entirely of shotover instances.
+
+This is achieved by rewriting `system.local` and `system.peers`/`system.peers_v2` query results.
+The `system.local` will make Shotover appear to be its own node.
+While `system.peers`/`system.peers_v2` will be rewritten to list the configured Shotover peers as the only other nodes in the cluster.
 
 ```yaml
-- CassandraSinkSingle:
-    # The IP address and port of the upstream cassandra node/service.
-    remote_address: "127.0.0.1:9042"
+- CassandraSinkCluster:
+    # contact points must be within the configured data_center and rack.
+    # If this is not followed, Shotover will still function correctly but Shotover will communicate with a
+    # node outside of the specified data_center and rack.
+    first_contact_points: ["172.16.1.2:9042", "172.16.1.3:9042"]
+
+    # A list of every Shotover node that will be proxying to the same Cassandra cluster.
+    # This field should be identical for all Shotover nodes proxying to the same Cassandra cluster.
+    shotover_nodes:
+        # Address of the Shotover node.
+        # This is usually the same address as the Shotover source that is connected to this sink.
+        # But it may be different if you want Shotover to report a different address.
+      - address: "127.0.0.1:9042"
+        # The data_center this Shotover node will report as and route messages to.
+        # For performance reasons, Shotover should be physically located in this data_center.
+        data_center: "dc1"
+        # The rack this Shotover node will report as and route messages to.
+        # For performance reasons, Shotover should be physically located in this rack.
+        rack: "rack1"
+        # The host_id that Shotover will report as.
+        # Does not affect message routing.
+        # Make sure to set this to a unique value for each Shotover node, maybe copy one from: https://wasteaguid.info
+        host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
+
+      # If you only have a single Shotover instance then you only want a single node.
+      # Otherwise if you have multiple Shotover instances then add more nodes e.g.
+      #- address: "127.0.0.2:9042"
+      #  data_center: "dc1"
+      #  rack: "rack2"
+      #  host_id: "3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4"
+      #- address: "127.0.0.3:9042"
+      #  data_center: "dc2"
+      #  rack: "rack1"
+      #  host_id: "fa74d7ec-1223-472b-97de-04a32ccdb70b"
+
+    # Defines which entry in shotover_nodes this Shotover instance will become.
+    # This affects:
+    # * the shotover_nodes data_center and rack fields are used for routing messages
+    #     + Shotover will never route messages outside of the specified data_center
+    #     + Shotover will always prefer to route messages to the specified rack
+    #         but may route outside of the rack when nodes in the rack are unreachable
+    # * which shotover_nodes entry is included in system.local and excluded from system.peers
+    local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
@@ -71,7 +122,34 @@ This transform will take a query, serialise it into a CQL4 compatible format and
   # read_timeout: 60
 ```
 
-Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.
+This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkCluster` and `chain` as the name of the chain that this transform is in.
+
+### CassandraSinkSingle
+
+This transform will send/receive Cassandra messages to a single Cassandra node.
+This will just pass the query directly to the remote node.
+No cluster discovery or routing occurs with this transform.
+
+```yaml
+- CassandraSinkSingle:
+    # The IP address and port of the upstream Cassandra node/service.
+    remote_address: "127.0.0.1:9042"
+
+    # When this field is provided TLS is used when connecting to the remote address.
+    # Removing this field will disable TLS.
+    #tls:
+    #  # Path to the certificate authority file, typically named with a .crt extension.
+    #  certificate_authority_path: "tls/localhost_CA.crt"
+    #  # Path to the certificate file, typically named with a .crt extension.
+    #  certificate_path: "tls/localhost.crt"
+    #  # Path to the private key file, typically named with a .key extension.
+    #  private_key_path: "tls/localhost.key"
+
+  # Timeout in seconds after which to give up waiting for a response from the destination.
+  # This field is optional, if not provided, timeout will never occur.
+  # When a timeout occurs the connection to the client is immediately closed.
+  # read_timeout: 60
+```
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `failed_requests` and the labels `transform` defined as `CassandraSinkSingle` and `chain` as the name of the chain that this transform is in.
 
