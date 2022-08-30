@@ -153,7 +153,7 @@ async fn rx_process_fallible<T: AsyncRead>(
                         }
                     }
                     Err(e) => {
-                        return Err(e.context("Encountered error while communicating with destination cassandra node"));
+                        return Err(anyhow!("{:?}", e).context("Encountered error while communicating with destination cassandra node"));
                     }
                 }
             },

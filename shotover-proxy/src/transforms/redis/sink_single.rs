@@ -3,6 +3,7 @@ use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::{Message, Messages};
+use crate::server::CodecReadError;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Context, Result};
@@ -213,7 +214,7 @@ async fn server_response_processing_task(
 
 /// returns true when the task should shutdown
 async fn process_server_response(
-    responses: Option<Result<Messages>>,
+    responses: Option<Result<Messages, CodecReadError>>,
     subscribe_tx: &Option<mpsc::UnboundedSender<Messages>>,
     response_messages_tx: &mpsc::UnboundedSender<Message>,
     is_subscribed: &mut bool,

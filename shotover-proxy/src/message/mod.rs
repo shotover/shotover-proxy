@@ -53,7 +53,6 @@ pub struct Message {
     /// It is an invariant that this field must remain Some at all times.
     /// The only reason it is an Option is to allow temporarily taking ownership of the value from an &mut T
     inner: Option<MessageInner>,
-    pub return_to_sender: bool,
 
     // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of ConsistentScatter
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
@@ -71,7 +70,6 @@ impl Message {
                 bytes,
                 message_type,
             }),
-            return_to_sender: false,
             meta_timestamp: None,
         }
     }
@@ -82,7 +80,6 @@ impl Message {
     pub fn from_bytes_and_frame(bytes: Bytes, frame: Frame) -> Self {
         Message {
             inner: Some(MessageInner::Parsed { bytes, frame }),
-            return_to_sender: false,
             meta_timestamp: None,
         }
     }
@@ -93,7 +90,6 @@ impl Message {
     pub fn from_frame(frame: Frame) -> Self {
         Message {
             inner: Some(MessageInner::Modified { frame }),
-            return_to_sender: false,
             meta_timestamp: None,
         }
     }
