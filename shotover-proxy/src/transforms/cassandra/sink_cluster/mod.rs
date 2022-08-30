@@ -774,7 +774,7 @@ async fn topology_task_process(
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(
-                    "SELECT listen_address, rack, data_center, tokens FROM system.local",
+                    "SELECT broadcast_address, rack, data_center, tokens FROM system.local",
                 )),
                 params: Box::new(QueryParams::default()),
             },
