@@ -39,7 +39,6 @@ use anyhow::Result;
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use core::fmt;
-use core::fmt::Display;
 use futures::Future;
 use metrics::{counter, histogram};
 use serde::Deserialize;
@@ -398,12 +397,6 @@ impl<'a> Clone for Wrapper<'a> {
             local_addr: self.local_addr,
             flush: false,
         }
-    }
-}
-
-impl<'a> Display for Wrapper<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!("{:#?}", self.messages))
     }
 }
 
