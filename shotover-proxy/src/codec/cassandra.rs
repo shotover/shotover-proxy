@@ -70,6 +70,26 @@ impl Decoder for CassandraCodec {
                         pretty_hex::pretty_hex(&bytes)
                     );
 
+                    // TODO: Delete this block when we add protocol v5 support to shotover.
+                    if let Ok(Version::V5) = Version::try_from(bytes[0]) {
+                        self.force_close =
+                            Some("Received frame with unsupported protocol v5".into());
+
+                        let mut message = Message::from_frame(Frame::Cassandra(CassandraFrame {
+                            version: Version::V4,
+                            stream_id: 0,
+                            operation: CassandraOperation::Error(ErrorBody {
+                                error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
+                                message: "Invalid or unsupported protocol version".into(),
+                                additional_info: AdditionalErrorInfo::Server,
+                            }),
+                            tracing_id: None,
+                            warnings: vec![],
+                        }));
+                        message.return_to_sender = true;
+                        return Ok(Some(vec![message]));
+                    }
+
                     self.messages
                         .push(Message::from_bytes(bytes.freeze(), MessageType::Cassandra));
                 }
@@ -84,7 +104,7 @@ impl Decoder for CassandraCodec {
                     // if we got an error force the close on the next read.
                     // We can not immediately close as we are gong to queue a message
                     // back to the client and we have to allow time for the message
-                    // to be sent.  We can not reuse the connection as it may/does contain excess
+                    // to be sent. We can not reuse the connection as it may contain excess
                     // data from the failed parse.
                     self.force_close = Some(format!(
                         "Received frame with unknown protocol version: {}",
