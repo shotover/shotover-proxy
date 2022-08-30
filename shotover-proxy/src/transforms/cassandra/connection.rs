@@ -1,8 +1,6 @@
+use crate::codec::cassandra::CassandraCodec;
 use crate::frame::cassandra;
 use crate::message::Message;
-use crate::server::Codec;
-use crate::server::CodecReadHalf;
-use crate::server::CodecWriteHalf;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
 use crate::transforms::Messages;
@@ -19,7 +17,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{info, Instrument};
+use tracing::{error, Instrument};
 
 /// Represents a `Request` to a `CassandraConnection`
 #[derive(Debug)]
@@ -36,9 +34,9 @@ pub struct CassandraConnection {
 }
 
 impl CassandraConnection {
-    pub async fn new<C: Codec + 'static, A: ToSocketAddrs>(
+    pub async fn new<A: ToSocketAddrs>(
         host: A,
-        codec: C,
+        codec: CassandraCodec,
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
@@ -82,11 +80,22 @@ impl CassandraConnection {
     }
 }
 
-async fn tx_process<C: CodecWriteHalf, T: AsyncWrite>(
+async fn tx_process<T: AsyncWrite>(
     write: WriteHalf<T>,
     out_rx: mpsc::UnboundedReceiver<Request>,
     return_tx: mpsc::UnboundedSender<Request>,
-    codec: C,
+    codec: CassandraCodec,
+) {
+    if let Err(err) = tx_process_fallible(write, out_rx, return_tx, codec).await {
+        error!("{:?}", err.context("tx_process task terminated"));
+    }
+}
+
+async fn tx_process_fallible<T: AsyncWrite>(
+    write: WriteHalf<T>,
+    out_rx: mpsc::UnboundedReceiver<Request>,
+    return_tx: mpsc::UnboundedSender<Request>,
+    codec: CassandraCodec,
 ) -> Result<()> {
     let in_w = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
@@ -98,23 +107,34 @@ async fn tx_process<C: CodecWriteHalf, T: AsyncWrite>(
     Ok(())
 }
 
-async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
+async fn rx_process<T: AsyncRead>(
+    read: ReadHalf<T>,
+    return_rx: mpsc::UnboundedReceiver<Request>,
+    codec: CassandraCodec,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+) {
+    if let Err(err) = rx_process_fallible(read, return_rx, codec, pushed_messages_tx).await {
+        error!("{:?}", err.context("rx_process task terminated"));
+    }
+}
+
+async fn rx_process_fallible<T: AsyncRead>(
     read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<Request>,
-    codec: C,
+    codec: CassandraCodec,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 ) -> Result<()> {
-    let mut in_r = FramedRead::new(read, codec);
+    let mut reader = FramedRead::new(read, codec);
     let mut return_channel_map: HashMap<i16, (oneshot::Sender<Response>, Message)> = HashMap::new();
 
     let mut return_message_map: HashMap<i16, Message> = HashMap::new();
 
     loop {
         tokio::select! {
-            Some(maybe_req) = in_r.next() => {
-                match maybe_req {
-                    Ok(req) => {
-                        for m in req {
+            Some(response) = reader.next() => {
+                match response {
+                    Ok(response) => {
+                        for m in response {
                             if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(m.as_raw_bytes().unwrap()) {
                                 if let Some(ref pushed_messages_tx) = pushed_messages_tx {
                                     pushed_messages_tx.send(vec![m]).unwrap();
@@ -125,7 +145,7 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                                         return_message_map.insert(stream_id, m);
                                     },
                                     Some((return_tx, original)) => {
-                                        return_tx.send(Response {original, response: Ok(m) })
+                                        return_tx.send(Response { original, response: Ok(m) })
                                             .map_err(|_| anyhow!("couldn't send message"))?;
                                     }
                                 }
@@ -133,13 +153,12 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                         }
                     }
                     Err(e) => {
-                        info!("Couldn't decode message from upstream host {:?}", e);
-                        return Err(anyhow!("Couldn't decode message from upstream host {:?}", e));
+                        return Err(e.context("Encountered error while communicating with destination cassandra node"));
                     }
                 }
             },
             Some(original_request) = return_rx.recv() => {
-                let Request { message, return_chan, message_id} = original_request;
+                let Request { message, return_chan, message_id } = original_request;
                 match return_message_map.remove(&message_id) {
                     None => {
                         return_channel_map.insert(message_id, (return_chan, message));
@@ -151,11 +170,10 @@ async fn rx_process<C: CodecReadHalf, T: AsyncRead>(
                 };
             },
             else => {
-                break
+                return Ok(())
             }
         }
     }
-    Ok(())
 }
 
 pub async fn receive(
