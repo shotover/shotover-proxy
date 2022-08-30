@@ -297,10 +297,34 @@ impl BenchResources {
     }
 
     fn setup(&self) {
-        self.connection.as_datastax().execute(&stmt!("CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };")).wait().unwrap();
-        self.connection.as_datastax().execute(&stmt!("CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);")).wait().unwrap();
-        self.connection.as_datastax().execute(
-            &stmt!("INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'initial value');"),
-        ).wait().unwrap();
+        let create_keyspace = stmt!(
+            "CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+        );
+
+        let create_table = stmt!(
+            "CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);"
+        );
+
+        let insert = stmt!(
+            "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'initial value');"
+        );
+
+        self.connection
+            .as_datastax()
+            .execute(&create_keyspace)
+            .wait()
+            .unwrap();
+
+        self.connection
+            .as_datastax()
+            .execute(&create_table)
+            .wait()
+            .unwrap();
+
+        self.connection
+            .as_datastax()
+            .execute(&insert)
+            .wait()
+            .unwrap();
     }
 }

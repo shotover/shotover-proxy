@@ -1,4 +1,4 @@
-#![cfg(feature = "cpp-driver-tests")]
+#![cfg(feature = "cassandra-cpp-driver-tests")]
 use crate::helpers::cassandra::{
     assert_query_result, CassandraConnection, CassandraDriver, ResultValue,
 };

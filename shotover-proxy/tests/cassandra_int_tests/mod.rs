@@ -1,15 +1,15 @@
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 use crate::helpers::cassandra::{
     assert_query_result, run_query, CassandraDriver::Datastax, ResultValue,
 };
 use crate::helpers::cassandra::{CassandraDriver, CassandraDriver::CdrsTokio};
 use crate::helpers::ShotoverManager;
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 use cassandra_cpp::{Error, ErrorKind};
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 use futures::future::{join_all, try_join_all};
 use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
@@ -19,11 +19,10 @@ use tokio::time::{sleep, timeout, Duration};
 
 mod batch_statements;
 mod cache;
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 mod cluster;
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 mod cluster_multi_rack;
-//mod collections;
 mod cluster_single_rack_v3;
 mod cluster_single_rack_v4;
 mod collections;
@@ -31,7 +30,7 @@ mod functions;
 mod keyspace;
 mod native_types;
 mod prepared_statements;
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 mod protect;
 mod table;
@@ -39,7 +38,7 @@ mod udt;
 
 #[rstest]
 #[case(CdrsTokio)]
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough(#[case] driver: CassandraDriver) {
@@ -54,16 +53,16 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
     table::test(&connection).await;
     udt::test(&connection).await;
     native_types::test(&connection).await;
-    //collections::test(&connection).await;
+    collections::test(&connection, driver).await;
     functions::test(&connection).await;
     prepared_statements::test(&connection).await;
     batch_statements::test(&connection).await;
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
@@ -92,17 +91,16 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
     table::test(&connection).await;
     udt::test(&connection).await;
     native_types::test(&connection).await;
-    // collections::test(&connection);
+    collections::test(&connection, driver).await;
     functions::test(&connection).await;
     prepared_statements::test(&connection).await;
     batch_statements::test(&connection).await;
 }
 
-#[cfg(feature = "cpp-driver-tests")]
-#[cfg(feature = "alpha-transforms")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_single_rack_v3() {
@@ -159,7 +157,7 @@ async fn test_cluster_single_rack_v4() {
         table::test(&connection1).await;
         udt::test(&connection1).await;
         native_types::test(&connection1).await;
-        // collections::test(&connection);
+        collections::test(&connection1, driver).await;
         functions::test(&connection1).await;
         prepared_statements::test(&connection1).await;
         batch_statements::test(&connection1).await;
@@ -188,10 +186,10 @@ async fn test_cluster_single_rack_v4() {
     cluster_single_rack_v4::test_topology_task(None, Some(9044)).await;
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
@@ -217,7 +215,7 @@ async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
         table::test(&connection1).await;
         udt::test(&connection1).await;
         native_types::test(&connection1).await;
-        // collections::test(&connection1).await;
+        collections::test(&connection1, driver).await;
         functions::test(&connection1).await;
         prepared_statements::test(&connection1).await;
         batch_statements::test(&connection1).await;
@@ -234,10 +232,10 @@ async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
     cluster_multi_rack::test_topology_task(None).await;
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
@@ -280,7 +278,7 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 
 #[rstest]
 #[case(CdrsTokio)]
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
@@ -305,11 +303,11 @@ async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
     cache::test(&connection, &mut redis_connection, &snapshotter).await;
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
 // #[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver) {
@@ -326,17 +324,17 @@ async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver)
     table::test(&shotover_connection).await;
     udt::test(&shotover_connection).await;
     native_types::test(&shotover_connection).await;
-    // collections::test(&shotover_connection);
+    collections::test(&shotover_connection, driver).await;
     functions::test(&shotover_connection).await;
     batch_statements::test(&shotover_connection).await;
     protect::test(&shotover_connection, &direct_connection).await;
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_protect_transform_aws(#[case] driver: CassandraDriver) {
@@ -353,16 +351,16 @@ async fn test_cassandra_protect_transform_aws(#[case] driver: CassandraDriver) {
     table::test(&shotover_connection).await;
     udt::test(&shotover_connection).await;
     native_types::test(&shotover_connection).await;
-    // collections::test(&shotover_connection);
+    collections::test(&shotover_connection, driver).await;
     functions::test(&shotover_connection).await;
     batch_statements::test(&shotover_connection).await;
     protect::test(&shotover_connection, &direct_connection).await;
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_peers_rewrite_cassandra4(#[case] driver: CassandraDriver) {
@@ -453,10 +451,10 @@ async fn test_cassandra_peers_rewrite_cassandra4(#[case] driver: CassandraDriver
     }
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver) {
@@ -479,10 +477,10 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
     assert_eq!(result, "unconfigured table peers_v2");
 }
 
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cpp-driver-tests", case(Datastax))]
+#[cfg_attr(feature = "cassandra-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {

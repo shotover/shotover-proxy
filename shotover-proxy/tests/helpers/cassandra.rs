@@ -1,4 +1,4 @@
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
     stmt, Batch, BatchType, CassFuture, CassResult, Cluster, Error, ErrorKind, PreparedStatement,
     Session as DatastaxSession, Ssl, Value, ValueType,
@@ -9,7 +9,7 @@ use cassandra_protocol::types::cassandra_type::{wrapper_fn, CassandraType};
 use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
     cluster::session::{Session as CdrsTokioSession, SessionBuilder, TcpSessionBuilder},
-    cluster::{NodeTcpConfigBuilder, TcpConnectionManager},
+    cluster::{NodeAddress, NodeTcpConfigBuilder, TcpConnectionManager},
     frame::{
         message_response::ResponseBody, message_result::ResResultBody, Envelope, Serialize, Version,
     },
@@ -22,19 +22,19 @@ use cdrs_tokio::{
 use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
 use scylla::{Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
-#[cfg(feature = "cpp-driver-tests")]
+#[cfg(feature = "cassandra-cpp-driver-tests")]
 use std::fs::read_to_string;
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum PreparedQuery {
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax(PreparedStatement),
     CdrsTokio(CdrsTokioPreparedQuery),
 }
 
 impl PreparedQuery {
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     fn as_datastax(&self) -> &PreparedStatement {
         match self {
             PreparedQuery::Datastax(p) => p,
@@ -45,7 +45,7 @@ impl PreparedQuery {
     fn as_cdrs(&self) -> &CdrsTokioPreparedQuery {
         match self {
             PreparedQuery::CdrsTokio(p) => p,
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             _ => panic!("Not PreparedQuery::CdrsTokio"),
         }
     }
@@ -54,7 +54,7 @@ impl PreparedQuery {
 #[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum CassandraDriver {
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax,
     CdrsTokio,
 }
@@ -66,7 +66,7 @@ type CdrsTokioSessionInstance = CdrsTokioSession<
 >;
 
 pub enum CassandraConnection {
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax {
         session: DatastaxSession,
         schema_awaiter: Option<SessionScylla>,
@@ -85,7 +85,7 @@ impl CassandraConnection {
         }
 
         match driver {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             CassandraDriver::Datastax => {
                 let mut cluster = Cluster::default();
                 cluster.set_contact_points(contact_points).unwrap();
@@ -104,9 +104,15 @@ impl CassandraConnection {
                 let user = "cassandra";
                 let password = "cassandra";
                 let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
+
+                let node_addresses = contact_points
+                    .split(',')
+                    .map(|contact_point| NodeAddress::from(format!("{contact_point}:{port}")))
+                    .collect::<Vec<NodeAddress>>();
+
                 let config = futures::executor::block_on(
                     NodeTcpConfigBuilder::new()
-                        .with_contact_point("127.0.0.1:9042".into())
+                        .with_contact_points(node_addresses)
                         .with_authenticator_provider(Arc::new(auth))
                         .build(),
                 )
@@ -132,7 +138,7 @@ impl CassandraConnection {
         }
     }
 
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     #[allow(unused)]
     pub fn as_datastax(&self) -> &DatastaxSession {
         match self {
@@ -149,7 +155,7 @@ impl CassandraConnection {
         driver: CassandraDriver,
     ) -> Self {
         match driver {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             CassandraDriver::Datastax => {
                 let ca_cert = read_to_string(ca_cert_path).unwrap();
                 let mut ssl = Ssl::default();
@@ -203,7 +209,7 @@ impl CassandraConnection {
             context.build()
         });
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { schema_awaiter, .. } => {
                 *schema_awaiter = Some(
                     SessionBuilderScylla::new()
@@ -231,7 +237,7 @@ impl CassandraConnection {
 
     async fn await_schema_agreement(&self) {
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { schema_awaiter, .. } => {
                 if let Some(schema_awaiter) = schema_awaiter {
                     schema_awaiter.await_schema_agreement().await.unwrap();
@@ -248,7 +254,7 @@ impl CassandraConnection {
     #[allow(unused)]
     pub async fn execute(&self, query: &str) -> Vec<Vec<ResultValue>> {
         let result = match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
                 match session.execute(&statement).wait() {
@@ -275,10 +281,10 @@ impl CassandraConnection {
     }
 
     #[allow(unused)]
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     pub fn execute_async(&self, query: &str) -> CassFuture<CassResult> {
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
                 session.execute(&statement)
@@ -290,7 +296,7 @@ impl CassandraConnection {
     #[allow(unused)]
     pub fn execute_expect_err(&self, query: &str) -> String {
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
                 let error = session.execute(&statement).wait().unwrap_err();
@@ -324,7 +330,7 @@ impl CassandraConnection {
     #[allow(unused)]
     pub fn prepare(&self, query: &str) -> PreparedQuery {
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 PreparedQuery::Datastax(session.prepare(query).unwrap().wait().unwrap())
             }
@@ -342,7 +348,7 @@ impl CassandraConnection {
         value: i32,
     ) -> Vec<Vec<ResultValue>> {
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
                 statement.bind_int32(0, value);
@@ -371,7 +377,7 @@ impl CassandraConnection {
     #[allow(unused)]
     pub fn execute_batch(&self, queries: Vec<(String, i32)>) {
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut batch = Batch::new(BatchType::LOGGED);
 
@@ -405,7 +411,7 @@ impl CassandraConnection {
     #[allow(unused)]
     pub fn execute_batch_expect_err(&self, queries: Vec<(String, i32)>) -> String {
         match self {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut batch = Batch::new(BatchType::LOGGED);
                 for (query, value) in queries {
@@ -462,7 +468,7 @@ impl CassandraConnection {
 
 #[derive(Debug, Clone, PartialOrd, Eq, Ord)]
 pub enum ResultValue {
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     Text(String),
     Varchar(String),
     Int(i32),
@@ -498,7 +504,7 @@ pub enum ResultValue {
 impl PartialEq for ResultValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            #[cfg(feature = "cpp-driver-tests")]
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             (Self::Text(l0), Self::Text(r0)) => l0 == r0,
             (Self::Varchar(l0), Self::Varchar(r0)) => l0 == r0,
             (Self::Int(l0), Self::Int(r0)) => l0 == r0,
@@ -534,7 +540,7 @@ impl PartialEq for ResultValue {
 
 impl ResultValue {
     #[allow(unused)]
-    #[cfg(feature = "cpp-driver-tests")]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
     pub fn new_from_cpp(value: Value) -> Self {
         if value.is_null() {
             ResultValue::Null
