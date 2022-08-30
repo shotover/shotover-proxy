@@ -47,6 +47,30 @@ impl CassandraCodec {
         }
         dst.put(buffer.as_slice());
     }
+
+    /// If the client tried to use a protocol that we dont support then we need to reject it.
+    /// The rejection process is sending back an error and then closing the connection.
+    /// However we can not immediately close the connection otherwise the message wont have time to send.
+    fn reject_protocol_version(&mut self, version: u8) -> Message {
+        self.force_close = Some(format!(
+            "Received frame with unknown protocol version: {}",
+            version
+        ));
+
+        let mut message = Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            stream_id: 0,
+            operation: CassandraOperation::Error(ErrorBody {
+                error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
+                message: "Invalid or unsupported protocol version".into(),
+                additional_info: AdditionalErrorInfo::Server,
+            }),
+            tracing_id: None,
+            warnings: vec![],
+        }));
+        message.return_to_sender = true;
+        message
+    }
 }
 
 impl Decoder for CassandraCodec {
@@ -70,24 +94,12 @@ impl Decoder for CassandraCodec {
                         pretty_hex::pretty_hex(&bytes)
                     );
 
-                    // TODO: Delete this block when we add protocol v5 support to shotover.
-                    if let Ok(Version::V5) = Version::try_from(bytes[0]) {
-                        self.force_close =
-                            Some("Received frame with unsupported protocol v5".into());
-
-                        let mut message = Message::from_frame(Frame::Cassandra(CassandraFrame {
-                            version: Version::V4,
-                            stream_id: 0,
-                            operation: CassandraOperation::Error(ErrorBody {
-                                error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
-                                message: "Invalid or unsupported protocol version".into(),
-                                additional_info: AdditionalErrorInfo::Server,
-                            }),
-                            tracing_id: None,
-                            warnings: vec![],
-                        }));
-                        message.return_to_sender = true;
-                        return Ok(Some(vec![message]));
+                    let version = Version::try_from(bytes[0])?;
+                    if let Version::V3 | Version::V4 = version {
+                        // Accept these protocols
+                    } else {
+                        // Reject protocols that cassandra-protocol supports but shotover does not yet support
+                        return Ok(Some(vec![self.reject_protocol_version(version.into())]));
                     }
 
                     self.messages
@@ -101,29 +113,7 @@ impl Decoder for CassandraCodec {
                     }
                 }
                 Err(CheckEnvelopeSizeError::UnsupportedVersion(version)) => {
-                    // if we got an error force the close on the next read.
-                    // We can not immediately close as we are gong to queue a message
-                    // back to the client and we have to allow time for the message
-                    // to be sent. We can not reuse the connection as it may contain excess
-                    // data from the failed parse.
-                    self.force_close = Some(format!(
-                        "Received frame with unknown protocol version: {}",
-                        version
-                    ));
-
-                    let mut message = Message::from_frame(Frame::Cassandra(CassandraFrame {
-                        version: Version::V4,
-                        stream_id: 0,
-                        operation: CassandraOperation::Error(ErrorBody {
-                            error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
-                            message: "Invalid or unsupported protocol version".into(),
-                            additional_info: AdditionalErrorInfo::Server,
-                        }),
-                        tracing_id: None,
-                        warnings: vec![],
-                    }));
-                    message.return_to_sender = true;
-                    return Ok(Some(vec![message]));
+                    return Ok(Some(vec![self.reject_protocol_version(version)]));
                 }
                 err => return Err(anyhow!("Failed to parse frame {:?}", err)),
             }
