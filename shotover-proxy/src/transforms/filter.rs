@@ -4,6 +4,9 @@ use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static SHOWN_ERROR: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone)]
 pub struct QueryTypeFilter {
@@ -44,19 +47,21 @@ impl Transform for QueryTypeFilter {
             message_wrapper.messages.remove(*i);
         }
 
-        let mut shown_error = false;
+        let mut shown_error = SHOWN_ERROR.load(Ordering::Relaxed);
 
         message_wrapper
             .call_next_transform()
             .await
             .map(|mut messages| {
+
                 for (i, message) in removed_indexes.into_iter() {
                     if i <= messages.len() {
                         messages.insert(i, message);
                     }
-                    else if !shown_error {
+                    else if !shown_error{
                         tracing::error!("The current filter transform implementation does not obey the current transform invariants. see https://github.com/shotover/shotover-proxy/issues/499");
                         shown_error = true;
+                        SHOWN_ERROR.store(true , Ordering::Relaxed);
                     }
                 }
                 messages
