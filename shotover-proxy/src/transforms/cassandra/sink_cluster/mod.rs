@@ -181,30 +181,6 @@ impl CassandraSinkCluster {
 
 //Creating the AST is pretty expensive. Since we are defining the queries
 // ourselves and know they are not batch statements we can skip that check.
-// This function checks the messages list to ensure that the stream id used is not
-// already being used
-fn create_query_with_generated_stream_id(
-    messages: &Messages,
-    query: String,
-    version: Version,
-) -> Result<Message> {
-    let stream_id = get_unused_stream_id(messages)?;
-    Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
-        version,
-        stream_id,
-        tracing_id: None,
-        warnings: vec![],
-        operation: CassandraOperation::Query {
-            // Using CassandraStatement::Unknown in a non sink transform would cause problems because the query would be inaccessible to transforms further down the chain.
-            // However using it in a sink transform is a performance hack that is safe because no further transforms need access to the AST.
-            query: Box::new(CassandraStatement::Unknown(query)),
-            params: Box::new(QueryParams::default()),
-        },
-    })))
-}
-
-//Creating the AST is pretty expensive. Since we are defining the queries
-// ourselves and know they are not batch statements we can skip that check.
 fn create_query(query: String, version: Version, stream_id: i16) -> Message {
     Message::from_frame(Frame::Cassandra(CassandraFrame {
         version,
@@ -232,21 +208,21 @@ impl CassandraSinkCluster {
             let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
             messages.insert(
                 table_to_rewrite.index + 1,
-                create_query_with_generated_stream_id(
-                    &messages,
+                create_query(
                     query.into(),
                     table_to_rewrite.version,
-                )?,
+                    get_unused_stream_id(&messages)?,
+                ),
             );
             if let RewriteTableTy::Peers = table_to_rewrite.ty {
                 let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
                 messages.insert(
                     table_to_rewrite.index + 2,
-                    create_query_with_generated_stream_id(
-                        &messages,
+                    create_query(
                         query.into(),
                         table_to_rewrite.version,
-                    )?,
+                        get_unused_stream_id(&messages)?,
+                    ),
                 );
             }
         }

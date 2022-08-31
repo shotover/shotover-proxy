@@ -1,10 +1,10 @@
 use super::node::{CassandraNode, ConnectionFactory};
-use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
+use cql3_parser::cassandra_statement::CassandraStatement;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -60,8 +60,8 @@ async fn topology_task_process(
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(
-                    "SELECT peer, rack, data_center, tokens FROM system.peers",
+                query: Box::new(CassandraStatement::Unknown(
+                    "SELECT peer, rack, data_center, tokens FROM system.peers".into(),
                 )),
                 params: Box::new(QueryParams::default()),
             },
@@ -77,8 +77,8 @@ async fn topology_task_process(
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(
-                    "SELECT broadcast_address, rack, data_center, tokens FROM system.local",
+                query: Box::new(CassandraStatement::Unknown(
+                    "SELECT broadcast_address, rack, data_center, tokens FROM system.local".into(),
                 )),
                 params: Box::new(QueryParams::default()),
             },
