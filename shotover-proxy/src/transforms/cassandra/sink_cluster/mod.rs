@@ -1,5 +1,4 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -180,7 +179,7 @@ impl CassandraSinkCluster {
     }
 }
 
-fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Message> {
+fn create_query(messages: &Messages, query: String, version: Version) -> Result<Message> {
     let stream_id = get_unused_stream_id(messages)?;
     Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
         version,
@@ -188,7 +187,7 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
         tracing_id: None,
         warnings: vec![],
         operation: CassandraOperation::Query {
-            query: Box::new(parse_statement_single(query)),
+            query: Box::new(CassandraStatement::Unknown(query)),
             params: Box::new(QueryParams::default()),
         },
     })))
@@ -206,13 +205,13 @@ impl CassandraSinkCluster {
             let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
             messages.insert(
                 table_to_rewrite.index + 1,
-                create_query(&messages, query, table_to_rewrite.version)?,
+                create_query(&messages, query.into(), table_to_rewrite.version)?,
             );
             if let RewriteTableTy::Peers = table_to_rewrite.ty {
                 let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
                 messages.insert(
                     table_to_rewrite.index + 2,
-                    create_query(&messages, query, table_to_rewrite.version)?,
+                    create_query(&messages, query.into(), table_to_rewrite.version)?,
                 );
             }
         }
