@@ -195,6 +195,8 @@ fn create_query_with_generated_stream_id(
         tracing_id: None,
         warnings: vec![],
         operation: CassandraOperation::Query {
+            // Using CassandraStatement::Unknown in a non sink transform would cause problems because the query would be inaccessible to transforms further down the chain.
+            // However using it in a sink transform is a performance hack that is safe because no further transforms need access to the AST.
             query: Box::new(CassandraStatement::Unknown(query)),
             params: Box::new(QueryParams::default()),
         },
@@ -210,6 +212,8 @@ fn create_query(query: String, version: Version, stream_id: i16) -> Message {
         tracing_id: None,
         warnings: vec![],
         operation: CassandraOperation::Query {
+            // Using CassandraStatement::Unknown in a non sink transform would cause problems because the query would be inaccessible to transforms further down the chain.
+            // However using it in a sink transform is a performance hack that is safe because no further transforms need access to the AST.
             query: Box::new(CassandraStatement::Unknown(query)),
             params: Box::new(QueryParams::default()),
         },
