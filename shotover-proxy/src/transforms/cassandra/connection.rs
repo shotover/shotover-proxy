@@ -40,7 +40,9 @@ impl CassandraConnection {
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
-        let tcp_stream: TcpStream = TcpStream::connect(&host).await?;
+        let tcp_stream = timeout(Duration::from_secs(3), TcpStream::connect(&host))
+            .await?
+            .map_err(|e| anyhow::Error::new(e).context("Failed to connect to upstream"))?;
 
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();

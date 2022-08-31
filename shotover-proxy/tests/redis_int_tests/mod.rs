@@ -23,7 +23,7 @@ async fn test_passthrough() {
         Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
 
     run_all(&mut connection, &mut flusher, &shotover_manager).await;
-    test_invalid_frame();
+    test_invalid_frame().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -34,8 +34,8 @@ async fn test_passthrough_redis_down() {
     let mut connection = shotover_manager.redis_connection_async(6379).await;
 
     test_trigger_transform_failure_driver(&mut connection).await;
-    test_trigger_transform_failure_raw();
-    test_invalid_frame();
+    test_trigger_transform_failure_raw().await;
+    test_invalid_frame().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

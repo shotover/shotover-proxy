@@ -13,8 +13,10 @@ use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::fmt::Debug;
 use std::pin::Pin;
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 use tokio_util::codec::Framed;
 use tracing::Instrument;
 
@@ -95,7 +97,13 @@ impl Transform for RedisSinkSingle {
         }
 
         if self.connection.is_none() {
-            let tcp_stream = TcpStream::connect(self.address.clone()).await?;
+            let tcp_stream = timeout(
+                Duration::from_secs(3),
+                TcpStream::connect(self.address.clone()),
+            )
+            .await?
+            .map_err(|e| anyhow::Error::new(e).context("Failed to connect to upstream"))?;
+
             let generic_stream = if let Some(tls) = self.tls.as_mut() {
                 let tls_stream = tls.connect_unverified_hostname(tcp_stream).await?;
                 Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
