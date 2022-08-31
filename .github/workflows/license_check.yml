@@ -1,0 +1,25 @@
+name: License Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Cancel already running jobs
+concurrency:
+  group: license_check_${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  license_check:
+    runs-on: ubuntu-22.04
+    name: License Check
+    steps:
+      - uses: actions/checkout@v2
+      - run: cargo install --locked cargo-deny
+      - run: cargo deny check licenses

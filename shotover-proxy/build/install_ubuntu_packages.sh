@@ -3,7 +3,7 @@
 set -e
 
 sudo apt-get update
-sudo apt-get install -y libpcap-dev wget
+sudo apt-get install -y libpcap-dev wget gcc-aarch64-linux-gnu
 
 . /etc/lsb-release
 
