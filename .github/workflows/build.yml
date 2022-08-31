@@ -1,0 +1,43 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Cancel already running jobs
+concurrency:
+  group: build_${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - name: Ubuntu 22.04 - Release - x86_64
+            runner: ubuntu-22.04
+            cargo_flags: --release
+          - name: Ubuntu 22.04 - Release - aarch64
+            runner: ubuntu-22.04
+            cargo_flags: --target aarch64-unknown-linux-gnu --release
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v2
+        # We purposefully dont cache here as build_and_test will always be the bottleneck
+        # so we should leave the cache alone so build_and_test can make more use of it.
+      - name: Install ubuntu packages
+        run: shotover-proxy/build/install_ubuntu_packages.sh
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --version 0.5.8
+      - name: Ensure that shotover-proxy compiles and has no warnings under every possible combination of features
+        # some things to explicitly point out:
+        # * clippy also reports rustc warnings and errors
+        # * clippy --all-targets is not run so we only build the shotover_proxy executable
+        run: cargo hack --feature-powerset clippy --locked ${{ matrix.cargo_flags }} -- -D warnings
