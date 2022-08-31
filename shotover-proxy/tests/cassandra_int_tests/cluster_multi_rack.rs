@@ -133,7 +133,7 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
 
         let rack_index = possible_racks
             .iter()
-            .position(|x| *x == node._rack)
+            .position(|x| *x == node.rack)
             .expect("Node did not contain a unique expected rack");
         possible_racks.remove(rack_index);
 
