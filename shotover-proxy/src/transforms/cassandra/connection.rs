@@ -34,7 +34,7 @@ pub struct CassandraConnection {
 }
 
 impl CassandraConnection {
-    pub async fn new<A: ToSocketAddrs>(
+    pub async fn new<A: ToSocketAddrs + std::fmt::Debug>(
         host: A,
         codec: CassandraCodec,
         mut tls: Option<TlsConnector>,
@@ -42,7 +42,9 @@ impl CassandraConnection {
     ) -> Result<Self> {
         let tcp_stream = timeout(Duration::from_secs(3), TcpStream::connect(&host))
             .await?
-            .map_err(|e| anyhow::Error::new(e).context("Failed to connect to upstream"))?;
+            .map_err(|e| {
+                anyhow::Error::new(e).context(format!("Failed to connect to upstream: {:?}", host))
+            })?;
 
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();
