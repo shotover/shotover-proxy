@@ -18,33 +18,29 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, info, warn};
 
+#[derive(Debug)]
+pub enum CodecReadError {
+    /// The codec failed to parse a received message
+    Parser(anyhow::Error),
+    /// The tcp connection returned an error
+    Io(std::io::Error),
+    /// Respond to the client with the provided messages and then close the connection
+    RespondAndThenCloseConnection(Messages),
+}
+
+impl From<std::io::Error> for CodecReadError {
+    fn from(err: std::io::Error) -> Self {
+        CodecReadError::Io(err)
+    }
+}
+
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait CodecReadHalf: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send {}
-impl<T: Decoder<Item = Messages, Error = anyhow::Error> + Clone + Send> CodecReadHalf for T {}
+pub trait CodecReadHalf: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send {}
+impl<T: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send> CodecReadHalf for T {}
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
 impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
-
-fn process_return_to_sender_messages(
-    messages: Messages,
-    tx_out: &UnboundedSender<Messages>,
-) -> Messages {
-    #[allow(clippy::unnecessary_filter_map)]
-    messages
-        .into_iter()
-        .filter_map(|m| {
-            if m.return_to_sender {
-                if let Err(err) = tx_out.send(vec![m]) {
-                    error!("Failed to send return to sender message: {:?}", err);
-                }
-                None
-            } else {
-                Some(m)
-            }
-        })
-        .collect()
-}
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
 pub trait Codec: CodecReadHalf + CodecWriteHalf {}
@@ -398,18 +394,24 @@ fn spawn_read_write_tasks<
                     result = reader.next() => {
                         if let Some(message) = result {
                             match message {
-                                Ok(message) => {
-                                    let remaining_messages =
-                                        process_return_to_sender_messages(message, &out_tx);
-                                    if !remaining_messages.is_empty() {
-                                        if let Err(error) = in_tx.send(remaining_messages) {
-                                            warn!("failed to pass on received message: {}", error);
-                                            return;
-                                        }
+                                Ok(messages) => {
+                                    if let Err(error) = in_tx.send(messages) {
+                                        warn!("failed to pass on received message: {}", error);
+                                        return;
                                     }
                                 }
-                                Err(error) => {
-                                    warn!("failed to receive or decode message: {:?}", error);
+                                Err(CodecReadError::RespondAndThenCloseConnection(messages)) => {
+                                    if let Err(err) = out_tx.send(messages) {
+                                        error!("Failed to send RespondAndThenShutdown message: {:?}", err);
+                                    }
+                                    return;
+                                }
+                                Err(CodecReadError::Parser(err)) => {
+                                    warn!("failed to decode message: {:?}", err);
+                                    return;
+                                }
+                                Err(CodecReadError::Io(err)) => {
+                                    warn!("failed to receive message on tcp stream: {:?}", err);
                                     return;
                                 }
                             }

@@ -1,25 +1,18 @@
 use crate::frame::cassandra::CassandraOperation;
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages};
-use anyhow::{anyhow, Error, Result};
+use crate::server::CodecReadError;
+use anyhow::{anyhow, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{AdditionalErrorInfo, ErrorBody};
 use cassandra_protocol::frame::{CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Version};
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::{debug, info};
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec {
     compressor: Compression,
-    /// if force_close is Some then the connection will be closed the next time the
-    /// system attempts to read data from it.  This is used in protocol errors where we
-    /// need to return a message to the client so we can not immediately close the connection
-    /// but we also do not know the state of the input stream.  For example if the protocol
-    /// number does not match there may be too much or too little data in the buffer so we need
-    /// to discard the connection.  The string is used in the error message.
-    force_close: Option<String>,
-
     messages: Vec<Message>,
 }
 
@@ -33,7 +26,6 @@ impl CassandraCodec {
     pub fn new() -> CassandraCodec {
         CassandraCodec {
             compressor: Compression::None,
-            force_close: None,
             messages: vec![],
         }
     }
@@ -47,43 +39,13 @@ impl CassandraCodec {
         }
         dst.put(buffer.as_slice());
     }
-
-    /// If the client tried to use a protocol that we dont support then we need to reject it.
-    /// The rejection process is sending back an error and then closing the connection.
-    /// However we can not immediately close the connection otherwise the message wont have time to send.
-    fn reject_protocol_version(&mut self, version: u8) -> Message {
-        self.force_close = Some(format!(
-            "Received frame with unknown protocol version: {}",
-            version
-        ));
-
-        let mut message = Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 0,
-            operation: CassandraOperation::Error(ErrorBody {
-                error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
-                message: "Invalid or unsupported protocol version".into(),
-                additional_info: AdditionalErrorInfo::Server,
-            }),
-            tracing_id: None,
-            warnings: vec![],
-        }));
-        message.return_to_sender = true;
-        message
-    }
 }
 
 impl Decoder for CassandraCodec {
     type Item = Messages;
-    type Error = Error;
+    type Error = CodecReadError;
 
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
-        // if we need to close the connection return an error.
-        if let Some(result) = self.force_close.take() {
-            debug!("Closing errored connection: {:?}", &result);
-            return Err(anyhow!(result));
-        }
-
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, CodecReadError> {
         loop {
             match RawCassandraFrame::check_envelope_size(src) {
                 Ok(frame_len) => {
@@ -94,12 +56,13 @@ impl Decoder for CassandraCodec {
                         pretty_hex::pretty_hex(&bytes)
                     );
 
-                    let version = Version::try_from(bytes[0])?;
+                    let version = Version::try_from(bytes[0])
+                        .expect("Gauranteed because check_envelope_size only returns Ok if the Version will parse");
                     if let Version::V3 | Version::V4 = version {
                         // Accept these protocols
                     } else {
                         // Reject protocols that cassandra-protocol supports but shotover does not yet support
-                        return Ok(Some(vec![self.reject_protocol_version(version.into())]));
+                        return Err(reject_protocol_version(version.into()));
                     }
 
                     self.messages
@@ -113,12 +76,40 @@ impl Decoder for CassandraCodec {
                     }
                 }
                 Err(CheckEnvelopeSizeError::UnsupportedVersion(version)) => {
-                    return Ok(Some(vec![self.reject_protocol_version(version)]));
+                    return Err(reject_protocol_version(version));
                 }
-                err => return Err(anyhow!("Failed to parse frame {:?}", err)),
+                err => {
+                    return Err(CodecReadError::Parser(anyhow!(
+                        "Failed to parse frame {:?}",
+                        err
+                    )))
+                }
             }
         }
     }
+}
+
+/// If the client tried to use a protocol that we dont support then we need to reject it.
+/// The rejection process is sending back an error and then closing the connection.
+fn reject_protocol_version(version: u8) -> CodecReadError {
+    info!(
+        "Negotiating protocol version: rejecting version {} (configure the client to use a supported version by default to improve connection time)",
+        version
+    );
+
+    CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
+        CassandraFrame {
+            version: Version::V4,
+            stream_id: 0,
+            operation: CassandraOperation::Error(ErrorBody {
+                error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
+                message: "Invalid or unsupported protocol version".into(),
+                additional_info: AdditionalErrorInfo::Server,
+            }),
+            tracing_id: None,
+            warnings: vec![],
+        },
+    ))])
 }
 
 impl Encoder<Messages> for CassandraCodec {
