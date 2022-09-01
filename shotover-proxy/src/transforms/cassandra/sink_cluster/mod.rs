@@ -233,6 +233,7 @@ impl CassandraSinkCluster {
             } else {
                 self.get_random_node_in_dc_rack().address
             };
+
             self.init_handshake_connection =
                 Some(self.connection_factory.new_connection(random_point).await?);
             self.init_handshake_address = Some(random_point);
