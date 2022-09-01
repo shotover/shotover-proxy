@@ -23,7 +23,7 @@ use cassandra_protocol::frame::{
 use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::blob::Blob;
 use cassandra_protocol::types::cassandra_type::CassandraType;
-use cassandra_protocol::types::{CBytes, CBytesShort, CInt, CLong};
+use cassandra_protocol::types::{CBytesShort, CInt, CLong};
 use cql3_parser::begin_batch::{BatchType as ParserBatchType, BeginBatch};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -481,15 +481,7 @@ impl CassandraOperation {
         let rows_count = rows.len() as CInt;
         let rows_content = rows
             .into_iter()
-            .map(|row| {
-                row.into_iter()
-                    .map(|value| {
-                        CBytes::new(
-                            cassandra_protocol::types::value::Bytes::from(value).into_inner(),
-                        )
-                    })
-                    .collect()
-            })
+            .map(|row| row.into_iter().map(MessageValue::into_cbytes).collect())
             .collect();
 
         ResResultBody::Rows(BodyResResultRows {

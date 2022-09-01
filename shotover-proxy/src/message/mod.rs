@@ -8,6 +8,8 @@ use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
 use bytes::{Buf, Bytes};
 use bytes_utils::Str;
+use cassandra_protocol::frame::Serialize as FrameSerialize;
+use cassandra_protocol::types::CInt;
 use cassandra_protocol::{
     frame::{
         message_error::{AdditionalErrorInfo, ErrorBody},
@@ -20,12 +22,12 @@ use cassandra_protocol::{
     },
 };
 use cql3_parser::common::Operand;
-use itertools::Itertools;
 use nonzero_ext::nonzero;
 use num::BigInt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{Cursor, Write};
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use uuid::Uuid;
@@ -618,56 +620,159 @@ impl MessageValue {
             CassandraType::Null => MessageValue::Null,
         }
     }
-}
 
-impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
-    fn from(value: MessageValue) -> cassandra_protocol::types::value::Bytes {
-        match value {
-            MessageValue::Null => (-1_i32).into(),
-            MessageValue::Bytes(b) => cassandra_protocol::types::value::Bytes::new(b.to_vec()),
-            MessageValue::Strings(s) => s.into(),
-            MessageValue::Integer(x, size) => {
-                cassandra_protocol::types::value::Bytes::new(match size {
-                    IntSize::I64 => (x as i64).to_be_bytes().to_vec(),
-                    IntSize::I32 => (x as i32).to_be_bytes().to_vec(),
-                    IntSize::I16 => (x as i16).to_be_bytes().to_vec(),
-                    IntSize::I8 => (x as i8).to_be_bytes().to_vec(),
-                })
-            }
-            MessageValue::Float(f) => f.into_inner().into(),
-            MessageValue::Boolean(b) => b.into(),
-            MessageValue::List(l) => l.into(),
-            MessageValue::Inet(i) => i.into(),
-            MessageValue::Ascii(a) => a.into(),
-            MessageValue::Double(d) => d.into_inner().into(),
-            MessageValue::Set(s) => s.into_iter().collect_vec().into(),
-            MessageValue::Map(m) => m.into(),
-            MessageValue::Varint(v) => v.into(),
-            MessageValue::Decimal(d) => {
-                let (unscaled, scale) = d.into_bigint_and_exponent();
-                cassandra_protocol::types::decimal::Decimal {
-                    unscaled,
-                    scale: scale as i32,
-                }
-                .into()
-            }
-            MessageValue::Date(d) => d.into(),
-            MessageValue::Timestamp(t) => t.into(),
-            MessageValue::Duration(d) => {
-                // TODO: Either this function should be made fallible or we Duration should have validated setters
-                cassandra_protocol::types::duration::Duration::new(d.months, d.days, d.nanoseconds)
-                    .unwrap()
-                    .into()
-            }
-            MessageValue::Timeuuid(t) => t.into(),
-            MessageValue::Varchar(v) => v.into(),
-            MessageValue::Uuid(u) => u.into(),
-            MessageValue::Time(t) => t.into(),
-            MessageValue::Counter(c) => c.into(),
-            MessageValue::Tuple(t) => t.into(),
-            MessageValue::Udt(u) => u.into(),
+    pub fn into_cbytes(value: MessageValue) -> CBytes {
+        // cassandra-protocol handles null values incredibly poorly.
+        // so we need to rewrite their logic to operate at the CBytes level in order to have the null value expressible
+        //
+        // Additionally reimplementing this logic allows us to allocate a lot less
+        // and its also way easier to understand the whole stack than the `.into()` based API.
+        //
+        // TODO: This should be upstreamable but will require rewriting their entire CBytes/Bytes/Value API
+        //       and so will take a long time to both write and review
+
+        // CBytes API expects the length to be implied and the null value encoded
+        let mut bytes = vec![];
+        value.cassandra_serialize(&mut Cursor::new(&mut bytes));
+        if i32::from_be_bytes(bytes[0..4].try_into().unwrap()) < 0 {
+            // Despite the name of the function this actually creates a cassandra NULL value instead of a cassandra empty value
+            CBytes::new_empty()
+        } else {
+            // strip the length
+            bytes.drain(0..4);
+            CBytes::new(bytes)
         }
     }
+
+    fn cassandra_serialize(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
+        match self {
+            MessageValue::Null => cursor.write_all(&[255, 255, 255, 255]).unwrap(),
+            MessageValue::Bytes(b) => serialize_bytes(cursor, b),
+            MessageValue::Strings(s) => serialize_bytes(cursor, s.as_bytes()),
+            MessageValue::Integer(x, size) => match size {
+                IntSize::I64 => serialize_bytes(cursor, &(*x as i64).to_be_bytes()),
+                IntSize::I32 => serialize_bytes(cursor, &(*x as i32).to_be_bytes()),
+                IntSize::I16 => serialize_bytes(cursor, &(*x as i16).to_be_bytes()),
+                IntSize::I8 => serialize_bytes(cursor, &(*x as i8).to_be_bytes()),
+            },
+            MessageValue::Float(f) => serialize_bytes(cursor, &f.into_inner().to_be_bytes()),
+            MessageValue::Boolean(b) => serialize_bytes(cursor, &[if *b { 1 } else { 0 }]),
+            MessageValue::List(l) => serialize_list(cursor, l),
+            MessageValue::Inet(i) => match i {
+                IpAddr::V4(ip) => serialize_bytes(cursor, &ip.octets()),
+                IpAddr::V6(ip) => serialize_bytes(cursor, &ip.octets()),
+            },
+            MessageValue::Ascii(a) => serialize_bytes(cursor, a.as_bytes()),
+            MessageValue::Double(d) => serialize_bytes(cursor, &d.into_inner().to_be_bytes()),
+            MessageValue::Set(s) => serialize_set(cursor, s),
+            MessageValue::Map(m) => serialize_map(cursor, m),
+            MessageValue::Varint(v) => serialize_bytes(cursor, &v.to_signed_bytes_be()),
+            MessageValue::Decimal(d) => {
+                let (unscaled, scale) = d.as_bigint_and_exponent();
+                serialize_bytes(
+                    cursor,
+                    &cassandra_protocol::types::decimal::Decimal {
+                        unscaled,
+                        scale: scale as i32,
+                    }
+                    .serialize_to_vec(Version::V4),
+                );
+            }
+            MessageValue::Date(d) => serialize_bytes(cursor, &d.to_be_bytes()),
+            MessageValue::Timestamp(t) => serialize_bytes(cursor, &t.to_be_bytes()),
+            MessageValue::Duration(d) => {
+                // TODO: Either this function should be made fallible or Duration should have validated setters
+                serialize_bytes(
+                    cursor,
+                    &cassandra_protocol::types::duration::Duration::new(
+                        d.months,
+                        d.days,
+                        d.nanoseconds,
+                    )
+                    .unwrap()
+                    .serialize_to_vec(Version::V4),
+                );
+            }
+            MessageValue::Timeuuid(t) => serialize_bytes(cursor, t.as_bytes()),
+            MessageValue::Varchar(v) => serialize_bytes(cursor, v.as_bytes()),
+            MessageValue::Uuid(u) => serialize_bytes(cursor, u.as_bytes()),
+            MessageValue::Time(t) => serialize_bytes(cursor, &t.to_be_bytes()),
+            MessageValue::Counter(c) => serialize_bytes(cursor, &c.to_be_bytes()),
+            MessageValue::Tuple(t) => serialize_list(cursor, t),
+            MessageValue::Udt(u) => serialize_stringmap(cursor, u),
+        }
+    }
+}
+
+fn serialize_with_length_prefix(
+    cursor: &mut Cursor<&mut Vec<u8>>,
+    serializer: impl FnOnce(&mut Cursor<&mut Vec<u8>>),
+) {
+    // write dummy length
+    let start_pos = cursor.position();
+    serialize_len(cursor, 0);
+
+    // perform serialization
+    serializer(cursor);
+
+    // overwrite dummy length with actual length of serialized bytes
+    let bytes_len = cursor.position() - start_pos;
+    cursor.get_mut()[start_pos as usize..start_pos as usize + 4]
+        .copy_from_slice(&(bytes_len as CInt).to_be_bytes());
+}
+
+fn serialize_len(cursor: &mut Cursor<&mut Vec<u8>>, len: usize) {
+    let len = len as CInt;
+    let _ = cursor.write_all(&len.to_be_bytes());
+}
+
+fn serialize_bytes(cursor: &mut Cursor<&mut Vec<u8>>, bytes: &[u8]) {
+    serialize_len(cursor, bytes.len());
+    let _ = cursor.write_all(bytes);
+}
+
+fn serialize_list(cursor: &mut Cursor<&mut Vec<u8>>, values: &[MessageValue]) {
+    serialize_with_length_prefix(cursor, |cursor| {
+        serialize_len(cursor, values.len());
+
+        for value in values {
+            value.cassandra_serialize(cursor);
+        }
+    });
+}
+
+#[allow(clippy::mutable_key_type)]
+fn serialize_set(cursor: &mut Cursor<&mut Vec<u8>>, values: &BTreeSet<MessageValue>) {
+    serialize_with_length_prefix(cursor, |cursor| {
+        serialize_len(cursor, values.len());
+
+        for value in values {
+            value.cassandra_serialize(cursor);
+        }
+    });
+}
+
+fn serialize_stringmap(cursor: &mut Cursor<&mut Vec<u8>>, values: &BTreeMap<String, MessageValue>) {
+    serialize_with_length_prefix(cursor, |cursor| {
+        serialize_len(cursor, values.len());
+
+        for (key, value) in values.iter() {
+            serialize_bytes(cursor, key.as_bytes());
+            value.cassandra_serialize(cursor);
+        }
+    });
+}
+
+#[allow(clippy::mutable_key_type)]
+fn serialize_map(cursor: &mut Cursor<&mut Vec<u8>>, values: &BTreeMap<MessageValue, MessageValue>) {
+    serialize_with_length_prefix(cursor, |cursor| {
+        serialize_len(cursor, values.len());
+
+        for (key, value) in values.iter() {
+            key.cassandra_serialize(cursor);
+            value.cassandra_serialize(cursor);
+        }
+    });
 }
 
 mod my_bytes {
