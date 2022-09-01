@@ -2,6 +2,7 @@ use super::node::{CassandraNode, ConnectionFactory};
 use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
+use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
@@ -52,43 +53,9 @@ async fn topology_task_process(
         .new_connection(handshake.address)
         .await?;
 
-    let (peers_tx, peers_rx) = oneshot::channel();
-    outbound.send(
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(
-                    "SELECT peer, rack, data_center, tokens FROM system.peers",
-                )),
-                params: Box::new(QueryParams::default()),
-            },
-        })),
-        peers_tx,
-    )?;
-
-    let (local_tx, local_rx) = oneshot::channel();
-    outbound.send(
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 1,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(
-                    "SELECT broadcast_address, rack, data_center, tokens FROM system.local",
-                )),
-                params: Box::new(QueryParams::default()),
-            },
-        })),
-        local_tx,
-    )?;
-
     let (new_nodes, more_nodes) = tokio::join!(
-        async { system_peers_into_nodes(peers_rx.await?.response?, data_center) },
-        async { system_peers_into_nodes(local_rx.await?.response?, data_center) }
+        system_peers_query(&outbound, data_center),
+        system_local_query(&outbound, data_center)
     );
     let mut new_nodes = new_nodes?;
     new_nodes.extend(more_nodes?);
@@ -101,6 +68,54 @@ async fn topology_task_process(
     std::mem::drop(expensive_drop);
 
     Ok(())
+}
+
+async fn system_local_query(
+    connection: &CassandraConnection,
+    data_center: &str,
+) -> Result<Vec<CassandraNode>> {
+    let (tx, rx) = oneshot::channel();
+    connection.send(
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            stream_id: 1,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single(
+                    "SELECT broadcast_address, rack, data_center, tokens FROM system.local",
+                )),
+                params: Box::new(QueryParams::default()),
+            },
+        })),
+        tx,
+    )?;
+
+    system_peers_into_nodes(rx.await?.response?, data_center)
+}
+
+async fn system_peers_query(
+    connection: &CassandraConnection,
+    data_center: &str,
+) -> Result<Vec<CassandraNode>> {
+    let (tx, rx) = oneshot::channel();
+    connection.send(
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            stream_id: 0,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single(
+                    "SELECT peer, rack, data_center, tokens FROM system.peers",
+                )),
+                params: Box::new(QueryParams::default()),
+            },
+        })),
+        tx,
+    )?;
+
+    system_peers_into_nodes(rx.await?.response?, data_center)
 }
 
 fn system_peers_into_nodes(
