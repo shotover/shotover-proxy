@@ -155,7 +155,7 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
             .expect("Node did not contain a unique expected address");
         possible_addresses.remove(address_index);
 
-        assert_eq!(node._rack, "rack1");
+        assert_eq!(node.rack, "rack1");
         assert_eq!(node._tokens.len(), 128);
     }
 }

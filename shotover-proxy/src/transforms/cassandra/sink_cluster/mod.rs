@@ -22,7 +22,7 @@ use rand::prelude::*;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
 use version_compare::Cmp;
@@ -95,8 +95,12 @@ pub struct CassandraSinkCluster {
     peers_table: FQName,
     peers_v2_table: FQName,
     local_shotover_node: ShotoverNode,
-    /// A local clone of topology_task_nodes
-    /// Internally stores connections to the nodes
+    /// A local clone of topology_task_nodes.
+    /// Internally stores connections to the nodes.
+    ///
+    /// Can be populated at two points:
+    /// 1. If topology_task_nodes is already populated when the very first message is received then we populate local_nodes immediately.
+    /// 2. Otherwise local_nodes will be populated immediately after we have a confirmed successful handshake, waiting until topology_task_nodes is populated.
     local_nodes: Vec<CassandraNode>,
     /// Only written to by the topology task
     /// Transform instances should never write to this.
@@ -190,12 +194,6 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
 
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
-        // Attempt to populate nodes list if we still dont have one yet
-        if self.local_nodes.is_empty() {
-            let nodes_shared = self.topology_task_nodes.read().await;
-            self.local_nodes = nodes_shared.clone();
-        }
-
         let tables_to_rewrite: Vec<TableToRewrite> = messages
             .iter_mut()
             .enumerate()
@@ -220,13 +218,18 @@ impl CassandraSinkCluster {
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
         if self.init_handshake_connection.is_none() {
-            let random_point = if let Some(random_point) = self.local_nodes.choose(&mut self.rng) {
-                SocketAddr::new(random_point.address, 9042)
-            } else {
+            if self.local_nodes.is_empty() {
+                let nodes_shared = self.topology_task_nodes.read().await;
+                self.local_nodes = nodes_shared.clone();
+            }
+
+            let random_point = if self.local_nodes.is_empty() {
                 tokio::net::lookup_host(self.contact_points.choose(&mut self.rng).unwrap())
                     .await?
                     .next()
                     .unwrap()
+            } else {
+                SocketAddr::new(self.get_random_node_in_dc_rack().address, 9042)
             };
             self.init_handshake_connection =
                 Some(self.connection_factory.new_connection(random_point).await?);
@@ -238,7 +241,7 @@ impl CassandraSinkCluster {
                 // Filter operation types so we are only left with messages relevant to the handshake.
                 // Due to shotover pipelining we could receive non-handshake messages while !self.init_handshake_complete.
                 // Despite being used by the client in a handshake, CassandraOperation::Options is not included
-                // because it doesnt dont alter the state of the server and so it isnt needed.
+                // because it doesnt alter the state of the server and so it isnt needed.
                 if let Some(Frame::Cassandra(CassandraFrame {
                     operation: CassandraOperation::Startup(_) | CassandraOperation::AuthResponse(_),
                     ..
@@ -303,15 +306,7 @@ impl CassandraSinkCluster {
                     ..
                 })) = response.frame()
                 {
-                    // Only send a handshake if the task really needs it
-                    // i.e. when the channel of size 1 is empty
-                    if let Ok(permit) = self.task_handshake_tx.try_reserve() {
-                        permit.send(TaskConnectionInfo {
-                            connection_factory: self.connection_factory.clone(),
-                            address: self.init_handshake_address.unwrap(),
-                        })
-                    }
-                    self.init_handshake_complete = true;
+                    self.complete_handshake().await?;
                     break;
                 }
             }
@@ -334,6 +329,64 @@ impl CassandraSinkCluster {
         }
 
         Ok(responses)
+    }
+
+    async fn complete_handshake(&mut self) -> Result<()> {
+        // Only send a handshake if the task really needs it
+        // i.e. when the channel of size 1 is empty
+        if let Ok(permit) = self.task_handshake_tx.try_reserve() {
+            permit.send(TaskConnectionInfo {
+                connection_factory: self.connection_factory.clone(),
+                address: self.init_handshake_address.unwrap(),
+            })
+        }
+        self.init_handshake_complete = true;
+
+        if self.local_nodes.is_empty() {
+            self.populate_local_nodes().await?;
+
+            // If we have to populate the local_nodes at this point then that means the control connection
+            // may not have been made against a node in the configured data_center/rack.
+            // Therefore we need to recreate the control connection to ensure that it is in the configured data_center/rack.
+            let random_address = self.get_random_node_in_dc_rack().address;
+            self.init_handshake_connection = Some(
+                self.connection_factory
+                    .new_connection((random_address, 9042))
+                    .await?,
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn populate_local_nodes(&mut self) -> Result<()> {
+        let start = Instant::now();
+        loop {
+            if self.local_nodes.is_empty() {
+                let nodes_shared = self.topology_task_nodes.read().await;
+                self.local_nodes = nodes_shared.clone();
+            }
+
+            if !self.local_nodes.is_empty() {
+                return Ok(());
+            }
+
+            if start.elapsed() > Duration::from_secs(10 * 60) {
+                return Err(anyhow!(
+                    "10 minute timeout waiting for topology task elapsed"
+                ));
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    fn get_random_node_in_dc_rack(&mut self) -> &CassandraNode {
+        self.local_nodes
+            .iter()
+            .filter(|x| x.rack == self.local_shotover_node.rack)
+            .choose(&mut self.rng)
+            .unwrap()
     }
 
     fn get_rewrite_table(&self, request: &mut Message, index: usize) -> Option<TableToRewrite> {
@@ -556,8 +609,6 @@ impl CassandraSinkCluster {
         let mut broadcast_address_alias = "broadcast_address";
         let mut listen_address_alias = "listen_address";
         let mut host_id_alias = "host_id";
-        let mut rack_alias = "rack";
-        let mut data_center_alias = "data_center_alias";
         for select in &table.selects {
             if let SelectElement::Column(column) = select {
                 if let Some(alias) = &column.alias {
@@ -577,10 +628,6 @@ impl CassandraSinkCluster {
                         listen_address_alias = alias;
                     } else if column.name == Identifier::Unquoted("host_id".to_string()) {
                         host_id_alias = alias;
-                    } else if column.name == Identifier::Unquoted("rack".to_string()) {
-                        rack_alias = alias;
-                    } else if column.name == Identifier::Unquoted("data_center".to_string()) {
-                        data_center_alias = alias;
                     }
                 }
             }
@@ -592,42 +639,12 @@ impl CassandraSinkCluster {
                 metadata,
             }) = &mut frame.operation
             {
-                // TODO: if rack and data_center not in query then we cant perform this filtering,
-                //       we will need to do an additional system.local query to get that information...
-                let mut is_in_data_center = true;
-                let mut is_in_rack = true;
-                for row in rows.iter_mut() {
-                    for (col, col_meta) in row.iter_mut().zip(metadata.col_specs.iter()) {
-                        if col_meta.name == rack_alias {
-                            if let MessageValue::Varchar(rack) = col {
-                                is_in_rack = rack == &self.local_shotover_node.rack;
-                                if !is_in_rack {
-                                    *rack = self.local_shotover_node.rack.clone();
-                                    tracing::warn!("A contact point node is not in the configured rack, this node will receive traffic from outside of its rack");
-                                }
-                            }
-                        } else if col_meta.name == data_center_alias {
-                            if let MessageValue::Varchar(data_center) = col {
-                                is_in_data_center =
-                                    data_center == &self.local_shotover_node.data_center;
-                                if !is_in_data_center {
-                                    *data_center = self.local_shotover_node.data_center.clone();
-                                    tracing::warn!("A contact point node is not in the configured data_center, this node will receive traffic from outside of its data_center");
-                                }
-                            }
-                        }
-                    }
-                }
-
+                // The local_response message is guaranteed to come from a node that is in our configured data_center/rack.
+                // That means we can leave fields like rack and data_center alone and get exactly what we want.
                 for row in rows {
                     for (col, col_meta) in row.iter_mut().zip(metadata.col_specs.iter()) {
                         if col_meta.name == release_version_alias {
                             if let MessageValue::Varchar(release_version) = col {
-                                if !is_in_data_center || !is_in_rack {
-                                    if let Some(peer) = peers.first() {
-                                        *release_version = peer.release_version.clone();
-                                    }
-                                }
                                 for peer in &peers {
                                     if let Ok(Cmp::Lt) = version_compare::compare(
                                         &peer.release_version,
@@ -639,9 +656,6 @@ impl CassandraSinkCluster {
                             }
                         } else if col_meta.name == tokens_alias {
                             if let MessageValue::List(tokens) = col {
-                                if !is_in_data_center || !is_in_rack {
-                                    tokens.clear();
-                                }
                                 for peer in &peers {
                                     tokens.extend(peer.tokens.iter().cloned());
                                 }
@@ -649,11 +663,6 @@ impl CassandraSinkCluster {
                             }
                         } else if col_meta.name == schema_version_alias {
                             if let MessageValue::Uuid(schema_version) = col {
-                                if !is_in_data_center || !is_in_rack {
-                                    if let Some(peer) = peers.first() {
-                                        *schema_version = peer.schema_version;
-                                    }
-                                }
                                 for peer in &peers {
                                     if schema_version != &peer.schema_version {
                                         *schema_version = Uuid::new_v4();
@@ -846,7 +855,7 @@ fn system_peers_into_nodes(
 
                     Ok(CassandraNode {
                         address,
-                        _rack: rack,
+                        rack,
                         _tokens: tokens,
                         outbound: None,
                     })
