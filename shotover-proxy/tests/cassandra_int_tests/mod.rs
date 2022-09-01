@@ -19,6 +19,8 @@ mod batch_statements;
 mod cache;
 mod cluster;
 mod cluster_multi_rack;
+mod cluster_single_rack_v3;
+mod cluster_single_rack_v4;
 mod collections;
 mod functions;
 mod keyspace;
@@ -88,8 +90,49 @@ async fn test_source_tls_and_single_tls() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cluster_single_rack() {
-    let _compose = DockerCompose::new("example-configs/cassandra-cluster/docker-compose.yml");
+async fn test_cluster_single_rack_v3() {
+    let _compose =
+        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v3.yml");
+
+    {
+        let shotover_manager = ShotoverManager::from_topology_file(
+            "example-configs/cassandra-cluster/topology-dummy-peers.yaml",
+        );
+
+        let mut connection1 = shotover_manager
+            .cassandra_connection("127.0.0.1", 9042)
+            .await;
+        connection1
+            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .await;
+        keyspace::test(&connection1).await;
+        table::test(&connection1).await;
+        udt::test(&connection1).await;
+        native_types::test(&connection1).await;
+        collections::test(&connection1).await;
+        functions::test(&connection1).await;
+        prepared_statements::test(&connection1).await;
+        batch_statements::test(&connection1).await;
+        cluster_single_rack_v3::test_dummy_peers(&connection1).await;
+
+        //Check for bugs in cross connection state
+        let mut connection2 = shotover_manager
+            .cassandra_connection("127.0.0.1", 9042)
+            .await;
+        connection2
+            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .await;
+        native_types::test(&connection2).await;
+    }
+
+    cluster_single_rack_v4::test_topology_task(None).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cluster_single_rack_v4() {
+    let _compose =
+        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml");
 
     {
         let shotover_manager =
@@ -109,7 +152,7 @@ async fn test_cluster_single_rack() {
         functions::test(&connection1).await;
         prepared_statements::test(&connection1).await;
         batch_statements::test(&connection1).await;
-        cluster::test(&connection1).await;
+        cluster_single_rack_v4::test(&connection1).await;
 
         //Check for bugs in cross connection state
         let mut connection2 = shotover_manager
@@ -132,10 +175,10 @@ async fn test_cluster_single_rack() {
         connection
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
-        cluster::test_dummy_peers(&connection).await;
+        cluster_single_rack_v4::test_dummy_peers(&connection).await;
     }
 
-    cluster::test_topology_task(None).await;
+    cluster_single_rack_v4::test_topology_task(None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -220,10 +263,10 @@ async fn test_source_tls_and_cluster_tls() {
         collections::test(&connection).await;
         prepared_statements::test(&connection).await;
         batch_statements::test(&connection).await;
-        cluster::test(&connection).await;
+        cluster_single_rack_v4::test(&connection).await;
     }
 
-    cluster::test_topology_task(Some(ca_cert)).await;
+    cluster_single_rack_v4::test_topology_task(Some(ca_cert)).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
