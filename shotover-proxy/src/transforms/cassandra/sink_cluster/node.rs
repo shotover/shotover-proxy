@@ -73,7 +73,7 @@ impl ConnectionFactory {
         }
     }
 
-    pub async fn new_connection<A: ToSocketAddrs>(
+    pub async fn new_connection<A: ToSocketAddrs + std::fmt::Debug>(
         &self,
         address: A,
     ) -> Result<CassandraConnection> {
