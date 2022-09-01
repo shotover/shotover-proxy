@@ -211,17 +211,29 @@ impl CassandraSinkCluster {
             .collect();
 
         for table_to_rewrite in tables_to_rewrite.iter().rev() {
-            let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-            messages.insert(
-                table_to_rewrite.index + 1,
-                create_query(&messages, query, table_to_rewrite.version)?,
-            );
-            if let RewriteTableTy::Peers = table_to_rewrite.ty {
-                let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
-                messages.insert(
-                    table_to_rewrite.index + 2,
-                    create_query(&messages, query, table_to_rewrite.version)?,
-                );
+            match table_to_rewrite.ty {
+                RewriteTableTy::Local => {
+                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
+                    messages.insert(
+                        table_to_rewrite.index + 1,
+                        create_query(&messages, query, table_to_rewrite.version)?,
+                    );
+                }
+                RewriteTableTy::Peers => {
+                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
+                    messages.insert(
+                        table_to_rewrite.index + 1,
+                        create_query(&messages, query, table_to_rewrite.version)?,
+                    );
+                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
+                    messages.insert(
+                        table_to_rewrite.index + 2,
+                        create_query(&messages, query, table_to_rewrite.version)?,
+                    );
+                }
+                RewriteTableTy::Error(_) => {
+                    // No additional queries needed
+                }
             }
         }
 
@@ -420,8 +432,11 @@ impl CassandraSinkCluster {
                     } else if self.peers_table == select.table_name
                         || self.peers_v2_table == select.table_name
                     {
-                        // TODO: fail if WHERE exists
-                        RewriteTableTy::Peers
+                        if select.where_clause.is_empty() {
+                            RewriteTableTy::Peers
+                        } else {
+                            RewriteTableTy::Error("Shotover does not support system.peers/system.peers_v2 queries with WHERE statements".into())
+                        }
                     } else {
                         return None;
                     };
@@ -443,19 +458,30 @@ impl CassandraSinkCluster {
         table: TableToRewrite,
         responses: &mut Vec<Message>,
     ) -> Result<()> {
-        if table.index + 1 < responses.len() {
-            let peers_response = responses.remove(table.index + 1);
-            match table.ty {
-                RewriteTableTy::Local => {
+        fn remove_extra_message(
+            table: &TableToRewrite,
+            responses: &mut Vec<Message>,
+        ) -> Option<Message> {
+            if table.index + 1 < responses.len() {
+                Some(responses.remove(table.index + 1))
+            } else {
+                None
+            }
+        }
+
+        match table.ty {
+            RewriteTableTy::Local => {
+                if let Some(peers_response) = remove_extra_message(&table, responses) {
                     if let Some(local_response) = responses.get_mut(table.index) {
                         self.rewrite_table_local(table, local_response, peers_response)
                             .await?;
                         local_response.invalidate_cache();
                     }
                 }
-                RewriteTableTy::Peers => {
-                    if table.index + 1 < responses.len() {
-                        let local_response = responses.remove(table.index + 1);
+            }
+            RewriteTableTy::Peers => {
+                if let Some(peers_response) = remove_extra_message(&table, responses) {
+                    if let Some(local_response) = remove_extra_message(&table, responses) {
                         if let Some(client_peers_response) = responses.get_mut(table.index) {
                             let mut nodes = parse_system_nodes(peers_response)?;
                             nodes.extend(parse_system_nodes(local_response)?);
@@ -465,6 +491,11 @@ impl CassandraSinkCluster {
                             client_peers_response.invalidate_cache();
                         }
                     }
+                }
+            }
+            RewriteTableTy::Error(error) => {
+                if let Some(response) = responses.get_mut(table.index) {
+                    response.set_error(error);
                 }
             }
         }
@@ -751,6 +782,7 @@ struct TableToRewrite {
 enum RewriteTableTy {
     Local,
     Peers,
+    Error(String),
 }
 
 fn is_use_statement(request: &mut Message) -> bool {
