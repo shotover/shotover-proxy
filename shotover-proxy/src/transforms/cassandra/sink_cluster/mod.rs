@@ -298,24 +298,62 @@ impl CassandraSinkCluster {
             self.pool.update_keyspaces(&mut self.keyspaces_rx).await;
         }
 
+        // If we have a prepare message we will need to open connections one by one for all nodes later on.
+        // So as optimization, we instead open them all concurrently first.
+        if messages.iter_mut().any(is_prepare_message) {
+            try_join_all(
+                self.pool
+                    .nodes()
+                    .iter_mut()
+                    .map(|node| node.get_connection(&self.connection_factory)),
+            )
+            .await?;
+        }
+
+        let mut outgoing_index_offset = 0;
         let tables_to_rewrite: Vec<TableToRewrite> = messages
             .iter_mut()
             .enumerate()
-            .filter_map(|(i, m)| self.get_rewrite_table(m, i))
+            .filter_map(|(i, m)| {
+                let table = self.get_rewrite_table(m, i, outgoing_index_offset);
+                if let Some(table) = &table {
+                    outgoing_index_offset += table.ty.extra_messages_needed();
+                }
+                table
+            })
             .collect();
 
+        // Insert the extra messages required by table rewrites.
+        // After this the incoming_index values are now invalid and the outgoing_index values should be used instead
         for table_to_rewrite in tables_to_rewrite.iter().rev() {
-            let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
-            messages.insert(
-                table_to_rewrite.index + 1,
-                create_query(&messages, query, self.version.unwrap())?,
-            );
-            if let RewriteTableTy::Peers = table_to_rewrite.ty {
-                let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
-                messages.insert(
-                    table_to_rewrite.index + 2,
-                    create_query(&messages, query, self.version.unwrap())?,
-                );
+            match &table_to_rewrite.ty {
+                RewriteTableTy::Local => {
+                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
+                    messages.insert(
+                        table_to_rewrite.incoming_index + 1,
+                        create_query(&messages, query, self.version.unwrap())?,
+                    );
+                }
+                RewriteTableTy::Peers => {
+                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
+                    messages.insert(
+                        table_to_rewrite.incoming_index + 1,
+                        create_query(&messages, query, self.version.unwrap())?,
+                    );
+                    let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
+                    messages.insert(
+                        table_to_rewrite.incoming_index + 2,
+                        create_query(&messages, query, self.version.unwrap())?,
+                    );
+                }
+                RewriteTableTy::Prepare { destination_nodes } => {
+                    for i in 1..destination_nodes.len() {
+                        messages.insert(
+                            table_to_rewrite.incoming_index + i,
+                            messages[table_to_rewrite.incoming_index].clone(),
+                        );
+                    }
+                }
             }
         }
 
@@ -361,10 +399,9 @@ impl CassandraSinkCluster {
 
         let mut responses_future_use = FuturesOrdered::new();
         let mut use_future_index_to_node_index = vec![];
+        let mut nodes_to_prepare_on: Vec<Uuid> = vec![];
 
-        let mut responses_future_prepare = FuturesOrdered::new();
-
-        for mut message in messages {
+        for (i, mut message) in messages.into_iter().enumerate() {
             let (return_chan_tx, return_chan_rx) = oneshot::channel();
             if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
@@ -398,28 +435,21 @@ impl CassandraSinkCluster {
                     .unwrap()
                     .send(message, return_chan_tx)?;
             } else if is_prepare_message(&mut message) {
-                // Send the PREPARE statement to all connections
-                let connections = try_join_all(
-                    self.pool
-                        .nodes()
-                        .iter_mut()
-                        .map(|node| node.get_connection(&self.connection_factory)),
-                )
-                .await?;
-
-                for connection in connections.iter().skip(1) {
-                    let (return_chan_tx, return_chan_rx) = oneshot::channel();
-
-                    connection.send(message.clone(), return_chan_tx)?;
-
-                    responses_future_prepare.push_back(return_chan_rx);
+                if let Some(rewrite) = tables_to_rewrite.iter().find(|x| x.outgoing_index == i) {
+                    if let RewriteTableTy::Prepare { destination_nodes } = &rewrite.ty {
+                        nodes_to_prepare_on = destination_nodes.clone();
+                    }
                 }
-
-                // send the PREPARE statement to the first node
-                // connection and use the response as shotover's response
-                connections
-                    .get(0)
-                    .ok_or_else(|| anyhow!("no connections found in connection pool"))?
+                let next_host_id = nodes_to_prepare_on
+                    .pop()
+                    .ok_or_else(|| anyhow!("ran out of nodes to send prepare messages to"))?;
+                self.pool
+                    .nodes()
+                    .iter_mut()
+                    .find(|node| node.host_id == next_host_id)
+                    .ok_or_else(|| anyhow!("node {next_host_id} has dissapeared"))?
+                    .get_connection(&self.connection_factory)
+                    .await?
                     .send(message, return_chan_tx)?;
             } else {
                 // If the message is an execute we should perform token aware routing
@@ -498,51 +528,6 @@ impl CassandraSinkCluster {
                     self.pool.report_issue_with_node(error.destination);
                     responses.push(error.to_response(self.version.unwrap()));
                 }
-            }
-        }
-
-        {
-            let prepare_response_results = super::connection::receive(
-                self.read_timeout,
-                &self.failed_requests,
-                responses_future_prepare,
-            )
-            .await?;
-            let mut prepare_responses = vec![];
-            for response in prepare_response_results {
-                match response {
-                    Ok(response) => prepare_responses.push(response),
-                    Err(error) => {
-                        self.pool.report_issue_with_node(error.destination);
-                        prepare_responses.push(error.to_response(self.version.unwrap()));
-                    }
-                }
-            }
-
-            let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepare_responses
-                .iter_mut()
-                .filter_map(|message| {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Result(CassandraResult::Prepared(prepared)),
-                        ..
-                    })) = message.frame()
-                    {
-                        Some(prepared)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
-                let err_str = prepared_results
-                    .iter()
-                    .map(|p| format!("\n{:?}", p))
-                    .collect::<String>();
-
-                tracing::error!(
-                    "Nodes did not return the same response to PREPARE statement {err_str}"
-                );
             }
         }
 
@@ -664,50 +649,76 @@ impl CassandraSinkCluster {
 
     /// Returns any information required to correctly rewrite the response.
     /// Will also perform minor modifications to the query required for the rewrite.
-    fn get_rewrite_table(&self, request: &mut Message, index: usize) -> Option<TableToRewrite> {
+    fn get_rewrite_table(
+        &mut self,
+        request: &mut Message,
+        incoming_index: usize,
+        outgoing_index_offset: usize,
+    ) -> Option<TableToRewrite> {
         if let Some(Frame::Cassandra(cassandra)) = request.frame() {
             // No need to handle Batch as selects can only occur on Query
-            if let CassandraOperation::Query { query, .. } = &mut cassandra.operation {
-                if let CassandraStatement::Select(select) = query.as_mut() {
-                    let ty = if LOCAL_TABLE == select.table_name {
-                        RewriteTableTy::Local
-                    } else if PEERS_TABLE == select.table_name
-                        || PEERS_V2_TABLE == select.table_name
-                    {
-                        RewriteTableTy::Peers
-                    } else {
-                        return None;
-                    };
+            match &mut cassandra.operation {
+                CassandraOperation::Query { query, .. } => {
+                    if let CassandraStatement::Select(select) = query.as_mut() {
+                        let ty = if LOCAL_TABLE == select.table_name {
+                            RewriteTableTy::Local
+                        } else if PEERS_TABLE == select.table_name
+                            || PEERS_V2_TABLE == select.table_name
+                        {
+                            RewriteTableTy::Peers
+                        } else {
+                            return None;
+                        };
 
-                    let warnings = if Self::has_no_where_clause(ty, select) {
-                        vec![]
-                    } else {
-                        select.where_clause.clear();
-                        vec![format!(
+                        let warnings = if Self::has_no_where_clause(&ty, select) {
+                            vec![]
+                        } else {
+                            select.where_clause.clear();
+                            vec![format!(
                             "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {}",
                             select.table_name
                         )]
-                    };
+                        };
 
+                        return Some(TableToRewrite {
+                            incoming_index,
+                            outgoing_index: incoming_index + outgoing_index_offset,
+                            ty,
+                            warnings,
+                            selects: select.columns.clone(),
+                        });
+                    }
+                }
+                CassandraOperation::Prepare(_) => {
                     return Some(TableToRewrite {
-                        index,
-                        ty,
-                        warnings,
-                        selects: select.columns.clone(),
+                        incoming_index,
+                        outgoing_index: incoming_index + outgoing_index_offset,
+                        ty: RewriteTableTy::Prepare {
+                            destination_nodes: self
+                                .pool
+                                .nodes()
+                                .iter()
+                                .filter(|node| node.is_up)
+                                .map(|node| node.host_id)
+                                .collect(),
+                        },
+                        warnings: vec![],
+                        selects: vec![],
                     });
                 }
+                _ => {}
             }
         }
         None
     }
 
-    fn has_no_where_clause(ty: RewriteTableTy, select: &Select) -> bool {
+    fn has_no_where_clause(ty: &RewriteTableTy, select: &Select) -> bool {
         select.where_clause.is_empty()
             // Most drivers do `FROM system.local WHERE key = 'local'` when determining the topology.
             // I'm not sure why they do that it seems to have no affect as there is only ever one row and its key is always 'local'.
             // Maybe it was a workaround for an old version of cassandra that got copied around?
             // To keep warning noise down we consider it as having no where clause.
-            || (ty == RewriteTableTy::Local
+            || (ty == &RewriteTableTy::Local
                 && select.where_clause
                     == [RelationElement {
                         obj: Operand::Column(Identifier::Quoted("key".to_owned())),
@@ -729,16 +740,24 @@ impl CassandraSinkCluster {
             }
         }
 
-        if table.index + 1 < responses.len() {
-            let mut peers_response = responses.remove(table.index + 1);
+        fn remove_extra_message(
+            table: &TableToRewrite,
+            responses: &mut Vec<Message>,
+        ) -> Option<Message> {
+            if table.incoming_index + 1 < responses.len() {
+                Some(responses.remove(table.incoming_index + 1))
+            } else {
+                None
+            }
+        }
 
-            // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
-            let mut warnings = get_warnings(&mut peers_response);
-            warnings.extend(table.warnings.clone());
-
-            match table.ty {
-                RewriteTableTy::Local => {
-                    if let Some(local_response) = responses.get_mut(table.index) {
+        match &table.ty {
+            RewriteTableTy::Local => {
+                if let Some(mut peers_response) = remove_extra_message(&table, responses) {
+                    if let Some(local_response) = responses.get_mut(table.incoming_index) {
+                        // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
+                        let mut warnings = table.warnings.clone();
+                        warnings.extend(get_warnings(&mut peers_response));
                         warnings.extend(get_warnings(local_response));
 
                         self.rewrite_table_local(table, local_response, peers_response, warnings)
@@ -746,10 +765,15 @@ impl CassandraSinkCluster {
                         local_response.invalidate_cache();
                     }
                 }
-                RewriteTableTy::Peers => {
-                    if table.index + 1 < responses.len() {
-                        let mut local_response = responses.remove(table.index + 1);
-                        if let Some(client_peers_response) = responses.get_mut(table.index) {
+            }
+            RewriteTableTy::Peers => {
+                if let Some(mut peers_response) = remove_extra_message(&table, responses) {
+                    if let Some(mut local_response) = remove_extra_message(&table, responses) {
+                        if let Some(client_peers_response) = responses.get_mut(table.incoming_index)
+                        {
+                            // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
+                            let mut warnings = table.warnings.clone();
+                            warnings.extend(get_warnings(&mut peers_response));
                             warnings.extend(get_warnings(&mut local_response));
                             warnings.extend(get_warnings(client_peers_response));
 
@@ -761,6 +785,37 @@ impl CassandraSinkCluster {
                             client_peers_response.invalidate_cache();
                         }
                     }
+                }
+            }
+            RewriteTableTy::Prepare { destination_nodes } => {
+                let mut prepared_responses: Vec<Message> = destination_nodes
+                    .iter()
+                    .filter_map(|_| remove_extra_message(&table, responses))
+                    .collect();
+
+                let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepared_responses
+                    .iter_mut()
+                    .filter_map(|message| match message.frame() {
+                        Some(Frame::Cassandra(CassandraFrame {
+                            operation:
+                                CassandraOperation::Result(CassandraResult::Prepared(prepared)),
+                            ..
+                        })) => Some(prepared),
+                        other => {
+                            tracing::error!("Response to prepare query was not a Prepared, was instead: {other:?}");
+                            None
+                        }
+                    })
+                    .collect();
+                if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
+                    let err_str = prepared_results
+                        .iter()
+                        .map(|p| format!("\n{:?}", p))
+                        .collect::<String>();
+
+                    tracing::error!(
+                        "Nodes did not return the same response to PREPARE statement {err_str}"
+                    );
                 }
             }
         }
@@ -1052,16 +1107,31 @@ impl CassandraSinkCluster {
 }
 
 struct TableToRewrite {
-    index: usize,
+    incoming_index: usize,
+    outgoing_index: usize,
     ty: RewriteTableTy,
     selects: Vec<SelectElement>,
     warnings: Vec<String>,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone)]
 enum RewriteTableTy {
     Local,
     Peers,
+    // We need to know which nodes we are sending to early on so that we can create the appropriate number of messages early and keep our rewrite indexes intact
+    Prepare { destination_nodes: Vec<Uuid> },
+}
+
+impl RewriteTableTy {
+    fn extra_messages_needed(&self) -> usize {
+        match self {
+            RewriteTableTy::Local => 1,
+            RewriteTableTy::Peers => 2,
+            RewriteTableTy::Prepare { destination_nodes } => {
+                destination_nodes.len().saturating_sub(1)
+            }
+        }
+    }
 }
 
 fn get_prepared_result_message(message: &mut Message) -> Option<(CBytesShort, PreparedMetadata)> {
