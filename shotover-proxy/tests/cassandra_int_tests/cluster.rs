@@ -4,9 +4,8 @@ use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
 use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use shotover_proxy::transforms::cassandra::sink_cluster::{
-    create_topology_task,
     node::{CassandraNode, ConnectionFactory},
-    TaskConnectionInfo,
+    topology::{create_topology_task, TaskConnectionInfo},
 };
 use std::net::IpAddr;
 use std::sync::Arc;
