@@ -231,7 +231,7 @@ impl CassandraSinkCluster {
                     .next()
                     .unwrap()
             } else {
-                SocketAddr::new(self.get_random_node_in_dc_rack().address, 9042)
+                self.get_random_node_in_dc_rack().address
             };
             self.init_handshake_connection =
                 Some(self.connection_factory.new_connection(random_point).await?);
@@ -353,7 +353,7 @@ impl CassandraSinkCluster {
             let random_address = self.get_random_node_in_dc_rack().address;
             self.init_handshake_connection = Some(
                 self.connection_factory
-                    .new_connection((random_address, 9042))
+                    .new_connection(random_address)
                     .await?,
             );
         }

@@ -1,6 +1,6 @@
 use crate::cassandra_int_tests::cluster::run_topology_task;
 use crate::helpers::cassandra::{assert_query_result, CassandraConnection, ResultValue};
-use std::net::IpAddr;
+use std::net::SocketAddr;
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
@@ -215,10 +215,10 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
     let nodes = run_topology_task(ca_path).await;
 
     assert_eq!(nodes.len(), 3);
-    let mut possible_addresses: Vec<IpAddr> = vec![
-        "172.16.1.2".parse().unwrap(),
-        "172.16.1.3".parse().unwrap(),
-        "172.16.1.4".parse().unwrap(),
+    let mut possible_addresses: Vec<SocketAddr> = vec![
+        "172.16.1.2:9042".parse().unwrap(),
+        "172.16.1.3:9042".parse().unwrap(),
+        "172.16.1.4:9042".parse().unwrap(),
     ];
     for node in &nodes {
         let address_index = possible_addresses
