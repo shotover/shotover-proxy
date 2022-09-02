@@ -142,14 +142,14 @@ fn system_peers_into_nodes(
                     } else {
                         return Err(anyhow!("rack not a varchar"));
                     };
-                    let address = if let Some(MessageValue::Inet(value)) = row.pop() {
+                    let ip = if let Some(MessageValue::Inet(value)) = row.pop() {
                         value
                     } else {
                         return Err(anyhow!("address not an inet"));
                     };
 
                     Ok(CassandraNode {
-                        address,
+                        address: SocketAddr::new(ip, 9042),
                         rack,
                         _tokens: tokens,
                         outbound: None,

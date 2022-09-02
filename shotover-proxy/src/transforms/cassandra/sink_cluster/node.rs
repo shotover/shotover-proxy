@@ -3,13 +3,13 @@ use crate::message::{Message, Messages};
 use crate::tls::TlsConnector;
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::Result;
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone)]
 pub struct CassandraNode {
-    pub address: IpAddr,
+    pub address: SocketAddr,
     pub rack: String,
     pub _tokens: Vec<String>,
     pub outbound: Option<CassandraConnection>,
@@ -21,11 +21,7 @@ impl CassandraNode {
         connection_factory: &ConnectionFactory,
     ) -> Result<&mut CassandraConnection> {
         if self.outbound.is_none() {
-            self.outbound = Some(
-                connection_factory
-                    .new_connection((self.address, 9042))
-                    .await?,
-            )
+            self.outbound = Some(connection_factory.new_connection(self.address).await?)
         }
 
         Ok(self.outbound.as_mut().unwrap())
