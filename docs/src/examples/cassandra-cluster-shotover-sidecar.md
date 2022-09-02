@@ -114,7 +114,6 @@ and use the same query again. You should see the following results returned, not
 
 If everything has worked, you will be able to use Cassandra, with your connection going through Shotover!
 
-
 #### Adding Rate Limiting
 
 The next section of this tutorial will cover adding rate limiting to your Cassandra cluster with Shotover. We will add the `RequestThrottling` transform to our `topology.yaml` as shown below. This transform should go at the front of the chain to prevent any unnecessary operations from occurring if a query is going to be rate limited.

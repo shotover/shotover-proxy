@@ -5,7 +5,7 @@ services:
     ports:
       - "6379:6379"
   cassandra-one:
-    image: bitnami/cassandra:3.11
+    image: bitnami/cassandra:4.0.6
     ports:
       - "9043:9042"
     environment:
