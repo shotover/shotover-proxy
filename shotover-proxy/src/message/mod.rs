@@ -425,9 +425,6 @@ pub enum MessageValue {
     Boolean(bool),
     Inet(IpAddr),
     List(Vec<MessageValue>),
-    NamedRows(Vec<BTreeMap<String, MessageValue>>),
-    Document(BTreeMap<String, MessageValue>),
-    FragmentedResponse(Vec<MessageValue>),
     Set(BTreeSet<MessageValue>),
     Map(BTreeMap<MessageValue, MessageValue>),
     Varint(BigInt),
@@ -511,11 +508,6 @@ impl From<MessageValue> for RedisFrame {
             MessageValue::Boolean(b) => RedisFrame::Integer(i64::from(b)),
             MessageValue::Inet(i) => RedisFrame::SimpleString(i.to_string().into()),
             MessageValue::List(l) => RedisFrame::Array(l.into_iter().map(|v| v.into()).collect()),
-            MessageValue::NamedRows(_) => todo!(),
-            MessageValue::Document(_) => todo!(),
-            MessageValue::FragmentedResponse(l) => {
-                RedisFrame::Array(l.into_iter().map(|v| v.into()).collect())
-            }
             MessageValue::Ascii(_a) => todo!(),
             MessageValue::Double(_d) => todo!(),
             MessageValue::Set(_s) => todo!(),
@@ -645,10 +637,7 @@ impl From<MessageValue> for cassandra_protocol::types::value::Bytes {
             MessageValue::Float(f) => f.into_inner().into(),
             MessageValue::Boolean(b) => b.into(),
             MessageValue::List(l) => l.into(),
-            MessageValue::NamedRows(n) => cassandra_protocol::types::value::Bytes::from(n),
-            MessageValue::Document(d) => cassandra_protocol::types::value::Bytes::from(d),
             MessageValue::Inet(i) => i.into(),
-            MessageValue::FragmentedResponse(l) => cassandra_protocol::types::value::Bytes::from(l),
             MessageValue::Ascii(a) => a.into(),
             MessageValue::Double(d) => d.into_inner().into(),
             MessageValue::Set(s) => s.into_iter().collect_vec().into(),
