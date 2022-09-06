@@ -492,8 +492,10 @@ pub enum ResultValue {
     Date(Vec<u8>), // TODO should be string
     Set(Vec<ResultValue>),
     List(Vec<ResultValue>),
+    #[allow(unused)]
     Tuple(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
+    #[allow(unused)]
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
@@ -561,8 +563,8 @@ impl ResultValue {
                 ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
                 ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
                 ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
-                    ResultValue::Inet(value.get_inet().map(|x| x.to_string()).unwrap())
                 ValueType::INET => {
+                    ResultValue::Inet(value.get_inet().map(|x| x.to_string()).unwrap())
                 }
                 ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
                 ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
@@ -573,21 +575,33 @@ impl ResultValue {
                 ValueType::COUNTER => ResultValue::Counter(value.get_i64().unwrap()),
                 ValueType::VARINT => ResultValue::VarInt(value.get_bytes().unwrap().to_vec()),
                 ValueType::TINY_INT => ResultValue::TinyInt(value.get_i8().unwrap()),
-                ValueType::SET => {
-                    ResultValue::Set(value.get_set().unwrap().map(ResultValue::new).collect())
-                }
+                ValueType::SET => ResultValue::Set(
+                    value
+                        .get_set()
+                        .unwrap()
+                        .map(ResultValue::new_from_cpp)
+                        .collect(),
+                ),
                 // despite the name get_set is used by SET, LIST and TUPLE
-                ValueType::LIST => {
-                    ResultValue::List(value.get_set().unwrap().map(ResultValue::new).collect())
-                }
-                ValueType::TUPLE => {
-                    ResultValue::Tuple(value.get_set().unwrap().map(ResultValue::new).collect())
-                }
+                ValueType::LIST => ResultValue::List(
+                    value
+                        .get_set()
+                        .unwrap()
+                        .map(ResultValue::new_from_cpp)
+                        .collect(),
+                ),
+                ValueType::TUPLE => ResultValue::Tuple(
+                    value
+                        .get_set()
+                        .unwrap()
+                        .map(ResultValue::new_from_cpp)
+                        .collect(),
+                ),
                 ValueType::MAP => ResultValue::Map(
                     value
                         .get_map()
                         .unwrap()
-                        .map(|(k, v)| (ResultValue::new(k), ResultValue::new(v)))
+                        .map(|(k, v)| (ResultValue::new_from_cpp(k), ResultValue::new_from_cpp(v)))
                         .collect(),
                 ),
                 ValueType::UNKNOWN => todo!(),

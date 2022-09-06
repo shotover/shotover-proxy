@@ -1,7 +1,9 @@
-use crate::helpers::cassandra::CassandraConnection;
+use crate::helpers::cassandra::{CassandraConnection, CassandraDriver};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, Criterion};
+use cassandra_cpp::{stmt, Session, Statement};
+use criterion::{criterion_group, criterion_main, Criterion};
 use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
@@ -10,6 +12,8 @@ struct Query {
     name: &'static str,
     statement: Statement,
 }
+
+const DRIVER: CassandraDriver = CassandraDriver::Datastax;
 
 fn cassandra(c: &mut Criterion) {
     let mut group = c.benchmark_group("cassandra");
@@ -45,7 +49,7 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
+                        let connection = &mut resources.as_mut().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -68,7 +72,7 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
+                        let connection = &mut resources.as_mut().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -90,7 +94,7 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
+                        let connection = &mut resources.as_mut().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -113,7 +117,7 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
+                        let connection = &mut resources.as_mut().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -136,7 +140,7 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
+                        let connection = &mut resources.as_mut().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -155,7 +159,7 @@ fn cassandra(c: &mut Criterion) {
             group.bench_with_input(format!("tls_{}", query.name), &resources, |b, resources| {
                 b.iter(|| {
                     let mut resources = resources.borrow_mut();
-                    let connection = &mut resources.as_mut().unwrap().connection;
+                    let connection = &mut resources.as_mut().unwrap().get_connection();
                     connection.execute(&query.statement).wait().unwrap();
                 })
             });
@@ -181,21 +185,21 @@ fn cassandra(c: &mut Criterion) {
             );
 
             resources
-                .connection
+                .get_connection()
                 .execute(&stmt!(
                     "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
                 ))
                 .wait()
                 .unwrap();
             resources
-                .connection
+                .get_connection()
                 .execute(&stmt!(
                     "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);"
                 ))
                 .wait()
                 .unwrap();
             resources
-                .connection
+                .get_connection()
                 .execute(&stmt!(
                     "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'Initial value', 42, true);"
                 ))
@@ -212,7 +216,7 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
+                        let connection = &mut resources.as_mut().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -234,7 +238,7 @@ fn cassandra(c: &mut Criterion) {
                 |b, resources| {
                     b.iter(|| {
                         let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().connection;
+                        let connection = &mut resources.as_mut().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -244,11 +248,12 @@ fn cassandra(c: &mut Criterion) {
 }
 
 criterion_group!(benches, cassandra);
+criterion_main!(benches);
 
 pub struct BenchResources {
     _compose: DockerCompose,
     _shotover_manager: ShotoverManager,
-    connection: Session,
+    connection: CassandraConnection,
 }
 
 impl BenchResources {
@@ -256,10 +261,7 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let CassandraConnection::Datastax {
-            session: connection,
-            ..
-        } = futures::executor::block_on(CassandraConnection::new("127.0.0.1", 9042));
+        let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042, DRIVER);
 
         let bench_resources = Self {
             _compose: compose,
@@ -270,6 +272,10 @@ impl BenchResources {
         bench_resources
     }
 
+    pub fn get_connection(&self) -> &Session {
+        self.connection.as_datastax()
+    }
+
     fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
         generate_cassandra_test_certs();
         let compose = DockerCompose::new(compose_file);
@@ -277,10 +283,8 @@ impl BenchResources {
 
         let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
 
-        let CassandraConnection::Datastax {
-            session: connection,
-            ..
-        } = futures::executor::block_on(CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert));
+        let connection =
+            shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert, DRIVER);
 
         let bench_resources = Self {
             _compose: compose,
@@ -292,23 +296,33 @@ impl BenchResources {
     }
 
     fn setup(&self) {
-        self.connection
-            .execute(&stmt!(
-                "CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
-            ))
-            .wait().unwrap();
+        let create_keyspace = stmt!(
+            "CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+        );
+
+        let create_table = stmt!(
+            "CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);"
+        );
+
+        let insert = stmt!(
+            "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'initial value');"
+        );
 
         self.connection
-            .execute(&stmt!(
-                "CREATE TABLE benchmark_keyspace.table_1 (id int PRIMARY KEY, x int, name varchar);"
-            ))
+            .as_datastax()
+            .execute(&create_keyspace)
             .wait()
             .unwrap();
 
         self.connection
-            .execute(&stmt!(
-                "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'initial value');"
-            ))
+            .as_datastax()
+            .execute(&create_table)
+            .wait()
+            .unwrap();
+
+        self.connection
+            .as_datastax()
+            .execute(&insert)
             .wait()
             .unwrap();
     }

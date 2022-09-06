@@ -24,14 +24,15 @@ async fn create_function(session: &CassandraConnection) {
 }
 
 pub async fn test(session: &CassandraConnection) {
-    run_query(session,
-              "CREATE KEYSPACE test_function_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+    run_query(
+        session,
+        "CREATE KEYSPACE test_function_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     ).await;
 
     run_query(
-            session,
-            "CREATE TABLE test_function_keyspace.test_function_table (id int PRIMARY KEY, x int, y int);",
-        ).await;
+        session,
+        "CREATE TABLE test_function_keyspace.test_function_table (id int PRIMARY KEY, x int, y int);",
+    ).await;
 
     run_query(
         session,
