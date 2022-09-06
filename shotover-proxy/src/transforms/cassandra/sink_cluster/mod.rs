@@ -462,6 +462,8 @@ impl CassandraSinkCluster {
         let mut data_center_alias = "data_center";
         let mut rack_alias = "rack";
         let mut host_id_alias = "host_id";
+        let mut native_address_alias = "native_address";
+        let mut native_port_alias = "native_port";
         let mut preferred_ip_alias = "preferred_ip";
         let mut preferred_port_alias = "preferred_port";
         let mut rpc_address_alias = "rpc_address";
@@ -483,6 +485,10 @@ impl CassandraSinkCluster {
                         rack_alias = alias;
                     } else if column.name == Identifier::Unquoted("host_id".to_string()) {
                         host_id_alias = alias;
+                    } else if column.name == Identifier::Unquoted("native_address".to_string()) {
+                        native_address_alias = alias;
+                    } else if column.name == Identifier::Unquoted("native_port".to_string()) {
+                        native_port_alias = alias;
                     } else if column.name == Identifier::Unquoted("preferred_ip".to_string()) {
                         preferred_ip_alias = alias;
                     } else if column.name == Identifier::Unquoted("preferred_port".to_string()) {
@@ -559,13 +565,17 @@ impl CassandraSinkCluster {
                                     || colspec.name == rpc_address_alias
                                 {
                                     MessageValue::Null
-                                } else if colspec.name == peer_alias {
+                                } else if colspec.name == native_address_alias {
                                     MessageValue::Inet(shotover_peer.address.ip())
-                                } else if colspec.name == peer_port_alias {
+                                } else if colspec.name == native_port_alias {
                                     MessageValue::Integer(
                                         shotover_peer.address.port() as i64,
                                         IntSize::I32,
                                     )
+                                } else if colspec.name == peer_alias {
+                                    MessageValue::Inet(shotover_peer.address.ip())
+                                } else if colspec.name == peer_port_alias {
+                                    MessageValue::Integer(7000, IntSize::I32)
                                 } else if colspec.name == release_version_alias {
                                     MessageValue::Varchar(release_version.clone())
                                 } else if colspec.name == tokens_alias {

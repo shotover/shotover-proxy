@@ -93,11 +93,11 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
 async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnection) {
     let star_results1 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
-        ResultValue::Int(9042),
+        ResultValue::Int(7000),
         ResultValue::Varchar("dc1".into()),
         ResultValue::Uuid("3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4".parse().unwrap()),
-        ResultValue::Inet("255.255.255.255".into()),
-        ResultValue::Int(-1),
+        ResultValue::Inet("127.0.0.1".into()),
+        ResultValue::Int(9042),
         ResultValue::Inet("255.255.255.255".into()),
         ResultValue::Int(-1),
         ResultValue::Varchar("rack1".into()),
@@ -110,11 +110,11 @@ async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnecti
     ];
     let star_results2 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
-        ResultValue::Int(9042),
+        ResultValue::Int(7000),
         ResultValue::Varchar("dc1".into()),
         ResultValue::Uuid("fa74d7ec-1223-472b-97de-04a32ccdb70b".parse().unwrap()),
-        ResultValue::Inet("255.255.255.255".into()),
-        ResultValue::Int(-1),
+        ResultValue::Inet("127.0.0.1".parse().unwrap()),
+        ResultValue::Int(9042),
         ResultValue::Inet("255.255.255.255".into()),
         ResultValue::Int(-1),
         ResultValue::Varchar("rack1".into()),
