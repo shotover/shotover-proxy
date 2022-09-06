@@ -11,7 +11,7 @@ networks:
 
 services:
   cassandra-one:
-    image: bitnami/cassandra:4.0
+    image: bitnami/cassandra:4.0.6
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
@@ -36,7 +36,7 @@ services:
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
 
   cassandra-two:
-    image: bitnami/cassandra:4.0
+    image: bitnami/cassandra:4.0.6
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.3
