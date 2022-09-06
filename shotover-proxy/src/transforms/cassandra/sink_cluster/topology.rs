@@ -227,7 +227,7 @@ mod system_peers {
                 warnings: vec![],
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
-                        "SELECT peer, rack, data_center, tokens FROM system.peers",
+                        "SELECT native_port, native_address, rack, tokens, data_center FROM system.peers_v2",
                     )),
                     params: Box::new(QueryParams::default()),
                 },
@@ -235,7 +235,41 @@ mod system_peers {
             tx,
         )?;
 
-        into_nodes(rx.await?.response?, data_center)
+        let mut response = rx.await?.response?;
+
+        if is_unconfigured_peers_v2_table_response(&mut response) {
+            let (tx, rx) = oneshot::channel();
+            connection.send(
+                Message::from_frame(Frame::Cassandra(CassandraFrame {
+                    version: Version::V4,
+                    stream_id: 0,
+                    tracing_id: None,
+                    warnings: vec![],
+                    operation: CassandraOperation::Query {
+                        query: Box::new(parse_statement_single(
+                            "SELECT peer, rack, tokens, data_center FROM system.peers",
+                        )),
+                        params: Box::new(QueryParams::default()),
+                    },
+                })),
+                tx,
+            )?;
+            response = rx.await?.response?;
+        }
+
+        into_nodes(response, data_center)
+    }
+
+    fn is_unconfigured_peers_v2_table_response(message: &mut Message) -> bool {
+        if let Some(Frame::Cassandra(CassandraFrame {
+            operation: CassandraOperation::Error(error),
+            ..
+        })) = message.frame()
+        {
+            return error.message == "unconfigured table peers_v2";
+        }
+
+        false
     }
 
     fn into_nodes(mut response: Message, config_data_center: &str) -> Result<Vec<CassandraNode>> {
@@ -247,16 +281,18 @@ mod system_peers {
                 }) => rows
                     .iter_mut()
                     .filter(|row| {
-                        if let Some(MessageValue::Varchar(data_center)) = row.get(2) {
+                        if let Some(MessageValue::Varchar(data_center)) = row.last() {
                             data_center == config_data_center
                         } else {
                             false
                         }
                     })
                     .map(|row| {
-                        if row.len() != 4 {
-                            return Err(anyhow!("expected 4 columns but was {}", row.len()));
+                        if row.len() != 4 && row.len() != 5 {
+                            return Err(anyhow!("expected 4 or 5 columns but was {}", row.len()));
                         }
+
+                        let _data_center = row.pop();
 
                         let tokens = if let Some(MessageValue::List(list)) = row.pop() {
                             list.into_iter()
@@ -268,20 +304,31 @@ mod system_peers {
                         } else {
                             return Err(anyhow!("tokens not a list"));
                         };
-                        let _data_center = row.pop();
+
                         let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
                             value
                         } else {
                             return Err(anyhow!("rack not a varchar"));
                         };
+
                         let ip = if let Some(MessageValue::Inet(value)) = row.pop() {
                             value
                         } else {
-                            return Err(anyhow!("address not an inet"));
+                            return Err(anyhow!("native_address not an inet"));
+                        };
+
+                        let port = if let Some(message_value) = row.pop() {
+                            if let MessageValue::Integer(value, _) = message_value {
+                                value
+                            } else {
+                                return Err(anyhow!("port is not an integer"));
+                            }
+                        } else {
+                            9042
                         };
 
                         Ok(CassandraNode {
-                            address: SocketAddr::new(ip, 9042),
+                            address: SocketAddr::new(ip, port.try_into()?),
                             rack,
                             _tokens: tokens,
                             outbound: None,
@@ -289,13 +336,13 @@ mod system_peers {
                     })
                     .collect(),
                 operation => Err(anyhow!(
-                    "system.peers returned unexpected cassandra operation: {:?}",
+                    "system.peers or system.peers_v2 returned unexpected cassandra operation: {:?}",
                     operation
                 )),
             }
         } else {
             Err(anyhow!(
-                "Failed to parse system.peers response {:?}",
+                "Failed to parse system.peers or system.peers_v2 response {:?}",
                 response
             ))
         }
