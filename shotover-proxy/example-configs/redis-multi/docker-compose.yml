@@ -1,14 +1,14 @@
 version: "3.3"
 services:
   redis-one:
-    image: library/redis:5.0.9
+    image: &image library/redis:5.0.9
     ports:
       - "3331:6379"
   redis-two:
-    image: library/redis:5.0.9
+    image: *image
     ports:
       - "3332:6379"
   redis-three:
-    image: library/redis:5.0.9
+    image: *image
     ports:
       - "3333:6379"

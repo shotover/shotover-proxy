@@ -1,55 +1,45 @@
 version: '3.3'
 services:
   redis-node-0:
-    image: docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: &image docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2230:6379"
-    environment:
+    environment: &environment
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-1:
-    image: docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: *image
     ports:
       - "2231:6379"
-    environment:
-      - 'REDIS_PASSWORD=shotover'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
+    environment: *environment
 
   redis-node-2:
-    image: docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: *image
     ports:
       - "2232:6379"
-    environment:
-      - 'REDIS_PASSWORD=shotover'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
+    environment: *environment
 
   redis-node-3:
-    image: docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: *image
     ports:
       - "2233:6379"
-    environment:
-      - 'REDIS_PASSWORD=shotover'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
+    environment: *environment
 
   redis-node-4:
-    image: docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: *image
     ports:
       - "2234:6379"
-    environment:
-      - 'REDIS_PASSWORD=shotover'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
+    environment: *environment
 
   redis-node-5:
-    image: docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: *image
     ports:
       - "2235:6379"
-    environment:
-      - 'REDIS_PASSWORD=shotover'
-      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
+    environment: *environment
 
   redis-cluster-init:
-    image: docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: *image
     depends_on:
       - redis-node-0
       - redis-node-1
