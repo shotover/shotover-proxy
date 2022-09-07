@@ -150,10 +150,10 @@ mod system_local {
                         })
                         .map(|row| {
                             let tokens =
-                                if let Some(MessageValue::List(list)) = row.get(tokens_index) {
-                                    list.iter()
+                                if let Some(MessageValue::List(list)) = row.get_mut(tokens_index) {
+                                    list.drain(..)
                                         .map::<Result<String>, _>(|x| match x {
-                                            MessageValue::Varchar(a) => Ok(a.clone()),
+                                            MessageValue::Varchar(a) => Ok(a),
                                             _ => Err(anyhow!("tokens value not a varchar")),
                                         })
                                         .collect::<Result<Vec<String>>>()?
@@ -185,6 +185,7 @@ mod system_local {
                                     return Err(anyhow!("port not an integer"));
                                 }
                             } else {
+                                //cassandra 3.x does not have the broadcast_port field so we just assume the default port
                                 9042
                             };
 
@@ -237,7 +238,7 @@ mod system_peers {
 
         let mut response = rx.await?.response?;
 
-        if is_unconfigured_peers_v2_table_response(&mut response) {
+        if is_peers_v2_does_not_exist_error(&mut response) {
             let (tx, rx) = oneshot::channel();
             connection.send(
                 Message::from_frame(Frame::Cassandra(CassandraFrame {
@@ -260,7 +261,7 @@ mod system_peers {
         into_nodes(response, data_center)
     }
 
-    fn is_unconfigured_peers_v2_table_response(message: &mut Message) -> bool {
+    fn is_peers_v2_does_not_exist_error(message: &mut Message) -> bool {
         if let Some(Frame::Cassandra(CassandraFrame {
             operation: CassandraOperation::Error(error),
             ..
@@ -324,6 +325,7 @@ mod system_peers {
                                 return Err(anyhow!("port is not an integer"));
                             }
                         } else {
+                            //this method supports both system.peers and system.peers_v2, system.peers does not have a field for the port so we fallback to the default port.
                             9042
                         };
 
