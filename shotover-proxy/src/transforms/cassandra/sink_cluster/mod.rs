@@ -620,6 +620,7 @@ impl CassandraSinkCluster {
         let mut broadcast_address_alias = "broadcast_address";
         let mut listen_address_alias = "listen_address";
         let mut host_id_alias = "host_id";
+        let mut rpc_port_alias = "rpc_port";
         for select in &table.selects {
             if let SelectElement::Column(column) = select {
                 if let Some(alias) = &column.alias {
@@ -639,6 +640,8 @@ impl CassandraSinkCluster {
                         listen_address_alias = alias;
                     } else if column.name == Identifier::Unquoted("host_id".to_string()) {
                         host_id_alias = alias;
+                    } else if column.name == Identifier::Unquoted("rpc_port".to_string()) {
+                        rpc_port_alias = alias
                     }
                 }
             }
@@ -688,6 +691,10 @@ impl CassandraSinkCluster {
                         } else if col_meta.name == host_id_alias {
                             if let MessageValue::Uuid(host_id) = col {
                                 *host_id = self.local_shotover_node.host_id;
+                            }
+                        } else if col_meta.name == rpc_port_alias {
+                            if let MessageValue::Integer(rpc_port, _) = col {
+                                *rpc_port = self.local_shotover_node.address.port() as i64;
                             }
                         }
                     }

@@ -1,4 +1,6 @@
+use crate::cassandra_int_tests::cluster::run_topology_task;
 use crate::helpers::cassandra::{assert_query_result, CassandraConnection, ResultValue};
+use std::net::SocketAddr;
 
 async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection) {
     let star_results1 = [
@@ -104,4 +106,25 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
 pub async fn test_dummy_peers(connection: &CassandraConnection) {
     test_rewrite_system_local(connection).await;
     test_rewrite_system_peers_dummy_peers(connection).await;
+}
+
+pub async fn test_topology_task(ca_path: Option<&str>) {
+    let nodes = run_topology_task(ca_path, None).await;
+
+    assert_eq!(nodes.len(), 3);
+    let mut possible_addresses: Vec<SocketAddr> = vec![
+        "172.16.1.2:9042".parse().unwrap(),
+        "172.16.1.3:9042".parse().unwrap(),
+        "172.16.1.4:9042".parse().unwrap(),
+    ];
+    for node in &nodes {
+        let address_index = possible_addresses
+            .iter()
+            .position(|x| *x == node.address)
+            .expect("Node did not contain a unique expected address");
+        possible_addresses.remove(address_index);
+
+        assert_eq!(node.rack, "rack1");
+        assert_eq!(node._tokens.len(), 128);
+    }
 }

@@ -212,13 +212,13 @@ pub async fn test_dummy_peers(connection: &CassandraConnection) {
 }
 
 pub async fn test_topology_task(ca_path: Option<&str>) {
-    let nodes = run_topology_task(ca_path).await;
+    let nodes = run_topology_task(ca_path, Some(9044)).await;
 
     assert_eq!(nodes.len(), 3);
     let mut possible_addresses: Vec<SocketAddr> = vec![
-        "172.16.1.2:9042".parse().unwrap(),
-        "172.16.1.3:9042".parse().unwrap(),
-        "172.16.1.4:9042".parse().unwrap(),
+        "172.16.1.2:9044".parse().unwrap(),
+        "172.16.1.3:9044".parse().unwrap(),
+        "172.16.1.4:9044".parse().unwrap(),
     ];
     for node in &nodes {
         let address_index = possible_addresses
