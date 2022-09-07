@@ -193,10 +193,10 @@ pub enum ResultValue {
     TinyInt(i8),
     VarInt(Vec<u8>),
     Date(Vec<u8>), // TODO should be string
-    Map(Vec<(ResultValue, ResultValue)>),
-    List(Vec<ResultValue>),
     Set(Vec<ResultValue>),
+    List(Vec<ResultValue>),
     Tuple(Vec<ResultValue>),
+    Map(Vec<(ResultValue, ResultValue)>),
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
@@ -228,8 +228,9 @@ impl PartialEq for ResultValue {
             (Self::TinyInt(l0), Self::TinyInt(r0)) => l0 == r0,
             (Self::VarInt(l0), Self::VarInt(r0)) => l0 == r0,
             (Self::Date(l0), Self::Date(r0)) => l0 == r0,
-            (Self::List(l0), Self::List(r0)) => l0 == r0,
             (Self::Set(l0), Self::Set(r0)) => l0 == r0,
+            (Self::List(l0), Self::List(r0)) => l0 == r0,
+            (Self::Tuple(l0), Self::Tuple(r0)) => l0 == r0,
             (Self::Map(l0), Self::Map(r0)) => l0 == r0,
             (Self::Null, Self::Null) => true,
             (Self::Any, _) => true,
@@ -242,56 +243,59 @@ impl PartialEq for ResultValue {
 impl ResultValue {
     #[allow(unused)]
     pub fn new(value: Value) -> ResultValue {
-        let result = match value.get_type() {
-            ValueType::TEXT => value.get_string().map(ResultValue::Text),
-            ValueType::VARCHAR => value.get_string().map(ResultValue::Varchar),
-            ValueType::INT => value.get_i32().map(ResultValue::Int),
-            ValueType::BOOLEAN => value.get_bool().map(ResultValue::Boolean),
-            ValueType::UUID => value
-                .get_uuid()
-                .map(|x| ResultValue::Uuid(uuid::Uuid::parse_str(&x.to_string()).unwrap())),
-            ValueType::ASCII => value.get_string().map(ResultValue::Ascii),
-            ValueType::BIGINT => value.get_i64().map(ResultValue::BigInt),
-            ValueType::BLOB => value.get_bytes().map(|x| ResultValue::Blob(x.to_vec())),
-            ValueType::DATE => value.get_bytes().map(|x| ResultValue::Date(x.to_vec())),
-            ValueType::DECIMAL => value.get_bytes().map(|x| ResultValue::Decimal(x.to_vec())),
-            ValueType::DOUBLE => value.get_f64().map(|x| ResultValue::Double(x.into())),
-            ValueType::DURATION => value.get_bytes().map(|x| ResultValue::Duration(x.to_vec())),
-            ValueType::FLOAT => value.get_f32().map(|x| ResultValue::Float(x.into())),
-            ValueType::INET => value.get_inet().map(|x| ResultValue::Inet(x.to_string())),
-            ValueType::SMALL_INT => value.get_i16().map(ResultValue::SmallInt),
-            ValueType::TIME => value.get_bytes().map(|x| ResultValue::Time(x.to_vec())),
-            ValueType::TIMESTAMP => value.get_i64().map(ResultValue::Timestamp),
-            ValueType::TIMEUUID => value
-                .get_uuid()
-                .map(|x| ResultValue::TimeUuid(uuid::Uuid::parse_str(&x.to_string()).unwrap())),
-            ValueType::COUNTER => value.get_i64().map(ResultValue::Counter),
-            ValueType::VARINT => value.get_bytes().map(|x| ResultValue::VarInt(x.to_vec())),
-            ValueType::TINY_INT => value.get_i8().map(ResultValue::TinyInt),
-            ValueType::MAP => value.get_map().map(|map| {
-                ResultValue::Map(
-                    map.map(|(k, v)| (ResultValue::new(k), ResultValue::new(v)))
+        if value.is_null() {
+            ResultValue::Null
+        } else {
+            match value.get_type() {
+                ValueType::TEXT => ResultValue::Text(value.get_string().unwrap()),
+                ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
+                ValueType::INT => ResultValue::Int(value.get_i32().unwrap()),
+                ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
+                ValueType::UUID => ResultValue::Uuid(
+                    uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
+                ),
+                ValueType::ASCII => ResultValue::Ascii(value.get_string().unwrap()),
+                ValueType::BIGINT => ResultValue::BigInt(value.get_i64().unwrap()),
+                ValueType::BLOB => ResultValue::Blob(value.get_bytes().unwrap().to_vec()),
+                ValueType::DATE => ResultValue::Date(value.get_bytes().unwrap().to_vec()),
+                ValueType::DECIMAL => ResultValue::Decimal(value.get_bytes().unwrap().to_vec()),
+                ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
+                ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
+                ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
+                ValueType::INET => {
+                    ResultValue::Inet(value.get_inet().map(|x| x.to_string()).unwrap())
+                }
+                ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
+                ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
+                ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_i64().unwrap()),
+                ValueType::TIMEUUID => ResultValue::TimeUuid(
+                    uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
+                ),
+                ValueType::COUNTER => ResultValue::Counter(value.get_i64().unwrap()),
+                ValueType::VARINT => ResultValue::VarInt(value.get_bytes().unwrap().to_vec()),
+                ValueType::TINY_INT => ResultValue::TinyInt(value.get_i8().unwrap()),
+                ValueType::SET => {
+                    ResultValue::Set(value.get_set().unwrap().map(ResultValue::new).collect())
+                }
+                // despite the name get_set is used by SET, LIST and TUPLE
+                ValueType::LIST => {
+                    ResultValue::List(value.get_set().unwrap().map(ResultValue::new).collect())
+                }
+                ValueType::TUPLE => {
+                    ResultValue::Tuple(value.get_set().unwrap().map(ResultValue::new).collect())
+                }
+                ValueType::MAP => ResultValue::Map(
+                    value
+                        .get_map()
+                        .unwrap()
+                        .map(|(k, v)| (ResultValue::new(k), ResultValue::new(v)))
                         .collect(),
-                )
-            }),
-            ValueType::SET => value
-                .get_set()
-                .map(|set| ResultValue::Set(set.map(ResultValue::new).collect())),
-            // LIST and TUPLE also use get_set
-            ValueType::LIST => value
-                .get_set()
-                .map(|list| ResultValue::List(list.map(ResultValue::new).collect())),
-            ValueType::TUPLE => value
-                .get_set()
-                .map(|tuple| ResultValue::Tuple(tuple.map(ResultValue::new).collect())),
-            ValueType::UDT => todo!(),
-            ValueType::UNKNOWN => todo!(),
-            ValueType::CUSTOM => todo!(),
-        };
-        match result {
-            Ok(result) => result,
-            Err(NULL) => ResultValue::Null,
-            Err(err) => panic!("Failed to process value {:?}", value),
+                ),
+                ValueType::UNKNOWN => todo!(),
+                ValueType::CUSTOM => todo!(),
+                ValueType::UDT => todo!(),
+                ValueType::TUPLE => todo!(),
+            }
         }
     }
 }
