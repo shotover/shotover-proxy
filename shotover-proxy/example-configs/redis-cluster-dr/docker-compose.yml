@@ -6,7 +6,7 @@ services:
       - "2220:6379"
     volumes:
       - redis-cluster_data-0:/bitnami/redis/data
-    environment: &environment
+    environment: &node-environment
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
@@ -16,7 +16,7 @@ services:
       - "2221:6379"
     volumes:
       - redis-cluster_data-1:/bitnami/redis/data
-    environment: *environment
+    environment: *node-environment
 
   redis-node-2:
     image: *image
@@ -24,7 +24,7 @@ services:
       - "2222:6379"
     volumes:
       - redis-cluster_data-2:/bitnami/redis/data
-    environment: *environment
+    environment: *node-environment
 
   redis-node-3:
     image: *image
@@ -32,7 +32,7 @@ services:
       - "2223:6379"
     volumes:
       - redis-cluster_data-3:/bitnami/redis/data
-    environment: *environment
+    environment: *node-environment
 
   redis-node-4:
     image: *image
@@ -40,7 +40,7 @@ services:
       - "2224:6379"
     volumes:
       - redis-cluster_data-4:/bitnami/redis/data
-    environment: *environment
+    environment: *node-environment
 
   redis-node-5:
     image: *image
@@ -48,7 +48,7 @@ services:
       - "2225:6379"
     volumes:
       - redis-cluster_data-5:/bitnami/redis/data
-    environment: *environment
+    environment: *node-environment
 
   redis-cluster-init:
     image: *image
@@ -72,7 +72,9 @@ services:
       - "2120:6379"
     volumes:
       - redis-cluster_data-0-dr:/bitnami/redis/data
-    environment: *environment
+    environment: &dr-environment
+      - 'REDIS_PASSWORD=shotover'
+      - 'REDIS_NODES=redis-node-0-dr redis-node-1-dr redis-node-2-dr redis-node-3-dr redis-node-4-dr redis-node-5-dr'
 
   redis-node-1-dr:
     image: *image
@@ -80,7 +82,7 @@ services:
       - "2121:6379"
     volumes:
       - redis-cluster_data-1-dr:/bitnami/redis/data
-    environment: *environment
+    environment: *dr-environment
 
   redis-node-2-dr:
     image: *image
@@ -88,7 +90,7 @@ services:
       - "2122:6379"
     volumes:
       - redis-cluster_data-2-dr:/bitnami/redis/data
-    environment: *environment
+    environment: *dr-environment
 
   redis-node-3-dr:
     image: *image
@@ -96,7 +98,7 @@ services:
       - "2123:6379"
     volumes:
       - redis-cluster_data-3-dr:/bitnami/redis/data
-    environment: *environment
+    environment: *dr-environment
 
   redis-node-4-dr:
     image: *image
@@ -104,7 +106,7 @@ services:
       - "2124:6379"
     volumes:
       - redis-cluster_data-4-dr:/bitnami/redis/data
-    environment: *environment
+    environment: *dr-environment
 
   redis-node-5-dr:
     image: *image
@@ -112,7 +114,7 @@ services:
       - "2125:6379"
     volumes:
       - redis-cluster_data-5-dr:/bitnami/redis/data
-    environment: *environment
+    environment: *dr-environment
 
   redis-cluster-init-dr:
     image: *image
