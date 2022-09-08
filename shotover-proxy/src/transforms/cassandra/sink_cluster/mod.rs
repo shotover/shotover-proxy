@@ -511,10 +511,8 @@ impl CassandraSinkCluster {
         }
 
         if let Some(Frame::Cassandra(frame)) = peers_response.frame() {
-            if let CassandraOperation::Result(CassandraResult::Rows {
-                value: MessageValue::Rows(rows),
-                metadata,
-            }) = &mut frame.operation
+            if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
+                &mut frame.operation
             {
                 *rows = self
                     .shotover_peers
@@ -646,10 +644,8 @@ impl CassandraSinkCluster {
         }
 
         if let Some(Frame::Cassandra(frame)) = local_response.frame() {
-            if let CassandraOperation::Result(CassandraResult::Rows {
-                value: MessageValue::Rows(rows),
-                metadata,
-            }) = &mut frame.operation
+            if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
+                &mut frame.operation
             {
                 // The local_response message is guaranteed to come from a node that is in our configured data_center/rack.
                 // That means we can leave fields like rack and data_center alone and get exactly what we want.
@@ -813,10 +809,7 @@ struct NodeInfo {
 fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>> {
     if let Some(Frame::Cassandra(frame)) = response.frame() {
         match &mut frame.operation {
-            CassandraOperation::Result(CassandraResult::Rows {
-                value: MessageValue::Rows(rows),
-                ..
-            }) => rows
+            CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                 .iter_mut()
                 .map(|row| {
                     if row.len() != 5 {
