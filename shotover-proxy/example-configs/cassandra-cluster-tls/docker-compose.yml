@@ -11,7 +11,7 @@ networks:
 
 services:
   cassandra-one:
-    image: bitnami/cassandra:4.0.6
+    image: &image bitnami/cassandra:4.0.6
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
@@ -43,7 +43,7 @@ services:
       - ../cassandra-tls/certs/truststore.p12:/bitnami/cassandra/secrets/truststore
 
   cassandra-two:
-    image: bitnami/cassandra:4.0.6
+    image: *image
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.3
@@ -52,7 +52,7 @@ services:
     volumes: *volumes
 
   cassandra-three:
-    image: bitnami/cassandra:4.0.6
+    image: *image
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.4
