@@ -204,7 +204,7 @@ impl CassandraFrame {
                                         .collect()
                                 };
                             CassandraOperation::Result(CassandraResult::Rows {
-                                value: MessageValue::Rows(converted_rows),
+                                rows: converted_rows,
                                 metadata: Box::new(rows.metadata),
                             })
                         }
@@ -422,8 +422,8 @@ impl CassandraOperation {
             }
             .serialize_to_vec(version),
             CassandraOperation::Result(result) => match result {
-                CassandraResult::Rows { value, metadata } => {
-                    Self::build_cassandra_result_body(version, value, *metadata)
+                CassandraResult::Rows { rows, metadata } => {
+                    Self::build_cassandra_result_body(version, rows, *metadata)
                 }
                 CassandraResult::SetKeyspace(set_keyspace) => {
                     ResResultBody::SetKeyspace(*set_keyspace)
@@ -475,32 +475,29 @@ impl CassandraOperation {
 
     fn build_cassandra_result_body(
         protocol_version: Version,
-        result: MessageValue,
+        rows: Vec<Vec<MessageValue>>,
         metadata: RowsMetadata,
     ) -> ResResultBody {
-        if let MessageValue::Rows(rows) = result {
-            let rows_count = rows.len() as CInt;
-            let rows_content = rows
-                .into_iter()
-                .map(|row| {
-                    row.into_iter()
-                        .map(|value| {
-                            CBytes::new(
-                                cassandra_protocol::types::value::Bytes::from(value).into_inner(),
-                            )
-                        })
-                        .collect()
-                })
-                .collect();
+        let rows_count = rows.len() as CInt;
+        let rows_content = rows
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|value| {
+                        CBytes::new(
+                            cassandra_protocol::types::value::Bytes::from(value).into_inner(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect();
 
-            return ResResultBody::Rows(BodyResResultRows {
-                protocol_version,
-                metadata,
-                rows_count,
-                rows_content,
-            });
-        }
-        unreachable!()
+        ResResultBody::Rows(BodyResResultRows {
+            protocol_version,
+            metadata,
+            rows_count,
+            rows_content,
+        })
     }
 }
 
@@ -658,7 +655,7 @@ pub fn to_cassandra_type(operand: &Operand) -> CassandraType {
 pub enum CassandraResult {
     // values are boxed so that Void takes minimal stack space
     Rows {
-        value: MessageValue,
+        rows: Vec<Vec<MessageValue>>,
         metadata: Box<RowsMetadata>,
     },
     SetKeyspace(Box<BodyResResultSetKeyspace>),

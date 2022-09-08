@@ -171,11 +171,7 @@ impl Transform for Protect {
             let mut invalidate_cache = false;
             if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = request.frame() {
                 if let Some(Frame::Cassandra(CassandraFrame {
-                    operation:
-                        CassandraOperation::Result(CassandraResult::Rows {
-                            value: MessageValue::Rows(rows),
-                            ..
-                        }),
+                    operation: CassandraOperation::Result(CassandraResult::Rows { rows, .. }),
                     ..
                 })) = response.frame()
                 {

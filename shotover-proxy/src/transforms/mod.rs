@@ -408,6 +408,7 @@ impl<'a> Display for Wrapper<'a> {
 }
 
 tokio::task_local! {
+    #[allow(clippy::declare_interior_mutable_const)]
     pub static CONTEXT_CHAIN_NAME: String;
 }
 
