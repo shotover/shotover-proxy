@@ -104,3 +104,7 @@ harness = false
 [[bench]]
 name = "cassandra_benches"
 harness = false
+
+[[bench]]
+name = "codec_benches"
+harness = false
