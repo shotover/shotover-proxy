@@ -98,10 +98,7 @@ mod system_local {
     fn into_nodes(mut response: Message, config_data_center: &str) -> Result<Vec<CassandraNode>> {
         if let Some(Frame::Cassandra(frame)) = response.frame() {
             match &mut frame.operation {
-                CassandraOperation::Result(CassandraResult::Rows {
-                    value: MessageValue::Rows(rows),
-                    metadata,
-                }) => {
+                CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) => {
                     let (
                         broadcast_address_index,
                         rack_index,
@@ -276,10 +273,7 @@ mod system_peers {
     fn into_nodes(mut response: Message, config_data_center: &str) -> Result<Vec<CassandraNode>> {
         if let Some(Frame::Cassandra(frame)) = response.frame() {
             match &mut frame.operation {
-                CassandraOperation::Result(CassandraResult::Rows {
-                    value: MessageValue::Rows(rows),
-                    ..
-                }) => rows
+                CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                     .iter_mut()
                     .filter(|row| {
                         if let Some(MessageValue::Varchar(data_center)) = row.last() {
