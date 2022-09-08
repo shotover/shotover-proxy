@@ -3,7 +3,7 @@ use cassandra_protocol::frame::message_result::{
     ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags, TableSpec,
 };
 use cassandra_protocol::{frame::Version, query::QueryParams};
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover_proxy::codec::cassandra::CassandraCodec;
 use shotover_proxy::frame::cassandra::parse_statement_single;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
@@ -17,7 +17,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            stream_id: 0,
+            stream_id: 1,
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Query {
@@ -67,7 +67,6 @@ fn criterion_benchmark(c: &mut Criterion) {
 }
 
 criterion_group!(benches, criterion_benchmark);
-criterion_main!(benches);
 
 fn peers_v2_result() -> CassandraResult {
     CassandraResult::Rows {
