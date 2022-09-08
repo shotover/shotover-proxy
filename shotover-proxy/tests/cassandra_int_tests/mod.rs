@@ -179,7 +179,7 @@ async fn test_cluster_single_rack_v4() {
         cluster_single_rack_v4::test_dummy_peers(&connection).await;
     }
 
-    cluster_single_rack_v4::test_topology_task(None).await;
+    cluster_single_rack_v4::test_topology_task(None, Some(9044)).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -267,7 +267,7 @@ async fn test_source_tls_and_cluster_tls() {
         cluster_single_rack_v4::test(&connection).await;
     }
 
-    cluster_single_rack_v4::test_topology_task(Some(ca_cert)).await;
+    cluster_single_rack_v4::test_topology_task(Some(ca_cert), None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
