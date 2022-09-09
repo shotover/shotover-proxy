@@ -593,7 +593,9 @@ async fn test_events_keyspace(#[case] driver: CassandraDriver) {
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
-    let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042, driver);
+    let connection = shotover_manager
+        .cassandra_connection("127.0.0.1", 9042, driver)
+        .await;
 
     let mut event_recv = connection.as_cdrs().create_event_receiver();
 

@@ -79,7 +79,7 @@ pub enum CassandraConnection {
 
 impl CassandraConnection {
     #[allow(unused)]
-    pub fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
+    pub async fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
         for contact_point in contact_points.split(',') {
             test_helpers::wait_for_socket_to_open(contact_point, port);
         }
@@ -110,13 +110,12 @@ impl CassandraConnection {
                     .map(|contact_point| NodeAddress::from(format!("{contact_point}:{port}")))
                     .collect::<Vec<NodeAddress>>();
 
-                let config = futures::executor::block_on(
-                    NodeTcpConfigBuilder::new()
-                        .with_contact_points(node_addresses)
-                        .with_authenticator_provider(Arc::new(auth))
-                        .build(),
-                )
-                .unwrap();
+                let config = NodeTcpConfigBuilder::new()
+                    .with_contact_points(node_addresses)
+                    .with_authenticator_provider(Arc::new(auth))
+                    .build()
+                    .await
+                    .unwrap();
 
                 let session =
                     TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
@@ -177,6 +176,7 @@ impl CassandraConnection {
                     schema_awaiter: None,
                 }
             }
+            // TODO actually implement TLS for cdrs-tokio
             CassandraDriver::CdrsTokio => {
                 let user = "cassandra";
                 let password = "cassandra";

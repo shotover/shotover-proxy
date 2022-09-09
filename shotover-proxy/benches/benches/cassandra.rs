@@ -261,7 +261,11 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let connection = shotover_manager.cassandra_connection("127.0.0.1", 9042, DRIVER);
+        let connection = futures::executor::block_on(shotover_manager.cassandra_connection(
+            "127.0.0.1",
+            9042,
+            DRIVER,
+        ));
 
         let bench_resources = Self {
             _compose: compose,
