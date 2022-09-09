@@ -193,9 +193,11 @@ pub enum ResultValue {
     TinyInt(i8),
     VarInt(Vec<u8>),
     Date(Vec<u8>), // TODO should be string
-    List(Vec<ResultValue>),
     Set(Vec<ResultValue>),
+    List(Vec<ResultValue>),
+    Tuple(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
+    Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
     #[allow(unused)]
@@ -226,9 +228,11 @@ impl PartialEq for ResultValue {
             (Self::TinyInt(l0), Self::TinyInt(r0)) => l0 == r0,
             (Self::VarInt(l0), Self::VarInt(r0)) => l0 == r0,
             (Self::Date(l0), Self::Date(r0)) => l0 == r0,
-            (Self::List(l0), Self::List(r0)) => l0 == r0,
             (Self::Set(l0), Self::Set(r0)) => l0 == r0,
+            (Self::List(l0), Self::List(r0)) => l0 == r0,
+            (Self::Tuple(l0), Self::Tuple(r0)) => l0 == r0,
             (Self::Map(l0), Self::Map(r0)) => l0 == r0,
+            (Self::Null, Self::Null) => true,
             (Self::Any, _) => true,
             (_, Self::Any) => true,
             _ => false,
@@ -239,63 +243,59 @@ impl PartialEq for ResultValue {
 impl ResultValue {
     #[allow(unused)]
     pub fn new(value: Value) -> ResultValue {
-        match value.get_type() {
-            ValueType::TEXT => ResultValue::Text(value.get_string().unwrap()),
-            ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
-            ValueType::INT => ResultValue::Int(value.get_i32().unwrap()),
-            ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
-            ValueType::UUID => ResultValue::Uuid(
-                uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
-            ),
-            ValueType::ASCII => ResultValue::Ascii(value.get_string().unwrap()),
-            ValueType::BIGINT => ResultValue::BigInt(value.get_i64().unwrap()),
-            ValueType::BLOB => ResultValue::Blob(value.get_bytes().unwrap().to_vec()),
-            ValueType::DATE => ResultValue::Date(value.get_bytes().unwrap().to_vec()),
-            ValueType::DECIMAL => ResultValue::Decimal(value.get_bytes().unwrap().to_vec()),
-            ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
-            ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
-            ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
-            ValueType::INET => value
-                .get_inet()
-                .map(|x| ResultValue::Inet(x.to_string()))
-                .unwrap_or_else(|_| ResultValue::Inet("NULL address".to_string())),
-            ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
-            ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
-            ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_i64().unwrap()),
-            ValueType::TIMEUUID => ResultValue::TimeUuid(
-                uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
-            ),
-            ValueType::UNKNOWN => todo!(),
-            ValueType::CUSTOM => todo!(),
-            ValueType::COUNTER => ResultValue::Counter(value.get_i64().unwrap()),
-            ValueType::VARINT => ResultValue::VarInt(value.get_bytes().unwrap().to_vec()),
-            ValueType::TINY_INT => ResultValue::TinyInt(value.get_i8().unwrap()),
-            ValueType::LIST => {
-                let mut list = Vec::new();
-                for i in value.get_set().unwrap() {
-                    list.push(ResultValue::new(i));
+        if value.is_null() {
+            ResultValue::Null
+        } else {
+            match value.get_type() {
+                ValueType::TEXT => ResultValue::Text(value.get_string().unwrap()),
+                ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
+                ValueType::INT => ResultValue::Int(value.get_i32().unwrap()),
+                ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
+                ValueType::UUID => ResultValue::Uuid(
+                    uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
+                ),
+                ValueType::ASCII => ResultValue::Ascii(value.get_string().unwrap()),
+                ValueType::BIGINT => ResultValue::BigInt(value.get_i64().unwrap()),
+                ValueType::BLOB => ResultValue::Blob(value.get_bytes().unwrap().to_vec()),
+                ValueType::DATE => ResultValue::Date(value.get_bytes().unwrap().to_vec()),
+                ValueType::DECIMAL => ResultValue::Decimal(value.get_bytes().unwrap().to_vec()),
+                ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
+                ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
+                ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
+                ValueType::INET => {
+                    ResultValue::Inet(value.get_inet().map(|x| x.to_string()).unwrap())
                 }
-                ResultValue::List(list)
-            }
-            ValueType::MAP => {
-                let mut map = Vec::new();
-                // null value results in empty map
-                if let Ok(kv) = value.get_map() {
-                    for (k, v) in kv {
-                        map.push((ResultValue::new(k), ResultValue::new(v)));
-                    }
+                ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
+                ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
+                ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_i64().unwrap()),
+                ValueType::TIMEUUID => ResultValue::TimeUuid(
+                    uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
+                ),
+                ValueType::COUNTER => ResultValue::Counter(value.get_i64().unwrap()),
+                ValueType::VARINT => ResultValue::VarInt(value.get_bytes().unwrap().to_vec()),
+                ValueType::TINY_INT => ResultValue::TinyInt(value.get_i8().unwrap()),
+                ValueType::SET => {
+                    ResultValue::Set(value.get_set().unwrap().map(ResultValue::new).collect())
                 }
-                ResultValue::Map(map)
-            }
-            ValueType::SET => {
-                let mut set = Vec::new();
-                for i in value.get_set().unwrap() {
-                    set.push(ResultValue::new(i));
+                // despite the name get_set is used by SET, LIST and TUPLE
+                ValueType::LIST => {
+                    ResultValue::List(value.get_set().unwrap().map(ResultValue::new).collect())
                 }
-                ResultValue::Set(set)
+                ValueType::TUPLE => {
+                    ResultValue::Tuple(value.get_set().unwrap().map(ResultValue::new).collect())
+                }
+                ValueType::MAP => ResultValue::Map(
+                    value
+                        .get_map()
+                        .unwrap()
+                        .map(|(k, v)| (ResultValue::new(k), ResultValue::new(v)))
+                        .collect(),
+                ),
+                ValueType::UNKNOWN => todo!(),
+                ValueType::CUSTOM => todo!(),
+                ValueType::UDT => todo!(),
+                ValueType::TUPLE => todo!(),
             }
-            ValueType::UDT => todo!(),
-            ValueType::TUPLE => todo!(),
         }
     }
 }
