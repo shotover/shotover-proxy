@@ -2,7 +2,7 @@ use bytes::Bytes;
 use cassandra_protocol::{
     compression::Compression, consistency::Consistency, frame::Version, query::QueryParams,
 };
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
 use shotover_proxy::frame::cassandra::parse_statement_single;
 use shotover_proxy::frame::RedisFrame;
@@ -376,4 +376,3 @@ impl<'a> BenchInput<'a> {
 }
 
 criterion_group!(benches, criterion_benchmark);
-criterion_main!(benches);
