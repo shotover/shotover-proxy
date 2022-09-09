@@ -109,10 +109,7 @@ fn system_peers_into_nodes(
 ) -> Result<Vec<CassandraNode>> {
     if let Some(Frame::Cassandra(frame)) = response.frame() {
         match &mut frame.operation {
-            CassandraOperation::Result(CassandraResult::Rows {
-                value: MessageValue::Rows(rows),
-                ..
-            }) => rows
+            CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                 .iter_mut()
                 .filter(|row| {
                     if let Some(MessageValue::Varchar(data_center)) = row.get(2) {

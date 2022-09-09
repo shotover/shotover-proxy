@@ -117,10 +117,8 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
 fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u16) {
     if let Some(Frame::Cassandra(frame)) = message.frame() {
         // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
-        if let CassandraOperation::Result(CassandraResult::Rows {
-            value: MessageValue::Rows(rows),
-            metadata,
-        }) = &mut frame.operation
+        if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
+            &mut frame.operation
         {
             for (i, col) in metadata.col_specs.iter().enumerate() {
                 if column_names.contains(&Identifier::parse(&col.name)) {
@@ -177,7 +175,7 @@ mod test {
             tracing_id: None,
             warnings: vec![],
             operation: CassandraOperation::Result(Rows {
-                value: MessageValue::Rows(rows),
+                rows,
                 metadata: Box::new(RowsMetadata {
                     flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
                     columns_count: 1,

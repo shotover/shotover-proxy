@@ -143,7 +143,7 @@ mod cassandra_protocol_tests {
         parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult,
     };
     use crate::frame::Frame;
-    use crate::message::{Message, MessageValue};
+    use crate::message::Message;
     use bytes::BytesMut;
     use cassandra_protocol::frame::message_result::{
         ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags,
@@ -266,7 +266,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             operation: CassandraOperation::Result(CassandraResult::Rows {
-                value: MessageValue::Rows(vec![]),
+                rows: vec![],
                 metadata: Box::new(RowsMetadata {
                     flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
                     columns_count: 9,

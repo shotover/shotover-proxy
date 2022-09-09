@@ -15,8 +15,8 @@ alpha-transforms = []
 [dependencies]
 pretty-hex = "0.3.0"
 hex = "0.4.3"
-tokio = { version = "=1.19.2", features = ["full", "macros"] }
-tokio-util = { version = "0.7.0", features = ["full"] }
+tokio = { version = "1.21.0", features = ["full", "macros"] }
+tokio-util = { version = "0.7.0" }
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
 bytes-utils = "0.1.1"
@@ -27,7 +27,7 @@ derivative = "2.1.1"
 itertools = "0.10.1"
 rand = { version = "0.8.4" }
 rand_distr = "0.4.1"
-cached = "0.38"
+cached = "0.39"
 pin-project-lite = "0.2"
 tokio-openssl = "0.6.2"
 openssl = { version = "0.10.36", features = ["vendored"] }
@@ -91,16 +91,8 @@ nix = "0.25.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
-scylla = { version = "0.4.7", features = ["ssl"] }
+scylla = { version = "0.5.0", features = ["ssl"] }
 
 [[bench]]
-name = "redis_benches"
-harness = false
-
-[[bench]]
-name = "chain_benches"
-harness = false
-
-[[bench]]
-name = "cassandra_benches"
+name = "benches"
 harness = false
