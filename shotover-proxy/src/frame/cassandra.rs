@@ -1,4 +1,4 @@
-use crate::message::{MessageValue, QueryType};
+use crate::message::{serialize_len, MessageValue, QueryType};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
@@ -14,8 +14,8 @@ use cassandra_protocol::frame::message_query::BodyReqQuery;
 use cassandra_protocol::frame::message_request::RequestBody;
 use cassandra_protocol::frame::message_response::ResponseBody;
 use cassandra_protocol::frame::message_result::{
-    BodyResResultPrepared, BodyResResultRows, BodyResResultSetKeyspace, ResResultBody,
-    RowsMetadata, RowsMetadataFlags,
+    BodyResResultPrepared, BodyResResultSetKeyspace, ResResultBody, ResultKind, RowsMetadata,
+    RowsMetadataFlags,
 };
 use cassandra_protocol::frame::{
     Direction, Envelope as RawCassandraFrame, Flags, Opcode, Serialize, StreamId, Version,
@@ -23,12 +23,13 @@ use cassandra_protocol::frame::{
 use cassandra_protocol::query::{QueryParams, QueryValues};
 use cassandra_protocol::types::blob::Blob;
 use cassandra_protocol::types::cassandra_type::CassandraType;
-use cassandra_protocol::types::{CBytesShort, CInt, CLong};
+use cassandra_protocol::types::{CBytesShort, CLong};
 use cql3_parser::begin_batch::{BatchType as ParserBatchType, BeginBatch};
 use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
 use nonzero_ext::nonzero;
+use std::io::Cursor;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::str::FromStr;
@@ -423,18 +424,32 @@ impl CassandraOperation {
             .serialize_to_vec(version),
             CassandraOperation::Result(result) => match result {
                 CassandraResult::Rows { rows, metadata } => {
-                    Self::build_cassandra_result_body(version, rows, *metadata)
+                    let mut buf = vec![];
+                    let mut cursor = Cursor::new(&mut buf);
+
+                    ResultKind::Rows.serialize(&mut cursor, version);
+
+                    metadata.serialize(&mut cursor, version);
+                    serialize_len(&mut cursor, rows.len());
+                    for row in rows {
+                        for col in row {
+                            col.cassandra_serialize(&mut cursor);
+                        }
+                    }
+
+                    buf
                 }
                 CassandraResult::SetKeyspace(set_keyspace) => {
-                    ResResultBody::SetKeyspace(*set_keyspace)
+                    ResResultBody::SetKeyspace(*set_keyspace).serialize_to_vec(version)
                 }
-                CassandraResult::Prepared(prepared) => ResResultBody::Prepared(*prepared),
+                CassandraResult::Prepared(prepared) => {
+                    ResResultBody::Prepared(*prepared).serialize_to_vec(version)
+                }
                 CassandraResult::SchemaChange(schema_change) => {
-                    ResResultBody::SchemaChange(*schema_change)
+                    ResResultBody::SchemaChange(*schema_change).serialize_to_vec(version)
                 }
-                CassandraResult::Void => ResResultBody::Void,
-            }
-            .serialize_to_vec(version),
+                CassandraResult::Void => ResResultBody::Void.serialize_to_vec(version),
+            },
             CassandraOperation::Error(error) => error.serialize_to_vec(version),
             CassandraOperation::Startup(bytes) => bytes.to_vec(),
             CassandraOperation::Ready(bytes) => bytes.to_vec(),
@@ -471,25 +486,6 @@ impl CassandraOperation {
             CassandraOperation::AuthResponse(bytes) => bytes.to_vec(),
             CassandraOperation::AuthSuccess(bytes) => bytes.to_vec(),
         }
-    }
-
-    fn build_cassandra_result_body(
-        protocol_version: Version,
-        rows: Vec<Vec<MessageValue>>,
-        metadata: RowsMetadata,
-    ) -> ResResultBody {
-        let rows_count = rows.len() as CInt;
-        let rows_content = rows
-            .into_iter()
-            .map(|row| row.into_iter().map(MessageValue::into_cbytes).collect())
-            .collect();
-
-        ResResultBody::Rows(BodyResResultRows {
-            protocol_version,
-            metadata,
-            rows_count,
-            rows_content,
-        })
     }
 }
 

@@ -621,30 +621,7 @@ impl MessageValue {
         }
     }
 
-    pub fn into_cbytes(value: MessageValue) -> CBytes {
-        // cassandra-protocol handles null values incredibly poorly.
-        // so we need to rewrite their logic to operate at the CBytes level in order to have the null value expressible
-        //
-        // Additionally reimplementing this logic allows us to allocate a lot less
-        // and its also way easier to understand the whole stack than the `.into()` based API.
-        //
-        // TODO: This should be upstreamable but will require rewriting their entire CBytes/Bytes/Value API
-        //       and so will take a long time to both write and review
-
-        // CBytes API expects the length to be implied and the null value encoded
-        let mut bytes = vec![];
-        value.cassandra_serialize(&mut Cursor::new(&mut bytes));
-        if i32::from_be_bytes(bytes[0..4].try_into().unwrap()) < 0 {
-            // Despite the name of the function this actually creates a cassandra NULL value instead of a cassandra empty value
-            CBytes::new_empty()
-        } else {
-            // strip the length
-            bytes.drain(0..4);
-            CBytes::new(bytes)
-        }
-    }
-
-    fn cassandra_serialize(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
+    pub fn cassandra_serialize(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
         match self {
             MessageValue::Null => cursor.write_all(&[255, 255, 255, 255]).unwrap(),
             MessageValue::Bytes(b) => serialize_bytes(cursor, b),
@@ -709,26 +686,27 @@ fn serialize_with_length_prefix(
     serializer: impl FnOnce(&mut Cursor<&mut Vec<u8>>),
 ) {
     // write dummy length
-    let start_pos = cursor.position();
+    let length_start = cursor.position();
+    let bytes_start = length_start + 4;
     serialize_len(cursor, 0);
 
     // perform serialization
     serializer(cursor);
 
     // overwrite dummy length with actual length of serialized bytes
-    let bytes_len = cursor.position() - start_pos;
-    cursor.get_mut()[start_pos as usize..start_pos as usize + 4]
+    let bytes_len = cursor.position() - bytes_start;
+    cursor.get_mut()[length_start as usize..bytes_start as usize]
         .copy_from_slice(&(bytes_len as CInt).to_be_bytes());
 }
 
-fn serialize_len(cursor: &mut Cursor<&mut Vec<u8>>, len: usize) {
+pub fn serialize_len(cursor: &mut Cursor<&mut Vec<u8>>, len: usize) {
     let len = len as CInt;
-    let _ = cursor.write_all(&len.to_be_bytes());
+    cursor.write_all(&len.to_be_bytes()).unwrap();
 }
 
 fn serialize_bytes(cursor: &mut Cursor<&mut Vec<u8>>, bytes: &[u8]) {
     serialize_len(cursor, bytes.len());
-    let _ = cursor.write_all(bytes);
+    cursor.write_all(bytes).unwrap();
 }
 
 fn serialize_list(cursor: &mut Cursor<&mut Vec<u8>>, values: &[MessageValue]) {
