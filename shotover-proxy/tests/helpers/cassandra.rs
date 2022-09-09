@@ -1,7 +1,7 @@
 use cassandra_cpp::Error as CassandraError;
 use cassandra_cpp::{
-    stmt, Batch, CassFuture, CassResult, Cluster, Error, PreparedStatement, Session, Statement,
-    Value, ValueType,
+    stmt, Batch, CassFuture, CassResult, Cluster, Error, PreparedStatement, Session, Ssl,
+    Statement, Value, ValueType,
 };
 use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
@@ -30,6 +30,33 @@ impl CassandraConnection {
             // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
             // So we instead force the Display formatter `{}` on the error.
             session: cluster.connect().map_err(|err| format!("{err}")).unwrap(),
+            schema_awaiter: None,
+        }
+    }
+
+    #[allow(unused)]
+    pub async fn new_tls(
+        contact_points: &str,
+        port: u16,
+        ca_cert_path: &str,
+    ) -> CassandraConnection {
+        let ca_cert = std::fs::read_to_string(ca_cert_path).unwrap();
+        let mut ssl = Ssl::default();
+        Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
+
+        for contact_point in contact_points.split(',') {
+            test_helpers::wait_for_socket_to_open(contact_point, port);
+        }
+
+        let mut cluster = Cluster::default();
+        cluster.set_credentials("cassandra", "cassandra").unwrap();
+        cluster.set_contact_points(contact_points).unwrap();
+        cluster.set_port(port).ok();
+        cluster.set_load_balance_round_robin();
+        cluster.set_ssl(&mut ssl);
+
+        CassandraConnection::Datastax {
+            session: cluster.connect().unwrap(),
             schema_awaiter: None,
         }
     }
