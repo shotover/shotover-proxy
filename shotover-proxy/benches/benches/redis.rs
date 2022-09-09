@@ -1,12 +1,10 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, Criterion};
 use redis::Cmd;
 use std::path::Path;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 
-#[path = "../tests/helpers/mod.rs"]
-mod helpers;
-use helpers::ShotoverManager;
+use crate::helpers::ShotoverManager;
 
 struct Query {
     name: &'static str,
@@ -144,7 +142,6 @@ fn redis(c: &mut Criterion) {
 }
 
 criterion_group!(benches, redis);
-criterion_main!(benches);
 
 struct BenchResources {
     _compose: DockerCompose,

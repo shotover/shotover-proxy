@@ -94,17 +94,5 @@ cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
 scylla = { version = "0.5.0", features = ["ssl"] }
 
 [[bench]]
-name = "redis_benches"
-harness = false
-
-[[bench]]
-name = "chain_benches"
-harness = false
-
-[[bench]]
-name = "cassandra_benches"
-harness = false
-
-[[bench]]
-name = "codec_benches"
+name = "benches"
 harness = false

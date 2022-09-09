@@ -15,15 +15,12 @@ fi
 echo -e "\nBenchmarking main as a baseline"
 git fetch origin
 git checkout origin/$GITHUB_BASE_REF
-cargo bench --all-features --bench redis_benches -- --save-baseline master --noplot
-cargo bench --all-features --bench chain_benches -- --save-baseline master --noplot
-cargo bench --all-features --bench cassandra_benches -- --save-baseline master --noplot
+# Need to specify `--bench benches` becauses otherwise it tries to pass --save-baseline to something else (possibly a test) and blows up
+cargo bench --all-features --bench benches -- --save-baseline master --noplot
 
 echo -e "\nBenchmarking PR branch against main as a baseline"
 git checkout $ORIGINAL_REF
-cargo bench --all-features --bench redis_benches -- --baseline-lenient master --noplot | tee benches_log.txt -a
-cargo bench --all-features --bench chain_benches -- --baseline-lenient master --noplot | tee benches_log.txt -a
-cargo bench --all-features --bench cassandra_benches -- --baseline-lenient master --noplot | tee benches_log.txt -a
+cargo bench --all-features --bench benches -- --baseline-lenient master --noplot | tee benches_log.txt -a
 
 # grep returns non zero exit code when it doesnt find anything so we need to disable pipefail
 set +o pipefail
