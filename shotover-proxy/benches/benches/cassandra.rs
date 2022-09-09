@@ -1,13 +1,10 @@
+use crate::helpers::cassandra::CassandraConnection;
+use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Cluster, Session, Statement};
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, Criterion};
 use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
-
-#[path = "../tests/helpers/mod.rs"]
-mod helpers;
-use helpers::cassandra::CassandraConnection;
-use helpers::ShotoverManager;
 
 struct Query {
     name: &'static str,
@@ -247,7 +244,6 @@ fn cassandra(c: &mut Criterion) {
 }
 
 criterion_group!(benches, cassandra);
-criterion_main!(benches);
 
 pub struct BenchResources {
     _compose: DockerCompose,
