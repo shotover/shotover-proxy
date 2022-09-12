@@ -96,7 +96,7 @@ async fn test_cluster_single_rack_v3() {
 
     {
         let shotover_manager = ShotoverManager::from_topology_file(
-            "example-configs/cassandra-cluster/topology-dummy-peers.yaml",
+            "example-configs/cassandra-cluster/topology-dummy-peers-v3.yaml",
         );
 
         let mut connection1 = shotover_manager
@@ -125,7 +125,7 @@ async fn test_cluster_single_rack_v3() {
         native_types::test(&connection2).await;
     }
 
-    cluster_single_rack_v4::test_topology_task(None).await;
+    cluster_single_rack_v3::test_topology_task(None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -135,14 +135,15 @@ async fn test_cluster_single_rack_v4() {
         DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml");
 
     {
-        let shotover_manager =
-            ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology.yaml");
+        let shotover_manager = ShotoverManager::from_topology_file(
+            "example-configs/cassandra-cluster/topology-v4.yaml",
+        );
 
         let mut connection1 = shotover_manager
             .cassandra_connection("127.0.0.1", 9042)
             .await;
         connection1
-            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
         keyspace::test(&connection1).await;
         table::test(&connection1).await;
@@ -159,26 +160,26 @@ async fn test_cluster_single_rack_v4() {
             .cassandra_connection("127.0.0.1", 9042)
             .await;
         connection2
-            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
         native_types::test(&connection2).await;
     }
 
     {
         let shotover_manager = ShotoverManager::from_topology_file(
-            "example-configs/cassandra-cluster/topology-dummy-peers.yaml",
+            "example-configs/cassandra-cluster/topology-dummy-peers-v4.yaml",
         );
 
         let mut connection = shotover_manager
             .cassandra_connection("127.0.0.1", 9042)
             .await;
         connection
-            .enable_schema_awaiter("172.16.1.2:9042", None)
+            .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
         cluster_single_rack_v4::test_dummy_peers(&connection).await;
     }
 
-    cluster_single_rack_v4::test_topology_task(None).await;
+    cluster_single_rack_v4::test_topology_task(None, Some(9044)).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -266,7 +267,7 @@ async fn test_source_tls_and_cluster_tls() {
         cluster_single_rack_v4::test(&connection).await;
     }
 
-    cluster_single_rack_v4::test_topology_task(Some(ca_cert)).await;
+    cluster_single_rack_v4::test_topology_task(Some(ca_cert), None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
