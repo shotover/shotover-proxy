@@ -34,6 +34,7 @@ services:
       HEAP_NEWSIZE: "48M"
       CASSANDRA_ENABLE_SCRIPTED_USER_DEFINED_FUNCTIONS: "true"
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
+      CASSANDRA_CQL_PORT_NUMBER: 9044
 
   cassandra-two:
     image: *image

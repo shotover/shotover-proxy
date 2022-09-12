@@ -9,7 +9,8 @@ use shotover_proxy::transforms::cassandra::sink_cluster::{
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
-pub async fn run_topology_task(ca_path: Option<&str>) -> Vec<CassandraNode> {
+pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<CassandraNode> {
+    let port = port.unwrap_or(9042);
     let nodes_shared = Arc::new(RwLock::new(vec![]));
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
     let tls = ca_path.map(|ca_path| {
@@ -33,7 +34,7 @@ pub async fn run_topology_task(ca_path: Option<&str>) -> Vec<CassandraNode> {
     task_handshake_tx
         .send(TaskConnectionInfo {
             connection_factory: connection_factory.clone(),
-            address: "172.16.1.2:9042".parse().unwrap(),
+            address: format!("172.16.1.2:{port}").parse().unwrap(),
         })
         .await
         .unwrap();
