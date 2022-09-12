@@ -3,7 +3,7 @@ use crate::frame::cassandra::parse_statement_single;
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
 use crate::transforms::cassandra::connection::CassandraConnection;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use cassandra_protocol::{frame::Version, query::QueryParams};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -53,7 +53,7 @@ async fn topology_task_process(
         .await?;
 
     let (new_nodes, more_nodes) = tokio::join!(
-        system_local::query(&outbound, data_center),
+        system_local::query(&outbound, data_center, handshake.address),
         system_peers::query(&outbound, data_center)
     );
 
@@ -76,6 +76,7 @@ mod system_local {
     pub async fn query(
         connection: &CassandraConnection,
         data_center: &str,
+        address: SocketAddr,
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
@@ -85,116 +86,62 @@ mod system_local {
                 tracing_id: None,
                 warnings: vec![],
                 operation: CassandraOperation::Query {
-                    query: Box::new(parse_statement_single("SELECT * FROM system.local")),
+                    query: Box::new(parse_statement_single(
+                        "SELECT rack, tokens, data_center FROM system.local",
+                    )),
                     params: Box::new(QueryParams::default()),
                 },
             })),
             tx,
         )?;
 
-        into_nodes(rx.await?.response?, data_center)
+        into_nodes(rx.await?.response?, data_center, address)
     }
 
-    fn into_nodes(mut response: Message, config_data_center: &str) -> Result<Vec<CassandraNode>> {
+    fn into_nodes(
+        mut response: Message,
+        config_data_center: &str,
+        address: SocketAddr,
+    ) -> Result<Vec<CassandraNode>> {
         if let Some(Frame::Cassandra(frame)) = response.frame() {
             match &mut frame.operation {
-                CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) => {
-                    let (
-                        broadcast_address_index,
-                        rack_index,
-                        data_center_index,
-                        tokens_index,
-                        broadcast_port_index,
-                    ) = {
-                        let mut broadcast_address_index: Option<usize> = None;
-                        let mut rack_index: Option<usize> = None;
-                        let mut data_center_index: Option<usize> = None;
-                        let mut tokens_index: Option<usize> = None;
-                        let mut broadcast_port_index: Option<usize> = None;
+                CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
+                    .iter_mut()
+                    .filter(|row| {
+                        if let Some(MessageValue::Varchar(data_center)) = row.last() {
+                            data_center == config_data_center
+                        } else {
+                            false
+                        }
+                    })
+                    .map(|row| {
+                        let _data_center = row.pop();
 
-                        metadata
-                            .col_specs
-                            .iter()
-                            .enumerate()
-                            .for_each(|(i, col_spec)| match col_spec.name.as_str() {
-                                "broadcast_address" => broadcast_address_index = Some(i),
-                                "rack" => rack_index = Some(i),
-                                "data_center" => data_center_index = Some(i),
-                                "tokens" => tokens_index = Some(i),
-                                "rpc_port" => broadcast_port_index = Some(i),
-                                _ => {}
-                            });
+                        let tokens = if let Some(MessageValue::List(mut list)) = row.pop() {
+                            list.drain(..)
+                                .map::<Result<String>, _>(|x| match x {
+                                    MessageValue::Varchar(a) => Ok(a),
+                                    _ => Err(anyhow!("tokens value not a varchar")),
+                                })
+                                .collect::<Result<Vec<String>>>()?
+                        } else {
+                            return Err(anyhow!("tokens not a list"));
+                        };
 
-                        (
-                            broadcast_address_index
-                                .context("broadcast_address missing from columns")?,
-                            rack_index.context("rack missing from columns")?,
-                            data_center_index.context("data_center missing from columns")?,
-                            tokens_index.context("tokens missing from columns")?,
-                            broadcast_port_index,
-                        )
-                    };
+                        let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
+                            value
+                        } else {
+                            return Err(anyhow!("rack not a varchar"));
+                        };
 
-                    rows.iter_mut()
-                        .filter(|row| {
-                            if let Some(MessageValue::Varchar(data_center)) =
-                                row.get(data_center_index)
-                            {
-                                data_center == config_data_center
-                            } else {
-                                false
-                            }
+                        Ok(CassandraNode {
+                            address,
+                            rack,
+                            _tokens: tokens,
+                            outbound: None,
                         })
-                        .map(|row| {
-                            let tokens =
-                                if let Some(MessageValue::List(list)) = row.get_mut(tokens_index) {
-                                    list.drain(..)
-                                        .map::<Result<String>, _>(|x| match x {
-                                            MessageValue::Varchar(a) => Ok(a),
-                                            _ => Err(anyhow!("tokens value not a varchar")),
-                                        })
-                                        .collect::<Result<Vec<String>>>()?
-                                } else {
-                                    return Err(anyhow!("tokens not a list"));
-                                };
-
-                            let rack =
-                                if let Some(MessageValue::Varchar(value)) = row.get(rack_index) {
-                                    value.clone()
-                                } else {
-                                    return Err(anyhow!("rack not a varchar"));
-                                };
-
-                            let ip = if let Some(MessageValue::Inet(value)) =
-                                row.get(broadcast_address_index)
-                            {
-                                *value
-                            } else {
-                                return Err(anyhow!("address not an inet"));
-                            };
-
-                            let port = if let Some(broadcast_port_index) = broadcast_port_index {
-                                if let Some(MessageValue::Integer(value, _)) =
-                                    row.get(broadcast_port_index)
-                                {
-                                    *value
-                                } else {
-                                    return Err(anyhow!("port not an integer"));
-                                }
-                            } else {
-                                //cassandra 3.x does not have the broadcast_port field so we just assume the default port
-                                9042
-                            };
-
-                            Ok(CassandraNode {
-                                address: SocketAddr::new(ip, port.try_into()?),
-                                rack,
-                                _tokens: tokens,
-                                outbound: None,
-                            })
-                        })
-                        .collect()
-                }
+                    })
+                    .collect(),
                 operation => Err(anyhow!(
                     "system.peers returned unexpected cassandra operation: {:?}",
                     operation
