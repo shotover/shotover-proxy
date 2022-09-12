@@ -151,7 +151,7 @@ pub async fn test(connection: &CassandraConnection) {
 }
 
 pub async fn test_topology_task(ca_path: Option<&str>) {
-    let nodes = run_topology_task(ca_path).await;
+    let nodes = run_topology_task(ca_path, None).await;
 
     assert_eq!(nodes.len(), 3);
     let mut possible_addresses: Vec<SocketAddr> = vec![
