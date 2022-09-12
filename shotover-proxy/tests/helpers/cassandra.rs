@@ -468,8 +468,6 @@ impl CassandraConnection {
 
 #[derive(Debug, Clone, PartialOrd, Eq, Ord)]
 pub enum ResultValue {
-    #[cfg(feature = "cassandra-cpp-driver-tests")]
-    Text(String),
     Varchar(String),
     Int(i32),
     Boolean(bool),
@@ -506,8 +504,6 @@ pub enum ResultValue {
 impl PartialEq for ResultValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            #[cfg(feature = "cassandra-cpp-driver-tests")]
-            (Self::Text(l0), Self::Text(r0)) => l0 == r0,
             (Self::Varchar(l0), Self::Varchar(r0)) => l0 == r0,
             (Self::Int(l0), Self::Int(r0)) => l0 == r0,
             (Self::Boolean(l0), Self::Boolean(r0)) => l0 == r0,
@@ -548,7 +544,6 @@ impl ResultValue {
             ResultValue::Null
         } else {
             match value.get_type() {
-                ValueType::TEXT => ResultValue::Text(value.get_string().unwrap()),
                 ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
                 ValueType::INT => ResultValue::Int(value.get_i32().unwrap()),
                 ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
@@ -607,6 +602,8 @@ impl ResultValue {
                 ValueType::UNKNOWN => todo!(),
                 ValueType::CUSTOM => todo!(),
                 ValueType::UDT => todo!(),
+                ValueType::TUPLE => todo!(),
+                ValueType::TEXT => unimplemented!(),
             }
         }
     }

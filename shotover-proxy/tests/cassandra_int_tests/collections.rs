@@ -237,22 +237,14 @@ mod list {
             .await;
         }
 
+        let new_set = match driver {
+            CassandraDriver::CdrsTokio => ResultValue::List,
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraDriver::Datastax => ResultValue::Set,
+        };
+
         // test selecting list of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-            let expected: Vec<Vec<ResultValue>> = match driver {
-                CassandraDriver::CdrsTokio => {
-                    vec![vec![ResultValue::List(vec![ResultValue::List(vec![
-                        get_type_example_result_value(*native_col_type),
-                    ])])]]
-                }
-                #[cfg(feature = "cassandra-cpp-driver-tests")]
-                CassandraDriver::Datastax => {
-                    vec![vec![ResultValue::List(vec![ResultValue::Set(vec![
-                        get_type_example_result_value(*native_col_type),
-                    ])])]]
-                }
-            };
-
             assert_query_result(
                 session,
                 format!(
@@ -260,10 +252,9 @@ mod list {
                     i
                 )
                 .as_str(),
-                &expected
-                    .iter()
-                    .map(Vec::as_slice)
-                    .collect::<Vec<&[ResultValue]>>(),
+                &[&[ResultValue::List(vec![new_set(vec![
+                    get_type_example_result_value(*native_col_type),
+                ])])]],
             )
             .await;
         }
@@ -405,6 +396,12 @@ mod set {
     }
 
     async fn select(session: &CassandraConnection, driver: CassandraDriver) {
+        let new_set = match driver {
+            CassandraDriver::CdrsTokio => ResultValue::List,
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraDriver::Datastax => ResultValue::Set,
+        };
+
         // select sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -412,45 +409,21 @@ mod set {
                 i
             );
 
-            let expected: Vec<Vec<ResultValue>> = match driver {
-                CassandraDriver::CdrsTokio => {
-                    vec![vec![ResultValue::List(vec![
-                        get_type_example_result_value(*col_type),
-                    ])]]
-                }
-                #[cfg(feature = "cassandra-cpp-driver-tests")]
-                CassandraDriver::Datastax => {
-                    vec![vec![ResultValue::Set(vec![get_type_example_result_value(
-                        *col_type,
-                    )])]]
-                }
-            };
-
             assert_query_result(
                 session,
                 query.as_str(),
-                &expected
-                    .iter()
-                    .map(Vec::as_slice)
-                    .collect::<Vec<&[ResultValue]>>(),
+                &[&[new_set(vec![get_type_example_result_value(*col_type)])]],
             )
             .await;
         }
 
         // test selecting set of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-            let expected: Vec<Vec<ResultValue>> =
-                match driver {
-                    CassandraDriver::CdrsTokio => {
-                        vec![vec![ResultValue::List(vec![ResultValue::List(vec![
-                            get_type_example_result_value(*native_col_type),
-                        ])])]]
-                    }
-                    #[cfg(feature = "cassandra-cpp-driver-tests")]
-                    CassandraDriver::Datastax => vec![vec![ResultValue::Set(vec![
-                        ResultValue::Set(vec![get_type_example_result_value(*native_col_type)]),
-                    ])]],
-                };
+            let new_set = match driver {
+                CassandraDriver::CdrsTokio => ResultValue::List,
+                #[cfg(feature = "cassandra-cpp-driver-tests")]
+                CassandraDriver::Datastax => ResultValue::Set,
+            };
 
             assert_query_result(
                 session,
@@ -459,29 +432,15 @@ mod set {
                     i
                 )
                 .as_str(),
-                &expected
-                    .iter()
-                    .map(Vec::as_slice)
-                    .collect::<Vec<&[ResultValue]>>(),
+                &[&[new_set(vec![new_set(vec![get_type_example_result_value(
+                    *native_col_type,
+                )])])]],
             )
             .await;
         }
 
         // test selecting set of lists
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-            let expected: Vec<Vec<ResultValue>> =
-                match driver {
-                    CassandraDriver::CdrsTokio => {
-                        vec![vec![ResultValue::List(vec![ResultValue::List(vec![
-                            get_type_example_result_value(*native_col_type),
-                        ])])]]
-                    }
-                    #[cfg(feature = "cassandra-cpp-driver-tests")]
-                    CassandraDriver::Datastax => vec![vec![ResultValue::Set(vec![
-                        ResultValue::List(vec![get_type_example_result_value(*native_col_type)]),
-                    ])]],
-                };
-
             assert_query_result(
                 session,
                 format!(
@@ -489,32 +448,15 @@ mod set {
                     i
                 )
                 .as_str(),
-                &expected
-                    .iter()
-                    .map(Vec::as_slice)
-                    .collect::<Vec<&[ResultValue]>>(),
+                &[&[new_set(vec![ResultValue::List(vec![
+                    get_type_example_result_value(*native_col_type),
+                ])])]],
             )
             .await;
         }
 
         // test selecting set of maps
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-            let expected: Vec<Vec<ResultValue>> = match driver {
-                CassandraDriver::CdrsTokio => {
-                    vec![vec![ResultValue::List(vec![ResultValue::Map(vec![(
-                        ResultValue::Int(0),
-                        get_type_example_result_value(*native_col_type),
-                    )])])]]
-                }
-                #[cfg(feature = "cassandra-cpp-driver-tests")]
-                CassandraDriver::Datastax => {
-                    vec![vec![ResultValue::Set(vec![ResultValue::Map(vec![(
-                        ResultValue::Int(0),
-                        get_type_example_result_value(*native_col_type),
-                    )])])]]
-                }
-            };
-
             assert_query_result(
                 session,
                 format!(
@@ -522,10 +464,10 @@ mod set {
                     i,
                 )
                 .as_str(),
-                &expected
-                    .iter()
-                    .map(Vec::as_slice)
-                    .collect::<Vec<&[ResultValue]>>(),
+                &[&[new_set(vec![ResultValue::Map(vec![(
+                    ResultValue::Int(0),
+                    get_type_example_result_value(*native_col_type),
+                )])])]],
             )
             .await;
         }
@@ -660,20 +602,14 @@ mod map {
             .await;
         }
 
+        let new_set = match driver {
+            CassandraDriver::CdrsTokio => ResultValue::List,
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraDriver::Datastax => ResultValue::Set,
+        };
+
         // test selecting map of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
-            let expected: Vec<Vec<ResultValue>> = match driver {
-                CassandraDriver::CdrsTokio => vec![vec![ResultValue::Map(vec![(
-                    ResultValue::Int(0),
-                    ResultValue::List(vec![get_type_example_result_value(*native_col_type)]),
-                )])]],
-                #[cfg(feature = "cassandra-cpp-driver-tests")]
-                CassandraDriver::Datastax => vec![vec![ResultValue::Map(vec![(
-                    ResultValue::Int(0),
-                    ResultValue::Set(vec![get_type_example_result_value(*native_col_type)]),
-                )])]],
-            };
-
             assert_query_result(
                 session,
                 format!(
@@ -681,10 +617,10 @@ mod map {
                     i
                 )
                 .as_str(),
-                &expected
-                    .iter()
-                    .map(Vec::as_slice)
-                    .collect::<Vec<&[ResultValue]>>(),
+                &[&[ResultValue::Map(vec![(
+                    ResultValue::Int(0),
+                    new_set(vec![get_type_example_result_value(*native_col_type)]),
+                )])]],
             )
             .await;
         }
