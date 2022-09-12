@@ -187,6 +187,6 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
             .expect("Node did not contain a unique expected rack");
         possible_racks.remove(rack_index);
 
-        assert_eq!(node._tokens.len(), 128);
+        assert_eq!(node.tokens.len(), 128);
     }
 }

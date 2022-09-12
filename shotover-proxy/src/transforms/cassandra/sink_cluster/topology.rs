@@ -4,6 +4,7 @@ use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
+use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::{frame::Version, query::QueryParams};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -119,11 +120,11 @@ mod system_local {
 
                         let tokens = if let Some(MessageValue::List(mut list)) = row.pop() {
                             list.drain(..)
-                                .map::<Result<String>, _>(|x| match x {
-                                    MessageValue::Varchar(a) => Ok(a),
+                                .map::<Result<Murmur3Token>, _>(|x| match x {
+                                    MessageValue::Varchar(a) => Ok(a.try_into()?),
                                     _ => Err(anyhow!("tokens value not a varchar")),
                                 })
-                                .collect::<Result<Vec<String>>>()?
+                                .collect::<Result<Vec<Murmur3Token>>>()?
                         } else {
                             return Err(anyhow!("tokens not a list"));
                         };
@@ -137,7 +138,7 @@ mod system_local {
                         Ok(CassandraNode {
                             address,
                             rack,
-                            _tokens: tokens,
+                            tokens,
                             outbound: None,
                         })
                     })
@@ -238,11 +239,11 @@ mod system_peers {
 
                         let tokens = if let Some(MessageValue::List(list)) = row.pop() {
                             list.into_iter()
-                                .map::<Result<String>, _>(|x| match x {
-                                    MessageValue::Varchar(a) => Ok(a),
+                                .map::<Result<Murmur3Token>, _>(|x| match x {
+                                    MessageValue::Varchar(a) => Ok(a.try_into()?),
                                     _ => Err(anyhow!("tokens value not a varchar")),
                                 })
-                                .collect::<Result<Vec<String>>>()?
+                                .collect::<Result<Vec<Murmur3Token>>>()?
                         } else {
                             return Err(anyhow!("tokens not a list"));
                         };
@@ -273,7 +274,7 @@ mod system_peers {
                         Ok(CassandraNode {
                             address: SocketAddr::new(ip, port.try_into()?),
                             rack,
-                            _tokens: tokens,
+                            tokens,
                             outbound: None,
                         })
                     })
