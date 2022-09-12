@@ -8,45 +8,40 @@ pub async fn test(connection: &CassandraConnection) {
     }
 
     {
-        let mut queries: Vec<(String, i32)> = vec![];
+        let mut batch = vec![];
         for i in 0..2 {
-            queries.push((
-                "INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (?, 'text1', 'text2')".into(),
+            batch.push(format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text1', 'text2')", i));
+        }
+        connection.execute_batch(batch);
+
+        assert_query_result(
+            connection,
+            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
+            &[
+                &[
+                    ResultValue::Int(0),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+                &[
+                    ResultValue::Int(1),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+            ],
+        )
+        .await;
+    }
+
+    {
+        let mut batch = vec![];
+        for i in 0..2 {
+            batch.push(format!(
+                "UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = {};",
                 i
             ));
         }
-
-        connection.execute_batch(queries);
-
-        assert_query_result(
-            connection,
-            "SELECT id, lastname, firstname FROM batch_keyspace.batch_table;",
-            &[
-                &[
-                    ResultValue::Int(0),
-                    ResultValue::Varchar("text1".into()),
-                    ResultValue::Varchar("text2".into()),
-                ],
-                &[
-                    ResultValue::Int(1),
-                    ResultValue::Varchar("text1".into()),
-                    ResultValue::Varchar("text2".into()),
-                ],
-            ],
-        )
-        .await;
-    }
-
-    {
-        let mut queries: Vec<(String, i32)> = vec![];
-        for i in 0..2 {
-            queries.push((
-                "UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = ?;".into(),
-                i,
-            ));
-        }
-
-        connection.execute_batch(queries);
+        connection.execute_batch(batch);
 
         assert_query_result(
             connection,
@@ -68,27 +63,28 @@ pub async fn test(connection: &CassandraConnection) {
     }
 
     {
-        let mut queries: Vec<(String, i32)> = vec![];
+        let mut batch = vec![];
         for i in 0..2 {
-            queries.push((
-                "DELETE FROM batch_keyspace.batch_table WHERE id = ?;".into(),
-                i,
+            batch.push(format!(
+                "DELETE FROM batch_keyspace.batch_table WHERE id = {};",
+                i
             ));
         }
-        connection.execute_batch(queries);
+        connection.execute_batch(batch);
         assert_query_result(connection, "SELECT * FROM batch_keyspace.batch_table;", &[]).await;
     }
 
     {
-        connection.execute_batch(vec![]);
+        let batch = vec![];
+        connection.execute_batch(batch);
     }
 
     // test batch statements over QUERY PROTOCOL
     {
         let insert_statement = "BEGIN BATCH
-    INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (2, 'text1', 'text2');
-    INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (3, 'text1', 'text2');
-    APPLY BATCH;";
+INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (2, 'text1', 'text2');
+INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES (3, 'text1', 'text2');
+APPLY BATCH;";
         run_query(connection, insert_statement).await;
 
         assert_query_result(

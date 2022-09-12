@@ -1,6 +1,6 @@
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use crate::helpers::cassandra::{
-    assert_query_result, run_query, CassandraDriver::Datastax, ResultValue,
+    assert_query_result, run_query, CassandraDriver::Datastax, CassandraError, ResultValue,
 };
 use crate::helpers::cassandra::{CassandraDriver, CassandraDriver::CdrsTokio};
 use crate::helpers::ShotoverManager;
@@ -488,7 +488,13 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
     // is passed through shotover unchanged.
     let statement = "SELECT data_center, native_port, rack FROM system.peers_v2;";
     let result = connection.execute_expect_err(statement);
-    assert_eq!(result, "unconfigured table peers_v2");
+    assert_eq!(
+        result,
+        CassandraError {
+            code: 0x2200.into(),
+            message: "unconfigured table peers_v2".into()
+        }
+    );
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -558,9 +564,9 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
 
     // this batch set should be allowed through
     {
-        let mut queries: Vec<(String, i32)> = vec![];
+        let mut queries: Vec<String> = vec![];
         for i in 0..25 {
-            queries.push(("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES (?, 'text', 'text')".into(), i));
+            queries.push(format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i));
         }
         connection.execute_batch(queries);
     }
@@ -569,12 +575,18 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
 
     // this batch set should not be allowed through
     {
-        let mut queries: Vec<(String, i32)> = vec![];
+        let mut queries: Vec<String> = vec![];
         for i in 0..60 {
-            queries.push(("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES (?, 'text', 'text')".into(), i));
+            queries.push(format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i));
         }
         let result = connection.execute_batch_expect_err(queries);
-        assert_eq!(result, "Server overloaded".to_string());
+        assert_eq!(
+            result,
+            CassandraError {
+                code: 0x1001.into(),
+                message: "Server overloaded".into()
+            }
+        );
     }
 
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window

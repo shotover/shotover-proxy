@@ -51,6 +51,39 @@ impl PreparedQuery {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct CassandraError {
+    pub code: CassandraErrorCode,
+    pub message: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CassandraErrorCode {
+    ServerOverloaded = 0x1001,
+    InvalidQuery = 0x2200,
+}
+
+impl From<i32> for CassandraErrorCode {
+    fn from(i: i32) -> Self {
+        match i {
+            0x1001 => CassandraErrorCode::ServerOverloaded,
+            0x2200 => CassandraErrorCode::InvalidQuery,
+            _ => unimplemented!("{i} is not implemented"),
+        }
+    }
+}
+
+impl CassandraErrorCode {
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
+    fn new_from_cpp(code: CassErrorCode) -> Self {
+        match code {
+            CassErrorCode::SERVER_INVALID_QUERY => CassandraErrorCode::InvalidQuery,
+            CassErrorCode::SERVER_OVERLOADED => CassandraErrorCode::ServerOverloaded,
+            _ => unimplemented!("{code:?} is not implemented"),
+        }
+    }
+}
+
 #[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum CassandraDriver {
@@ -294,15 +327,18 @@ impl CassandraConnection {
     }
 
     #[allow(unused)]
-    pub fn execute_expect_err(&self, query: &str) -> String {
+    pub fn execute_expect_err(&self, query: &str) -> CassandraError {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
                 let error = session.execute(&statement).wait().unwrap_err();
 
-                if let ErrorKind::CassErrorResult(_, msg, ..) = error.0 {
-                    return msg;
+                if let ErrorKind::CassErrorResult(code, msg, ..) = error.0 {
+                    return CassandraError {
+                        code: CassandraErrorCode::new_from_cpp(code),
+                        message: msg,
+                    };
                 }
 
                 panic!("Did not get an error result for {query}");
@@ -311,7 +347,10 @@ impl CassandraConnection {
                 let error = futures::executor::block_on(session.query(query)).unwrap_err();
 
                 match error {
-                    CdrsError::Server { body, .. } => body.message,
+                    CdrsError::Server { body, .. } => CassandraError {
+                        code: body.error_code.into(),
+                        message: body.message,
+                    },
                     _ => todo!(),
                 }
             }
@@ -320,10 +359,10 @@ impl CassandraConnection {
 
     #[allow(dead_code)]
     pub fn execute_expect_err_contains(&self, query: &str, contains: &str) {
-        let result = self.execute_expect_err(query);
+        let error_msg = self.execute_expect_err(query).message;
         assert!(
-            result.contains(contains),
-            "Expected the error to contain '{contains}' but it did not and was instead '{result}'"
+            error_msg.contains(contains),
+            "Expected the error to contain '{contains}' but it did not and was instead '{error_msg}'"
         );
     }
 
@@ -375,14 +414,14 @@ impl CassandraConnection {
     }
 
     #[allow(unused)]
-    pub fn execute_batch(&self, queries: Vec<(String, i32)>) {
+    pub fn execute_batch(&self, queries: Vec<String>) {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut batch = Batch::new(BatchType::LOGGED);
 
-                for (query, value) in queries {
-                    batch.add_statement(stmt!(query.as_str()).bind_int32(0, value).unwrap());
+                for query in queries {
+                    batch.add_statement(&stmt!(query.as_str()));
                 }
 
                 match session.execute_batch(&batch).wait() {
@@ -397,8 +436,8 @@ impl CassandraConnection {
             Self::CdrsTokio { session, .. } => {
                 let mut builder = BatchQueryBuilder::new();
 
-                for (query, value) in queries {
-                    builder = builder.add_query(query, query_values!(value));
+                for query in queries {
+                    builder = builder.add_query(query, query_values!());
                 }
 
                 let batch = builder.build().unwrap();
@@ -409,17 +448,20 @@ impl CassandraConnection {
     }
 
     #[allow(unused)]
-    pub fn execute_batch_expect_err(&self, queries: Vec<(String, i32)>) -> String {
+    pub fn execute_batch_expect_err(&self, queries: Vec<String>) -> CassandraError {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut batch = Batch::new(BatchType::LOGGED);
-                for (query, value) in queries {
-                    batch.add_statement(stmt!(query.as_str()).bind_int32(0, value).unwrap());
+                for query in queries {
+                    batch.add_statement(&stmt!(query.as_str()));
                 }
                 let error = session.execute_batch(&batch).wait().unwrap_err();
-                if let ErrorKind::CassErrorResult(_, msg, ..) = error.0 {
-                    return msg;
+                if let ErrorKind::CassErrorResult(code, message, ..) = error.0 {
+                    return CassandraError {
+                        code: CassandraErrorCode::new_from_cpp(code),
+                        message,
+                    };
                 }
 
                 panic!("Did not get an error result for {batch:?}");
