@@ -356,7 +356,12 @@ impl CassandraSinkCluster {
                     .new_connection(random_address)
                     .await?,
             );
+            self.init_handshake_address = Some(random_address);
         }
+        tracing::info!(
+            "Control connection finalized against node at: {:?}",
+            self.init_handshake_address.unwrap()
+        );
 
         Ok(())
     }
