@@ -21,12 +21,26 @@ jobs:
       matrix:
         include:
           # the cassandra cpp driver is only supported on 18.04
+          - name: Ubuntu 18.04 - Release - cassandra_int_tests
+            runner: ubuntu-18.04
+            cargo_flags: --release
+            test_flags: cassandra_int_tests
+
           - name: Ubuntu 18.04 - Release
             runner: ubuntu-18.04
             cargo_flags: --release
+            test_flags: --skip cassandra_int_tests
+
+          - name: Ubuntu 18.04 - Debug - cassandra_int_tests
+            runner: ubuntu-18.04
+            cargo_flags:
+            test_flags: cassandra_int_tests
+
           - name: Ubuntu 18.04 - Debug
             runner: ubuntu-18.04
             cargo_flags:
+            test_flags: --skip cassandra_int_tests
+
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     steps:
@@ -35,9 +49,10 @@ jobs:
       with:
         # rust-cache already handles all the sane defaults for caching rust builds.
         # However because we are running seperate debug/release builds in parallel,
-        # we also need to add Debug or Release to the key so that a seperate cache is used.
+        # we also need to add the runner and cargo_flags to the key so that a seperate cache is used.
         # Otherwise only the last build to finish would get saved to the cache.
-        key: ${{ matrix.name }}
+        # We allow different test_flags to share a cache as they should have identical build outputs
+        key: ${{ matrix.runner }} - ${{ matrix.cargo_flags }}
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
     - name: Install cargo-hack
@@ -50,7 +65,7 @@ jobs:
       # * clippy --all-targets causes clippy to run against tests and examples which it doesnt do by default.
       run: cargo hack --feature-powerset clippy --all-targets --locked ${{ matrix.cargo_flags }} -- -D warnings
     - name: Ensure that tests pass
-      run: cargo test ${{ matrix.cargo_flags }} --all-features -- --include-ignored --show-output --nocapture
+      run: cargo test ${{ matrix.cargo_flags }} --all-features -- --include-ignored --show-output --nocapture ${{ matrix.test_flags }}
     - name: Ensure that custom benches run
       run: cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough --rate 1000
       if: ${{ matrix.name == 'Ubuntu 18.04 - Release' }}
