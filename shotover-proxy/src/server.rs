@@ -87,8 +87,8 @@ pub struct TcpCodecListener<C: Codec> {
 
     tls: Option<TlsAcceptor>,
 
-    /// Keep track of how many messages we have received so we can use it as a request id.
-    message_count: u64,
+    /// Keep track of how many connections we have received so we can use it as a request id.
+    connection_count: u64,
 
     available_connections_gauge: Gauge,
 
@@ -125,7 +125,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             limit_connections,
             trigger_shutdown_rx,
             tls,
-            message_count: 0,
+            connection_count: 0,
             available_connections_gauge,
             timeout,
         })
@@ -231,7 +231,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 timeout: self.timeout,
             };
 
-            self.message_count = self.message_count.wrapping_add(1);
+            self.connection_count = self.connection_count.wrapping_add(1);
 
             // Spawn a new task to process the connections.
             tokio::spawn(
@@ -247,8 +247,8 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                     }
                 }
                 .instrument(tracing::error_span!(
-                    "request",
-                    id = self.message_count,
+                    "connection",
+                    id = self.connection_count,
                     source = self.source_name.as_str()
                 )),
             );
