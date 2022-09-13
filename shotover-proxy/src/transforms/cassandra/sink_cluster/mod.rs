@@ -176,7 +176,7 @@ impl CassandraSinkCluster {
             system_keyspaces: [
                 Identifier::parse("system"),
                 Identifier::parse("system_schema"),
-                Identifier::parse("repair_history"),
+                Identifier::parse("system_distributed"),
             ],
             local_shotover_node,
             local_nodes: vec![],
