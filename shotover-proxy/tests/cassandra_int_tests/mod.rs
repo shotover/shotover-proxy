@@ -1,4 +1,4 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, ResultValue};
+use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Batch, BatchType, Error, ErrorKind};
 use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
@@ -36,12 +36,10 @@ mod udt;
 async fn test_passthrough() {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
-    let connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9042)
-        .await;
+    let connection = CassandraConnection::new("127.0.0.1", 9042).await;
 
     keyspace::test(&connection).await;
     table::test(&connection).await;
@@ -59,15 +57,14 @@ async fn test_source_tls_and_single_tls() {
     test_helpers::cert::generate_cassandra_test_certs();
     let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yml");
 
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-tls/topology.yaml");
 
     let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-        let direct_connection =
-            shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+        let direct_connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert).await;
         assert_query_result(
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
@@ -76,7 +73,7 @@ async fn test_source_tls_and_single_tls() {
         .await;
     }
 
-    let connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9043, ca_cert);
+    let connection = CassandraConnection::new_tls("127.0.0.1", 9043, ca_cert).await;
 
     keyspace::test(&connection).await;
     table::test(&connection).await;
@@ -95,13 +92,11 @@ async fn test_cluster_single_rack_v3() {
         DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v3.yml");
 
     {
-        let shotover_manager = ShotoverManager::from_topology_file(
+        let _shotover_manager = ShotoverManager::from_topology_file(
             "example-configs/cassandra-cluster/topology-dummy-peers-v3.yaml",
         );
 
-        let mut connection1 = shotover_manager
-            .cassandra_connection("127.0.0.1", 9042)
-            .await;
+        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042).await;
         connection1
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -116,9 +111,7 @@ async fn test_cluster_single_rack_v3() {
         cluster_single_rack_v3::test_dummy_peers(&connection1).await;
 
         //Check for bugs in cross connection state
-        let mut connection2 = shotover_manager
-            .cassandra_connection("127.0.0.1", 9042)
-            .await;
+        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042).await;
         connection2
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -135,13 +128,11 @@ async fn test_cluster_single_rack_v4() {
         DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml");
 
     {
-        let shotover_manager = ShotoverManager::from_topology_file(
+        let _shotover_manager = ShotoverManager::from_topology_file(
             "example-configs/cassandra-cluster/topology-v4.yaml",
         );
 
-        let mut connection1 = shotover_manager
-            .cassandra_connection("127.0.0.1", 9042)
-            .await;
+        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042).await;
         connection1
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -156,9 +147,7 @@ async fn test_cluster_single_rack_v4() {
         cluster_single_rack_v4::test(&connection1).await;
 
         //Check for bugs in cross connection state
-        let mut connection2 = shotover_manager
-            .cassandra_connection("127.0.0.1", 9042)
-            .await;
+        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042).await;
         connection2
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -166,13 +155,11 @@ async fn test_cluster_single_rack_v4() {
     }
 
     {
-        let shotover_manager = ShotoverManager::from_topology_file(
+        let _shotover_manager = ShotoverManager::from_topology_file(
             "example-configs/cassandra-cluster/topology-dummy-peers-v4.yaml",
         );
 
-        let mut connection = shotover_manager
-            .cassandra_connection("127.0.0.1", 9042)
-            .await;
+        let mut connection = CassandraConnection::new("127.0.0.1", 9042).await;
         connection
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -189,7 +176,7 @@ async fn test_cluster_multi_rack() {
         DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yml");
 
     {
-        let shotover_manager_rack1 = ShotoverManager::from_topology_file_without_observability(
+        let _shotover_manager_rack1 = ShotoverManager::from_topology_file_without_observability(
             "example-configs/cassandra-cluster-multi-rack/topology_rack1.yaml",
         );
         let _shotover_manager_rack2 = ShotoverManager::from_topology_file_without_observability(
@@ -199,9 +186,7 @@ async fn test_cluster_multi_rack() {
             "example-configs/cassandra-cluster-multi-rack/topology_rack3.yaml",
         );
 
-        let mut connection1 = shotover_manager_rack1
-            .cassandra_connection("127.0.0.1", 9042)
-            .await;
+        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042).await;
         connection1
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -216,9 +201,7 @@ async fn test_cluster_multi_rack() {
         cluster_multi_rack::test(&connection1).await;
 
         //Check for bugs in cross connection state
-        let mut connection2 = shotover_manager_rack1
-            .cassandra_connection("127.0.0.1", 9042)
-            .await;
+        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042).await;
         connection2
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -235,14 +218,13 @@ async fn test_source_tls_and_cluster_tls() {
     let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
     let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yml");
     {
-        let shotover_manager = ShotoverManager::from_topology_file(
+        let _shotover_manager = ShotoverManager::from_topology_file(
             "example-configs/cassandra-cluster-tls/topology.yaml",
         );
 
         {
             // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-            let direct_connection =
-                shotover_manager.cassandra_connection_tls("172.16.1.2", 9042, ca_cert);
+            let direct_connection = CassandraConnection::new_tls("172.16.1.2", 9042, ca_cert).await;
             assert_query_result(
                 &direct_connection,
                 "SELECT bootstrapped FROM system.local",
@@ -251,7 +233,7 @@ async fn test_source_tls_and_cluster_tls() {
             .await;
         }
 
-        let mut connection = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+        let mut connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert).await;
         connection
             .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
             .await;
@@ -283,9 +265,7 @@ async fn test_cassandra_redis_cache() {
     );
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
-    let connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9042)
-        .await;
+    let connection = CassandraConnection::new("127.0.0.1", 9042).await;
 
     keyspace::test(&connection).await;
     table::test(&connection).await;
@@ -302,16 +282,12 @@ async fn test_cassandra_redis_cache() {
 async fn test_cassandra_protect_transform_local() {
     let _compose = DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yml");
 
-    let shotover_manager = ShotoverManager::from_topology_file(
+    let _shotover_manager = ShotoverManager::from_topology_file(
         "example-configs/cassandra-protect-local/topology.yaml",
     );
 
-    let shotover_connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9042)
-        .await;
-    let direct_connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9043)
-        .await;
+    let shotover_connection = CassandraConnection::new("127.0.0.1", 9042).await;
+    let direct_connection = CassandraConnection::new("127.0.0.1", 9043).await;
 
     keyspace::test(&shotover_connection).await;
     table::test(&shotover_connection).await;
@@ -330,15 +306,11 @@ async fn test_cassandra_protect_transform_aws() {
     let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yml");
     let _compose_aws = DockerCompose::new_moto();
 
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-protect-aws/topology.yaml");
 
-    let shotover_connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9042)
-        .await;
-    let direct_connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9043)
-        .await;
+    let shotover_connection = CassandraConnection::new("127.0.0.1", 9042).await;
+    let direct_connection = CassandraConnection::new("127.0.0.1", 9043).await;
 
     keyspace::test(&shotover_connection).await;
     table::test(&shotover_connection).await;
@@ -357,17 +329,12 @@ async fn test_cassandra_peers_rewrite_cassandra4() {
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
     );
 
-    let shotover_manager = ShotoverManager::from_topology_file(
+    let _shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let normal_connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9043)
-        .await;
-
-    let rewrite_port_connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9044)
-        .await;
+    let normal_connection = CassandraConnection::new("127.0.0.1", 9043).await;
+    let rewrite_port_connection = CassandraConnection::new("127.0.0.1", 9044).await;
 
     // run some basic tests to confirm it works as normal
     table::test(&normal_connection).await;
@@ -452,13 +419,11 @@ async fn test_cassandra_peers_rewrite_cassandra3() {
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml",
     );
 
-    let shotover_manager = ShotoverManager::from_topology_file(
+    let _shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9044)
-        .await;
+    let connection = CassandraConnection::new("127.0.0.1", 9044).await;
     // run some basic tests to confirm it works as normal
     table::test(&connection).await;
 
@@ -481,16 +446,12 @@ async fn test_cassandra_request_throttling() {
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
 
-    let connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9042)
-        .await;
+    let connection = CassandraConnection::new("127.0.0.1", 9042).await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window and not trigger the rate limiter with client's startup reqeusts
-    let connection_2 = shotover_manager
-        .cassandra_connection("127.0.0.1", 9042)
-        .await;
+    let connection_2 = CassandraConnection::new("127.0.0.1", 9042).await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window again
 
     let statement = "SELECT * FROM system.peers";

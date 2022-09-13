@@ -1,6 +1,6 @@
 use crate::helpers::cassandra::CassandraConnection;
 use crate::helpers::ShotoverManager;
-use cassandra_cpp::{stmt, Cluster, Session, Statement};
+use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, Criterion};
 use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::docker_compose::DockerCompose;
@@ -256,15 +256,10 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let mut cluster = Cluster::default();
-        cluster.set_contact_points("127.0.0.1").unwrap();
-        cluster.set_credentials("cassandra", "cassandra").unwrap();
-        cluster.set_port(9042).unwrap();
-        cluster.set_load_balance_round_robin();
-
-        // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
-        // So we instead force the Display formatter `{}` on the error.
-        let connection = cluster.connect().map_err(|err| format!("{err}")).unwrap();
+        let CassandraConnection::Datastax {
+            session: connection,
+            ..
+        } = futures::executor::block_on(CassandraConnection::new("127.0.0.1", 9042));
 
         let bench_resources = Self {
             _compose: compose,
@@ -285,7 +280,7 @@ impl BenchResources {
         let CassandraConnection::Datastax {
             session: connection,
             ..
-        } = shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert);
+        } = futures::executor::block_on(CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert));
 
         let bench_resources = Self {
             _compose: compose,
