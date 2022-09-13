@@ -1,12 +1,16 @@
-use crate::frame::cassandra::CassandraOperation;
+use crate::frame::cassandra::{CassandraMetadata, CassandraOperation};
 use crate::frame::{CassandraFrame, Frame, MessageType};
-use crate::message::{Encodable, Message, Messages};
+use crate::message::{Encodable, Message, Messages, Metadata};
 use crate::server::CodecReadError;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{AdditionalErrorInfo, ErrorBody};
-use cassandra_protocol::frame::{CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Version};
+use cassandra_protocol::frame::{
+    CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Opcode, Version,
+};
+use cql3_parser::cassandra_statement::CassandraStatement;
+use cql3_parser::common::Identifier;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 
@@ -14,6 +18,7 @@ use tracing::info;
 pub struct CassandraCodec {
     compressor: Compression,
     messages: Vec<Message>,
+    current_use_keyspace: Option<Identifier>,
 }
 
 impl Default for CassandraCodec {
@@ -27,6 +32,7 @@ impl CassandraCodec {
         CassandraCodec {
             compressor: Compression::None,
             messages: vec![],
+            current_use_keyspace: None,
         }
     }
 }
@@ -65,8 +71,23 @@ impl Decoder for CassandraCodec {
                         return Err(reject_protocol_version(version.into()));
                     }
 
-                    self.messages
-                        .push(Message::from_bytes(bytes.freeze(), MessageType::Cassandra));
+                    let mut message = Message::from_bytes(bytes.freeze(), MessageType::Cassandra);
+
+                    if let Ok(Metadata::Cassandra(CassandraMetadata {
+                        opcode: Opcode::Query | Opcode::Batch,
+                        ..
+                    })) = message.metadata()
+                    {
+                        if let Some(keyspace) = get_use_keyspace(&mut message) {
+                            self.current_use_keyspace = Some(keyspace);
+                        }
+
+                        if let Some(keyspace) = &self.current_use_keyspace {
+                            set_default_keyspace(&mut message, keyspace);
+                        }
+                    }
+
+                    self.messages.push(message);
                 }
                 Err(CheckEnvelopeSizeError::NotEnoughBytes) => {
                     if self.messages.is_empty() || src.remaining() != 0 {
@@ -84,6 +105,70 @@ impl Decoder for CassandraCodec {
                         err
                     )))
                 }
+            }
+        }
+    }
+}
+
+fn get_use_keyspace(message: &mut Message) -> Option<Identifier> {
+    if let Some(Frame::Cassandra(frame)) = message.frame() {
+        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+            if let CassandraStatement::Use(keyspace) = query.as_ref() {
+                return Some(keyspace.clone());
+            }
+        }
+    }
+    None
+}
+
+fn set_default_keyspace(message: &mut Message, keyspace: &Identifier) {
+    // TODO: rewrite Operation::Prepared in the same way
+    if let Some(Frame::Cassandra(frame)) = message.frame() {
+        for query in frame.operation.queries() {
+            let name = match query {
+                CassandraStatement::AlterMaterializedView(x) => &mut x.name,
+                CassandraStatement::AlterTable(x) => &mut x.name,
+                CassandraStatement::AlterType(x) => &mut x.name,
+                CassandraStatement::CreateAggregate(x) => &mut x.name,
+                CassandraStatement::CreateFunction(x) => &mut x.name,
+                CassandraStatement::CreateIndex(x) => &mut x.table,
+                CassandraStatement::CreateMaterializedView(x) => &mut x.name,
+                CassandraStatement::CreateTable(x) => &mut x.name,
+                CassandraStatement::CreateTrigger(x) => &mut x.name,
+                CassandraStatement::CreateType(x) => &mut x.name,
+                CassandraStatement::Delete(x) => &mut x.table_name,
+                CassandraStatement::DropAggregate(x) => &mut x.name,
+                CassandraStatement::DropFunction(x) => &mut x.name,
+                CassandraStatement::DropIndex(x) => &mut x.name,
+                CassandraStatement::DropMaterializedView(x) => &mut x.name,
+                CassandraStatement::DropTable(x) => &mut x.name,
+                CassandraStatement::DropTrigger(x) => &mut x.name,
+                CassandraStatement::DropType(x) => &mut x.name,
+                CassandraStatement::Insert(x) => &mut x.table_name,
+                CassandraStatement::Select(x) => &mut x.table_name,
+                CassandraStatement::Truncate(name) => name,
+                CassandraStatement::Update(x) => &mut x.table_name,
+                CassandraStatement::AlterKeyspace(_)
+                | CassandraStatement::AlterRole(_)
+                | CassandraStatement::AlterUser(_)
+                | CassandraStatement::ApplyBatch
+                | CassandraStatement::CreateKeyspace(_)
+                | CassandraStatement::CreateRole(_)
+                | CassandraStatement::CreateUser(_)
+                | CassandraStatement::DropRole(_)
+                | CassandraStatement::DropUser(_)
+                | CassandraStatement::Grant(_)
+                | CassandraStatement::ListRoles(_)
+                | CassandraStatement::Revoke(_)
+                | CassandraStatement::DropKeyspace(_)
+                | CassandraStatement::ListPermissions(_)
+                | CassandraStatement::Use(_)
+                | CassandraStatement::Unknown(_) => {
+                    return;
+                }
+            };
+            if name.keyspace.is_none() {
+                name.keyspace = Some(keyspace.clone());
             }
         }
     }

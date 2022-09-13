@@ -6,7 +6,7 @@ use tokio::time::{sleep, timeout};
 
 use crate::cassandra_int_tests::cluster::run_topology_task;
 use crate::helpers::cassandra::{
-    assert_query_result, CassandraConnection, CassandraDriver, ResultValue,
+    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
 };
 use crate::helpers::ShotoverManager;
 use std::net::SocketAddr;
@@ -32,6 +32,10 @@ async fn test_rewrite_system_peers(connection: &CassandraConnection) {
 async fn test_rewrite_system_peers_v2(connection: &CassandraConnection) {
     let all_columns = "peer, peer_port, data_center, host_id, native_address, native_port, preferred_ip, preferred_port, rack, release_version, schema_version, tokens";
     assert_query_result(connection, "SELECT * FROM system.peers_v2;", &[]).await;
+
+    run_query(connection, "USE system;").await;
+    assert_query_result(connection, "SELECT * FROM peers_v2;", &[]).await;
+
     assert_query_result(
         connection,
         &format!("SELECT {all_columns} FROM system.peers_v2;"),
