@@ -239,7 +239,7 @@ impl CassandraFrame {
             Opcode::Prepare => CassandraOperation::Prepare(frame.body),
             Opcode::Execute => {
                 if let RequestBody::Execute(body) = frame.request_body()? {
-                    CassandraOperation::Execute(body)
+                    CassandraOperation::Execute(Box::new(body))
                 } else {
                     unreachable!("we already know this is an execute");
                 }
@@ -326,7 +326,7 @@ pub enum CassandraOperation {
     Result(CassandraResult),
     Error(ErrorBody),
     Prepare(Vec<u8>),
-    Execute(BodyReqExecuteOwned),
+    Execute(Box<BodyReqExecuteOwned>),
     Register(Vec<u8>),
     Event(ServerEvent),
     Batch(CassandraBatch),
