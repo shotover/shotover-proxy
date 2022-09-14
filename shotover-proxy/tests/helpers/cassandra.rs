@@ -608,7 +608,6 @@ impl ResultValue {
                 ValueType::UNKNOWN => todo!(),
                 ValueType::CUSTOM => todo!(),
                 ValueType::UDT => todo!(),
-                ValueType::TUPLE => todo!(),
                 ValueType::TEXT => unimplemented!("text is represented by the same id as varchar at the protocol level and therefore will never be instantiated by the datastax cpp driver. https://github.com/apache/cassandra/blob/703ccdee29f7e8c39aeb976e72e516415d609cf4/doc/native_protocol_v5.spec#L1184"),
             }
         }
@@ -665,8 +664,10 @@ impl ResultValue {
                 ResultValue::Set(elements)
             }
             CassandraType::Udt(_) => todo!(),
-            CassandraType::Tuple(_) => todo!(),
-            CassandraType::Null => todo!(),
+            CassandraType::Tuple(tuple) => {
+                ResultValue::Tuple(tuple.iter().map(ResultValue::new_from_cdrs).collect())
+            }
+            CassandraType::Null => ResultValue::Null,
         }
     }
 }
