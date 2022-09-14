@@ -639,34 +639,33 @@ impl ResultValue {
             CassandraType::Duration(duration) => {
                 ResultValue::Duration(duration.serialize_to_vec(version))
             }
-            CassandraType::List(list) => {
-                let mut elements = Vec::new();
-                for element in list {
-                    elements.push(ResultValue::new_from_cdrs(element, version));
-                }
-                ResultValue::List(elements)
-            }
-            CassandraType::Map(map) => {
-                let mut elements = Vec::new();
-                for (k, v) in map {
-                    elements.push((
-                        ResultValue::new_from_cdrs(k, version),
-                        ResultValue::new_from_cdrs(v, version),
-                    ));
-                }
-                ResultValue::Map(elements)
-            }
-            CassandraType::Set(set) => {
-                let mut elements = Vec::new();
-                for element in set {
-                    elements.push(ResultValue::new_from_cdrs(element, version));
-                }
-                ResultValue::Set(elements)
-            }
+            CassandraType::List(mut list) => ResultValue::List(
+                list.drain(..)
+                    .map(|element| ResultValue::new_from_cdrs(element, version))
+                    .collect(),
+            ),
+            CassandraType::Map(mut map) => ResultValue::Map(
+                map.drain(..)
+                    .map(|(k, v)| {
+                        (
+                            ResultValue::new_from_cdrs(k, version),
+                            ResultValue::new_from_cdrs(v, version),
+                        )
+                    })
+                    .collect(),
+            ),
+            CassandraType::Set(mut set) => ResultValue::Set(
+                set.drain(..)
+                    .map(|element| ResultValue::new_from_cdrs(element, version))
+                    .collect(),
+            ),
             CassandraType::Udt(_) => todo!(),
-            CassandraType::Tuple(tuple) => {
-                ResultValue::Tuple(tuple.iter().map(ResultValue::new_from_cdrs).collect())
-            }
+            CassandraType::Tuple(mut tuple) => ResultValue::Tuple(
+                tuple
+                    .drain(..)
+                    .map(|element| ResultValue::new_from_cdrs(element, version))
+                    .collect(),
+            ),
             CassandraType::Null => ResultValue::Null,
         }
     }
