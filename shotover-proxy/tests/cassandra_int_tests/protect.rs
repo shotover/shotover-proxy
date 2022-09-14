@@ -16,8 +16,9 @@ pub async fn test(shotover_session: &CassandraConnection, direct_session: &Cassa
         "CREATE KEYSPACE test_protect_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
     ).await;
 
-    run_query(shotover_session,
-              "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);"
+    run_query(
+        shotover_session,
+        "CREATE TABLE test_protect_keyspace.test_table (pk varchar PRIMARY KEY, cluster varchar, col1 blob, col2 int, col3 boolean);"
     ).await;
 
     run_query(

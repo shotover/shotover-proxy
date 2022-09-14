@@ -208,27 +208,7 @@ impl CassandraConnection {
                 }
             }
             // TODO actually implement TLS for cdrs-tokio
-            CassandraDriver::CdrsTokio => {
-                let user = "cassandra";
-                let password = "cassandra";
-                let auth = StaticPasswordAuthenticatorProvider::new(&user, &password);
-                let config = futures::executor::block_on(
-                    NodeTcpConfigBuilder::new()
-                        .with_contact_point("127.0.0.1:9042".into())
-                        .with_authenticator_provider(Arc::new(auth))
-                        .build(),
-                )
-                .unwrap();
-
-                let session =
-                    TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
-                        .build()
-                        .unwrap();
-                CassandraConnection::CdrsTokio {
-                    session,
-                    schema_awaiter: None,
-                }
-            }
+            CassandraDriver::CdrsTokio => todo!(),
         }
     }
 
@@ -239,46 +219,32 @@ impl CassandraConnection {
             context.set_ca_file(ca_cert).unwrap();
             context.build()
         });
-        match self {
+
+        let schema_awaiter = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
-            Self::Datastax { schema_awaiter, .. } => {
-                *schema_awaiter = Some(
-                    SessionBuilderScylla::new()
-                        .known_node(direct_node)
-                        .user("cassandra", "cassandra")
-                        .ssl_context(context)
-                        .build()
-                        .await
-                        .unwrap(),
-                );
-            }
-            Self::CdrsTokio { schema_awaiter, .. } => {
-                *schema_awaiter = Some(
-                    SessionBuilderScylla::new()
-                        .known_node(direct_node)
-                        .user("cassandra", "cassandra")
-                        .ssl_context(context)
-                        .build()
-                        .await
-                        .unwrap(),
-                );
-            }
-        }
+            Self::Datastax { schema_awaiter, .. } => schema_awaiter,
+            Self::CdrsTokio { schema_awaiter, .. } => schema_awaiter,
+        };
+
+        *schema_awaiter = Some(
+            SessionBuilderScylla::new()
+                .known_node(direct_node)
+                .user("cassandra", "cassandra")
+                .ssl_context(context)
+                .build()
+                .await
+                .unwrap(),
+        );
     }
 
     async fn await_schema_agreement(&self) {
-        match self {
+        let schema_awaiter = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
-            Self::Datastax { schema_awaiter, .. } => {
-                if let Some(schema_awaiter) = schema_awaiter {
-                    schema_awaiter.await_schema_agreement().await.unwrap();
-                }
-            }
-            Self::CdrsTokio { schema_awaiter, .. } => {
-                if let Some(schema_awaiter) = schema_awaiter {
-                    futures::executor::block_on(schema_awaiter.await_schema_agreement()).unwrap();
-                }
-            }
+            Self::Datastax { schema_awaiter, .. } => schema_awaiter,
+            Self::CdrsTokio { schema_awaiter, .. } => schema_awaiter,
+        };
+        if let Some(schema_awaiter) = schema_awaiter {
+            schema_awaiter.await_schema_agreement().await.unwrap();
         }
     }
 

@@ -1,6 +1,7 @@
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use crate::helpers::cassandra::{
-    assert_query_result, run_query, CassandraDriver::Datastax, CassandraError, ResultValue,
+    assert_query_result, run_query, CassandraDriver::Datastax, CassandraError, CassandraErrorCode,
+    ResultValue,
 };
 use crate::helpers::cassandra::{CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio};
 use crate::helpers::ShotoverManager;
@@ -491,7 +492,7 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
     assert_eq!(
         result,
         CassandraError {
-            code: 0x2200.into(),
+            code: CassandraErrorCode::InvalidQuery,
             message: "unconfigured table peers_v2".into()
         }
     );
@@ -583,7 +584,7 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
         assert_eq!(
             result,
             CassandraError {
-                code: 0x1001.into(),
+                code: CassandraErrorCode::ServerOverloaded,
                 message: "Server overloaded".into()
             }
         );
