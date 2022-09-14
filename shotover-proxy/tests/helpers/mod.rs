@@ -77,7 +77,7 @@ impl ShotoverManager {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn redis_connection(&self, port: u16) -> redis::Connection {
         let address = "127.0.0.1";
         test_helpers::wait_for_socket_to_open(address, port);
@@ -86,11 +86,13 @@ impl ShotoverManager {
             .unwrap()
             .get_connection()
             .unwrap();
-        connection.set_read_timeout(Some(Duration::from_secs(10)));
+        connection
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
         connection
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn redis_connection_async(&self, port: u16) -> redis::aio::Connection {
         let address = "127.0.0.1";
         test_helpers::wait_for_socket_to_open(address, port);
@@ -106,7 +108,7 @@ impl ShotoverManager {
         .await
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn redis_connection_async_tls(
         &self,
         port: u16,
