@@ -3,6 +3,7 @@ use crate::message::{Message, Messages};
 use crate::tls::TlsConnector;
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::Result;
+use cassandra_protocol::token::Murmur3Token;
 use std::net::SocketAddr;
 use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot};
@@ -11,7 +12,7 @@ use tokio::sync::{mpsc, oneshot};
 pub struct CassandraNode {
     pub address: SocketAddr,
     pub rack: String,
-    pub _tokens: Vec<String>,
+    pub tokens: Vec<Murmur3Token>,
     pub outbound: Option<CassandraConnection>,
 }
 
