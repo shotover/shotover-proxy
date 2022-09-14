@@ -125,6 +125,6 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
         possible_addresses.remove(address_index);
 
         assert_eq!(node.rack, "rack1");
-        assert_eq!(node._tokens.len(), 128);
+        assert_eq!(node.tokens.len(), 128);
     }
 }
