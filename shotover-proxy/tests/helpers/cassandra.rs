@@ -1,9 +1,7 @@
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
-    stmt, Batch, BatchType, CassFuture, CassResult, Cluster, Error, ErrorKind, PreparedStatement,
-    Session as DatastaxSession, Ssl, Value, ValueType,
-    stmt, Batch, CassFuture, CassResult, Cluster, Error, PreparedStatement, Session, Ssl,
-    Statement, Value, ValueType,
+    stmt, Batch, BatchType, CassErrorCode, CassFuture, CassResult, Cluster, Error, ErrorKind,
+    PreparedStatement, Session as DatastaxSession, Ssl, Value, ValueType,
 };
 use cassandra_protocol::types::cassandra_type::{wrapper_fn, CassandraType};
 use cdrs_tokio::{

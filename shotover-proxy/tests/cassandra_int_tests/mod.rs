@@ -2,7 +2,7 @@
 use crate::helpers::cassandra::{
     assert_query_result, run_query, CassandraDriver::Datastax, CassandraError, ResultValue,
 };
-use crate::helpers::cassandra::{CassandraDriver, CassandraDriver::CdrsTokio};
+use crate::helpers::cassandra::{CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio};
 use crate::helpers::ShotoverManager;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{Error, ErrorKind};
@@ -49,7 +49,7 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
-    let connection = CassandraConnection::new("127.0.0.1", 9042).await;
+    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
     keyspace::test(&connection).await;
     table::test(&connection).await;
@@ -78,7 +78,7 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-        let direct_connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert).await;
+        let direct_connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver);
         assert_query_result(
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
@@ -87,7 +87,7 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
         .await;
     }
 
-    let connection = CassandraConnection::new_tls("127.0.0.1", 9043, ca_cert).await;
+    let connection = CassandraConnection::new_tls("127.0.0.1", 9043, ca_cert, driver);
 
     keyspace::test(&connection).await;
     table::test(&connection).await;
@@ -114,7 +114,7 @@ async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
             "example-configs/cassandra-cluster/topology-dummy-peers-v3.yaml",
         );
 
-        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042).await;
+        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         connection1
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -129,7 +129,7 @@ async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
         cluster_single_rack_v3::test_dummy_peers(&connection1).await;
 
         //Check for bugs in cross connection state
-        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042).await;
+        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         connection2
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -154,7 +154,7 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             "example-configs/cassandra-cluster/topology-v4.yaml",
         );
 
-        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042).await;
+        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         connection1
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -170,7 +170,7 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         cluster_single_rack_v4::test(&connection1).await;
 
         //Check for bugs in cross connection state
-        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042).await;
+        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         connection2
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -182,7 +182,7 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             "example-configs/cassandra-cluster/topology-dummy-peers-v4.yaml",
         );
 
-        let mut connection = CassandraConnection::new("127.0.0.1", 9042).await;
+        let mut connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         connection
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -213,7 +213,7 @@ async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
             "example-configs/cassandra-cluster-multi-rack/topology_rack3.yaml",
         );
 
-        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042).await;
+        let mut connection1 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         connection1
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -228,7 +228,7 @@ async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
         cluster_multi_rack::test(&connection1).await;
 
         //Check for bugs in cross connection state
-        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042).await;
+        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         connection2
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
@@ -256,7 +256,8 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 
         {
             // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-            let direct_connection = CassandraConnection::new_tls("172.16.1.2", 9042, ca_cert).await;
+            let direct_connection =
+                CassandraConnection::new_tls("172.16.1.2", 9042, ca_cert, driver);
             assert_query_result(
                 &direct_connection,
                 "SELECT bootstrapped FROM system.local",
@@ -265,13 +266,12 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
             .await;
         }
 
-        let mut connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert).await;
+        let mut connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver);
         connection
             .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
             .await;
 
-        let mut connection =
-            shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert, driver);
+        let mut connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver);
         connection
             .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
             .await;
@@ -306,7 +306,7 @@ async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
     );
 
     let mut redis_connection = shotover_manager.redis_connection(6379);
-    let connection = CassandraConnection::new("127.0.0.1", 9042).await;
+    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
     keyspace::test(&connection).await;
     table::test(&connection).await;
@@ -331,8 +331,8 @@ async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver)
         "example-configs/cassandra-protect-local/topology.yaml",
     );
 
-    let shotover_connection = CassandraConnection::new("127.0.0.1", 9042).await;
-    let direct_connection = CassandraConnection::new("127.0.0.1", 9043).await;
+    let shotover_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
 
     keyspace::test(&shotover_connection).await;
     table::test(&shotover_connection).await;
@@ -358,8 +358,8 @@ async fn test_cassandra_protect_transform_aws(#[case] driver: CassandraDriver) {
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-protect-aws/topology.yaml");
 
-    let shotover_connection = CassandraConnection::new("127.0.0.1", 9042).await;
-    let direct_connection = CassandraConnection::new("127.0.0.1", 9043).await;
+    let shotover_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
 
     keyspace::test(&shotover_connection).await;
     table::test(&shotover_connection).await;
@@ -386,8 +386,8 @@ async fn test_cassandra_peers_rewrite_cassandra4(#[case] driver: CassandraDriver
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let normal_connection = CassandraConnection::new("127.0.0.1", 9043).await;
-    let rewrite_port_connection = CassandraConnection::new("127.0.0.1", 9044).await;
+    let normal_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
+    let rewrite_port_connection = CassandraConnection::new("127.0.0.1", 9044, driver).await;
 
     // run some basic tests to confirm it works as normal
     table::test(&normal_connection).await;
@@ -480,7 +480,7 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
         "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
     );
 
-    let connection = CassandraConnection::new("127.0.0.1", 9044).await;
+    let connection = CassandraConnection::new("127.0.0.1", 9044, driver).await;
     // run some basic tests to confirm it works as normal
     table::test(&connection).await;
 
@@ -510,9 +510,9 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
     let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
 
-    let connection = CassandraConnection::new("127.0.0.1", 9042).await;
+    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window and not trigger the rate limiter with client's startup reqeusts
-    let connection_2 = CassandraConnection::new("127.0.0.1", 9042).await;
+    let connection_2 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window again
 
     let statement = "SELECT * FROM system.peers";
@@ -602,12 +602,10 @@ async fn test_events_keyspace(#[case] driver: CassandraDriver) {
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
 
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
 
-    let connection = shotover_manager
-        .cassandra_connection("127.0.0.1", 9042, driver)
-        .await;
+    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
     let mut event_recv = connection.as_cdrs().create_event_receiver();
 

@@ -1,8 +1,6 @@
 use crate::helpers::cassandra::{CassandraConnection, CassandraDriver};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Session, Statement};
-use criterion::{criterion_group, Criterion};
-use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
 use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::docker_compose::DockerCompose;
@@ -261,11 +259,8 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let connection = futures::executor::block_on(shotover_manager.cassandra_connection(
-            "127.0.0.1",
-            9042,
-            DRIVER,
-        ));
+        let connection =
+            futures::executor::block_on(CassandraConnection::new("127.0.0.1", 9042, DRIVER));
 
         let bench_resources = Self {
             _compose: compose,
@@ -287,8 +282,7 @@ impl BenchResources {
 
         let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
 
-        let connection =
-            shotover_manager.cassandra_connection_tls("127.0.0.1", 9042, ca_cert, DRIVER);
+        let connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, DRIVER);
 
         let bench_resources = Self {
             _compose: compose,
