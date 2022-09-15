@@ -30,7 +30,7 @@ async fn select(session: &CassandraConnection) {
             ResultValue::VarInt(vec![3, 5, 233]),
         ]],
     )
-    .await
+    .await;
 }
 
 async fn insert(session: &CassandraConnection) {

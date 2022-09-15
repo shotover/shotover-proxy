@@ -11,6 +11,7 @@ license = "Apache-2.0"
 [features]
 # Include WIP alpha transforms in the public API
 alpha-transforms = []
+cassandra-cpp-driver-tests = []
 
 [dependencies]
 pretty-hex = "0.3.0"
@@ -92,7 +93,9 @@ reqwest = "0.11.6"
 metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
 scylla = { version = "0.5.0", features = ["ssl"] }
+rstest = "0.15.0"
 
 [[bench]]
 name = "benches"
 harness = false
+required-features = ["cassandra-cpp-driver-tests"]

@@ -298,7 +298,7 @@ impl Message {
             Metadata::Cassandra(metadata) => {
                 let body = CassandraOperation::Error(ErrorBody {
                     error_code: 0x1001,
-                    message: "".into(),
+                    message: "Server overloaded".into(),
                     additional_info: AdditionalErrorInfo::Overloaded,
                 });
 

@@ -1,4 +1,6 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
+use crate::helpers::cassandra::{
+    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
+};
 use cassandra_protocol::frame::message_result::ColType;
 
 fn get_map_example(value: &str) -> String {
@@ -217,7 +219,7 @@ mod list {
         }
     }
 
-    async fn select(session: &CassandraConnection) {
+    async fn select(session: &CassandraConnection, driver: CassandraDriver) {
         // select lists of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -235,6 +237,12 @@ mod list {
             .await;
         }
 
+        let new_set = match driver {
+            CassandraDriver::CdrsTokio => ResultValue::List,
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraDriver::Datastax => ResultValue::Set,
+        };
+
         // test selecting list of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             assert_query_result(
@@ -244,7 +252,7 @@ mod list {
                     i
                 )
                 .as_str(),
-                &[&[ResultValue::List(vec![ResultValue::Set(vec![
+                &[&[ResultValue::List(vec![new_set(vec![
                     get_type_example_result_value(*native_col_type),
                 ])])]],
             )
@@ -285,10 +293,10 @@ mod list {
         }
     }
 
-    pub async fn test(session: &CassandraConnection) {
+    pub async fn test(session: &CassandraConnection, driver: CassandraDriver) {
         create(session).await;
         insert(session).await;
-        select(session).await;
+        select(session, driver).await;
     }
 }
 
@@ -387,7 +395,13 @@ mod set {
         }
     }
 
-    async fn select(session: &CassandraConnection) {
+    async fn select(session: &CassandraConnection, driver: CassandraDriver) {
+        let new_set = match driver {
+            CassandraDriver::CdrsTokio => ResultValue::List,
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraDriver::Datastax => ResultValue::Set,
+        };
+
         // select sets of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
@@ -398,15 +412,19 @@ mod set {
             assert_query_result(
                 session,
                 query.as_str(),
-                &[&[ResultValue::Set(vec![get_type_example_result_value(
-                    *col_type,
-                )])]],
+                &[&[new_set(vec![get_type_example_result_value(*col_type)])]],
             )
             .await;
         }
 
         // test selecting set of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
+            let new_set = match driver {
+                CassandraDriver::CdrsTokio => ResultValue::List,
+                #[cfg(feature = "cassandra-cpp-driver-tests")]
+                CassandraDriver::Datastax => ResultValue::Set,
+            };
+
             assert_query_result(
                 session,
                 format!(
@@ -414,9 +432,9 @@ mod set {
                     i
                 )
                 .as_str(),
-                &[&[ResultValue::Set(vec![ResultValue::Set(vec![
-                    get_type_example_result_value(*native_col_type),
-                ])])]],
+                &[&[new_set(vec![new_set(vec![get_type_example_result_value(
+                    *native_col_type,
+                )])])]],
             )
             .await;
         }
@@ -430,7 +448,7 @@ mod set {
                     i
                 )
                 .as_str(),
-                &[&[ResultValue::Set(vec![ResultValue::List(vec![
+                &[&[new_set(vec![ResultValue::List(vec![
                     get_type_example_result_value(*native_col_type),
                 ])])]],
             )
@@ -446,7 +464,7 @@ mod set {
                     i,
                 )
                 .as_str(),
-                &[&[ResultValue::Set(vec![ResultValue::Map(vec![(
+                &[&[new_set(vec![ResultValue::Map(vec![(
                     ResultValue::Int(0),
                     get_type_example_result_value(*native_col_type),
                 )])])]],
@@ -455,10 +473,10 @@ mod set {
         }
     }
 
-    pub async fn test(session: &CassandraConnection) {
+    pub async fn test(session: &CassandraConnection, driver: CassandraDriver) {
         create(session).await;
         insert(session).await;
-        select(session).await;
+        select(session, driver).await;
     }
 }
 
@@ -565,8 +583,8 @@ mod map {
         }
     }
 
-    async fn select(session: &CassandraConnection) {
-        // select sets of native types
+    async fn select(session: &CassandraConnection, driver: CassandraDriver) {
+        // select map of native types
         for (i, col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             let query = format!(
                 "SELECT my_map FROM test_collections_keyspace.test_map_table_{};",
@@ -584,6 +602,12 @@ mod map {
             .await;
         }
 
+        let new_set = match driver {
+            CassandraDriver::CdrsTokio => ResultValue::List,
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraDriver::Datastax => ResultValue::Set,
+        };
+
         // test selecting map of sets
         for (i, native_col_type) in NATIVE_COL_TYPES.iter().enumerate() {
             assert_query_result(
@@ -595,7 +619,7 @@ mod map {
                 .as_str(),
                 &[&[ResultValue::Map(vec![(
                     ResultValue::Int(0),
-                    ResultValue::Set(vec![get_type_example_result_value(*native_col_type)]),
+                    new_set(vec![get_type_example_result_value(*native_col_type)]),
                 )])]],
             )
             .await;
@@ -639,17 +663,17 @@ mod map {
         }
     }
 
-    pub async fn test(session: &CassandraConnection) {
+    pub async fn test(session: &CassandraConnection, driver: CassandraDriver) {
         create(session).await;
         insert(session).await;
-        select(session).await;
+        select(session, driver).await;
     }
 }
 
-pub async fn test(session: &CassandraConnection) {
+pub async fn test(session: &CassandraConnection, driver: CassandraDriver) {
     run_query(session, "CREATE KEYSPACE test_collections_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
 
-    list::test(session).await;
-    set::test(session).await;
-    map::test(session).await;
+    list::test(session, driver).await;
+    set::test(session, driver).await;
+    map::test(session, driver).await;
 }

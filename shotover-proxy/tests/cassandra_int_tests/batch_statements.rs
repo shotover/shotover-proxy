@@ -1,5 +1,4 @@
 use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
-use cassandra_cpp::{stmt, Batch, BatchType};
 
 pub async fn test(connection: &CassandraConnection) {
     // setup keyspace and table for the batch statement tests
@@ -9,12 +8,11 @@ pub async fn test(connection: &CassandraConnection) {
     }
 
     {
-        let mut batch = Batch::new(BatchType::LOGGED);
+        let mut batch = vec![];
         for i in 0..2 {
-            let statement = format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text1', 'text2')", i);
-            batch.add_statement(&stmt!(statement.as_str())).unwrap();
+            batch.push(format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text1', 'text2')", i));
         }
-        connection.execute_batch(&batch);
+        connection.execute_batch(batch);
 
         assert_query_result(
             connection,
@@ -36,15 +34,14 @@ pub async fn test(connection: &CassandraConnection) {
     }
 
     {
-        let mut batch = Batch::new(BatchType::LOGGED);
+        let mut batch = vec![];
         for i in 0..2 {
-            let statement = format!(
+            batch.push(format!(
                 "UPDATE batch_keyspace.batch_table SET lastname = 'text3' WHERE id = {};",
                 i
-            );
-            batch.add_statement(&stmt!(statement.as_str())).unwrap();
+            ));
         }
-        connection.execute_batch(&batch);
+        connection.execute_batch(batch);
 
         assert_query_result(
             connection,
@@ -66,18 +63,20 @@ pub async fn test(connection: &CassandraConnection) {
     }
 
     {
-        let mut batch = Batch::new(BatchType::LOGGED);
+        let mut batch = vec![];
         for i in 0..2 {
-            let statement = format!("DELETE FROM batch_keyspace.batch_table WHERE id = {};", i);
-            batch.add_statement(&stmt!(statement.as_str())).unwrap();
+            batch.push(format!(
+                "DELETE FROM batch_keyspace.batch_table WHERE id = {};",
+                i
+            ));
         }
-        connection.execute_batch(&batch);
+        connection.execute_batch(batch);
         assert_query_result(connection, "SELECT * FROM batch_keyspace.batch_table;", &[]).await;
     }
 
     {
-        let batch = Batch::new(BatchType::LOGGED);
-        connection.execute_batch(&batch);
+        let batch = vec![];
+        connection.execute_batch(batch);
     }
 
     // test batch statements over QUERY PROTOCOL
