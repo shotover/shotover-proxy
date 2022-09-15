@@ -23,7 +23,7 @@ services:
       retries: 60
     environment:
       &environment
-      CASSANDRA_SEEDS: "cassandra-one,cassandra-two"
+      CASSANDRA_SEEDS: "cassandra-one,cassandra-two,cassandra-three"
       CASSANDRA_CLUSTER_NAME: TestCluster
       CASSANDRA_RACK: rack1
       CASSANDRA_DC: dc1
