@@ -82,7 +82,7 @@ impl CassandraErrorCode {
     }
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -109,7 +109,7 @@ pub enum CassandraConnection {
 }
 
 impl CassandraConnection {
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
         for contact_point in contact_points.split(',') {
             test_helpers::wait_for_socket_to_open(contact_point, port);
@@ -160,16 +160,17 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn as_cdrs(&self) -> &CdrsTokioSessionInstance {
         match self {
             Self::CdrsTokio { session, .. } => session,
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
             _ => panic!("Not CdrsTokio"),
         }
     }
 
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn as_datastax(&self) -> &DatastaxSession {
         match self {
             Self::Datastax { session, .. } => session,
@@ -177,7 +178,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code, unused_variables)]
     pub fn new_tls(
         contact_points: &str,
         port: u16,
@@ -248,7 +249,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn execute(&self, query: &str) -> Vec<Vec<ResultValue>> {
         let result = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -277,7 +278,7 @@ impl CassandraConnection {
         result
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     pub fn execute_async(&self, query: &str) -> CassFuture<CassResult> {
         match self {
@@ -290,7 +291,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_expect_err(&self, query: &str) -> CassandraError {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -330,7 +331,7 @@ impl CassandraConnection {
         );
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn prepare(&self, query: &str) -> PreparedQuery {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -344,7 +345,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
@@ -354,7 +355,7 @@ impl CassandraConnection {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
-                statement.bind_int32(0, value);
+                statement.bind_int32(0, value).unwrap();
                 match session.execute(&statement).wait() {
                     Ok(result) => result
                         .into_iter()
@@ -377,7 +378,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_batch(&self, queries: Vec<String>) {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -385,7 +386,7 @@ impl CassandraConnection {
                 let mut batch = Batch::new(BatchType::LOGGED);
 
                 for query in queries {
-                    batch.add_statement(&stmt!(query.as_str()));
+                    batch.add_statement(&stmt!(query.as_str())).unwrap();
                 }
 
                 match session.execute_batch(&batch).wait() {
@@ -411,14 +412,14 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code, unused_variables)]
     pub fn execute_batch_expect_err(&self, queries: Vec<String>) -> CassandraError {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut batch = Batch::new(BatchType::LOGGED);
                 for query in queries {
-                    batch.add_statement(&stmt!(query.as_str()));
+                    batch.add_statement(&stmt!(query.as_str())).unwrap();
                 }
                 let error = session.execute_batch(&batch).wait().unwrap_err();
                 if let ErrorKind::CassErrorResult(code, message, ..) = error.0 {
@@ -496,10 +497,10 @@ pub enum ResultValue {
     Date(Vec<u8>), // TODO should be string
     Set(Vec<ResultValue>),
     List(Vec<ResultValue>),
-    #[allow(unused)]
+    #[allow(dead_code)]
     Tuple(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
-    #[allow(unused)]
+    #[allow(dead_code)]
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
@@ -543,7 +544,7 @@ impl PartialEq for ResultValue {
 }
 
 impl ResultValue {
-    #[allow(unused)]
+    #[allow(dead_code)]
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     pub fn new_from_cpp(value: Value) -> Self {
         if value.is_null() {
