@@ -263,19 +263,24 @@ pub async fn test_events_filtering(
     let mut found = false;
     let mut all_names: Vec<String> = vec![];
     for container in containers.list(&Default::default()).await.unwrap() {
-        let names = container.names.unwrap();
-        // session_direct is connecting to instance one.
-        // So make sure to instead kill instance two.
-        all_names.push(format!("{:?}", names));
-        if names.len() == 1 && names[0] == "/cassandra-cluster-cassandra-two-1" {
+        let compose_service = container
+            .labels
+            .unwrap()
+            .get("com.docker.compose.service")
+            .unwrap()
+            .to_string();
+        // session_direct is connecting to cassandra-one.
+        // So make sure to instead kill caassandra-two.
+        if compose_service == "cassandra-two" {
             found = true;
             let container = containers.get(container.id.unwrap());
             container.stop(None).await.unwrap();
         }
+        all_names.push(compose_service);
     }
     assert!(
         found,
-        "container was not found with expected name, actual names were {:?}",
+        "container was not found with expected docker compose service name, actual names were {:?}",
         all_names
     );
 
