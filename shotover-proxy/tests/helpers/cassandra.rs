@@ -15,7 +15,7 @@ pub enum CassandraConnection {
 }
 
 impl CassandraConnection {
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn new(contact_points: &str, port: u16) -> CassandraConnection {
         for contact_point in contact_points.split(',') {
             test_helpers::wait_for_socket_to_open(contact_point, port);
@@ -34,7 +34,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn new_tls(
         contact_points: &str,
         port: u16,
@@ -61,11 +61,11 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn enable_schema_awaiter(&mut self, direct_node: &str, ca_cert: Option<&str>) {
         let context = ca_cert.map(|ca_cert| {
             let mut context = SslContext::builder(SslMethod::tls()).unwrap();
-            context.set_ca_file(ca_cert);
+            context.set_ca_file(ca_cert).unwrap();
             context.build()
         });
         match self {
@@ -83,7 +83,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub async fn execute(&self, query: &str) -> Vec<Vec<ResultValue>> {
         let result = match self {
             CassandraConnection::Datastax { session, .. } => {
@@ -102,12 +102,9 @@ impl CassandraConnection {
         let query = query.trim();
         if query.starts_with("CREATE") || query.starts_with("ALTER") {
             match self {
-                CassandraConnection::Datastax {
-                    session,
-                    schema_awaiter,
-                } => {
+                CassandraConnection::Datastax { schema_awaiter, .. } => {
                     if let Some(schema_awaiter) = schema_awaiter {
-                        schema_awaiter.await_schema_agreement().await;
+                        schema_awaiter.await_schema_agreement().await.unwrap();
                     }
                 }
             }
@@ -116,7 +113,7 @@ impl CassandraConnection {
         result
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_async(&self, query: &str) -> CassFuture<CassResult> {
         match self {
             CassandraConnection::Datastax { session, .. } => {
@@ -126,7 +123,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_expect_err(&self, query: &str) -> CassandraError {
         match self {
             CassandraConnection::Datastax { session, .. } => {
@@ -136,7 +133,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_expect_err_contains(&self, query: &str, contains: &str) {
         let result = self.execute_expect_err(query).to_string();
         assert!(
@@ -145,7 +142,7 @@ impl CassandraConnection {
         );
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn prepare(&self, query: &str) -> PreparedStatement {
         match self {
             CassandraConnection::Datastax { session, .. } => {
@@ -154,7 +151,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_prepared(&self, statement: &Statement) -> Vec<Vec<ResultValue>> {
         match self {
             CassandraConnection::Datastax { session, .. } => {
@@ -171,7 +168,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_batch(&self, batch: &Batch) {
         match self {
             CassandraConnection::Datastax { session, .. } => {
@@ -187,7 +184,7 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn execute_batch_expect_err(&self, batch: &Batch) -> CassandraError {
         match self {
             CassandraConnection::Datastax { session, .. } => {
@@ -227,7 +224,7 @@ pub enum ResultValue {
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
-    #[allow(unused)]
+    #[allow(dead_code)]
     Any,
 }
 
@@ -268,7 +265,7 @@ impl PartialEq for ResultValue {
 }
 
 impl ResultValue {
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn new(value: Value) -> ResultValue {
         if value.is_null() {
             ResultValue::Null
@@ -321,14 +318,13 @@ impl ResultValue {
                 ValueType::UNKNOWN => todo!(),
                 ValueType::CUSTOM => todo!(),
                 ValueType::UDT => todo!(),
-                ValueType::TUPLE => todo!(),
             }
         }
     }
 }
 
 /// Execute a `query` against the `session` and return result rows
-#[allow(unused)]
+#[allow(dead_code)]
 pub fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
     let statement = stmt!(query);
     match session.execute(&statement).wait() {
@@ -341,7 +337,7 @@ pub fn execute_query(session: &Session, query: &str) -> Vec<Vec<ResultValue>> {
 }
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn assert_query_result(
     session: &CassandraConnection,
     query: &str,
@@ -353,7 +349,7 @@ pub async fn assert_query_result(
 }
 
 /// Assert that the results from an integration test match the expected rows
-#[allow(unused)]
+#[allow(dead_code)]
 pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[ResultValue]]) {
     let mut expected_rows: Vec<_> = expected_rows.iter().map(|x| x.to_vec()).collect();
     expected_rows.sort();
@@ -362,7 +358,7 @@ pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[Result
 }
 
 /// Execute a `query` against the `session` and assert the result rows contain `row`
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn assert_query_result_contains_row(
     session: &CassandraConnection,
     query: &str,
@@ -378,7 +374,7 @@ pub async fn assert_query_result_contains_row(
 }
 
 /// Execute a `query` against the `session` and assert the result rows does not contain `row`
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn assert_query_result_not_contains_row(
     session: &CassandraConnection,
     query: &str,
@@ -393,7 +389,7 @@ pub async fn assert_query_result_not_contains_row(
     }
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn run_query(session: &CassandraConnection, query: &str) {
     assert_query_result(session, query, &[]).await;
 }

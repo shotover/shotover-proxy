@@ -25,7 +25,7 @@ impl Drop for ShotoverProcess {
 }
 
 impl ShotoverProcess {
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn new(topology_path: &str) -> ShotoverProcess {
         // First ensure shotover is fully built so that the potentially lengthy build time is not included in the wait_for_socket_to_open timeout
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
@@ -71,17 +71,17 @@ impl ShotoverProcess {
         ShotoverProcess { child }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     fn pid(&self) -> Pid {
         Pid::from_raw(self.child.as_ref().unwrap().id() as i32)
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn signal(&self, signal: Signal) {
         nix::sys::signal::kill(self.pid(), signal).unwrap();
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn wait(mut self) -> WaitOutput {
         let output = self.child.take().unwrap().wait_with_output().unwrap();
 
@@ -98,8 +98,8 @@ impl ShotoverProcess {
         }
     }
 
-    #[allow(unused)]
-    pub fn shutdown_and_assert_success(mut self) {
+    #[allow(dead_code)]
+    pub fn shutdown_and_assert_success(self) {
         self.signal(nix::sys::signal::Signal::SIGTERM);
         let result = self.wait();
 
