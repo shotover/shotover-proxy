@@ -41,10 +41,10 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Varchar("dc1".into()),
         ResultValue::Uuid("3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4".parse().unwrap()),
-        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
         ResultValue::Varchar("4.0.6".into()),
-        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Null,
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
@@ -55,10 +55,10 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Varchar("dc1".into()),
         ResultValue::Uuid("fa74d7ec-1223-472b-97de-04a32ccdb70b".parse().unwrap()),
-        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
         ResultValue::Varchar("4.0.6".into()),
-        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Null,
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
@@ -98,8 +98,8 @@ async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnecti
         ResultValue::Uuid("3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4".parse().unwrap()),
         ResultValue::Inet("127.0.0.1".into()),
         ResultValue::Int(9042),
-        ResultValue::Inet("255.255.255.255".into()),
-        ResultValue::Int(-1),
+        ResultValue::Null,
+        ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
         ResultValue::Varchar("4.0.6".into()),
         // schema_version is non deterministic so we cant assert on it.
@@ -115,8 +115,8 @@ async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnecti
         ResultValue::Uuid("fa74d7ec-1223-472b-97de-04a32ccdb70b".parse().unwrap()),
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Int(9042),
-        ResultValue::Inet("255.255.255.255".into()),
-        ResultValue::Int(-1),
+        ResultValue::Null,
+        ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
         ResultValue::Varchar("4.0.6".into()),
         // schema_version is non deterministic so we cant assert on it.

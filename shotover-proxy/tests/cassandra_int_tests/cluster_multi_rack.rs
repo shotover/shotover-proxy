@@ -3,31 +3,17 @@ use crate::helpers::cassandra::{assert_query_result, CassandraConnection, Result
 use std::net::SocketAddr;
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
-    let star_results1 = [
+    let star_results = [
         // peer is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Varchar("dc1".into()),
         // host_id is non-determistic because we dont know which node this will be
         ResultValue::Any,
-        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Null,
         // rack is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Varchar("4.0.6".into()),
-        ResultValue::Inet("255.255.255.255".into()),
-        // schema_version is non deterministic so we cant assert on it.
-        ResultValue::Any,
-        // Unfortunately token generation appears to be non-deterministic but we can at least assert that
-        // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(128).collect()),
-    ];
-    let star_results2 = [
-        ResultValue::Any,
-        ResultValue::Varchar("dc1".into()),
-        ResultValue::Any,
-        ResultValue::Inet("255.255.255.255".into()),
-        ResultValue::Any,
-        ResultValue::Varchar("4.0.6".into()),
-        ResultValue::Inet("255.255.255.255".into()),
+        ResultValue::Null,
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
@@ -39,21 +25,21 @@ async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     assert_query_result(
         connection,
         "SELECT * FROM system.peers;",
-        &[&star_results1, &star_results2],
+        &[&star_results, &star_results],
     )
     .await;
     assert_query_result(
         connection,
         &format!("SELECT {all_columns} FROM system.peers;"),
-        &[&star_results1, &star_results2],
+        &[&star_results, &star_results],
     )
     .await;
     assert_query_result(
         connection,
         &format!("SELECT {all_columns}, {all_columns} FROM system.peers;"),
         &[
-            &[star_results1.as_slice(), star_results1.as_slice()].concat(),
-            &[star_results2.as_slice(), star_results2.as_slice()].concat(),
+            &[star_results.as_slice(), star_results.as_slice()].concat(),
+            &[star_results.as_slice(), star_results.as_slice()].concat(),
         ],
     )
     .await;
@@ -70,8 +56,8 @@ async fn test_rewrite_system_peers_v2(connection: &CassandraConnection) {
         // native_address is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Int(9042),
-        ResultValue::Inet("255.255.255.255".into()),
-        ResultValue::Int(-1),
+        ResultValue::Null,
+        ResultValue::Null,
         // rack is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Varchar("4.0.6".into()),
