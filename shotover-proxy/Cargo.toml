@@ -94,6 +94,7 @@ metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
 scylla = { version = "0.5.0", features = ["ssl"] }
 rstest = "0.15.0"
+docker-api = "0.10.1"
 
 [[bench]]
 name = "benches"

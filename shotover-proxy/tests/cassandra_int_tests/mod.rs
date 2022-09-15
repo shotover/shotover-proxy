@@ -7,9 +7,11 @@ use crate::helpers::cassandra::{CassandraConnection, CassandraDriver, CassandraD
 use crate::helpers::ShotoverManager;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{Error, ErrorKind};
+use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
+use docker_api::Docker;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use futures::future::{join_all, try_join_all};
 use metrics_util::debugging::DebuggingRecorder;
@@ -628,4 +630,69 @@ async fn test_events_keyspace(#[case] driver: CassandraDriver) {
             options: SchemaChangeOptions::Keyspace("test_events_ks".to_string())
         })
     );
+}
+
+// TODO: could integrate with test_cluster_single_rack_v4 by taking ownership of the DockerCompose
+#[rstest]
+#[case(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_cluster_events_filtering(#[case] driver: CassandraDriver) {
+    let _compose =
+        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml");
+    let _shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
+
+    let session_direct = CassandraConnection::new("172.16.1.2", 9042, driver).await;
+    let mut event_recv_direct = session_direct.as_cdrs().create_event_receiver();
+
+    let session_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let mut event_recv_shotover = session_shotover.as_cdrs().create_event_receiver();
+
+    // let the driver finish connecting to the cluster and registering for the events
+    sleep(Duration::from_secs(10)).await;
+
+    // stop one of the containers to trigger a status change event
+    let docker = Docker::new("unix:///var/run/docker.sock").unwrap();
+    let containers = docker.containers();
+    let mut found = false;
+    for container in containers.list(&Default::default()).await.unwrap() {
+        let names = container.names.unwrap();
+        // session_direct is connecting to instance one.
+        // So make sure to instead kill instance two.
+        if names.len() == 1 && names[0] == "/cassandra-cluster-cassandra-two-1" {
+            found = true;
+            let container = containers.get(container.id.unwrap());
+            container.stop(None).await.unwrap();
+        }
+    }
+    assert!(found, "container was not found with expected name");
+
+    // The direct connection should allow all events to pass through
+    tracing::error!("TODO: Everything works fine up to here");
+    let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    tracing::error!(
+        "TODO: But we never reach this line, I think cdrs-tokio's event handling is broken."
+    );
+
+    assert!(
+        matches!(
+            event,
+            ServerEvent::StatusChange(StatusChange {
+                change_type: StatusChangeType::Down,
+                ..
+            })
+        ),
+        "expected status change down but was {:?}",
+        event
+    );
+
+    // we have already received an event directly from the cassandra instance so its reasonable to
+    // expect shotover to have processed that event within 10 seconds if it was ever going to
+    timeout(Duration::from_secs(10), event_recv_shotover.recv())
+        .await
+        .expect_err("CassandraSinkClustser must filter out this event");
 }
