@@ -251,16 +251,31 @@ pub async fn test_topology_task(ca_path: Option<&str>, cassandra_port: Option<u3
     }
 }
 
-pub async fn test_events_filtering(
+pub async fn test_node_going_down(
     compose: DockerCompose,
     shotover_manager: ShotoverManager,
     driver: CassandraDriver,
 ) {
-    let session_direct = CassandraConnection::new("172.16.1.2", 9044, driver).await;
-    let mut event_recv_direct = session_direct.as_cdrs().create_event_receiver();
+    {
+        let mut connection_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        connection_shotover
+            .enable_schema_awaiter("172.16.1.2:9044", None)
+            .await;
+        // Use Replication 2 in case it ends up on the node that we kill
+        run_query(&connection_shotover, "CREATE KEYSPACE cluster_single_rack_node_going_down WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 2 };").await;
+        run_query(&connection_shotover, "CREATE TABLE cluster_single_rack_node_going_down.test_table (pk varchar PRIMARY KEY, col1 int, col2 boolean);").await;
+        connection_shotover.await_schema_agreement().await;
 
-    let session_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
-    let mut event_recv_shotover = session_shotover.as_cdrs().create_event_receiver();
+        // TODO: hold onto this connection and use it to test how we handle preexisting connections before the node is stopped
+    }
+
+    let event_connection_direct =
+        CassandraConnection::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio).await;
+    let mut event_recv_direct = event_connection_direct.as_cdrs().create_event_receiver();
+
+    let event_connection_shotover =
+        CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio).await;
+    let mut event_recv_shotover = event_connection_shotover.as_cdrs().create_event_receiver();
 
     // let the driver finish connecting to the cluster and registering for the events
     sleep(Duration::from_secs(10)).await;
@@ -277,7 +292,7 @@ pub async fn test_events_filtering(
             .get("com.docker.compose.service")
             .unwrap()
             .to_string();
-        // session_direct is connecting to cassandra-one.
+        // event_connection_direct is connecting to cassandra-one.
         // So make sure to instead kill caassandra-two.
         if compose_service == "cassandra-two" {
             found = true;
@@ -292,19 +307,35 @@ pub async fn test_events_filtering(
         all_names
     );
 
-    // The direct connection should allow all events to pass through
-    let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    loop {
+        // The direct connection should allow all events to pass through
+        let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
+            .await
+            .unwrap()
+            .unwrap();
 
-    assert_eq!(
-        event,
-        ServerEvent::StatusChange(StatusChange {
-            change_type: StatusChangeType::Down,
-            addr: "172.16.1.3:9044".parse().unwrap()
-        })
-    );
+        // Sometimes we get up status events if we connect early enough.
+        // I assume these are just due to the nodes initially joining the cluster.
+        // If we hit one skip it and continue searching for our expected down status event
+        if matches!(
+            event,
+            ServerEvent::StatusChange(StatusChange {
+                change_type: StatusChangeType::Up,
+                ..
+            })
+        ) {
+            continue;
+        }
+
+        assert_eq!(
+            event,
+            ServerEvent::StatusChange(StatusChange {
+                change_type: StatusChangeType::Down,
+                addr: "172.16.1.3:9044".parse().unwrap()
+            })
+        );
+        break;
+    }
 
     // we have already received an event directly from the cassandra instance so its reasonable to
     // expect shotover to have processed that event within 10 seconds if it was ever going to
@@ -312,7 +343,44 @@ pub async fn test_events_filtering(
         .await
         .expect_err("CassandraSinkCluster must filter out this event");
 
+    // test that shotover handles preexisting connections after node goes down
+    // TODO: test_connection_handles_node_down(&old_connection).await;
+
+    // test that shotover handles new connections after node goes down
+    let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    test_connection_handles_node_down(&new_connection).await;
+
     // Purposefully dispose of these as we left the underlying cassandra cluster in a non-recoverable state
-    std::mem::drop(compose);
     std::mem::drop(shotover_manager);
+    std::mem::drop(compose);
+}
+
+async fn test_connection_handles_node_down(connection: &CassandraConnection) {
+    // test a query that hits the control node and performs rewriting
+    test_rewrite_system_local(connection).await;
+
+    // test queries that get routed across all nodes and performs reading and writing
+    run_query(connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk1', 42, true);").await;
+    run_query(connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk2', 413, false);").await;
+
+    // run this a few times to make sure we arent getting lucky with the routing
+    for _ in 0..10 {
+        assert_query_result(
+            connection,
+            "SELECT pk, col1, col2 FROM cluster_single_rack_node_going_down.test_table;",
+            &[
+                &[
+                    ResultValue::Varchar("pk1".into()),
+                    ResultValue::Int(42),
+                    ResultValue::Boolean(true),
+                ],
+                &[
+                    ResultValue::Varchar("pk2".into()),
+                    ResultValue::Int(413),
+                    ResultValue::Boolean(false),
+                ],
+            ],
+        )
+        .await;
+    }
 }

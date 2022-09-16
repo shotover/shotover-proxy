@@ -222,7 +222,7 @@ impl CassandraConnection {
         );
     }
 
-    async fn await_schema_agreement(&self) {
+    pub async fn await_schema_agreement(&self) {
         let schema_awaiter = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { schema_awaiter, .. } => schema_awaiter,
