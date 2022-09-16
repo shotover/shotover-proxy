@@ -278,7 +278,12 @@ async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
     let mut redis_connection = shotover_manager.redis_connection(6379);
     let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
-    standard_test_suite(&connection, driver).await;
+    keyspace::test(&connection).await;
+    table::test(&connection).await;
+    udt::test(&connection).await;
+    functions::test(&connection).await;
+    prepared_statements::test(&connection).await;
+    batch_statements::test(&connection).await;
     cache::test(&connection, &mut redis_connection, &snapshotter).await;
 }
 
