@@ -232,8 +232,11 @@ impl CassandraSinkCluster {
                 let nodes_shared = self.topology_task_nodes.read().await;
                 self.local_nodes = nodes_shared.clone();
             }
+            for node in &self.local_nodes {
+                tracing::error!("local nodes: {} {}", node.address, node.is_up);
+            }
 
-            let random_point = if self.local_nodes.is_empty() {
+            let random_point = if self.local_nodes.iter().all(|x| !x.is_up) {
                 tokio::net::lookup_host(self.contact_points.choose(&mut self.rng).unwrap())
                     .await?
                     .next()
@@ -296,7 +299,12 @@ impl CassandraSinkCluster {
                 self.init_handshake_connection.as_mut().unwrap()
             } else {
                 // We have a full nodes list and handshake, so we can do proper routing now.
-                let random_node = self.local_nodes.choose_mut(&mut self.rng).unwrap();
+                let random_node = self
+                    .local_nodes
+                    .iter_mut()
+                    .filter(|x| x.is_up)
+                    .choose(&mut self.rng)
+                    .unwrap();
                 random_node.get_connection(&self.connection_factory).await?
             }
             .send(message, return_chan_tx)?;
@@ -400,7 +408,7 @@ impl CassandraSinkCluster {
     fn get_random_node_in_dc_rack(&mut self) -> &CassandraNode {
         self.local_nodes
             .iter()
-            .filter(|x| x.rack == self.local_shotover_node.rack)
+            .filter(|x| x.rack == self.local_shotover_node.rack && x.is_up)
             .choose(&mut self.rng)
             .unwrap()
     }
