@@ -24,7 +24,7 @@ services:
       retries: 60
     environment:
       &environment
-      CASSANDRA_SEEDS: "cassandra-one,cassandra-two"
+      CASSANDRA_SEEDS: "cassandra-one,cassandra-two,cassandra-three"
       MAX_HEAP_SIZE: "400M"
       MIN_HEAP_SIZE: "400M"
       HEAP_NEWSIZE: "48M"
