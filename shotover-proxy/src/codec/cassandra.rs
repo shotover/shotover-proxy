@@ -230,6 +230,8 @@ mod cassandra_protocol_tests {
     use crate::frame::Frame;
     use crate::message::Message;
     use bytes::BytesMut;
+    use cassandra_protocol::events::SimpleServerEvent;
+    use cassandra_protocol::frame::message_register::BodyReqRegister;
     use cassandra_protocol::frame::message_result::{
         ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags,
         TableSpec,
@@ -327,11 +329,13 @@ mod cassandra_protocol_tests {
         );
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            operation: CassandraOperation::Register(vec![
-                0, 3, 0, 15, 84, 79, 80, 79, 76, 79, 71, 89, 95, 67, 72, 65, 78, 71, 69, 0, 13, 83,
-                84, 65, 84, 85, 83, 95, 67, 72, 65, 78, 71, 69, 0, 13, 83, 67, 72, 69, 77, 65, 95,
-                67, 72, 65, 78, 71, 69,
-            ]),
+            operation: CassandraOperation::Register(BodyReqRegister {
+                events: vec![
+                    SimpleServerEvent::TopologyChange,
+                    SimpleServerEvent::StatusChange,
+                    SimpleServerEvent::SchemaChange,
+                ],
+            }),
             stream_id: 1,
             tracing_id: None,
             warnings: vec![],
