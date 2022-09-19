@@ -12,6 +12,7 @@ use cassandra_protocol::frame::message_error::ErrorBody;
 use cassandra_protocol::frame::message_event::BodyResEvent;
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_query::BodyReqQuery;
+use cassandra_protocol::frame::message_register::BodyReqRegister;
 use cassandra_protocol::frame::message_request::RequestBody;
 use cassandra_protocol::frame::message_response::ResponseBody;
 use cassandra_protocol::frame::message_result::{
@@ -245,7 +246,13 @@ impl CassandraFrame {
                     unreachable!("we already know this is an execute");
                 }
             }
-            Opcode::Register => CassandraOperation::Register(frame.body),
+            Opcode::Register => {
+                if let RequestBody::Register(register) = frame.request_body()? {
+                    CassandraOperation::Register(register)
+                } else {
+                    unreachable!("we already know this is a register");
+                }
+            }
             Opcode::Event => {
                 if let ResponseBody::Event(BodyResEvent { event }) = frame.response_body()? {
                     CassandraOperation::Event(event)
@@ -328,7 +335,7 @@ pub enum CassandraOperation {
     Error(ErrorBody),
     Prepare(Vec<u8>),
     Execute(Box<BodyReqExecuteOwned>),
-    Register(Vec<u8>),
+    Register(BodyReqRegister),
     Event(ServerEvent),
     Batch(CassandraBatch),
     // operations for protocol negotiation, should be ignored by transforms
@@ -465,7 +472,7 @@ impl CassandraOperation {
             CassandraOperation::Supported(bytes) => bytes.to_vec(),
             CassandraOperation::Prepare(bytes) => bytes.to_vec(),
             CassandraOperation::Execute(execute) => execute.serialize_to_vec(version),
-            CassandraOperation::Register(bytes) => bytes.to_vec(),
+            CassandraOperation::Register(register) => register.serialize_to_vec(version),
             CassandraOperation::Event(event) => event.serialize_to_vec(version),
             CassandraOperation::Batch(batch) => BodyReqBatch {
                 batch_type: batch.ty,
