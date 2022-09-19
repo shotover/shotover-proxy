@@ -1,11 +1,48 @@
 use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 
+async fn use_statement(connection: &CassandraConnection) {
+    {
+        run_query(connection, "USE batch_keyspace;").await;
+        connection.execute_batch(vec![
+            "INSERT INTO batch_table (id, lastname, firstname) VALUES (0, 'text1', 'text2')".into(),
+            "INSERT INTO batch_table (id, lastname, firstname) VALUES (1, 'text1', 'text2')".into(),
+        ]);
+        assert_query_result(
+            connection,
+            "SELECT id, lastname, firstname FROM batch_table;",
+            &[
+                &[
+                    ResultValue::Int(0),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+                &[
+                    ResultValue::Int(1),
+                    ResultValue::Varchar("text1".into()),
+                    ResultValue::Varchar("text2".into()),
+                ],
+            ],
+        )
+        .await;
+    }
+
+    {
+        connection.execute_batch(vec![
+            "DELETE FROM batch_table WHERE id = 0;".into(),
+            "DELETE FROM batch_table WHERE id = 1;".into(),
+        ]);
+        assert_query_result(connection, "SELECT * FROM batch_table;", &[]).await;
+    }
+}
+
 pub async fn test(connection: &CassandraConnection) {
     // setup keyspace and table for the batch statement tests
     {
         run_query(connection, "CREATE KEYSPACE batch_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
         run_query(connection, "CREATE TABLE batch_keyspace.batch_table (id int PRIMARY KEY, lastname text, firstname text);").await;
     }
+
+    use_statement(connection).await;
 
     {
         let mut batch = vec![];
