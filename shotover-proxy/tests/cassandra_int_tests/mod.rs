@@ -39,6 +39,17 @@ mod protect;
 mod table;
 mod udt;
 
+async fn standard_test_suite(connection: &CassandraConnection, driver: CassandraDriver) {
+    keyspace::test(connection).await;
+    table::test(connection).await;
+    udt::test(connection).await;
+    native_types::test(connection).await;
+    collections::test(connection, driver).await;
+    functions::test(connection).await;
+    prepared_statements::test(connection).await;
+    batch_statements::test(connection).await;
+}
+
 #[rstest]
 #[case(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
@@ -52,14 +63,7 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
 
     let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
-    keyspace::test(&connection).await;
-    table::test(&connection).await;
-    udt::test(&connection).await;
-    native_types::test(&connection).await;
-    collections::test(&connection, driver).await;
-    functions::test(&connection).await;
-    prepared_statements::test(&connection).await;
-    batch_statements::test(&connection).await;
+    standard_test_suite(&connection, driver).await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -90,14 +94,7 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 
     let connection = CassandraConnection::new_tls("127.0.0.1", 9043, ca_cert, driver);
 
-    keyspace::test(&connection).await;
-    table::test(&connection).await;
-    udt::test(&connection).await;
-    native_types::test(&connection).await;
-    collections::test(&connection, driver).await;
-    functions::test(&connection).await;
-    prepared_statements::test(&connection).await;
-    batch_statements::test(&connection).await;
+    standard_test_suite(&connection, driver).await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -119,14 +116,7 @@ async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
         connection1
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
-        keyspace::test(&connection1).await;
-        table::test(&connection1).await;
-        udt::test(&connection1).await;
-        native_types::test(&connection1).await;
-        collections::test(&connection1, driver).await;
-        functions::test(&connection1).await;
-        prepared_statements::test(&connection1).await;
-        batch_statements::test(&connection1).await;
+        standard_test_suite(&connection1, driver).await;
         cluster_single_rack_v3::test_dummy_peers(&connection1).await;
 
         //Check for bugs in cross connection state
@@ -147,7 +137,7 @@ async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
-    let _compose =
+    let compose =
         DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml");
 
     {
@@ -160,14 +150,7 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
 
-        keyspace::test(&connection1).await;
-        table::test(&connection1).await;
-        udt::test(&connection1).await;
-        native_types::test(&connection1).await;
-        collections::test(&connection1, driver).await;
-        functions::test(&connection1).await;
-        prepared_statements::test(&connection1).await;
-        batch_statements::test(&connection1).await;
+        standard_test_suite(&connection1, driver).await;
         cluster_single_rack_v4::test(&connection1).await;
 
         //Check for bugs in cross connection state
@@ -191,6 +174,15 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     }
 
     cluster_single_rack_v4::test_topology_task(None, Some(9044)).await;
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
+    cluster_single_rack_v4::test_events_filtering(
+        compose,
+        shotover_manager,
+        CassandraDriver::CdrsTokio,
+    )
+    .await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -218,14 +210,7 @@ async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
         connection1
             .enable_schema_awaiter("172.16.1.2:9042", None)
             .await;
-        keyspace::test(&connection1).await;
-        table::test(&connection1).await;
-        udt::test(&connection1).await;
-        native_types::test(&connection1).await;
-        collections::test(&connection1, driver).await;
-        functions::test(&connection1).await;
-        prepared_statements::test(&connection1).await;
-        batch_statements::test(&connection1).await;
+        standard_test_suite(&connection1, driver).await;
         cluster_multi_rack::test(&connection1).await;
 
         //Check for bugs in cross connection state
@@ -277,14 +262,7 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
             .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
             .await;
 
-        keyspace::test(&connection).await;
-        table::test(&connection).await;
-        udt::test(&connection).await;
-        native_types::test(&connection).await;
-        functions::test(&connection).await;
-        collections::test(&connection, driver).await;
-        prepared_statements::test(&connection).await;
-        batch_statements::test(&connection).await;
+        standard_test_suite(&connection, driver).await;
         cluster_single_rack_v4::test(&connection).await;
     }
 
@@ -335,13 +313,7 @@ async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver)
     let shotover_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
     let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
 
-    keyspace::test(&shotover_connection).await;
-    table::test(&shotover_connection).await;
-    udt::test(&shotover_connection).await;
-    native_types::test(&shotover_connection).await;
-    collections::test(&shotover_connection, driver).await;
-    functions::test(&shotover_connection).await;
-    batch_statements::test(&shotover_connection).await;
+    standard_test_suite(&shotover_connection, driver).await;
     protect::test(&shotover_connection, &direct_connection).await;
 }
 
@@ -362,13 +334,7 @@ async fn test_cassandra_protect_transform_aws(#[case] driver: CassandraDriver) {
     let shotover_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
     let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
 
-    keyspace::test(&shotover_connection).await;
-    table::test(&shotover_connection).await;
-    udt::test(&shotover_connection).await;
-    native_types::test(&shotover_connection).await;
-    collections::test(&shotover_connection, driver).await;
-    functions::test(&shotover_connection).await;
-    batch_statements::test(&shotover_connection).await;
+    standard_test_suite(&shotover_connection, driver).await;
     protect::test(&shotover_connection, &direct_connection).await;
 }
 

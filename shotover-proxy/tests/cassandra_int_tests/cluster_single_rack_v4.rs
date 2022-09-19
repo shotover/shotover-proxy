@@ -1,6 +1,16 @@
+use cassandra_protocol::events::ServerEvent;
+use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
+use docker_api::Docker;
+use test_helpers::docker_compose::DockerCompose;
+use tokio::time::{sleep, timeout};
+
 use crate::cassandra_int_tests::cluster::run_topology_task;
-use crate::helpers::cassandra::{assert_query_result, CassandraConnection, ResultValue};
+use crate::helpers::cassandra::{
+    assert_query_result, CassandraConnection, CassandraDriver, ResultValue,
+};
+use crate::helpers::ShotoverManager;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
@@ -231,4 +241,72 @@ pub async fn test_topology_task(ca_path: Option<&str>, cassandra_port: Option<u3
         assert_eq!(node.rack, "rack1");
         assert_eq!(node.tokens.len(), 128);
     }
+}
+
+pub async fn test_events_filtering(
+    compose: DockerCompose,
+    shotover_manager: ShotoverManager,
+    driver: CassandraDriver,
+) {
+    let session_direct = CassandraConnection::new("172.16.1.2", 9044, driver).await;
+    let mut event_recv_direct = session_direct.as_cdrs().create_event_receiver();
+
+    let session_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let mut event_recv_shotover = session_shotover.as_cdrs().create_event_receiver();
+
+    // let the driver finish connecting to the cluster and registering for the events
+    sleep(Duration::from_secs(10)).await;
+
+    // stop one of the containers to trigger a status change event
+    let docker = Docker::new("unix:///var/run/docker.sock").unwrap();
+    let containers = docker.containers();
+    let mut found = false;
+    let mut all_names: Vec<String> = vec![];
+    for container in containers.list(&Default::default()).await.unwrap() {
+        let compose_service = container
+            .labels
+            .unwrap()
+            .get("com.docker.compose.service")
+            .unwrap()
+            .to_string();
+        // session_direct is connecting to cassandra-one.
+        // So make sure to instead kill caassandra-two.
+        if compose_service == "cassandra-two" {
+            found = true;
+            let container = containers.get(container.id.unwrap());
+            container.stop(None).await.unwrap();
+        }
+        all_names.push(compose_service);
+    }
+    assert!(
+        found,
+        "container was not found with expected docker compose service name, actual names were {:?}",
+        all_names
+    );
+
+    // The direct connection should allow all events to pass through
+    let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        event,
+        ServerEvent::StatusChange(StatusChange {
+            change_type: StatusChangeType::Down,
+            addr: cassandra_protocol::types::CInet {
+                addr: "172.16.1.3:9044".parse().unwrap()
+            },
+        })
+    );
+
+    // we have already received an event directly from the cassandra instance so its reasonable to
+    // expect shotover to have processed that event within 10 seconds if it was ever going to
+    timeout(Duration::from_secs(10), event_recv_shotover.recv())
+        .await
+        .expect_err("CassandraSinkCluster must filter out this event");
+
+    // Purposefully dispose of these as we left the underlying cassandra cluster in a non-recoverable state
+    std::mem::drop(compose);
+    std::mem::drop(shotover_manager);
 }
