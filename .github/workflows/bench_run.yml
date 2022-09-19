@@ -21,8 +21,14 @@ jobs:
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
       with:
-        # Unique key is used to avoid collisions with the Testing workflow
-        key: 'ubuntu-18.04-benchmark'
+        # PRs do not share caches, instead each PR initially pulls from the cache of the main branch for the first run.
+        # This workflow does not run on main, so to make use of a cache before this workflow has completed once on a PR,
+        # we need to manually recreate the key used by ubuntu-18.04 release builds.
+        shared-key: "ubuntu-18.04 - --release-build_and_test"
+        # TODO: while we want to leach off this cache we dont want to overwrite it
+        #       so once something like https://github.com/Swatinem/rust-cache/issues/66 becomes available,
+        #       we should do something like this:
+        # save-if: false
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
     - name: Run benchmarks
