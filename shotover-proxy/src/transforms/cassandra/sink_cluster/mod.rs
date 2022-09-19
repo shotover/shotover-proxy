@@ -8,6 +8,7 @@ use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -891,6 +892,25 @@ fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>> {
 impl Transform for CassandraSinkCluster {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         self.send_message(message_wrapper.messages).await
+    }
+
+    async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        message_wrapper.messages.retain_mut(|message| {
+            if let Some(Frame::Cassandra(CassandraFrame {
+                operation: CassandraOperation::Event(event),
+                ..
+            })) = message.frame()
+            {
+                match event {
+                    ServerEvent::TopologyChange(_) => false,
+                    ServerEvent::StatusChange(_) => false,
+                    ServerEvent::SchemaChange(_) => true,
+                }
+            } else {
+                true
+            }
+        });
+        message_wrapper.call_next_transform_pushed().await
     }
 
     fn is_terminating(&self) -> bool {

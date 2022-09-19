@@ -147,7 +147,7 @@ async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
-    let _compose =
+    let compose =
         DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml");
 
     {
@@ -191,6 +191,15 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     }
 
     cluster_single_rack_v4::test_topology_task(None, Some(9044)).await;
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
+    cluster_single_rack_v4::test_events_filtering(
+        compose,
+        shotover_manager,
+        CassandraDriver::CdrsTokio,
+    )
+    .await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
