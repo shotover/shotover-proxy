@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-18.04
     name: Benchmarks
     steps:
-    - uses: actions/checkout@v2
-    - uses: Swatinem/rust-cache@v1
+    - uses: actions/checkout@v3
+    - uses: Swatinem/rust-cache@v2
       with:
         # Unique key is used to avoid collisions with the Testing workflow
         key: 'ubuntu-18.04-benchmark'

@@ -29,7 +29,7 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         # We purposefully dont cache here as build_and_test will always be the bottleneck
         # so we should leave the cache alone so build_and_test can make more use of it.
       - name: Install ubuntu packages

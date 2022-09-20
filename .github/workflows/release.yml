@@ -16,7 +16,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Push image
         run: |
           docker build -t shotover/shotover-proxy:latest -t shotover/shotover-proxy:${GITHUB_REF/refs\/tags\//} .
@@ -27,15 +27,7 @@ jobs:
     name: "Publish Binary to GitHub"
     runs-on: ubuntu-18.04
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-            # `toolchain: stable` results in the latest stable toolchain being installed.
-            # However as soon as we use cargo the real version specified in rust-toolchain.toml replaces the stable toolchain.
-            #
-            # When something like https://github.com/actions-rs/toolchain/pull/184 lands we can delete this line and get a nice speedup
-            profile: minimal
-            toolchain: stable
+      - uses: actions/checkout@v3
       - name: Install ubuntu packages
         run: shotover-proxy/build/install_ubuntu_packages.sh
       - name: Build & test
