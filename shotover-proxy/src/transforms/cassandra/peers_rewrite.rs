@@ -75,7 +75,7 @@ impl Transform for CassandraPeersRewrite {
                 if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
                     &mut frame.operation
                 {
-                    addr.addr.set_port(self.port);
+                    addr.set_port(self.port);
                     message.invalidate_cache();
                 }
             }
