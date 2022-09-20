@@ -294,9 +294,7 @@ pub async fn test_events_filtering(
         event,
         ServerEvent::StatusChange(StatusChange {
             change_type: StatusChangeType::Down,
-            addr: cassandra_protocol::types::CInet {
-                addr: "172.16.1.3:9044".parse().unwrap()
-            },
+            addr: "172.16.1.3:9044".parse().unwrap()
         })
     );
 
