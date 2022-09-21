@@ -16,8 +16,8 @@ use cassandra_protocol::frame::message_register::BodyReqRegister;
 use cassandra_protocol::frame::message_request::RequestBody;
 use cassandra_protocol::frame::message_response::ResponseBody;
 use cassandra_protocol::frame::message_result::{
-    BodyResResultPrepared, BodyResResultSetKeyspace, ResResultBody, ResultKind, RowsMetadata,
-    RowsMetadataFlags,
+    BodyResResultPrepared, BodyResResultSetKeyspace, ColSpec, ColTypeOption, ResResultBody,
+    ResultKind, RowsMetadata, RowsMetadataFlags,
 };
 use cassandra_protocol::frame::{
     Direction, Envelope as RawCassandraFrame, Flags, Opcode, Serialize, StreamId, Version,
@@ -31,6 +31,7 @@ use cql3_parser::cassandra_ast::CassandraAST;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
 use nonzero_ext::nonzero;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::Cursor;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
@@ -685,6 +686,139 @@ pub struct CassandraBatch {
     consistency: Consistency,
     serial_consistency: Option<Consistency>,
     timestamp: Option<CLong>,
+}
+
+impl Display for CassandraFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{} stream:{}", self.version, self.stream_id)?;
+        if let Some(tracing_id) = self.tracing_id {
+            write!(f, " tracing_id:{}", tracing_id)?;
+        }
+        if !self.warnings.is_empty() {
+            write!(f, " warnings:{:?}", self.warnings)?;
+        }
+        match &self.operation {
+            CassandraOperation::Query { query, params } => {
+                let QueryParams {
+                    consistency,
+                    with_names,
+                    values,
+                    page_size,
+                    paging_state,
+                    serial_consistency,
+                    timestamp,
+                    keyspace,
+                    now_in_seconds,
+                } = params.as_ref();
+
+                write!(
+                    f,
+                    " Query consistency:{} with_names:{:?}",
+                    consistency, with_names,
+                )?;
+
+                if let Some(values) = values {
+                    write!(f, " values:{:?}", values)?;
+                }
+                if let Some(page_size) = page_size {
+                    write!(f, " page_size:{:?}", page_size)?;
+                }
+                if let Some(paging_state) = paging_state {
+                    write!(f, " paging_state:{:?}", paging_state)?;
+                }
+                if let Some(serial_consistency) = serial_consistency {
+                    write!(f, " serial_consistency:{:?}", serial_consistency)?;
+                }
+                if let Some(timestamp) = timestamp {
+                    write!(f, " timestamp:{:?}", timestamp)?;
+                }
+                if let Some(keyspace) = keyspace {
+                    write!(f, " keyspace:{:?}", keyspace)?;
+                }
+                if let Some(now_in_seconds) = now_in_seconds {
+                    write!(f, " now_in_seconds:{:?}", now_in_seconds)?;
+                }
+                write!(f, " {}", query)
+            }
+            CassandraOperation::Register(BodyReqRegister { events }) => {
+                write!(f, " Register {:?}", events)
+            }
+            CassandraOperation::Error(ErrorBody {
+                error_code,
+                message,
+                additional_info,
+            }) => {
+                write!(
+                    f,
+                    " Error 0x{:x} {:?} {:?}",
+                    error_code, additional_info, message
+                )
+            }
+            CassandraOperation::Result(result) => match result {
+                CassandraResult::Rows { rows, metadata } => {
+                    let RowsMetadata {
+                        flags,
+                        columns_count,
+                        paging_state,
+                        new_metadata_id,
+                        global_table_spec,
+                        col_specs,
+                    } = metadata.as_ref();
+
+                    write!(
+                        f,
+                        " Result Rows {:?} columns_count:{}",
+                        flags, columns_count,
+                    )?;
+                    if let Some(paging_state) = paging_state {
+                        write!(f, " paging_state:{:?}", paging_state)?;
+                    }
+                    if let Some(new_metadata_id) = new_metadata_id {
+                        write!(f, " new_metadata_id:{:?}", new_metadata_id)?;
+                    }
+                    if let Some(global_table_spec) = global_table_spec {
+                        write!(
+                            f,
+                            " global_name:{}.{}",
+                            global_table_spec.ks_name, global_table_spec.table_name
+                        )?;
+                    }
+                    write!(f, " cols:[")?;
+                    let mut need_comma = false;
+                    for col_spec in col_specs {
+                        let ColSpec {
+                            table_spec,
+                            name,
+                            col_type,
+                        } = col_spec;
+
+                        let ColTypeOption { id, value } = col_type;
+
+                        if need_comma {
+                            write!(f, ", ")?;
+                        }
+                        need_comma = true;
+                        write!(f, "{}:{:?}", name, id)?;
+                        if let Some(value) = value {
+                            write!(f, " of {:?}", value)?;
+                        }
+                        if let Some(table_spec) = table_spec {
+                            write!(f, " table_spec:{:?}", table_spec)?;
+                        }
+                    }
+                    write!(f, "]")?;
+                    for row in rows {
+                        write!(f, "\n    {:?}", row)?;
+                    }
+                    Ok(())
+                }
+                CassandraResult::Void => write!(f, "Result Void"),
+                _ => write!(f, "Result {:?}", result),
+            },
+            CassandraOperation::Ready(_) => write!(f, " Ready"),
+            _ => write!(f, " {:?}", self.operation),
+        }
+    }
 }
 
 #[cfg(test)]

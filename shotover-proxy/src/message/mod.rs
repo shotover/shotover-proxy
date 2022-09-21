@@ -347,6 +347,20 @@ impl Message {
             None => None,
         }
     }
+
+    pub fn to_high_level_string(&mut self) -> String {
+        if let Some(response) = self.frame() {
+            format!("{}", response)
+        } else if let Some(MessageInner::RawBytes {
+            bytes,
+            message_type,
+        }) = &self.inner
+        {
+            format!("Unparseable {:?} message {:?}", message_type, bytes)
+        } else {
+            unreachable!("self.frame() failed so MessageInner must still be RawBytes")
+        }
+    }
 }
 
 /// There are 3 levels of processing the message can be in.
