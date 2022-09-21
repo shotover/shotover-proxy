@@ -7,6 +7,7 @@ use cassandra_protocol::token::Murmur3Token;
 use std::net::SocketAddr;
 use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct CassandraNode {
@@ -14,6 +15,7 @@ pub struct CassandraNode {
     pub rack: String,
     pub tokens: Vec<Murmur3Token>,
     pub outbound: Option<CassandraConnection>,
+    pub host_id: Uuid,
 }
 
 impl CassandraNode {
