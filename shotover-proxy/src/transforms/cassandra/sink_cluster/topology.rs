@@ -88,7 +88,7 @@ mod system_local {
                 warnings: vec![],
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
-                        "SELECT rack, tokens, data_center FROM system.local",
+                        "SELECT rack, tokens, host_id, data_center FROM system.local",
                     )),
                     params: Box::new(QueryParams::default()),
                 },
@@ -118,6 +118,12 @@ mod system_local {
                     .map(|row| {
                         let _data_center = row.pop();
 
+                        let host_id = if let Some(MessageValue::Uuid(host_id)) = row.pop() {
+                            host_id
+                        } else {
+                            return Err(anyhow!("host_id not a uuid"));
+                        };
+
                         let tokens = if let Some(MessageValue::List(mut list)) = row.pop() {
                             list.drain(..)
                                 .map::<Result<Murmur3Token>, _>(|x| match x {
@@ -140,6 +146,7 @@ mod system_local {
                             rack,
                             tokens,
                             outbound: None,
+                            host_id,
                         })
                     })
                     .collect(),
@@ -173,7 +180,7 @@ mod system_peers {
                 warnings: vec![],
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
-                        "SELECT native_port, native_address, rack, tokens, data_center FROM system.peers_v2",
+                        "SELECT native_port, native_address, rack, tokens, host_id, data_center FROM system.peers_v2",
                     )),
                     params: Box::new(QueryParams::default()),
                 },
@@ -193,7 +200,7 @@ mod system_peers {
                     warnings: vec![],
                     operation: CassandraOperation::Query {
                         query: Box::new(parse_statement_single(
-                            "SELECT peer, rack, tokens, data_center FROM system.peers",
+                            "SELECT peer, rack, tokens, host_id, data_center FROM system.peers",
                         )),
                         params: Box::new(QueryParams::default()),
                     },
@@ -231,11 +238,17 @@ mod system_peers {
                         }
                     })
                     .map(|row| {
-                        if row.len() != 4 && row.len() != 5 {
-                            return Err(anyhow!("expected 4 or 5 columns but was {}", row.len()));
+                        if row.len() != 5 && row.len() != 6 {
+                            return Err(anyhow!("expected 5 or 6 columns but was {}", row.len()));
                         }
 
                         let _data_center = row.pop();
+
+                        let host_id = if let Some(MessageValue::Uuid(host_id)) = row.pop() {
+                            host_id
+                        } else {
+                            return Err(anyhow!("host_id not a uuid"));
+                        };
 
                         let tokens = if let Some(MessageValue::List(list)) = row.pop() {
                             list.into_iter()
@@ -276,6 +289,7 @@ mod system_peers {
                             rack,
                             tokens,
                             outbound: None,
+                            host_id,
                         })
                     })
                     .collect(),
