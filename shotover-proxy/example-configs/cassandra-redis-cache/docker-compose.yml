@@ -5,14 +5,10 @@ services:
     ports:
       - "6379:6379"
   cassandra-one:
-    image: bitnami/cassandra:4.0.6
+    image: shotover-int-tests/cassandra:4.0.6
     ports:
       - "9043:9042"
     environment:
-      MAX_HEAP_SIZE: "128M"
-      MIN_HEAP_SIZE: "128M"
-      HEAP_NEWSIZE: "24M"
-      CASSANDRA_ENABLE_SCRIPTED_USER_DEFINED_FUNCTIONS: "true"
-      CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
-      CASSANDRA_INIT_MAX_RETRIES: "500"
-      CASSANDRA_INIT_SLEEP_TIME: "1"
+      MAX_HEAP_SIZE: "400M"
+      MIN_HEAP_SIZE: "400M"
+      HEAP_NEWSIZE: "48M"
