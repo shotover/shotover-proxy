@@ -71,6 +71,7 @@ pub mod raw_frame {
             version: frame.version,
             stream_id: frame.stream_id,
             tracing_id: frame.tracing_id,
+            opcode: frame.opcode,
         })
     }
 
@@ -85,20 +86,13 @@ pub mod raw_frame {
             _ => nonzero!(1u32),
         })
     }
-
-    pub(crate) fn get_opcode(bytes: &[u8]) -> Result<Opcode> {
-        if bytes.len() < 9 {
-            bail!("Cassandra frame too short, needs at least 9 bytes for header");
-        }
-        let opcode = Opcode::try_from(bytes[4])?;
-        Ok(opcode)
-    }
 }
 
-pub(crate) struct CassandraMetadata {
+pub struct CassandraMetadata {
     pub version: Version,
     pub stream_id: StreamId,
     pub tracing_id: Option<Uuid>,
+    pub opcode: Opcode,
     // missing `warnings` field because we are not using it currently
 }
 
@@ -119,6 +113,7 @@ impl CassandraFrame {
             version: self.version,
             stream_id: self.stream_id,
             tracing_id: self.tracing_id,
+            opcode: self.operation.to_opcode(),
         }
     }
 

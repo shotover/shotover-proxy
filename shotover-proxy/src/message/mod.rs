@@ -32,7 +32,7 @@ use std::net::IpAddr;
 use std::num::NonZeroU32;
 use uuid::Uuid;
 
-enum Metadata {
+pub enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
     None,
@@ -171,16 +171,6 @@ impl Message {
         }
     }
 
-    /// Only use for messages read straight from the socket
-    /// that are definitely in an unparsed state
-    /// (haven't passed through any transforms where they might have been parsed or modified)
-    pub(crate) fn as_raw_bytes(&self) -> Option<&Bytes> {
-        match self.inner.as_ref().unwrap() {
-            MessageInner::RawBytes { bytes, .. } => Some(bytes),
-            _ => None,
-        }
-    }
-
     /// Batch messages have a cell count of 1 cell per inner message.
     /// Cell count is determined as follows:
     /// * Regular message - 1 cell
@@ -270,7 +260,7 @@ impl Message {
     }
 
     /// Get metadata for this `Message`
-    fn metadata(&self) -> Result<Metadata> {
+    pub fn metadata(&self) -> Result<Metadata> {
         match self.inner.as_ref().unwrap() {
             MessageInner::RawBytes {
                 bytes,

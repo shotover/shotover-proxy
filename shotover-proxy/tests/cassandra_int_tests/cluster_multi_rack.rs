@@ -174,5 +174,6 @@ pub async fn test_topology_task(ca_path: Option<&str>) {
         possible_racks.remove(rack_index);
 
         assert_eq!(node.tokens.len(), 128);
+        assert!(node.is_up);
     }
 }
