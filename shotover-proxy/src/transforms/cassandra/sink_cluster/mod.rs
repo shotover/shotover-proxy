@@ -232,9 +232,6 @@ impl CassandraSinkCluster {
                 let nodes_shared = self.topology_task_nodes.read().await;
                 self.local_nodes = nodes_shared.clone();
             }
-            for node in &self.local_nodes {
-                tracing::error!("local nodes: {} {}", node.address, node.is_up);
-            }
 
             let random_point = if self.local_nodes.iter().all(|x| !x.is_up) {
                 tokio::net::lookup_host(self.contact_points.choose(&mut self.rng).unwrap())
