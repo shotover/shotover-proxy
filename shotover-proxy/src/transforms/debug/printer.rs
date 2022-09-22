@@ -23,11 +23,17 @@ impl DebugPrinter {
 
 #[async_trait]
 impl Transform for DebugPrinter {
-    async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
-        info!("Request content: {:?}", message_wrapper.messages);
+    async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
+        for request in &mut message_wrapper.messages {
+            info!("Request: {}", request.to_high_level_string());
+        }
+
         self.counter += 1;
-        let response = message_wrapper.call_next_transform().await;
-        info!("Response content: {:?}", response);
-        response
+        let mut responses = message_wrapper.call_next_transform().await?;
+
+        for response in &mut responses {
+            info!("Response: {}", response.to_high_level_string());
+        }
+        Ok(responses)
     }
 }

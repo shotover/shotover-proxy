@@ -5,6 +5,7 @@ pub use redis_protocol::resp2::types::Frame as RedisFrame;
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MessageType {
@@ -75,6 +76,16 @@ impl Frame {
                 "Expected cassandra frame but received {} frame",
                 frame.name()
             )),
+        }
+    }
+}
+
+impl Display for Frame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
+            Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
+            Frame::None => write!(f, "None"),
         }
     }
 }
