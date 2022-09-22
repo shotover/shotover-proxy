@@ -722,7 +722,6 @@ impl CassandraSinkCluster {
         }
     }
 
-    // TODO: handle use statement state
     fn is_system_query(&self, request: &mut Message) -> bool {
         if let Some(Frame::Cassandra(frame)) = request.frame() {
             if let CassandraOperation::Query { query, .. } = &mut frame.operation {
