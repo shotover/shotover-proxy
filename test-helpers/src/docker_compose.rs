@@ -3,7 +3,6 @@ use regex::Regex;
 use std::env;
 use std::io::ErrorKind;
 use std::process::Command;
-use std::thread;
 use std::time;
 use subprocess::{Exec, Redirection};
 use tracing::trace;
@@ -205,8 +204,6 @@ impl DockerCompose {
 
         run_command("docker-compose", &["-f", file_path, "kill"])?;
         run_command("docker-compose", &["-f", file_path, "down", "-v"])?;
-
-        thread::sleep(time::Duration::from_secs(1));
 
         Ok(())
     }
