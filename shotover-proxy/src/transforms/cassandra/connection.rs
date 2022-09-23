@@ -1,6 +1,6 @@
 use crate::codec::cassandra::CassandraCodec;
-use crate::frame::cassandra;
-use crate::message::Message;
+use crate::frame::cassandra::CassandraMetadata;
+use crate::message::{Message, Metadata};
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
 use crate::transforms::Messages;
@@ -139,7 +139,7 @@ async fn rx_process_fallible<T: AsyncRead>(
                 match response {
                     Ok(response) => {
                         for m in response {
-                            if let Ok(Opcode::Event) = cassandra::raw_frame::get_opcode(m.as_raw_bytes().unwrap()) {
+                            if let Ok(Metadata::Cassandra(CassandraMetadata { opcode: Opcode::Event, .. })) = m.metadata() {
                                 if let Some(ref pushed_messages_tx) = pushed_messages_tx {
                                     pushed_messages_tx.send(vec![m]).unwrap();
                                 }
@@ -223,10 +223,12 @@ pub async fn receive_message(
                 response: Ok(message),
                 ..
             } => {
-                if let Some(raw_bytes) = message.as_raw_bytes() {
-                    if let Ok(Opcode::Error) = cassandra::raw_frame::get_opcode(raw_bytes) {
-                        failed_requests.increment(1);
-                    }
+                if let Ok(Metadata::Cassandra(CassandraMetadata {
+                    opcode: Opcode::Error,
+                    ..
+                })) = message.metadata()
+                {
+                    failed_requests.increment(1);
                 }
                 Ok(message)
             }
