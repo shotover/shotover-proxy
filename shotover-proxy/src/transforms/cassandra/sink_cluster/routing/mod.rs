@@ -1,3 +1,4 @@
+#![allow(unused)]
 use self::token_map::TokenMap;
 use crate::frame::{
     cassandra::{CassandraOperation, CassandraResult},

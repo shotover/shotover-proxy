@@ -9,7 +9,7 @@ pub struct TokenMap {
 }
 
 impl TokenMap {
-    pub fn new(nodes: &Vec<Arc<CassandraNode>>) -> Self {
+    pub fn new(nodes: &[Arc<CassandraNode>]) -> Self {
         TokenMap {
             token_ring: nodes
                 .iter()
