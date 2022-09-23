@@ -234,24 +234,24 @@ mod system_local {
                         let host_id = if let Some(MessageValue::Uuid(host_id)) = row.pop() {
                             host_id
                         } else {
-                            return Err(anyhow!("host_id not a uuid"));
+                            return Err(anyhow!("system.local.host_id not a uuid"));
                         };
 
                         let tokens = if let Some(MessageValue::List(mut list)) = row.pop() {
                             list.drain(..)
                                 .map::<Result<Murmur3Token>, _>(|x| match x {
                                     MessageValue::Varchar(a) => Ok(a.try_into()?),
-                                    _ => Err(anyhow!("tokens value not a varchar")),
+                                    _ => Err(anyhow!("system.local.tokens value not a varchar")),
                                 })
                                 .collect::<Result<Vec<Murmur3Token>>>()?
                         } else {
-                            return Err(anyhow!("tokens not a list"));
+                            return Err(anyhow!("system.local.tokens not a list"));
                         };
 
                         let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
                             value
                         } else {
-                            return Err(anyhow!("rack not a varchar"));
+                            return Err(anyhow!("system.local.rack not a varchar"));
                         };
 
                         Ok(CassandraNode {
@@ -361,37 +361,39 @@ mod system_peers {
                         let host_id = if let Some(MessageValue::Uuid(host_id)) = row.pop() {
                             host_id
                         } else {
-                            return Err(anyhow!("host_id not a uuid"));
+                            return Err(anyhow!("system.peers(v2).host_id not a uuid"));
                         };
 
                         let tokens = if let Some(MessageValue::List(list)) = row.pop() {
                             list.into_iter()
                                 .map::<Result<Murmur3Token>, _>(|x| match x {
                                     MessageValue::Varchar(a) => Ok(a.try_into()?),
-                                    _ => Err(anyhow!("tokens value not a varchar")),
+                                    _ => {
+                                        Err(anyhow!("system.peers(v2).tokens value not a varchar"))
+                                    }
                                 })
                                 .collect::<Result<Vec<Murmur3Token>>>()?
                         } else {
-                            return Err(anyhow!("tokens not a list"));
+                            return Err(anyhow!("system.peers(v2).tokens not a list"));
                         };
 
                         let rack = if let Some(MessageValue::Varchar(value)) = row.pop() {
                             value
                         } else {
-                            return Err(anyhow!("rack not a varchar"));
+                            return Err(anyhow!("system.peers(v2).rack not a varchar"));
                         };
 
                         let ip = if let Some(MessageValue::Inet(value)) = row.pop() {
                             value
                         } else {
-                            return Err(anyhow!("native_address not an inet"));
+                            return Err(anyhow!("system.peers(v2).native_address not an inet"));
                         };
 
                         let port = if let Some(message_value) = row.pop() {
                             if let MessageValue::Integer(value, _) = message_value {
                                 value
                             } else {
-                                return Err(anyhow!("port is not an integer"));
+                                return Err(anyhow!("system.peers(v2).port is not an integer"));
                             }
                         } else {
                             //this method supports both system.peers and system.peers_v2, system.peers does not have a field for the port so we fallback to the default port.
