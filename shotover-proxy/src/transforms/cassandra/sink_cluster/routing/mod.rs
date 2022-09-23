@@ -5,20 +5,12 @@ use crate::frame::{
 };
 use crate::message::Message;
 use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
-use anyhow::Result;
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-use cassandra_protocol::frame::message_result::{BodyResResultPrepared, PreparedMetadata};
-use cassandra_protocol::frame::{Serialize, Version};
-use cassandra_protocol::query::QueryValues;
+use cassandra_protocol::frame::message_result::PreparedMetadata;
+use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
-use cassandra_protocol::types::value::Value;
-use cassandra_protocol::types::CIntShort;
-use cassandra_protocol::types::SHORT_LEN;
-use itertools::Itertools;
-use std::collections::{BTreeMap, HashMap};
-use std::io::{Cursor, Write};
+use std::collections::HashMap;
 use std::sync::Arc;
-use uuid::Uuid;
 
 mod token_map;
 
@@ -115,23 +107,12 @@ impl NodePool {
 }
 
 mod routing_key {
-    use crate::frame::{
-        cassandra::{CassandraOperation, CassandraResult},
-        CassandraFrame, Frame,
-    };
-    use crate::message::Message;
-    use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
-    use anyhow::Result;
-    use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-    use cassandra_protocol::frame::message_result::{BodyResResultPrepared, PreparedMetadata};
     use cassandra_protocol::frame::{Serialize, Version};
     use cassandra_protocol::query::QueryValues;
-    use cassandra_protocol::token::Murmur3Token;
     use cassandra_protocol::types::value::Value;
     use cassandra_protocol::types::CIntShort;
     use cassandra_protocol::types::SHORT_LEN;
     use itertools::Itertools;
-    use std::collections::{BTreeMap, HashMap};
     use std::io::{Cursor, Write};
 
     pub fn calculate(
@@ -144,7 +125,7 @@ mod routing_key {
             _ => panic!("handle named"),
         };
 
-        serialize_routing_key_with_indexes(&values, pk_indexes, version)
+        serialize_routing_key_with_indexes(values, pk_indexes, version)
     }
 
     fn serialize_routing_key_with_indexes(
