@@ -186,8 +186,8 @@ impl DockerCompose {
     fn clean_up(file_path: &str) -> Result<()> {
         trace!("bringing down docker compose {}", file_path);
 
+        run_command("docker-compose", &["-f", file_path, "kill"])?;
         run_command("docker-compose", &["-f", file_path, "down", "-v"])?;
-        run_command("docker-compose", &["-f", file_path, "rm", "-f", "-s", "-v"])?;
 
         thread::sleep(time::Duration::from_secs(1));
 

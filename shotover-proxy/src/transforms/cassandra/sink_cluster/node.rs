@@ -1,8 +1,10 @@
 use crate::codec::cassandra::CassandraCodec;
+use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tls::TlsConnector;
 use crate::transforms::cassandra::connection::CassandraConnection;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use std::net::SocketAddr;
 use tokio::net::ToSocketAddrs;
@@ -16,6 +18,7 @@ pub struct CassandraNode {
     pub tokens: Vec<Murmur3Token>,
     pub outbound: Option<CassandraConnection>,
     pub host_id: Uuid,
+    pub is_up: bool,
 }
 
 impl CassandraNode {
@@ -112,5 +115,17 @@ impl ConnectionFactory {
 
     pub fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         self.pushed_messages_tx = Some(pushed_messages_tx);
+    }
+
+    pub fn get_version(&mut self) -> Result<Version> {
+        for message in &mut self.init_handshake {
+            if let Some(Frame::Cassandra(frame)) = message.frame() {
+                return Ok(frame.version);
+            }
+        }
+        Err(anyhow!(
+            "connection version could not be retrieved from the handshake because none of the {} messages in the handshake could be parsed",
+            self.init_handshake.len()
+        ))
     }
 }
