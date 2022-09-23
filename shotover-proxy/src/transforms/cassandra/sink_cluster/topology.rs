@@ -254,14 +254,7 @@ mod system_local {
                             return Err(anyhow!("system.local.rack not a varchar"));
                         };
 
-                        Ok(CassandraNode {
-                            address,
-                            rack,
-                            tokens,
-                            outbound: None,
-                            host_id,
-                            is_up: true,
-                        })
+                        Ok(CassandraNode::new(address, rack, tokens, host_id))
                     })
                     .collect(),
                 operation => Err(anyhow!(
@@ -400,14 +393,12 @@ mod system_peers {
                             9042
                         };
 
-                        Ok(CassandraNode {
-                            address: SocketAddr::new(ip, port.try_into()?),
+                        Ok(CassandraNode::new(
+                            SocketAddr::new(ip, port.try_into()?),
                             rack,
                             tokens,
-                            outbound: None,
                             host_id,
-                            is_up: true,
-                        })
+                        ))
                     })
                     .collect(),
                 operation => Err(anyhow!(

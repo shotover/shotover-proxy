@@ -30,6 +30,7 @@ use uuid::Uuid;
 use version_compare::Cmp;
 
 pub mod node;
+mod routing;
 pub mod topology;
 
 #[derive(Deserialize, Debug, Clone)]
