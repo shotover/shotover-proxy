@@ -183,7 +183,7 @@ impl DockerCompose {
 
     fn build_images() {
         // On my machine this only takes 40ms when the image is unchanged.
-        // So recreating it for every test is fine, but if we start adding more images maybe we should introduce a global so we only run it once
+        // So recreating it for every test is fine, but if we start adding more images maybe we should introduce an atomic flag so we only run it once
         run_command(
             "docker",
             &[
