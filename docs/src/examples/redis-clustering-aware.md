@@ -28,8 +28,6 @@ redis-node-0:
   networks:
     cluster_subnet:
       ipv4_address: 172.16.1.2
-  volumes:
-    - redis-cluster_data-0:/bitnami/redis/data
   environment:
     - 'ALLOW_EMPTY_PASSWORD=yes'
     - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2'

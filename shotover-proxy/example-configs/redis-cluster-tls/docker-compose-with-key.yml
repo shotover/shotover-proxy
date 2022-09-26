@@ -5,10 +5,10 @@ services:
     ports:
       - "2220:6379"
     volumes:
-      - redis-cluster_data-0:/bitnami/redis/data
       - &keys ../redis-tls/certs:/usr/local/etc/redis/certs
 
-    environment: &node_environment
+    environment:
+      &node_environment
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_TLS_PORT=6379'
@@ -23,7 +23,6 @@ services:
     ports:
       - "2221:6379"
     volumes:
-      - redis-cluster_data-1:/bitnami/redis/data
       - *keys
     environment: *node_environment
 
@@ -32,7 +31,6 @@ services:
     ports:
       - "2222:6379"
     volumes:
-      - redis-cluster_data-2:/bitnami/redis/data
       - *keys
     environment: *node_environment
 
@@ -41,7 +39,6 @@ services:
     ports:
       - "2223:6379"
     volumes:
-      - redis-cluster_data-3:/bitnami/redis/data
       - *keys
     environment: *node_environment
 
@@ -50,7 +47,6 @@ services:
     ports:
       - "2224:6379"
     volumes:
-      - redis-cluster_data-4:/bitnami/redis/data
       - *keys
     environment: *node_environment
 
@@ -59,7 +55,6 @@ services:
     ports:
       - "2225:6379"
     volumes:
-      - redis-cluster_data-5:/bitnami/redis/data
       - *keys
     environment: *node_environment
 
@@ -84,17 +79,3 @@ services:
       - 'REDIS_TLS_CERT_FILE=/usr/local/etc/redis/certs/redis.crt'
       - 'REDIS_TLS_KEY_FILE=/usr/local/etc/redis/certs/redis.key'
       - 'REDIS_TLS_CA_FILE=/usr/local/etc/redis/certs/ca.crt'
-
-volumes:
-  redis-cluster_data-0:
-    driver: local
-  redis-cluster_data-1:
-    driver: local
-  redis-cluster_data-2:
-    driver: local
-  redis-cluster_data-3:
-    driver: local
-  redis-cluster_data-4:
-    driver: local
-  redis-cluster_data-5:
-    driver: local

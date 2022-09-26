@@ -4,8 +4,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2220:6379"
-    volumes:
-      - redis-cluster_data-0:/bitnami/redis/data
     environment:
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -14,8 +12,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2221:6379"
-    volumes:
-      - redis-cluster_data-1:/bitnami/redis/data
     environment:
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -24,8 +20,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2222:6379"
-    volumes:
-      - redis-cluster_data-2:/bitnami/redis/data
     environment:
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -34,8 +28,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2223:6379"
-    volumes:
-      - redis-cluster_data-3:/bitnami/redis/data
     environment:
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -44,8 +36,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2224:6379"
-    volumes:
-      - redis-cluster_data-4:/bitnami/redis/data
     environment:
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -54,8 +44,6 @@ services:
     image: docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2225:6379"
-    volumes:
-      - redis-cluster_data-5:/bitnami/redis/data
     environment:
       - 'ALLOW_EMPTY_PASSWORD=yes'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
@@ -84,17 +72,3 @@ services:
       - type: bind
         source: $PWD
         target: /config
-
-volumes:
-  redis-cluster_data-0:
-    driver: local
-  redis-cluster_data-1:
-    driver: local
-  redis-cluster_data-2:
-    driver: local
-  redis-cluster_data-3:
-    driver: local
-  redis-cluster_data-4:
-    driver: local
-  redis-cluster_data-5:
-    driver: local
