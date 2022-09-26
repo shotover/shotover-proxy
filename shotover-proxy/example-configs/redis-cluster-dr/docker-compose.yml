@@ -4,9 +4,8 @@ services:
     image: &image docker.io/bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2220:6379"
-    volumes:
-      - redis-cluster_data-0:/bitnami/redis/data
-    environment: &node-environment
+    environment:
+      &node-environment
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
@@ -14,40 +13,30 @@ services:
     image: *image
     ports:
       - "2221:6379"
-    volumes:
-      - redis-cluster_data-1:/bitnami/redis/data
     environment: *node-environment
 
   redis-node-2:
     image: *image
     ports:
       - "2222:6379"
-    volumes:
-      - redis-cluster_data-2:/bitnami/redis/data
     environment: *node-environment
 
   redis-node-3:
     image: *image
     ports:
       - "2223:6379"
-    volumes:
-      - redis-cluster_data-3:/bitnami/redis/data
     environment: *node-environment
 
   redis-node-4:
     image: *image
     ports:
       - "2224:6379"
-    volumes:
-      - redis-cluster_data-4:/bitnami/redis/data
     environment: *node-environment
 
   redis-node-5:
     image: *image
     ports:
       - "2225:6379"
-    volumes:
-      - redis-cluster_data-5:/bitnami/redis/data
     environment: *node-environment
 
   redis-cluster-init:
@@ -70,9 +59,8 @@ services:
     image: *image
     ports:
       - "2120:6379"
-    volumes:
-      - redis-cluster_data-0-dr:/bitnami/redis/data
-    environment: &dr-environment
+    environment:
+      &dr-environment
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0-dr redis-node-1-dr redis-node-2-dr redis-node-3-dr redis-node-4-dr redis-node-5-dr'
 
@@ -80,40 +68,30 @@ services:
     image: *image
     ports:
       - "2121:6379"
-    volumes:
-      - redis-cluster_data-1-dr:/bitnami/redis/data
     environment: *dr-environment
 
   redis-node-2-dr:
     image: *image
     ports:
       - "2122:6379"
-    volumes:
-      - redis-cluster_data-2-dr:/bitnami/redis/data
     environment: *dr-environment
 
   redis-node-3-dr:
     image: *image
     ports:
       - "2123:6379"
-    volumes:
-      - redis-cluster_data-3-dr:/bitnami/redis/data
     environment: *dr-environment
 
   redis-node-4-dr:
     image: *image
     ports:
       - "2124:6379"
-    volumes:
-      - redis-cluster_data-4-dr:/bitnami/redis/data
     environment: *dr-environment
 
   redis-node-5-dr:
     image: *image
     ports:
       - "2125:6379"
-    volumes:
-      - redis-cluster_data-5-dr:/bitnami/redis/data
     environment: *dr-environment
 
   redis-cluster-init-dr:
@@ -129,32 +107,5 @@ services:
       - 'REDIS_PASSWORD=shotover'
       - 'REDISCLI_AUTH=shotover'
       - 'REDIS_CLUSTER_REPLICAS=1'
-      - 'REDIS_NODES=redis-node-0-dr redis-node-1-dr redis-node-2-dr
-        redis-node-3-dr redis-node-4-dr redis-node-5-dr'
+      - 'REDIS_NODES=redis-node-0-dr redis-node-1-dr redis-node-2-dr redis-node-3-dr redis-node-4-dr redis-node-5-dr'
       - 'REDIS_CLUSTER_CREATOR=yes'
-
-volumes:
-  redis-cluster_data-0:
-    driver: local
-  redis-cluster_data-1:
-    driver: local
-  redis-cluster_data-2:
-    driver: local
-  redis-cluster_data-3:
-    driver: local
-  redis-cluster_data-4:
-    driver: local
-  redis-cluster_data-5:
-    driver: local
-  redis-cluster_data-0-dr:
-    driver: local
-  redis-cluster_data-1-dr:
-    driver: local
-  redis-cluster_data-2-dr:
-    driver: local
-  redis-cluster_data-3-dr:
-    driver: local
-  redis-cluster_data-4-dr:
-    driver: local
-  redis-cluster_data-5-dr:
-    driver: local
