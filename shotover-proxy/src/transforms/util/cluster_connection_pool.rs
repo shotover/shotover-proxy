@@ -244,13 +244,13 @@ async fn tx_process<C: CodecWriteHalf, W: AsyncWrite + Unpin + Send + 'static>(
     return_tx: UnboundedSender<Request>,
     codec: C,
 ) -> Result<()> {
-    let in_w = FramedWrite::new(write, codec);
+    let writer = FramedWrite::new(write, codec);
     let rx_stream = UnboundedReceiverStream::new(out_rx).map(|x| {
         let ret = Ok(vec![x.message.clone()]);
         return_tx.send(x)?;
         ret
     });
-    rx_stream.forward(in_w).await
+    rx_stream.forward(writer).await
 }
 
 async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
@@ -258,22 +258,22 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,
 ) -> Result<()> {
-    let mut in_r = FramedRead::new(read, codec);
+    let mut reader = FramedRead::new(read, codec);
 
-    while let Some(maybe_req) = in_r.next().await {
-        match maybe_req {
-            Ok(req) => {
-                for m in req {
+    while let Some(responses) = reader.next().await {
+        match responses {
+            Ok(responses) => {
+                for response_message in responses {
                     if let Some(Request {
-                        message,
+                        message: request_message,
                         return_chan: Some(ret),
                         ..
                     }) = return_rx.recv().await
                     {
                         // If the receiver hangs up, just silently ignore
                         let _ = ret.send(Response {
-                            original: message,
-                            response: Ok(m),
+                            original: request_message,
+                            response: Ok(response_message),
                         });
                     }
                 }
