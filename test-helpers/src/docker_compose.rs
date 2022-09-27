@@ -65,6 +65,8 @@ impl DockerCompose {
             panic!("Could not find docker-compose. Have you installed it?");
         }
 
+        DockerCompose::build_images();
+
         DockerCompose::clean_up(file_path).unwrap();
 
         run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
@@ -177,6 +179,21 @@ impl DockerCompose {
             count,
             sys_time.elapsed()
         );
+    }
+
+    fn build_images() {
+        // On my machine this only takes 40ms when the image is unchanged.
+        // So recreating it for every test is fine, but if we start adding more images maybe we should introduce an atomic flag so we only run it once
+        run_command(
+            "docker",
+            &[
+                "build",
+                "example-configs/docker-images/cassandra-4.0.6",
+                "--tag",
+                "shotover-int-tests/cassandra:4.0.6",
+            ],
+        )
+        .unwrap();
     }
 
     /// Cleans up the docker-compose by shutting down the running system and removing the images.
