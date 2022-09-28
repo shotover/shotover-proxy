@@ -150,7 +150,7 @@ async fn rx_process_fallible<T: AsyncRead>(
                                     },
                                     Some((return_tx, original)) => {
                                         return_tx.send(Response { original, response: Ok(m) })
-                                            .map_err(|_| anyhow!("couldn't send message"))?;
+                                            .map_err(|_| anyhow!("1 couldn't send message"))?;
                                     }
                                 }
                             }
@@ -169,7 +169,7 @@ async fn rx_process_fallible<T: AsyncRead>(
                     }
                     Some(m) => {
                         return_chan.send(Response { original: message, response: Ok(m) })
-                            .map_err(|_| anyhow!("couldn't send message"))?;
+                            .map_err(|_| anyhow!("2 couldn't send message"))?;
                     }
                 };
             },
