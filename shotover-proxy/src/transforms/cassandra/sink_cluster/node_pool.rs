@@ -78,6 +78,7 @@ impl NodePool {
         )
         .unwrap();
 
+        // TODO this should use the keyspace info to properly select the replica count
         let mut replica_host_ids = self
             .token_map
             .nodes_for_token_capped(Murmur3Token::generate(&routing_key), 1);
