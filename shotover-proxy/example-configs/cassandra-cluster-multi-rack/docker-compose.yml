@@ -36,6 +36,10 @@ services:
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
       CASSANDRA_INIT_MAX_RETRIES: "500"
       CASSANDRA_INIT_SLEEP_TIME: "1"
+    volumes:
+      &volumes
+      - type: tmpfs
+        target: /bitnami/cassandra
 
   cassandra-two:
     image: *image
@@ -46,6 +50,7 @@ services:
     environment:
       <<: *environment
       CASSANDRA_RACK: rack2
+    volumes: *volumes
 
   cassandra-three:
     image: *image
@@ -56,3 +61,4 @@ services:
     environment:
       <<: *environment
       CASSANDRA_RACK: rack3
+    volumes: *volumes
