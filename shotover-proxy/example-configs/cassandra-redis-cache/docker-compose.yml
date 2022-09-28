@@ -12,3 +12,6 @@ services:
       MAX_HEAP_SIZE: "400M"
       MIN_HEAP_SIZE: "400M"
       HEAP_NEWSIZE: "48M"
+    volumes:
+      - type: tmpfs
+        target: /var/lib/cassandra
