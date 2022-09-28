@@ -12,7 +12,7 @@ use cassandra_protocol::frame::Serialize as FrameSerialize;
 use cassandra_protocol::types::CInt;
 use cassandra_protocol::{
     frame::{
-        message_error::{AdditionalErrorInfo, ErrorBody},
+        message_error::{ErrorBody, ErrorType},
         message_result::{ColSpec, ColTypeOption},
         Version,
     },
@@ -217,9 +217,8 @@ impl Message {
                 version: frame.version,
                 stream_id: frame.stream_id,
                 operation: CassandraOperation::Error(ErrorBody {
-                    error_code: 0x0,
                     message: "Message was filtered out by shotover".into(),
-                    additional_info: AdditionalErrorInfo::Server,
+                    ty: ErrorType::Server,
                 }),
                 tracing_id: frame.tracing_id,
                 warnings: vec![],
@@ -247,9 +246,8 @@ impl Message {
                 version: frame.version,
                 stream_id: frame.stream_id,
                 operation: CassandraOperation::Error(ErrorBody {
-                    error_code: 0x0,
                     message: error,
-                    additional_info: AdditionalErrorInfo::Server,
+                    ty: ErrorType::Server,
                 }),
                 tracing_id: frame.tracing_id,
                 warnings: vec![],
@@ -287,9 +285,8 @@ impl Message {
         *self = Message::from_frame(match metadata {
             Metadata::Cassandra(metadata) => {
                 let body = CassandraOperation::Error(ErrorBody {
-                    error_code: 0x1001,
                     message: "Server overloaded".into(),
-                    additional_info: AdditionalErrorInfo::Overloaded,
+                    ty: ErrorType::Overloaded,
                 });
 
                 Frame::Cassandra(CassandraFrame {

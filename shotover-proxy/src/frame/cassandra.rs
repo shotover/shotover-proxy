@@ -738,16 +738,8 @@ impl Display for CassandraFrame {
             CassandraOperation::Register(BodyReqRegister { events }) => {
                 write!(f, " Register {:?}", events)
             }
-            CassandraOperation::Error(ErrorBody {
-                error_code,
-                message,
-                additional_info,
-            }) => {
-                write!(
-                    f,
-                    " Error 0x{:x} {:?} {:?}",
-                    error_code, additional_info, message
-                )
+            CassandraOperation::Error(ErrorBody { message, ty }) => {
+                write!(f, " Error {:?} {:?}", ty, message)
             }
             CassandraOperation::Result(result) => match result {
                 CassandraResult::Rows { rows, metadata } => {
