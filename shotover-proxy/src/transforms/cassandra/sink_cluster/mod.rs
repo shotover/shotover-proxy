@@ -27,9 +27,8 @@ use node_pool::{GetReplicaErr, NodePool};
 use rand::prelude::*;
 use serde::Deserialize;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, oneshot, RwLock};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot, watch};
 use topology::{create_topology_task, TaskConnectionInfo};
 use uuid::Uuid;
 use version_compare::Cmp;
@@ -107,16 +106,11 @@ pub struct CassandraSinkCluster {
     peers_v2_table: FQName,
     system_keyspaces: [Identifier; 3],
     local_shotover_node: ShotoverNode,
-    /// A local clone of topology_task_nodes.
-    /// Internally stores connections to the nodes.
-    ///
-    /// Can be populated at two points:
-    /// 1. If topology_task_nodes is already populated when the very first message is received then we populate local_nodes immediately.
-    /// 2. Otherwise local_nodes will be populated immediately after we have a confirmed successful handshake, waiting until topology_task_nodes is populated.
+    /// The nodes list is populated as soon as nodes_rx makes one available, but once a confirmed succesful handshake is reached
+    /// we await nodes_rx to ensure that we have a nodes list from that point forward.
+    /// Addditionally any changes to nodes_rx is observed and copied over.
     pool: NodePool,
-    /// Only written to by the topology task
-    /// Transform instances should never write to this.
-    topology_task_nodes: Arc<RwLock<Vec<CassandraNode>>>,
+    nodes_rx: watch::Receiver<Vec<CassandraNode>>,
     rng: SmallRng,
     task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
 }
@@ -139,7 +133,9 @@ impl Clone for CassandraSinkCluster {
             system_keyspaces: self.system_keyspaces.clone(),
             local_shotover_node: self.local_shotover_node.clone(),
             pool: NodePool::new(vec![]),
-            topology_task_nodes: self.topology_task_nodes.clone(),
+            // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
+            // once a single node list has been sent all new connections will immediately recognize it as a change.
+            nodes_rx: self.nodes_rx.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             task_handshake_tx: self.task_handshake_tx.clone(),
         }
@@ -159,12 +155,11 @@ impl CassandraSinkCluster {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
         let receive_timeout = timeout.map(Duration::from_secs);
 
-        let nodes_shared = Arc::new(RwLock::new(vec![]));
-
+        let (local_nodes_tx, local_nodes_rx) = watch::channel(vec![]);
         let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
 
         create_topology_task(
-            nodes_shared.clone(),
+            local_nodes_tx,
             task_handshake_rx,
             local_shotover_node.data_center.clone(),
         );
@@ -189,7 +184,7 @@ impl CassandraSinkCluster {
             ],
             local_shotover_node,
             pool: NodePool::new(vec![]),
-            topology_task_nodes: nodes_shared,
+            nodes_rx: local_nodes_rx,
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             task_handshake_tx,
         }
@@ -212,6 +207,24 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
 
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
+        // if the node list has been updated use the new list, copying over any existing connections
+        if self.nodes_rx.has_changed()? {
+            let mut new_nodes = self.nodes_rx.borrow_and_update().clone();
+
+            for node in self.pool.nodes.drain(..) {
+                if let Some(outbound) = node.outbound {
+                    for new_node in &mut new_nodes {
+                        if new_node.host_id == node.host_id {
+                            new_node.outbound = Some(outbound);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            self.pool.set_nodes(new_nodes);
+        }
+
         let tables_to_rewrite: Vec<TableToRewrite> = messages
             .iter_mut()
             .enumerate()
@@ -236,11 +249,6 @@ impl CassandraSinkCluster {
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
         if self.init_handshake_connection.is_none() {
-            if self.pool.nodes.is_empty() {
-                let nodes_shared = self.topology_task_nodes.read().await;
-                self.pool.set_nodes(nodes_shared.clone());
-            }
-
             let random_point = if self.pool.nodes.iter().all(|x| !x.is_up) {
                 tokio::net::lookup_host(self.contact_points.choose(&mut self.rng).unwrap())
                     .await?
@@ -489,7 +497,8 @@ impl CassandraSinkCluster {
         self.init_handshake_complete = true;
 
         if self.pool.nodes.is_empty() {
-            self.populate_local_nodes().await?;
+            self.nodes_rx.changed().await?;
+            self.pool.nodes = self.nodes_rx.borrow_and_update().clone();
 
             // If we have to populate the local_nodes at this point then that means the control connection
             // may not have been made against a node in the configured data_center/rack.
@@ -511,28 +520,6 @@ impl CassandraSinkCluster {
         );
 
         Ok(())
-    }
-
-    async fn populate_local_nodes(&mut self) -> Result<()> {
-        let start = Instant::now();
-        loop {
-            if self.pool.nodes.is_empty() {
-                let nodes_shared = self.topology_task_nodes.read().await;
-                self.pool.set_nodes(nodes_shared.clone());
-            }
-
-            if !self.pool.nodes.is_empty() {
-                return Ok(());
-            }
-
-            if start.elapsed() > Duration::from_secs(10 * 60) {
-                return Err(anyhow!(
-                    "10 minute timeout waiting for topology task elapsed"
-                ));
-            }
-
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
     }
 
     fn get_rewrite_table(&self, request: &mut Message, index: usize) -> Option<TableToRewrite> {

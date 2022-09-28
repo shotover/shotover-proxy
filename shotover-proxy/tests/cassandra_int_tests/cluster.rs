@@ -6,12 +6,11 @@ use shotover_proxy::transforms::cassandra::sink_cluster::{
     node::{CassandraNode, ConnectionFactory},
     topology::{create_topology_task, TaskConnectionInfo},
 };
-use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, watch};
 
 pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<CassandraNode> {
     let port = port.unwrap_or(9042);
-    let nodes_shared = Arc::new(RwLock::new(vec![]));
+    let (nodes_tx, mut nodes_rx) = watch::channel(vec![]);
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
     let tls = ca_path.map(|ca_path| {
         TlsConnector::new(TlsConnectorConfig {
@@ -27,7 +26,7 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         connection_factory.push_handshake_message(message);
     }
 
-    create_topology_task(nodes_shared.clone(), task_handshake_rx, "dc1".to_string());
+    create_topology_task(nodes_tx, task_handshake_rx, "dc1".to_string());
 
     // Give the handshake task a hardcoded handshake.
     // Normally the handshake is the handshake that the client gave shotover.
@@ -39,18 +38,8 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         .await
         .unwrap();
 
-    // keep attempting to read the nodes list until it is populated.
-    let mut nodes = vec![];
-    let mut tries = 0;
-    while nodes.is_empty() {
-        nodes = nodes_shared.read().await.clone();
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-
-        if tries > 2000 {
-            panic!("Ran out of retries for the topology task to write the nodes list");
-        }
-        tries += 1;
-    }
+    nodes_rx.changed().await.unwrap();
+    let nodes = nodes_rx.borrow().clone();
     nodes
 }
 
