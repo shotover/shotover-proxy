@@ -30,15 +30,6 @@ impl TokenMap {
             .take(replica_count)
             .map(|(_, node)| *node)
     }
-
-    // /// Returns local nodes starting at given token and going in the direction of replicas.
-    // pub fn nodes_for_token(&self, token: Murmur3Token) -> impl Iterator<Item = Uuid> + '_ {
-    //     self.token_ring
-    //         .range(token..)
-    //         .chain(self.token_ring.iter())
-    //         .take(self.token_ring.len())
-    //         .map(|(_, node)| *node)
-    // }
 }
 
 #[cfg(test)]

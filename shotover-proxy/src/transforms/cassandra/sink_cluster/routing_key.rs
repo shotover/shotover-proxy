@@ -1,195 +1,86 @@
-use self::token_map::TokenMap;
-use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
-use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-use cassandra_protocol::frame::message_result::PreparedMetadata;
-use cassandra_protocol::frame::Version;
-use cassandra_protocol::token::Murmur3Token;
-use rand::prelude::*;
-use std::collections::HashMap;
+use cassandra_protocol::frame::{Serialize, Version};
+use cassandra_protocol::query::QueryValues;
+use cassandra_protocol::types::value::Value;
+use cassandra_protocol::types::CIntShort;
+use cassandra_protocol::types::SHORT_LEN;
+use itertools::Itertools;
+use std::io::{Cursor, Write};
 
-mod token_map;
+pub fn calculate(
+    pk_indexes: &[i16],
+    query_values: &QueryValues,
+    version: Version,
+) -> Option<Vec<u8>> {
+    let values = match query_values {
+        QueryValues::SimpleValues(values) => values,
+        _ => panic!("handle named"),
+    };
 
-#[derive(Debug)]
-pub struct NodePool {
-    prepared_metadata: HashMap<Vec<u8>, PreparedMetadata>,
-    token_map: TokenMap,
-    pub nodes: Vec<CassandraNode>,
-
-    rng: SmallRng,
+    serialize_routing_key_with_indexes(values, pk_indexes, version)
 }
 
-impl NodePool {
-    pub fn new(nodes: Vec<CassandraNode>) -> Self {
-        Self {
-            token_map: TokenMap::new(nodes.as_slice()),
-            nodes,
-            prepared_metadata: HashMap::new(),
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
-
-    pub fn set_nodes(&mut self, nodes: Vec<CassandraNode>) {
-        self.nodes = nodes;
-        self.token_map = TokenMap::new(self.nodes.as_slice());
-    }
-
-    pub fn add_prepared_result(&mut self, id: Vec<u8>, metadata: PreparedMetadata) {
-        tracing::warn!("Add prepared result metadata {id:?}");
-        self.prepared_metadata.insert(id, metadata);
-    }
-
-    // TODO handle the unwrap
-    fn get_prepared_metadata(&self, id: &Vec<u8>) -> &PreparedMetadata {
-        tracing::warn!("Getting prepeared metadata {id:?}");
-        self.prepared_metadata.get(id).unwrap()
-    }
-
-    pub fn random_node(&mut self) -> &mut CassandraNode {
-        self.nodes
-            .iter_mut()
-            .filter(|x| x.is_up)
-            .choose(&mut self.rng)
-            .unwrap()
-    }
-
-    pub fn get_random_node_in_dc_rack(&mut self, rack: &String) -> &CassandraNode {
-        self.nodes
-            .iter()
-            .filter(|x| x.rack == *rack && x.is_up)
-            .choose(&mut self.rng)
-            .unwrap()
-    }
-
-    /// Get a token routed replica node for the supplied execute message (if exists)
-    pub fn replica_node(
-        &mut self,
-        execute: &BodyReqExecuteOwned,
-        version: &Version,
-    ) -> Option<&mut CassandraNode> {
-        let metadata = self.get_prepared_metadata(&execute.id.clone().into_bytes().unwrap());
-
-        let routing_key = routing_key::calculate(
-            &metadata.pk_indexes,
-            execute.query_parameters.values.as_ref().unwrap(),
-            *version,
-        )
-        .unwrap();
-
-        let mut replica_host_ids = self
-            .token_map
-            .nodes_for_token_capped(Murmur3Token::generate(&routing_key), 1);
-
-        if let Some(host_id) = replica_host_ids.next() {
-            return self
-                .nodes
-                .iter_mut()
-                .find(|node| host_id == node.host_id && node.is_up);
-        }
-
-        None
-    }
-}
-
-mod routing_key {
-    use cassandra_protocol::frame::{Serialize, Version};
-    use cassandra_protocol::query::QueryValues;
-    use cassandra_protocol::types::value::Value;
-    use cassandra_protocol::types::CIntShort;
-    use cassandra_protocol::types::SHORT_LEN;
-    use itertools::Itertools;
-    use std::io::{Cursor, Write};
-
-    pub fn calculate(
-        pk_indexes: &[i16],
-        query_values: &QueryValues,
-        version: Version,
-    ) -> Option<Vec<u8>> {
-        let values = match query_values {
-            QueryValues::SimpleValues(values) => values,
-            _ => panic!("handle named"),
-        };
-
-        serialize_routing_key_with_indexes(values, pk_indexes, version)
-    }
-
-    fn serialize_routing_key_with_indexes(
-        values: &[Value],
-        pk_indexes: &[i16],
-        version: Version,
-    ) -> Option<Vec<u8>> {
-        match pk_indexes.len() {
-            0 => None,
-            1 => values
-                .get(pk_indexes[0] as usize)
-                .map(|value| value.serialize_to_vec(version)),
-            _ => {
-                let mut buf = vec![];
-                if pk_indexes
-                    .iter()
-                    .map(|index| values.get(*index as usize))
-                    .fold_options(Cursor::new(&mut buf), |mut cursor, value| {
-                        serialize_routing_value(&mut cursor, value, version);
-                        cursor
-                    })
-                    .is_some()
-                {
-                    Some(buf)
-                } else {
-                    None
-                }
+fn serialize_routing_key_with_indexes(
+    values: &[Value],
+    pk_indexes: &[i16],
+    version: Version,
+) -> Option<Vec<u8>> {
+    match pk_indexes.len() {
+        0 => None,
+        1 => values
+            .get(pk_indexes[0] as usize)
+            .map(|value| value.serialize_to_vec(version)),
+        _ => {
+            let mut buf = vec![];
+            if pk_indexes
+                .iter()
+                .map(|index| values.get(*index as usize))
+                .fold_options(Cursor::new(&mut buf), |mut cursor, value| {
+                    serialize_routing_value(&mut cursor, value, version);
+                    cursor
+                })
+                .is_some()
+            {
+                Some(buf)
+            } else {
+                None
             }
         }
     }
+}
 
-    // https://github.com/apache/cassandra/blob/3a950b45c321e051a9744721408760c568c05617/src/java/org/apache/cassandra/db/marshal/CompositeType.java#L39
-    fn serialize_routing_value(cursor: &mut Cursor<&mut Vec<u8>>, value: &Value, version: Version) {
-        let temp_size: CIntShort = 0;
-        temp_size.serialize(cursor, version);
+// https://github.com/apache/cassandra/blob/3a950b45c321e051a9744721408760c568c05617/src/java/org/apache/cassandra/db/marshal/CompositeType.java#L39
+fn serialize_routing_value(cursor: &mut Cursor<&mut Vec<u8>>, value: &Value, version: Version) {
+    let temp_size: CIntShort = 0;
+    temp_size.serialize(cursor, version);
 
-        let before_value_pos = cursor.position();
-        value.serialize(cursor, version);
+    let before_value_pos = cursor.position();
+    value.serialize(cursor, version);
 
-        let after_value_pos = cursor.position();
-        cursor.set_position(before_value_pos - SHORT_LEN as u64);
+    let after_value_pos = cursor.position();
+    cursor.set_position(before_value_pos - SHORT_LEN as u64);
 
-        let value_size: CIntShort = (after_value_pos - before_value_pos) as CIntShort;
-        value_size.serialize(cursor, version);
+    let value_size: CIntShort = (after_value_pos - before_value_pos) as CIntShort;
+    value_size.serialize(cursor, version);
 
-        cursor.set_position(after_value_pos);
-        let _ = cursor.write(&[0]);
-    }
-
-    // fn serialize_routing_key(values: &[Value], version: Version) -> Vec<u8> {
-    //     match values.len() {
-    //         0 => vec![],
-    //         1 => values[0].serialize_to_vec(version),
-    //         _ => {
-    //             let mut buf = vec![];
-    //             let mut cursor = Cursor::new(&mut buf);
-
-    //             for value in values {
-    //                 serialize_routing_value(&mut cursor, value, version);
-    //             }
-
-    //             buf
-    //         }
-    //     }
-    // }
+    cursor.set_position(after_value_pos);
+    let _ = cursor.write(&[0]);
 }
 
 #[cfg(test)]
 mod test_token_aware_router {
-    use super::*;
+    use super::super::node_pool::NodePool;
+    use super::super::routing_key::calculate;
+    use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
     use cassandra_protocol::consistency::Consistency::One;
+    use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
+    use cassandra_protocol::frame::message_result::PreparedMetadata;
     use cassandra_protocol::frame::message_result::{
         ColSpec, ColType::Int, ColTypeOption, TableSpec,
     };
+    use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
     use cassandra_protocol::query::QueryValues::SimpleValues;
+    use cassandra_protocol::token::Murmur3Token;
     use cassandra_protocol::types::value::Value;
     use cassandra_protocol::types::CBytesShort;
     use uuid::uuid;
@@ -218,28 +109,6 @@ mod test_token_aware_router {
             11, 241, 38, 11, 140, 72, 217, 34, 214, 128, 175, 241, 151, 73, 197, 227,
         ]);
 
-        // let prepared_result = &mut Message::from_frame(Frame::Cassandra(CassandraFrame {
-        //     version: Version::V4,
-        //     stream_id: 0,
-        //     tracing_id: None,
-        //     warnings: vec![],
-        //     operation: CassandraOperation::Result(CassandraResult::Prepared(Box::new(
-        //         BodyResResultPrepared {
-        //             id: id.clone(),
-        //             result_metadata_id: None,
-        //             metadata: prepared_metadata.clone(),
-        //             result_metadata: RowsMetadata {
-        //                 flags: RowsMetadataFlags::NO_METADATA,
-        //                 columns_count: 0,
-        //                 paging_state: None,
-        //                 new_metadata_id: None,
-        //                 global_table_spec: None,
-        //                 col_specs: vec![],
-        //             },
-        //         },
-        //     ))),
-        // }));
-
         let query_parameters = QueryParams {
             consistency: One,
             with_names: false,
@@ -260,23 +129,9 @@ mod test_token_aware_router {
             query_parameters: query_parameters.clone(),
         };
 
-        // let execute = &mut Message::from_frame(Frame::Cassandra(CassandraFrame {
-        //     version: Version::V4,
-        //     stream_id: 0,
-        //     tracing_id: None,
-        //     warnings: vec![],
-        //     operation: CassandraOperation::Execute(Box::new(BodyReqExecuteOwned {
-        //         id: CBytesShort::new(vec![
-        //             11, 241, 38, 11, 140, 72, 217, 34, 214, 128, 175, 241, 151, 73, 197, 227,
-        //         ]),
-        //         result_metadata_id: None,
-        //         query_parameters: query_parameters.clone(),
-        //     })),
-        // }));
-
         router.add_prepared_result(id.into_bytes().unwrap(), prepared_metadata.clone());
 
-        let routing_key = routing_key::calculate(
+        let routing_key = calculate(
             &prepared_metadata.pk_indexes,
             query_parameters.values.as_ref().unwrap(),
             Version::V4,

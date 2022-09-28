@@ -21,8 +21,8 @@ use futures::StreamExt;
 use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
+use node_pool::NodePool;
 use rand::prelude::*;
-use routing::NodePool;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -33,7 +33,9 @@ use uuid::Uuid;
 use version_compare::Cmp;
 
 pub mod node;
-mod routing;
+mod node_pool;
+mod routing_key;
+mod token_map;
 pub mod topology;
 
 #[derive(Deserialize, Debug, Clone)]
