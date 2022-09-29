@@ -234,7 +234,7 @@ impl CassandraSinkCluster {
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
         if self.init_handshake_connection.is_none() {
-            if self.pool.is_empty() {
+            if self.pool.nodes.is_empty() {
                 let nodes_shared = self.topology_task_nodes.read().await;
                 self.pool.set_nodes(nodes_shared.clone());
             }
@@ -246,7 +246,7 @@ impl CassandraSinkCluster {
                     .unwrap()
             } else {
                 self.pool
-                    .get_random_node_in_dc_rack(&self.local_shotover_node.rack)
+                    .get_random_node_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng)
                     .address
             };
 
@@ -281,7 +281,7 @@ impl CassandraSinkCluster {
 
         for mut message in messages {
             let (return_chan_tx, return_chan_rx) = oneshot::channel();
-            if self.pool.is_empty()
+            if self.pool.nodes.is_empty()
                 || !self.init_handshake_complete
                 // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
                 // DDL statements and system.local must be routed through the same connection, so that schema_version changes appear immediately in system.local
@@ -332,7 +332,7 @@ impl CassandraSinkCluster {
                     .send(message, return_chan_tx)?;
             } else {
                 // If the message is an execute we should perform token aware routing
-                if let Some((execute, version)) = is_execute_message(&mut message) {
+                if let Some((execute, version)) = get_execute_message(&mut message) {
                     if let Some(replica_node) = self.pool.replica_node(execute, version) {
                         replica_node
                             .get_connection(&self.connection_factory)
@@ -340,7 +340,7 @@ impl CassandraSinkCluster {
                             .send(message, return_chan_tx)?;
                     // if no replicas exist just send to a random node
                     } else {
-                        let node = self.pool.random_node();
+                        let node = self.pool.random_node(&mut self.rng);
                         node.get_connection(&self.connection_factory)
                             .await?
                             .send(message, return_chan_tx)?;
@@ -348,7 +348,7 @@ impl CassandraSinkCluster {
 
                 // otherwise just send to a random node
                 } else {
-                    let node = self.pool.random_node();
+                    let node = self.pool.random_node(&mut self.rng);
                     node.get_connection(&self.connection_factory)
                         .await?
                         .send(message, return_chan_tx)?;
@@ -401,7 +401,7 @@ impl CassandraSinkCluster {
         }
 
         for response in responses.iter_mut() {
-            if let Some((id, metadata)) = is_prepared_message(response) {
+            if let Some((id, metadata)) = get_prepared_result_message(response)? {
                 self.pool.add_prepared_result(id, metadata);
             }
         }
@@ -420,7 +420,7 @@ impl CassandraSinkCluster {
         }
         self.init_handshake_complete = true;
 
-        if self.pool.is_empty() {
+        if self.pool.nodes.is_empty() {
             self.populate_local_nodes().await?;
 
             // If we have to populate the local_nodes at this point then that means the control connection
@@ -428,7 +428,7 @@ impl CassandraSinkCluster {
             // Therefore we need to recreate the control connection to ensure that it is in the configured data_center/rack.
             let random_address = self
                 .pool
-                .get_random_node_in_dc_rack(&self.local_shotover_node.rack)
+                .get_random_node_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng)
                 .address;
             self.init_handshake_connection = Some(
                 self.connection_factory
@@ -448,12 +448,12 @@ impl CassandraSinkCluster {
     async fn populate_local_nodes(&mut self) -> Result<()> {
         let start = Instant::now();
         loop {
-            if self.pool.is_empty() {
+            if self.pool.nodes.is_empty() {
                 let nodes_shared = self.topology_task_nodes.read().await;
                 self.pool.set_nodes(nodes_shared.clone());
             }
 
-            if !self.pool.is_empty() {
+            if !self.pool.nodes.is_empty() {
                 return Ok(());
             }
 
@@ -810,22 +810,28 @@ enum RewriteTableTy {
     Peers,
 }
 
-fn is_prepared_message(message: &mut Message) -> Option<(Vec<u8>, PreparedMetadata)> {
+fn get_prepared_result_message(
+    message: &mut Message,
+) -> Result<Option<(Vec<u8>, PreparedMetadata)>> {
     if let Some(Frame::Cassandra(CassandraFrame {
         operation: CassandraOperation::Result(CassandraResult::Prepared(prepared)),
         ..
     })) = message.frame()
     {
-        return Some((
-            prepared.id.clone().into_bytes().unwrap(),
+        return Ok(Some((
+            prepared
+                .id
+                .clone()
+                .into_bytes()
+                .ok_or_else(|| anyhow!("result prepared contained empty id"))?,
             prepared.metadata.clone(),
-        ));
+        )));
     }
 
-    None
+    Ok(None)
 }
 
-fn is_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, &Version)> {
+fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, &Version)> {
     if let Some(Frame::Cassandra(CassandraFrame {
         operation: CassandraOperation::Execute(execute_body),
         version,

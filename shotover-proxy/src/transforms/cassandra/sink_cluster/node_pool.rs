@@ -13,8 +13,6 @@ pub struct NodePool {
     prepared_metadata: HashMap<Vec<u8>, PreparedMetadata>,
     token_map: TokenMap,
     pub nodes: Vec<CassandraNode>,
-
-    rng: SmallRng,
 }
 
 impl NodePool {
@@ -23,12 +21,7 @@ impl NodePool {
             token_map: TokenMap::new(nodes.as_slice()),
             nodes,
             prepared_metadata: HashMap::new(),
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
     }
 
     pub fn set_nodes(&mut self, nodes: Vec<CassandraNode>) {
@@ -37,29 +30,26 @@ impl NodePool {
     }
 
     pub fn add_prepared_result(&mut self, id: Vec<u8>, metadata: PreparedMetadata) {
-        tracing::warn!("Add prepared result metadata {id:?}");
         self.prepared_metadata.insert(id, metadata);
     }
 
-    // TODO handle the unwrap
-    fn get_prepared_metadata(&self, id: &Vec<u8>) -> &PreparedMetadata {
-        tracing::warn!("Getting prepeared metadata {id:?}");
-        self.prepared_metadata.get(id).unwrap()
-    }
-
-    pub fn random_node(&mut self) -> &mut CassandraNode {
+    pub fn random_node(&mut self, rng: &mut SmallRng) -> &mut CassandraNode {
         self.nodes
             .iter_mut()
             .filter(|x| x.is_up)
-            .choose(&mut self.rng)
+            .choose(rng)
             .unwrap()
     }
 
-    pub fn get_random_node_in_dc_rack(&mut self, rack: &String) -> &CassandraNode {
+    pub fn get_random_node_in_dc_rack(
+        &mut self,
+        rack: &String,
+        rng: &mut SmallRng,
+    ) -> &CassandraNode {
         self.nodes
             .iter()
             .filter(|x| x.rack == *rack && x.is_up)
-            .choose(&mut self.rng)
+            .choose(rng)
             .unwrap()
     }
 
@@ -69,7 +59,10 @@ impl NodePool {
         execute: &BodyReqExecuteOwned,
         version: &Version,
     ) -> Option<&mut CassandraNode> {
-        let metadata = self.get_prepared_metadata(&execute.id.clone().into_bytes().unwrap());
+        let metadata = self
+            .prepared_metadata
+            .get(&execute.id.clone().into_bytes().unwrap())
+            .unwrap();
 
         let routing_key = calculate(
             &metadata.pk_indexes,
