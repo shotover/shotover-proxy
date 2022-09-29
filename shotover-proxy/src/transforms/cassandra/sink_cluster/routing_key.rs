@@ -129,7 +129,7 @@ mod test_token_aware_router {
             query_parameters: query_parameters.clone(),
         };
 
-        router.add_prepared_result(id.into_bytes().unwrap(), prepared_metadata.clone());
+        router.add_prepared_result(id, prepared_metadata.clone());
 
         let routing_key = calculate(
             &prepared_metadata.pk_indexes,

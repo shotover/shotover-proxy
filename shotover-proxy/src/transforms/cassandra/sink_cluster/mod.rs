@@ -13,6 +13,7 @@ use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::query::QueryParams;
+use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
@@ -812,20 +813,13 @@ enum RewriteTableTy {
 
 fn get_prepared_result_message(
     message: &mut Message,
-) -> Result<Option<(Vec<u8>, PreparedMetadata)>> {
+) -> Result<Option<(CBytesShort, PreparedMetadata)>> {
     if let Some(Frame::Cassandra(CassandraFrame {
         operation: CassandraOperation::Result(CassandraResult::Prepared(prepared)),
         ..
     })) = message.frame()
     {
-        return Ok(Some((
-            prepared
-                .id
-                .clone()
-                .into_bytes()
-                .ok_or_else(|| anyhow!("result prepared contained empty id"))?,
-            prepared.metadata.clone(),
-        )));
+        return Ok(Some((prepared.id.clone(), prepared.metadata.clone())));
     }
 
     Ok(None)

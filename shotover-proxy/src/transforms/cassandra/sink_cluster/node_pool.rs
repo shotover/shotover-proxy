@@ -5,12 +5,13 @@ use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
+use cassandra_protocol::types::CBytesShort;
 use rand::prelude::*;
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct NodePool {
-    prepared_metadata: HashMap<Vec<u8>, PreparedMetadata>,
+    prepared_metadata: HashMap<CBytesShort, PreparedMetadata>,
     token_map: TokenMap,
     pub nodes: Vec<CassandraNode>,
 }
@@ -29,7 +30,7 @@ impl NodePool {
         self.token_map = TokenMap::new(self.nodes.as_slice());
     }
 
-    pub fn add_prepared_result(&mut self, id: Vec<u8>, metadata: PreparedMetadata) {
+    pub fn add_prepared_result(&mut self, id: CBytesShort, metadata: PreparedMetadata) {
         self.prepared_metadata.insert(id, metadata);
     }
 
@@ -59,10 +60,7 @@ impl NodePool {
         execute: &BodyReqExecuteOwned,
         version: &Version,
     ) -> Option<&mut CassandraNode> {
-        let metadata = self
-            .prepared_metadata
-            .get(&execute.id.clone().into_bytes().unwrap())
-            .unwrap();
+        let metadata = self.prepared_metadata.get(&execute.id).unwrap();
 
         let routing_key = calculate(
             &metadata.pk_indexes,
@@ -74,7 +72,7 @@ impl NodePool {
         // TODO this should use the keyspace info to properly select the replica count
         let mut replica_host_ids = self
             .token_map
-            .nodes_for_token_capped(Murmur3Token::generate(&routing_key), 1);
+            .iter_replica_nodes(Murmur3Token::generate(&routing_key), 1);
 
         if let Some(host_id) = replica_host_ids.next() {
             return self

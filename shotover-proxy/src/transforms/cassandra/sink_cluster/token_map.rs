@@ -18,8 +18,8 @@ impl TokenMap {
         }
     }
 
-    /// Returns local nodes starting at given token and going in the direction of replicas.
-    pub fn nodes_for_token_capped(
+    /// Returns nodes starting at given token and going in the direction of replicas.
+    pub fn iter_replica_nodes(
         &self,
         token: Murmur3Token,
         replica_count: usize,
@@ -98,7 +98,7 @@ mod test_token_map {
     fn verify_tokens(node_host_ids: &[Uuid], token: Murmur3Token) {
         let token_map = TokenMap::new(prepare_nodes().as_slice());
         let nodes = token_map
-            .nodes_for_token_capped(token, node_host_ids.len())
+            .iter_replica_nodes(token, node_host_ids.len())
             .collect_vec();
 
         assert_eq!(nodes.len(), node_host_ids.len());
