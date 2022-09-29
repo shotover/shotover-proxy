@@ -16,7 +16,7 @@ cassandra-cpp-driver-tests = []
 [dependencies]
 pretty-hex = "0.3.0"
 hex = "0.4.3"
-tokio = { version = "1.21.0", features = ["full", "macros"] }
+tokio = { version = "1.21.1", features = ["full", "macros"] }
 tokio-util = { version = "0.7.0" }
 tokio-stream = "0.1.2"
 bytes = "1.0.0"
@@ -33,7 +33,7 @@ pin-project-lite = "0.2"
 tokio-openssl = "0.6.2"
 openssl = { version = "0.10.36", features = ["vendored"] }
 async-recursion = "1.0"
-governor = { version = "0.4.2", default-features = false, features = ["std", "jitter", "quanta"] }
+governor = { version = "0.5.0", default-features = false, features = ["std", "jitter", "quanta"] }
 nonzero_ext = "0.3.0"
 version-compare = "0.1"
 
@@ -42,7 +42,7 @@ thiserror = "1.0"
 anyhow = "1.0.31"
 
 # Parsers
-cql3-parser = "0.3.0"
+cql3-parser = "0.3.1"
 serde = { version = "1.0.111", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.8.21"
@@ -64,7 +64,7 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
-cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio" }
+cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
 crc16 = "0.4.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 
@@ -91,10 +91,10 @@ hex-literal = "0.3.3"
 nix = "0.25.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
-cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
+cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
 scylla = { version = "0.5.0", features = ["ssl"] }
 rstest = "0.15.0"
-docker-api = "0.10.1"
+docker-api = "0.11.0"
 
 [[bench]]
 name = "benches"

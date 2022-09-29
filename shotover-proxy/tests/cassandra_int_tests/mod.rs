@@ -1,12 +1,13 @@
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use crate::helpers::cassandra::{
-    assert_query_result, run_query, CassandraDriver::Datastax, CassandraError, CassandraErrorCode,
-    ResultValue,
+    assert_query_result, run_query, CassandraDriver::Datastax, ResultValue,
 };
 use crate::helpers::cassandra::{CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio};
 use crate::helpers::ShotoverManager;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{Error, ErrorKind};
+#[cfg(feature = "cassandra-cpp-driver-tests")]
+use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
@@ -60,6 +61,23 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
 
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
+
+    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+
+    standard_test_suite(&connection, driver).await;
+}
+
+#[rstest]
+#[case(CdrsTokio)]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_passthrough_encode(#[case] driver: CassandraDriver) {
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+
+    let _shotover_manager = ShotoverManager::from_topology_file(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    );
 
     let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
@@ -457,8 +475,8 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
     let result = connection.execute_expect_err(statement);
     assert_eq!(
         result,
-        CassandraError {
-            code: CassandraErrorCode::InvalidQuery,
+        ErrorBody {
+            ty: ErrorType::Invalid,
             message: "unconfigured table peers_v2".into()
         }
     );
@@ -549,8 +567,8 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
         let result = connection.execute_batch_expect_err(queries);
         assert_eq!(
             result,
-            CassandraError {
-                code: CassandraErrorCode::ServerOverloaded,
+            ErrorBody {
+                ty: ErrorType::Overloaded,
                 message: "Server overloaded".into()
             }
         );
