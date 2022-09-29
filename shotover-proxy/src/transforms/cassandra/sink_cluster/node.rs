@@ -22,6 +22,22 @@ pub struct CassandraNode {
 }
 
 impl CassandraNode {
+    pub fn new(
+        address: SocketAddr,
+        rack: String,
+        tokens: Vec<Murmur3Token>,
+        host_id: Uuid,
+    ) -> Self {
+        Self {
+            address,
+            rack,
+            tokens,
+            host_id,
+            outbound: None,
+            is_up: true,
+        }
+    }
+
     pub async fn get_connection(
         &mut self,
         connection_factory: &ConnectionFactory,
