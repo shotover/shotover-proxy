@@ -67,6 +67,23 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
     standard_test_suite(&connection, driver).await;
 }
 
+#[rstest]
+#[case(CdrsTokio)]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_passthrough_encode(#[case] driver: CassandraDriver) {
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+
+    let _shotover_manager = ShotoverManager::from_topology_file(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    );
+
+    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+
+    standard_test_suite(&connection, driver).await;
+}
+
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 //#[case(CdrsTokio)] // TODO
