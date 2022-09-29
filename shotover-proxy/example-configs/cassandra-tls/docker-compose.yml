@@ -18,3 +18,5 @@ services:
     volumes:
       - ./certs/keystore.p12:/bitnami/cassandra/secrets/keystore
       - ./certs/truststore.p12:/bitnami/cassandra/secrets/truststore
+      - type: tmpfs
+        target: /bitnami/cassandra

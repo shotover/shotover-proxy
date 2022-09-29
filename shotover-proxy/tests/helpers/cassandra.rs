@@ -3,7 +3,12 @@ use cassandra_cpp::{
     stmt, Batch, BatchType, CassErrorCode, CassFuture, CassResult, Cluster, Error, ErrorKind,
     PreparedStatement, Session as DatastaxSession, Ssl, Value, ValueType,
 };
-use cassandra_protocol::types::cassandra_type::{wrapper_fn, CassandraType};
+#[cfg(feature = "cassandra-cpp-driver-tests")]
+use cassandra_protocol::frame::message_error::ErrorType;
+use cassandra_protocol::{
+    frame::message_error::ErrorBody,
+    types::cassandra_type::{wrapper_fn, CassandraType},
+};
 use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
     cluster::session::{Session as CdrsTokioSession, SessionBuilder, TcpSessionBuilder},
@@ -49,36 +54,15 @@ impl PreparedQuery {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct CassandraError {
-    pub code: CassandraErrorCode,
-    pub message: String,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum CassandraErrorCode {
-    ServerOverloaded = 0x1001,
-    InvalidQuery = 0x2200,
-}
-
-impl From<i32> for CassandraErrorCode {
-    fn from(i: i32) -> Self {
-        match i {
-            0x1001 => CassandraErrorCode::ServerOverloaded,
-            0x2200 => CassandraErrorCode::InvalidQuery,
-            _ => unimplemented!("{i} is not implemented"),
-        }
-    }
-}
-
-impl CassandraErrorCode {
-    #[cfg(feature = "cassandra-cpp-driver-tests")]
-    fn new_from_cpp(code: CassErrorCode) -> Self {
-        match code {
-            CassErrorCode::SERVER_INVALID_QUERY => CassandraErrorCode::InvalidQuery,
-            CassErrorCode::SERVER_OVERLOADED => CassandraErrorCode::ServerOverloaded,
+#[cfg(feature = "cassandra-cpp-driver-tests")]
+fn cpp_error_to_cdrs(code: CassErrorCode, message: String) -> ErrorBody {
+    ErrorBody {
+        ty: match code {
+            CassErrorCode::SERVER_INVALID_QUERY => ErrorType::Invalid,
+            CassErrorCode::SERVER_OVERLOADED => ErrorType::Overloaded,
             _ => unimplemented!("{code:?} is not implemented"),
-        }
+        },
+        message,
     }
 }
 
@@ -292,7 +276,7 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code)]
-    pub fn execute_expect_err(&self, query: &str) -> CassandraError {
+    pub fn execute_expect_err(&self, query: &str) -> ErrorBody {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
@@ -300,22 +284,16 @@ impl CassandraConnection {
                 let error = session.execute(&statement).wait().unwrap_err();
 
                 if let ErrorKind::CassErrorResult(code, msg, ..) = error.0 {
-                    return CassandraError {
-                        code: CassandraErrorCode::new_from_cpp(code),
-                        message: msg,
-                    };
+                    cpp_error_to_cdrs(code, msg)
+                } else {
+                    panic!("Did not get an error result for {query}");
                 }
-
-                panic!("Did not get an error result for {query}");
             }
             Self::CdrsTokio { session, .. } => {
                 let error = futures::executor::block_on(session.query(query)).unwrap_err();
 
                 match error {
-                    CdrsError::Server { body, .. } => CassandraError {
-                        code: body.error_code.into(),
-                        message: body.message,
-                    },
+                    CdrsError::Server { body, .. } => body,
                     _ => todo!(),
                 }
             }
@@ -413,7 +391,7 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code, unused_variables)]
-    pub fn execute_batch_expect_err(&self, queries: Vec<String>) -> CassandraError {
+    pub fn execute_batch_expect_err(&self, queries: Vec<String>) -> ErrorBody {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
@@ -422,14 +400,11 @@ impl CassandraConnection {
                     batch.add_statement(&stmt!(query.as_str())).unwrap();
                 }
                 let error = session.execute_batch(&batch).wait().unwrap_err();
-                if let ErrorKind::CassErrorResult(code, message, ..) = error.0 {
-                    return CassandraError {
-                        code: CassandraErrorCode::new_from_cpp(code),
-                        message,
-                    };
+                if let ErrorKind::CassErrorResult(code, msg, ..) = error.0 {
+                    cpp_error_to_cdrs(code, msg)
+                } else {
+                    panic!("Did not get an error result for {batch:?}");
                 }
-
-                panic!("Did not get an error result for {batch:?}");
             }
             Self::CdrsTokio { .. } => todo!(),
         }

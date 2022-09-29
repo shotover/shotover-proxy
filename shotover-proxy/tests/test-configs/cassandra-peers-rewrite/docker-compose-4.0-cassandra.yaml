@@ -36,6 +36,10 @@ services:
       CASSANDRA_ENABLE_USER_DEFINED_FUNCTIONS: "true"
       CASSANDRA_INIT_MAX_RETRIES: "500"
       CASSANDRA_INIT_SLEEP_TIME: "1"
+    volumes:
+      &volumes
+      - type: tmpfs
+        target: /bitnami/cassandra
 
   cassandra-two:
     image: *image
@@ -44,3 +48,4 @@ services:
         ipv4_address: 172.16.1.3
     healthcheck: *healthcheck
     environment: *environment
+    volumes: *volumes

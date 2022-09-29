@@ -5,7 +5,7 @@ use crate::server::CodecReadError;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
-use cassandra_protocol::frame::message_error::{AdditionalErrorInfo, ErrorBody};
+use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::frame::{
     CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Opcode, Version,
 };
@@ -187,9 +187,8 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
             version: Version::V4,
             stream_id: 0,
             operation: CassandraOperation::Error(ErrorBody {
-                error_code: 0xA, // https://github.com/apache/cassandra/blob/adf2f4c83a2766ef8ebd20b35b49df50957bdf5e/doc/native_protocol_v4.spec#L1053
                 message: "Invalid or unsupported protocol version".into(),
-                additional_info: AdditionalErrorInfo::Server,
+                ty: ErrorType::Protocol,
             }),
             tracing_id: None,
             warnings: vec![],

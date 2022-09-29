@@ -43,6 +43,8 @@ services:
       &volumes
       - ../cassandra-tls/certs/keystore.p12:/bitnami/cassandra/secrets/keystore
       - ../cassandra-tls/certs/truststore.p12:/bitnami/cassandra/secrets/truststore
+      - type: tmpfs
+        target: /bitnami/cassandra
 
   cassandra-two:
     image: *image
