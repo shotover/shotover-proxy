@@ -497,9 +497,9 @@ dependencies = [
 
 [[package]]
 name = "containers-api"
-version = "0.3.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bee704f0c9a664c04f6ec23c038302d3ef94f9e040daca2ac5434d55c0038b8"
+checksum = "f27d5f3aeaa134ce3074008ed3a8fbc2e7a427bbdb7cfd4c3da9416be912c540"
 dependencies = [
  "chrono",
  "flate2",
@@ -559,9 +559,9 @@ dependencies = [
 
 [[package]]
 name = "cql3-parser"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c9662338ec83ade685bf4e5e70d11a505033a3715dc6b1b7b0650a950857778"
+checksum = "3da32ab68b2179b3a25f91f83701b6d3ba1b82bdad6c1bafa9e6c44de7e83588"
 dependencies = [
  "bigdecimal 0.3.0",
  "bytes 1.2.1",
@@ -853,9 +853,9 @@ dependencies = [
 
 [[package]]
 name = "docker-api"
-version = "0.10.1"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6818b39f6fc2bd3b858657f89768101b66d498b560666c0d35fed0773f66202c"
+checksum = "a35b4461fe6cd9d2cfd1f9a88c392cf0d67eefb3970a0e4f70d6f4e047bd94d0"
 dependencies = [
  "base64",
  "byteorder",
@@ -863,21 +863,16 @@ dependencies = [
  "chrono",
  "containers-api",
  "docker-api-stubs",
- "flate2",
  "futures-util",
  "futures_codec",
  "http",
  "hyper",
- "hyperlocal",
  "log",
- "mime",
  "paste",
- "pin-project 1.0.12",
  "serde",
  "serde_json",
  "tar",
  "thiserror",
- "tokio",
  "url",
 ]
 
@@ -3262,18 +3257,18 @@ checksum = "949517c0cf1bf4ee812e2e07e08ab448e3ae0d23472aee8a06c985f0c8815b16"
 
 [[package]]
 name = "thiserror"
-version = "1.0.36"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a99cb8c4b9a8ef0e7907cd3b617cc8dc04d571c4e73c8ae403d80ac160bb122"
+checksum = "10deb33631e3c9018b9baf9dcbbc4f737320d2b576bac10f6aefa048fa407e3e"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.36"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a891860d3c8d66fec8e73ddb3765f90082374dbaaa833407b904a94f1a7eb43"
+checksum = "982d17546b47146b28f7c22e3d08465f6b8903d0ea13c1660d9d84a6e7adcdbb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3360,9 +3355,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.21.1"
+version = "1.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0020c875007ad96677dcc890298f4b942882c5d4eb7cc8f439fc3bf813dc9c95"
+checksum = "a9e03c497dc955702ba729190dc4aac6f2a0ce97f913e5b1b5912fc5039d9099"
 dependencies = [
  "autocfg",
  "bytes 1.2.1",
@@ -3370,7 +3365,6 @@ dependencies = [
  "memchr",
  "mio",
  "num_cpus",
- "once_cell",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
