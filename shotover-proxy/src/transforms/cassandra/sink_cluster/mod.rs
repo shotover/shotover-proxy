@@ -334,14 +334,19 @@ impl CassandraSinkCluster {
             } else {
                 // If the message is an execute we should perform token aware routing
                 if let Some((execute, version)) = get_execute_message(&mut message) {
-                    if let Some(replica_node) = self.pool.replica_node(execute, version) {
+                    if let Some(replica_node) =
+                        self.pool.replica_node(execute, version, &mut self.rng)?
+                    {
                         replica_node
                             .get_connection(&self.connection_factory)
                             .await?
                             .send(message, return_chan_tx)?;
                     // if no replicas exist just send to a random node
                     } else {
-                        let node = self.pool.random_node(&mut self.rng);
+                        let node = self.pool.get_random_node_in_dc_rack(
+                            &self.local_shotover_node.rack,
+                            &mut self.rng,
+                        );
                         node.get_connection(&self.connection_factory)
                             .await?
                             .send(message, return_chan_tx)?;
@@ -349,7 +354,9 @@ impl CassandraSinkCluster {
 
                 // otherwise just send to a random node
                 } else {
-                    let node = self.pool.random_node(&mut self.rng);
+                    let node = self
+                        .pool
+                        .get_random_node_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng);
                     node.get_connection(&self.connection_factory)
                         .await?
                         .send(message, return_chan_tx)?;
@@ -402,7 +409,7 @@ impl CassandraSinkCluster {
         }
 
         for response in responses.iter_mut() {
-            if let Some((id, metadata)) = get_prepared_result_message(response)? {
+            if let Some((id, metadata)) = get_prepared_result_message(response) {
                 self.pool.add_prepared_result(id, metadata);
             }
         }
@@ -811,18 +818,16 @@ enum RewriteTableTy {
     Peers,
 }
 
-fn get_prepared_result_message(
-    message: &mut Message,
-) -> Result<Option<(CBytesShort, PreparedMetadata)>> {
+fn get_prepared_result_message(message: &mut Message) -> Option<(CBytesShort, PreparedMetadata)> {
     if let Some(Frame::Cassandra(CassandraFrame {
         operation: CassandraOperation::Result(CassandraResult::Prepared(prepared)),
         ..
     })) = message.frame()
     {
-        return Ok(Some((prepared.id.clone(), prepared.metadata.clone())));
+        return Some((prepared.id.clone(), prepared.metadata.clone()));
     }
 
-    Ok(None)
+    None
 }
 
 fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, &Version)> {

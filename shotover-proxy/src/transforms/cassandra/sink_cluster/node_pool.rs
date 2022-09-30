@@ -1,6 +1,7 @@
-use super::routing_key::calculate;
+use super::routing_key::calculate_routing_key;
 use super::token_map::TokenMap;
 use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
+use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::Version;
@@ -34,21 +35,13 @@ impl NodePool {
         self.prepared_metadata.insert(id, metadata);
     }
 
-    pub fn random_node(&mut self, rng: &mut SmallRng) -> &mut CassandraNode {
-        self.nodes
-            .iter_mut()
-            .filter(|x| x.is_up)
-            .choose(rng)
-            .unwrap()
-    }
-
     pub fn get_random_node_in_dc_rack(
         &mut self,
         rack: &String,
         rng: &mut SmallRng,
-    ) -> &CassandraNode {
+    ) -> &mut CassandraNode {
         self.nodes
-            .iter()
+            .iter_mut()
             .filter(|x| x.rack == *rack && x.is_up)
             .choose(rng)
             .unwrap()
@@ -59,10 +52,14 @@ impl NodePool {
         &mut self,
         execute: &BodyReqExecuteOwned,
         version: &Version,
-    ) -> Option<&mut CassandraNode> {
-        let metadata = self.prepared_metadata.get(&execute.id).unwrap();
+        rng: &mut SmallRng,
+    ) -> Result<Option<&mut CassandraNode>> {
+        let metadata = self
+            .prepared_metadata
+            .get(&execute.id)
+            .ok_or_else(|| anyhow!("could not find prepared metadata for {:?}", execute.id))?;
 
-        let routing_key = calculate(
+        let routing_key = calculate_routing_key(
             &metadata.pk_indexes,
             execute.query_parameters.values.as_ref().unwrap(),
             *version,
@@ -70,17 +67,17 @@ impl NodePool {
         .unwrap();
 
         // TODO this should use the keyspace info to properly select the replica count
-        let mut replica_host_ids = self
+        let replica_host_ids = self
             .token_map
             .iter_replica_nodes(Murmur3Token::generate(&routing_key), 1);
 
-        if let Some(host_id) = replica_host_ids.next() {
-            return self
+        if let Some(host_id) = replica_host_ids.choose(rng) {
+            return Ok(self
                 .nodes
                 .iter_mut()
-                .find(|node| host_id == node.host_id && node.is_up);
+                .find(|node| host_id == node.host_id && node.is_up));
         }
 
-        None
+        Ok(None)
     }
 }
