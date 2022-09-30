@@ -101,9 +101,6 @@ mod test_token_map {
             .iter_replica_nodes(token, node_host_ids.len())
             .collect_vec();
 
-        assert_eq!(nodes.len(), node_host_ids.len());
-        for (index, node) in nodes.iter().enumerate() {
-            assert_eq!(*node, node_host_ids[index]);
-        }
+        assert_eq!(nodes, node_host_ids);
     }
 }
