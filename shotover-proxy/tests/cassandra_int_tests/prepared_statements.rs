@@ -1,3 +1,5 @@
+use futures::Future;
+
 use crate::helpers::cassandra::{
     assert_query_result, assert_rows, run_query, CassandraConnection, ResultValue,
 };
@@ -44,6 +46,29 @@ fn select(session: &CassandraConnection) {
 
     assert_rows(result_rows, &[&[ResultValue::Int(1)]]);
 }
+async fn select_cross_connection<Fut>(
+    connection: &CassandraConnection,
+    connection_creator: impl Fn() -> Fut,
+) where
+    Fut: Future<Output = CassandraConnection>,
+{
+    let connection_before = connection_creator().await;
+
+    // query is purposely slightly different to past queries to avoid being cached
+    let prepared =
+        connection.prepare("SELECT id, id FROM test_prepare_statements.table_1 WHERE id = ?");
+
+    let connection_after = connection_creator().await;
+
+    assert_rows(
+        connection_before.execute_prepared(&prepared, 1),
+        &[&[ResultValue::Int(1), ResultValue::Int(1)]],
+    );
+    assert_rows(
+        connection_after.execute_prepared(&prepared, 1),
+        &[&[ResultValue::Int(1), ResultValue::Int(1)]],
+    );
+}
 
 async fn use_statement(session: &CassandraConnection) {
     // Create prepared command with the correct keyspace
@@ -70,7 +95,10 @@ async fn use_statement(session: &CassandraConnection) {
     // .await;
 }
 
-pub async fn test(session: &CassandraConnection) {
+pub async fn test<Fut>(session: &CassandraConnection, connection_creator: impl Fn() -> Fut)
+where
+    Fut: Future<Output = CassandraConnection>,
+{
     run_query(session, "CREATE KEYSPACE test_prepare_statements WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(session, "CREATE KEYSPACE test_prepare_statements_empty WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
     run_query(
@@ -81,6 +109,7 @@ pub async fn test(session: &CassandraConnection) {
 
     insert(session);
     select(session);
+    select_cross_connection(session, connection_creator).await;
     delete(session).await;
     use_statement(session).await;
 }
