@@ -398,7 +398,9 @@ impl CassandraSinkCluster {
                 if cfg!(test) {
                     panic!("{}", err_str);
                 } else {
-                    tracing::error!("Nodes did not return the same response to PREPARE statement");
+                    tracing::error!(
+                        "Nodes did not return the same response to PREPARE statement {err_str}"
+                    );
                 }
             }
         }
