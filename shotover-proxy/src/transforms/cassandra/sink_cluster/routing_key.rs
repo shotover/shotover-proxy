@@ -6,6 +6,8 @@ use cassandra_protocol::types::SHORT_LEN;
 use itertools::Itertools;
 use std::io::{Cursor, Write};
 
+// functions taken from https://github.com/krojew/cdrs-tokio/blob/9246dcf4227c1d4b1ff1eafaf0abfae2d831eec4/cdrs-tokio/src/cluster/session.rs#L126
+
 pub fn calculate_routing_key(
     pk_indexes: &[i16],
     query_values: &QueryValues,
