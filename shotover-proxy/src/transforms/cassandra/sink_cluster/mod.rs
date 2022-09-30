@@ -370,12 +370,38 @@ impl CassandraSinkCluster {
             super::connection::receive(self.read_timeout, &self.failed_requests, responses_future)
                 .await?;
 
-        let _prepare_responses = super::connection::receive(
-            self.read_timeout,
-            &self.failed_requests,
-            responses_future_prepare,
-        )
-        .await?;
+        {
+            let mut prepare_responses = super::connection::receive(
+                self.read_timeout,
+                &self.failed_requests,
+                responses_future_prepare,
+            )
+            .await?;
+
+            if !prepare_responses.windows(2).all(|w| w[0] == w[1]) {
+                let err_str = prepare_responses
+                    .iter_mut()
+                    .filter_map(|response| {
+                        if let Some(Frame::Cassandra(CassandraFrame {
+                            operation:
+                                CassandraOperation::Result(CassandraResult::Prepared(prepared)),
+                            ..
+                        })) = response.frame()
+                        {
+                            Some(format!("\n{:?}", prepared))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<String>();
+
+                if cfg!(test) {
+                    panic!("{}", err_str);
+                } else {
+                    tracing::error!("Nodes did not return the same response to PREPARE statement");
+                }
+            }
+        }
 
         // When the server indicates that it is ready for normal operation via Ready or AuthSuccess,
         // we have succesfully collected an entire handshake so we mark the handshake as complete.
