@@ -10,17 +10,40 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+/// Messages that pass through this transform will be parsed.
+/// Must be individually enabled at the request or response level.
 #[derive(Deserialize, Debug, Clone)]
 pub struct DebugForceParseConfig {
-    parse_requests: Option<bool>,
-    parse_responses: Option<bool>,
+    parse_requests: bool,
+    parse_responses: bool,
 }
 
 impl DebugForceParseConfig {
     pub async fn get_transform(&self) -> Result<Transforms> {
         Ok(Transforms::DebugForceParse(DebugForceParse {
-            parse_requests: self.parse_requests.unwrap_or(true),
-            parse_responses: self.parse_responses.unwrap_or(true),
+            parse_requests: self.parse_requests,
+            parse_responses: self.parse_responses,
+            encode_requests: false,
+            encode_responses: false,
+        }))
+    }
+}
+
+/// Messages that pass through this transform will be parsed and then reencoded.
+/// Must be individually enabled at the request or response level.
+#[derive(Deserialize, Debug, Clone)]
+pub struct DebugForceEncodeConfig {
+    encode_requests: bool,
+    encode_responses: bool,
+}
+
+impl DebugForceEncodeConfig {
+    pub async fn get_transform(&self) -> Result<Transforms> {
+        Ok(Transforms::DebugForceParse(DebugForceParse {
+            parse_requests: self.encode_requests,
+            parse_responses: self.encode_responses,
+            encode_requests: self.encode_requests,
+            encode_responses: self.encode_responses,
         }))
     }
 }
@@ -29,23 +52,31 @@ impl DebugForceParseConfig {
 pub struct DebugForceParse {
     parse_requests: bool,
     parse_responses: bool,
+    encode_requests: bool,
+    encode_responses: bool,
 }
 
 #[async_trait]
 impl Transform for DebugForceParse {
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
-        if self.parse_requests {
-            for message in &mut message_wrapper.messages {
+        for message in &mut message_wrapper.messages {
+            if self.parse_requests {
                 message.frame();
+            }
+            if self.encode_requests {
+                message.invalidate_cache();
             }
         }
 
         let mut response = message_wrapper.call_next_transform().await;
 
-        if self.parse_responses {
-            if let Ok(response) = response.as_mut() {
-                for message in response {
+        if let Ok(response) = response.as_mut() {
+            for message in response {
+                if self.parse_responses {
                     message.frame();
+                }
+                if self.encode_responses {
+                    message.invalidate_cache();
                 }
             }
         }

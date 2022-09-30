@@ -9,7 +9,7 @@ use crate::transforms::chain::TransformChain;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::force_parse::DebugForceParse;
 #[cfg(feature = "alpha-transforms")]
-use crate::transforms::debug::force_parse::DebugForceParseConfig;
+use crate::transforms::debug::force_parse::{DebugForceEncodeConfig, DebugForceParseConfig};
 use crate::transforms::debug::printer::DebugPrinter;
 use crate::transforms::debug::random_delay::DebugRandomDelay;
 use crate::transforms::debug::returner::{DebugReturner, DebugReturnerConfig};
@@ -310,6 +310,8 @@ pub enum TransformsConfig {
     Protect(ProtectConfig),
     #[cfg(feature = "alpha-transforms")]
     DebugForceParse(DebugForceParseConfig),
+    #[cfg(feature = "alpha-transforms")]
+    DebugForceEncode(DebugForceEncodeConfig),
     ParallelMap(ParallelMapConfig),
     //PoolConnections(ConnectionBalanceAndPoolConfig),
     Coalesce(CoalesceConfig),
@@ -343,6 +345,8 @@ impl TransformsConfig {
             TransformsConfig::Protect(p) => p.get_transform().await,
             #[cfg(feature = "alpha-transforms")]
             TransformsConfig::DebugForceParse(d) => d.get_transform().await,
+            #[cfg(feature = "alpha-transforms")]
+            TransformsConfig::DebugForceEncode(d) => d.get_transform().await,
             TransformsConfig::RedisSinkCluster(r) => r.get_transform(chain_name).await,
             TransformsConfig::ParallelMap(s) => s.get_transform().await,
             //TransformsConfig::PoolConnections(s) => s.get_transform().await,
