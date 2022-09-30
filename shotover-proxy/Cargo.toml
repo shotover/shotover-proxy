@@ -23,7 +23,7 @@ bytes = "1.0.0"
 bytes-utils = "0.1.1"
 futures = "0.3"
 async-trait = "0.1.30"
-clap = { version = "3.0.4", features = ["cargo", "derive"] }
+clap = { version = "4.0.4", features = ["cargo", "derive"] }
 derivative = "2.1.1"
 itertools = "0.10.1"
 rand = { version = "0.8.4" }
