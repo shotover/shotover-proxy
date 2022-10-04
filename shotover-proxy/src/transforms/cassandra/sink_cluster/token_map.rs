@@ -13,7 +13,7 @@ impl TokenMap {
         TokenMap {
             token_ring: nodes
                 .iter()
-                .flat_map(|node| node.tokens.iter().map(move |token| (*token, node.host_id)))
+                .flat_map(|node| node.tokens.iter().map(|token| (*token, node.host_id)))
                 .collect(),
         }
     }

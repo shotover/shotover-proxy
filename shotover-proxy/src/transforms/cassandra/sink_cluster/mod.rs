@@ -337,7 +337,7 @@ impl CassandraSinkCluster {
                 if let Some((execute, metadata)) = get_execute_message(&mut message) {
                     match self
                         .pool
-                        .replica_node(&execute, &metadata.version, &mut self.rng)
+                        .replica_node(execute, &metadata.version, &mut self.rng)
                     {
                         Ok(Some(replica_node)) => {
                             replica_node
@@ -355,7 +355,8 @@ impl CassandraSinkCluster {
                                 .send(message, return_chan_tx)?;
                         }
                         Err(GetReplicaErr::NoMetadata) => {
-                            tracing::info!("forcing re-prepare on {:?}", execute.id);
+                            let id = execute.id.clone();
+                            tracing::info!("forcing re-prepare on {:?}", id);
                             // this shotover node doesn't have the metadata
                             // send an unprepared error in response to force
                             // the client to reprepare the query
@@ -367,7 +368,7 @@ impl CassandraSinkCluster {
                                             operation: CassandraOperation::Error(ErrorBody {
                                                 message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
                                                 ty: ErrorType::Unprepared(UnpreparedError {
-                                                    id: execute.id.clone(),
+                                                    id,
                                                 }),
                                             }),
                                             stream_id: metadata.stream_id,
@@ -376,8 +377,7 @@ impl CassandraSinkCluster {
                                             warnings: vec![],
                                         },
                                     ))),
-                                })
-                                .unwrap();
+                                }).expect("the receiver is guaranteed to be alive, so this must succeed");
                         }
                         Err(GetReplicaErr::Other(err)) => {
                             return Err(err);
@@ -890,7 +890,7 @@ fn get_prepared_result_message(message: &mut Message) -> Option<(CBytesShort, Pr
     None
 }
 
-fn get_execute_message(message: &mut Message) -> Option<(BodyReqExecuteOwned, CassandraMetadata)> {
+fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, CassandraMetadata)> {
     if let Some(Frame::Cassandra(CassandraFrame {
         operation: CassandraOperation::Execute(execute_body),
         version,
@@ -900,7 +900,7 @@ fn get_execute_message(message: &mut Message) -> Option<(BodyReqExecuteOwned, Ca
     })) = message.frame()
     {
         return Some((
-            *execute_body.clone(),
+            execute_body,
             CassandraMetadata {
                 version: *version,
                 stream_id: *stream_id,
