@@ -355,7 +355,7 @@ impl CassandraSinkCluster {
                                 .send(message, return_chan_tx)?;
                         }
                         Err(GetReplicaErr::NoMetadata) => {
-                            tracing::error!("forcing re-prepare on {:?}", execute.id);
+                            tracing::info!("forcing re-prepare on {:?}", execute.id);
                             // this shotover node doesn't have the metadata
                             // send an unprepared error in response to force
                             // the client to reprepare the query
