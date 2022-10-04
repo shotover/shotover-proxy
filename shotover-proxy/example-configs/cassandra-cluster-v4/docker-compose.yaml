@@ -11,6 +11,7 @@ networks:
 
 services:
   cassandra-one:
+    build: &build example-configs/docker-images/cassandra-4.0.6
     image: &image shotover-int-tests/cassandra:4.0.6
     networks:
       cluster_subnet:
@@ -34,6 +35,7 @@ services:
     command: &command cassandra -f -Dcassandra.initial_token="$$CASSANDRA_INITIAL_TOKENS" -Dcassandra.native_transport_port=9044
 
   cassandra-two:
+    build: *build
     image: *image
     networks:
       cluster_subnet:
@@ -45,6 +47,7 @@ services:
     command: *command
 
   cassandra-three:
+    build: *build
     image: *image
     networks:
       cluster_subnet:

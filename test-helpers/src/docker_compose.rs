@@ -2,11 +2,11 @@ use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde_yaml::Value;
 use std::collections::HashMap;
+use std::env;
 use std::fmt::Write;
 use std::io::ErrorKind;
 use std::process::Command;
 use std::time::{self, Duration};
-use std::{env, path::Path};
 use subprocess::{Exec, Redirection};
 use tracing::trace;
 use tracing_subscriber::fmt::TestWriter;
@@ -81,8 +81,6 @@ impl DockerCompose {
         DockerCompose::clean_up(file_path).unwrap();
 
         let service_to_image = DockerCompose::get_service_to_image(file_path);
-
-        DockerCompose::build_images(&service_to_image);
 
         run_command("docker-compose", &["-f", file_path, "up", "-d"]).unwrap();
 
@@ -304,56 +302,6 @@ impl DockerCompose {
             panic!(
                 "At least one container failed to initialize\n{containers}\nFull log\n{full_log}"
             );
-        }
-    }
-
-    fn build_images(service_to_image: &HashMap<String, String>) {
-        if service_to_image
-            .values()
-            .any(|x| x == "shotover-int-tests/cassandra:4.0.6")
-        {
-            run_command(
-                "docker",
-                &[
-                    "build",
-                    "example-configs/docker-images/cassandra-4.0.6",
-                    "--tag",
-                    "shotover-int-tests/cassandra:4.0.6",
-                ],
-            )
-            .unwrap();
-        }
-        if service_to_image
-            .values()
-            .any(|x| x == "shotover-int-tests/cassandra:3.11.13")
-        {
-            run_command(
-                "docker",
-                &[
-                    "build",
-                    "example-configs/docker-images/cassandra-3.11.13",
-                    "--tag",
-                    "shotover-int-tests/cassandra:3.11.13",
-                ],
-            )
-            .unwrap();
-        }
-        if service_to_image
-            .values()
-            .any(|x| x == "shotover-int-tests/cassandra-tls:4.0.6")
-            && Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
-                .exists()
-        {
-            run_command(
-                "docker",
-                &[
-                    "build",
-                    "example-configs/docker-images/cassandra-tls-4.0.6",
-                    "--tag",
-                    "shotover-int-tests/cassandra-tls:4.0.6",
-                ],
-            )
-            .unwrap();
         }
     }
 

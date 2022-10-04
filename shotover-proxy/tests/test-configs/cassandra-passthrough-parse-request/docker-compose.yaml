@@ -1,6 +1,7 @@
 version: "3.3"
 services:
   cassandra-one:
+    build: example-configs/docker-images/cassandra-4.0.6
     image: shotover-int-tests/cassandra:4.0.6
     ports:
       - "9043:9042"
