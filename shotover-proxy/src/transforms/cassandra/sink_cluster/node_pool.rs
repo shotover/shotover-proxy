@@ -1,7 +1,7 @@
 use super::routing_key::calculate_routing_key;
 use super::token_map::TokenMap;
 use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::Version;
@@ -9,6 +9,11 @@ use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use rand::prelude::*;
 use std::collections::HashMap;
+
+pub enum GetReplicaErr {
+    NoMetadata,
+    Other(Error),
+}
 
 #[derive(Debug)]
 pub struct NodePool {
@@ -53,15 +58,17 @@ impl NodePool {
         execute: &BodyReqExecuteOwned,
         version: &Version,
         rng: &mut SmallRng,
-    ) -> Result<Option<&mut CassandraNode>> {
+    ) -> Result<Option<&mut CassandraNode>, GetReplicaErr> {
         let metadata = self
             .prepared_metadata
             .get(&execute.id)
-            .ok_or_else(|| anyhow!("could not find prepared metadata for {:?}", execute.id))?;
+            .ok_or(GetReplicaErr::NoMetadata)?;
 
         let routing_key = calculate_routing_key(
             &metadata.pk_indexes,
-            execute.query_parameters.values.as_ref().unwrap(),
+            execute.query_parameters.values.as_ref().ok_or_else(|| {
+                GetReplicaErr::Other(anyhow!("Execute body does not have query paramters"))
+            })?,
             *version,
         )
         .unwrap();

@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::parse_statement_single;
+use crate::frame::cassandra::{parse_statement_single, CassandraMetadata};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -9,9 +9,10 @@ use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
+use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
-use cassandra_protocol::frame::Version;
+use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::query::QueryParams;
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -22,7 +23,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
-use node_pool::NodePool;
+use node_pool::{GetReplicaErr, NodePool};
 use rand::prelude::*;
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -333,26 +334,57 @@ impl CassandraSinkCluster {
                     .send(message, return_chan_tx)?;
             } else {
                 // If the message is an execute we should perform token aware routing
-                if let Some((execute, version)) = get_execute_message(&mut message) {
-                    if let Some(replica_node) =
-                        self.pool.replica_node(execute, version, &mut self.rng)?
+                if let Some((execute, metadata)) = get_execute_message(&mut message) {
+                    match self
+                        .pool
+                        .replica_node(&execute, &metadata.version, &mut self.rng)
                     {
-                        replica_node
-                            .get_connection(&self.connection_factory)
-                            .await?
-                            .send(message, return_chan_tx)?;
-                    // if no replicas exist just send to a random node
-                    } else {
-                        let node = self.pool.get_random_node_in_dc_rack(
-                            &self.local_shotover_node.rack,
-                            &mut self.rng,
-                        );
-                        node.get_connection(&self.connection_factory)
-                            .await?
-                            .send(message, return_chan_tx)?;
-                    }
+                        Ok(Some(replica_node)) => {
+                            replica_node
+                                .get_connection(&self.connection_factory)
+                                .await?
+                                .send(message, return_chan_tx)?;
+                        }
+                        Ok(None) => {
+                            let node = self.pool.get_random_node_in_dc_rack(
+                                &self.local_shotover_node.rack,
+                                &mut self.rng,
+                            );
+                            node.get_connection(&self.connection_factory)
+                                .await?
+                                .send(message, return_chan_tx)?;
+                        }
+                        Err(GetReplicaErr::NoMetadata) => {
+                            tracing::error!("forcing re-prepare on {:?}", execute.id);
+                            // this shotover node doesn't have the metadata
+                            // send an unprepared error in response to force
+                            // the client to reprepare the query
+                            return_chan_tx
+                                .send(Response {
+                                    original: message.clone(),
+                                    response: Ok(Message::from_frame(Frame::Cassandra(
+                                        CassandraFrame {
+                                            operation: CassandraOperation::Error(ErrorBody {
+                                                message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
+                                                ty: ErrorType::Unprepared(UnpreparedError {
+                                                    id: execute.id.clone(),
+                                                }),
+                                            }),
+                                            stream_id: metadata.stream_id,
+                                            tracing_id: metadata.tracing_id,
+                                            version: metadata.version,
+                                            warnings: vec![],
+                                        },
+                                    ))),
+                                })
+                                .unwrap();
+                        }
+                        Err(GetReplicaErr::Other(err)) => {
+                            return Err(err);
+                        }
+                    };
 
-                // otherwise just send to a random node
+                    // otherwise just send to a random node
                 } else {
                     let node = self
                         .pool
@@ -858,14 +890,24 @@ fn get_prepared_result_message(message: &mut Message) -> Option<(CBytesShort, Pr
     None
 }
 
-fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, &Version)> {
+fn get_execute_message(message: &mut Message) -> Option<(BodyReqExecuteOwned, CassandraMetadata)> {
     if let Some(Frame::Cassandra(CassandraFrame {
         operation: CassandraOperation::Execute(execute_body),
         version,
+        stream_id,
+        tracing_id,
         ..
     })) = message.frame()
     {
-        return Some((execute_body, version));
+        return Some((
+            *execute_body.clone(),
+            CassandraMetadata {
+                version: *version,
+                stream_id: *stream_id,
+                tracing_id: *tracing_id,
+                opcode: Opcode::Execute,
+            },
+        ));
     }
 
     None
