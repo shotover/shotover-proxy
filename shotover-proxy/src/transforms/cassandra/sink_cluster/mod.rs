@@ -704,7 +704,6 @@ impl CassandraSinkCluster {
                                     MessageValue::Uuid(shotover_peer.host_id)
                                 } else if colspec.name == preferred_ip_alias
                                     || colspec.name == preferred_port_alias
-                                    || colspec.name == rpc_address_alias
                                 {
                                     MessageValue::Null
                                 } else if colspec.name == native_address_alias {
@@ -714,7 +713,9 @@ impl CassandraSinkCluster {
                                         shotover_peer.address.port() as i64,
                                         IntSize::I32,
                                     )
-                                } else if colspec.name == peer_alias {
+                                } else if colspec.name == peer_alias
+                                    || colspec.name == rpc_address_alias
+                                {
                                     MessageValue::Inet(shotover_peer.address.ip())
                                 } else if colspec.name == peer_port_alias {
                                     MessageValue::Integer(7000, IntSize::I32)

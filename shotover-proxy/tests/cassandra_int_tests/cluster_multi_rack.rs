@@ -13,7 +13,8 @@ async fn test_rewrite_system_peers(connection: &CassandraConnection) {
         // rack is non-determistic because we dont know which node this will be
         ResultValue::Any,
         ResultValue::Varchar("4.0.6".into()),
-        ResultValue::Null,
+        // rpc_address is non-determistic because we dont know which node this will be
+        ResultValue::Any,
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
@@ -96,7 +97,7 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
     let star_results = [
         ResultValue::Varchar("local".into()),
         ResultValue::Varchar("COMPLETED".into()),
-        // broadcast address is non-deterministic because we dont know which node this will be
+        // broadcast address is non-deterministic because we dont know which shotover node this will be
         ResultValue::Any,
         ResultValue::Int(7000),
         ResultValue::Varchar("TestCluster".into()),
@@ -104,13 +105,14 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Varchar("dc1".into()),
         // gossip_generation is non deterministic cant assert on it
         ResultValue::Any,
-        // host_id is non-deterministic because we dont know which node this will be
+        // host_id is non-deterministic because we dont know which shotover node this will be
         ResultValue::Any,
-        ResultValue::Inet("127.0.0.1".parse().unwrap()),
+        // listen_address is non-deterministic because we dont know which shotover node this will be
+        ResultValue::Any,
         ResultValue::Int(7000),
         ResultValue::Varchar("5".into()),
         ResultValue::Varchar("org.apache.cassandra.dht.Murmur3Partitioner".into()),
-        // rack is non-deterministic because we dont know which node this will be
+        // rack is non-deterministic because we dont know which shotover node this will be
         ResultValue::Any,
         ResultValue::Varchar("4.0.6".into()),
         ResultValue::Inet("0.0.0.0".parse().unwrap()),
