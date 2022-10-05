@@ -23,3 +23,4 @@ output.txt
 /docs/mdbook_bin
 shotover-proxy/read-localhost:9042.json
 shotover-proxy/read-localhost:9043.json
+/shotover-proxy/build/packages
