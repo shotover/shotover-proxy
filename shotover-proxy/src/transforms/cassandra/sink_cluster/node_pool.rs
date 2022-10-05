@@ -9,9 +9,8 @@ use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use rand::prelude::*;
 use std::collections::HashMap;
-use tokio::sync::watch;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 
 pub enum GetReplicaErr {
     NoMetadata,

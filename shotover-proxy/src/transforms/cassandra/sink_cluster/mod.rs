@@ -18,6 +18,7 @@ use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier};
 use cql3_parser::select::SelectElement;
+use futures::future::try_join_all;
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
 use itertools::Itertools;
@@ -310,21 +311,27 @@ impl CassandraSinkCluster {
                     .send(message, return_chan_tx)?;
             } else if is_prepare_message(&mut message) {
                 // Send the PREPARE statement to all connections
-                for node in self.pool.nodes().iter_mut() {
+                let connections = try_join_all(
+                    self.pool
+                        .nodes()
+                        .iter_mut()
+                        .map(|node| node.get_connection(&self.connection_factory)),
+                )
+                .await?;
+
+                for connection in connections.iter().skip(1) {
                     let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
-                    node.get_connection(&self.connection_factory)
-                        .await?
-                        .send(message.clone(), return_chan_tx)?;
+                    connection.send(message.clone(), return_chan_tx)?;
 
                     responses_future_prepare.push_back(return_chan_rx);
                 }
 
-                // TODO use the first node for this rather than repreparing
-                // send the PREPARE statement to the handshake connection and use the response as shotover's response
-                self.init_handshake_connection
-                    .as_mut()
-                    .unwrap()
+                // send the PREPARE statement to the first node
+                // connection and use the response as shotover's response
+                connections
+                    .get(0)
+                    .ok_or_else(|| anyhow!("no connections found in connection pool"))?
                     .send(message, return_chan_tx)?;
             } else {
                 // If the message is an execute we should perform token aware routing
