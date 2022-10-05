@@ -10,7 +10,8 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
         ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
         ResultValue::Varchar("3.11.13".into()),
-        ResultValue::Null,
+        // rpc_address is non-determistic because we dont know which node this will be
+        ResultValue::Any,
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
@@ -24,7 +25,8 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
         ResultValue::Null,
         ResultValue::Varchar("rack1".into()),
         ResultValue::Varchar("3.11.13".into()),
-        ResultValue::Null,
+        // rpc_address is non-determistic because we dont know which node this will be
+        ResultValue::Any,
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
