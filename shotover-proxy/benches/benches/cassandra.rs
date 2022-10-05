@@ -2,10 +2,12 @@ use crate::helpers::cassandra::{CassandraConnection, CassandraDriver};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::collections::HashMap;
 use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 
+#[cfg(feature = "alpha-transforms")]
 struct Query {
     name: &'static str,
     statement: Statement,
@@ -18,18 +20,7 @@ fn cassandra(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(1));
     group.noise_threshold(0.2);
 
-    let queries = [
-        Query {
-            name: "insert",
-            statement: stmt!(
-                "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (1, 11, 'foo');"
-            ),
-        },
-        Query {
-            name: "select",
-            statement: stmt!("SELECT id, x, name FROM benchmark_keyspace.table_1;"),
-        },
-    ];
+    let queries = ["insert", "select", "execute"];
 
     // Benches the case where the message does not meet the criteria for encryption
     #[cfg(feature = "alpha-transforms")]
@@ -42,13 +33,16 @@ fn cassandra(c: &mut Criterion) {
         });
         for query in &queries {
             group.bench_with_input(
-                format!("protect_local_{}_unencrypted", query.name),
+                format!("protect_local_{}_unencrypted", query),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().get_connection();
-                        connection.execute(&query.statement).wait().unwrap();
+                        let resources = resources.borrow();
+                        let connection = resources.as_ref().unwrap().get_connection();
+                        connection
+                            .execute(resources.as_ref().unwrap().get(query))
+                            .wait()
+                            .unwrap();
                     })
                 },
             );
@@ -65,13 +59,16 @@ fn cassandra(c: &mut Criterion) {
         // Benches the case where the message does not meet the criteria for caching
         for query in &queries {
             group.bench_with_input(
-                format!("redis_cache_{}_uncached", query.name),
+                format!("redis_cache_{}_uncached", query),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().get_connection();
-                        connection.execute(&query.statement).wait().unwrap();
+                        let resources = resources.borrow();
+                        let connection = resources.as_ref().unwrap().get_connection();
+                        connection
+                            .execute(resources.as_ref().unwrap().get(query))
+                            .wait()
+                            .unwrap();
                     })
                 },
             );
@@ -87,13 +84,16 @@ fn cassandra(c: &mut Criterion) {
         });
         for query in &queries {
             group.bench_with_input(
-                format!("passthrough_no_parse_{}", query.name),
+                format!("passthrough_no_parse_{}", query),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().get_connection();
-                        connection.execute(&query.statement).wait().unwrap();
+                        let resources = resources.borrow();
+                        let connection = resources.as_ref().unwrap().get_connection();
+                        connection
+                            .execute(resources.as_ref().unwrap().get(query))
+                            .wait()
+                            .unwrap();
                     })
                 },
             );
@@ -110,13 +110,16 @@ fn cassandra(c: &mut Criterion) {
         });
         for query in &queries {
             group.bench_with_input(
-                format!("passthrough_parse_request_{}", query.name),
+                format!("passthrough_parse_request_{}", query),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().get_connection();
-                        connection.execute(&query.statement).wait().unwrap();
+                        let resources = resources.borrow();
+                        let connection = resources.as_ref().unwrap().get_connection();
+                        connection
+                            .execute(resources.as_ref().unwrap().get(query))
+                            .wait()
+                            .unwrap();
                     })
                 },
             );
@@ -133,13 +136,16 @@ fn cassandra(c: &mut Criterion) {
         });
         for query in &queries {
             group.bench_with_input(
-                format!("passthrough_parse_response_{}", query.name),
+                format!("passthrough_parse_response_{}", query),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().get_connection();
-                        connection.execute(&query.statement).wait().unwrap();
+                        let resources = resources.borrow();
+                        let connection = resources.as_ref().unwrap().get_connection();
+                        connection
+                            .execute(resources.as_ref().unwrap().get(query))
+                            .wait()
+                            .unwrap();
                     })
                 },
             );
@@ -154,11 +160,14 @@ fn cassandra(c: &mut Criterion) {
             )
         });
         for query in &queries {
-            group.bench_with_input(format!("tls_{}", query.name), &resources, |b, resources| {
+            group.bench_with_input(format!("tls_{}", query), &resources, |b, resources| {
                 b.iter(|| {
-                    let mut resources = resources.borrow_mut();
-                    let connection = &mut resources.as_mut().unwrap().get_connection();
-                    connection.execute(&query.statement).wait().unwrap();
+                    let resources = resources.borrow();
+                    let connection = resources.as_ref().unwrap().get_connection();
+                    connection
+                        .execute(resources.as_ref().unwrap().get(query))
+                        .wait()
+                        .unwrap();
                 })
             });
         }
@@ -213,8 +222,8 @@ fn cassandra(c: &mut Criterion) {
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().get_connection();
+                        let resources = resources.borrow();
+                        let connection = resources.as_ref().unwrap().get_connection();
                         connection.execute(&query.statement).wait().unwrap();
                     })
                 },
@@ -231,13 +240,16 @@ fn cassandra(c: &mut Criterion) {
         });
         for query in &queries {
             group.bench_with_input(
-                format!("request_throttling_{}", query.name),
+                format!("request_throttling_{}", query),
                 &resources,
                 |b, resources| {
                     b.iter(|| {
-                        let mut resources = resources.borrow_mut();
-                        let connection = &mut resources.as_mut().unwrap().get_connection();
-                        connection.execute(&query.statement).wait().unwrap();
+                        let resources = resources.borrow();
+                        let connection = resources.as_ref().unwrap().get_connection();
+                        connection
+                            .execute(resources.as_ref().unwrap().get(query))
+                            .wait()
+                            .unwrap();
                     })
                 },
             );
@@ -252,6 +264,7 @@ pub struct BenchResources {
     _compose: DockerCompose,
     _shotover_manager: ShotoverManager,
     connection: CassandraConnection,
+    queries: HashMap<String, Statement>,
 }
 
 impl BenchResources {
@@ -262,10 +275,11 @@ impl BenchResources {
         let connection =
             futures::executor::block_on(CassandraConnection::new("127.0.0.1", 9042, DRIVER));
 
-        let bench_resources = Self {
+        let mut bench_resources = Self {
             _compose: compose,
             _shotover_manager: shotover_manager,
             connection,
+            queries: HashMap::new(),
         };
         bench_resources.setup();
         bench_resources
@@ -284,16 +298,21 @@ impl BenchResources {
 
         let connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, DRIVER);
 
-        let bench_resources = Self {
+        let mut bench_resources = Self {
             _compose: compose,
             _shotover_manager: shotover_manager,
             connection,
+            queries: HashMap::new(),
         };
         bench_resources.setup();
         bench_resources
     }
 
-    fn setup(&self) {
+    pub fn get(&self, query: &str) -> &Statement {
+        self.queries.get(query).unwrap()
+    }
+
+    fn setup(&mut self) {
         let create_keyspace = stmt!(
             "CREATE KEYSPACE benchmark_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
         );
@@ -323,5 +342,32 @@ impl BenchResources {
             .execute(&insert)
             .wait()
             .unwrap();
+
+        let prepared_statement = self
+            .connection
+            .as_datastax()
+            .prepare(
+                "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (0, 10, 'new_value');",
+            )
+            .unwrap()
+            .wait()
+            .unwrap()
+            .bind();
+
+        self.queries = [
+            (
+                "insert".into(),
+                stmt!(
+                    "INSERT INTO benchmark_keyspace.table_1 (id, x, name) VALUES (1, 11, 'foo');"
+                ),
+            ),
+            (
+                "select".into(),
+                stmt!("SELECT id, x, name FROM benchmark_keyspace.table_1;"),
+            ),
+            ("execute".into(), prepared_statement),
+        ]
+        .into_iter()
+        .collect();
     }
 }
