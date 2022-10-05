@@ -10,9 +10,8 @@ use cassandra_protocol::frame::message_register::BodyReqRegister;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::{frame::Version, query::QueryParams};
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, oneshot, watch};
 
 #[derive(Debug)]
 pub struct TaskConnectionInfo {
@@ -21,7 +20,7 @@ pub struct TaskConnectionInfo {
 }
 
 pub fn create_topology_task(
-    nodes: Arc<RwLock<Vec<CassandraNode>>>,
+    nodes_tx: watch::Sender<Vec<CassandraNode>>,
     mut connection_info_rx: mpsc::Receiver<TaskConnectionInfo>,
     data_center: String,
 ) {
@@ -29,7 +28,7 @@ pub fn create_topology_task(
         while let Some(mut connection_info) = connection_info_rx.recv().await {
             let mut attempts = 0;
             while let Err(err) =
-                topology_task_process(&nodes, &mut connection_info, &data_center).await
+                topology_task_process(&nodes_tx, &mut connection_info, &data_center).await
             {
                 tracing::error!("topology task failed, retrying, error was: {err:?}");
                 attempts += 1;
@@ -43,7 +42,7 @@ pub fn create_topology_task(
 }
 
 async fn topology_task_process(
-    shared_nodes: &Arc<RwLock<Vec<CassandraNode>>>,
+    nodes_tx: &watch::Sender<Vec<CassandraNode>>,
     connection_info: &mut TaskConnectionInfo,
     data_center: &str,
 ) -> Result<()> {
@@ -60,7 +59,7 @@ async fn topology_task_process(
     let version = connection_info.connection_factory.get_version()?;
 
     let mut nodes = fetch_current_nodes(&connection, connection_info, data_center).await?;
-    write_to_shared(shared_nodes, nodes.clone()).await;
+    nodes_tx.send(nodes.clone())?;
 
     register_for_topology_and_status_events(&connection, version).await?;
 
@@ -119,7 +118,7 @@ async fn topology_task_process(
                 return Err(anyhow!("topology control connection was closed"));
             }
         }
-        write_to_shared(shared_nodes, nodes.clone()).await;
+        nodes_tx.send(nodes.clone())?;
     }
 }
 
@@ -170,18 +169,6 @@ async fn fetch_current_nodes(
     new_nodes.extend(more_nodes?);
 
     Ok(new_nodes)
-}
-
-async fn write_to_shared(
-    shared_nodes: &Arc<RwLock<Vec<CassandraNode>>>,
-    new_nodes: Vec<CassandraNode>,
-) {
-    let mut write_lock = shared_nodes.write().await;
-    let expensive_drop = std::mem::replace(&mut *write_lock, new_nodes);
-
-    // Make sure to drop write_lock before the expensive_drop which will have to perform many deallocations.
-    std::mem::drop(write_lock);
-    std::mem::drop(expensive_drop);
 }
 
 mod system_local {
