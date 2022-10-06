@@ -382,7 +382,7 @@ async fn test_cassandra_peers_rewrite_cassandra4(#[case] driver: CassandraDriver
             &normal_connection,
             "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Varchar("dc1".into()),
+                ResultValue::Varchar("Mars".into()),
                 ResultValue::Int(9042),
                 ResultValue::Varchar("West".into()),
             ]],
@@ -408,7 +408,7 @@ async fn test_cassandra_peers_rewrite_cassandra4(#[case] driver: CassandraDriver
             &rewrite_port_connection,
             "SELECT data_center, native_port, rack FROM system.peers_v2;",
             &[&[
-                ResultValue::Varchar("dc1".into()),
+                ResultValue::Varchar("Mars".into()),
                 ResultValue::Int(9044),
                 ResultValue::Varchar("West".into()),
             ]],
