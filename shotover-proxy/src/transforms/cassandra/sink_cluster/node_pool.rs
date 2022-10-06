@@ -9,6 +9,7 @@ use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use rand::prelude::*;
 use std::collections::HashMap;
+use tokio::sync::watch;
 
 pub enum GetReplicaErr {
     NoMetadata,
@@ -19,7 +20,7 @@ pub enum GetReplicaErr {
 pub struct NodePool {
     prepared_metadata: HashMap<CBytesShort, PreparedMetadata>,
     token_map: TokenMap,
-    pub nodes: Vec<CassandraNode>,
+    nodes: Vec<CassandraNode>,
 }
 
 impl NodePool {
@@ -31,8 +32,25 @@ impl NodePool {
         }
     }
 
-    pub fn set_nodes(&mut self, nodes: Vec<CassandraNode>) {
-        self.nodes = nodes;
+    pub fn nodes(&mut self) -> &mut [CassandraNode] {
+        &mut self.nodes
+    }
+
+    /// if the node list has been updated use the new list, copying over any existing connections
+    pub fn update_nodes(&mut self, nodes_rx: &mut watch::Receiver<Vec<CassandraNode>>) {
+        let mut new_nodes = nodes_rx.borrow_and_update().clone();
+
+        for node in self.nodes.drain(..) {
+            if let Some(outbound) = node.outbound {
+                for new_node in &mut new_nodes {
+                    if new_node.host_id == node.host_id {
+                        new_node.outbound = Some(outbound);
+                        break;
+                    }
+                }
+            }
+        }
+        self.nodes = new_nodes;
         self.token_map = TokenMap::new(self.nodes.as_slice());
     }
 

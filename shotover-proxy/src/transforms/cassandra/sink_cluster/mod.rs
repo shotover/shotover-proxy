@@ -207,22 +207,8 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
 
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
-        // if the node list has been updated use the new list, copying over any existing connections
         if self.nodes_rx.has_changed()? {
-            let mut new_nodes = self.nodes_rx.borrow_and_update().clone();
-
-            for node in self.pool.nodes.drain(..) {
-                if let Some(outbound) = node.outbound {
-                    for new_node in &mut new_nodes {
-                        if new_node.host_id == node.host_id {
-                            new_node.outbound = Some(outbound);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            self.pool.set_nodes(new_nodes);
+            self.pool.update_nodes(&mut self.nodes_rx);
         }
 
         let tables_to_rewrite: Vec<TableToRewrite> = messages
@@ -249,7 +235,7 @@ impl CassandraSinkCluster {
         // Create the initial connection.
         // Messages will be sent through this connection until we have extracted the handshake.
         if self.init_handshake_connection.is_none() {
-            let random_point = if self.pool.nodes.iter().all(|x| !x.is_up) {
+            let random_point = if self.pool.nodes().iter().all(|x| !x.is_up) {
                 tokio::net::lookup_host(self.contact_points.choose(&mut self.rng).unwrap())
                     .await?
                     .next()
@@ -291,7 +277,7 @@ impl CassandraSinkCluster {
 
         for mut message in messages {
             let (return_chan_tx, return_chan_rx) = oneshot::channel();
-            if self.pool.nodes.is_empty()
+            if self.pool.nodes().is_empty()
                 || !self.init_handshake_complete
                 // system.local and system.peers must be routed to the same node otherwise the system.local node will be amongst the system.peers nodes and a node will be missing
                 // DDL statements and system.local must be routed through the same connection, so that schema_version changes appear immediately in system.local
@@ -308,7 +294,7 @@ impl CassandraSinkCluster {
                 self.connection_factory.set_use_message(message.clone());
 
                 // Send the USE statement to all open connections to ensure they are all in sync
-                for (node_index, node) in self.pool.nodes.iter().enumerate() {
+                for (node_index, node) in self.pool.nodes().iter().enumerate() {
                     if let Some(connection) = &node.outbound {
                         let (return_chan_tx, return_chan_rx) = oneshot::channel();
                         connection.send(message.clone(), return_chan_tx)?;
@@ -324,7 +310,7 @@ impl CassandraSinkCluster {
                     .send(message, return_chan_tx)?;
             } else if is_prepare_message(&mut message) {
                 // Send the PREPARE statement to all connections
-                for node in self.pool.nodes.iter_mut() {
+                for node in self.pool.nodes().iter_mut() {
                     let (return_chan_tx, return_chan_rx) = oneshot::channel();
 
                     node.get_connection(&self.connection_factory)
@@ -468,7 +454,7 @@ impl CassandraSinkCluster {
             // If any errors occurred close the connection as we can no
             // longer make any guarantees about the current state of the connection
             if !is_use_statement_successful(response) {
-                self.pool.nodes[node_index].outbound = None;
+                self.pool.nodes()[node_index].outbound = None;
             }
         }
 
@@ -496,9 +482,9 @@ impl CassandraSinkCluster {
         }
         self.init_handshake_complete = true;
 
-        if self.pool.nodes.is_empty() {
+        if self.pool.nodes().is_empty() {
             self.nodes_rx.changed().await?;
-            self.pool.nodes = self.nodes_rx.borrow_and_update().clone();
+            self.pool.update_nodes(&mut self.nodes_rx);
 
             // If we have to populate the local_nodes at this point then that means the control connection
             // may not have been made against a node in the configured data_center/rack.
