@@ -22,6 +22,7 @@ pub struct NodePool {
     prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
     token_map: TokenMap,
     nodes: Vec<CassandraNode>,
+    prev_idx: usize,
 }
 
 impl Clone for NodePool {
@@ -40,6 +41,7 @@ impl NodePool {
             token_map: TokenMap::new(nodes.as_slice()),
             nodes,
             prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
+            prev_idx: 0,
         }
     }
 
@@ -70,15 +72,24 @@ impl NodePool {
         write_lock.insert(id, metadata);
     }
 
-    pub fn get_random_node_in_dc_rack(
-        &mut self,
-        rack: &String,
-        rng: &mut SmallRng,
-    ) -> &mut CassandraNode {
+    pub fn get_round_robin_node_in_dc_rack(&mut self, rack: &String) -> &mut CassandraNode {
+        let up_indexes: Vec<usize> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, node)| {
+                if node.is_up && node.rack == *rack {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        self.prev_idx = (self.prev_idx + 1) % up_indexes.len();
+
         self.nodes
-            .iter_mut()
-            .filter(|x| x.rack == *rack && x.is_up)
-            .choose(rng)
+            .get_mut(*up_indexes.get(self.prev_idx).unwrap())
             .unwrap()
     }
 
@@ -119,5 +130,130 @@ impl NodePool {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod test_node_pool {
+    use super::*;
+    use crate::transforms::cassandra::sink_cluster::CassandraNode;
+    use uuid::uuid;
+
+    fn prepare_nodes() -> Vec<CassandraNode> {
+        vec![
+            CassandraNode::new(
+                "172.16.1.0:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7a"),
+            ),
+            CassandraNode::new(
+                "172.16.1.1:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7b"),
+            ),
+            CassandraNode::new(
+                "172.16.1.2:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7c"),
+            ),
+            CassandraNode::new(
+                "172.16.1.3:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7c"),
+            ),
+            CassandraNode::new(
+                "172.16.1.4:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7c"),
+            ),
+            CassandraNode::new(
+                "172.16.1.5:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7d"),
+            ),
+            CassandraNode::new(
+                "172.16.1.6:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7e"),
+            ),
+            CassandraNode::new(
+                "172.16.1.7:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7f"),
+            ),
+        ]
+    }
+
+    #[test]
+    fn test_round_robin() {
+        let nodes = prepare_nodes();
+
+        let mut node_pool = NodePool::new(nodes.clone());
+
+        node_pool.nodes[1].is_up = false;
+        node_pool.nodes[3].is_up = false;
+        node_pool.nodes[5].is_up = false;
+
+        let mut round_robin_nodes = vec![];
+
+        for _ in 0..nodes.len() - 1 {
+            round_robin_nodes.push(
+                node_pool
+                    .get_round_robin_node_in_dc_rack(&"rack1".to_string())
+                    .address
+                    .to_string(),
+            );
+        }
+
+        // only includes up nodes in round robin
+        assert_eq!(
+            vec![
+                "172.16.1.2:9044",
+                "172.16.1.4:9044",
+                "172.16.1.6:9044",
+                "172.16.1.7:9044",
+                "172.16.1.0:9044",
+                "172.16.1.2:9044",
+                "172.16.1.4:9044",
+            ],
+            round_robin_nodes
+        );
+
+        node_pool.nodes[1].is_up = true;
+        node_pool.nodes[3].is_up = true;
+        node_pool.nodes[5].is_up = true;
+
+        round_robin_nodes.clear();
+
+        for _ in 0..nodes.len() - 1 {
+            round_robin_nodes.push(
+                node_pool
+                    .get_round_robin_node_in_dc_rack(&"rack1".to_string())
+                    .address
+                    .to_string(),
+            );
+        }
+
+        // includes the new up nodes in round robin
+        assert_eq!(
+            vec![
+                "172.16.1.3:9044",
+                "172.16.1.4:9044",
+                "172.16.1.5:9044",
+                "172.16.1.6:9044",
+                "172.16.1.7:9044",
+                "172.16.1.0:9044",
+                "172.16.1.1:9044"
+            ],
+            round_robin_nodes
+        );
     }
 }
