@@ -104,6 +104,7 @@ impl CassandraConnection {
         match driver {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             CassandraDriver::Datastax => {
+                cassandra_cpp::set_log_logger();
                 let mut cluster = Cluster::default();
                 cluster.set_contact_points(contact_points).unwrap();
                 cluster.set_credentials("cassandra", "cassandra").unwrap();
