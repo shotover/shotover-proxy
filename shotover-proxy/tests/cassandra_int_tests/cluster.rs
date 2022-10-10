@@ -47,6 +47,7 @@ fn create_handshake() -> Vec<Message> {
     vec![
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 64,
             tracing: Tracing::Request(false),
             warnings: vec![],
@@ -54,6 +55,7 @@ fn create_handshake() -> Vec<Message> {
         })),
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 128,
             tracing: Tracing::Request(false),
             warnings: vec![],

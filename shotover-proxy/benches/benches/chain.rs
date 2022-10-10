@@ -1,6 +1,9 @@
 use bytes::Bytes;
 use cassandra_protocol::{
-    compression::Compression, consistency::Consistency, frame::Version, query::QueryParams,
+    compression::Compression,
+    consistency::Consistency,
+    frame::{Flags, Version},
+    query::QueryParams,
 };
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
@@ -230,6 +233,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![Message::from_bytes(
                 CassandraFrame {
                     version: Version::V4,
+                    flags: Flags::default(),
                     stream_id: 0,
                     tracing: Tracing::Request(false),
                     warnings: vec![],
@@ -337,6 +341,7 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
     Wrapper::new_with_chain_name(
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 0,
             tracing: Tracing::Request(false),
             warnings: vec![],
