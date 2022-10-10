@@ -215,6 +215,7 @@ impl Message {
             )),
             Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
                 version: frame.version,
+                flags: frame.flags,
                 stream_id: frame.stream_id,
                 operation: CassandraOperation::Error(ErrorBody {
                     message: "Message was filtered out by shotover".into(),
@@ -244,6 +245,7 @@ impl Message {
             }
             Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
                 version: frame.version,
+                flags: frame.flags,
                 stream_id: frame.stream_id,
                 operation: CassandraOperation::Error(ErrorBody {
                     message: error,
@@ -291,6 +293,7 @@ impl Message {
 
                 Frame::Cassandra(CassandraFrame {
                     version: metadata.version,
+                    flags: metadata.flags,
                     stream_id: metadata.stream_id,
                     tracing: metadata.tracing,
                     warnings: vec![],
