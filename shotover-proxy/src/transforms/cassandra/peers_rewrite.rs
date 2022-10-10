@@ -142,11 +142,12 @@ mod test {
     use cassandra_protocol::frame::message_result::{
         ColSpec, ColType, ColTypeOption, RowsMetadata, RowsMetadataFlags, TableSpec,
     };
-    use cassandra_protocol::frame::Version;
+    use cassandra_protocol::frame::{Flags, Version};
     use cassandra_protocol::query::QueryParams;
 
     fn create_query_message(query: &str) -> Message {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
+            flags: Flags::default(),
             version: Version::V4,
             stream_id: 0,
             tracing_id: None,
@@ -171,6 +172,7 @@ mod test {
     fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<MessageValue>>) -> Message {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 0,
             tracing_id: None,
             warnings: vec![],

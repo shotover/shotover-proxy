@@ -69,6 +69,7 @@ pub mod raw_frame {
 
         Ok(CassandraMetadata {
             version: frame.version,
+            flags: frame.flags,
             stream_id: frame.stream_id,
             tracing_id: frame.tracing_id,
             opcode: frame.opcode,
@@ -93,12 +94,14 @@ pub struct CassandraMetadata {
     pub stream_id: StreamId,
     pub tracing_id: Option<Uuid>,
     pub opcode: Opcode,
+    pub flags: Flags,
     // missing `warnings` field because we are not using it currently
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
     pub version: Version,
+    pub flags: Flags,
     pub stream_id: StreamId,
     pub tracing_id: Option<Uuid>,
     pub warnings: Vec<String>,
@@ -111,6 +114,7 @@ impl CassandraFrame {
     pub(crate) fn metadata(&self) -> CassandraMetadata {
         CassandraMetadata {
             version: self.version,
+            flags: self.flags,
             stream_id: self.stream_id,
             tracing_id: self.tracing_id,
             opcode: self.operation.to_opcode(),
@@ -292,6 +296,7 @@ impl CassandraFrame {
 
         Ok(CassandraFrame {
             version: frame.version,
+            flags: frame.flags,
             stream_id: frame.stream_id,
             tracing_id: frame.tracing_id,
             warnings: frame.warnings,

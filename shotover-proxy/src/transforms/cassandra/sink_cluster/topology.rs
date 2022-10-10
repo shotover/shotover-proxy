@@ -8,7 +8,10 @@ use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
 use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
 use cassandra_protocol::frame::message_register::BodyReqRegister;
 use cassandra_protocol::token::Murmur3Token;
-use cassandra_protocol::{frame::Version, query::QueryParams};
+use cassandra_protocol::{
+    frame::{Flags, Version},
+    query::QueryParams,
+};
 use std::net::SocketAddr;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -144,6 +147,7 @@ async fn register_for_topology_and_status_events(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
+                flags: Flags::default(),
                 tracing_id: None,
                 warnings: vec![],
                 operation: CassandraOperation::Register(BodyReqRegister {
@@ -195,6 +199,7 @@ mod system_local {
         connection.send(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
+                flags: Flags::default(),
                 stream_id: 1,
                 tracing_id: None,
                 warnings: vec![],
@@ -282,6 +287,7 @@ mod system_peers {
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 stream_id: 0,
+                flags: Flags::default(),
                 tracing_id: None,
                 warnings: vec![],
                 operation: CassandraOperation::Query {
@@ -302,6 +308,7 @@ mod system_peers {
                 Message::from_frame(Frame::Cassandra(CassandraFrame {
                     version: Version::V4,
                     stream_id: 0,
+                    flags: Flags::default(),
                     tracing_id: None,
                     warnings: vec![],
                     operation: CassandraOperation::Query {

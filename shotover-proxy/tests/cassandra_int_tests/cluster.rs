@@ -1,4 +1,4 @@
-use cassandra_protocol::frame::Version;
+use cassandra_protocol::frame::{Flags, Version};
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
 use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
@@ -47,6 +47,7 @@ fn create_handshake() -> Vec<Message> {
     vec![
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 64,
             tracing_id: None,
             warnings: vec![],
@@ -54,6 +55,7 @@ fn create_handshake() -> Vec<Message> {
         })),
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 128,
             tracing_id: None,
             warnings: vec![],

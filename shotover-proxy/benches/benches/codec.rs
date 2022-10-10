@@ -2,7 +2,10 @@ use bytes::BytesMut;
 use cassandra_protocol::frame::message_result::{
     ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags, TableSpec,
 };
-use cassandra_protocol::{frame::Version, query::QueryParams};
+use cassandra_protocol::{
+    frame::{Flags, Version},
+    query::QueryParams,
+};
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover_proxy::codec::cassandra::CassandraCodec;
 use shotover_proxy::frame::cassandra::parse_statement_single;
@@ -17,6 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 1,
             tracing_id: None,
             warnings: vec![],
@@ -44,6 +48,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
+            flags: Flags::default(),
             stream_id: 0,
             tracing_id: None,
             warnings: vec![],

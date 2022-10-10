@@ -12,7 +12,7 @@ use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
-use cassandra_protocol::frame::{Opcode, Version};
+use cassandra_protocol::frame::{Flags, Opcode, Version};
 use cassandra_protocol::query::QueryParams;
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -196,6 +196,7 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
     let stream_id = get_unused_stream_id(messages)?;
     Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
         version,
+        flags: Flags::default(),
         stream_id,
         tracing_id: None,
         warnings: vec![],
@@ -372,6 +373,7 @@ impl CassandraSinkCluster {
                                                     id,
                                                 }),
                                             }),
+                                            flags: metadata.flags,
                                             stream_id: metadata.stream_id,
                                             tracing_id: metadata.tracing_id,
                                             version: metadata.version,
@@ -884,6 +886,7 @@ fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, C
     if let Some(Frame::Cassandra(CassandraFrame {
         operation: CassandraOperation::Execute(execute_body),
         version,
+        flags,
         stream_id,
         tracing_id,
         ..
@@ -893,6 +896,7 @@ fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, C
             execute_body,
             CassandraMetadata {
                 version: *version,
+                flags: *flags,
                 stream_id: *stream_id,
                 tracing_id: *tracing_id,
                 opcode: Opcode::Execute,

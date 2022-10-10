@@ -63,7 +63,7 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
-cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cassandra-protocol = { git = "https://github.com/conorbros/cdrs-tokio", branch = "8.0-dev" }
 crc16 = "0.4.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 
@@ -84,7 +84,7 @@ pktparse = { version = "0.7.0", features = ["serde"] }
 tls-parser = "0.11.0"
 tokio-io-timeout = "1.1.1"
 serial_test = "0.9.0"
-cassandra-cpp = "1.1.0"
+cassandra-cpp = { git = "https://github.com/conorbros/cassandra-rs" }
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
 nix = "0.25.0"

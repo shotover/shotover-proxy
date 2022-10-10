@@ -287,15 +287,15 @@ checksum = "3a4f925191b4367301851c6d99b09890311d74b0d43f274c0b34c86d308a3663"
 
 [[package]]
 name = "cassandra-cpp"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfa5d9e96a365aa8c025dd5a0c90179de277b76f9494d8dea956bcd6241bae6c"
+version = "1.1.1-pre"
+source = "git+https://github.com/conorbros/cassandra-rs#89b137af8c5059e4b020317f52518408292e745e"
 dependencies = [
  "cassandra-cpp-sys",
  "error-chain",
+ "libc",
  "parking_lot",
  "slog",
- "uuid 0.8.2",
+ "uuid",
 ]
 
 [[package]]
