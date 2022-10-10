@@ -9,6 +9,8 @@ use cassandra_protocol::{
     frame::message_error::ErrorBody,
     types::cassandra_type::{wrapper_fn, CassandraType},
 };
+use cdrs_tokio::query::QueryParamsBuilder;
+use cdrs_tokio::statement::StatementParams;
 use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
     cluster::session::{Session as CdrsTokioSession, SessionBuilder, TcpSessionBuilder},
@@ -338,6 +340,7 @@ impl CassandraConnection {
             Self::Datastax { session, .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
                 statement.bind_int32(0, value).unwrap();
+                statement.set_tracing(true).unwrap();
                 match session.execute(&statement).await {
                     Ok(result) => result
                         .into_iter()
@@ -350,10 +353,30 @@ impl CassandraConnection {
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
+                let query_params = QueryParamsBuilder::new()
+                    .with_values(query_values!(value))
+                    .build();
                 let response = session
                     .exec_with_values(statement, query_values!(value))
                     .await
                     .unwrap();
+
+                let params = StatementParams {
+                    query_params,
+                    is_idempotent: false,
+                    keyspace: None,
+                    token: None,
+                    routing_key: None,
+                    tracing: true,
+                    warnings: false,
+                    speculative_execution_policy: None,
+                    retry_policy: None,
+                    beta_protocol: false,
+                };
+
+                let response =
+                    futures::executor::block_on(session.exec_with_params(statement, &params))
+                        .unwrap();
 
                 Self::process_cdrs_response(response)
             }
