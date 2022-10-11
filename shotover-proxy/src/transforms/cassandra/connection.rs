@@ -41,9 +41,16 @@ impl CassandraConnection {
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
         let tcp_stream = timeout(Duration::from_secs(3), TcpStream::connect(&host))
-            .await?
+            .await
+            .map_err(|_| {
+                anyhow!(
+                    "Cassandra node at {:?} did not respond to connection attempt within 3 seconds",
+                    host
+                )
+            })?
             .map_err(|e| {
-                anyhow::Error::new(e).context(format!("Failed to connect to upstream: {:?}", host))
+                anyhow::Error::new(e)
+                    .context(format!("Failed to connect to cassandra node: {:?}", host))
             })?;
 
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
