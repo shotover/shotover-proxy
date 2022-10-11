@@ -373,7 +373,7 @@ impl CassandraSinkCluster {
                                                     id,
                                                 }),
                                             }),
-                                            flags: metadata.flags,
+                                            flags: metadata.flags.difference(Flags::TRACING), // we don't have a tracing id because we didn't actually hit a node
                                             stream_id: metadata.stream_id,
                                             tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
                                             version: metadata.version,
