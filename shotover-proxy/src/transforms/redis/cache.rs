@@ -17,7 +17,7 @@ use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
-use tracing_log::log::{error, warn};
+use tracing::{error, warn};
 
 /// Data is stored in Redis as a Hash (hset/hget) and constructed from the cassandra SELECT statement
 /// * The name of the hash is constructed from: the FROM component and partition + range keys as per the TableCacheSchema configuration
