@@ -105,7 +105,7 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-tls/topology.yaml");
 
-    let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
+    let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
@@ -254,7 +254,7 @@ async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
 #[serial]
 async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
-    let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
+    let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
     let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yml");
     {

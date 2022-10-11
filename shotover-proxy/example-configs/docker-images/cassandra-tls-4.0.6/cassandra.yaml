@@ -1159,14 +1159,14 @@ server_encryption_options:
 # auth set require_client_auth=true. Restart all nodes
 client_encryption_options:
     # Enable client-to-server encryption
-    enabled: false
+    enabled: true
     # When set to true, encrypted and unencrypted connections are allowed on the native_transport_port
     # This should _only be true_ while in unencrypted or transitional operation
     # optional defaults to true when enabled is false, and false when enabled is true.
     # optional: true
     # Set keystore and keystore_password to valid keystores if enabled is true
-    keystore: conf/.keystore
-    keystore_password: cassandra
+    keystore: /etc/cassandra/certs/keystore.p12
+    keystore_password: password
     # Verify client certificates
     require_client_auth: false
     # Set trustore and truststore_password if require_client_auth is true

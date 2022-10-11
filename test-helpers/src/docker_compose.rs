@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
 use regex::Regex;
-use std::env;
 use std::io::ErrorKind;
 use std::process::Command;
 use std::time;
+use std::{env, path::Path};
 use subprocess::{Exec, Redirection};
 use tracing::trace;
 
@@ -203,6 +203,20 @@ impl DockerCompose {
             ],
         )
         .unwrap();
+        if Path::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/keystore.p12")
+            .exists()
+        {
+            run_command(
+                "docker",
+                &[
+                    "build",
+                    "example-configs/docker-images/cassandra-tls-4.0.6",
+                    "--tag",
+                    "shotover-int-tests/cassandra-tls:4.0.6",
+                ],
+            )
+            .unwrap();
+        }
     }
 
     /// Cleans up the docker-compose by shutting down the running system and removing the images.
