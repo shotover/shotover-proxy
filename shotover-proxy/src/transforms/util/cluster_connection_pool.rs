@@ -260,6 +260,9 @@ async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
 ) -> Result<()> {
     let mut reader = FramedRead::new(read, codec);
 
+    // TODO: This reader.next() may perform reads after tx_process has shutdown the write half.
+    //       This may result in unexpected ConnectionReset errors.
+    //       refer to the cassandra connection logic.
     while let Some(responses) = reader.next().await {
         match responses {
             Ok(responses) => {
