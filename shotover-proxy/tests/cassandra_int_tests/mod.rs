@@ -74,6 +74,7 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
     standard_test_suite(&connection, driver).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[case(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
