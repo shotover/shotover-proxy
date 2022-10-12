@@ -32,7 +32,7 @@ pub async fn test(
             &format!(
                 "{}:{}",
                 cassandra_contact_points.split(',').collect::<Vec<&str>>()[0].to_owned(),
-                "9042"
+                cassandra_port
             ),
             None,
         )

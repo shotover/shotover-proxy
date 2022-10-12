@@ -167,7 +167,12 @@ impl CassandraConnection {
             }
             CassandraDriver::Scylla => {
                 let session = SessionBuilderScylla::new()
-                    .known_nodes(&contact_points.split(',').collect::<Vec<&str>>())
+                    .known_nodes(
+                        &contact_points
+                            .split(',')
+                            .map(|contact_point| format!("{contact_point}:{port}"))
+                            .collect::<Vec<String>>(),
+                    )
                     .user("cassandra", "cassandra")
                     .build()
                     .await
