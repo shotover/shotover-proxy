@@ -1,10 +1,13 @@
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
+    stmt, Batch, BatchType, CassErrorCode, CassFuture, CassResult, Cluster, Error, ErrorKind,
+    PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl, Value, ValueType,
     stmt, Batch, BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
     PreparedStatement, Session as DatastaxSession, Ssl, Value, ValueType,
 };
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::ErrorType;
+use cassandra_protocol::types::IntoRustByIndex;
 use cassandra_protocol::{
     frame::message_error::ErrorBody,
     types::cassandra_type::{wrapper_fn, CassandraType},
@@ -26,21 +29,25 @@ use cdrs_tokio::{
 };
 use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
+use scylla::frame::response::result::CqlValue;
+use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 use scylla::{Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use std::fs::read_to_string;
+use std::net::IpAddr;
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum PreparedQuery {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    Datastax(PreparedStatement),
+    Datastax(PreparedStatementCpp),
     CdrsTokio(CdrsTokioPreparedQuery),
+    Scylla(PreparedStatementScylla),
 }
 
 impl PreparedQuery {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    fn as_datastax(&self) -> &PreparedStatement {
+    fn as_datastax(&self) -> &PreparedStatementCpp {
         match self {
             PreparedQuery::Datastax(p) => p,
             _ => panic!("Not PreparedQuery::Datastax"),
@@ -50,8 +57,14 @@ impl PreparedQuery {
     fn as_cdrs(&self) -> &CdrsTokioPreparedQuery {
         match self {
             PreparedQuery::CdrsTokio(p) => p,
-            #[cfg(feature = "cassandra-cpp-driver-tests")]
             _ => panic!("Not PreparedQuery::CdrsTokio"),
+        }
+    }
+
+    fn as_scylla(&self) -> &PreparedStatementScylla {
+        match self {
+            PreparedQuery::Scylla(s) => s,
+            _ => panic!("Not PreparedQuery::Scylla"),
         }
     }
 }
@@ -74,6 +87,7 @@ pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax,
     CdrsTokio,
+    Scylla,
 }
 
 type CdrsTokioSessionInstance = CdrsTokioSession<
@@ -90,6 +104,10 @@ pub enum CassandraConnection {
     },
     CdrsTokio {
         session: CdrsTokioSessionInstance,
+        schema_awaiter: Option<SessionScylla>,
+    },
+    Scylla {
+        session: SessionScylla,
         schema_awaiter: Option<SessionScylla>,
     },
 }
@@ -147,6 +165,19 @@ impl CassandraConnection {
                     schema_awaiter: None,
                 }
             }
+            CassandraDriver::Scylla => {
+                let session = SessionBuilderScylla::new()
+                    .known_nodes(&contact_points.split(',').collect::<Vec<&str>>())
+                    .user("cassandra", "cassandra")
+                    .build()
+                    .await
+                    .unwrap();
+
+                CassandraConnection::Scylla {
+                    session,
+                    schema_awaiter: None,
+                }
+            }
         }
     }
 
@@ -154,7 +185,6 @@ impl CassandraConnection {
     pub fn as_cdrs(&self) -> &CdrsTokioSessionInstance {
         match self {
             Self::CdrsTokio { session, .. } => session,
-            #[cfg(feature = "cassandra-cpp-driver-tests")]
             _ => panic!("Not CdrsTokio"),
         }
     }
@@ -200,6 +230,7 @@ impl CassandraConnection {
             }
             // TODO actually implement TLS for cdrs-tokio
             CassandraDriver::CdrsTokio => todo!(),
+            CassandraDriver::Scylla => todo!(),
         }
     }
 
@@ -215,6 +246,7 @@ impl CassandraConnection {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { schema_awaiter, .. } => schema_awaiter,
             Self::CdrsTokio { schema_awaiter, .. } => schema_awaiter,
+            Self::Scylla { schema_awaiter, .. } => schema_awaiter,
         };
 
         *schema_awaiter = Some(
@@ -233,6 +265,7 @@ impl CassandraConnection {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { schema_awaiter, .. } => schema_awaiter,
             Self::CdrsTokio { schema_awaiter, .. } => schema_awaiter,
+            Self::Scylla { schema_awaiter, .. } => schema_awaiter,
         };
         if let Some(schema_awaiter) = schema_awaiter {
             schema_awaiter.await_schema_agreement().await.unwrap();
@@ -257,6 +290,21 @@ impl CassandraConnection {
                 let response = session.query(query).await.unwrap();
                 Self::process_cdrs_response(response)
             }
+            Self::Scylla { session, .. } => {
+                let rows = session.query(query, ()).await.unwrap().rows;
+                match rows {
+                    Some(rows) => rows
+                        .into_iter()
+                        .map(|x| {
+                            x.columns
+                                .into_iter()
+                                .map(|col| ResultValue::new_from_scylla(col.unwrap()))
+                                .collect()
+                        })
+                        .collect(),
+                    None => vec![],
+                }
+            }
         };
 
         let query = query.to_uppercase();
@@ -278,6 +326,7 @@ impl CassandraConnection {
                 session.execute(&statement).await
             }
             Self::CdrsTokio { .. } => todo!(),
+            Self::Scylla { .. } => todo!(),
         }
     }
 
@@ -303,6 +352,7 @@ impl CassandraConnection {
                     _ => todo!(),
                 }
             }
+            Self::Scylla { .. } => todo!(),
         }
     }
 
@@ -326,11 +376,80 @@ impl CassandraConnection {
                 let query = session.prepare(query).await.unwrap();
                 PreparedQuery::CdrsTokio(query)
             }
+            Self::Scylla { session, .. } => {
+                let mut prepared = futures::executor::block_on(session.prepare(query)).unwrap();
+                prepared.set_tracing(true);
+                PreparedQuery::Scylla(prepared)
+            }
         }
     }
 
     #[allow(dead_code)]
-    pub async fn execute_prepared(
+    pub async fn execute_prepared_with_tracing(
+        &self,
+        prepared_query: &PreparedQuery,
+        key: i32,
+    ) -> IpAddr {
+        match self {
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            Self::Datastax { .. } => {
+                todo!();
+            }
+            Self::CdrsTokio { session, .. } => {
+                let statement = prepared_query.as_cdrs();
+                let query_params = QueryParamsBuilder::new()
+                    .with_values(query_values!(key))
+                    .build();
+
+                let params = StatementParams {
+                    query_params,
+                    is_idempotent: false,
+                    keyspace: None,
+                    token: None,
+                    routing_key: None,
+                    tracing: true,
+                    warnings: false,
+                    speculative_execution_policy: None,
+                    retry_policy: None,
+                    beta_protocol: false,
+                };
+
+                let response = session.exec_with_params(statement, &params).await.unwrap();
+
+                let tracing_id = response.tracing_id.unwrap();
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // let cassandra finish writing to the tracing table
+                let row = session
+                    .query(format!(
+                        "SELECT coordinator FROM system_traces.sessions WHERE session_id = {}",
+                        tracing_id
+                    ))
+                    .await
+                    .unwrap()
+                    .response_body()
+                    .unwrap()
+                    .into_rows()
+                    .unwrap();
+
+                row[0].get_by_index(0).unwrap().unwrap()
+            }
+            Self::Scylla { session, .. } => {
+                let statement = prepared_query.as_scylla();
+                let response = session.execute(statement, (key,)).await.unwrap();
+                let tracing_id = response.tracing_id.unwrap();
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                session
+                    .get_tracing_info(&tracing_id)
+                    .await
+                    .unwrap()
+                    .coordinator
+                    .unwrap()
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
         value: i32,
@@ -374,6 +493,7 @@ impl CassandraConnection {
 
                 Self::process_cdrs_response(response)
             }
+            Self::Scylla { .. } => todo!(),
         }
     }
 
@@ -408,6 +528,7 @@ impl CassandraConnection {
 
                 session.batch(batch).await.unwrap();
             }
+            Self::Scylla { .. } => todo!(),
         }
     }
 
@@ -428,6 +549,7 @@ impl CassandraConnection {
                 }
             }
             Self::CdrsTokio { .. } => todo!(),
+            Self::Scylla { .. } => todo!(),
         }
     }
 
@@ -664,6 +786,55 @@ impl ResultValue {
                     .collect(),
             ),
             CassandraType::Null => ResultValue::Null,
+        }
+    }
+
+    pub fn new_from_scylla(value: CqlValue) -> Self {
+        match value {
+            CqlValue::Ascii(ascii) => Self::Ascii(ascii),
+            CqlValue::BigInt(big_int) => Self::BigInt(big_int),
+            CqlValue::Blob(blob) => Self::Blob(blob),
+            CqlValue::Boolean(b) => Self::Boolean(b),
+            CqlValue::Counter(_counter) => todo!(),
+            CqlValue::Decimal(_decimal) => todo!(),
+            CqlValue::Float(float) => Self::Float(float.into()),
+            CqlValue::Int(int) => Self::Int(int),
+            CqlValue::Timestamp(_timestamp) => todo!(),
+            CqlValue::Uuid(uuid) => Self::Uuid(uuid),
+            CqlValue::Varint(_var_int) => todo!(),
+            CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid),
+            CqlValue::Inet(ip) => Self::Inet(ip.to_string()),
+            CqlValue::Date(_date) => todo!(),
+            CqlValue::Time(_time) => todo!(),
+            CqlValue::SmallInt(small_int) => Self::SmallInt(small_int),
+            CqlValue::TinyInt(tiny_int) => Self::TinyInt(tiny_int),
+            CqlValue::Duration(_duration) => todo!(),
+            CqlValue::Double(double) => Self::Double(double.into()),
+            CqlValue::Text(text) => Self::Varchar(text),
+            CqlValue::Empty => Self::Null,
+            CqlValue::List(mut list) => {
+                Self::List(list.drain(..).map(ResultValue::new_from_scylla).collect())
+            }
+            CqlValue::Set(mut set) => {
+                Self::Set(set.drain(..).map(ResultValue::new_from_scylla).collect())
+            }
+            CqlValue::Map(mut map) => Self::Map(
+                map.drain(..)
+                    .map(|(k, v)| {
+                        (
+                            ResultValue::new_from_scylla(k),
+                            ResultValue::new_from_scylla(v),
+                        )
+                    })
+                    .collect(),
+            ),
+            CqlValue::Tuple(mut tuple) => Self::Tuple(
+                tuple
+                    .drain(..)
+                    .map(|element| ResultValue::new_from_scylla(element.unwrap()))
+                    .collect(),
+            ),
+            CqlValue::UserDefinedType { .. } => todo!(),
         }
     }
 }
