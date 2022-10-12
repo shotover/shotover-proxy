@@ -38,6 +38,7 @@ mod prepared_statements;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 mod protect;
+#[cfg(feature = "cassandra-cpp-driver-tests")]
 mod routing;
 mod table;
 mod udt;
