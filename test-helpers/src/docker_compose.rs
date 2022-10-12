@@ -193,6 +193,16 @@ impl DockerCompose {
             ],
         )
         .unwrap();
+        run_command(
+            "docker",
+            &[
+                "build",
+                "example-configs/docker-images/cassandra-3.11.13",
+                "--tag",
+                "shotover-int-tests/cassandra:3.11.13",
+            ],
+        )
+        .unwrap();
     }
 
     /// Cleans up the docker-compose by shutting down the running system and removing the images.
