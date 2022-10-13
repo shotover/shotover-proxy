@@ -63,7 +63,7 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
-cassandra-protocol = { git = "https://github.com/conorbros/cdrs-tokio", branch = "8.0-dev" }
+cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
 crc16 = "0.4.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 
