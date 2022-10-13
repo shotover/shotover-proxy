@@ -294,7 +294,7 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let ca_cert = "example-configs/cassandra-tls/certs/localhost_CA.crt";
+        let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
         let connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, DRIVER);
 

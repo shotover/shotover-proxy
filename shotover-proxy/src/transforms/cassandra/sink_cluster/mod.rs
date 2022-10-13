@@ -332,6 +332,7 @@ impl CassandraSinkCluster {
                     match self
                         .pool
                         .replica_node(execute, &metadata.version, &mut self.rng)
+                        .await
                     {
                         Ok(Some(replica_node)) => {
                             replica_node
@@ -464,7 +465,7 @@ impl CassandraSinkCluster {
 
         for response in responses.iter_mut() {
             if let Some((id, metadata)) = get_prepared_result_message(response) {
-                self.pool.add_prepared_result(id, metadata);
+                self.pool.add_prepared_result(id, metadata).await;
             }
         }
 
