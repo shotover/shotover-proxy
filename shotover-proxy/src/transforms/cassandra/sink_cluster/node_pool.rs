@@ -9,7 +9,8 @@ use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use rand::prelude::*;
 use std::collections::HashMap;
-use tokio::sync::watch;
+use std::sync::Arc;
+use tokio::sync::{watch, RwLock};
 
 pub enum GetReplicaErr {
     NoMetadata,
@@ -18,9 +19,19 @@ pub enum GetReplicaErr {
 
 #[derive(Debug)]
 pub struct NodePool {
-    prepared_metadata: HashMap<CBytesShort, PreparedMetadata>,
+    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
     token_map: TokenMap,
     nodes: Vec<CassandraNode>,
+}
+
+impl Clone for NodePool {
+    fn clone(&self) -> Self {
+        Self {
+            prepared_metadata: self.prepared_metadata.clone(),
+            token_map: TokenMap::new(&[]),
+            nodes: vec![],
+        }
+    }
 }
 
 impl NodePool {
@@ -28,7 +39,7 @@ impl NodePool {
         Self {
             token_map: TokenMap::new(nodes.as_slice()),
             nodes,
-            prepared_metadata: HashMap::new(),
+            prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -54,8 +65,9 @@ impl NodePool {
         self.token_map = TokenMap::new(self.nodes.as_slice());
     }
 
-    pub fn add_prepared_result(&mut self, id: CBytesShort, metadata: PreparedMetadata) {
-        self.prepared_metadata.insert(id, metadata);
+    pub async fn add_prepared_result(&mut self, id: CBytesShort, metadata: PreparedMetadata) {
+        let mut write_lock = self.prepared_metadata.write().await;
+        write_lock.insert(id, metadata);
     }
 
     pub fn get_random_node_in_dc_rack(
@@ -71,16 +83,19 @@ impl NodePool {
     }
 
     /// Get a token routed replica node for the supplied execute message (if exists)
-    pub fn replica_node(
+    pub async fn replica_node(
         &mut self,
         execute: &BodyReqExecuteOwned,
         version: &Version,
         rng: &mut SmallRng,
     ) -> Result<Option<&mut CassandraNode>, GetReplicaErr> {
-        let metadata = self
-            .prepared_metadata
-            .get(&execute.id)
-            .ok_or(GetReplicaErr::NoMetadata)?;
+        let metadata = {
+            let read_lock = self.prepared_metadata.read().await;
+            read_lock
+                .get(&execute.id)
+                .ok_or(GetReplicaErr::NoMetadata)?
+                .clone()
+        };
 
         let routing_key = calculate_routing_key(
             &metadata.pk_indexes,
