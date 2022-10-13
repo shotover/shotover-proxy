@@ -144,9 +144,9 @@ fn redis(c: &mut Criterion) {
 criterion_group!(benches, redis);
 
 struct BenchResources {
-    _compose: DockerCompose,
-    _shotover_manager: ShotoverManager,
     connection: redis::Connection,
+    _shotover_manager: ShotoverManager,
+    _compose: DockerCompose,
 }
 
 impl BenchResources {
