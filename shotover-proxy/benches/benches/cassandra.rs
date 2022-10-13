@@ -261,9 +261,9 @@ criterion_group!(benches, cassandra);
 criterion_main!(benches);
 
 pub struct BenchResources {
-    _compose: DockerCompose,
-    _shotover_manager: ShotoverManager,
     connection: CassandraConnection,
+    _shotover_manager: ShotoverManager,
+    _compose: DockerCompose,
     queries: HashMap<String, Statement>,
 }
 
