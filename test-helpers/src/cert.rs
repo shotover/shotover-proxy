@@ -37,7 +37,7 @@ pub fn generate_redis_test_certs(path: &Path) {
 }
 
 pub fn generate_cassandra_test_certs() {
-    Command::new("example-configs/cassandra-tls/certs/gen_certs.sh")
+    Command::new("example-configs/docker-images/cassandra-tls-4.0.6/certs/gen_certs.sh")
         .output()
         .unwrap();
 }
