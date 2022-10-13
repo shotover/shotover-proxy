@@ -31,6 +31,7 @@ impl Clone for NodePool {
             prepared_metadata: self.prepared_metadata.clone(),
             token_map: TokenMap::new(&[]),
             nodes: vec![],
+            prev_idx: 0,
         }
     }
 }
@@ -72,7 +73,7 @@ impl NodePool {
         write_lock.insert(id, metadata);
     }
 
-    pub fn get_round_robin_node_in_dc_rack(&mut self, rack: &String) -> &mut CassandraNode {
+    pub fn get_round_robin_node_in_dc_rack(&mut self, rack: &str) -> &mut CassandraNode {
         let up_indexes: Vec<usize> = self
             .nodes
             .iter()
@@ -207,7 +208,7 @@ mod test_node_pool {
         for _ in 0..nodes.len() - 1 {
             round_robin_nodes.push(
                 node_pool
-                    .get_round_robin_node_in_dc_rack(&"rack1".to_string())
+                    .get_round_robin_node_in_dc_rack("rack1")
                     .address
                     .to_string(),
             );
@@ -236,7 +237,7 @@ mod test_node_pool {
         for _ in 0..nodes.len() - 1 {
             round_robin_nodes.push(
                 node_pool
-                    .get_round_robin_node_in_dc_rack(&"rack1".to_string())
+                    .get_round_robin_node_in_dc_rack("rack1")
                     .address
                     .to_string(),
             );
