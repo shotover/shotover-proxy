@@ -269,86 +269,88 @@ pub async fn test_node_going_down(
         // TODO: hold onto this connection and use it to test how we handle preexisting connections before the node is stopped
     }
 
-    let event_connection_direct =
-        CassandraConnection::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio).await;
-    let mut event_recv_direct = event_connection_direct.as_cdrs().create_event_receiver();
+    {
+        let event_connection_direct =
+            CassandraConnection::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio).await;
+        let mut event_recv_direct = event_connection_direct.as_cdrs().create_event_receiver();
 
-    let event_connection_shotover =
-        CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio).await;
-    let mut event_recv_shotover = event_connection_shotover.as_cdrs().create_event_receiver();
+        let event_connection_shotover =
+            CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio).await;
+        let mut event_recv_shotover = event_connection_shotover.as_cdrs().create_event_receiver();
 
-    // let the driver finish connecting to the cluster and registering for the events
-    sleep(Duration::from_secs(10)).await;
+        // let the driver finish connecting to the cluster and registering for the events
+        sleep(Duration::from_secs(10)).await;
 
-    // stop one of the containers to trigger a status change event
-    let docker = Docker::new("unix:///var/run/docker.sock").unwrap();
-    let containers = docker.containers();
-    let mut found = false;
-    let mut all_names: Vec<String> = vec![];
-    for container in containers.list(&Default::default()).await.unwrap() {
-        let compose_service = container
-            .labels
-            .unwrap()
-            .get("com.docker.compose.service")
-            .unwrap()
-            .to_string();
-        // event_connection_direct is connecting to cassandra-one.
-        // So make sure to instead kill caassandra-two.
-        if compose_service == "cassandra-two" {
-            found = true;
-            let container = containers.get(container.id.unwrap());
-            container.stop(None).await.unwrap();
+        // stop one of the containers to trigger a status change event
+        let docker = Docker::new("unix:///var/run/docker.sock").unwrap();
+        let containers = docker.containers();
+        let mut found = false;
+        let mut all_names: Vec<String> = vec![];
+        for container in containers.list(&Default::default()).await.unwrap() {
+            let compose_service = container
+                .labels
+                .unwrap()
+                .get("com.docker.compose.service")
+                .unwrap()
+                .to_string();
+            // event_connection_direct is connecting to cassandra-one.
+            // So make sure to instead kill caassandra-two.
+            if compose_service == "cassandra-two" {
+                found = true;
+                let container = containers.get(container.id.unwrap());
+                container.stop(None).await.unwrap();
+            }
+            all_names.push(compose_service);
         }
-        all_names.push(compose_service);
-    }
-    assert!(
+        assert!(
         found,
         "container was not found with expected docker compose service name, actual names were {:?}",
         all_names
     );
 
-    loop {
-        // The direct connection should allow all events to pass through
-        let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        loop {
+            // The direct connection should allow all events to pass through
+            let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
+                .await
+                .unwrap()
+                .unwrap();
 
-        // Sometimes we get up status events if we connect early enough.
-        // I assume these are just due to the nodes initially joining the cluster.
-        // If we hit one skip it and continue searching for our expected down status event
-        if matches!(
-            event,
-            ServerEvent::StatusChange(StatusChange {
-                change_type: StatusChangeType::Up,
-                ..
-            })
-        ) {
-            continue;
+            // Sometimes we get up status events if we connect early enough.
+            // I assume these are just due to the nodes initially joining the cluster.
+            // If we hit one skip it and continue searching for our expected down status event
+            if matches!(
+                event,
+                ServerEvent::StatusChange(StatusChange {
+                    change_type: StatusChangeType::Up,
+                    ..
+                })
+            ) {
+                continue;
+            }
+
+            assert_eq!(
+                event,
+                ServerEvent::StatusChange(StatusChange {
+                    change_type: StatusChangeType::Down,
+                    addr: "172.16.1.3:9044".parse().unwrap()
+                })
+            );
+            break;
         }
 
-        assert_eq!(
-            event,
-            ServerEvent::StatusChange(StatusChange {
-                change_type: StatusChangeType::Down,
-                addr: "172.16.1.3:9044".parse().unwrap()
-            })
-        );
-        break;
+        // we have already received an event directly from the cassandra instance so its reasonable to
+        // expect shotover to have processed that event within 10 seconds if it was ever going to
+        timeout(Duration::from_secs(10), event_recv_shotover.recv())
+            .await
+            .expect_err("CassandraSinkCluster must filter out this event");
+
+        // test that shotover handles preexisting connections after node goes down
+        // TODO: test_connection_handles_node_down(&old_connection).await;
+
+        // test that shotover handles new connections after node goes down
+        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        test_connection_handles_node_down(&new_connection).await;
     }
-
-    // we have already received an event directly from the cassandra instance so its reasonable to
-    // expect shotover to have processed that event within 10 seconds if it was ever going to
-    timeout(Duration::from_secs(10), event_recv_shotover.recv())
-        .await
-        .expect_err("CassandraSinkCluster must filter out this event");
-
-    // test that shotover handles preexisting connections after node goes down
-    // TODO: test_connection_handles_node_down(&old_connection).await;
-
-    // test that shotover handles new connections after node goes down
-    let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
-    test_connection_handles_node_down(&new_connection).await;
 
     // Purposefully dispose of these as we left the underlying cassandra cluster in a non-recoverable state
     std::mem::drop(shotover_manager);
