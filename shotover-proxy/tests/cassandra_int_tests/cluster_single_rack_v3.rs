@@ -74,7 +74,8 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Varchar("org.apache.cassandra.dht.Murmur3Partitioner".into()),
         ResultValue::Varchar("rack1".into()),
         ResultValue::Varchar("3.11.13".into()),
-        ResultValue::Inet("0.0.0.0".parse().unwrap()),
+        // rpc_address is non deterministic so we cant assert on it
+        ResultValue::Any,
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
         // thrift_version isnt used anymore so I dont really care what it maps to
