@@ -51,7 +51,7 @@ pub async fn test(
     let prepared_insert = shotover.prepare(insert_cql);
 
     let select_cql = "SELECT name FROM test_routing_ks.my_test_table WHERE key = ?;";
-    let prepared_select = cassandra.prepare(select_cql);
+    let prepared_select = shotover.prepare(select_cql);
 
     let update_cql = "UPDATE test_routing_ks.my_test_table SET name = 'not_my_name' WHERE key = ?";
     let prepared_update = cassandra.prepare(update_cql);
@@ -63,7 +63,7 @@ pub async fn test(
         let shotover_hit = shotover
             .execute_prepared_with_tracing(&prepared_insert, key)
             .await;
-        let cassandra_hit = shotover
+        let cassandra_hit = cassandra
             .execute_prepared_with_tracing(&prepared_insert, key)
             .await;
         assert_eq!(shotover_hit, cassandra_hit);
@@ -73,7 +73,7 @@ pub async fn test(
         let shotover_hit = shotover
             .execute_prepared_with_tracing(&prepared_select, key)
             .await;
-        let cassandra_hit = shotover
+        let cassandra_hit = cassandra
             .execute_prepared_with_tracing(&prepared_select, key)
             .await;
         assert_eq!(shotover_hit, cassandra_hit);
@@ -83,7 +83,7 @@ pub async fn test(
         let shotover_hit = shotover
             .execute_prepared_with_tracing(&prepared_update, key)
             .await;
-        let cassandra_hit = shotover
+        let cassandra_hit = cassandra
             .execute_prepared_with_tracing(&prepared_update, key)
             .await;
         assert_eq!(shotover_hit, cassandra_hit);
@@ -93,7 +93,7 @@ pub async fn test(
         let shotover_hit = shotover
             .execute_prepared_with_tracing(&prepared_delete, key)
             .await;
-        let cassandra_hit = shotover
+        let cassandra_hit = cassandra
             .execute_prepared_with_tracing(&prepared_delete, key)
             .await;
         assert_eq!(shotover_hit, cassandra_hit);
