@@ -115,7 +115,8 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         // rack is non-deterministic because we dont know which shotover node this will be
         ResultValue::Any,
         ResultValue::Varchar("4.0.6".into()),
-        ResultValue::Inet("0.0.0.0".parse().unwrap()),
+        // rpc_address is non deterministic so we cant assert on it
+        ResultValue::Any,
         ResultValue::Int(9042),
         // schema_version is non deterministic so we cant assert on it.
         ResultValue::Any,
