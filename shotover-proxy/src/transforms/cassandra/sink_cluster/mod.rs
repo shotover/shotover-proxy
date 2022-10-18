@@ -214,6 +214,22 @@ impl CassandraSinkCluster {
     async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
         if self.nodes_rx.has_changed()? {
             self.pool.update_nodes(&mut self.nodes_rx);
+
+            // recreate the control connection if it is down
+            if let Some(address) = self.control_connection_address {
+                if !self
+                    .pool
+                    .nodes()
+                    .iter()
+                    .any(|x| x.address == address && x.is_up)
+                {
+                    let address = self
+                        .pool
+                        .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
+                        .address;
+                    self.create_control_connection(address).await?;
+                }
+            }
         }
 
         let tables_to_rewrite: Vec<TableToRewrite> = messages
@@ -251,9 +267,7 @@ impl CassandraSinkCluster {
                     .address
             };
 
-            self.control_connection =
-                Some(self.connection_factory.new_connection(random_point).await?);
-            self.control_connection_address = Some(random_point);
+            self.create_control_connection(random_point).await?;
         }
 
         if !self.init_handshake_complete {
@@ -500,21 +514,23 @@ impl CassandraSinkCluster {
             // If we have to populate the local_nodes at this point then that means the control connection
             // may not have been made against a node in the configured data_center/rack.
             // Therefore we need to recreate the control connection to ensure that it is in the configured data_center/rack.
-            let random_address = self
+            let address = self
                 .pool
                 .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
                 .address;
-            self.control_connection = Some(
-                self.connection_factory
-                    .new_connection(random_address)
-                    .await?,
-            );
-            self.control_connection_address = Some(random_address);
+            self.create_control_connection(address).await?;
         }
         tracing::info!(
             "Control connection finalized against node at: {:?}",
             self.control_connection_address.unwrap()
         );
+
+        Ok(())
+    }
+
+    async fn create_control_connection(&mut self, address: SocketAddr) -> Result<()> {
+        self.control_connection = Some(self.connection_factory.new_connection(address).await?);
+        self.control_connection_address = Some(address);
 
         Ok(())
     }
