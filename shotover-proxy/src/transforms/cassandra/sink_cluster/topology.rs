@@ -144,7 +144,7 @@ async fn register_for_topology_and_status_events(
     let (tx, rx) = oneshot::channel();
     connection
         .send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame {
+            Message::from_frame(Frame::Cassandra(CassandraFrame::new(
                 version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
@@ -155,7 +155,8 @@ async fn register_for_topology_and_status_events(
                         SimpleServerEvent::StatusChange,
                     ],
                 }),
-            })),
+                None,
+            ))),
             tx,
         )
         .unwrap();
@@ -208,7 +209,8 @@ mod system_local {
                     )),
                     params: Box::new(QueryParams::default()),
                 },
-            })),
+                None,
+            ))),
             tx,
         )?;
 
@@ -294,7 +296,8 @@ mod system_peers {
                     )),
                     params: Box::new(QueryParams::default()),
                 },
-            })),
+                None
+            ))),
             tx,
         )?;
 
@@ -314,7 +317,8 @@ mod system_peers {
                         )),
                         params: Box::new(QueryParams::default()),
                     },
-                })),
+                    None,
+                ))),
                 tx,
             )?;
             response = rx.await?.response?;

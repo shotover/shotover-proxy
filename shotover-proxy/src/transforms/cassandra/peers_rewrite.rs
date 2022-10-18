@@ -166,7 +166,8 @@ mod test {
                     timestamp: Some(1643855761086585),
                 }),
             },
-        }))
+            None,
+        )))
     }
 
     fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<MessageValue>>) -> Message {
@@ -190,7 +191,8 @@ mod test {
                     col_specs: col_specs.to_owned(),
                 }),
             }),
-        }))
+            None,
+        )))
     }
 
     #[test]

@@ -143,6 +143,29 @@ pub struct CassandraFrame {
 }
 
 impl CassandraFrame {
+    pub fn new(
+        version: Version,
+        flags: Flags,
+        stream_id: StreamId,
+        warnings: Vec<String>,
+        operation: CassandraOperation,
+        tracing_id: Option<Uuid>,
+    ) -> Self {
+        let tracing = match operation.to_direction() {
+            Direction::Request => Tracing::Request(flags.contains(Flags::TRACING)),
+            Direction::Response => Tracing::Response(tracing_id),
+        };
+
+        Self {
+            version,
+            flags,
+            stream_id,
+            warnings,
+            operation,
+            tracing,
+        }
+    }
+
     /// Return `CassandraMetadata` from this `CassandraFrame`
     pub(crate) fn metadata(&self) -> CassandraMetadata {
         CassandraMetadata {
@@ -327,6 +350,11 @@ impl CassandraFrame {
             Opcode::AuthChallenge => CassandraOperation::AuthChallenge(frame.body),
             Opcode::AuthResponse => CassandraOperation::AuthResponse(frame.body),
             Opcode::AuthSuccess => CassandraOperation::AuthSuccess(frame.body),
+        };
+
+        let tracing = match operation.to_direction() {
+            Direction::Request => Tracing::Request(frame.flags.contains(Flags::TRACING)),
+            Direction::Response => Tracing::Response(frame.tracing_id),
         };
 
         Ok(CassandraFrame {

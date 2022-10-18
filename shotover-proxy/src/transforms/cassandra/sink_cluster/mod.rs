@@ -194,9 +194,9 @@ impl CassandraSinkCluster {
 
 fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Message> {
     let stream_id = get_unused_stream_id(messages)?;
-    Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
+    Ok(Message::from_frame(Frame::Cassandra(CassandraFrame::new(
         version,
-        flags: Flags::default(),
+        Flags::default(),
         stream_id,
         tracing: Tracing::Request(false),
         warnings: vec![],
@@ -204,7 +204,8 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
             query: Box::new(parse_statement_single(query)),
             params: Box::new(QueryParams::default()),
         },
-    })))
+        None,
+    ))))
 }
 
 impl CassandraSinkCluster {
@@ -366,8 +367,12 @@ impl CassandraSinkCluster {
                                 .send(Response {
                                     original: message.clone(),
                                     response: Ok(Message::from_frame(Frame::Cassandra(
-                                        CassandraFrame {
-                                            operation: CassandraOperation::Error(ErrorBody {
+                                        CassandraFrame::new(
+                                            metadata.version,
+                                            metadata.flags.difference(Flags::TRACING), // we don't have a tracing id because we didn't actually hit a node
+                                            metadata.stream_id,
+                                            vec![],
+                                            CassandraOperation::Error(ErrorBody {
                                                 message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
                                                 ty: ErrorType::Unprepared(UnpreparedError {
                                                     id,

@@ -28,7 +28,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 query: Box::new(parse_statement_single("SELECT * FROM system.local;")),
                 params: Box::new(QueryParams::default()),
             },
-        }))];
+            None,
+        )))];
 
         let mut codec = CassandraCodec::new();
 
