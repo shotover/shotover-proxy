@@ -3,10 +3,14 @@ use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnect
 async fn use_statement(connection: &CassandraConnection) {
     {
         run_query(connection, "USE batch_keyspace;").await;
-        connection.execute_batch(vec![
-            "INSERT INTO batch_table (id, lastname, firstname) VALUES (0, 'text1', 'text2')".into(),
-            "INSERT INTO batch_table (id, lastname, firstname) VALUES (1, 'text1', 'text2')".into(),
-        ]);
+        connection
+            .execute_batch(vec![
+                "INSERT INTO batch_table (id, lastname, firstname) VALUES (0, 'text1', 'text2')"
+                    .into(),
+                "INSERT INTO batch_table (id, lastname, firstname) VALUES (1, 'text1', 'text2')"
+                    .into(),
+            ])
+            .await;
         assert_query_result(
             connection,
             "SELECT id, lastname, firstname FROM batch_table;",
@@ -27,10 +31,12 @@ async fn use_statement(connection: &CassandraConnection) {
     }
 
     {
-        connection.execute_batch(vec![
-            "DELETE FROM batch_table WHERE id = 0;".into(),
-            "DELETE FROM batch_table WHERE id = 1;".into(),
-        ]);
+        connection
+            .execute_batch(vec![
+                "DELETE FROM batch_table WHERE id = 0;".into(),
+                "DELETE FROM batch_table WHERE id = 1;".into(),
+            ])
+            .await;
         assert_query_result(connection, "SELECT * FROM batch_table;", &[]).await;
     }
 }
@@ -49,7 +55,7 @@ pub async fn test(connection: &CassandraConnection) {
         for i in 0..2 {
             batch.push(format!("INSERT INTO batch_keyspace.batch_table (id, lastname, firstname) VALUES ({}, 'text1', 'text2')", i));
         }
-        connection.execute_batch(batch);
+        connection.execute_batch(batch).await;
 
         assert_query_result(
             connection,
@@ -78,7 +84,7 @@ pub async fn test(connection: &CassandraConnection) {
                 i
             ));
         }
-        connection.execute_batch(batch);
+        connection.execute_batch(batch).await;
 
         assert_query_result(
             connection,
@@ -107,13 +113,13 @@ pub async fn test(connection: &CassandraConnection) {
                 i
             ));
         }
-        connection.execute_batch(batch);
+        connection.execute_batch(batch).await;
         assert_query_result(connection, "SELECT * FROM batch_keyspace.batch_table;", &[]).await;
     }
 
     {
         let batch = vec![];
-        connection.execute_batch(batch);
+        connection.execute_batch(batch).await;
     }
 
     // test batch statements over QUERY PROTOCOL

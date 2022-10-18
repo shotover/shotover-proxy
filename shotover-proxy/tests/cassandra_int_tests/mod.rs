@@ -12,7 +12,7 @@ use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
 #[cfg(feature = "cassandra-cpp-driver-tests")]
-use futures::future::{join_all, try_join_all};
+use futures::future::join_all;
 use futures::Future;
 use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
@@ -109,7 +109,8 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-        let direct_connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver);
+        let direct_connection =
+            CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver).await;
         assert_query_result(
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
@@ -118,7 +119,7 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
         .await;
     }
 
-    let connection = || async { CassandraConnection::new_tls("127.0.0.1", 9043, ca_cert, driver) };
+    let connection = || CassandraConnection::new_tls("127.0.0.1", 9043, ca_cert, driver);
 
     standard_test_suite(&connection, driver).await;
 }
@@ -260,7 +261,7 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
         {
             // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
             let direct_connection =
-                CassandraConnection::new_tls("172.16.1.2", 9042, ca_cert, driver);
+                CassandraConnection::new_tls("172.16.1.2", 9042, ca_cert, driver).await;
             assert_query_result(
                 &direct_connection,
                 "SELECT bootstrapped FROM system.local",
@@ -270,7 +271,8 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
         }
 
         let connection = || async {
-            let mut connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver);
+            let mut connection =
+                CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver).await;
             connection
                 .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
                 .await;
@@ -471,7 +473,7 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
     // Assert that the error cassandra gives because system.peers_v2 does not exist on cassandra v3
     // is passed through shotover unchanged.
     let statement = "SELECT data_center, native_port, rack FROM system.peers_v2;";
-    let result = connection.execute_expect_err(statement);
+    let result = connection.execute_expect_err(statement).await;
     assert_eq!(
         result,
         ErrorBody {
@@ -503,25 +505,25 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
 
     // these should all be let through the request throttling
     {
-        let mut futures = vec![];
+        let mut future_list = vec![];
         for _ in 0..25 {
-            futures.push(connection.execute_async(statement));
-            futures.push(connection_2.execute_async(statement));
+            future_list.push(connection.execute(statement));
+            future_list.push(connection_2.execute(statement));
         }
-        try_join_all(futures).await.unwrap();
+        join_all(future_list).await;
     }
 
     // sleep to reset the window
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // only around half of these should be let through the request throttling
     {
-        let mut futures = vec![];
+        let mut future_list = vec![];
         for _ in 0..50 {
-            futures.push(connection.execute_async(statement));
-            futures.push(connection_2.execute_async(statement));
+            future_list.push(connection.execute_fallible(statement));
+            future_list.push(connection_2.execute_fallible(statement));
         }
-        let mut results = join_all(futures).await;
+        let mut results = join_all(future_list).await;
         results.retain(|result| match result {
             Ok(_) => true,
             Err(Error(
@@ -538,7 +540,7 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
         assert!(50 < len && len <= 60, "got {len}");
     }
 
-    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await; // sleep to reset the window
 
     // setup keyspace and table for the batch statement tests
     {
@@ -552,10 +554,10 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
         for i in 0..25 {
             queries.push(format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i));
         }
-        connection.execute_batch(queries);
+        connection.execute_batch(queries).await;
     }
 
-    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await; // sleep to reset the window
 
     // this batch set should not be allowed through
     {
@@ -563,7 +565,7 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
         for i in 0..60 {
             queries.push(format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i));
         }
-        let result = connection.execute_batch_expect_err(queries);
+        let result = connection.execute_batch_expect_err(queries).await;
         assert_eq!(
             result,
             ErrorBody {
@@ -573,7 +575,7 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
         );
     }
 
-    std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await; // sleep to reset the window
 
     batch_statements::test(&connection).await;
 }

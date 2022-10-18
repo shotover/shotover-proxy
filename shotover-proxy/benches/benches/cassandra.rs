@@ -296,7 +296,12 @@ impl BenchResources {
 
         let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
-        let connection = CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, DRIVER);
+        let connection = futures::executor::block_on(CassandraConnection::new_tls(
+            "127.0.0.1",
+            9042,
+            ca_cert,
+            DRIVER,
+        ));
 
         let mut bench_resources = Self {
             _compose: compose,

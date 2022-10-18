@@ -29,7 +29,7 @@ pub async fn test(shotover_session: &CassandraConnection, direct_session: &Cassa
     shotover_session.execute_batch(vec![
         "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk2', 'cluster', 'encrypted2', 1, true)".into(),
         "INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk3', 'cluster', 'encrypted3', 2, false)".into()
-    ]);
+    ]).await;
 
     let insert_statement = "BEGIN BATCH
     INSERT INTO test_protect_keyspace.test_table (pk, cluster, col1, col2, col3) VALUES ('pk4', 'cluster', 'encrypted4', 3, true);
