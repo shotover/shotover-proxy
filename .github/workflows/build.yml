@@ -26,6 +26,8 @@ jobs:
           - name: Ubuntu 22.04 - Release - aarch64
             runner: ubuntu-22.04
             cargo_flags: --target aarch64-unknown-linux-gnu --release
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: cache custom ubuntu packages
         uses: actions/cache@v3
