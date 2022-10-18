@@ -231,13 +231,12 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_bytes(
-                CassandraFrame {
-                    version: Version::V4,
-                    flags: Flags::default(),
-                    stream_id: 0,
-                    tracing_id: None,
-                    warnings: vec![],
-                    operation: CassandraOperation::Query {
+                CassandraFrame::new(
+                    Version::V4,
+                    Flags::default(),
+                    0,
+                    vec![],
+                    CassandraOperation::Query {
                         query: Box::new(parse_statement_single(
                             "INSERT INTO foo (z, v) VALUES (1, 123)",
                         )),
@@ -253,7 +252,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                             now_in_seconds: None,
                         }),
                     },
-                }
+                    None,
+                )
                 .encode()
                 .encode_with(Compression::None)
                 .unwrap()
@@ -339,13 +339,12 @@ fn criterion_benchmark(c: &mut Criterion) {
 
 fn cassandra_parsed_query(query: &str) -> Wrapper {
     Wrapper::new_with_chain_name(
-        vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            flags: Flags::default(),
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
+        vec![Message::from_frame(Frame::Cassandra(CassandraFrame::new(
+            Version::V4,
+            Flags::default(),
+            0,
+            vec![],
+            CassandraOperation::Query {
                 query: Box::new(parse_statement_single(query)),
                 params: Box::new(QueryParams {
                     consistency: Consistency::One,
@@ -359,7 +358,8 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
                     now_in_seconds: None,
                 }),
             },
-        }))],
+            None,
+        )))],
         "bench".into(),
         "127.0.0.1:6379".parse().unwrap(),
     )

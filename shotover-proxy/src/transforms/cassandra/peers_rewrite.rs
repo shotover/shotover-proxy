@@ -146,13 +146,12 @@ mod test {
     use cassandra_protocol::query::QueryParams;
 
     fn create_query_message(query: &str) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            flags: Flags::default(),
-            version: Version::V4,
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
+        Message::from_frame(Frame::Cassandra(CassandraFrame::new(
+            Version::V4,
+            Flags::default(),
+            0,
+            vec![],
+            CassandraOperation::Query {
                 query: Box::new(parse_statement_single(query)),
                 params: Box::new(QueryParams {
                     keyspace: None,
@@ -166,17 +165,17 @@ mod test {
                     timestamp: Some(1643855761086585),
                 }),
             },
-        }))
+            None,
+        )))
     }
 
     fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<MessageValue>>) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            flags: Flags::default(),
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Result(Rows {
+        Message::from_frame(Frame::Cassandra(CassandraFrame::new(
+            Version::V4,
+            Flags::default(),
+            0,
+            vec![],
+            CassandraOperation::Result(Rows {
                 rows,
                 metadata: Box::new(RowsMetadata {
                     flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
@@ -190,7 +189,8 @@ mod test {
                     col_specs: col_specs.to_owned(),
                 }),
             }),
-        }))
+            None,
+        )))
     }
 
     #[test]

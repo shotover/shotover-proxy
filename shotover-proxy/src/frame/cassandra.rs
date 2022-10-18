@@ -98,25 +98,64 @@ pub struct CassandraMetadata {
     // missing `warnings` field because we are not using it currently
 }
 
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Tracing {
+    Request(bool),
+    Response(Option<Uuid>),
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<Option<Uuid>> for Tracing {
+    fn into(self) -> Option<Uuid> {
+        match self {
+            Self::Request(_) => None,
+            Self::Response(uuid) => uuid,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
     pub version: Version,
     pub flags: Flags,
     pub stream_id: StreamId,
-    pub tracing_id: Option<Uuid>,
+    pub tracing: Tracing,
     pub warnings: Vec<String>,
     /// Contains the message body
     pub operation: CassandraOperation,
 }
 
 impl CassandraFrame {
+    pub fn new(
+        version: Version,
+        flags: Flags,
+        stream_id: StreamId,
+        warnings: Vec<String>,
+        operation: CassandraOperation,
+        tracing_id: Option<Uuid>,
+    ) -> Self {
+        let tracing = match operation.to_direction() {
+            Direction::Request => Tracing::Request(flags.contains(Flags::TRACING)),
+            Direction::Response => Tracing::Response(tracing_id),
+        };
+
+        Self {
+            version,
+            flags,
+            stream_id,
+            warnings,
+            operation,
+            tracing,
+        }
+    }
+
     /// Return `CassandraMetadata` from this `CassandraFrame`
     pub(crate) fn metadata(&self) -> CassandraMetadata {
         CassandraMetadata {
             version: self.version,
             flags: self.flags,
             stream_id: self.stream_id,
-            tracing_id: self.tracing_id,
+            tracing_id: self.tracing.into(),
             opcode: self.operation.to_opcode(),
         }
     }
@@ -294,11 +333,16 @@ impl CassandraFrame {
             Opcode::AuthSuccess => CassandraOperation::AuthSuccess(frame.body),
         };
 
+        let tracing = match operation.to_direction() {
+            Direction::Request => Tracing::Request(frame.flags.contains(Flags::TRACING)),
+            Direction::Response => Tracing::Response(frame.tracing_id),
+        };
+
         Ok(CassandraFrame {
             version: frame.version,
             flags: frame.flags,
             stream_id: frame.stream_id,
-            tracing_id: frame.tracing_id,
+            tracing,
             warnings: frame.warnings,
             operation,
         })
@@ -324,7 +368,7 @@ impl CassandraFrame {
             opcode: self.operation.to_opcode(),
             stream_id: self.stream_id,
             body: self.operation.into_body(self.version),
-            tracing_id: self.tracing_id,
+            tracing_id: self.tracing.into(),
             warnings: self.warnings,
         }
     }
@@ -695,7 +739,8 @@ pub struct CassandraBatch {
 impl Display for CassandraFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{} stream:{}", self.version, self.stream_id)?;
-        if let Some(tracing_id) = self.tracing_id {
+        let tracing_id: Option<Uuid> = self.tracing.into();
+        if let Some(tracing_id) = tracing_id {
             write!(f, " tracing_id:{}", tracing_id)?;
         }
         if !self.warnings.is_empty() {
