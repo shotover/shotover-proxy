@@ -200,12 +200,7 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
-    cluster_single_rack_v4::test_events_filtering(
-        compose,
-        shotover_manager,
-        CassandraDriver::CdrsTokio,
-    )
-    .await;
+    cluster_single_rack_v4::test_node_going_down(compose, shotover_manager, driver).await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
