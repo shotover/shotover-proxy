@@ -20,24 +20,23 @@ jobs:
     strategy:
       matrix:
         include:
-          # the cassandra cpp driver is only supported on 18.04
-          - name: Ubuntu 18.04 - Release - cassandra_int_tests
-            runner: ubuntu-18.04
+          - name: Ubuntu 20.04 - Release - cassandra_int_tests
+            runner: ubuntu-20.04
             cargo_flags: --release
             test_flags: cassandra_int_tests
 
-          - name: Ubuntu 18.04 - Release
-            runner: ubuntu-18.04
+          - name: Ubuntu 20.04 - Release
+            runner: ubuntu-20.04
             cargo_flags: --release
             test_flags: --skip cassandra_int_tests
 
-          - name: Ubuntu 18.04 - Debug - cassandra_int_tests
-            runner: ubuntu-18.04
+          - name: Ubuntu 20.04 - Debug - cassandra_int_tests
+            runner: ubuntu-20.04
             cargo_flags:
             test_flags: cassandra_int_tests
 
-          - name: Ubuntu 18.04 - Debug
-            runner: ubuntu-18.04
+          - name: Ubuntu 20.04 - Debug
+            runner: ubuntu-20.04
             cargo_flags:
             test_flags: --skip cassandra_int_tests
 
@@ -53,6 +52,11 @@ jobs:
         # Otherwise only the last build to finish would get saved to the cache.
         # We allow different test_flags to share a cache as they should have identical build outputs
         key: ${{ matrix.runner }} - ${{ matrix.cargo_flags }}
+    - name: cache custom ubuntu packages
+      uses: actions/cache@v3
+      with:
+        path: shotover-proxy/build/packages
+        key: ubuntu-20.04-packages
     - name: Install ubuntu packages
       run: shotover-proxy/build/install_ubuntu_packages.sh
     - name: Install cargo-hack
@@ -68,7 +72,7 @@ jobs:
       run: cargo test ${{ matrix.cargo_flags }} --all-features -- --include-ignored --show-output --nocapture ${{ matrix.test_flags }}
     - name: Ensure that custom benches run
       run: cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough --rate 1000
-      if: ${{ matrix.name == 'Ubuntu 18.04 - Release' }}
+      if: ${{ matrix.name == 'Ubuntu 20.04 - Release' }}
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |
         if [ -n "$(git status --porcelain)" ]; then
