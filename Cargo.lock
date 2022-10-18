@@ -3055,7 +3055,6 @@ dependencies = [
  "criterion",
  "csv",
  "derivative",
- "docker-api",
  "futures",
  "generic-array",
  "governor",
@@ -3280,6 +3279,7 @@ name = "test-helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "docker-api",
  "nix",
  "rcgen",
  "regex",

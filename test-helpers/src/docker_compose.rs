@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use docker_api::Docker;
 use regex::Regex;
 use std::io::ErrorKind;
 use std::process::Command;
@@ -87,6 +88,33 @@ impl DockerCompose {
         env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
 
         DockerCompose::new("tests/transforms/docker-compose-moto.yml")
+    }
+
+    /// Stops the container with the provided service name
+    pub async fn stop_service(&self, service_name: &str) {
+        let docker = Docker::new("unix:///var/run/docker.sock").unwrap();
+        let containers = docker.containers();
+        let mut found = false;
+        let mut all_names: Vec<String> = vec![];
+        for container in containers.list(&Default::default()).await.unwrap() {
+            let compose_service = container
+                .labels
+                .unwrap()
+                .get("com.docker.compose.service")
+                .unwrap()
+                .to_string();
+            if compose_service == service_name {
+                found = true;
+                let container = containers.get(container.id.unwrap());
+                container.stop(None).await.unwrap();
+            }
+            all_names.push(compose_service);
+        }
+        assert!(
+            found,
+            "container was not found with expected docker compose service name, actual names were {:?}",
+            all_names
+        );
     }
 
     fn wait_for_containers_to_startup(&self) {
