@@ -243,7 +243,7 @@ impl CassandraSinkCluster {
                     .unwrap()
             } else {
                 self.pool
-                    .get_random_node_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng)
+                    .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
                     .address
             };
 
@@ -348,10 +348,9 @@ impl CassandraSinkCluster {
                                 .send(message, return_chan_tx)?;
                         }
                         Ok(None) => {
-                            let node = self.pool.get_random_node_in_dc_rack(
-                                &self.local_shotover_node.rack,
-                                &mut self.rng,
-                            );
+                            let node = self
+                                .pool
+                                .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack);
                             node.get_connection(&self.connection_factory)
                                 .await?
                                 .send(message, return_chan_tx)?;
@@ -390,7 +389,7 @@ impl CassandraSinkCluster {
                 } else {
                     let node = self
                         .pool
-                        .get_random_node_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng);
+                        .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack);
                     node.get_connection(&self.connection_factory)
                         .await?
                         .send(message, return_chan_tx)?;
@@ -499,7 +498,7 @@ impl CassandraSinkCluster {
             // Therefore we need to recreate the control connection to ensure that it is in the configured data_center/rack.
             let random_address = self
                 .pool
-                .get_random_node_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng)
+                .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack)
                 .address;
             self.init_handshake_connection = Some(
                 self.connection_factory
