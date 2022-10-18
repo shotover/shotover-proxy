@@ -45,21 +45,23 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
 
 fn create_handshake() -> Vec<Message> {
     vec![
-        Message::from_frame(Frame::Cassandra(CassandraFrame::new(
-            Version::V4,
-            Flags::default(),
-            64,
-            vec![],
-            CassandraOperation::Startup(b"\0\x01\0\x0bCQL_VERSION\0\x053.0.0".to_vec()),
-            None,
-        ))),
-        Message::from_frame(Frame::Cassandra(CassandraFrame::new(
-            Version::V4,
-            Flags::default(),
-            128,
-            vec![],
-            CassandraOperation::AuthResponse(b"\0\0\0\x14\0cassandra\0cassandra".to_vec()),
-            None,
-        ))),
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            flags: Flags::default(),
+            stream_id: 64,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::Startup(b"\0\x01\0\x0bCQL_VERSION\0\x053.0.0".to_vec()),
+        })),
+        Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            flags: Flags::default(),
+            stream_id: 128,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::AuthResponse(
+                b"\0\0\0\x14\0cassandra\0cassandra".to_vec(),
+            ),
+        })),
     ]
 }

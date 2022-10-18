@@ -213,17 +213,17 @@ impl Message {
             Frame::Redis(_) => Frame::Redis(RedisFrame::Error(
                 "ERR Message was filtered out by shotover".into(),
             )),
-            Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame::new(
-                frame.version,
-                frame.flags,
-                frame.stream_id,
-                vec![],
-                CassandraOperation::Error(ErrorBody {
+            Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
+                version: frame.version,
+                flags: frame.flags,
+                stream_id: frame.stream_id,
+                operation: CassandraOperation::Error(ErrorBody {
                     message: "Message was filtered out by shotover".into(),
                     ty: ErrorType::Server,
                 }),
-                frame.tracing.into(),
-            )),
+                tracing_id: frame.tracing_id,
+                warnings: vec![],
+            }),
             Frame::None => Frame::None,
         })
     }
@@ -243,17 +243,17 @@ impl Message {
             Metadata::Redis => {
                 Frame::Redis(RedisFrame::Error(Str::from_inner(error.into()).unwrap()))
             }
-            Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame::new(
-                frame.version,
-                frame.flags,
-                frame.stream_id,
-                vec![],
-                CassandraOperation::Error(ErrorBody {
+            Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
+                version: frame.version,
+                flags: frame.flags,
+                stream_id: frame.stream_id,
+                operation: CassandraOperation::Error(ErrorBody {
                     message: error,
                     ty: ErrorType::Server,
                 }),
-                frame.tracing_id,
-            )),
+                tracing_id: frame.tracing_id,
+                warnings: vec![],
+            }),
             Metadata::None => Frame::None,
         });
         self.invalidate_cache();
@@ -291,14 +291,14 @@ impl Message {
                     ty: ErrorType::Overloaded,
                 });
 
-                Frame::Cassandra(CassandraFrame::new(
-                    metadata.version,
-                    metadata.flags,
-                    metadata.stream_id,
-                    vec![],
-                    body,
-                    metadata.tracing_id,
-                ))
+                Frame::Cassandra(CassandraFrame {
+                    version: metadata.version,
+                    flags: metadata.flags,
+                    stream_id: metadata.stream_id,
+                    tracing_id: metadata.tracing_id,
+                    warnings: vec![],
+                    operation: body,
+                })
             }
             Metadata::Redis => {
                 unimplemented!()

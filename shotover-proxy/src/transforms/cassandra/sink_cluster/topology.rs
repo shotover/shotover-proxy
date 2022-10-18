@@ -144,19 +144,19 @@ async fn register_for_topology_and_status_events(
     let (tx, rx) = oneshot::channel();
     connection
         .send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame::new(
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
-                Flags::default(),
-                0,
-                vec![],
-                CassandraOperation::Register(BodyReqRegister {
+                stream_id: 0,
+                flags: Flags::default(),
+                tracing_id: None,
+                warnings: vec![],
+                operation: CassandraOperation::Register(BodyReqRegister {
                     events: vec![
                         SimpleServerEvent::TopologyChange,
                         SimpleServerEvent::StatusChange,
                     ],
                 }),
-                None,
-            ))),
+            })),
             tx,
         )
         .unwrap();
@@ -197,19 +197,19 @@ mod system_local {
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame::new(
-                Version::V4,
-                Flags::default(),
-                1,
-                vec![],
-                CassandraOperation::Query {
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
+                version: Version::V4,
+                flags: Flags::default(),
+                stream_id: 1,
+                tracing_id: None,
+                warnings: vec![],
+                operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
                         "SELECT rack, tokens, host_id, data_center FROM system.local",
                     )),
                     params: Box::new(QueryParams::default()),
                 },
-                None,
-            ))),
+            })),
             tx,
         )?;
 
@@ -284,19 +284,19 @@ mod system_peers {
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame::new(
-                Version::V4,
-                Flags::default(),
-                0,
-                vec![],
-                CassandraOperation::Query {
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
+                version: Version::V4,
+                stream_id: 0,
+                flags: Flags::default(),
+                tracing_id: None,
+                warnings: vec![],
+                operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
                         "SELECT native_port, native_address, rack, tokens, host_id, data_center FROM system.peers_v2",
                     )),
                     params: Box::new(QueryParams::default()),
                 },
-                None
-            ))),
+            })),
             tx,
         )?;
 
@@ -305,19 +305,19 @@ mod system_peers {
         if is_peers_v2_does_not_exist_error(&mut response) {
             let (tx, rx) = oneshot::channel();
             connection.send(
-                Message::from_frame(Frame::Cassandra(CassandraFrame::new(
-                    Version::V4,
-                    Flags::default(),
-                    0,
-                    vec![],
-                    CassandraOperation::Query {
+                Message::from_frame(Frame::Cassandra(CassandraFrame {
+                    version: Version::V4,
+                    stream_id: 0,
+                    flags: Flags::default(),
+                    tracing_id: None,
+                    warnings: vec![],
+                    operation: CassandraOperation::Query {
                         query: Box::new(parse_statement_single(
                             "SELECT peer, rack, tokens, host_id, data_center FROM system.peers",
                         )),
                         params: Box::new(QueryParams::default()),
                     },
-                    None,
-                ))),
+                })),
                 tx,
             )?;
             response = rx.await?.response?;

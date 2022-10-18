@@ -18,17 +18,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.noise_threshold(0.2);
 
     {
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame::new(
-            Version::V4,
-            Flags::default(),
-            1,
-            vec![],
-            CassandraOperation::Query {
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            flags: Flags::default(),
+            stream_id: 1,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single("SELECT * FROM system.local;")),
                 params: Box::new(QueryParams::default()),
             },
-            None,
-        )))];
+        }))];
 
         let mut codec = CassandraCodec::new();
 
@@ -46,14 +46,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame::new(
-            Version::V4,
-            Flags::default(),
-            0,
-            vec![],
-            CassandraOperation::Result(peers_v2_result()),
-            None,
-        )))];
+        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
+            version: Version::V4,
+            flags: Flags::default(),
+            stream_id: 0,
+            tracing_id: None,
+            warnings: vec![],
+            operation: CassandraOperation::Result(peers_v2_result()),
+        }))];
 
         let mut codec = CassandraCodec::new();
 
