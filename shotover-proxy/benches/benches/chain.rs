@@ -253,8 +253,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             now_in_seconds: None,
                         }),
                     },
-                    None,
-                )
+                }
                 .encode()
                 .encode_with(Compression::None)
                 .unwrap()
@@ -360,8 +359,7 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
                     now_in_seconds: None,
                 }),
             },
-            None,
-        )))],
+        }))],
         "bench".into(),
         "127.0.0.1:6379".parse().unwrap(),
     )

@@ -136,36 +136,13 @@ pub struct CassandraFrame {
     pub version: Version,
     pub flags: Flags,
     pub stream_id: StreamId,
-    pub tracing: Tracing,
+    pub tracing_id: Option<Uuid>,
     pub warnings: Vec<String>,
     /// Contains the message body
     pub operation: CassandraOperation,
 }
 
 impl CassandraFrame {
-    pub fn new(
-        version: Version,
-        flags: Flags,
-        stream_id: StreamId,
-        warnings: Vec<String>,
-        operation: CassandraOperation,
-        tracing_id: Option<Uuid>,
-    ) -> Self {
-        let tracing = match operation.to_direction() {
-            Direction::Request => Tracing::Request(flags.contains(Flags::TRACING)),
-            Direction::Response => Tracing::Response(tracing_id),
-        };
-
-        Self {
-            version,
-            flags,
-            stream_id,
-            warnings,
-            operation,
-            tracing,
-        }
-    }
-
     /// Return `CassandraMetadata` from this `CassandraFrame`
     pub(crate) fn metadata(&self) -> CassandraMetadata {
         CassandraMetadata {
@@ -352,16 +329,11 @@ impl CassandraFrame {
             Opcode::AuthSuccess => CassandraOperation::AuthSuccess(frame.body),
         };
 
-        let tracing = match operation.to_direction() {
-            Direction::Request => Tracing::Request(frame.flags.contains(Flags::TRACING)),
-            Direction::Response => Tracing::Response(frame.tracing_id),
-        };
-
         Ok(CassandraFrame {
             version: frame.version,
             flags: frame.flags,
             stream_id: frame.stream_id,
-            tracing,
+            tracing_id: frame.tracing_id,
             warnings: frame.warnings,
             operation,
         })
@@ -387,7 +359,7 @@ impl CassandraFrame {
             opcode: self.operation.to_opcode(),
             stream_id: self.stream_id,
             body: self.operation.into_body(self.version),
-            tracing_id: self.tracing.into(),
+            tracing_id: self.tracing_id,
             warnings: self.warnings,
         }
     }
