@@ -1,4 +1,5 @@
 use cassandra_protocol::frame::Version;
+use shotover_proxy::frame::cassandra::CassandraFrameRequest;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
 use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
@@ -45,21 +46,25 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
 
 fn create_handshake() -> Vec<Message> {
     vec![
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 64,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Startup(b"\0\x01\0\x0bCQL_VERSION\0\x053.0.0".to_vec()),
-        })),
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 128,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::AuthResponse(
-                b"\0\0\0\x14\0cassandra\0cassandra".to_vec(),
-            ),
-        })),
+        Message::from_frame(Frame::Cassandra(CassandraFrame::Request(
+            CassandraFrameRequest {
+                version: Version::V4,
+                stream_id: 64,
+                request_tracing_id: false,
+                operation: CassandraOperation::Startup(
+                    b"\0\x01\0\x0bCQL_VERSION\0\x053.0.0".to_vec(),
+                ),
+            },
+        ))),
+        Message::from_frame(Frame::Cassandra(CassandraFrame::Request(
+            CassandraFrameRequest {
+                version: Version::V4,
+                stream_id: 128,
+                request_tracing_id: false,
+                operation: CassandraOperation::AuthResponse(
+                    b"\0\0\0\x14\0cassandra\0cassandra".to_vec(),
+                ),
+            },
+        ))),
     ]
 }

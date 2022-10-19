@@ -97,7 +97,22 @@ pub struct CassandraMetadata {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct CassandraFrame {
+pub enum CassandraFrame {
+    Request(CassandraFrameRequest),
+    Response(CassandraFrameResponse),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct CassandraFrameRequest {
+    pub version: Version,
+    pub stream_id: StreamId,
+    pub request_tracing_id: bool,
+    /// Contains the message body
+    pub operation: CassandraOperation,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct CassandraFrameResponse {
     pub version: Version,
     pub stream_id: StreamId,
     pub tracing_id: Option<Uuid>,
@@ -107,19 +122,48 @@ pub struct CassandraFrame {
 }
 
 impl CassandraFrame {
+    pub fn version(&self) -> Version {
+        match self {
+            CassandraFrame::Request(CassandraFrameRequest { version, .. })
+            | CassandraFrame::Response(CassandraFrameResponse { version, .. }) => *version,
+        }
+    }
+
+    pub fn stream_id(&self) -> StreamId {
+        match self {
+            CassandraFrame::Request(CassandraFrameRequest { stream_id, .. })
+            | CassandraFrame::Response(CassandraFrameResponse { stream_id, .. }) => *stream_id,
+        }
+    }
+
+    pub fn operation(&self) -> &CassandraOperation {
+        match self {
+            CassandraFrame::Request(CassandraFrameRequest { operation, .. })
+            | CassandraFrame::Response(CassandraFrameResponse { operation, .. }) => operation,
+        }
+    }
+
+    pub fn operation_mut(&mut self) -> &mut CassandraOperation {
+        match self {
+            CassandraFrame::Request(CassandraFrameRequest { operation, .. })
+            | CassandraFrame::Response(CassandraFrameResponse { operation, .. }) => operation,
+        }
+    }
+
     /// Return `CassandraMetadata` from this `CassandraFrame`
     pub(crate) fn metadata(&self) -> CassandraMetadata {
-        CassandraMetadata {
-            version: self.version,
-            stream_id: self.stream_id,
-            tracing_id: self.tracing_id,
-            opcode: self.operation.to_opcode(),
-        }
+        // CassandraMetadata {
+        //     version: self.version,
+        //     stream_id: self.stream_id,
+        //     tracing_id: self.tracing_id,
+        //     opcode: self.operation.to_opcode(),
+        // }
+        todo!()
     }
 
     // Count the amount of cells in this `CassandraFrame`, this will either be the count of all queries in a BATCH statement or 1 for all other types of Cassandra queries
     pub(crate) fn cell_count(&self) -> Result<NonZeroU32> {
-        Ok(match &self.operation {
+        Ok(match self.operation() {
             CassandraOperation::Batch(batch) => {
                 // it doesnt make sense to say a message is 0 messages, so when the batch has no queries we round up to 1
                 NonZeroU32::new(batch.queries.len() as u32).unwrap_or(nonzero!(1u32))
@@ -290,17 +334,25 @@ impl CassandraFrame {
             Opcode::AuthSuccess => CassandraOperation::AuthSuccess(frame.body),
         };
 
-        Ok(CassandraFrame {
-            version: frame.version,
-            stream_id: frame.stream_id,
-            tracing_id: frame.tracing_id,
-            warnings: frame.warnings,
-            operation,
+        Ok(match frame.direction {
+            Direction::Request => CassandraFrame::Request(CassandraFrameRequest {
+                version: frame.version,
+                stream_id: frame.stream_id,
+                request_tracing_id: frame.flags.contains(Flags::TRACING),
+                operation,
+            }),
+            Direction::Response => CassandraFrame::Response(CassandraFrameResponse {
+                version: frame.version,
+                stream_id: frame.stream_id,
+                tracing_id: frame.tracing_id,
+                warnings: frame.warnings,
+                operation,
+            }),
         })
     }
 
     pub fn get_query_type(&self) -> QueryType {
-        match &self.operation {
+        match self.operation() {
             CassandraOperation::Query { query, .. } => get_query_type(query),
             CassandraOperation::Batch { .. } => QueryType::Write,
             _ => QueryType::Read,
@@ -308,15 +360,33 @@ impl CassandraFrame {
     }
 
     pub fn encode(self) -> RawCassandraFrame {
-        RawCassandraFrame {
-            direction: self.operation.to_direction(),
-            version: self.version,
-            flags: Flags::default(),
-            opcode: self.operation.to_opcode(),
-            stream_id: self.stream_id,
-            body: self.operation.into_body(self.version),
-            tracing_id: self.tracing_id,
-            warnings: self.warnings,
+        let frame_direction = match self {
+            CassandraFrame::Request(_) => Direction::Request,
+            CassandraFrame::Response(_) => Direction::Response,
+        };
+        assert_eq!(frame_direction, self.operation().to_direction());
+
+        match self {
+            CassandraFrame::Request(request) => RawCassandraFrame {
+                direction: Direction::Request,
+                version: request.version,
+                flags: Flags::default(),
+                opcode: request.operation.to_opcode(),
+                stream_id: request.stream_id,
+                body: request.operation.into_body(request.version),
+                tracing_id: None,
+                warnings: vec![],
+            },
+            CassandraFrame::Response(response) => RawCassandraFrame {
+                direction: Direction::Response,
+                version: response.version,
+                flags: Flags::default(),
+                opcode: response.operation.to_opcode(),
+                stream_id: response.stream_id,
+                body: response.operation.into_body(response.version),
+                tracing_id: response.tracing_id,
+                warnings: response.warnings,
+            },
         }
     }
 }
@@ -685,14 +755,23 @@ pub struct CassandraBatch {
 
 impl Display for CassandraFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{} stream:{}", self.version, self.stream_id)?;
-        if let Some(tracing_id) = self.tracing_id {
-            write!(f, " tracing_id:{}", tracing_id)?;
+        write!(f, "{} stream:{}", self.version(), self.stream_id())?;
+        match self {
+            CassandraFrame::Request(request) => {
+                if request.request_tracing_id {
+                    write!(f, " request_tracing_id:{}", request.request_tracing_id)?;
+                }
+            }
+            CassandraFrame::Response(response) => {
+                if let Some(tracing_id) = response.tracing_id {
+                    write!(f, " tracing_id:{}", tracing_id)?;
+                }
+                if !response.warnings.is_empty() {
+                    write!(f, " warnings:{:?}", response.warnings)?;
+                }
+            }
         }
-        if !self.warnings.is_empty() {
-            write!(f, " warnings:{:?}", self.warnings)?;
-        }
-        match &self.operation {
+        match self.operation() {
             CassandraOperation::Query { query, params } => {
                 let QueryParams {
                     consistency,
@@ -803,7 +882,7 @@ impl Display for CassandraFrame {
                 _ => write!(f, "Result {:?}", result),
             },
             CassandraOperation::Ready(_) => write!(f, " Ready"),
-            _ => write!(f, " {:?}", self.operation),
+            _ => write!(f, " {:?}", self.operation()),
         }
     }
 }

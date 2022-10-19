@@ -31,7 +31,7 @@ impl Transform for QueryCounter {
         for m in &mut message_wrapper.messages {
             match m.frame() {
                 Some(Frame::Cassandra(frame)) => {
-                    for statement in frame.operation.queries() {
+                    for statement in frame.operation_mut().queries() {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => statement.short_name(), "type" => "cassandra");
                     }
                 }

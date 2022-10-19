@@ -4,7 +4,8 @@ use cassandra_protocol::{
 };
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
-use shotover_proxy::frame::cassandra::parse_statement_single;
+use shotover_proxy::frame::cassandra::CassandraFrameRequest;
+use shotover_proxy::frame::cassandra::{parse_statement_single, CassandraFrameRequest};
 use shotover_proxy::frame::RedisFrame;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType};
 use shotover_proxy::message::{Message, QueryType};
@@ -228,11 +229,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_bytes(
-                CassandraFrame {
+                CassandraFrame::Request(CassandraFrameRequest {
                     version: Version::V4,
                     stream_id: 0,
-                    tracing_id: None,
-                    warnings: vec![],
+                    request_tracing_id: false,
                     operation: CassandraOperation::Query {
                         query: Box::new(parse_statement_single(
                             "INSERT INTO foo (z, v) VALUES (1, 123)",
@@ -249,7 +249,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             now_in_seconds: None,
                         }),
                     },
-                }
+                })
                 .encode()
                 .encode_with(Compression::None)
                 .unwrap()
@@ -335,26 +335,27 @@ fn criterion_benchmark(c: &mut Criterion) {
 
 fn cassandra_parsed_query(query: &str) -> Wrapper {
     Wrapper::new_with_chain_name(
-        vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(query)),
-                params: Box::new(QueryParams {
-                    consistency: Consistency::One,
-                    with_names: false,
-                    values: None,
-                    page_size: Some(5000),
-                    paging_state: None,
-                    serial_consistency: None,
-                    timestamp: Some(1643855761086585),
-                    keyspace: None,
-                    now_in_seconds: None,
-                }),
-            },
-        }))],
+        vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Request(CassandraFrameRequest {
+                version: Version::V4,
+                stream_id: 0,
+                request_tracing_id: false,
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(query)),
+                    params: Box::new(QueryParams {
+                        consistency: Consistency::One,
+                        with_names: false,
+                        values: None,
+                        page_size: Some(5000),
+                        paging_state: None,
+                        serial_consistency: None,
+                        timestamp: Some(1643855761086585),
+                        keyspace: None,
+                        now_in_seconds: None,
+                    }),
+                },
+            }),
+        ))],
         "bench".into(),
         "127.0.0.1:6379".parse().unwrap(),
     )

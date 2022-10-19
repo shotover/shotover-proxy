@@ -1,7 +1,7 @@
 use crate::codec::redis::redis_query_type;
 use crate::frame::{
     cassandra,
-    cassandra::{to_cassandra_type, CassandraMetadata, CassandraOperation},
+    cassandra::{to_cassandra_type, CassandraFrameResponse, CassandraMetadata, CassandraOperation},
 };
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
@@ -213,16 +213,18 @@ impl Message {
             Frame::Redis(_) => Frame::Redis(RedisFrame::Error(
                 "ERR Message was filtered out by shotover".into(),
             )),
-            Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
-                version: frame.version,
-                stream_id: frame.stream_id,
-                operation: CassandraOperation::Error(ErrorBody {
-                    message: "Message was filtered out by shotover".into(),
-                    ty: ErrorType::Server,
-                }),
-                tracing_id: frame.tracing_id,
-                warnings: vec![],
-            }),
+            Frame::Cassandra(frame) => {
+                Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
+                    version: frame.version(),
+                    stream_id: frame.stream_id(),
+                    operation: CassandraOperation::Error(ErrorBody {
+                        message: "Message was filtered out by shotover".into(),
+                        ty: ErrorType::Server,
+                    }),
+                    tracing_id: None,
+                    warnings: vec![],
+                }))
+            }
             Frame::None => Frame::None,
         })
     }
@@ -242,16 +244,18 @@ impl Message {
             Metadata::Redis => {
                 Frame::Redis(RedisFrame::Error(Str::from_inner(error.into()).unwrap()))
             }
-            Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
-                version: frame.version,
-                stream_id: frame.stream_id,
-                operation: CassandraOperation::Error(ErrorBody {
-                    message: error,
-                    ty: ErrorType::Server,
-                }),
-                tracing_id: frame.tracing_id,
-                warnings: vec![],
-            }),
+            Metadata::Cassandra(meta) => {
+                Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
+                    version: meta.version,
+                    stream_id: meta.stream_id,
+                    operation: CassandraOperation::Error(ErrorBody {
+                        message: error,
+                        ty: ErrorType::Server,
+                    }),
+                    tracing_id: None,
+                    warnings: vec![],
+                }))
+            }
             Metadata::None => Frame::None,
         });
         self.invalidate_cache();
@@ -284,18 +288,16 @@ impl Message {
 
         *self = Message::from_frame(match metadata {
             Metadata::Cassandra(metadata) => {
-                let body = CassandraOperation::Error(ErrorBody {
-                    message: "Server overloaded".into(),
-                    ty: ErrorType::Overloaded,
-                });
-
-                Frame::Cassandra(CassandraFrame {
+                Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
                     version: metadata.version,
                     stream_id: metadata.stream_id,
-                    tracing_id: metadata.tracing_id,
+                    tracing_id: None,
                     warnings: vec![],
-                    operation: body,
-                })
+                    operation: CassandraOperation::Error(ErrorBody {
+                        message: "Server overloaded".into(),
+                        ty: ErrorType::Overloaded,
+                    }),
+                }))
             }
             Metadata::Redis => {
                 unimplemented!()
@@ -326,7 +328,7 @@ impl Message {
             Some(MessageInner::RawBytes { .. }) => None,
             Some(MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame }) => {
                 match frame {
-                    Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
+                    Frame::Cassandra(cassandra) => Some(cassandra.stream_id()),
                     Frame::Redis(_) => None,
                     Frame::None => None,
                 }

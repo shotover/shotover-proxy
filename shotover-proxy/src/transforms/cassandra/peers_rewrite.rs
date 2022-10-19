@@ -73,7 +73,7 @@ impl Transform for CassandraPeersRewrite {
         for message in &mut message_wrapper.messages {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
                 if let Event(ServerEvent::StatusChange(StatusChange { addr, .. })) =
-                    &mut frame.operation
+                    &mut frame.operation_mut()
                 {
                     addr.set_port(self.port);
                     message.invalidate_cache();
@@ -93,7 +93,7 @@ fn extract_native_port_column(peer_table: &FQName, message: &mut Message) -> Vec
     let native_port = Identifier::parse("native_port");
     if let Some(Frame::Cassandra(cassandra)) = message.frame() {
         // No need to handle Batch as selects can only occur on Query
-        if let CassandraOperation::Query { query, .. } = &cassandra.operation {
+        if let CassandraOperation::Query { query, .. } = cassandra.operation_mut() {
             if let CassandraStatement::Select(select) = query.as_ref() {
                 if peer_table == &select.table_name {
                     for select_element in &select.columns {
@@ -118,7 +118,7 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
     if let Some(Frame::Cassandra(frame)) = message.frame() {
         // CassandraOperation::Error(_) is another possible case, we should silently ignore such cases
         if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
-            &mut frame.operation
+            &mut frame.operation_mut()
         {
             for (i, col) in metadata.col_specs.iter().enumerate() {
                 if column_names.contains(&Identifier::parse(&col.name)) {
@@ -135,7 +135,9 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::cassandra::parse_statement_single;
+    use crate::frame::cassandra::{
+        parse_statement_single, CassandraFrameRequest, CassandraFrameResponse,
+    };
     use crate::frame::CassandraFrame;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::consistency::Consistency;
@@ -146,49 +148,52 @@ mod test {
     use cassandra_protocol::query::QueryParams;
 
     fn create_query_message(query: &str) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(query)),
-                params: Box::new(QueryParams {
-                    keyspace: None,
-                    now_in_seconds: None,
-                    consistency: Consistency::One,
-                    with_names: false,
-                    values: None,
-                    page_size: Some(5000),
-                    paging_state: None,
-                    serial_consistency: None,
-                    timestamp: Some(1643855761086585),
-                }),
+        Message::from_frame(Frame::Cassandra(CassandraFrame::Request(
+            CassandraFrameRequest {
+                version: Version::V4,
+                stream_id: 0,
+                request_tracing_id: false,
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(query)),
+                    params: Box::new(QueryParams {
+                        keyspace: None,
+                        now_in_seconds: None,
+                        consistency: Consistency::One,
+                        with_names: false,
+                        values: None,
+                        page_size: Some(5000),
+                        paging_state: None,
+                        serial_consistency: None,
+                        timestamp: Some(1643855761086585),
+                    }),
+                },
             },
-        }))
+        )))
     }
 
     fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<MessageValue>>) -> Message {
-        Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Result(Rows {
-                rows,
-                metadata: Box::new(RowsMetadata {
-                    flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
-                    columns_count: 1,
-                    paging_state: None,
-                    new_metadata_id: None,
-                    global_table_spec: Some(TableSpec {
-                        ks_name: "system".into(),
-                        table_name: "peers_v2".into(),
+        Message::from_frame(Frame::Cassandra(CassandraFrame::Response(
+            CassandraFrameResponse {
+                version: Version::V4,
+                stream_id: 0,
+                tracing_id: None,
+                warnings: vec![],
+                operation: CassandraOperation::Result(Rows {
+                    rows,
+                    metadata: Box::new(RowsMetadata {
+                        flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
+                        columns_count: 1,
+                        paging_state: None,
+                        new_metadata_id: None,
+                        global_table_spec: Some(TableSpec {
+                            ks_name: "system".into(),
+                            table_name: "peers_v2".into(),
+                        }),
+                        col_specs: col_specs.to_owned(),
                     }),
-                    col_specs: col_specs.to_owned(),
                 }),
-            }),
-        }))
+            },
+        )))
     }
 
     #[test]

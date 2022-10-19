@@ -1,4 +1,5 @@
 use crate::error::ChainResponse;
+use crate::frame::cassandra::{CassandraFrameRequest, CassandraFrameResponse};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::KeyManager;
@@ -154,7 +155,11 @@ impl Transform for Protect {
         for message in message_wrapper.messages.iter_mut() {
             let mut invalidate_cache = false;
 
-            if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = message.frame() {
+            if let Some(Frame::Cassandra(CassandraFrame::Request(CassandraFrameRequest {
+                operation,
+                ..
+            }))) = message.frame()
+            {
                 for statement in operation.queries() {
                     invalidate_cache |= self.encrypt_columns(statement).await.unwrap();
                 }
@@ -169,11 +174,15 @@ impl Transform for Protect {
 
         for (response, request) in result.iter_mut().zip(original_messages.iter_mut()) {
             let mut invalidate_cache = false;
-            if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = request.frame() {
-                if let Some(Frame::Cassandra(CassandraFrame {
+            if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
+                operation,
+                ..
+            }))) = request.frame()
+            {
+                if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
                     operation: CassandraOperation::Result(CassandraResult::Rows { rows, .. }),
                     ..
-                })) = response.frame()
+                }))) = response.frame()
                 {
                     for statement in operation.queries() {
                         invalidate_cache |= self.decrypt_results(statement, rows).await?

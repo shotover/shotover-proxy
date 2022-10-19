@@ -1,5 +1,7 @@
 use super::node::{CassandraNode, ConnectionFactory};
-use crate::frame::cassandra::parse_statement_single;
+use crate::frame::cassandra::{
+    parse_statement_single, CassandraFrameRequest, CassandraFrameResponse,
+};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
 use crate::transforms::cassandra::connection::CassandraConnection;
@@ -79,10 +81,12 @@ async fn topology_task_process(
         match pushed_messages {
             Some(messages) => {
                 for mut message in messages {
-                    if let Some(Frame::Cassandra(CassandraFrame {
-                        operation: CassandraOperation::Event(event),
-                        ..
-                    })) = message.frame()
+                    if let Some(Frame::Cassandra(CassandraFrame::Response(
+                        CassandraFrameResponse {
+                            operation: CassandraOperation::Event(event),
+                            ..
+                        },
+                    ))) = message.frame()
                     {
                         match event {
                             ServerEvent::TopologyChange(topology) => match topology.change_type {
@@ -141,23 +145,28 @@ async fn register_for_topology_and_status_events(
     let (tx, rx) = oneshot::channel();
     connection
         .send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version,
-                stream_id: 0,
-                tracing_id: None,
-                warnings: vec![],
-                operation: CassandraOperation::Register(BodyReqRegister {
-                    events: vec![
-                        SimpleServerEvent::TopologyChange,
-                        SimpleServerEvent::StatusChange,
-                    ],
-                }),
-            })),
+            Message::from_frame(Frame::Cassandra(CassandraFrame::Request(
+                CassandraFrameRequest {
+                    version,
+                    stream_id: 0,
+                    request_tracing_id: false,
+                    operation: CassandraOperation::Register(BodyReqRegister {
+                        events: vec![
+                            SimpleServerEvent::TopologyChange,
+                            SimpleServerEvent::StatusChange,
+                        ],
+                    }),
+                },
+            ))),
             tx,
         )
         .unwrap();
 
-    if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = rx.await?.response?.frame() {
+    if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
+        operation,
+        ..
+    }))) = rx.await?.response?.frame()
+    {
         match operation {
             CassandraOperation::Ready(_) => Ok(()),
             operation => Err(anyhow!("Expected Cassandra to respond to a Register with a Ready. Instead it responded with {:?}", operation))
@@ -193,18 +202,19 @@ mod system_local {
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
-                stream_id: 1,
-                tracing_id: None,
-                warnings: vec![],
-                operation: CassandraOperation::Query {
-                    query: Box::new(parse_statement_single(
-                        "SELECT rack, tokens, host_id, data_center FROM system.local",
-                    )),
-                    params: Box::new(QueryParams::default()),
+            Message::from_frame(Frame::Cassandra(CassandraFrame::Request(
+                CassandraFrameRequest {
+                    version: Version::V4,
+                    stream_id: 1,
+                    request_tracing_id: false,
+                    operation: CassandraOperation::Query {
+                        query: Box::new(parse_statement_single(
+                            "SELECT rack, tokens, host_id, data_center FROM system.local",
+                        )),
+                        params: Box::new(QueryParams::default()),
+                    },
                 },
-            })),
+            ))),
             tx,
         )?;
 
@@ -217,7 +227,7 @@ mod system_local {
         address: SocketAddr,
     ) -> Result<Vec<CassandraNode>> {
         if let Some(Frame::Cassandra(frame)) = response.frame() {
-            match &mut frame.operation {
+            match &mut frame.operation_mut() {
                 CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                     .iter_mut()
                     .filter(|row| {
@@ -279,18 +289,17 @@ mod system_peers {
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
-            Message::from_frame(Frame::Cassandra(CassandraFrame {
+            Message::from_frame(Frame::Cassandra(CassandraFrame::Request(CassandraFrameRequest {
                 version: Version::V4,
                 stream_id: 0,
-                tracing_id: None,
-                warnings: vec![],
+                request_tracing_id: false,
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
                         "SELECT native_port, native_address, rack, tokens, host_id, data_center FROM system.peers_v2",
                     )),
                     params: Box::new(QueryParams::default()),
                 },
-            })),
+            }))),
             tx,
         )?;
 
@@ -299,18 +308,19 @@ mod system_peers {
         if is_peers_v2_does_not_exist_error(&mut response) {
             let (tx, rx) = oneshot::channel();
             connection.send(
-                Message::from_frame(Frame::Cassandra(CassandraFrame {
-                    version: Version::V4,
-                    stream_id: 0,
-                    tracing_id: None,
-                    warnings: vec![],
-                    operation: CassandraOperation::Query {
-                        query: Box::new(parse_statement_single(
-                            "SELECT peer, rack, tokens, host_id, data_center FROM system.peers",
-                        )),
-                        params: Box::new(QueryParams::default()),
+                Message::from_frame(Frame::Cassandra(CassandraFrame::Request(
+                    CassandraFrameRequest {
+                        version: Version::V4,
+                        stream_id: 0,
+                        request_tracing_id: false,
+                        operation: CassandraOperation::Query {
+                            query: Box::new(parse_statement_single(
+                                "SELECT peer, rack, tokens, host_id, data_center FROM system.peers",
+                            )),
+                            params: Box::new(QueryParams::default()),
+                        },
                     },
-                })),
+                ))),
                 tx,
             )?;
             response = rx.await?.response?;
@@ -320,10 +330,10 @@ mod system_peers {
     }
 
     fn is_peers_v2_does_not_exist_error(message: &mut Message) -> bool {
-        if let Some(Frame::Cassandra(CassandraFrame {
+        if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
             operation: CassandraOperation::Error(error),
             ..
-        })) = message.frame()
+        }))) = message.frame()
         {
             return error.message == "unconfigured table peers_v2";
         }
@@ -333,7 +343,7 @@ mod system_peers {
 
     fn into_nodes(mut response: Message, config_data_center: &str) -> Result<Vec<CassandraNode>> {
         if let Some(Frame::Cassandra(frame)) = response.frame() {
-            match &mut frame.operation {
+            match &mut frame.operation_mut() {
                 CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                     .iter_mut()
                     .filter(|row| {

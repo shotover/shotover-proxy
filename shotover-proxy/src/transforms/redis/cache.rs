@@ -1,4 +1,5 @@
 use crate::error::ChainResponse;
+use crate::frame::cassandra::CassandraFrameRequest;
 use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::TransformChain;
@@ -117,10 +118,10 @@ impl SimpleRedisCache {
             .iter_mut()
             .enumerate()
             .filter_map(|(i, message)| {
-                if let Some(Frame::Cassandra(CassandraFrame {
+                if let Some(Frame::Cassandra(CassandraFrame::Request(CassandraFrameRequest {
                     operation: CassandraOperation::Query { query, .. },
                     ..
-                })) = message.frame()
+                }))) = message.frame()
                 {
                     if let CacheableState::CacheRow = is_cacheable(query) {
                         if let Some(table_name) = query.get_table_name() {
@@ -167,15 +168,15 @@ impl SimpleRedisCache {
                             }
                             RedisFrame::BulkString(redis_bytes) => {
                                 match CassandraFrame::from_bytes(redis_bytes.clone()) {
-                                    Ok(mut response_frame) => {
-                                        if let Some(Frame::Cassandra(request_frame)) =
+                                    Ok(CassandraFrame::Response(mut response_frame)) => {
+                                        if let Some(Frame::Cassandra(CassandraFrame::Request(request_frame))) =
                                             cassandra_requests[redis_index].frame()
                                         {
                                             if response_frame.version == request_frame.version {
                                                 response_frame.stream_id = request_frame.stream_id;
                                                 Some((
                                                     Message::from_frame(Frame::Cassandra(
-                                                        response_frame,
+                                                        CassandraFrame::Response(response_frame),
                                                     )),
                                                     redis_index,
                                                 ))
@@ -189,6 +190,10 @@ impl SimpleRedisCache {
                                             error!("Failed to use cache as not cassandra request");
                                             None
                                         }
+                                    }
+                                    Ok(_) => {
+                                        error!("Expected frame to be a response but it was a request");
+                                        None
                                     }
                                     Err(err) => {
                                         error!("Failed to decode cached cassandra message {err:?}");
@@ -307,7 +312,11 @@ impl SimpleRedisCache {
             .iter_mut()
             .zip(response_messages.iter_mut())
         {
-            if let Some(Frame::Cassandra(CassandraFrame { operation, .. })) = request {
+            if let Some(Frame::Cassandra(CassandraFrame::Request(CassandraFrameRequest {
+                operation,
+                ..
+            }))) = request
+            {
                 for statement in operation.queries() {
                     match is_cacheable(statement) {
                         CacheableState::DeleteRow => {

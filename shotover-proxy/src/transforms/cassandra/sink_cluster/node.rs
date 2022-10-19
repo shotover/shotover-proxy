@@ -152,7 +152,7 @@ impl ConnectionFactory {
     pub fn get_version(&mut self) -> Result<Version> {
         for message in &mut self.init_handshake {
             if let Some(Frame::Cassandra(frame)) = message.frame() {
-                return Ok(frame.version);
+                return Ok(frame.version());
             }
         }
         Err(anyhow!(

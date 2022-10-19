@@ -1,5 +1,7 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::{parse_statement_single, CassandraMetadata};
+use crate::frame::cassandra::{
+    parse_statement_single, CassandraFrameRequest, CassandraFrameResponse, CassandraMetadata,
+};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -194,16 +196,17 @@ impl CassandraSinkCluster {
 
 fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Message> {
     let stream_id = get_unused_stream_id(messages)?;
-    Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
-        version,
-        stream_id,
-        tracing_id: None,
-        warnings: vec![],
-        operation: CassandraOperation::Query {
-            query: Box::new(parse_statement_single(query)),
-            params: Box::new(QueryParams::default()),
-        },
-    })))
+    Ok(Message::from_frame(Frame::Cassandra(
+        CassandraFrame::Request(CassandraFrameRequest {
+            version,
+            stream_id,
+            request_tracing_id: false,
+            operation: CassandraOperation::Query {
+                query: Box::new(parse_statement_single(query)),
+                params: Box::new(QueryParams::default()),
+            },
+        }),
+    )))
 }
 
 impl CassandraSinkCluster {
@@ -258,10 +261,10 @@ impl CassandraSinkCluster {
                 // Due to shotover pipelining we could receive non-handshake messages while !self.init_handshake_complete.
                 // Despite being used by the client in a handshake, CassandraOperation::Options is not included
                 // because it doesnt alter the state of the server and so it isnt needed.
-                if let Some(Frame::Cassandra(CassandraFrame {
+                if let Some(Frame::Cassandra(CassandraFrame::Request(CassandraFrameRequest {
                     operation: CassandraOperation::Startup(_) | CassandraOperation::AuthResponse(_),
                     ..
-                })) = message.frame()
+                }))) = message.frame()
                 {
                     self.connection_factory
                         .push_handshake_message(message.clone());
@@ -365,7 +368,7 @@ impl CassandraSinkCluster {
                                 .send(Response {
                                     original: message.clone(),
                                     response: Ok(Message::from_frame(Frame::Cassandra(
-                                        CassandraFrame {
+                                        CassandraFrame::Response(CassandraFrameResponse {
                                             operation: CassandraOperation::Error(ErrorBody {
                                                 message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
                                                 ty: ErrorType::Unprepared(UnpreparedError {
@@ -376,7 +379,7 @@ impl CassandraSinkCluster {
                                             tracing_id: metadata.tracing_id,
                                             version: metadata.version,
                                             warnings: vec![],
-                                        },
+                                        }),
                                     ))),
                                 }).expect("the receiver is guaranteed to be alive, so this must succeed");
                         }
@@ -415,11 +418,13 @@ impl CassandraSinkCluster {
                 let err_str = prepare_responses
                     .iter_mut()
                     .filter_map(|response| {
-                        if let Some(Frame::Cassandra(CassandraFrame {
-                            operation:
-                                CassandraOperation::Result(CassandraResult::Prepared(prepared)),
-                            ..
-                        })) = response.frame()
+                        if let Some(Frame::Cassandra(CassandraFrame::Response(
+                            CassandraFrameResponse {
+                                operation:
+                                    CassandraOperation::Result(CassandraResult::Prepared(prepared)),
+                                ..
+                            },
+                        ))) = response.frame()
                         {
                             Some(format!("\n{:?}", prepared))
                         } else {
@@ -442,10 +447,10 @@ impl CassandraSinkCluster {
         // we have succesfully collected an entire handshake so we mark the handshake as complete.
         if !self.init_handshake_complete {
             for response in &mut responses {
-                if let Some(Frame::Cassandra(CassandraFrame {
+                if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
                     operation: CassandraOperation::Ready(_) | CassandraOperation::AuthSuccess(_),
                     ..
-                })) = response.frame()
+                }))) = response.frame()
                 {
                     self.complete_handshake().await?;
                     break;
@@ -518,7 +523,7 @@ impl CassandraSinkCluster {
     fn get_rewrite_table(&self, request: &mut Message, index: usize) -> Option<TableToRewrite> {
         if let Some(Frame::Cassandra(cassandra)) = request.frame() {
             // No need to handle Batch as selects can only occur on Query
-            if let CassandraOperation::Query { query, .. } = &cassandra.operation {
+            if let CassandraOperation::Query { query, .. } = cassandra.operation() {
                 if let CassandraStatement::Select(select) = query.as_ref() {
                     let ty = if self.local_table == select.table_name {
                         RewriteTableTy::Local
@@ -534,7 +539,7 @@ impl CassandraSinkCluster {
                     return Some(TableToRewrite {
                         index,
                         ty,
-                        version: cassandra.version,
+                        version: cassandra.version(),
                         selects: select.columns.clone(),
                     });
                 }
@@ -636,7 +641,7 @@ impl CassandraSinkCluster {
 
         if let Some(Frame::Cassandra(frame)) = peers_response.frame() {
             if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
-                &mut frame.operation
+                &mut frame.operation_mut()
             {
                 *rows = self
                     .shotover_peers
@@ -776,7 +781,7 @@ impl CassandraSinkCluster {
 
         if let Some(Frame::Cassandra(frame)) = local_response.frame() {
             if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
-                &mut frame.operation
+                &mut frame.operation_mut()
             {
                 // The local_response message is guaranteed to come from a node that is in our configured data_center/rack.
                 // That means we can leave fields like rack and data_center alone and get exactly what we want.
@@ -844,7 +849,7 @@ impl CassandraSinkCluster {
 
     fn is_system_query(&self, request: &mut Message) -> bool {
         if let Some(Frame::Cassandra(frame)) = request.frame() {
-            if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+            if let CassandraOperation::Query { query, .. } = &mut frame.operation_mut() {
                 if let CassandraStatement::Select(select) = query.as_ref() {
                     if let Some(keyspace) = &select.table_name.keyspace {
                         return self.system_keyspaces.contains(keyspace);
@@ -869,10 +874,10 @@ enum RewriteTableTy {
 }
 
 fn get_prepared_result_message(message: &mut Message) -> Option<(CBytesShort, PreparedMetadata)> {
-    if let Some(Frame::Cassandra(CassandraFrame {
+    if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
         operation: CassandraOperation::Result(CassandraResult::Prepared(prepared)),
         ..
-    })) = message.frame()
+    }))) = message.frame()
     {
         return Some((prepared.id.clone(), prepared.metadata.clone()));
     }
@@ -881,20 +886,19 @@ fn get_prepared_result_message(message: &mut Message) -> Option<(CBytesShort, Pr
 }
 
 fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, CassandraMetadata)> {
-    if let Some(Frame::Cassandra(CassandraFrame {
+    if let Some(Frame::Cassandra(CassandraFrame::Request(CassandraFrameRequest {
         operation: CassandraOperation::Execute(execute_body),
         version,
         stream_id,
-        tracing_id,
         ..
-    })) = message.frame()
+    }))) = message.frame()
     {
         return Some((
             execute_body,
             CassandraMetadata {
                 version: *version,
                 stream_id: *stream_id,
-                tracing_id: *tracing_id,
+                tracing_id: None,
                 opcode: Opcode::Execute,
             },
         ));
@@ -904,10 +908,10 @@ fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, C
 }
 
 fn is_prepare_message(message: &mut Message) -> bool {
-    if let Some(Frame::Cassandra(CassandraFrame {
+    if let Some(Frame::Cassandra(CassandraFrame::Request(CassandraFrameRequest {
         operation: CassandraOperation::Prepare(_),
         ..
-    })) = message.frame()
+    }))) = message.frame()
     {
         return true;
     }
@@ -917,7 +921,7 @@ fn is_prepare_message(message: &mut Message) -> bool {
 
 fn is_use_statement(request: &mut Message) -> bool {
     if let Some(Frame::Cassandra(frame)) = request.frame() {
-        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+        if let CassandraOperation::Query { query, .. } = &mut frame.operation_mut() {
             if let CassandraStatement::Use(_) = query.as_ref() {
                 return true;
             }
@@ -928,7 +932,7 @@ fn is_use_statement(request: &mut Message) -> bool {
 
 fn is_ddl_statement(request: &mut Message) -> bool {
     if let Some(Frame::Cassandra(frame)) = request.frame() {
-        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+        if let CassandraOperation::Query { query, .. } = &mut frame.operation_mut() {
             if let CassandraStatement::CreateAggregate(_)
             | CassandraStatement::CreateFunction(_)
             | CassandraStatement::CreateIndex(_)
@@ -959,10 +963,10 @@ fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
         ..
     })) = response
     {
-        if let Some(Frame::Cassandra(CassandraFrame {
+        if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
             operation: CassandraOperation::Result(CassandraResult::SetKeyspace(_)),
             ..
-        })) = response.frame()
+        }))) = response.frame()
         {
             return true;
         }
@@ -995,7 +999,7 @@ struct NodeInfo {
 
 fn parse_system_nodes(mut response: Message) -> Result<Vec<NodeInfo>> {
     if let Some(Frame::Cassandra(frame)) = response.frame() {
-        match &mut frame.operation {
+        match &mut frame.operation_mut() {
             CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                 .iter_mut()
                 .map(|row| {
@@ -1062,10 +1066,10 @@ impl Transform for CassandraSinkCluster {
 
     async fn transform_pushed<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         message_wrapper.messages.retain_mut(|message| {
-            if let Some(Frame::Cassandra(CassandraFrame {
+            if let Some(Frame::Cassandra(CassandraFrame::Response(CassandraFrameResponse {
                 operation: CassandraOperation::Event(event),
                 ..
-            })) = message.frame()
+            }))) = message.frame()
             {
                 match event {
                     ServerEvent::TopologyChange(_) => false,

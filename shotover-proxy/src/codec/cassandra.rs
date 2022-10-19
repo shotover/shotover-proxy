@@ -1,5 +1,7 @@
-use crate::frame::cassandra::{CassandraMetadata, CassandraOperation};
-use crate::frame::{CassandraFrame, Frame, MessageType};
+use crate::frame::cassandra::{
+    CassandraFrame, CassandraFrameResponse, CassandraMetadata, CassandraOperation,
+};
+use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
 use crate::server::CodecReadError;
 use anyhow::{anyhow, Result};
@@ -112,7 +114,7 @@ impl Decoder for CassandraCodec {
 
 fn get_use_keyspace(message: &mut Message) -> Option<Identifier> {
     if let Some(Frame::Cassandra(frame)) = message.frame() {
-        if let CassandraOperation::Query { query, .. } = &mut frame.operation {
+        if let CassandraOperation::Query { query, .. } = frame.operation_mut() {
             if let CassandraStatement::Use(keyspace) = query.as_ref() {
                 return Some(keyspace.clone());
             }
@@ -124,7 +126,7 @@ fn get_use_keyspace(message: &mut Message) -> Option<Identifier> {
 fn set_default_keyspace(message: &mut Message, keyspace: &Identifier) {
     // TODO: rewrite Operation::Prepared in the same way
     if let Some(Frame::Cassandra(frame)) = message.frame() {
-        for query in frame.operation.queries() {
+        for query in frame.operation_mut().queries() {
             let name = match query {
                 CassandraStatement::AlterMaterializedView(x) => &mut x.name,
                 CassandraStatement::AlterTable(x) => &mut x.name,
@@ -183,7 +185,7 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
     );
 
     CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
-        CassandraFrame {
+        CassandraFrame::Response(CassandraFrameResponse {
             version: Version::V4,
             stream_id: 0,
             operation: CassandraOperation::Error(ErrorBody {
@@ -192,7 +194,7 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
             }),
             tracing_id: None,
             warnings: vec![],
-        },
+        }),
     ))])
 }
 
@@ -224,7 +226,8 @@ impl Encoder<Messages> for CassandraCodec {
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodec;
     use crate::frame::cassandra::{
-        parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult,
+        parse_statement_single, CassandraFrame, CassandraFrameRequest, CassandraFrameResponse,
+        CassandraOperation, CassandraResult,
     };
     use crate::frame::Frame;
     use crate::message::Message;
@@ -279,15 +282,17 @@ mod cassandra_protocol_tests {
     fn test_codec_startup() {
         let mut codec = CassandraCodec::new();
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            operation: CassandraOperation::Startup(vec![
-                0, 1, 0, 11, 67, 81, 76, 95, 86, 69, 82, 83, 73, 79, 78, 0, 5, 51, 46, 48, 46, 48,
-            ]),
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-        }))];
+        let messages = vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Request(CassandraFrameRequest {
+                version: Version::V4,
+                operation: CassandraOperation::Startup(vec![
+                    0, 1, 0, 11, 67, 81, 76, 95, 86, 69, 82, 83, 73, 79, 78, 0, 5, 51, 46, 48, 46,
+                    48,
+                ]),
+                stream_id: 0,
+                request_tracing_id: false,
+            }),
+        ))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -295,13 +300,15 @@ mod cassandra_protocol_tests {
     fn test_codec_options() {
         let mut codec = CassandraCodec::new();
         let bytes = hex!("040000000500000000");
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            operation: CassandraOperation::Options(vec![]),
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-        }))];
+        let messages = vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Response(CassandraFrameResponse {
+                version: Version::V4,
+                operation: CassandraOperation::Options(vec![]),
+                stream_id: 0,
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        ))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -309,13 +316,15 @@ mod cassandra_protocol_tests {
     fn test_codec_ready() {
         let mut codec = CassandraCodec::new();
         let bytes = hex!("840000000200000000");
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            operation: CassandraOperation::Ready(vec![]),
-            stream_id: 0,
-            tracing_id: None,
-            warnings: vec![],
-        }))];
+        let messages = vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Response(CassandraFrameResponse {
+                version: Version::V4,
+                operation: CassandraOperation::Ready(vec![]),
+                stream_id: 0,
+                tracing_id: None,
+                warnings: vec![],
+            }),
+        ))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -326,19 +335,20 @@ mod cassandra_protocol_tests {
             "040000010b000000310003000f544f504f4c4f47595f4348414e4745
             000d5354415455535f4348414e4745000d534348454d415f4348414e4745"
         );
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            operation: CassandraOperation::Register(BodyReqRegister {
-                events: vec![
-                    SimpleServerEvent::TopologyChange,
-                    SimpleServerEvent::StatusChange,
-                    SimpleServerEvent::SchemaChange,
-                ],
+        let messages = vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Request(CassandraFrameRequest {
+                version: Version::V4,
+                operation: CassandraOperation::Register(BodyReqRegister {
+                    events: vec![
+                        SimpleServerEvent::TopologyChange,
+                        SimpleServerEvent::StatusChange,
+                        SimpleServerEvent::SchemaChange,
+                    ],
+                }),
+                stream_id: 1,
+                request_tracing_id: false,
             }),
-            stream_id: 1,
-            tracing_id: None,
-            warnings: vec![],
-        }))];
+        ))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -351,102 +361,105 @@ mod cassandra_protocol_tests {
             65727265645f6970001000047261636b000d000f72656c656173655f76657273696f6e000d000b7270635f616464726
             573730010000e736368656d615f76657273696f6e000c0006746f6b656e730022000d00000000"
         );
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            operation: CassandraOperation::Result(CassandraResult::Rows {
-                rows: vec![],
-                metadata: Box::new(RowsMetadata {
-                    flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
-                    columns_count: 9,
-                    paging_state: None,
-                    new_metadata_id: None,
-                    global_table_spec: Some(TableSpec {
-                        ks_name: "system".into(),
-                        table_name: "peers".into(),
-                    }),
-                    col_specs: vec![
-                        ColSpec {
-                            table_spec: None,
-                            name: "peer".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Inet,
-                                value: None,
+        let messages = vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Request(CassandraFrameRequest {
+                version: Version::V4,
+                operation: CassandraOperation::Result(CassandraResult::Rows {
+                    rows: vec![],
+                    metadata: Box::new(RowsMetadata {
+                        flags: RowsMetadataFlags::GLOBAL_TABLE_SPACE,
+                        columns_count: 9,
+                        paging_state: None,
+                        new_metadata_id: None,
+                        global_table_spec: Some(TableSpec {
+                            ks_name: "system".into(),
+                            table_name: "peers".into(),
+                        }),
+                        col_specs: vec![
+                            ColSpec {
+                                table_spec: None,
+                                name: "peer".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Inet,
+                                    value: None,
+                                },
                             },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "data_center".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Varchar,
-                                value: None,
-                            },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "host_id".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Uuid,
-                                value: None,
-                            },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "preferred_ip".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Inet,
-                                value: None,
-                            },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "rack".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Varchar,
-                                value: None,
-                            },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "release_version".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Varchar,
-                                value: None,
-                            },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "rpc_address".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Inet,
-                                value: None,
-                            },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "schema_version".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Uuid,
-                                value: None,
-                            },
-                        },
-                        ColSpec {
-                            table_spec: None,
-                            name: "tokens".into(),
-                            col_type: ColTypeOption {
-                                id: ColType::Set,
-                                value: Some(ColTypeOptionValue::CSet(Box::new(ColTypeOption {
+                            ColSpec {
+                                table_spec: None,
+                                name: "data_center".into(),
+                                col_type: ColTypeOption {
                                     id: ColType::Varchar,
                                     value: None,
-                                }))),
+                                },
                             },
-                        },
-                    ],
+                            ColSpec {
+                                table_spec: None,
+                                name: "host_id".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Uuid,
+                                    value: None,
+                                },
+                            },
+                            ColSpec {
+                                table_spec: None,
+                                name: "preferred_ip".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Inet,
+                                    value: None,
+                                },
+                            },
+                            ColSpec {
+                                table_spec: None,
+                                name: "rack".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Varchar,
+                                    value: None,
+                                },
+                            },
+                            ColSpec {
+                                table_spec: None,
+                                name: "release_version".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Varchar,
+                                    value: None,
+                                },
+                            },
+                            ColSpec {
+                                table_spec: None,
+                                name: "rpc_address".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Inet,
+                                    value: None,
+                                },
+                            },
+                            ColSpec {
+                                table_spec: None,
+                                name: "schema_version".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Uuid,
+                                    value: None,
+                                },
+                            },
+                            ColSpec {
+                                table_spec: None,
+                                name: "tokens".into(),
+                                col_type: ColTypeOption {
+                                    id: ColType::Set,
+                                    value: Some(ColTypeOptionValue::CSet(Box::new(
+                                        ColTypeOption {
+                                            id: ColType::Varchar,
+                                            value: None,
+                                        },
+                                    ))),
+                                },
+                            },
+                        ],
+                    }),
                 }),
+                stream_id: 2,
+                request_tracing_id: false,
             }),
-            stream_id: 2,
-            tracing_id: None,
-            warnings: vec![],
-        }))];
+        ))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -458,18 +471,19 @@ mod cassandra_protocol_tests {
             74656d2e6c6f63616c205748455245206b6579203d20276c6f63616c27000100"
         );
 
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 3,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(
-                    "SELECT * FROM system.local WHERE key = 'local'",
-                )),
-                params: Box::new(QueryParams::default()),
-            },
-        }))];
+        let messages = vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Request(CassandraFrameRequest {
+                version: Version::V4,
+                stream_id: 3,
+                request_tracing_id: false,
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(
+                        "SELECT * FROM system.local WHERE key = 'local'",
+                    )),
+                    params: Box::new(QueryParams::default()),
+                },
+            }),
+        ))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 
@@ -481,18 +495,19 @@ mod cassandra_protocol_tests {
             6d2e666f6f2028626172292056414c554553202827626172322729000100"
         );
 
-        let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
-            version: Version::V4,
-            stream_id: 3,
-            tracing_id: None,
-            warnings: vec![],
-            operation: CassandraOperation::Query {
-                query: Box::new(parse_statement_single(
-                    "INSERT INTO system.foo (bar) VALUES ('bar2')",
-                )),
-                params: Box::new(QueryParams::default()),
-            },
-        }))];
+        let messages = vec![Message::from_frame(Frame::Cassandra(
+            CassandraFrame::Request(CassandraFrameRequest {
+                version: Version::V4,
+                stream_id: 3,
+                request_tracing_id: false,
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(
+                        "INSERT INTO system.foo (bar) VALUES ('bar2')",
+                    )),
+                    params: Box::new(QueryParams::default()),
+                },
+            }),
+        ))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
     }
 }
