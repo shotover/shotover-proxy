@@ -78,8 +78,8 @@ generic-array = { version = "0.14", features = ["serde"] }
 [dev-dependencies]
 rayon = "1.5.1"
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "version-0.4", version = "0.3", features = ["async_tokio"] }
-redis = { version = "0.21.0", features = ["tokio-comp", "cluster"] }
-pcap = "0.10.0"
+redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
+pcap = "0.11.0"
 pktparse = { version = "0.7.0", features = ["serde"] }
 tls-parser = "0.11.0"
 tokio-io-timeout = "1.1.1"
@@ -91,7 +91,7 @@ nix = "0.25.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
-scylla = { version = "0.5.0", features = ["ssl"] }
+scylla = { version = "0.6.0", features = ["ssl"] }
 rstest = "0.15.0"
 docker-api = "0.11.0"
 

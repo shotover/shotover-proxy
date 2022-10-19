@@ -188,7 +188,7 @@ async fn test_cluster_dr_redis() {
     ];
     let client = redis::cluster::ClusterClientBuilder::new(nodes)
         .password("shotover".to_string())
-        .open()
+        .build()
         .unwrap();
     let mut replication_connection = client.get_connection().unwrap();
 
