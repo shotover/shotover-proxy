@@ -333,9 +333,12 @@ async fn test_filtered_scanning(connection: &mut Connection, flusher: &mut Flush
         }
     }
 
-    let mut iter = connection.hscan_match("foo", "key_0_*").await.unwrap();
+    let mut iter = connection
+        .hscan_match::<&str, &str, (String, usize)>("foo", "key_0_*")
+        .await
+        .unwrap();
 
-    while let Some(x) = iter.next_item().await {
+    while let Some((_, x)) = iter.next_item().await {
         unseen.remove(&x);
     }
 
