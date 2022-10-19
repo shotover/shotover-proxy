@@ -308,10 +308,14 @@ impl CassandraFrame {
     }
 
     pub fn encode(self) -> RawCassandraFrame {
+        let mut flags = Flags::empty();
+        flags.set(Flags::WARNING, !self.warnings.is_empty());
+        flags.set(Flags::TRACING, self.tracing_id.is_some());
+
         RawCassandraFrame {
             direction: self.operation.to_direction(),
             version: self.version,
-            flags: Flags::default(),
+            flags,
             opcode: self.operation.to_opcode(),
             stream_id: self.stream_id,
             body: self.operation.into_body(self.version),
@@ -387,7 +391,7 @@ impl CassandraOperation {
     fn to_direction(&self) -> Direction {
         match self {
             CassandraOperation::Query { .. } => Direction::Request,
-            CassandraOperation::Result { .. } => Direction::Request,
+            CassandraOperation::Result { .. } => Direction::Response,
             CassandraOperation::Error(_) => Direction::Response,
             CassandraOperation::Startup(_) => Direction::Request,
             CassandraOperation::Ready(_) => Direction::Response,
