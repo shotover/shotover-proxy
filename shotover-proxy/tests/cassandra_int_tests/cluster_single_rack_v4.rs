@@ -1,6 +1,5 @@
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
-use docker_api::Docker;
 use test_helpers::docker_compose::DockerCompose;
 use tokio::time::{sleep, timeout};
 
@@ -281,32 +280,9 @@ pub async fn test_node_going_down(
         // let the driver finish connecting to the cluster and registering for the events
         sleep(Duration::from_secs(10)).await;
 
-        // stop one of the containers to trigger a status change event
-        let docker = Docker::new("unix:///var/run/docker.sock").unwrap();
-        let containers = docker.containers();
-        let mut found = false;
-        let mut all_names: Vec<String> = vec![];
-        for container in containers.list(&Default::default()).await.unwrap() {
-            let compose_service = container
-                .labels
-                .unwrap()
-                .get("com.docker.compose.service")
-                .unwrap()
-                .to_string();
-            // event_connection_direct is connecting to cassandra-one.
-            // So make sure to instead kill caassandra-two.
-            if compose_service == "cassandra-two" {
-                found = true;
-                let container = containers.get(container.id.unwrap());
-                container.stop(None).await.unwrap();
-            }
-            all_names.push(compose_service);
-        }
-        assert!(
-        found,
-        "container was not found with expected docker compose service name, actual names were {:?}",
-        all_names
-    );
+        // stop one of the containers to trigger a status change event.
+        // event_connection_direct is connecting to cassandra-one, so make sure to instead kill caassandra-two.
+        compose.stop_service("cassandra-two").await;
 
         loop {
             // The direct connection should allow all events to pass through
