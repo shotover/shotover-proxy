@@ -55,7 +55,7 @@ fn create_handshake() -> Vec<Message> {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 128,
-            tracing: Tracing::Response(None),
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::AuthResponse(
                 b"\0\0\0\x14\0cassandra\0cassandra".to_vec(),

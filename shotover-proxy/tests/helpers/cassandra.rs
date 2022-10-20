@@ -356,10 +356,6 @@ impl CassandraConnection {
                 let query_params = QueryParamsBuilder::new()
                     .with_values(query_values!(value))
                     .build();
-                let response = session
-                    .exec_with_values(statement, query_values!(value))
-                    .await
-                    .unwrap();
 
                 let params = StatementParams {
                     query_params,
@@ -374,9 +370,7 @@ impl CassandraConnection {
                     beta_protocol: false,
                 };
 
-                let response =
-                    futures::executor::block_on(session.exec_with_params(statement, &params))
-                        .unwrap();
+                let response = session.exec_with_params(statement, &params).await.unwrap();
 
                 Self::process_cdrs_response(response)
             }

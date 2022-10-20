@@ -288,7 +288,7 @@ checksum = "3a4f925191b4367301851c6d99b09890311d74b0d43f274c0b34c86d308a3663"
 [[package]]
 name = "cassandra-cpp"
 version = "1.1.1-pre"
-source = "git+https://github.com/conorbros/cassandra-rs#750f1317355e95425d5334374c037d9486a7f1d0"
+source = "git+https://github.com/conorbros/cassandra-rs#716c39a2f47c163f7621b3b4cb252a61ca19f68a"
 dependencies = [
  "cassandra-cpp-sys",
  "error-chain",

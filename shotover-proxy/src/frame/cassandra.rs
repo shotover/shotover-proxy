@@ -66,7 +66,7 @@ pub mod raw_frame {
         let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
             .envelope;
-        let tracing = Tracing::from_frame(&frame)?;
+        let tracing = Tracing::from_frame(&frame);
         Ok(CassandraMetadata {
             version: frame.version,
             stream_id: frame.stream_id,
@@ -121,22 +121,10 @@ impl From<Tracing> for Option<Uuid> {
 }
 
 impl Tracing {
-    fn from_frame(frame: &RawCassandraFrame) -> Result<Self> {
+    fn from_frame(frame: &RawCassandraFrame) -> Self {
         match frame.direction {
-            Direction::Request => Ok(Self::Request(frame.flags.contains(Flags::TRACING))),
-            Direction::Response => {
-                if frame.tracing_id.is_none() && frame.flags.contains(Flags::TRACING) {
-                    return Err(anyhow!("Frame has no tracing_id but tracing was set"));
-                }
-
-                if frame.tracing_id.is_some() && !frame.flags.contains(Flags::TRACING) {
-                    return Err(anyhow!(
-                        "Frame has a tracing_id but tracing flag was not set"
-                    ));
-                }
-
-                Ok(Self::Response(frame.tracing_id))
-            }
+            Direction::Request => Self::Request(frame.flags.contains(Flags::TRACING)),
+            Direction::Response => Self::Response(frame.tracing_id),
         }
     }
 }
@@ -178,7 +166,7 @@ impl CassandraFrame {
             .map_err(|e| anyhow!("{e:?}"))?
             .envelope;
 
-        let tracing = Tracing::from_frame(&frame)?;
+        let tracing = Tracing::from_frame(&frame);
         let operation = match frame.opcode {
             Opcode::Query => {
                 if let RequestBody::Query(body) = frame.request_body()? {
@@ -737,9 +725,20 @@ pub struct CassandraBatch {
 impl Display for CassandraFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{} stream:{}", self.version, self.stream_id)?;
-        if let Tracing::Request(tracing_id) = self.tracing {
-            write!(f, " tracing_id:{}", tracing_id)?;
+
+        match self.tracing {
+            Tracing::Request(request) => {
+                if request {
+                    write!(f, " request_tracing_id:{}", request)?;
+                }
+            }
+            Tracing::Response(response) => {
+                if let Some(tracing_id) = response {
+                    write!(f, " tracing_id:{}", tracing_id)?;
+                }
+            }
         }
+
         if !self.warnings.is_empty() {
             write!(f, " warnings:{:?}", self.warnings)?;
         }
