@@ -14,7 +14,6 @@ pub async fn create_table(connection: &mut CassandraConnection) {
     run_query(connection, create_table_cql).await;
 }
 
-#[cfg(test)]
 pub async fn test(
     shotover_contact_points: &str,
     shotover_port: u16,
@@ -48,16 +47,16 @@ pub async fn test(
     create_table(&mut cassandra).await;
 
     let insert_cql = "INSERT INTO test_routing_ks.my_test_table (key, name) VALUES (?, 'my_name')";
-    let prepared_insert = shotover.prepare(insert_cql);
+    let prepared_insert = shotover.prepare(insert_cql).await;
 
     let select_cql = "SELECT name FROM test_routing_ks.my_test_table WHERE key = ?;";
-    let prepared_select = shotover.prepare(select_cql);
+    let prepared_select = shotover.prepare(select_cql).await;
 
     let update_cql = "UPDATE test_routing_ks.my_test_table SET name = 'not_my_name' WHERE key = ?";
-    let prepared_update = cassandra.prepare(update_cql);
+    let prepared_update = cassandra.prepare(update_cql).await;
 
     let delete_cql = "DELETE FROM test_routing_ks.my_test_table WHERE key = ?;";
-    let prepared_delete = cassandra.prepare(delete_cql);
+    let prepared_delete = cassandra.prepare(delete_cql).await;
 
     for key in 0..100 {
         let shotover_hit = shotover

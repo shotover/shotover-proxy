@@ -1,9 +1,7 @@
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
-    stmt, Batch, BatchType, CassErrorCode, CassFuture, CassResult, Cluster, Error, ErrorKind,
-    PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl, Value, ValueType,
     stmt, Batch, BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
-    PreparedStatement, Session as DatastaxSession, Ssl, Value, ValueType,
+    PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl, Value, ValueType,
 };
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::ErrorType;
@@ -382,7 +380,7 @@ impl CassandraConnection {
                 PreparedQuery::CdrsTokio(query)
             }
             Self::Scylla { session, .. } => {
-                let mut prepared = futures::executor::block_on(session.prepare(query)).unwrap();
+                let mut prepared = session.prepare(query).await.unwrap();
                 prepared.set_tracing(true);
                 PreparedQuery::Scylla(prepared)
             }
@@ -454,7 +452,7 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code)]
-    pub fn execute_prepared(
+    pub async fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
         value: i32,
