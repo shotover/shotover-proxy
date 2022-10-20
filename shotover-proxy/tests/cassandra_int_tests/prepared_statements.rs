@@ -5,10 +5,12 @@ use crate::helpers::cassandra::{
 };
 
 async fn delete(session: &CassandraConnection) {
-    let prepared = session.prepare("DELETE FROM test_prepare_statements.table_1 WHERE id = ?;");
+    let prepared = session
+        .prepare("DELETE FROM test_prepare_statements.table_1 WHERE id = ?;")
+        .await;
 
     assert_eq!(
-        session.execute_prepared(&prepared, 1),
+        session.execute_prepared(&prepared, 1).await,
         Vec::<Vec<ResultValue>>::new()
     );
 
@@ -20,29 +22,33 @@ async fn delete(session: &CassandraConnection) {
     .await;
 }
 
-fn insert(session: &CassandraConnection) {
-    let prepared = session.prepare("INSERT INTO test_prepare_statements.table_1 (id) VALUES (?);");
+async fn insert(session: &CassandraConnection) {
+    let prepared = session
+        .prepare("INSERT INTO test_prepare_statements.table_1 (id) VALUES (?);")
+        .await;
 
     assert_eq!(
-        session.execute_prepared(&prepared, 1),
+        session.execute_prepared(&prepared, 1).await,
         Vec::<Vec<ResultValue>>::new()
     );
 
     assert_eq!(
-        session.execute_prepared(&prepared, 2),
+        session.execute_prepared(&prepared, 2).await,
         Vec::<Vec<ResultValue>>::new()
     );
 
     assert_eq!(
-        session.execute_prepared(&prepared, 2),
+        session.execute_prepared(&prepared, 2).await,
         Vec::<Vec<ResultValue>>::new()
     );
 }
 
-fn select(session: &CassandraConnection) {
-    let prepared = session.prepare("SELECT id FROM test_prepare_statements.table_1 WHERE id = ?");
+async fn select(session: &CassandraConnection) {
+    let prepared = session
+        .prepare("SELECT id FROM test_prepare_statements.table_1 WHERE id = ?")
+        .await;
 
-    let result_rows = session.execute_prepared(&prepared, 1);
+    let result_rows = session.execute_prepared(&prepared, 1).await;
 
     assert_rows(result_rows, &[&[ResultValue::Int(1)]]);
 }
@@ -55,17 +61,18 @@ async fn select_cross_connection<Fut>(
     let connection_before = connection_creator().await;
 
     // query is purposely slightly different to past queries to avoid being cached
-    let prepared =
-        connection.prepare("SELECT id, id FROM test_prepare_statements.table_1 WHERE id = ?");
+    let prepared = connection
+        .prepare("SELECT id, id FROM test_prepare_statements.table_1 WHERE id = ?")
+        .await;
 
     let connection_after = connection_creator().await;
 
     assert_rows(
-        connection_before.execute_prepared(&prepared, 1),
+        connection_before.execute_prepared(&prepared, 1).await,
         &[&[ResultValue::Int(1), ResultValue::Int(1)]],
     );
     assert_rows(
-        connection_after.execute_prepared(&prepared, 1),
+        connection_after.execute_prepared(&prepared, 1).await,
         &[&[ResultValue::Int(1), ResultValue::Int(1)]],
     );
 }
@@ -73,7 +80,9 @@ async fn select_cross_connection<Fut>(
 async fn use_statement(session: &CassandraConnection) {
     // Create prepared command with the correct keyspace
     run_query(session, "USE test_prepare_statements;").await;
-    let _prepared = session.prepare("INSERT INTO table_1 (id) VALUES (?);");
+    let _prepared = session
+        .prepare("INSERT INTO table_1 (id) VALUES (?);")
+        .await;
 
     // change the keyspace to be incorrect
     run_query(session, "USE test_prepare_statements_empty;").await;
@@ -107,8 +116,8 @@ where
     )
     .await;
 
-    insert(session);
-    select(session);
+    insert(session).await;
+    select(session).await;
     select_cross_connection(session, connection_creator).await;
     delete(session).await;
     use_statement(session).await;
