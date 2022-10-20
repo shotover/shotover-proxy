@@ -1,6 +1,6 @@
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
-    stmt, Batch, BatchType, CassErrorCode, CassFuture, CassResult, Cluster, Error, ErrorKind,
+    stmt, Batch, BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
     PreparedStatement, Session as DatastaxSession, Ssl, Value, ValueType,
 };
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -109,9 +109,13 @@ impl CassandraConnection {
                 cluster.set_load_balance_round_robin();
 
                 CassandraConnection::Datastax {
-                    // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
-                    // So we instead force the Display formatter `{}` on the error.
-                    session: cluster.connect().map_err(|err| format!("{err}")).unwrap(),
+                    session: cluster
+                        .connect_async()
+                        .await
+                        // By default unwrap uses the Debug formatter `{:?}` which is extremely noisy for the error type returned by `connect()`.
+                        // So we instead force the Display formatter `{}` on the error.
+                        .map_err(|err| format!("{err}"))
+                        .unwrap(),
                     schema_awaiter: None,
                 }
             }
@@ -163,7 +167,7 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code, unused_variables)]
-    pub fn new_tls(
+    pub async fn new_tls(
         contact_points: &str,
         port: u16,
         ca_cert_path: &str,
@@ -188,7 +192,7 @@ impl CassandraConnection {
                 cluster.set_ssl(&mut ssl);
 
                 CassandraConnection::Datastax {
-                    session: cluster.connect().unwrap(),
+                    session: cluster.connect_async().await.unwrap(),
                     schema_awaiter: None,
                 }
             }
@@ -239,7 +243,7 @@ impl CassandraConnection {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
-                match session.execute(&statement).wait() {
+                match session.execute(&statement).await {
                     Ok(result) => result
                         .into_iter()
                         .map(|x| x.into_iter().map(ResultValue::new_from_cpp).collect())
@@ -264,24 +268,24 @@ impl CassandraConnection {
 
     #[allow(dead_code)]
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    pub fn execute_async(&self, query: &str) -> CassFuture<CassResult> {
+    pub async fn execute_fallible(&self, query: &str) -> Result<CassResult, cassandra_cpp::Error> {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
-                session.execute(&statement)
+                session.execute(&statement).await
             }
             Self::CdrsTokio { .. } => todo!(),
         }
     }
 
     #[allow(dead_code)]
-    pub fn execute_expect_err(&self, query: &str) -> ErrorBody {
+    pub async fn execute_expect_err(&self, query: &str) -> ErrorBody {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
-                let error = session.execute(&statement).wait().unwrap_err();
+                let error = session.execute(&statement).await.unwrap_err();
 
                 if let ErrorKind::CassErrorResult(code, msg, ..) = error.0 {
                     cpp_error_to_cdrs(code, msg)
@@ -290,7 +294,7 @@ impl CassandraConnection {
                 }
             }
             Self::CdrsTokio { session, .. } => {
-                let error = futures::executor::block_on(session.query(query)).unwrap_err();
+                let error = session.query(query).await.unwrap_err();
 
                 match error {
                     CdrsError::Server { body, .. } => body,
@@ -301,8 +305,8 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code)]
-    pub fn execute_expect_err_contains(&self, query: &str, contains: &str) {
-        let error_msg = self.execute_expect_err(query).message;
+    pub async fn execute_expect_err_contains(&self, query: &str, contains: &str) {
+        let error_msg = self.execute_expect_err(query).await.message;
         assert!(
             error_msg.contains(contains),
             "Expected the error to contain '{contains}' but it did not and was instead '{error_msg}'"
@@ -310,21 +314,21 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code)]
-    pub fn prepare(&self, query: &str) -> PreparedQuery {
+    pub async fn prepare(&self, query: &str) -> PreparedQuery {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
-                PreparedQuery::Datastax(session.prepare(query).unwrap().wait().unwrap())
+                PreparedQuery::Datastax(session.prepare(query).unwrap().await.unwrap())
             }
             Self::CdrsTokio { session, .. } => {
-                let query = futures::executor::block_on(session.prepare(query)).unwrap();
+                let query = session.prepare(query).await.unwrap();
                 PreparedQuery::CdrsTokio(query)
             }
         }
     }
 
     #[allow(dead_code)]
-    pub fn execute_prepared(
+    pub async fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
         value: i32,
@@ -334,7 +338,7 @@ impl CassandraConnection {
             Self::Datastax { session, .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
                 statement.bind_int32(0, value).unwrap();
-                match session.execute(&statement).wait() {
+                match session.execute(&statement).await {
                     Ok(result) => result
                         .into_iter()
                         .map(|x| x.into_iter().map(ResultValue::new_from_cpp).collect())
@@ -346,10 +350,10 @@ impl CassandraConnection {
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
-                let response = futures::executor::block_on(
-                    session.exec_with_values(statement, query_values!(value)),
-                )
-                .unwrap();
+                let response = session
+                    .exec_with_values(statement, query_values!(value))
+                    .await
+                    .unwrap();
 
                 Self::process_cdrs_response(response)
             }
@@ -357,7 +361,7 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code)]
-    pub fn execute_batch(&self, queries: Vec<String>) {
+    pub async fn execute_batch(&self, queries: Vec<String>) {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
@@ -367,7 +371,7 @@ impl CassandraConnection {
                     batch.add_statement(&stmt!(query.as_str())).unwrap();
                 }
 
-                match session.execute_batch(&batch).wait() {
+                match session.execute_batch(&batch).await {
                     Ok(result) => assert_eq!(
                         result.into_iter().count(),
                         0,
@@ -385,13 +389,13 @@ impl CassandraConnection {
 
                 let batch = builder.build().unwrap();
 
-                futures::executor::block_on(session.batch(batch)).unwrap();
+                session.batch(batch).await.unwrap();
             }
         }
     }
 
     #[allow(dead_code, unused_variables)]
-    pub fn execute_batch_expect_err(&self, queries: Vec<String>) -> ErrorBody {
+    pub async fn execute_batch_expect_err(&self, queries: Vec<String>) -> ErrorBody {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
@@ -399,7 +403,7 @@ impl CassandraConnection {
                 for query in queries {
                     batch.add_statement(&stmt!(query.as_str())).unwrap();
                 }
-                let error = session.execute_batch(&batch).wait().unwrap_err();
+                let error = session.execute_batch(&batch).await.unwrap_err();
                 if let ErrorKind::CassErrorResult(code, msg, ..) = error.0 {
                     cpp_error_to_cdrs(code, msg)
                 } else {
