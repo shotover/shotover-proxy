@@ -40,7 +40,7 @@ use uuid::Uuid;
 
 /// Functions for operations on an unparsed Cassandra frame
 pub mod raw_frame {
-    use super::{CassandraMetadata, RawCassandraFrame};
+    use super::{CassandraMetadata, RawCassandraFrame, Tracing};
     use anyhow::{anyhow, bail, Result};
     use cassandra_protocol::{compression::Compression, frame::Opcode};
     use nonzero_ext::nonzero;
@@ -66,12 +66,11 @@ pub mod raw_frame {
         let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
             .envelope;
-
+        let tracing = Tracing::from_frame(&frame)?;
         Ok(CassandraMetadata {
             version: frame.version,
-            flags: frame.flags,
             stream_id: frame.stream_id,
-            tracing_id: frame.tracing_id,
+            tracing,
             opcode: frame.opcode,
         })
     }
@@ -92,18 +91,61 @@ pub mod raw_frame {
 pub struct CassandraMetadata {
     pub version: Version,
     pub stream_id: StreamId,
-    pub tracing_id: Option<Uuid>,
+    pub tracing: Tracing,
     pub opcode: Opcode,
-    pub flags: Flags,
     // missing `warnings` field because we are not using it currently
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Tracing {
+    Request(bool),
+    Response(Option<Uuid>),
+}
+
+impl Tracing {
+    fn enabled(&self) -> bool {
+        match self {
+            Self::Request(enabled) => *enabled,
+            Self::Response(uuid) => uuid.is_some(),
+        }
+    }
+}
+
+impl From<Tracing> for Option<Uuid> {
+    fn from(tracing: Tracing) -> Self {
+        match tracing {
+            Tracing::Request(_) => None,
+            Tracing::Response(uuid) => uuid,
+        }
+    }
+}
+
+impl Tracing {
+    fn from_frame(frame: &RawCassandraFrame) -> Result<Self> {
+        match frame.direction {
+            Direction::Request => Ok(Self::Request(frame.flags.contains(Flags::TRACING))),
+            Direction::Response => {
+                if frame.tracing_id.is_none() && frame.flags.contains(Flags::TRACING) {
+                    return Err(anyhow!("Frame has no tracing_id but tracing was set"));
+                }
+
+                if frame.tracing_id.is_some() && !frame.flags.contains(Flags::TRACING) {
+                    return Err(anyhow!(
+                        "Frame has a tracing_id but tracing flag was not set"
+                    ));
+                }
+
+                Ok(Self::Response(frame.tracing_id))
+            }
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CassandraFrame {
     pub version: Version,
-    pub flags: Flags,
     pub stream_id: StreamId,
-    pub tracing_id: Option<Uuid>,
+    pub tracing: Tracing,
     pub warnings: Vec<String>,
     /// Contains the message body
     pub operation: CassandraOperation,
@@ -114,9 +156,8 @@ impl CassandraFrame {
     pub(crate) fn metadata(&self) -> CassandraMetadata {
         CassandraMetadata {
             version: self.version,
-            flags: self.flags,
             stream_id: self.stream_id,
-            tracing_id: self.tracing_id,
+            tracing: self.tracing,
             opcode: self.operation.to_opcode(),
         }
     }
@@ -136,6 +177,8 @@ impl CassandraFrame {
         let frame = RawCassandraFrame::from_buffer(&bytes, Compression::None)
             .map_err(|e| anyhow!("{e:?}"))?
             .envelope;
+
+        let tracing = Tracing::from_frame(&frame)?;
         let operation = match frame.opcode {
             Opcode::Query => {
                 if let RequestBody::Query(body) = frame.request_body()? {
@@ -296,9 +339,8 @@ impl CassandraFrame {
 
         Ok(CassandraFrame {
             version: frame.version,
-            flags: frame.flags,
             stream_id: frame.stream_id,
-            tracing_id: frame.tracing_id,
+            tracing,
             warnings: frame.warnings,
             operation,
         })
@@ -313,9 +355,9 @@ impl CassandraFrame {
     }
 
     pub fn encode(self) -> RawCassandraFrame {
-        let mut flags = Flags::empty();
+        let mut flags = Flags::default();
         flags.set(Flags::WARNING, !self.warnings.is_empty());
-        flags.set(Flags::TRACING, self.tracing_id.is_some());
+        flags.set(Flags::TRACING, self.tracing.enabled());
 
         RawCassandraFrame {
             direction: self.operation.to_direction(),
@@ -324,7 +366,7 @@ impl CassandraFrame {
             opcode: self.operation.to_opcode(),
             stream_id: self.stream_id,
             body: self.operation.into_body(self.version),
-            tracing_id: self.tracing_id,
+            tracing_id: self.tracing.into(),
             warnings: self.warnings,
         }
     }
@@ -695,7 +737,7 @@ pub struct CassandraBatch {
 impl Display for CassandraFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{} stream:{}", self.version, self.stream_id)?;
-        if let Some(tracing_id) = self.tracing_id {
+        if let Tracing::Request(tracing_id) = self.tracing {
             write!(f, " tracing_id:{}", tracing_id)?;
         }
         if !self.warnings.is_empty() {

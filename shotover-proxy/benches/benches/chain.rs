@@ -1,13 +1,10 @@
 use bytes::Bytes;
 use cassandra_protocol::{
-    compression::Compression,
-    consistency::Consistency,
-    frame::{Flags, Version},
-    query::QueryParams,
+    compression::Compression, consistency::Consistency, frame::Version, query::QueryParams,
 };
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
-use shotover_proxy::frame::cassandra::parse_statement_single;
+use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
 use shotover_proxy::frame::RedisFrame;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType};
 use shotover_proxy::message::{Message, QueryType};
@@ -233,9 +230,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![Message::from_bytes(
                 CassandraFrame {
                     version: Version::V4,
-                    flags: Flags::default(),
                     stream_id: 0,
-                    tracing_id: None,
+                    tracing: Tracing::Request(false),
                     warnings: vec![],
                     operation: CassandraOperation::Query {
                         query: Box::new(parse_statement_single(
@@ -341,9 +337,8 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
     Wrapper::new_with_chain_name(
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(query)),

@@ -1,5 +1,5 @@
 use super::node::{CassandraNode, ConnectionFactory};
-use crate::frame::cassandra::parse_statement_single;
+use crate::frame::cassandra::{parse_statement_single, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
 use crate::transforms::cassandra::connection::CassandraConnection;
@@ -8,10 +8,7 @@ use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
 use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
 use cassandra_protocol::frame::message_register::BodyReqRegister;
 use cassandra_protocol::token::Murmur3Token;
-use cassandra_protocol::{
-    frame::{Flags, Version},
-    query::QueryParams,
-};
+use cassandra_protocol::{frame::Version, query::QueryParams};
 use std::net::SocketAddr;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -147,8 +144,7 @@ async fn register_for_topology_and_status_events(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
-                flags: Flags::default(),
-                tracing_id: None,
+                tracing: Tracing::Request(false),
                 warnings: vec![],
                 operation: CassandraOperation::Register(BodyReqRegister {
                     events: vec![
@@ -199,9 +195,8 @@ mod system_local {
         connection.send(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
-                flags: Flags::default(),
                 stream_id: 1,
-                tracing_id: None,
+                tracing: Tracing::Request(false),
                 warnings: vec![],
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
@@ -287,8 +282,7 @@ mod system_peers {
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 stream_id: 0,
-                flags: Flags::default(),
-                tracing_id: None,
+                tracing: Tracing::Request(false),
                 warnings: vec![],
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
@@ -308,8 +302,7 @@ mod system_peers {
                 Message::from_frame(Frame::Cassandra(CassandraFrame {
                     version: Version::V4,
                     stream_id: 0,
-                    flags: Flags::default(),
-                    tracing_id: None,
+                    tracing: Tracing::Request(false),
                     warnings: vec![],
                     operation: CassandraOperation::Query {
                         query: Box::new(parse_statement_single(

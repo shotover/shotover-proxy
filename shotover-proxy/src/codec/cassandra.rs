@@ -1,4 +1,4 @@
-use crate::frame::cassandra::{CassandraMetadata, CassandraOperation};
+use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
 use crate::server::CodecReadError;
@@ -7,7 +7,7 @@ use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::frame::{
-    CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Flags, Opcode, Version,
+    CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Opcode, Version,
 };
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Identifier;
@@ -185,13 +185,12 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
     CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
         CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             stream_id: 0,
             operation: CassandraOperation::Error(ErrorBody {
                 message: "Invalid or unsupported protocol version".into(),
                 ty: ErrorType::Protocol,
             }),
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
         },
     ))])
@@ -225,7 +224,7 @@ impl Encoder<Messages> for CassandraCodec {
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodec;
     use crate::frame::cassandra::{
-        parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult,
+        parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult, Tracing,
     };
     use crate::frame::Frame;
     use crate::message::Message;
@@ -236,7 +235,7 @@ mod cassandra_protocol_tests {
         ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags,
         TableSpec,
     };
-    use cassandra_protocol::frame::{Flags, Version};
+    use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
     use hex_literal::hex;
     use tokio_util::codec::{Decoder, Encoder};
@@ -282,12 +281,11 @@ mod cassandra_protocol_tests {
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             operation: CassandraOperation::Startup(vec![
                 0, 1, 0, 11, 67, 81, 76, 95, 86, 69, 82, 83, 73, 79, 78, 0, 5, 51, 46, 48, 46, 48,
             ]),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -299,10 +297,9 @@ mod cassandra_protocol_tests {
         let bytes = hex!("040000000500000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             operation: CassandraOperation::Options(vec![]),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -314,10 +311,9 @@ mod cassandra_protocol_tests {
         let bytes = hex!("840000000200000000");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             operation: CassandraOperation::Ready(vec![]),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -332,7 +328,6 @@ mod cassandra_protocol_tests {
         );
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             operation: CassandraOperation::Register(BodyReqRegister {
                 events: vec![
                     SimpleServerEvent::TopologyChange,
@@ -341,7 +336,7 @@ mod cassandra_protocol_tests {
                 ],
             }),
             stream_id: 1,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -358,7 +353,6 @@ mod cassandra_protocol_tests {
         );
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             operation: CassandraOperation::Result(CassandraResult::Rows {
                 rows: vec![],
                 metadata: Box::new(RowsMetadata {
@@ -450,7 +444,7 @@ mod cassandra_protocol_tests {
                 }),
             }),
             stream_id: 2,
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -466,9 +460,8 @@ mod cassandra_protocol_tests {
 
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             stream_id: 3,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(
@@ -490,9 +483,8 @@ mod cassandra_protocol_tests {
 
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             stream_id: 3,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(

@@ -135,22 +135,21 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::cassandra::parse_statement_single;
+    use crate::frame::cassandra::{parse_statement_single, Tracing};
     use crate::frame::CassandraFrame;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::consistency::Consistency;
     use cassandra_protocol::frame::message_result::{
         ColSpec, ColType, ColTypeOption, RowsMetadata, RowsMetadataFlags, TableSpec,
     };
-    use cassandra_protocol::frame::{Flags, Version};
+    use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
 
     fn create_query_message(query: &str) -> Message {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
-            flags: Flags::default(),
             version: Version::V4,
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(query)),
@@ -172,9 +171,8 @@ mod test {
     fn create_response_message(col_specs: &[ColSpec], rows: Vec<Vec<MessageValue>>) -> Message {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            flags: Flags::default(),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
             operation: CassandraOperation::Result(Rows {
                 rows,
