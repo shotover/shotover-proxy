@@ -5,7 +5,7 @@ use cassandra_protocol::frame::message_result::{
 use cassandra_protocol::{frame::Version, query::QueryParams};
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover_proxy::codec::cassandra::CassandraCodec;
-use shotover_proxy::frame::cassandra::parse_statement_single;
+use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use shotover_proxy::message::{IntSize, Message, MessageValue};
 use tokio_util::codec::Encoder;
@@ -18,7 +18,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 1,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single("SELECT * FROM system.local;")),
@@ -45,7 +45,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
             operation: CassandraOperation::Result(peers_v2_result()),
         }))];

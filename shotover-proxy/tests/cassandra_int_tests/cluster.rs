@@ -1,5 +1,5 @@
 use cassandra_protocol::frame::Version;
-use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
+use shotover_proxy::frame::{cassandra::Tracing, CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
 use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use shotover_proxy::transforms::cassandra::sink_cluster::{
@@ -48,14 +48,14 @@ fn create_handshake() -> Vec<Message> {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 64,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Startup(b"\0\x01\0\x0bCQL_VERSION\0\x053.0.0".to_vec()),
         })),
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 128,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::AuthResponse(
                 b"\0\0\0\x14\0cassandra\0cassandra".to_vec(),

@@ -1,4 +1,4 @@
-use crate::frame::cassandra::{CassandraMetadata, CassandraOperation};
+use crate::frame::cassandra::{CassandraMetadata, CassandraOperation, Tracing};
 use crate::frame::{CassandraFrame, Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, Metadata};
 use crate::server::CodecReadError;
@@ -190,7 +190,7 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
                 message: "Invalid or unsupported protocol version".into(),
                 ty: ErrorType::Protocol,
             }),
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
         },
     ))])
@@ -224,7 +224,7 @@ impl Encoder<Messages> for CassandraCodec {
 mod cassandra_protocol_tests {
     use crate::codec::cassandra::CassandraCodec;
     use crate::frame::cassandra::{
-        parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult,
+        parse_statement_single, CassandraFrame, CassandraOperation, CassandraResult, Tracing,
     };
     use crate::frame::Frame;
     use crate::message::Message;
@@ -285,7 +285,7 @@ mod cassandra_protocol_tests {
                 0, 1, 0, 11, 67, 81, 76, 95, 86, 69, 82, 83, 73, 79, 78, 0, 5, 51, 46, 48, 46, 48,
             ]),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -299,7 +299,7 @@ mod cassandra_protocol_tests {
             version: Version::V4,
             operation: CassandraOperation::Options(vec![]),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -313,7 +313,7 @@ mod cassandra_protocol_tests {
             version: Version::V4,
             operation: CassandraOperation::Ready(vec![]),
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -336,7 +336,7 @@ mod cassandra_protocol_tests {
                 ],
             }),
             stream_id: 1,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -444,7 +444,7 @@ mod cassandra_protocol_tests {
                 }),
             }),
             stream_id: 2,
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -461,7 +461,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 3,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(
@@ -484,7 +484,7 @@ mod cassandra_protocol_tests {
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 3,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(

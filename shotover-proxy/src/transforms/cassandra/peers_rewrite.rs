@@ -135,7 +135,7 @@ fn rewrite_port(message: &mut Message, column_names: &[Identifier], new_port: u1
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::cassandra::parse_statement_single;
+    use crate::frame::cassandra::{parse_statement_single, Tracing};
     use crate::frame::CassandraFrame;
     use crate::transforms::cassandra::peers_rewrite::CassandraResult::Rows;
     use cassandra_protocol::consistency::Consistency;
@@ -149,7 +149,7 @@ mod test {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(query)),
@@ -172,7 +172,7 @@ mod test {
         Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Response(None),
             warnings: vec![],
             operation: CassandraOperation::Result(Rows {
                 rows,
