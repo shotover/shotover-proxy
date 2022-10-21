@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::frame::cassandra::{parse_statement_single, CassandraMetadata};
+use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue, Messages};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
@@ -201,7 +201,7 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
     Ok(Message::from_frame(Frame::Cassandra(CassandraFrame {
         version,
         stream_id,
-        tracing_id: None,
+        tracing: Tracing::Request(false),
         warnings: vec![],
         operation: CassandraOperation::Query {
             query: Box::new(parse_statement_single(query)),
@@ -377,7 +377,7 @@ impl CassandraSinkCluster {
                                                 }),
                                             }),
                                             stream_id: metadata.stream_id,
-                                            tracing_id: metadata.tracing_id,
+                                            tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
                                             version: metadata.version,
                                             warnings: vec![],
                                         },
@@ -889,7 +889,7 @@ fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, C
         operation: CassandraOperation::Execute(execute_body),
         version,
         stream_id,
-        tracing_id,
+        tracing,
         ..
     })) = message.frame()
     {
@@ -898,7 +898,7 @@ fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, C
             CassandraMetadata {
                 version: *version,
                 stream_id: *stream_id,
-                tracing_id: *tracing_id,
+                tracing: *tracing,
                 opcode: Opcode::Execute,
             },
         ));

@@ -4,7 +4,7 @@ use cassandra_protocol::{
 };
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
-use shotover_proxy::frame::cassandra::parse_statement_single;
+use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
 use shotover_proxy::frame::RedisFrame;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType};
 use shotover_proxy::message::{Message, QueryType};
@@ -231,7 +231,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 CassandraFrame {
                     version: Version::V4,
                     stream_id: 0,
-                    tracing_id: None,
+                    tracing: Tracing::Request(false),
                     warnings: vec![],
                     operation: CassandraOperation::Query {
                         query: Box::new(parse_statement_single(
@@ -338,7 +338,7 @@ fn cassandra_parsed_query(query: &str) -> Wrapper {
         vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
             stream_id: 0,
-            tracing_id: None,
+            tracing: Tracing::Request(false),
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single(query)),

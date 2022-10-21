@@ -1,5 +1,5 @@
 use super::node::{CassandraNode, ConnectionFactory};
-use crate::frame::cassandra::parse_statement_single;
+use crate::frame::cassandra::{parse_statement_single, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
 use crate::transforms::cassandra::connection::CassandraConnection;
@@ -144,7 +144,7 @@ async fn register_for_topology_and_status_events(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
-                tracing_id: None,
+                tracing: Tracing::Request(false),
                 warnings: vec![],
                 operation: CassandraOperation::Register(BodyReqRegister {
                     events: vec![
@@ -196,7 +196,7 @@ mod system_local {
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 stream_id: 1,
-                tracing_id: None,
+                tracing: Tracing::Request(false),
                 warnings: vec![],
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
@@ -282,7 +282,7 @@ mod system_peers {
             Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version: Version::V4,
                 stream_id: 0,
-                tracing_id: None,
+                tracing: Tracing::Request(false),
                 warnings: vec![],
                 operation: CassandraOperation::Query {
                     query: Box::new(parse_statement_single(
@@ -302,7 +302,7 @@ mod system_peers {
                 Message::from_frame(Frame::Cassandra(CassandraFrame {
                     version: Version::V4,
                     stream_id: 0,
-                    tracing_id: None,
+                    tracing: Tracing::Request(false),
                     warnings: vec![],
                     operation: CassandraOperation::Query {
                         query: Box::new(parse_statement_single(
