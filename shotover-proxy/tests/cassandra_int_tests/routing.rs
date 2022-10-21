@@ -1,10 +1,7 @@
 use crate::helpers::cassandra::{run_query, CassandraConnection, CassandraDriver};
 
 pub async fn create_keyspace(connection: &mut CassandraConnection) {
-    let create_ks: &'static str =
-        "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { \
-                                   'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
-
+    let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
     run_query(connection, create_ks).await;
 }
 
@@ -30,7 +27,7 @@ pub async fn test(
         .enable_schema_awaiter(
             &format!(
                 "{}:{}",
-                cassandra_contact_points.split(',').collect::<Vec<&str>>()[0].to_owned(),
+                cassandra_contact_points.split(',').next().unwrap(),
                 cassandra_port
             ),
             None,
