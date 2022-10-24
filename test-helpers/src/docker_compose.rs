@@ -87,7 +87,7 @@ impl DockerCompose {
         env::set_var("AWS_ACCESS_KEY_ID", "dummy-access-key");
         env::set_var("AWS_SECRET_ACCESS_KEY", "dummy-access-key-secret");
 
-        DockerCompose::new("tests/transforms/docker-compose-moto.yml")
+        DockerCompose::new("tests/transforms/docker-compose-moto.yaml")
     }
 
     /// Stops the container with the provided service name
@@ -119,46 +119,46 @@ impl DockerCompose {
 
     fn wait_for_containers_to_startup(&self) {
         match self.file_path.as_ref() {
-            "tests/transforms/docker-compose-moto.yml" => {
+            "tests/transforms/docker-compose-moto.yaml" => {
                 self.wait_for_log(r#"Press CTRL\+C to quit"#, 1, 110)
             }
-            "example-configs/redis-passthrough/docker-compose.yml"
-            | "example-configs/redis-tls/docker-compose.yml" => {
+            "example-configs/redis-passthrough/docker-compose.yaml"
+            | "example-configs/redis-tls/docker-compose.yaml" => {
                 self.wait_for_log("Ready to accept connections", 1, 110)
             }
-            "example-configs/redis-multi/docker-compose.yml" => {
+            "example-configs/redis-multi/docker-compose.yaml" => {
                 self.wait_for_log("Ready to accept connections", 3, 110)
             }
-            "tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml"
-            | "tests/test-configs/redis-cluster-auth/docker-compose.yml"
-            | "example-configs/redis-cluster-handling/docker-compose.yml"
-            | "example-configs/redis-cluster-hiding/docker-compose.yml"
-            | "example-configs/redis-cluster-tls/docker-compose.yml"
-            | "example-configs/redis-cluster-tls/docker-compose-with-key.yml" => {
+            "tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yaml"
+            | "tests/test-configs/redis-cluster-auth/docker-compose.yaml"
+            | "example-configs/redis-cluster-handling/docker-compose.yaml"
+            | "example-configs/redis-cluster-hiding/docker-compose.yaml"
+            | "example-configs/redis-cluster-tls/docker-compose.yaml"
+            | "example-configs/redis-cluster-tls/docker-compose-with-key.yaml" => {
                 self.wait_for_log("Cluster state changed", 6, 110)
             }
-            "example-configs/redis-cluster-dr/docker-compose.yml" => {
+            "example-configs/redis-cluster-dr/docker-compose.yaml" => {
                 self.wait_for_log("Cluster state changed", 12, 110)
             }
-            "example-configs/cassandra-passthrough/docker-compose.yml"
-            | "example-configs/cassandra-tls/docker-compose.yml"
-            | "example-configs/cassandra-redis-cache/docker-compose.yml"
-            | "example-configs/cassandra-protect-local/docker-compose.yml"
-            | "example-configs/cassandra-protect-aws/docker-compose.yml"
-            | "example-configs/cassandra-request-throttling/docker-compose.yml"
-            | "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yml"
-            | "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yml" => {
+            "example-configs/cassandra-passthrough/docker-compose.yaml"
+            | "example-configs/cassandra-tls/docker-compose.yaml"
+            | "example-configs/cassandra-redis-cache/docker-compose.yaml"
+            | "example-configs/cassandra-protect-local/docker-compose.yaml"
+            | "example-configs/cassandra-protect-aws/docker-compose.yaml"
+            | "example-configs/cassandra-request-throttling/docker-compose.yaml"
+            | "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yaml"
+            | "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yaml" => {
                 self.wait_for_log("Startup complete", 1, 110)
             }
             "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml"
             | "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml" => {
                 self.wait_for_log("Startup complete", 2, 110)
             }
-            "example-configs-docker/cassandra-peers-rewrite/docker-compose.yml"
-            | "example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml"
-            | "example-configs/cassandra-cluster/docker-compose-cassandra-v3.yml"
-            | "example-configs/cassandra-cluster-multi-rack/docker-compose.yml"
-            | "example-configs/cassandra-cluster-tls/docker-compose.yml" => {
+            "example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml"
+            | "example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml"
+            | "example-configs/cassandra-cluster/docker-compose-cassandra-v3.yaml"
+            | "example-configs/cassandra-cluster-multi-rack/docker-compose.yaml"
+            | "example-configs/cassandra-cluster-tls/docker-compose.yaml" => {
                 self.wait_for_log("Startup complete", 3, 180)
             }
             path => unimplemented!(

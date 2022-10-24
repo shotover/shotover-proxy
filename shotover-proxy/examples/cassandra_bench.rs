@@ -30,7 +30,7 @@ fn main() {
 
     let latte = Latte::new(args.rate);
     {
-        let _compose = DockerCompose::new(&format!("{}/docker-compose.yml", args.config_dir));
+        let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", args.config_dir));
 
         // Uses ShotoverProcess instead of ShotoverManager for a more accurate benchmark
         let shotover_manager = ShotoverProcess::new(&format!("{}/topology.yaml", args.config_dir));

@@ -31,7 +31,7 @@ fn redis(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/redis-multi/topology.yaml",
-                "example-configs/redis-multi/docker-compose.yml",
+                "example-configs/redis-multi/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -54,7 +54,7 @@ fn redis(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/redis-cluster-hiding/topology.yaml",
-                "example-configs/redis-cluster-hiding/docker-compose.yml",
+                "example-configs/redis-cluster-hiding/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -77,7 +77,7 @@ fn redis(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/redis-passthrough/topology.yaml",
-                "example-configs/redis-passthrough/docker-compose.yml",
+                "example-configs/redis-passthrough/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -105,7 +105,7 @@ fn redis(c: &mut Criterion) {
             ));
             BenchResources::new(
                 "example-configs/redis-tls/topology.yaml",
-                "example-configs/redis-tls/docker-compose.yml",
+                "example-configs/redis-tls/docker-compose.yaml",
             )
         },
         move |b, state| {
@@ -127,7 +127,7 @@ fn redis(c: &mut Criterion) {
             ));
             BenchResources::new(
                 "example-configs/redis-cluster-tls/topology.yaml",
-                "example-configs/redis-cluster-tls/docker-compose.yml",
+                "example-configs/redis-cluster-tls/docker-compose.yaml",
             )
         },
         move |b, state| {
