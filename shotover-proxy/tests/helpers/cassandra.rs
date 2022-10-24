@@ -388,7 +388,7 @@ impl CassandraConnection {
     }
 
     #[allow(dead_code)]
-    pub async fn execute_prepared_with_tracing(
+    pub async fn execute_prepared_coordinator_node(
         &self,
         prepared_query: &PreparedQuery,
         key: i32,
