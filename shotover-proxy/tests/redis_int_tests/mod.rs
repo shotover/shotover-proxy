@@ -15,7 +15,7 @@ pub mod basic_driver_tests;
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough() {
-    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
@@ -44,7 +44,7 @@ async fn test_cluster_tls() {
     test_helpers::cert::generate_redis_test_certs(Path::new("example-configs/redis-tls/certs"));
 
     {
-        let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yml");
+        let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yaml");
         let shotover_manager =
             ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
 
@@ -58,7 +58,7 @@ async fn test_cluster_tls() {
     // Quick test to verify it works with private key
     {
         let _compose =
-            DockerCompose::new("example-configs/redis-cluster-tls/docker-compose-with-key.yml");
+            DockerCompose::new("example-configs/redis-cluster-tls/docker-compose-with-key.yaml");
         let shotover_manager = ShotoverManager::from_topology_file(
             "example-configs/redis-cluster-tls/topology-with-key.yaml",
         );
@@ -73,7 +73,7 @@ async fn test_cluster_tls() {
 async fn test_source_tls_and_single_tls() {
     test_helpers::cert::generate_redis_test_certs(Path::new("example-configs/redis-tls/certs"));
 
-    let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yaml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
@@ -100,7 +100,7 @@ async fn test_source_tls_and_single_tls() {
 #[serial]
 async fn test_cluster_ports_rewrite() {
     let _compose =
-        DockerCompose::new("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yml");
+        DockerCompose::new("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yaml");
     let shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-configs/redis-cluster-ports-rewrite/topology.yaml",
     );
@@ -118,7 +118,7 @@ async fn test_cluster_ports_rewrite() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_redis_multi() {
-    let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yaml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
@@ -131,7 +131,7 @@ async fn test_redis_multi() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_auth_redis() {
-    let _compose = DockerCompose::new("tests/test-configs/redis-cluster-auth/docker-compose.yml");
+    let _compose = DockerCompose::new("tests/test-configs/redis-cluster-auth/docker-compose.yaml");
     let shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/redis-cluster-auth/topology.yaml");
     let mut connection = shotover_manager.redis_connection_async(6379).await;
@@ -143,7 +143,7 @@ async fn test_cluster_auth_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_hiding_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-hiding/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/redis-cluster-hiding/docker-compose.yaml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-hiding/topology.yaml");
 
@@ -159,7 +159,7 @@ async fn test_cluster_hiding_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_handling_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-handling/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/redis-cluster-handling/docker-compose.yaml");
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-handling/topology.yaml");
 
@@ -176,7 +176,7 @@ async fn test_cluster_handling_redis() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cluster_dr_redis() {
-    let _compose = DockerCompose::new("example-configs/redis-cluster-dr/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/redis-cluster-dr/docker-compose.yaml");
 
     let nodes = vec![
         "redis://127.0.0.1:2120/",

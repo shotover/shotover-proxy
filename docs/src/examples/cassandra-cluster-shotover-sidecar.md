@@ -12,10 +12,10 @@ In this example, we will be connecting to a Cassandra cluster that has the follo
 
 ### Rewriting the peer ports
 
-Shotover will be deployed as a sidecar to each node in the Cassandra cluster, listening on `9043`. Use the following [docker-compose.yml](https://raw.githubusercontent.com/shotover/shotover-proxy/cassandra-docs/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yml) to run the Cassandra cluster and Shotover sidecars. In this example we want to ensure that all our traffic to Cassandra goes through Shotover.
+Shotover will be deployed as a sidecar to each node in the Cassandra cluster, listening on `9043`. Use the following [docker-compose.yaml](https://raw.githubusercontent.com/shotover/shotover-proxy/cassandra-docs/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml) to run the Cassandra cluster and Shotover sidecars. In this example we want to ensure that all our traffic to Cassandra goes through Shotover.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yml --output docker-compose.yml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml --output docker-compose.yaml
 ```
 
 Below we can see an example of a Cassandra node and it's Shotover sidecar, notice that they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
