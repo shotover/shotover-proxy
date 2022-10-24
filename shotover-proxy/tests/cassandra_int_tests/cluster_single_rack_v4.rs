@@ -255,18 +255,13 @@ pub async fn test_node_going_down(
     shotover_manager: ShotoverManager,
     driver: CassandraDriver,
 ) {
-    {
-        let mut connection_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
-        connection_shotover
-            .enable_schema_awaiter("172.16.1.2:9044", None)
-            .await;
-        // Use Replication 2 in case it ends up on the node that we kill
-        run_query(&connection_shotover, "CREATE KEYSPACE cluster_single_rack_node_going_down WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 2 };").await;
-        run_query(&connection_shotover, "CREATE TABLE cluster_single_rack_node_going_down.test_table (pk varchar PRIMARY KEY, col1 int, col2 boolean);").await;
-        connection_shotover.await_schema_agreement().await;
-
-        // TODO: hold onto this connection and use it to test how we handle preexisting connections before the node is stopped
-    }
+    let mut connection_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    connection_shotover
+        .enable_schema_awaiter("172.16.1.2:9044", None)
+        .await;
+    // Use Replication 2 in case it ends up on the node that we kill
+    run_query(&connection_shotover, "CREATE KEYSPACE cluster_single_rack_node_going_down WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 2 };").await;
+    run_query(&connection_shotover, "CREATE TABLE cluster_single_rack_node_going_down.test_table (pk varchar PRIMARY KEY, col1 int, col2 boolean);").await;
 
     {
         let event_connection_direct =
@@ -320,14 +315,20 @@ pub async fn test_node_going_down(
             .await
             .expect_err("CassandraSinkCluster must filter out this event");
 
-        // test that shotover handles preexisting connections after node goes down
-        // TODO: test_connection_handles_node_down(&old_connection).await;
+        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+
+        // setup data to read
+        run_query(&new_connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk1', 42, true);").await;
+        run_query(&new_connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk2', 413, false);").await;
 
         // test that shotover handles new connections after node goes down
-        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
         test_connection_handles_node_down(&new_connection).await;
+
+        // test that shotover handles preexisting connections after node goes down
+        test_connection_handles_node_down(&connection_shotover).await;
     }
 
+    std::mem::drop(connection_shotover);
     // Purposefully dispose of these as we left the underlying cassandra cluster in a non-recoverable state
     std::mem::drop(shotover_manager);
     std::mem::drop(compose);
@@ -336,10 +337,6 @@ pub async fn test_node_going_down(
 async fn test_connection_handles_node_down(connection: &CassandraConnection) {
     // test a query that hits the control node and performs rewriting
     test_rewrite_system_local(connection).await;
-
-    // test queries that get routed across all nodes and performs reading and writing
-    run_query(connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk1', 42, true);").await;
-    run_query(connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk2', 413, false);").await;
 
     // run this a few times to make sure we arent getting lucky with the routing
     for _ in 0..10 {
