@@ -101,7 +101,10 @@ impl TlsConnector {
         let ssl = self.connector.configure()?.into_ssl("localhost")?;
 
         let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
-        Pin::new(&mut ssl_stream).connect().await?;
+        Pin::new(&mut ssl_stream)
+            .connect()
+            .await
+            .map_err(|e| anyhow!(e).context("Failed to connect to TLS connection"))?;
 
         Ok(ssl_stream)
     }

@@ -35,7 +35,7 @@ use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConf
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use crate::transforms::tee::{Tee, TeeConfig};
 use crate::transforms::throttling::{RequestThrottling, RequestThrottlingConfig};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use core::fmt;
@@ -430,7 +430,8 @@ impl<'a> Wrapper<'a> {
         let start = Instant::now();
         let result = CONTEXT_CHAIN_NAME
             .scope(chain_name, transform.transform(self))
-            .await;
+            .await
+            .map_err(|e| e.context(anyhow!("{transform_name} transform failed")));
         counter!("shotover_transform_total", 1, "transform" => transform_name);
         if result.is_err() {
             counter!("shotover_transform_failures", 1, "transform" => transform_name)
