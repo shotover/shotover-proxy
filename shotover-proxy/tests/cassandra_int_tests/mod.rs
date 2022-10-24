@@ -65,7 +65,7 @@ where
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_passthrough(#[case] driver: CassandraDriver) {
+async fn passthrough_standard(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
     let _shotover_manager =
@@ -82,7 +82,7 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_passthrough_encode(#[case] driver: CassandraDriver) {
+async fn passthrough_encode(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
     let _shotover_manager = ShotoverManager::from_topology_file(
@@ -100,7 +100,7 @@ async fn test_passthrough_encode(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
+async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
     let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yaml");
 
@@ -132,7 +132,7 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
+async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     let _compose =
         DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v3.yaml");
 
@@ -165,7 +165,7 @@ async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
+async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     let compose =
         DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml");
 
@@ -214,7 +214,7 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
+async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
     let _compose =
         DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yaml");
 
@@ -252,7 +252,7 @@ async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
+async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
     let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
@@ -295,7 +295,7 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
+async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
     recorder.install().unwrap();
@@ -326,7 +326,7 @@ async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver) {
+async fn protect_transform_local(#[case] driver: CassandraDriver) {
     let _compose =
         DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yaml");
 
@@ -348,7 +348,7 @@ async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver)
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cassandra_protect_transform_aws(#[case] driver: CassandraDriver) {
+async fn protect_transform_aws(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yaml");
     let _compose_aws = DockerCompose::new_moto();
 
@@ -368,7 +368,7 @@ async fn test_cassandra_protect_transform_aws(#[case] driver: CassandraDriver) {
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cassandra_peers_rewrite_cassandra4(#[case] driver: CassandraDriver) {
+async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
     let _docker_compose = DockerCompose::new(
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
     );
@@ -462,7 +462,7 @@ async fn test_cassandra_peers_rewrite_cassandra4(#[case] driver: CassandraDriver
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver) {
+async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
     let _docker_compose = DockerCompose::new(
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml",
     );
@@ -494,7 +494,7 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
+async fn request_throttling(#[case] driver: CassandraDriver) {
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
@@ -589,7 +589,7 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
 #[case(CdrsTokio)]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn test_events_keyspace(#[case] driver: CassandraDriver) {
+async fn events_keyspace(#[case] driver: CassandraDriver) {
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
