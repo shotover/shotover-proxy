@@ -220,7 +220,7 @@ impl Message {
                     message: "Message was filtered out by shotover".into(),
                     ty: ErrorType::Server,
                 }),
-                tracing_id: frame.tracing_id,
+                tracing: frame.tracing,
                 warnings: vec![],
             }),
             Frame::None => Frame::None,
@@ -249,7 +249,7 @@ impl Message {
                     message: error,
                     ty: ErrorType::Server,
                 }),
-                tracing_id: frame.tracing_id,
+                tracing: frame.tracing,
                 warnings: vec![],
             }),
             Metadata::None => Frame::None,
@@ -292,7 +292,7 @@ impl Message {
                 Frame::Cassandra(CassandraFrame {
                     version: metadata.version,
                     stream_id: metadata.stream_id,
-                    tracing_id: metadata.tracing_id,
+                    tracing: metadata.tracing,
                     warnings: vec![],
                     operation: body,
                 })
