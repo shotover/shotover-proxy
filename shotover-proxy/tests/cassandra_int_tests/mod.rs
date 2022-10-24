@@ -66,7 +66,7 @@ where
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough(#[case] driver: CassandraDriver) {
-    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
@@ -83,7 +83,7 @@ async fn test_passthrough(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_passthrough_encode(#[case] driver: CassandraDriver) {
-    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
     let _shotover_manager = ShotoverManager::from_topology_file(
         "example-configs/cassandra-passthrough/topology-encode.yaml",
@@ -102,7 +102,7 @@ async fn test_passthrough_encode(#[case] driver: CassandraDriver) {
 #[serial]
 async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
-    let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yaml");
 
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-tls/topology.yaml");
@@ -134,7 +134,7 @@ async fn test_source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 #[serial]
 async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     let _compose =
-        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v3.yml");
+        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v3.yaml");
 
     {
         let _shotover_manager = ShotoverManager::from_topology_file(
@@ -167,7 +167,7 @@ async fn test_cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 #[serial]
 async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     let compose =
-        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yml");
+        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml");
 
     let connection = || async {
         let mut connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
@@ -216,7 +216,7 @@ async fn test_cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 #[serial]
 async fn test_cluster_multi_rack(#[case] driver: CassandraDriver) {
     let _compose =
-        DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yml");
+        DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yaml");
 
     {
         let _shotover_manager_rack1 = ShotoverManager::from_topology_file_without_observability(
@@ -256,7 +256,7 @@ async fn test_source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
     let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
-    let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yaml");
     {
         let _shotover_manager = ShotoverManager::from_topology_file(
             "example-configs/cassandra-cluster-tls/topology.yaml",
@@ -299,7 +299,7 @@ async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
     let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
     recorder.install().unwrap();
-    let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yaml");
 
     let shotover_manager = ShotoverManager::from_topology_file_without_observability(
         "example-configs/cassandra-redis-cache/topology.yaml",
@@ -327,7 +327,8 @@ async fn test_cassandra_redis_cache(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver) {
-    let _compose = DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yml");
+    let _compose =
+        DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yaml");
 
     let _shotover_manager = ShotoverManager::from_topology_file(
         "example-configs/cassandra-protect-local/topology.yaml",
@@ -348,7 +349,7 @@ async fn test_cassandra_protect_transform_local(#[case] driver: CassandraDriver)
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_cassandra_protect_transform_aws(#[case] driver: CassandraDriver) {
-    let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yml");
+    let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yaml");
     let _compose_aws = DockerCompose::new_moto();
 
     let _shotover_manager =
@@ -495,7 +496,7 @@ async fn test_cassandra_peers_rewrite_cassandra3(#[case] driver: CassandraDriver
 #[serial]
 async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
     let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
     let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/cassandra-request-throttling.yaml");
@@ -590,7 +591,7 @@ async fn test_cassandra_request_throttling(#[case] driver: CassandraDriver) {
 #[serial]
 async fn test_events_keyspace(#[case] driver: CassandraDriver) {
     let _docker_compose =
-        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yml");
+        DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");

@@ -7,12 +7,12 @@ SCRIPT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # and returns that instead. So if our tests fails, our CI system will still pick it up!
 
 function defer {
-	docker-compose -f $SCRIPT_DIR/../../example-configs/redis-cluster/docker-compose.yml down
+	docker-compose -f $SCRIPT_DIR/../../example-configs/redis-cluster/docker-compose.yaml down
 }
 
 trap defer EXIT
 
-docker-compose -f $SCRIPT_DIR/../../example-configs/redis-cluster/docker-compose.yml up -d
+docker-compose -f $SCRIPT_DIR/../../example-configs/redis-cluster/docker-compose.yaml up -d
 echo "Getting ready to run proxy"
 sleep 5
 echo "Running shotover"

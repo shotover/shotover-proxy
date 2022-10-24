@@ -13,10 +13,10 @@ In this example, we will be connecting to a Redis cluster that has the following
 * `172.16.1.6:6379`
 * `172.16.1.7:6379`
 
-Shotover will be deployed as a sidecar to each node in the Redis cluster, listening on `6380`. Use the following [docker-compose.yml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/docker-compose.yml) to run the Redis cluster and Shotover sidecars.
+Shotover will be deployed as a sidecar to each node in the Redis cluster, listening on `6380`. Use the following [docker-compose.yaml](https://github.com/shotover/shotover-proxy/blob/main/shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/docker-compose.yaml) to run the Redis cluster and Shotover sidecars.
 
 ```console
-curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/docker-compose.yml --output docker-compose.yml
+curl -L https://raw.githubusercontent.com/shotover/shotover-proxy/main/shotover-proxy/example-configs-docker/redis-cluster-ports-rewrite/docker-compose.yaml --output docker-compose.yaml
 ```
 
 Below we can see an example of a Redis node and it's Shotover sidecar. Notice they are running on the same network address (`172.16.1.2`) and the present directory is being mounted to allow Shotover to access the config and topology files.
