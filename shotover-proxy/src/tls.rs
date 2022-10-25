@@ -92,7 +92,10 @@ impl TlsConnector {
             .into_ssl("localhost")?;
 
         let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
-        Pin::new(&mut ssl_stream).connect().await?;
+        Pin::new(&mut ssl_stream)
+            .connect()
+            .await
+            .map_err(|e| anyhow!(e).context("Failed to establish TLS connection to destination"))?;
 
         Ok(ssl_stream)
     }
@@ -104,7 +107,7 @@ impl TlsConnector {
         Pin::new(&mut ssl_stream)
             .connect()
             .await
-            .map_err(|e| anyhow!(e).context("Failed to connect to TLS connection"))?;
+            .map_err(|e| anyhow!(e).context("Failed to establish TLS connection to destination"))?;
 
         Ok(ssl_stream)
     }
