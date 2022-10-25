@@ -55,7 +55,7 @@ This transform will route Cassandra messages to a node within a Cassandra cluste
 * token aware routing
 
 The fact that Shotover is routing to multiple destination nodes will be hidden from the client.
-Instead Shotover will pretend to be either a single cassandra node or part of a cluster of cassandra nodes consisting entirely of Shotover instances.
+Instead Shotover will pretend to be either a single Cassandra node or part of a cluster of Cassandra nodes consisting entirely of Shotover instances.
 
 This is achieved by rewriting `system.local` and `system.peers`/`system.peers_v2` query results.
 The `system.local` will make Shotover appear to be its own node.
@@ -124,13 +124,13 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
 
 #### Error handling
 
-If Shotover sends a request to a node and never gets a response, (maybe the node went down), Shotover will return a cassandra `Server` error to the client.
+If Shotover sends a request to a node and never gets a response, (maybe the node went down), Shotover will return a Cassandra `Server` error to the client.
 This is because the message may or may not have succeded, so only the client can attempt to retry as the retry may involve checking if the original query did in fact complete succesfully.
 
-If no nodes are capable of receiving the query then Shotover will return a cassandra `Overloaded` error indicating that the client should retry the query at some point.
+If no nodes are capable of receiving the query then Shotover will return a Cassandra `Overloaded` error indicating that the client should retry the query at some point.
 
 All other connection errors will be handled internally by Shotover.
-And all cassandra errors will be passed directly back to the client.
+And all Cassandra errors will be passed directly back to the client.
 
 #### Metrics
 
