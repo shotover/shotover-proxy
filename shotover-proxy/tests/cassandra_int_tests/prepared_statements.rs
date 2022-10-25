@@ -80,28 +80,26 @@ async fn select_cross_connection<Fut>(
 async fn use_statement(session: &CassandraConnection) {
     // Create prepared command with the correct keyspace
     run_query(session, "USE test_prepare_statements;").await;
-    let _prepared = session
+    let prepared = session
         .prepare("INSERT INTO table_1 (id) VALUES (?);")
         .await;
 
     // change the keyspace to be incorrect
     run_query(session, "USE test_prepare_statements_empty;").await;
 
-    // TODO: Somehow executing the query fails when run through shotover but succeeds when run directly against cassandra
-    //       We should investigate and fix the issue in shotover
     // observe query completing against the original keyspace without errors
-    // assert_eq!(
-    //     session.execute_prepared(&prepared, 358),
-    //     Vec::<Vec<ResultValue>>::new()
-    // );
+    assert_eq!(
+        session.execute_prepared(&prepared, 358).await,
+        Vec::<Vec<ResultValue>>::new()
+    );
 
-    // // observe that the query succeeded despite the keyspace being incorrect at the time.
-    // assert_query_result(
-    //     session,
-    //     "SELECT id FROM test_prepare_statements.table_1 WHERE id = 358;",
-    //     &[&[ResultValue::Int(358)]],
-    // )
-    // .await;
+    // observe that the query succeeded despite the keyspace being incorrect at the time.
+    assert_query_result(
+        session,
+        "SELECT id FROM test_prepare_statements.table_1 WHERE id = 358;",
+        &[&[ResultValue::Int(358)]],
+    )
+    .await;
 }
 
 pub async fn test<Fut>(session: &CassandraConnection, connection_creator: impl Fn() -> Fut)
