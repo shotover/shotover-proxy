@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Result};
 use docker_api::Docker;
-use regex::Regex;
 use std::io::ErrorKind;
 use std::process::Command;
-use std::time;
+use std::time::{self, Duration};
 use std::{env, path::Path};
 use subprocess::{Exec, Redirection};
 use tracing::trace;
@@ -120,14 +119,14 @@ impl DockerCompose {
     fn wait_for_containers_to_startup(&self) {
         match self.file_path.as_ref() {
             "tests/transforms/docker-compose-moto.yaml" => {
-                self.wait_for_log(r#"Press CTRL\+C to quit"#, 1, 110)
+                self.wait_for_log("Press CTRL+C to quit", 1)
             }
             "example-configs/redis-passthrough/docker-compose.yaml"
             | "example-configs/redis-tls/docker-compose.yaml" => {
-                self.wait_for_log("Ready to accept connections", 1, 110)
+                self.wait_for_log("Ready to accept connections", 1)
             }
             "example-configs/redis-multi/docker-compose.yaml" => {
-                self.wait_for_log("Ready to accept connections", 3, 110)
+                self.wait_for_log("Ready to accept connections", 3)
             }
             "tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yaml"
             | "tests/test-configs/redis-cluster-auth/docker-compose.yaml"
@@ -135,10 +134,10 @@ impl DockerCompose {
             | "example-configs/redis-cluster-hiding/docker-compose.yaml"
             | "example-configs/redis-cluster-tls/docker-compose.yaml"
             | "example-configs/redis-cluster-tls/docker-compose-with-key.yaml" => {
-                self.wait_for_log("Cluster state changed", 6, 110)
+                self.wait_for_log("Cluster state changed", 6)
             }
             "example-configs/redis-cluster-dr/docker-compose.yaml" => {
-                self.wait_for_log("Cluster state changed", 12, 110)
+                self.wait_for_log("Cluster state changed", 12)
             }
             "example-configs/cassandra-passthrough/docker-compose.yaml"
             | "example-configs/cassandra-tls/docker-compose.yaml"
@@ -148,18 +147,18 @@ impl DockerCompose {
             | "example-configs/cassandra-request-throttling/docker-compose.yaml"
             | "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yaml"
             | "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yaml" => {
-                self.wait_for_log("Startup complete", 1, 110)
+                self.wait_for_log("Startup complete", 1)
             }
             "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml"
             | "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml" => {
-                self.wait_for_log("Startup complete", 2, 110)
+                self.wait_for_log("Startup complete", 2)
             }
             "example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml"
             | "example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml"
             | "example-configs/cassandra-cluster/docker-compose-cassandra-v3.yaml"
             | "example-configs/cassandra-cluster-multi-rack/docker-compose.yaml"
             | "example-configs/cassandra-cluster-tls/docker-compose.yaml" => {
-                self.wait_for_log("Startup complete", 3, 180)
+                self.wait_for_log("Startup complete", 3)
             }
             path => unimplemented!(
                 "Unknown compose file `{path}` Please implement waiting logic for it here.",
@@ -169,43 +168,58 @@ impl DockerCompose {
 
     /// Waits for a string to appear in the docker-compose log output `count` times within `time` seconds.
     ///
-    /// Counts the number of items returned by `regex.find_iter`.
-    ///
     /// # Arguments
-    /// * `log_text` - A regular expression defining the text to find in the docker-container log
+    /// * `log_to_wait_for` - A regular expression defining the text to find in the docker-container log
     /// output.
     /// * `count` - The number of times the regular expression should be found.
     ///
     /// # Panics
-    /// * If `count` occurrences of `log_text` is not found in the log within 90 seconds.
-    ///
-    fn wait_for_log(&self, log_text: &str, count: usize, timeout_seconds: u64) {
-        trace!("wait_for_log: '{log_text}' {count}");
-        let args = ["-f", &self.file_path, "logs"];
-        let re = Regex::new(log_text).unwrap();
-        let sys_time = time::Instant::now();
-        let mut result = run_command("docker-compose", &args).unwrap();
-        let mut my_count = re.find_iter(&result).count();
-        while my_count < count {
-            if sys_time.elapsed().as_secs() > timeout_seconds {
-                panic!(
-                    "wait_for_log {} second timer expired. Found {} instances of '{}' in the log\n{}",
-                    timeout_seconds,
-                    re.find_iter(&result).count(),
-                    log_text,
-                    result
-                );
+    /// * If `count` occurrences of `log_text` is not found in the log within 120 seconds.
+    fn wait_for_log(&self, log_to_wait_for: &str, count: usize) {
+        let timeout = Duration::from_secs(120);
+
+        // TODO: remove this check once CI docker-compose is updated (probably ubuntu 22.04)
+        let can_use_status_flag =
+            run_command("docker-compose", &["-f", &self.file_path, "ps", "--help"])
+                .unwrap()
+                .contains("--status");
+
+        let instant = time::Instant::now();
+        loop {
+            // check if the service is completely ready
+            let full_log = run_command("docker-compose", &["-f", &self.file_path, "logs"]).unwrap();
+            let current_count = full_log.matches(log_to_wait_for).count();
+            if current_count >= count {
+                return;
             }
-            trace!("wait_for_log: {log_text:?} looping {my_count}/{count}");
-            result = run_command("docker-compose", &args).unwrap();
-            my_count = re.find_iter(&result).count();
+
+            // check if the service has failed in some way
+            // this allows us to report the failure to the developer a lot sooner than just relying on the timeout
+            if can_use_status_flag {
+                self.assert_no_containers_in_service_with_status("exited", &full_log);
+                self.assert_no_containers_in_service_with_status("dead", &full_log);
+                self.assert_no_containers_in_service_with_status("removing", &full_log);
+            }
+
+            // if all else fails timeout the wait
+            if instant.elapsed() > timeout {
+                panic!("wait_for_log {timeout:?} timer expired. Found {current_count}/{count} instances of '{log_to_wait_for}' in the log\n{full_log}");
+            }
         }
-        trace!(
-            "wait_for_log: found '{}' {} times in {:?} seconds",
-            log_text,
-            count,
-            sys_time.elapsed()
-        );
+    }
+
+    fn assert_no_containers_in_service_with_status(&self, status: &str, full_log: &str) {
+        let containers = run_command(
+            "docker-compose",
+            &["-f", &self.file_path, "ps", "--status", status],
+        )
+        .unwrap();
+        // One line for the table heading. If there are more lines then there is some data indicating that containers exist with this status
+        if containers.matches('\n').count() > 1 {
+            panic!(
+                "At least one container failed to initialize\n{containers}\nFull log\n{full_log}"
+            );
+        }
     }
 
     fn build_images() {
