@@ -254,6 +254,7 @@ pub async fn test_node_going_down(
     compose: DockerCompose,
     shotover_manager: ShotoverManager,
     driver: CassandraDriver,
+    kill: bool,
 ) {
     let mut connection_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
     connection_shotover
@@ -277,7 +278,11 @@ pub async fn test_node_going_down(
 
         // stop one of the containers to trigger a status change event.
         // event_connection_direct is connecting to cassandra-one, so make sure to instead kill caassandra-two.
-        compose.stop_service("cassandra-two").await;
+        if kill {
+            compose.kill_service("cassandra-two").await;
+        } else {
+            compose.stop_service("cassandra-two").await;
+        }
 
         loop {
             // The direct connection should allow all events to pass through
