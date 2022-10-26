@@ -15,12 +15,6 @@ services:
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.2
-    healthcheck:
-      &healthcheck
-      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
-      interval: 5s
-      timeout: 5s
-      retries: 60
     environment:
       &environment
       CASSANDRA_SEEDS: "cassandra-one,cassandra-two,cassandra-three"
@@ -43,7 +37,6 @@ services:
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.3
-    healthcheck: *healthcheck
     environment:
       <<: *environment
       CASSANDRA_RACK: rack2
@@ -56,7 +49,6 @@ services:
     networks:
       cluster_subnet:
         ipv4_address: 172.16.1.4
-    healthcheck: *healthcheck
     environment:
       <<: *environment
       CASSANDRA_RACK: rack3
