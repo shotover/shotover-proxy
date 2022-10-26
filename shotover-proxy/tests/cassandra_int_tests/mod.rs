@@ -24,12 +24,6 @@ mod batch_statements;
 mod cache;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 mod cluster;
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-mod cluster_multi_rack;
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-mod cluster_single_rack_v3;
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-mod cluster_single_rack_v4;
 mod collections;
 mod functions;
 mod keyspace;
@@ -149,14 +143,14 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
             connection
         };
         standard_test_suite(&connection, driver).await;
-        cluster_single_rack_v3::test_dummy_peers(&connection().await).await;
+        cluster::single_rack_v3::test_dummy_peers(&connection().await).await;
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9042).await;
 
         //Check for bugs in cross connection state
         native_types::test(&connection().await).await;
     }
 
-    cluster_single_rack_v3::test_topology_task(None).await;
+    cluster::single_rack_v3::test_topology_task(None).await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -182,7 +176,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         );
 
         standard_test_suite(&connection, driver).await;
-        cluster_single_rack_v4::test(&connection().await).await;
+        cluster::single_rack_v4::test(&connection().await).await;
 
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9044).await;
         //Check for bugs in cross connection state
@@ -198,14 +192,14 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             "example-configs/cassandra-cluster/topology-dummy-peers-v4.yaml",
         );
 
-        cluster_single_rack_v4::test_dummy_peers(&connection().await).await;
+        cluster::single_rack_v4::test_dummy_peers(&connection().await).await;
     }
 
-    cluster_single_rack_v4::test_topology_task(None, Some(9044)).await;
+    cluster::single_rack_v4::test_topology_task(None, Some(9044)).await;
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
-    cluster_single_rack_v4::test_node_going_down(compose, shotover_manager, driver).await;
+    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver).await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -237,13 +231,13 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
             connection
         };
         standard_test_suite(&connection, driver).await;
-        cluster_multi_rack::test(&connection().await).await;
+        cluster::multi_rack::test(&connection().await).await;
 
         //Check for bugs in cross connection state
         native_types::test(&connection().await).await;
     }
 
-    cluster_multi_rack::test_topology_task(None).await;
+    cluster::multi_rack::test_topology_task(None).await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -284,10 +278,10 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
         };
 
         standard_test_suite(&connection, driver).await;
-        cluster_single_rack_v4::test(&connection().await).await;
+        cluster::single_rack_v4::test(&connection().await).await;
     }
 
-    cluster_single_rack_v4::test_topology_task(Some(ca_cert), None).await;
+    cluster::single_rack_v4::test_topology_task(Some(ca_cert), None).await;
 }
 
 #[rstest]
