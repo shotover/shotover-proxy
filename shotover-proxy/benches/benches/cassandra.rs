@@ -28,7 +28,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/cassandra-protect-local/topology.yaml",
-                "example-configs/cassandra-protect-local/docker-compose.yml",
+                "example-configs/cassandra-protect-local/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -53,7 +53,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/cassandra-redis-cache/topology.yaml",
-                "example-configs/cassandra-redis-cache/docker-compose.yml",
+                "example-configs/cassandra-redis-cache/docker-compose.yaml",
             )
         });
         // Benches the case where the message does not meet the criteria for caching
@@ -79,7 +79,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/cassandra-passthrough/topology.yaml",
-                "example-configs/cassandra-passthrough/docker-compose.yml",
+                "example-configs/cassandra-passthrough/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -105,7 +105,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "tests/test-configs/cassandra-passthrough-parse-request/topology.yaml",
-                "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yml",
+                "tests/test-configs/cassandra-passthrough-parse-request/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -131,7 +131,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "tests/test-configs/cassandra-passthrough-parse-response/topology.yaml",
-                "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yml",
+                "tests/test-configs/cassandra-passthrough-parse-response/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -156,7 +156,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new_tls(
                 "example-configs/cassandra-tls/topology.yaml",
-                "example-configs/cassandra-tls/docker-compose.yml",
+                "example-configs/cassandra-tls/docker-compose.yaml",
             )
         });
         for query in &queries {
@@ -188,7 +188,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             let resources = BenchResources::new(
                 "example-configs/cassandra-protect-local/topology.yaml",
-                "example-configs/cassandra-protect-local/docker-compose.yml",
+                "example-configs/cassandra-protect-local/docker-compose.yaml",
             );
 
             resources
@@ -235,7 +235,7 @@ fn cassandra(c: &mut Criterion) {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
                 "example-configs/cassandra-request-throttling/topology.yaml",
-                "example-configs/cassandra-request-throttling/docker-compose.yml",
+                "example-configs/cassandra-request-throttling/docker-compose.yaml",
             )
         });
         for query in &queries {
