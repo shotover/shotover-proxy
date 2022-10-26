@@ -73,6 +73,21 @@ impl NodePool {
         write_lock.insert(id, metadata);
     }
 
+    pub fn get_shuffled_nodes_in_dc_rack(
+        &mut self,
+        rack: &str,
+        rng: &mut SmallRng,
+    ) -> Vec<&mut CassandraNode> {
+        let mut nodes: Vec<_> = self
+            .nodes
+            .iter_mut()
+            .filter(|node| node.is_up && node.rack == *rack)
+            .collect();
+
+        nodes.shuffle(rng);
+        nodes
+    }
+
     pub fn get_round_robin_node_in_dc_rack(&mut self, rack: &str) -> &mut CassandraNode {
         let up_indexes: Vec<usize> = self
             .nodes
