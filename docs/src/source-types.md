@@ -3,7 +3,6 @@
 | Source Type                         | Implementation Status |
 |-------------------------------------|-----------------------|
 |[Cassandra](#cassandra)              |Alpha                  |
-|[MPSC](#mpsc)                        |Alpha                  |
 |[Redis](#redis)                      |Beta                   |
 
 ## Cassandra
@@ -20,6 +19,16 @@ Cassandra:
   # * when true: the connection is dropped.
   # * when false: the connection will wait until a connection can be made within the limit.
   hard_connection_limit: false
+
+  # When this field is provided TLS is used when the client connects to Shotover.
+  # Removing this field will disable TLS.
+  #tls:
+  #  # Path to the certificate authority file, typically named with a .crt extension.
+  #  certificate_authority_path: "tls/localhost_CA.crt"
+  #  # Path to the certificate file, typically named with a .crt extension.
+  #  certificate_path: "tls/localhost.crt"
+  #  # Path to the private key file, typically named with a .key extension.
+  #  private_key_path: "tls/localhost.key"
  
   # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
   # timeout: 60
@@ -40,15 +49,15 @@ Redis:
   # * when false: the connection will wait until a connection can be made within the limit.
   hard_connection_limit: false
 
-  # When this field is provided TLS is used when connecting to the remote address.
+  # When this field is provided TLS is used when the client connects to Shotover.
   # Removing this field will disable TLS.
-  tls:
-    # Path to the certificate file, typically named with a .crt extension.
-    certificate_path: "tls/redis.crt"
-    # Path to the private key file, typically named with a .key extension.
-    private_key_path: "tls/redis.key"
-    # Path to the certificate authority file typically named ca.crt.
-    certificate_authority_path: "tls/ca.crt"
+  #tls:
+  #  # Path to the certificate file, typically named with a .crt extension.
+  #  certificate_path: "tls/redis.crt"
+  #  # Path to the private key file, typically named with a .key extension.
+  #  private_key_path: "tls/redis.key"
+  #  # Path to the certificate authority file typically named ca.crt.
+  #  certificate_authority_path: "tls/ca.crt"
     
   # Timeout in seconds after which to terminate an idle connection. This field is optional, if not provided, idle connections will never be terminated.
   # timeout: 60
