@@ -3257,7 +3257,6 @@ dependencies = [
  "docker-api",
  "nix",
  "rcgen",
- "regex",
  "subprocess",
  "tracing",
 ]
