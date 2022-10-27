@@ -55,8 +55,8 @@ where
 }
 
 #[rstest]
-#[case(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+#[case::cdrs(CdrsTokio)]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn passthrough_standard(#[case] driver: CassandraDriver) {
@@ -72,8 +72,8 @@ async fn passthrough_standard(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
-#[case(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+#[case::cdrs(CdrsTokio)]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn passthrough_encode(#[case] driver: CassandraDriver) {
@@ -90,8 +90,8 @@ async fn passthrough_encode(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
@@ -122,8 +122,8 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
@@ -155,8 +155,8 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
@@ -204,8 +204,8 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
@@ -242,8 +242,8 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
@@ -285,8 +285,8 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 }
 
 #[rstest]
-#[case(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+#[case::cdrs(CdrsTokio)]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
@@ -316,8 +316,8 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
-// #[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+// #[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn protect_transform_local(#[case] driver: CassandraDriver) {
@@ -338,8 +338,8 @@ async fn protect_transform_local(#[case] driver: CassandraDriver) {
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[cfg(feature = "alpha-transforms")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn protect_transform_aws(#[case] driver: CassandraDriver) {
@@ -358,8 +358,8 @@ async fn protect_transform_aws(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
@@ -452,8 +452,8 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
@@ -484,8 +484,8 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case(CdrsTokio)] // TODO
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+//#[case::cdrs(CdrsTokio)] // TODO
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn request_throttling(#[case] driver: CassandraDriver) {
@@ -580,7 +580,7 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
 }
 
 #[rstest]
-#[case(CdrsTokio)]
+#[case::cdrs(CdrsTokio)]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn events_keyspace(#[case] driver: CassandraDriver) {
