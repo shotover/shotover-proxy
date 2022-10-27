@@ -47,7 +47,7 @@ mod test_token_map {
         vec![
             CassandraNode::new(
                 "127.0.0.1:9042".parse().unwrap(),
-                "dc1".into(),
+                "rack1".into(),
                 vec![
                     Murmur3Token::new(-2),
                     Murmur3Token::new(-1),
@@ -57,13 +57,13 @@ mod test_token_map {
             ),
             CassandraNode::new(
                 "127.0.0.1:9043".parse().unwrap(),
-                "dc1".into(),
+                "rack1".into(),
                 vec![Murmur3Token::new(20)],
                 NODE_2,
             ),
             CassandraNode::new(
                 "127.0.0.1:9044".parse().unwrap(),
-                "dc1".into(),
+                "rack1".into(),
                 vec![
                     Murmur3Token::new(2),
                     Murmur3Token::new(1),
