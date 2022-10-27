@@ -8,6 +8,10 @@ use shotover_proxy::transforms::cassandra::sink_cluster::{
 };
 use tokio::sync::{mpsc, watch};
 
+pub mod multi_rack;
+pub mod single_rack_v3;
+pub mod single_rack_v4;
+
 pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<CassandraNode> {
     let port = port.unwrap_or(9042);
     let (nodes_tx, mut nodes_rx) = watch::channel(vec![]);
