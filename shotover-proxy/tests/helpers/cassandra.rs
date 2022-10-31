@@ -212,6 +212,7 @@ impl CassandraConnection {
         match driver {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             CassandraDriver::Datastax => {
+                cassandra_cpp::set_log_logger();
                 let ca_cert = read_to_string(ca_cert_path).unwrap();
                 let mut ssl = Ssl::default();
                 Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
