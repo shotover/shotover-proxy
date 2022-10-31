@@ -138,60 +138,7 @@ impl NodePool {
 mod test_node_pool {
     use super::*;
     use crate::transforms::cassandra::sink_cluster::CassandraNode;
-    use uuid::uuid;
-
-    fn prepare_nodes() -> Vec<CassandraNode> {
-        vec![
-            CassandraNode::new(
-                "172.16.1.0:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7a"),
-            ),
-            CassandraNode::new(
-                "172.16.1.1:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7b"),
-            ),
-            CassandraNode::new(
-                "172.16.1.2:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7c"),
-            ),
-            CassandraNode::new(
-                "172.16.1.3:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7c"),
-            ),
-            CassandraNode::new(
-                "172.16.1.4:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7c"),
-            ),
-            CassandraNode::new(
-                "172.16.1.5:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7d"),
-            ),
-            CassandraNode::new(
-                "172.16.1.6:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7e"),
-            ),
-            CassandraNode::new(
-                "172.16.1.7:9044".parse().unwrap(),
-                "rack1".into(),
-                vec![],
-                uuid!("2dd022d6-2937-4754-89d6-02d2933a8f7f"),
-            ),
-        ]
-    }
+    use uuid::Uuid;
 
     #[test]
     fn test_round_robin() {
@@ -205,7 +152,7 @@ mod test_node_pool {
 
         let mut round_robin_nodes = vec![];
 
-        for _ in 0..nodes.len() - 1 {
+        for _ in 0..nodes.iter().filter(|node| node.rack == "rack1").count() - 1 {
             round_robin_nodes.push(
                 node_pool
                     .get_round_robin_node_in_dc_rack("rack1")
@@ -234,7 +181,7 @@ mod test_node_pool {
 
         round_robin_nodes.clear();
 
-        for _ in 0..nodes.len() - 1 {
+        for _ in 0..nodes.iter().filter(|node| node.rack == "rack1").count() - 1 {
             round_robin_nodes.push(
                 node_pool
                     .get_round_robin_node_in_dc_rack("rack1")
@@ -256,5 +203,108 @@ mod test_node_pool {
             ],
             round_robin_nodes
         );
+    }
+
+    fn prepare_nodes() -> Vec<CassandraNode> {
+        vec![
+            // rack 1 nodes
+            CassandraNode::new(
+                "172.16.1.0:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.1.1:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.1.2:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.1.3:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.1.4:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.1.5:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.1.6:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.1.7:9044".parse().unwrap(),
+                "rack1".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            // rack 2 nodes
+            CassandraNode::new(
+                "172.16.2.0:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.2.1:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.2.2:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.2.3:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.2.4:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.2.5:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.2.6:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+            CassandraNode::new(
+                "172.16.2.7:9044".parse().unwrap(),
+                "rack2".into(),
+                vec![],
+                Uuid::new_v4(),
+            ),
+        ]
     }
 }
