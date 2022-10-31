@@ -266,8 +266,11 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
         {
             Ok(_) => info!("source {} was shutdown", self.source_name),
             Err(e) => error!(
-                "source {} encountered an error when flushing the chain for shutdown: {}",
-                self.source_name, e
+                "{:?}",
+                e.context(format!(
+                    "source {} encountered an error when flushing the chain for shutdown",
+                    self.source_name,
+                ))
             ),
         }
     }

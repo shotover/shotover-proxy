@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use openssl::ssl::Ssl;
 use openssl::ssl::{SslAcceptor, SslConnector, SslFiletype, SslMethod};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -23,8 +24,26 @@ pub struct TlsAcceptor {
     acceptor: Arc<SslAcceptor>,
 }
 
+pub fn check_file_field(field_name: &str, file_path: &str) -> Result<()> {
+    if Path::new(file_path).exists() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "configured {field_name} does not exist '{file_path}'"
+        ))
+    }
+}
+
 impl TlsAcceptor {
     pub fn new(tls_config: TlsAcceptorConfig) -> Result<TlsAcceptor> {
+        // openssl's errors are really bad so we do our own checks so we can provide reasonable errors
+        check_file_field(
+            "certificate_authority_path",
+            &tls_config.certificate_authority_path,
+        )?;
+        check_file_field("private_key_path", &tls_config.private_key_path)?;
+        check_file_field("certificate_path", &tls_config.certificate_path)?;
+
         let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
         builder.set_ca_file(tls_config.certificate_authority_path)?;
         builder.set_private_key_file(tls_config.private_key_path, SslFiletype::PEM)?;
@@ -65,14 +84,20 @@ pub struct TlsConnector {
 
 impl TlsConnector {
     pub fn new(tls_config: TlsConnectorConfig) -> Result<TlsConnector> {
+        check_file_field(
+            "certificate_authority_path",
+            &tls_config.certificate_authority_path,
+        )?;
         let mut builder = SslConnector::builder(SslMethod::tls())?;
         builder.set_ca_file(tls_config.certificate_authority_path)?;
 
         if let Some(private_key_path) = tls_config.private_key_path {
+            check_file_field("private_key_path", &private_key_path)?;
             builder.set_private_key_file(private_key_path, SslFiletype::PEM)?;
         }
 
         if let Some(certificate_path) = tls_config.certificate_path {
+            check_file_field("certificate_path", &certificate_path)?;
             builder.set_certificate_chain_file(certificate_path)?;
         }
 

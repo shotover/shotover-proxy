@@ -70,7 +70,10 @@ impl Topology {
                     sources_list.append(
                         &mut source_config
                             .get_source(chain, trigger_shutdown_rx.clone())
-                            .await?,
+                            .await
+                            .map_err(|e| {
+                                e.context(format!("Failed to initialize source {source_name}"))
+                            })?,
                     );
                 } else {
                     return Err(anyhow!("Could not find the [{}] chain from \
