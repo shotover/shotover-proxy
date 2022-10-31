@@ -8,8 +8,8 @@ use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use rand::prelude::*;
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::{collections::HashMap, net::SocketAddr};
 use tokio::sync::{watch, RwLock};
 
 pub enum GetReplicaErr {
@@ -73,15 +73,16 @@ impl NodePool {
         write_lock.insert(id, metadata);
     }
 
-    pub fn get_shuffled_nodes_in_dc_rack(
+    pub fn get_shuffled_addresses_in_dc_rack(
         &mut self,
         rack: &str,
         rng: &mut SmallRng,
-    ) -> Vec<&mut CassandraNode> {
+    ) -> Vec<SocketAddr> {
         let mut nodes: Vec<_> = self
             .nodes
             .iter_mut()
             .filter(|node| node.is_up && node.rack == *rack)
+            .map(|node| node.address)
             .collect();
 
         nodes.shuffle(rng);

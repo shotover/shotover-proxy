@@ -223,15 +223,10 @@ impl CassandraSinkCluster {
                     .iter()
                     .any(|x| x.address == address && x.is_up)
                 {
-                    let addresses: Vec<_> = self
-                        .pool
-                        .get_shuffled_nodes_in_dc_rack(
-                            &self.local_shotover_node.rack,
-                            &mut self.rng,
-                        )
-                        .iter()
-                        .map(|node| node.address)
-                        .collect();
+                    let addresses = self.pool.get_shuffled_addresses_in_dc_rack(
+                        &self.local_shotover_node.rack,
+                        &mut self.rng,
+                    );
                     self.create_control_connection(&addresses).await.map_err(|e|
                         e.context("Failed to recreate control connection after control connection node went down")
                     )?;
@@ -270,11 +265,10 @@ impl CassandraSinkCluster {
                 }
                 points
             } else {
-                self.pool
-                    .get_shuffled_nodes_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng)
-                    .iter()
-                    .map(|node| node.address)
-                    .collect()
+                self.pool.get_shuffled_addresses_in_dc_rack(
+                    &self.local_shotover_node.rack,
+                    &mut self.rng,
+                )
             };
 
             self.create_control_connection(&points)
@@ -526,12 +520,9 @@ impl CassandraSinkCluster {
             // If we have to populate the local_nodes at this point then that means the control connection
             // may not have been made against a node in the configured data_center/rack.
             // Therefore we need to recreate the control connection to ensure that it is in the configured data_center/rack.
-            let addresses: Vec<_> = self
+            let addresses = self
                 .pool
-                .get_shuffled_nodes_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng)
-                .iter()
-                .map(|node| node.address)
-                .collect();
+                .get_shuffled_addresses_in_dc_rack(&self.local_shotover_node.rack, &mut self.rng);
             self.create_control_connection(&addresses)
                 .await
                 .map_err(|e| e.context("Failed to recreate control connection when initial connection was possibly against the wrong node"))?;
