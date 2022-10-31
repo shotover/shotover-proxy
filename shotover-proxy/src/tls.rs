@@ -176,7 +176,7 @@ fn openssl_ssl_error_to_anyhow(error: openssl::ssl::Error) -> anyhow::Error {
 
 fn openssl_stack_error_to_anyhow(error: openssl::error::ErrorStack) -> anyhow::Error {
     let mut anyhow_stack: Option<anyhow::Error> = None;
-    for inner in error.errors().iter().rev() {
+    for inner in error.errors() {
         let anyhow_error = openssl_error_to_anyhow(inner.clone());
         anyhow_stack = Some(match anyhow_stack {
             Some(anyhow) => anyhow.context(anyhow_error),
