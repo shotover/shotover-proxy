@@ -998,7 +998,7 @@ async fn get_master_id(connection: &mut Connection) -> String {
 async fn is_cluster_replicas_ready(connection: &mut Connection, master_id: &str) -> bool {
     let res = redis::cmd("CLUSTER")
         .arg("REPLICAS")
-        .arg(&master_id)
+        .arg(master_id)
         .query_async(connection)
         .await
         .unwrap();

@@ -27,7 +27,7 @@ impl PacketCapture {
     }
 
     pub fn save_to_file(&mut self, mut cap_handle: Capture<Active>, file_name: &str) {
-        match cap_handle.savefile(&file_name) {
+        match cap_handle.savefile(file_name) {
             Ok(mut file) => {
                 while let Ok(packet) = cap_handle.next_packet() {
                     file.write(&packet);
