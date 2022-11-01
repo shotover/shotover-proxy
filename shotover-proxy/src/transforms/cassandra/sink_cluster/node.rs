@@ -17,12 +17,12 @@ use uuid::Uuid;
 pub struct CassandraNode {
     pub address: SocketAddr,
     pub rack: String,
-
-    #[derivative(Debug = "ignore")]
-    pub tokens: Vec<Murmur3Token>,
     pub outbound: Option<CassandraConnection>,
     pub host_id: Uuid,
     pub is_up: bool,
+
+    #[derivative(Debug = "ignore")]
+    pub tokens: Vec<Murmur3Token>,
 }
 
 impl CassandraNode {

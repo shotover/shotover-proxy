@@ -19,7 +19,7 @@ impl TokenMap {
     }
 
     /// Returns nodes starting at given token and going in the direction of replicas.
-    pub fn iter_replica_nodes(
+    pub fn iter_replica_nodes_capped(
         &self,
         token: Murmur3Token,
         replica_count: usize,
@@ -30,6 +30,14 @@ impl TokenMap {
             .take(replica_count)
             .map(|(_, node)| *node)
     }
+
+    // pub fn iter_replica_nodes(&self, token: Murmur3Token) -> impl Iterator<Item = Uuid> + '_ {
+    //     self.token_ring
+    //         .range(token..)
+    //         .chain(self.token_ring.iter())
+    //         .take(self.token_ring.len())
+    //         .map(|(_, node)| *node)
+    // }
 }
 
 #[cfg(test)]
@@ -47,7 +55,7 @@ mod test_token_map {
         vec![
             CassandraNode::new(
                 "127.0.0.1:9042".parse().unwrap(),
-                "rack1".into(),
+                "dc1".into(),
                 vec![
                     Murmur3Token::new(-2),
                     Murmur3Token::new(-1),
@@ -57,13 +65,13 @@ mod test_token_map {
             ),
             CassandraNode::new(
                 "127.0.0.1:9043".parse().unwrap(),
-                "rack1".into(),
+                "dc1".into(),
                 vec![Murmur3Token::new(20)],
                 NODE_2,
             ),
             CassandraNode::new(
                 "127.0.0.1:9044".parse().unwrap(),
-                "rack1".into(),
+                "dc1".into(),
                 vec![
                     Murmur3Token::new(2),
                     Murmur3Token::new(1),
@@ -98,7 +106,7 @@ mod test_token_map {
     fn verify_tokens(node_host_ids: &[Uuid], token: Murmur3Token) {
         let token_map = TokenMap::new(prepare_nodes().as_slice());
         let nodes = token_map
-            .iter_replica_nodes(token, node_host_ids.len())
+            .iter_replica_nodes_capped(token, node_host_ids.len())
             .collect_vec();
 
         assert_eq!(nodes, node_host_ids);

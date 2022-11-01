@@ -1,6 +1,7 @@
+use super::node::CassandraNode;
 use super::routing_key::calculate_routing_key;
 use super::token_map::TokenMap;
-use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
+use super::KeyspaceChanRx;
 use anyhow::{anyhow, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
@@ -19,9 +20,15 @@ pub enum GetReplicaErr {
     Other(Error),
 }
 
+#[derive(Debug, Clone)]
+pub struct KeyspaceMetadata {
+    pub replication_factor: usize,
+}
+
 #[derive(Debug)]
 pub struct NodePool {
     prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
+    keyspace_metadata: Arc<RwLock<HashMap<String, KeyspaceMetadata>>>,
     token_map: TokenMap,
     nodes: Vec<CassandraNode>,
     prev_idx: usize,
@@ -31,6 +38,7 @@ impl Clone for NodePool {
     fn clone(&self) -> Self {
         Self {
             prepared_metadata: self.prepared_metadata.clone(),
+            keyspace_metadata: self.keyspace_metadata.clone(),
             token_map: TokenMap::new(&[]),
             nodes: vec![],
             prev_idx: 0,
@@ -44,6 +52,7 @@ impl NodePool {
             token_map: TokenMap::new(nodes.as_slice()),
             nodes,
             prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
+            keyspace_metadata: Arc::new(RwLock::new(HashMap::new())),
             prev_idx: 0,
         }
     }
@@ -68,6 +77,12 @@ impl NodePool {
         }
         self.nodes = new_nodes;
         self.token_map = TokenMap::new(self.nodes.as_slice());
+    }
+
+    pub async fn update_keyspaces(&mut self, keyspaces_rx: &mut KeyspaceChanRx) {
+        let updated_keyspaces = keyspaces_rx.borrow_and_update().clone();
+        let mut write_keyspaces = self.keyspace_metadata.write().await;
+        *write_keyspaces = updated_keyspaces;
     }
 
     pub async fn add_prepared_result(&mut self, id: CBytesShort, metadata: PreparedMetadata) {
@@ -121,7 +136,6 @@ impl NodePool {
         rack: &str,
         version: &Version,
         rng: &mut SmallRng,
-        rf: usize, // TODO this parameter should be removed
     ) -> Result<Option<&mut CassandraNode>, GetReplicaErr> {
         let metadata = {
             let read_lock = self.prepared_metadata.read().await;
@@ -131,19 +145,37 @@ impl NodePool {
                 .clone()
         };
 
+        let keyspace = {
+            let read_lock = self.keyspace_metadata.read().await;
+            read_lock
+                .get(
+                    &metadata
+                        .global_table_spec
+                        .as_ref()
+                        .ok_or_else(|| {
+                            GetReplicaErr::Other(anyhow!("Could not find keyspace metadata"))
+                        })?
+                        .ks_name,
+                )
+                .ok_or(GetReplicaErr::NoMetadata)?
+                .clone()
+        };
+
         let routing_key = calculate_routing_key(
             &metadata.pk_indexes,
             execute.query_parameters.values.as_ref().ok_or_else(|| {
-                GetReplicaErr::Other(anyhow!("Execute body does not have query paramters"))
+                GetReplicaErr::Other(anyhow!("Execute body does not have query parameters"))
             })?,
             *version,
         )
         .unwrap();
 
-        // TODO this should use the keyspace info to properly select the replica count
         let replica_host_ids = self
             .token_map
-            .iter_replica_nodes(Murmur3Token::generate(&routing_key), rf)
+            .iter_replica_nodes_capped(
+                Murmur3Token::generate(&routing_key),
+                keyspace.replication_factor,
+            )
             .collect::<Vec<uuid::Uuid>>();
 
         let (dc_replicas, rack_replicas) = self

@@ -24,9 +24,10 @@ use futures::StreamExt;
 use itertools::Itertools;
 use metrics::{register_counter, Counter};
 use node::{CassandraNode, ConnectionFactory};
-use node_pool::{GetReplicaErr, NodePool};
+use node_pool::{GetReplicaErr, KeyspaceMetadata, NodePool};
 use rand::prelude::*;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -41,6 +42,9 @@ mod routing_key;
 mod test_router;
 mod token_map;
 pub mod topology;
+
+pub type KeyspaceChanTx = watch::Sender<HashMap<String, KeyspaceMetadata>>;
+pub type KeyspaceChanRx = watch::Receiver<HashMap<String, KeyspaceMetadata>>;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkClusterConfig {
@@ -118,6 +122,7 @@ pub struct CassandraSinkCluster {
     /// Addditionally any changes to nodes_rx is observed and copied over.
     pool: NodePool,
     nodes_rx: watch::Receiver<Vec<CassandraNode>>,
+    keyspaces_rx: KeyspaceChanRx,
     rng: SmallRng,
     task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
 }
@@ -143,6 +148,7 @@ impl Clone for CassandraSinkCluster {
             // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
             // once a single node list has been sent all new connections will immediately recognize it as a change.
             nodes_rx: self.nodes_rx.clone(),
+            keyspaces_rx: self.keyspaces_rx.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             task_handshake_tx: self.task_handshake_tx.clone(),
         }
@@ -163,10 +169,14 @@ impl CassandraSinkCluster {
         let receive_timeout = timeout.map(Duration::from_secs);
 
         let (local_nodes_tx, local_nodes_rx) = watch::channel(vec![]);
+        let (keyspaces_tx, keyspaces_rx): (KeyspaceChanTx, KeyspaceChanRx) =
+            watch::channel(HashMap::new());
+
         let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
 
         create_topology_task(
             local_nodes_tx,
+            keyspaces_tx,
             task_handshake_rx,
             local_shotover_node.data_center.clone(),
         );
@@ -192,6 +202,7 @@ impl CassandraSinkCluster {
             local_shotover_node,
             pool: NodePool::new(vec![]),
             nodes_rx: local_nodes_rx,
+            keyspaces_rx,
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
             task_handshake_tx,
         }
@@ -234,6 +245,10 @@ impl CassandraSinkCluster {
                     )?;
                 }
             }
+        }
+
+        if self.keyspaces_rx.has_changed()? {
+            self.pool.update_keyspaces(&mut self.keyspaces_rx).await;
         }
 
         let tables_to_rewrite: Vec<TableToRewrite> = messages
@@ -369,7 +384,6 @@ impl CassandraSinkCluster {
                             &self.local_shotover_node.rack,
                             &metadata.version,
                             &mut self.rng,
-                            1,
                         )
                         .await
                     {

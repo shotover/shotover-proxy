@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod test_token_aware_router {
-    use super::super::node_pool::NodePool;
+    use super::super::node_pool::{KeyspaceMetadata, NodePool};
     use super::super::routing_key::calculate_routing_key;
     use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
+    use crate::transforms::cassandra::sink_cluster::{KeyspaceChanRx, KeyspaceChanTx};
     use cassandra_protocol::consistency::Consistency::One;
     use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
     use cassandra_protocol::frame::message_result::PreparedMetadata;
@@ -18,6 +19,7 @@ mod test_token_aware_router {
     use rand::prelude::*;
     use std::collections::HashMap;
     use std::net::SocketAddr;
+    use tokio::sync::watch;
     use uuid::Uuid;
 
     #[tokio::test]
@@ -29,6 +31,23 @@ mod test_token_aware_router {
         let id = CBytesShort::new(vec![
             11, 241, 38, 11, 140, 72, 217, 34, 214, 128, 175, 241, 151, 73, 197, 227,
         ]);
+
+        let keyspace_metadata = KeyspaceMetadata {
+            replication_factor: 3,
+        };
+
+        let (keyspaces_tx, mut keyspaces_rx): (KeyspaceChanTx, KeyspaceChanRx) =
+            watch::channel(HashMap::new());
+
+        keyspaces_tx
+            .send(
+                [("demo_ks".to_string(), keyspace_metadata)]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+
+        router.update_keyspaces(&mut keyspaces_rx).await;
 
         router
             .add_prepared_result(id.clone(), prepared_metadata().clone())
@@ -64,7 +83,6 @@ mod test_token_aware_router {
                     "rack1",
                     &Version::V4,
                     &mut rng,
-                    3,
                 )
                 .await
                 .unwrap()
