@@ -6,15 +6,19 @@ use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
+use derivative::Derivative;
 use std::net::SocketAddr;
 use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct CassandraNode {
     pub address: SocketAddr,
     pub rack: String,
+
+    #[derivative(Debug = "ignore")]
     pub tokens: Vec<Murmur3Token>,
     pub outbound: Option<CassandraConnection>,
     pub host_id: Uuid,

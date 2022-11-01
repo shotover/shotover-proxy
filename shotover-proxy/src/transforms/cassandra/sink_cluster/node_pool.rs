@@ -8,6 +8,7 @@ use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
 use rand::prelude::*;
+use split_iter::Splittable;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::sync::{watch, RwLock};
@@ -112,11 +113,15 @@ impl NodePool {
     }
 
     /// Get a token routed replica node for the supplied execute message (if exists)
-    pub async fn replica_node(
+    /// Will attempt to get a replica in the supplied rack if exists, otherwise get one in
+    /// the same data center
+    pub async fn get_replica_node_in_dc(
         &mut self,
         execute: &BodyReqExecuteOwned,
+        rack: &str,
         version: &Version,
         rng: &mut SmallRng,
+        rf: usize, // TODO this parameter should be removed
     ) -> Result<Option<&mut CassandraNode>, GetReplicaErr> {
         let metadata = {
             let read_lock = self.prepared_metadata.read().await;
@@ -138,16 +143,20 @@ impl NodePool {
         // TODO this should use the keyspace info to properly select the replica count
         let replica_host_ids = self
             .token_map
-            .iter_replica_nodes(Murmur3Token::generate(&routing_key), 1);
+            .iter_replica_nodes(Murmur3Token::generate(&routing_key), rf)
+            .collect::<Vec<uuid::Uuid>>();
 
-        if let Some(host_id) = replica_host_ids.choose(rng) {
-            return Ok(self
-                .nodes
-                .iter_mut()
-                .find(|node| host_id == node.host_id && node.is_up));
+        let (dc_replicas, rack_replicas) = self
+            .nodes
+            .iter_mut()
+            .filter(|node| replica_host_ids.contains(&node.host_id) && node.is_up)
+            .split(|node| node.rack == rack);
+
+        if let Some(rack_replica) = rack_replicas.choose(rng) {
+            return Ok(Some(rack_replica));
         }
 
-        Ok(None)
+        Ok(dc_replicas.choose(rng))
     }
 }
 

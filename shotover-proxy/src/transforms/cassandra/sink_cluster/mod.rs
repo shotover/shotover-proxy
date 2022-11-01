@@ -364,7 +364,13 @@ impl CassandraSinkCluster {
                 if let Some((execute, metadata)) = get_execute_message(&mut message) {
                     match self
                         .pool
-                        .replica_node(execute, &metadata.version, &mut self.rng)
+                        .get_replica_node_in_dc(
+                            execute,
+                            &self.local_shotover_node.rack,
+                            &metadata.version,
+                            &mut self.rng,
+                            1,
+                        )
                         .await
                     {
                         Ok(Some(replica_node)) => {
