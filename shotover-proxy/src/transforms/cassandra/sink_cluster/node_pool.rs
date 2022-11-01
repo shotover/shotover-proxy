@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::sync::{watch, RwLock};
 
+#[derive(Debug)]
 pub enum GetReplicaErr {
     NoMetadata,
     Other(Error),

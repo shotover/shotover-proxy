@@ -37,6 +37,8 @@ use version_compare::Cmp;
 pub mod node;
 mod node_pool;
 mod routing_key;
+#[cfg(test)]
+mod test_router;
 mod token_map;
 pub mod topology;
 
