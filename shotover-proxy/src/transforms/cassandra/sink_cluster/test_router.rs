@@ -15,10 +15,13 @@ mod test_token_aware_router {
     use cassandra_protocol::token::Murmur3Token;
     use cassandra_protocol::types::value::Value;
     use cassandra_protocol::types::CBytesShort;
+    use rand::prelude::*;
     use uuid::uuid;
 
-    #[test]
-    fn test_router() {
+    #[tokio::test]
+    async fn test_router() {
+        let mut rng = SmallRng::from_rng(rand::thread_rng()).unwrap();
+
         let mut router = NodePool::new(prepare_nodes());
 
         let prepared_metadata = PreparedMetadata {
@@ -61,7 +64,9 @@ mod test_token_aware_router {
             query_parameters: query_parameters.clone(),
         };
 
-        router.add_prepared_result(id, prepared_metadata.clone());
+        router
+            .add_prepared_result(id, prepared_metadata.clone())
+            .await;
 
         let routing_key = calculate_routing_key(
             &prepared_metadata.pk_indexes,
@@ -70,11 +75,15 @@ mod test_token_aware_router {
         )
         .unwrap();
 
-        assert_eq!(routing_key, vec![0, 0, 0, 4, 0, 0, 1, 164]);
+        assert_eq!(routing_key, vec![0, 0, 1, 164]);
 
-        let node = router.replica_node(execute_body, &Version::V4).unwrap();
+        let node = router
+            .replica_node(execute_body, &Version::V4, &mut rng)
+            .await
+            .unwrap()
+            .unwrap();
 
-        assert_eq!(node.address, "172.16.1.5:9044".parse().unwrap());
+        assert_eq!(node.address, "172.16.1.2:9044".parse().unwrap());
     }
 
     fn prepare_nodes() -> Vec<CassandraNode> {
