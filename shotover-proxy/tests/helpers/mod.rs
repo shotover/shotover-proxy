@@ -121,10 +121,7 @@ impl ShotoverManager {
             .await
             .unwrap();
         let connector = TlsConnector::new(config).unwrap();
-        let tls_stream = connector
-            .connect_unverified_hostname(tcp_stream)
-            .await
-            .unwrap();
+        let tls_stream = connector.connect(tcp_stream).await.unwrap();
         ShotoverManager::redis_connection_async_inner(
             Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
         )

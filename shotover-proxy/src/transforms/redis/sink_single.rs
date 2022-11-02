@@ -106,7 +106,7 @@ impl Transform for RedisSinkSingle {
             .map_err(|e| anyhow::Error::new(e).context("Failed to connect to upstream"))?;
 
             let generic_stream = if let Some(tls) = self.tls.as_mut() {
-                let tls_stream = tls.connect_unverified_hostname(tcp_stream).await?;
+                let tls_stream = tls.connect(tcp_stream).await?;
                 Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             } else {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>

@@ -115,6 +115,8 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
     #  certificate_path: "tls/localhost.crt"
     #  # Path to the private key file, typically named with a .key extension.
     #  private_key_path: "tls/localhost.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination.
+    #  #verify_hostname: true
 
   # Timeout in seconds after which to give up waiting for a response from the destination.
   # This field is optional, if not provided, timeout will never occur.
@@ -156,6 +158,8 @@ No cluster discovery or routing occurs with this transform.
     #  certificate_path: "tls/localhost.crt"
     #  # Path to the private key file, typically named with a .key extension.
     #  private_key_path: "tls/localhost.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination.
+    #  #verify_hostname: true
 
   # Timeout in seconds after which to give up waiting for a response from the destination.
   # This field is optional, if not provided, timeout will never occur.
@@ -427,6 +431,8 @@ This transform is a full featured Redis driver that will connect to a Redis clus
     #  certificate_path: "tls/redis.crt"
     #  # Path to the private key file, typically named with a .key extension.
     #  private_key_path: "tls/redis.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination.
+    #  #verify_hostname: true
 ```
 
 Unlike other Redis cluster drivers, this transform does support pipelining. It does however turn each command from the pipeline into a group of requests split between the master Redis node that owns them, buffering results as within different Redis nodes as needed. This is done sequentially and there is room to make this transform split requests between master nodes in a more concurrent manner.
@@ -464,6 +470,8 @@ This transform will take a query, serialise it into a RESP2 compatible format an
     #  certificate_path: "tls/redis.crt"
     #  # Path to the private key file, typically named with a .key extension.
     #  private_key_path: "tls/redis.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination.
+    #  #verify_hostname: true
 ```
 
 Note: this will just pass the query to the remote node. No cluster discovery or routing occurs with this transform.

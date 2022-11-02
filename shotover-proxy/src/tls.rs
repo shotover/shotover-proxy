@@ -85,11 +85,14 @@ pub struct TlsConnectorConfig {
     pub certificate_path: Option<String>,
     /// Path to the private key in PEM format
     pub private_key_path: Option<String>,
+    /// enable/disable verifying the hostname of the destination's certificate.
+    pub verify_hostname: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct TlsConnector {
     connector: Arc<SslConnector>,
+    verify_hostname: bool,
 }
 
 impl TlsConnector {
@@ -120,29 +123,8 @@ impl TlsConnector {
 
         Ok(TlsConnector {
             connector: Arc::new(builder.build()),
+            verify_hostname: tls_config.verify_hostname,
         })
-    }
-
-    pub async fn connect_unverified_hostname(
-        &self,
-        tcp_stream: TcpStream,
-    ) -> Result<SslStream<TcpStream>> {
-        let ssl = self
-            .connector
-            .configure()
-            .map_err(openssl_stack_error_to_anyhow)?
-            .verify_hostname(false)
-            .into_ssl("localhost")
-            .map_err(openssl_stack_error_to_anyhow)?;
-
-        let mut ssl_stream =
-            SslStream::new(ssl, tcp_stream).map_err(openssl_stack_error_to_anyhow)?;
-        Pin::new(&mut ssl_stream).connect().await.map_err(|e| {
-            openssl_ssl_error_to_anyhow(e)
-                .context("Failed to establish TLS connection to destination")
-        })?;
-
-        Ok(ssl_stream)
     }
 
     pub async fn connect(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>> {
@@ -150,6 +132,7 @@ impl TlsConnector {
             .connector
             .configure()
             .map_err(openssl_stack_error_to_anyhow)?
+            .verify_hostname(self.verify_hostname)
             .into_ssl("localhost")
             .map_err(openssl_stack_error_to_anyhow)?;
 
