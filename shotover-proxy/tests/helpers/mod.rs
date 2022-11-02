@@ -2,7 +2,7 @@ use anyhow::Result;
 use redis::aio::AsyncStream;
 use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};
-use shotover_proxy::tls::{ApplicationProtocol, TlsConnector, TlsConnectorConfig};
+use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use std::pin::Pin;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -120,7 +120,7 @@ impl ShotoverManager {
         let tcp_stream = tokio::net::TcpStream::connect((address, port))
             .await
             .unwrap();
-        let connector = TlsConnector::new(config, ApplicationProtocol::Redis).unwrap();
+        let connector = TlsConnector::new(config).unwrap();
         let tls_stream = connector.connect(tcp_stream).await.unwrap();
         ShotoverManager::redis_connection_async_inner(
             Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>

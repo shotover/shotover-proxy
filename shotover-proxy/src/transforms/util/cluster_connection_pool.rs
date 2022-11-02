@@ -2,7 +2,6 @@ use super::Response;
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
-use crate::tls::ApplicationProtocol;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
 use anyhow::{anyhow, Result};
@@ -79,9 +78,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     ) -> Result<Self> {
         Ok(Self {
             lanes: Arc::new(Mutex::new(HashMap::new())),
-            tls: tls
-                .map(|c| TlsConnector::new(c, ApplicationProtocol::Redis))
-                .transpose()?,
+            tls: tls.map(TlsConnector::new).transpose()?,
             codec,
             authenticator,
         })

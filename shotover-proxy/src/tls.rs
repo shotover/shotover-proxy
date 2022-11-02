@@ -85,11 +85,8 @@ pub struct TlsConnectorConfig {
     pub certificate_path: Option<String>,
     /// Path to the private key in PEM format
     pub private_key_path: Option<String>,
-    /// whether to enable verifying the hostname of the destination's certificate.
-    /// Some(true) - enable verify_hostname
-    /// Some(false) - disable verify_hostname
-    /// None - protocol specific default value
-    pub verify_hostname: Option<bool>,
+    /// enable/disable verifying the hostname of the destination's certificate.
+    pub verify_hostname: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -98,16 +95,8 @@ pub struct TlsConnector {
     verify_hostname: bool,
 }
 
-pub enum ApplicationProtocol {
-    Redis,
-    Cassandra,
-}
-
 impl TlsConnector {
-    pub fn new(
-        tls_config: TlsConnectorConfig,
-        protocol: ApplicationProtocol,
-    ) -> Result<TlsConnector> {
+    pub fn new(tls_config: TlsConnectorConfig) -> Result<TlsConnector> {
         check_file_field(
             "certificate_authority_path",
             &tls_config.certificate_authority_path,
@@ -132,20 +121,9 @@ impl TlsConnector {
                 .map_err(openssl_stack_error_to_anyhow)?;
         }
 
-        let verify_hostname = match (protocol, tls_config.verify_hostname) {
-            (ApplicationProtocol::Redis, Some(true)) => {
-                return Err(anyhow!(
-                    "verify_hostname is enabled in TLS config but redis does not support it."
-                ))
-            }
-            (ApplicationProtocol::Redis, _) => false,
-            (_, None) => true,
-            (_, Some(true)) => true,
-            (_, Some(false)) => false,
-        };
         Ok(TlsConnector {
             connector: Arc::new(builder.build()),
-            verify_hostname,
+            verify_hostname: tls_config.verify_hostname,
         })
     }
 

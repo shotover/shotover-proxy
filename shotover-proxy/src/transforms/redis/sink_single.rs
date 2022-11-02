@@ -4,7 +4,6 @@ use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::{Message, Messages};
 use crate::server::CodecReadError;
-use crate::tls::ApplicationProtocol;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Context, Result};
@@ -31,11 +30,7 @@ pub struct RedisSinkSingleConfig {
 
 impl RedisSinkSingleConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
-        let tls = self
-            .tls
-            .clone()
-            .map(|c| TlsConnector::new(c, ApplicationProtocol::Redis))
-            .transpose()?;
+        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(Transforms::RedisSinkSingle(RedisSinkSingle::new(
             self.address.clone(),
             tls,

@@ -1,7 +1,7 @@
 use cassandra_protocol::frame::Version;
 use shotover_proxy::frame::{cassandra::Tracing, CassandraFrame, CassandraOperation, Frame};
 use shotover_proxy::message::Message;
-use shotover_proxy::tls::{ApplicationProtocol, TlsConnector, TlsConnectorConfig};
+use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use shotover_proxy::transforms::cassandra::sink_cluster::{
     node::{CassandraNode, ConnectionFactory},
     topology::{create_topology_task, TaskConnectionInfo},
@@ -17,15 +17,12 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
     let (nodes_tx, mut nodes_rx) = watch::channel(vec![]);
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
     let tls = ca_path.map(|ca_path| {
-        TlsConnector::new(
-            TlsConnectorConfig {
-                certificate_authority_path: ca_path.into(),
-                certificate_path: None,
-                private_key_path: None,
-                verify_hostname: None,
-            },
-            ApplicationProtocol::Cassandra,
-        )
+        TlsConnector::new(TlsConnectorConfig {
+            certificate_authority_path: ca_path.into(),
+            certificate_path: None,
+            private_key_path: None,
+            verify_hostname: true,
+        })
         .unwrap()
     });
 

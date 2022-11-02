@@ -2,7 +2,7 @@ use crate::error::ChainResponse;
 use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue, Messages};
-use crate::tls::{ApplicationProtocol, TlsConnector, TlsConnectorConfig};
+use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::CassandraConnection;
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
@@ -56,11 +56,7 @@ pub struct CassandraSinkClusterConfig {
 
 impl CassandraSinkClusterConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
-        let tls = self
-            .tls
-            .clone()
-            .map(|c| TlsConnector::new(c, ApplicationProtocol::Cassandra))
-            .transpose()?;
+        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self
             .shotover_nodes
