@@ -21,6 +21,7 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
             certificate_authority_path: ca_path.into(),
             certificate_path: None,
             private_key_path: None,
+            verify_hostname: true,
         })
         .unwrap()
     });
