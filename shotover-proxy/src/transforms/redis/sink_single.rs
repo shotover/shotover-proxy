@@ -4,6 +4,7 @@ use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::{Message, Messages};
 use crate::server::CodecReadError;
+use crate::tls::ApplicationProtocol;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Context, Result};
@@ -30,7 +31,11 @@ pub struct RedisSinkSingleConfig {
 
 impl RedisSinkSingleConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
-        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+        let tls = self
+            .tls
+            .clone()
+            .map(|c| TlsConnector::new(c, ApplicationProtocol::Redis))
+            .transpose()?;
         Ok(Transforms::RedisSinkSingle(RedisSinkSingle::new(
             self.address.clone(),
             tls,
@@ -106,7 +111,7 @@ impl Transform for RedisSinkSingle {
             .map_err(|e| anyhow::Error::new(e).context("Failed to connect to upstream"))?;
 
             let generic_stream = if let Some(tls) = self.tls.as_mut() {
-                let tls_stream = tls.connect_unverified_hostname(tcp_stream).await?;
+                let tls_stream = tls.connect(tcp_stream).await?;
                 Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             } else {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>

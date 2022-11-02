@@ -2,6 +2,7 @@ use super::Response;
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
+use crate::tls::ApplicationProtocol;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
 use anyhow::{anyhow, Result};
@@ -78,7 +79,9 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
     ) -> Result<Self> {
         Ok(Self {
             lanes: Arc::new(Mutex::new(HashMap::new())),
-            tls: tls.map(TlsConnector::new).transpose()?,
+            tls: tls
+                .map(|c| TlsConnector::new(c, ApplicationProtocol::Redis))
+                .transpose()?,
             codec,
             authenticator,
         })
@@ -169,10 +172,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
             .map_err(ConnectionError::IO)?;
 
         let mut connection = if let Some(tls) = &self.tls {
-            let tls_stream = tls
-                .connect_unverified_hostname(stream)
-                .await
-                .map_err(ConnectionError::TLS)?;
+            let tls_stream = tls.connect(stream).await.map_err(ConnectionError::TLS)?;
             let (rx, tx) = tokio::io::split(tls_stream);
             spawn_read_write_tasks(&self.codec, rx, tx)
         } else {

@@ -115,6 +115,8 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
     #  certificate_path: "tls/localhost.crt"
     #  # Path to the private key file, typically named with a .key extension.
     #  private_key_path: "tls/localhost.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination. Enabled by default
+    #  #verify_hostname: true
 
   # Timeout in seconds after which to give up waiting for a response from the destination.
   # This field is optional, if not provided, timeout will never occur.
@@ -156,6 +158,8 @@ No cluster discovery or routing occurs with this transform.
     #  certificate_path: "tls/localhost.crt"
     #  # Path to the private key file, typically named with a .key extension.
     #  private_key_path: "tls/localhost.key"
+    #  # Enable/disable verifying the hostname of the certificate provided by the destination. Enabled by default
+    #  #verify_hostname: true
 
   # Timeout in seconds after which to give up waiting for a response from the destination.
   # This field is optional, if not provided, timeout will never occur.

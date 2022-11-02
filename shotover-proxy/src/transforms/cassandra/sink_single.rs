@@ -2,7 +2,7 @@ use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::tls::{TlsConnector, TlsConnectorConfig};
+use crate::tls::{ApplicationProtocol, TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::Result;
@@ -24,7 +24,11 @@ pub struct CassandraSinkSingleConfig {
 
 impl CassandraSinkSingleConfig {
     pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
-        let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
+        let tls = self
+            .tls
+            .clone()
+            .map(|c| TlsConnector::new(c, ApplicationProtocol::Cassandra))
+            .transpose()?;
         Ok(Transforms::CassandraSinkSingle(CassandraSinkSingle::new(
             self.address.clone(),
             chain_name,
