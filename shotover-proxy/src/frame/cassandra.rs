@@ -205,38 +205,45 @@ impl CassandraFrame {
                 if let ResponseBody::Result(result) = frame.response_body()? {
                     match result {
                         ResResultBody::Rows(rows) => {
-                            let converted_rows =
-                                if rows.metadata.flags.contains(RowsMetadataFlags::NO_METADATA) {
-                                    rows.rows_content
-                                        .into_iter()
-                                        .map(|row| {
-                                            row.into_iter()
-                                                .map(|row_content| {
+                            let converted_rows = if rows
+                                .metadata
+                                .flags
+                                .contains(RowsMetadataFlags::NO_METADATA)
+                            {
+                                rows.rows_content
+                                    .into_iter()
+                                    .map(|row| {
+                                        row.into_iter()
+                                            .map(|row_content| {
+                                                if row_content.is_empty() {
+                                                    MessageValue::Null
+                                                } else {
                                                     MessageValue::Bytes(
                                                         row_content.into_bytes().unwrap().into(),
                                                     )
-                                                })
-                                                .collect()
-                                        })
-                                        .collect()
-                                } else {
-                                    rows.rows_content
-                                        .into_iter()
-                                        .map(|row| {
-                                            row.into_iter()
-                                                .enumerate()
-                                                .map(|(i, row_content)| {
-                                                    let col_spec = &rows.metadata.col_specs[i];
-                                                    MessageValue::build_value_from_cstar_col_type(
-                                                        frame.version,
-                                                        col_spec,
-                                                        &row_content,
-                                                    )
-                                                })
-                                                .collect()
-                                        })
-                                        .collect()
-                                };
+                                                }
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            } else {
+                                rows.rows_content
+                                    .into_iter()
+                                    .map(|row| {
+                                        row.into_iter()
+                                            .enumerate()
+                                            .map(|(i, row_content)| {
+                                                let col_spec = &rows.metadata.col_specs[i];
+                                                MessageValue::build_value_from_cstar_col_type(
+                                                    frame.version,
+                                                    col_spec,
+                                                    &row_content,
+                                                )
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            };
                             CassandraOperation::Result(CassandraResult::Rows {
                                 rows: converted_rows,
                                 metadata: Box::new(rows.metadata),

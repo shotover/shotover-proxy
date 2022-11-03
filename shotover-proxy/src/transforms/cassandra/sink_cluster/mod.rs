@@ -393,7 +393,7 @@ impl CassandraSinkCluster {
                                 .await?
                                 .send(message, return_chan_tx)?;
                         }
-                        Ok(None) => {
+                        Ok(None) | Err(GetReplicaErr::NoKeyspaceMetadata) => {
                             let node = self
                                 .pool
                                 .get_round_robin_node_in_dc_rack(&self.local_shotover_node.rack);
@@ -401,7 +401,7 @@ impl CassandraSinkCluster {
                                 .await?
                                 .send(message, return_chan_tx)?;
                         }
-                        Err(GetReplicaErr::NoMetadata) => {
+                        Err(GetReplicaErr::NoPreparedMetadata) => {
                             let id = execute.id.clone();
                             tracing::info!("forcing re-prepare on {:?}", id);
                             // this shotover node doesn't have the metadata

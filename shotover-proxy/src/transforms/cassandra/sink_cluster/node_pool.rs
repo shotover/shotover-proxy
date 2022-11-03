@@ -16,7 +16,8 @@ use tokio::sync::{watch, RwLock};
 
 #[derive(Debug)]
 pub enum GetReplicaErr {
-    NoMetadata,
+    NoPreparedMetadata,
+    NoKeyspaceMetadata,
     Other(Error),
 }
 
@@ -141,7 +142,7 @@ impl NodePool {
             let read_lock = self.prepared_metadata.read().await;
             read_lock
                 .get(&execute.id)
-                .ok_or(GetReplicaErr::NoMetadata)?
+                .ok_or(GetReplicaErr::NoPreparedMetadata)?
                 .clone()
         };
 
@@ -152,12 +153,10 @@ impl NodePool {
                     &metadata
                         .global_table_spec
                         .as_ref()
-                        .ok_or_else(|| {
-                            GetReplicaErr::Other(anyhow!("Could not find keyspace metadata"))
-                        })?
+                        .ok_or(GetReplicaErr::NoKeyspaceMetadata)?
                         .ks_name,
                 )
-                .ok_or(GetReplicaErr::NoMetadata)?
+                .ok_or(GetReplicaErr::NoKeyspaceMetadata)?
                 .clone()
         };
 
