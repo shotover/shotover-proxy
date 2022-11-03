@@ -208,11 +208,9 @@ mod test_token_aware_router {
     }
 
     fn prepare_tokens() -> HashMap<String, Vec<Murmur3Token>> {
-        let data =
-            std::fs::read_to_string("src/transforms/cassandra/sink_cluster/test_cluster_data.json")
-                .expect("Unable to read file");
+        let data = include_str!("./test_cluster_data.json");
 
-        let parsed: HashMap<String, Vec<i64>> = serde_json::from_str(&data).unwrap();
+        let parsed: HashMap<String, Vec<i64>> = serde_json::from_str(data).unwrap();
 
         let mut result = HashMap::new();
         for (address, tokens) in parsed {
