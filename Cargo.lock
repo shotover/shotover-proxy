@@ -3064,6 +3064,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serial_test",
+ "split-iter",
  "strum_macros 0.24.3",
  "test-helpers",
  "thiserror",
@@ -3143,6 +3144,12 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "split-iter"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f2b15926089e5526bb2dd738a2eb0e59034356e06eb71e1cd912358c0e62c4d"
 
 [[package]]
 name = "static_assertions"
