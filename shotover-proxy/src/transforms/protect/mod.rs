@@ -27,7 +27,7 @@ pub struct ProtectConfig {
 
 impl ProtectConfig {
     pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::Protect(Protect {
+        Ok(Transforms::Protect(Box::new(Protect {
             keyspace_table_columns: self
                 .keyspace_table_columns
                 .iter()
@@ -47,7 +47,7 @@ impl ProtectConfig {
                 .collect(),
             key_source: self.key_manager.build()?,
             key_id: "XXXXXXX".to_string(),
-        }))
+        })))
     }
 }
 
