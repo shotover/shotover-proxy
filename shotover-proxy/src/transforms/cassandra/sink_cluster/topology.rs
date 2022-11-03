@@ -11,7 +11,6 @@ use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
 use cassandra_protocol::frame::message_register::BodyReqRegister;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::{frame::Version, query::QueryParams};
-use itertools::Itertools;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::unbounded_channel;
@@ -75,19 +74,19 @@ async fn topology_task_process(
 
     let version = connection_info.connection_factory.get_version()?;
 
-    let mut nodes = fetch_current_nodes(&connection, connection_info, data_center).await?;
+    let mut nodes = fetch_current_nodes(&connection, connection_info, data_center, version).await?;
     if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
         return Ok(());
     }
 
-    let mut keyspaces = system_keyspaces::query(&connection, data_center).await?;
+    let mut keyspaces = system_keyspaces::query(&connection, data_center, version).await?;
     if let Err(watch::error::SendError(_)) = keyspaces_tx.send(keyspaces.clone()) {
         return Ok(());
     }
 
     register_for_topology_and_status_events(&connection, version).await?;
 
-    'listen: loop {
+    loop {
         // Wait for events to come in from the cassandra node.
         // If all the nodes receivers are closed then immediately stop listening and shutdown the task
         let pushed_messages = tokio::select! {
@@ -109,6 +108,7 @@ async fn topology_task_process(
                                         &connection,
                                         connection_info,
                                         data_center,
+                                        version,
                                     )
                                     .await?;
 
@@ -128,7 +128,7 @@ async fn topology_task_process(
                                     if let Err(watch::error::SendError(_)) =
                                         nodes_tx.send(nodes.clone())
                                     {
-                                        break 'listen;
+                                        return Ok(());
                                     }
                                 }
                                 TopologyChangeType::RemovedNode => {
@@ -137,7 +137,7 @@ async fn topology_task_process(
                                     if let Err(watch::error::SendError(_)) =
                                         nodes_tx.send(nodes.clone())
                                     {
-                                        break 'listen;
+                                        return Ok(());
                                     }
                                 }
                             },
@@ -153,17 +153,17 @@ async fn topology_task_process(
                                 if let Err(watch::error::SendError(_)) =
                                     nodes_tx.send(nodes.clone())
                                 {
-                                    break 'listen;
+                                    return Ok(());
                                 }
                             }
-                            ServerEvent::SchemaChange(change) => {
-                                tracing::warn!("{:?}", change);
+                            ServerEvent::SchemaChange(_change) => {
                                 keyspaces =
-                                    system_keyspaces::query(&connection, data_center).await?;
+                                    system_keyspaces::query(&connection, data_center, version)
+                                        .await?;
                                 if let Err(watch::error::SendError(_)) =
                                     keyspaces_tx.send(keyspaces.clone())
                                 {
-                                    break 'listen;
+                                    return Ok(());
                                 }
                             }
                         }
@@ -173,8 +173,6 @@ async fn topology_task_process(
             None => return Err(anyhow!("topology control connection was closed")),
         }
     }
-
-    Ok(())
 }
 
 async fn register_for_topology_and_status_events(
@@ -215,10 +213,11 @@ async fn fetch_current_nodes(
     connection: &CassandraConnection,
     connection_info: &TaskConnectionInfo,
     data_center: &str,
+    version: Version,
 ) -> Result<Vec<CassandraNode>> {
     let (new_nodes, more_nodes) = tokio::join!(
-        system_local::query(connection, data_center, connection_info.address),
-        system_peers::query(connection, data_center)
+        system_local::query(connection, data_center, connection_info.address, version),
+        system_peers::query(connection, data_center, version)
     );
 
     let mut new_nodes = new_nodes?;
@@ -245,19 +244,19 @@ mod system_keyspaces {
     pub async fn query(
         connection: &CassandraConnection,
         data_center: &str,
+        version: Version,
     ) -> Result<HashMap<String, KeyspaceMetadata>> {
         let (tx, rx) = oneshot::channel();
 
         connection.send(Message::from_frame(
             Frame::Cassandra(CassandraFrame{
-                version: Version::V4,
+                version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
                 warnings: vec![],
                 operation: CassandraOperation::Query{
                     query: Box::new(
                         parse_statement_single(
-
                             "SELECT keyspace_name, toJson(replication) AS replication FROM system_schema.keyspaces",
                         )
                     ),
@@ -281,7 +280,7 @@ mod system_keyspaces {
                 CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
                     .iter_mut()
                     .map(|row| build_keyspace(row, data_center))
-                    .try_collect(),
+                    .collect(),
                 operation => Err(anyhow!(
                     "keyspace query returned unexpected cassandra operation: {:?}",
                     operation
@@ -371,7 +370,7 @@ mod system_keyspaces {
                 extract_replication_factor(Some(&replication_factor))
                     .map(move |replication_factor| (key, replication_factor))
             })
-            .try_collect()
+            .collect()
     }
 
     fn extract_replication_factor(value: Option<&JsonValue>) -> Result<usize> {
@@ -402,11 +401,12 @@ mod system_local {
         connection: &CassandraConnection,
         data_center: &str,
         address: SocketAddr,
+        version: Version,
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
+                version,
                 stream_id: 1,
                 tracing: Tracing::Request(false),
                 warnings: vec![],
@@ -488,11 +488,12 @@ mod system_peers {
     pub async fn query(
         connection: &CassandraConnection,
         data_center: &str,
+        version: Version,
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
+                version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
                 warnings: vec![],
@@ -512,7 +513,7 @@ mod system_peers {
             let (tx, rx) = oneshot::channel();
             connection.send(
                 Message::from_frame(Frame::Cassandra(CassandraFrame {
-                    version: Version::V4,
+                    version,
                     stream_id: 0,
                     tracing: Tracing::Request(false),
                     warnings: vec![],
