@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use docker_api::Docker;
+use docker_api::{Container, Docker};
 use std::io::ErrorKind;
 use std::process::Command;
 use std::time::{self, Duration};
@@ -91,10 +91,24 @@ impl DockerCompose {
 
     /// Stops the container with the provided service name
     pub async fn stop_service(&self, service_name: &str) {
+        for container in self.get_containers_with_service_name(service_name).await {
+            container.stop(None).await.unwrap();
+        }
+    }
+
+    /// Kills the container with the provided service name
+    pub async fn kill_service(&self, service_name: &str) {
+        for container in self.get_containers_with_service_name(service_name).await {
+            container.kill(None).await.unwrap();
+        }
+    }
+
+    async fn get_containers_with_service_name(&self, service_name: &str) -> Vec<Container> {
         let docker = Docker::new("unix:///var/run/docker.sock").unwrap();
         let containers = docker.containers();
         let mut found = false;
         let mut all_names: Vec<String> = vec![];
+        let mut result = vec![];
         for container in containers.list(&Default::default()).await.unwrap() {
             let compose_service = container
                 .labels
@@ -104,8 +118,7 @@ impl DockerCompose {
                 .to_string();
             if compose_service == service_name {
                 found = true;
-                let container = containers.get(container.id.unwrap());
-                container.stop(None).await.unwrap();
+                result.push(containers.get(container.id.unwrap()));
             }
             all_names.push(compose_service);
         }
@@ -114,6 +127,7 @@ impl DockerCompose {
             "container was not found with expected docker compose service name, actual names were {:?}",
             all_names
         );
+        result
     }
 
     fn wait_for_containers_to_startup(&self) {

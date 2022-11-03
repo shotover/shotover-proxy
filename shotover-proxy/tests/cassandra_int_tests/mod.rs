@@ -199,7 +199,22 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 
     let shotover_manager =
         ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
-    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver).await;
+    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, false).await;
+}
+
+#[cfg(feature = "cassandra-cpp-driver-tests")]
+#[rstest]
+//#[case::cdrs(CdrsTokio)]
+#[cfg_attr(feature = "cassandra-cpp-driver-tests", case(Datastax))]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn cluster_single_rack_node_lost(#[case] driver: CassandraDriver) {
+    let compose =
+        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml");
+
+    let shotover_manager =
+        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
+    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, true).await;
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
