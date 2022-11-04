@@ -61,7 +61,7 @@ impl Topology {
         }
 
         if !chain_errors.is_empty() {
-            return Err(anyhow!(format!("Topology errors\n{chain_errors}")));
+            return Err(anyhow!("Topology errors\n{chain_errors}"));
         }
 
         for (source_name, chain_name) in &self.source_to_chain_mapping {
