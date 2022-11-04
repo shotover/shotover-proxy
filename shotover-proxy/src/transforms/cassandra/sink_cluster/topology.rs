@@ -278,7 +278,7 @@ mod system_keyspaces {
         if let Some(Frame::Cassandra(frame)) = response.frame() {
             match &mut frame.operation {
                 CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
-                    .iter_mut()
+                    .drain(..)
                     .map(|row| build_keyspace(row, data_center))
                     .collect(),
                 operation => Err(anyhow!(
@@ -292,24 +292,25 @@ mod system_keyspaces {
     }
 
     fn build_keyspace(
-        row: &mut Vec<MessageValue>,
+        mut row: Vec<MessageValue>,
         data_center: &str,
     ) -> Result<(String, KeyspaceMetadata)> {
         let metadata = if let Some(MessageValue::Varchar(string)) = row.pop() {
             let replication: JsonValue = serde_json::from_str(&string).map_err(|error| {
-                anyhow!(format!(
+                anyhow!(
                     "Error parsing replication. Error: {} Replication: {}",
-                    error, string
-                ))
+                    error,
+                    string
+                )
             })?;
 
             let replication_strategy = match replication {
                 JsonValue::Object(properties) => build_replication_strategy(properties)?,
                 _ => {
-                    return Err(anyhow!(format!(
+                    return Err(anyhow!(
                         "Error parsing replication strategy: {}",
                         replication
-                    )))
+                    ))
                 }
             };
 
@@ -383,10 +384,7 @@ mod system_keyspaces {
                 };
 
                 result.map_err(|error| {
-                    anyhow!(format!(
-                        "Failed to parse ('{}'): {}",
-                        replication_factor, error
-                    ))
+                    anyhow!(error).context(format!("Failed to parse ('{}')", replication_factor))
                 })
             }
             _ => Err(anyhow!("Missing replication factor")),
