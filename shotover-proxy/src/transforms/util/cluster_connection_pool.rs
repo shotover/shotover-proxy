@@ -2,6 +2,7 @@ use super::Response;
 use crate::server::Codec;
 use crate::server::CodecReadHalf;
 use crate::server::CodecWriteHalf;
+use crate::tcp;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
 use anyhow::{anyhow, Result};
@@ -11,12 +12,12 @@ use futures::StreamExt;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
+
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
+
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
-use tokio::time::timeout;
+
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, trace, warn, Instrument};
@@ -163,17 +164,19 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         address: &str,
         token: &Option<T>,
     ) -> Result<Connection, ConnectionError<A::Error>> {
-        let stream = timeout(Duration::from_secs(3), TcpStream::connect(address))
+        let tcp_stream = tcp::tcp_stream(address)
             .await
-            .map_err(|e| ConnectionError::IO(e.into()))?
             .map_err(ConnectionError::IO)?;
 
         let mut connection = if let Some(tls) = &self.tls {
-            let tls_stream = tls.connect(stream).await.map_err(ConnectionError::TLS)?;
+            let tls_stream = tls
+                .connect(tcp_stream)
+                .await
+                .map_err(ConnectionError::TLS)?;
             let (rx, tx) = tokio::io::split(tls_stream);
             spawn_read_write_tasks(&self.codec, rx, tx)
         } else {
-            let (rx, tx) = stream.into_split();
+            let (rx, tx) = tcp_stream.into_split();
             spawn_read_write_tasks(&self.codec, rx, tx)
         };
 
