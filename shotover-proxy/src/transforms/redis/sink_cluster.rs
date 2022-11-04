@@ -266,7 +266,7 @@ impl RedisSinkCluster {
                 self.connection_pool
                     .new_unpooled_connection(address, token)
                     .map_err(move |err| {
-                        trace!("error fetching slot map from {}: {}", address, err);
+                        trace!("error fetching slot map from {}: {:?}", address, err);
                         TransformError::from(err)
                     })
                     .and_then(get_topology_from_node)
@@ -313,7 +313,7 @@ impl RedisSinkCluster {
                 Err(err)
             }
             Err(err) => {
-                warn!("failed to build connections: {}", err);
+                warn!("failed to build connections: {:?}", err);
                 Err(err)
             }
         }
@@ -339,7 +339,7 @@ impl RedisSinkCluster {
                 }
                 Err(e) => {
                     // Intentional debug! Some errors should be silently passed through.
-                    debug!("failed to connect to {}: {}", node, e);
+                    debug!("failed to connect to {}: {:?}", node, e);
                     errors.push(e.into());
                 }
             }
@@ -542,7 +542,7 @@ impl RedisSinkCluster {
         if let Err(e) = CONTEXT_CHAIN_NAME.try_with(|chain_name| {
         counter!("failed_requests", 1, "chain" => chain_name.to_string(), "transform" => self.get_name());
     }) {
-        error!("failed to count failed request - missing chain name: {}", e);
+        error!("failed to count failed request - missing chain name: {:?}", e);
     }
         short_circuit(RedisFrame::Error(message.into()))
     }
@@ -971,7 +971,7 @@ impl Transform for RedisSinkCluster {
                             responses.push_front(Box::pin(
                                 self.choose_and_send(&server, original)
                                     .await?
-                                    .map_err(|e| anyhow!("Error while retrying MOVE - {}", e)),
+                                    .map_err(|e| e.context("Error while retrying MOVE")),
                             ));
                         }
                         Some(Redirection::Ask { slot, server }) => {
@@ -980,7 +980,7 @@ impl Transform for RedisSinkCluster {
                             responses.push_front(Box::pin(
                                 self.choose_and_send(&server, original)
                                     .await?
-                                    .map_err(|e| anyhow!("Error while retrying ASK - {}", e)),
+                                    .map_err(|e| e.context("Error while retrying ASK")),
                             ));
                         }
                         None => response_buffer.push(response),
