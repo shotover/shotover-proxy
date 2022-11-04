@@ -10,7 +10,9 @@ async fn delete(session: &CassandraConnection) {
         .await;
 
     assert_eq!(
-        session.execute_prepared(&prepared, Some(1)).await,
+        session
+            .execute_prepared(&prepared, &[ResultValue::Int(1)])
+            .await,
         Vec::<Vec<ResultValue>>::new()
     );
 
@@ -28,17 +30,23 @@ async fn insert(session: &CassandraConnection) {
         .await;
 
     assert_eq!(
-        session.execute_prepared(&prepared, Some(1)).await,
+        session
+            .execute_prepared(&prepared, &[ResultValue::Int(1)])
+            .await,
         Vec::<Vec<ResultValue>>::new()
     );
 
     assert_eq!(
-        session.execute_prepared(&prepared, Some(2)).await,
+        session
+            .execute_prepared(&prepared, &[ResultValue::Int(2)])
+            .await,
         Vec::<Vec<ResultValue>>::new()
     );
 
     assert_eq!(
-        session.execute_prepared(&prepared, Some(2)).await,
+        session
+            .execute_prepared(&prepared, &[ResultValue::Int(3)])
+            .await,
         Vec::<Vec<ResultValue>>::new()
     );
 }
@@ -48,7 +56,9 @@ async fn select(session: &CassandraConnection) {
         .prepare("SELECT id FROM test_prepare_statements.table_1 WHERE id = ?")
         .await;
 
-    let result_rows = session.execute_prepared(&prepared, Some(1)).await;
+    let result_rows = session
+        .execute_prepared(&prepared, &[ResultValue::Int(1)])
+        .await;
 
     assert_rows(result_rows, &[&[ResultValue::Int(1)]]);
 }
@@ -68,11 +78,15 @@ async fn select_cross_connection<Fut>(
     let connection_after = connection_creator().await;
 
     assert_rows(
-        connection_before.execute_prepared(&prepared, Some(1)).await,
+        connection_before
+            .execute_prepared(&prepared, &[ResultValue::Int(1)])
+            .await,
         &[&[ResultValue::Int(1), ResultValue::Int(1)]],
     );
     assert_rows(
-        connection_after.execute_prepared(&prepared, Some(1)).await,
+        connection_after
+            .execute_prepared(&prepared, &[ResultValue::Int(1)])
+            .await,
         &[&[ResultValue::Int(1), ResultValue::Int(1)]],
     );
 }
@@ -89,7 +103,9 @@ async fn use_statement(session: &CassandraConnection) {
 
     // observe query completing against the original keyspace without errors
     assert_eq!(
-        session.execute_prepared(&prepared, Some(358)).await,
+        session
+            .execute_prepared(&prepared, &[ResultValue::Int(358)])
+            .await,
         Vec::<Vec<ResultValue>>::new()
     );
 
@@ -123,6 +139,6 @@ where
     if session.is(&[CassandraDriver::Scylla, CassandraDriver::CdrsTokio]) {
         let cql = "SELECT * FROM system.local WHERE key = 'local'";
         let prepared = session.prepare(cql).await;
-        session.execute_prepared(&prepared, None).await;
+        session.execute_prepared(&prepared, &[]).await;
     }
 }
