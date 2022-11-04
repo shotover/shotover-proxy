@@ -634,7 +634,7 @@ impl MessageValue {
                 IntSize::I8 => serialize_bytes(cursor, &(*x as i8).to_be_bytes()),
             },
             MessageValue::Float(f) => serialize_bytes(cursor, &f.into_inner().to_be_bytes()),
-            MessageValue::Boolean(b) => serialize_bytes(cursor, &[if *b { 1 } else { 0 }]),
+            MessageValue::Boolean(b) => serialize_bytes(cursor, &[*b as u8]),
             MessageValue::List(l) => serialize_list(cursor, l),
             MessageValue::Inet(i) => match i {
                 IpAddr::V4(ip) => serialize_bytes(cursor, &ip.octets()),

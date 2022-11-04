@@ -84,7 +84,7 @@ pub enum Transforms {
     Null(Null),
     #[cfg(test)]
     Loopback(Loopback),
-    Protect(Protect),
+    Protect(Box<Protect>),
     ConsistentScatter(ConsistentScatter),
     RedisTimestampTagger(RedisTimestampTagger),
     RedisSinkCluster(RedisSinkCluster),
