@@ -226,19 +226,8 @@ async fn fetch_current_nodes(
     Ok(new_nodes)
 }
 
-enum ReplicationStrategy {
-    SimpleStrategy {
-        replication_factor: usize,
-    },
-    NetworkTopologyStrategy {
-        datacenter_replication_factor: HashMap<String, usize>,
-    },
-    Other,
-}
-
 mod system_keyspaces {
     use super::*;
-    use serde_json::{Map, Value as JsonValue};
     use std::str::FromStr;
 
     pub async fn query(
@@ -257,7 +246,7 @@ mod system_keyspaces {
                 operation: CassandraOperation::Query{
                     query: Box::new(
                         parse_statement_single(
-                            "SELECT keyspace_name, toJson(replication) AS replication FROM system_schema.keyspaces",
+                            "SELECT keyspace_name, replication AS replication FROM system_schema.keyspaces",
                         )
                     ),
 
@@ -291,104 +280,77 @@ mod system_keyspaces {
         }
     }
 
-    fn build_keyspace(
+    pub fn build_keyspace(
         mut row: Vec<MessageValue>,
         data_center: &str,
     ) -> Result<(String, KeyspaceMetadata)> {
-        let metadata = if let Some(MessageValue::Varchar(string)) = row.pop() {
-            let replication: JsonValue = serde_json::from_str(&string).map_err(|error| {
-                anyhow!(
-                    "Error parsing replication. Error: {} Replication: {}",
-                    error,
-                    string
-                )
-            })?;
+        let metadata = if let Some(MessageValue::Map(mut replication_strategy)) = row.pop() {
+            let strategy_name: String = match replication_strategy
+                .remove(&MessageValue::Varchar("class".into()))
+                .ok_or_else(|| anyhow!("replication strategy map should have a 'class' field",))?
+            {
+                MessageValue::Varchar(name) => name,
+                _ => return Err(anyhow!("'class' field should be a varchar")),
+            };
 
-            let replication_strategy = match replication {
-                JsonValue::Object(properties) => build_replication_strategy(properties)?,
-                _ => {
-                    return Err(anyhow!(
-                        "Error parsing replication strategy: {}",
-                        replication
-                    ))
+            match strategy_name.as_str() {
+                "org.apache.cassandra.locator.SimpleStrategy" | "SimpleStrategy" => {
+                    let rf_str: String =
+                        match replication_strategy.remove(&MessageValue::Varchar("replication_factor".into())).ok_or_else(||
+                         anyhow!("SimpleStrategy in replication strategy map does not have a replication factor")
+                        )?{
+                            MessageValue::Varchar(rf) => rf,
+                            _ => return Err(anyhow!("SimpleStrategy replication factor should be a varchar "))
+                        };
+
+                    let replication_factor: usize = usize::from_str(&rf_str).map_err(|_| {
+                        anyhow!("Could not parse replication factor as an integer",)
+                    })?;
+
+                    KeyspaceMetadata { replication_factor }
                 }
-            };
+                "org.apache.cassandra.locator.NetworkTopologyStrategy"
+                | "NetworkTopologyStrategy" => {
+                    let data_center_rf = match replication_strategy
+                        .remove(&MessageValue::Varchar(data_center.into()))
+                    {
+                        Some(MessageValue::Varchar(rf_str)) => {
+                            usize::from_str(&rf_str).map_err(|_| {
+                                anyhow!("Could not parse replication factor as an integer",)
+                            })?
+                        }
+                        Some(_other) => {
+                            return Err(anyhow!(
+                                "NetworkTopologyStrategy replication factor should be a varchar"
+                            ))
+                        }
+                        None => 0,
+                    };
 
-            let replication_factor = match replication_strategy {
-                ReplicationStrategy::SimpleStrategy { replication_factor } => replication_factor,
-                ReplicationStrategy::NetworkTopologyStrategy {
-                    datacenter_replication_factor,
-                } => *datacenter_replication_factor.get(data_center).unwrap_or(&0),
-                _ => 0,
-            };
-
-            KeyspaceMetadata { replication_factor }
+                    KeyspaceMetadata {
+                        replication_factor: data_center_rf,
+                    }
+                }
+                "org.apache.cassandra.locator.LocalStrategy" | "LocalStrategy" => {
+                    KeyspaceMetadata {
+                        replication_factor: 0,
+                    }
+                }
+                _ => KeyspaceMetadata {
+                    replication_factor: 0,
+                },
+            }
         } else {
-            return Err(anyhow!(
-                "system_schema.keyspaces.replication is not a varchar"
-            ));
+            return Err(anyhow!("replication strategy should be a map"));
         };
 
         let name = if let Some(MessageValue::Varchar(name)) = row.pop() {
             name
         } else {
-            return Err(anyhow!("system_schema_keyspaces.name"));
+            return Err(anyhow!("system_schema_keyspaces.name should be a varchar"));
         };
 
         Ok((name, metadata))
-    }
-
-    fn build_replication_strategy(
-        mut properties: Map<String, JsonValue>,
-    ) -> Result<ReplicationStrategy> {
-        match properties.remove("class") {
-            Some(JsonValue::String(class)) => Ok(match class.as_str() {
-                "org.apache.cassandra.locator.SimpleStrategy" | "SimpleStrategy" => {
-                    ReplicationStrategy::SimpleStrategy {
-                        replication_factor: extract_replication_factor(
-                            properties.get("replication_factor"),
-                        )?,
-                    }
-                }
-                "org.apache.cassandra.locator.NetworkTopologyStrategy"
-                | "NetworkTopologyStrategy" => ReplicationStrategy::NetworkTopologyStrategy {
-                    datacenter_replication_factor: extract_datacenter_replication_factor(
-                        properties,
-                    )?,
-                },
-                _ => ReplicationStrategy::Other,
-            }),
-            _ => Err(anyhow!("Missing replication strategy class")),
-        }
-    }
-
-    fn extract_datacenter_replication_factor(
-        properties: Map<String, JsonValue>,
-    ) -> Result<HashMap<String, usize>> {
-        properties
-            .into_iter()
-            .map(|(key, replication_factor)| {
-                extract_replication_factor(Some(&replication_factor))
-                    .map(move |replication_factor| (key, replication_factor))
-            })
-            .collect()
-    }
-
-    fn extract_replication_factor(value: Option<&JsonValue>) -> Result<usize> {
-        match value {
-            Some(JsonValue::String(replication_factor)) => {
-                let result = if let Some(slash) = replication_factor.find('/') {
-                    usize::from_str(&replication_factor[..slash])
-                } else {
-                    usize::from_str(replication_factor)
-                };
-
-                result.map_err(|error| {
-                    anyhow!(error).context(format!("Failed to parse ('{}')", replication_factor))
-                })
-            }
-            _ => Err(anyhow!("Missing replication factor")),
-        }
     }
 }
 
@@ -622,5 +584,77 @@ mod system_peers {
                 response
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod test_system_keyspaces {
+    use super::*;
+
+    #[test]
+    fn test_simple() {
+        let row = vec![
+            MessageValue::Varchar("test".into()),
+            MessageValue::Map(
+                vec![
+                    (
+                        MessageValue::Varchar("class".into()),
+                        MessageValue::Varchar("org.apache.cassandra.locator.SimpleStrategy".into()),
+                    ),
+                    (
+                        MessageValue::Varchar("replication_factor".into()),
+                        MessageValue::Varchar("2".into()),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        ];
+
+        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+        assert_eq!(
+            result,
+            (
+                "test".into(),
+                KeyspaceMetadata {
+                    replication_factor: 2
+                }
+            )
+        )
+    }
+
+    #[test]
+    fn test_network() {
+        let row = vec![
+            MessageValue::Varchar("test".into()),
+            MessageValue::Map(
+                vec![
+                    (
+                        MessageValue::Varchar("class".into()),
+                        MessageValue::Varchar(
+                            "org.apache.cassandra.locator.NetworkTopologyStrategy".into(),
+                        ),
+                    ),
+                    (
+                        MessageValue::Varchar("dc1".into()),
+                        MessageValue::Varchar("3".into()),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        ];
+
+        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+
+        assert_eq!(
+            result,
+            (
+                "test".into(),
+                KeyspaceMetadata {
+                    replication_factor: 3
+                }
+            )
+        )
     }
 }

@@ -21,7 +21,7 @@ pub enum GetReplicaErr {
     Other(Error),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KeyspaceMetadata {
     pub replication_factor: usize,
 }
