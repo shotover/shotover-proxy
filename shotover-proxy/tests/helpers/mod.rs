@@ -117,11 +117,11 @@ impl ShotoverManager {
         let address = "127.0.0.1";
         test_helpers::wait_for_socket_to_open(address, port);
 
-        let tcp_stream = tokio::net::TcpStream::connect((address, port))
+        let connector = TlsConnector::new(config).unwrap();
+        let tls_stream = connector
+            .connect(Duration::from_secs(3), (address, port))
             .await
             .unwrap();
-        let connector = TlsConnector::new(config).unwrap();
-        let tls_stream = connector.connect(tcp_stream).await.unwrap();
         ShotoverManager::redis_connection_async_inner(
             Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
         )

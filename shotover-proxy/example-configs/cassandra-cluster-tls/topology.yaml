@@ -22,6 +22,6 @@ chain_config:
           certificate_authority_path: "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt"
           certificate_path: "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.crt"
           private_key_path: "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost.key"
-          verify_hostname: true
+          verify_hostname: false
 source_to_chain_mapping:
   cassandra_prod: main_chain

@@ -8,6 +8,7 @@ use shotover_proxy::transforms::cassandra::sink_cluster::{
 };
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
+use tokio::time::timeout;
 
 pub mod multi_rack;
 pub mod single_rack_v3;
@@ -22,7 +23,7 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
             certificate_authority_path: ca_path.into(),
             certificate_path: None,
             private_key_path: None,
-            verify_hostname: true,
+            verify_hostname: false,
         })
         .unwrap()
     });
@@ -44,7 +45,10 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         .await
         .unwrap();
 
-    nodes_rx.changed().await.unwrap();
+    timeout(Duration::from_secs(30), nodes_rx.changed())
+        .await
+        .unwrap()
+        .unwrap();
     let nodes = nodes_rx.borrow().clone();
     nodes
 }

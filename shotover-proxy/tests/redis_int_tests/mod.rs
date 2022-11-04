@@ -81,7 +81,7 @@ async fn source_tls_and_single_tls() {
         certificate_authority_path: "example-configs/redis-tls/certs/ca.crt".into(),
         certificate_path: Some("example-configs/redis-tls/certs/redis.crt".into()),
         private_key_path: Some("example-configs/redis-tls/certs/redis.key".into()),
-        verify_hostname: true,
+        verify_hostname: false,
     };
 
     let mut connection = shotover_manager

@@ -1,7 +1,7 @@
 use crate::codec::cassandra::CassandraCodec;
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
-use crate::tls::TlsConnector;
+use crate::tls::{TlsConnector, ToHostname};
 use crate::transforms::cassandra::connection::CassandraConnection;
 use anyhow::{anyhow, Result};
 use cassandra_protocol::frame::Version;
@@ -100,7 +100,7 @@ impl ConnectionFactory {
         }
     }
 
-    pub async fn new_connection<A: ToSocketAddrs + std::fmt::Debug>(
+    pub async fn new_connection<A: ToSocketAddrs + ToHostname + std::fmt::Debug>(
         &self,
         address: A,
     ) -> Result<CassandraConnection> {
