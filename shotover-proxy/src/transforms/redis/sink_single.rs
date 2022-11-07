@@ -15,9 +15,8 @@ use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::fmt::Debug;
 use std::pin::Pin;
-
+use std::time::Duration;
 use tokio::sync::mpsc;
-
 use tokio_util::codec::Framed;
 use tracing::Instrument;
 
@@ -26,6 +25,7 @@ pub struct RedisSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub tls: Option<TlsConnectorConfig>,
+    pub connect_timeout_ms: u64,
 }
 
 impl RedisSinkSingleConfig {
@@ -35,6 +35,7 @@ impl RedisSinkSingleConfig {
             self.address.clone(),
             tls,
             chain_name,
+            self.connect_timeout_ms,
         )))
     }
 }
@@ -54,6 +55,7 @@ pub struct RedisSinkSingle {
     chain_name: String,
     failed_requests: Counter,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+    connect_timeout: Duration,
 }
 
 impl Clone for RedisSinkSingle {
@@ -65,13 +67,20 @@ impl Clone for RedisSinkSingle {
             chain_name: self.chain_name.clone(),
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
+            connect_timeout: self.connect_timeout,
         }
     }
 }
 
 impl RedisSinkSingle {
-    pub fn new(address: String, tls: Option<TlsConnector>, chain_name: String) -> RedisSinkSingle {
+    pub fn new(
+        address: String,
+        tls: Option<TlsConnector>,
+        chain_name: String,
+        connect_timeout_ms: u64,
+    ) -> RedisSinkSingle {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "RedisSinkSingle");
+        let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
         RedisSinkSingle {
             address,
@@ -80,6 +89,7 @@ impl RedisSinkSingle {
             chain_name,
             failed_requests,
             pushed_messages_tx: None,
+            connect_timeout,
         }
     }
 }
@@ -98,7 +108,7 @@ impl Transform for RedisSinkSingle {
         }
 
         if self.connection.is_none() {
-            let tcp_stream = tcp::tcp_stream(self.address.clone()).await?;
+            let tcp_stream = tcp::tcp_stream(self.connect_timeout, self.address.clone()).await?;
 
             let generic_stream = if let Some(tls) = self.tls.as_mut() {
                 let tls_stream = tls.connect(tcp_stream).await?;

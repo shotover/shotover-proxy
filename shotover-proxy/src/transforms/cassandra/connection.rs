@@ -36,12 +36,13 @@ pub struct CassandraConnection {
 
 impl CassandraConnection {
     pub async fn new<A: ToSocketAddrs + std::fmt::Debug>(
+        connect_timeout: Duration,
         host: A,
         codec: CassandraCodec,
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
-        let tcp_stream = tcp::tcp_stream(host).await?;
+        let tcp_stream = tcp::tcp_stream(connect_timeout, host).await?;
 
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();

@@ -14,6 +14,7 @@ chain_config:
   redis_chain_tls:
     - RedisSinkSingle:
         remote_address: "127.0.0.1:1111"
+        connect_timeout_ms: 3000
         tls:
           certificate_authority_path: "example-configs/redis-tls/certs/ca.crt"
           certificate_path: "example-configs/redis-tls/certs/redis.crt"
