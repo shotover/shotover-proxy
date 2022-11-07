@@ -1,3 +1,4 @@
+use bytes::BufMut;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
     stmt, Batch, BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
@@ -27,7 +28,9 @@ use cdrs_tokio::{
 };
 use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
+use scylla::batch::Batch as ScyllaBatch;
 use scylla::frame::response::result::CqlValue;
+use scylla::frame::types::Consistency;
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 use scylla::{Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -173,6 +176,7 @@ impl CassandraConnection {
                             .collect::<Vec<String>>(),
                     )
                     .user("cassandra", "cassandra")
+                    .default_consistency(Consistency::One)
                     .build()
                     .await
                     .unwrap();
@@ -303,7 +307,13 @@ impl CassandraConnection {
                         .map(|x| {
                             x.columns
                                 .into_iter()
-                                .map(|col| ResultValue::new_from_scylla(col.unwrap()))
+                                .map(|col| {
+                                    if let Some(col) = col {
+                                        ResultValue::new_from_scylla(col)
+                                    } else {
+                                        ResultValue::Null
+                                    }
+                                })
                                 .collect()
                         })
                         .collect(),
@@ -498,7 +508,23 @@ impl CassandraConnection {
 
                 Self::process_cdrs_response(response)
             }
-            Self::Scylla { .. } => todo!(),
+            Self::Scylla { session, .. } => {
+                let statement = prepared_query.as_scylla();
+                let response = session.execute(statement, (value,)).await.unwrap();
+
+                if let Ok(rows) = response.rows() {
+                    rows.into_iter()
+                        .map(|row| {
+                            row.columns
+                                .into_iter()
+                                .map(|col| ResultValue::new_from_scylla(col.unwrap()))
+                                .collect()
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                }
+            }
         }
     }
 
@@ -533,7 +559,16 @@ impl CassandraConnection {
 
                 session.batch(batch).await.unwrap();
             }
-            Self::Scylla { .. } => todo!(),
+            Self::Scylla { session, .. } => {
+                let mut values = vec![];
+                let mut batch: ScyllaBatch = Default::default();
+                for query in queries {
+                    batch.append_statement(query.as_str());
+                    values.push(());
+                }
+
+                session.batch(&batch, values).await.unwrap();
+            }
         }
     }
 
@@ -801,16 +836,32 @@ impl ResultValue {
             CqlValue::Blob(blob) => Self::Blob(blob),
             CqlValue::Boolean(b) => Self::Boolean(b),
             CqlValue::Counter(_counter) => todo!(),
-            CqlValue::Decimal(_decimal) => todo!(),
+            CqlValue::Decimal(d) => {
+                let (value, scale) = d.as_bigint_and_exponent();
+                let mut buf = vec![];
+                let serialized = value.to_signed_bytes_be();
+                buf.put_i32(scale.try_into().unwrap());
+                buf.extend_from_slice(&serialized);
+                Self::Decimal(buf)
+            }
             CqlValue::Float(float) => Self::Float(float.into()),
             CqlValue::Int(int) => Self::Int(int),
-            CqlValue::Timestamp(_timestamp) => todo!(),
+            CqlValue::Timestamp(timestamp) => Self::Timestamp(timestamp.num_milliseconds()),
             CqlValue::Uuid(uuid) => Self::Uuid(uuid),
-            CqlValue::Varint(_var_int) => todo!(),
+            CqlValue::Varint(var_int) => {
+                let mut buf = vec![];
+                let serialized = var_int.to_signed_bytes_be();
+                buf.extend_from_slice(&serialized);
+                Self::VarInt(buf)
+            }
             CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid),
             CqlValue::Inet(ip) => Self::Inet(ip.to_string()),
-            CqlValue::Date(_date) => todo!(),
-            CqlValue::Time(_time) => todo!(),
+            CqlValue::Date(date) => Self::Date(date.to_be_bytes().to_vec()),
+            CqlValue::Time(time) => {
+                let mut buf = vec![];
+                buf.put_i64(time.num_nanoseconds().unwrap());
+                Self::Time(buf)
+            }
             CqlValue::SmallInt(small_int) => Self::SmallInt(small_int),
             CqlValue::TinyInt(tiny_int) => Self::TinyInt(tiny_int),
             CqlValue::Duration(_duration) => todo!(),
