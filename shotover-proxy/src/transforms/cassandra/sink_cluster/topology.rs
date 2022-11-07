@@ -237,23 +237,21 @@ mod system_keyspaces {
     ) -> Result<HashMap<String, KeyspaceMetadata>> {
         let (tx, rx) = oneshot::channel();
 
-        connection.send(Message::from_frame(
-            Frame::Cassandra(CassandraFrame{
+        connection.send(
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
                 version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
                 warnings: vec![],
-                operation: CassandraOperation::Query{
-                    query: Box::new(
-                        parse_statement_single(
-                            "SELECT keyspace_name, replication AS replication FROM system_schema.keyspaces",
-                        )
-                    ),
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(
+                        "SELECT keyspace_name, replication FROM system_schema.keyspaces",
+                    )),
 
                     params: Box::new(QueryParams::default()),
-                }
+                },
             })),
-            tx
+            tx,
         )?;
 
         let response = rx.await?.response?;
@@ -333,12 +331,15 @@ mod system_keyspaces {
                 }
                 "org.apache.cassandra.locator.LocalStrategy" | "LocalStrategy" => {
                     KeyspaceMetadata {
-                        replication_factor: 0,
+                        replication_factor: 1,
                     }
                 }
-                _ => KeyspaceMetadata {
-                    replication_factor: 0,
-                },
+                _ => {
+                    tracing::warn!("Unrecognised replication strategy: {strategy_name:?}");
+                    KeyspaceMetadata {
+                        replication_factor: 1,
+                    }
+                }
             }
         } else {
             return Err(anyhow!("replication strategy should be a map"));
