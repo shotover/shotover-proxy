@@ -307,13 +307,7 @@ impl CassandraConnection {
                         .map(|x| {
                             x.columns
                                 .into_iter()
-                                .map(|col| {
-                                    if let Some(col) = col {
-                                        ResultValue::new_from_scylla(col)
-                                    } else {
-                                        ResultValue::Null
-                                    }
-                                })
+                                .map(ResultValue::new_from_scylla)
                                 .collect()
                         })
                         .collect(),
@@ -512,17 +506,17 @@ impl CassandraConnection {
                 let statement = prepared_query.as_scylla();
                 let response = session.execute(statement, (value,)).await.unwrap();
 
-                if let Ok(rows) = response.rows() {
-                    rows.into_iter()
+                match response.rows {
+                    Some(rows) => rows
+                        .into_iter()
                         .map(|row| {
                             row.columns
                                 .into_iter()
-                                .map(|col| ResultValue::new_from_scylla(col.unwrap()))
+                                .map(ResultValue::new_from_scylla)
                                 .collect()
                         })
-                        .collect()
-                } else {
-                    vec![]
+                        .collect(),
+                    None => vec![],
                 }
             }
         }
@@ -829,68 +823,72 @@ impl ResultValue {
         }
     }
 
-    pub fn new_from_scylla(value: CqlValue) -> Self {
+    pub fn new_from_scylla(value: Option<CqlValue>) -> Self {
         match value {
-            CqlValue::Ascii(ascii) => Self::Ascii(ascii),
-            CqlValue::BigInt(big_int) => Self::BigInt(big_int),
-            CqlValue::Blob(blob) => Self::Blob(blob),
-            CqlValue::Boolean(b) => Self::Boolean(b),
-            CqlValue::Counter(_counter) => todo!(),
-            CqlValue::Decimal(d) => {
-                let (value, scale) = d.as_bigint_and_exponent();
-                let mut buf = vec![];
-                let serialized = value.to_signed_bytes_be();
-                buf.put_i32(scale.try_into().unwrap());
-                buf.extend_from_slice(&serialized);
-                Self::Decimal(buf)
-            }
-            CqlValue::Float(float) => Self::Float(float.into()),
-            CqlValue::Int(int) => Self::Int(int),
-            CqlValue::Timestamp(timestamp) => Self::Timestamp(timestamp.num_milliseconds()),
-            CqlValue::Uuid(uuid) => Self::Uuid(uuid),
-            CqlValue::Varint(var_int) => {
-                let mut buf = vec![];
-                let serialized = var_int.to_signed_bytes_be();
-                buf.extend_from_slice(&serialized);
-                Self::VarInt(buf)
-            }
-            CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid),
-            CqlValue::Inet(ip) => Self::Inet(ip.to_string()),
-            CqlValue::Date(date) => Self::Date(date.to_be_bytes().to_vec()),
-            CqlValue::Time(time) => {
-                let mut buf = vec![];
-                buf.put_i64(time.num_nanoseconds().unwrap());
-                Self::Time(buf)
-            }
-            CqlValue::SmallInt(small_int) => Self::SmallInt(small_int),
-            CqlValue::TinyInt(tiny_int) => Self::TinyInt(tiny_int),
-            CqlValue::Duration(_duration) => todo!(),
-            CqlValue::Double(double) => Self::Double(double.into()),
-            CqlValue::Text(text) => Self::Varchar(text),
-            CqlValue::Empty => Self::Null,
-            CqlValue::List(mut list) => {
-                Self::List(list.drain(..).map(ResultValue::new_from_scylla).collect())
-            }
-            CqlValue::Set(mut set) => {
-                Self::Set(set.drain(..).map(ResultValue::new_from_scylla).collect())
-            }
-            CqlValue::Map(mut map) => Self::Map(
-                map.drain(..)
-                    .map(|(k, v)| {
-                        (
-                            ResultValue::new_from_scylla(k),
-                            ResultValue::new_from_scylla(v),
-                        )
-                    })
-                    .collect(),
-            ),
-            CqlValue::Tuple(mut tuple) => Self::Tuple(
-                tuple
-                    .drain(..)
-                    .map(|element| ResultValue::new_from_scylla(element.unwrap()))
-                    .collect(),
-            ),
-            CqlValue::UserDefinedType { .. } => todo!(),
+            Some(value) => match value {
+                CqlValue::Ascii(ascii) => Self::Ascii(ascii),
+                CqlValue::BigInt(big_int) => Self::BigInt(big_int),
+                CqlValue::Blob(blob) => Self::Blob(blob),
+                CqlValue::Boolean(b) => Self::Boolean(b),
+                CqlValue::Counter(_counter) => todo!(),
+                CqlValue::Decimal(d) => {
+                    let (value, scale) = d.as_bigint_and_exponent();
+                    let mut buf = vec![];
+                    let serialized = value.to_signed_bytes_be();
+                    buf.put_i32(scale.try_into().unwrap());
+                    buf.extend_from_slice(&serialized);
+                    Self::Decimal(buf)
+                }
+                CqlValue::Float(float) => Self::Float(float.into()),
+                CqlValue::Int(int) => Self::Int(int),
+                CqlValue::Timestamp(timestamp) => Self::Timestamp(timestamp.num_milliseconds()),
+                CqlValue::Uuid(uuid) => Self::Uuid(uuid),
+                CqlValue::Varint(var_int) => {
+                    let mut buf = vec![];
+                    let serialized = var_int.to_signed_bytes_be();
+                    buf.extend_from_slice(&serialized);
+                    Self::VarInt(buf)
+                }
+                CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid),
+                CqlValue::Inet(ip) => Self::Inet(ip.to_string()),
+                CqlValue::Date(date) => Self::Date(date.to_be_bytes().to_vec()),
+                CqlValue::Time(time) => {
+                    let mut buf = vec![];
+                    buf.put_i64(time.num_nanoseconds().unwrap());
+                    Self::Time(buf)
+                }
+                CqlValue::SmallInt(small_int) => Self::SmallInt(small_int),
+                CqlValue::TinyInt(tiny_int) => Self::TinyInt(tiny_int),
+                CqlValue::Duration(_duration) => todo!(),
+                CqlValue::Double(double) => Self::Double(double.into()),
+                CqlValue::Text(text) => Self::Varchar(text),
+                CqlValue::Empty => Self::Null,
+                CqlValue::List(mut list) => Self::List(
+                    list.drain(..)
+                        .map(|v| ResultValue::new_from_scylla(Some(v)))
+                        .collect(),
+                ),
+                CqlValue::Set(mut set) => Self::Set(
+                    set.drain(..)
+                        .map(|v| ResultValue::new_from_scylla(Some(v)))
+                        .collect(),
+                ),
+                CqlValue::Map(mut map) => Self::Map(
+                    map.drain(..)
+                        .map(|(k, v)| {
+                            (
+                                ResultValue::new_from_scylla(Some(k)),
+                                ResultValue::new_from_scylla(Some(v)),
+                            )
+                        })
+                        .collect(),
+                ),
+                CqlValue::Tuple(mut tuple) => {
+                    Self::Tuple(tuple.drain(..).map(ResultValue::new_from_scylla).collect())
+                }
+                CqlValue::UserDefinedType { .. } => todo!(),
+            },
+            None => Self::Null,
         }
     }
 }
