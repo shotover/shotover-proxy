@@ -6,11 +6,12 @@ use rand_distr::Alphanumeric;
 use redis::aio::Connection;
 use redis::cluster::ClusterConnection;
 use redis::{AsyncCommands, Commands, ErrorKind, RedisError, Value};
+use shotover_proxy::tcp;
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+
 use tokio::time::timeout;
 use tracing::trace;
 
@@ -1279,10 +1280,7 @@ pub async fn test_trigger_transform_failure_driver(connection: &mut Connection) 
 pub async fn test_trigger_transform_failure_raw() {
     // Send invalid redis command
     // To correctly handle this shotover should close the connection
-    let mut connection = timeout(Duration::from_secs(3), TcpStream::connect("127.0.0.1:6379"))
-        .await
-        .unwrap()
-        .unwrap();
+    let mut connection = tcp::tcp_stream("127.0.0.1:6379").await.unwrap();
 
     connection.write_all(b"*1\r\n$4\r\nping\r\n").await.unwrap();
 
@@ -1301,10 +1299,7 @@ pub async fn test_trigger_transform_failure_raw() {
 pub async fn test_invalid_frame() {
     // Send invalid redis command
     // To correctly handle this shotover should close the connection
-    let mut connection = timeout(Duration::from_secs(3), TcpStream::connect("127.0.0.1:6379"))
-        .await
-        .unwrap()
-        .unwrap();
+    let mut connection = tcp::tcp_stream("127.0.0.1:6379").await.unwrap();
 
     connection
         .write_all(b"invalid_redis_frame\r\n")

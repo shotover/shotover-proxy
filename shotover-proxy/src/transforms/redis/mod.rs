@@ -1,6 +1,5 @@
-use std::io;
-
 use crate::transforms::util::ConnectionError;
+use anyhow::Error;
 
 pub mod cache;
 pub mod cluster_ports_rewrite;
@@ -43,10 +42,10 @@ pub enum TransformError {
     Protocol(String),
 
     #[error("io error: {0}")]
-    IO(io::Error),
+    IO(Error),
 
     #[error("TLS error: {0}")]
-    TLS(anyhow::Error),
+    TLS(Error),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
