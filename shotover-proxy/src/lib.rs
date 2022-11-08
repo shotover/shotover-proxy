@@ -28,5 +28,6 @@ mod observability;
 pub mod runner;
 mod server;
 pub mod sources;
+pub mod tcp;
 pub mod tls;
 pub mod transforms;
