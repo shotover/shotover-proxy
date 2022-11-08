@@ -2,6 +2,7 @@ use crate::codec::cassandra::CassandraCodec;
 use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Message, Metadata};
 use crate::server::CodecReadError;
+use crate::tcp;
 use crate::tls::TlsConnector;
 use crate::transforms::util::Response;
 use crate::transforms::Messages;
@@ -13,7 +14,7 @@ use futures::{SinkExt, StreamExt};
 use halfbrown::HashMap;
 use std::time::Duration;
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
-use tokio::net::{TcpStream, ToSocketAddrs};
+use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_util::codec::{FramedRead, FramedWrite};
@@ -40,18 +41,7 @@ impl CassandraConnection {
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
-        let tcp_stream = timeout(Duration::from_secs(3), TcpStream::connect(&host))
-            .await
-            .map_err(|_| {
-                anyhow!(
-                    "Cassandra node at {:?} did not respond to connection attempt within 3 seconds",
-                    host
-                )
-            })?
-            .map_err(|e| {
-                anyhow::Error::new(e)
-                    .context(format!("Failed to connect to cassandra node: {:?}", host))
-            })?;
+        let tcp_stream = tcp::tcp_stream(host).await?;
 
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();

@@ -1,6 +1,5 @@
 use anyhow::{Error, Result};
 use std::fmt;
-use std::io;
 
 use crate::message::Message;
 
@@ -23,7 +22,7 @@ pub struct Response {
 #[derive(thiserror::Error, Debug)]
 pub enum ConnectionError<E: fmt::Debug + fmt::Display> {
     #[error("io error: {0}")]
-    IO(io::Error),
+    IO(Error),
 
     #[error("TLS error: {0}")]
     TLS(Error),

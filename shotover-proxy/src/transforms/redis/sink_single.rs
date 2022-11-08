@@ -4,6 +4,7 @@ use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::{Message, Messages};
 use crate::server::CodecReadError;
+use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Context, Result};
@@ -14,10 +15,9 @@ use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::fmt::Debug;
 use std::pin::Pin;
-use std::time::Duration;
-use tokio::net::TcpStream;
+
 use tokio::sync::mpsc;
-use tokio::time::timeout;
+
 use tokio_util::codec::Framed;
 use tracing::Instrument;
 
@@ -98,12 +98,7 @@ impl Transform for RedisSinkSingle {
         }
 
         if self.connection.is_none() {
-            let tcp_stream = timeout(
-                Duration::from_secs(3),
-                TcpStream::connect(self.address.clone()),
-            )
-            .await?
-            .map_err(|e| anyhow::Error::new(e).context("Failed to connect to upstream"))?;
+            let tcp_stream = tcp::tcp_stream(self.address.clone()).await?;
 
             let generic_stream = if let Some(tls) = self.tls.as_mut() {
                 let tls_stream = tls.connect(tcp_stream).await?;
