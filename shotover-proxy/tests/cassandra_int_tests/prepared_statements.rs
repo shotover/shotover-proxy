@@ -1,8 +1,8 @@
-use futures::Future;
-
+use crate::helpers::cassandra::CassandraDriver;
 use crate::helpers::cassandra::{
     assert_query_result, assert_rows, run_query, CassandraConnection, ResultValue,
 };
+use futures::Future;
 
 async fn delete(session: &CassandraConnection) {
     let prepared = session
@@ -102,12 +102,6 @@ async fn use_statement(session: &CassandraConnection) {
     .await;
 }
 
-async fn hardcoded_prepared(session: &CassandraConnection) {
-    let cql = "SELECT * FROM system.local WHERE key = 'local'";
-    let prepared = session.prepare(cql).await;
-    session.execute_prepared(&prepared, None).await;
-}
-
 pub async fn test<Fut>(session: &CassandraConnection, connection_creator: impl Fn() -> Fut)
 where
     Fut: Future<Output = CassandraConnection>,
@@ -125,5 +119,10 @@ where
     select_cross_connection(session, connection_creator).await;
     delete(session).await;
     use_statement(session).await;
-    hardcoded_prepared(session).await;
+
+    if session.is(&[CassandraDriver::Scylla, CassandraDriver::CdrsTokio]) {
+        let cql = "SELECT * FROM system.local WHERE key = 'local'";
+        let prepared = session.prepare(cql).await;
+        session.execute_prepared(&prepared, None).await;
+    }
 }

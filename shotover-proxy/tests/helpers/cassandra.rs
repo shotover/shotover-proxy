@@ -83,7 +83,7 @@ fn cpp_error_to_cdrs(code: CassErrorCode, message: String) -> ErrorBody {
 }
 
 #[allow(dead_code)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax,
@@ -197,6 +197,16 @@ impl CassandraConnection {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn is(&self, drivers: &[CassandraDriver]) -> bool {
+        match self {
+            Self::CdrsTokio { .. } => drivers.contains(&CassandraDriver::CdrsTokio),
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            Self::Datastax { .. } => drivers.contains(&CassandraDriver::Datastax),
+            Self::Scylla { .. } => drivers.contains(&CassandraDriver::Scylla),
+        }
+    }
+
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     #[allow(dead_code)]
     pub fn as_datastax(&self) -> &DatastaxSession {
@@ -300,18 +310,18 @@ impl CassandraConnection {
                 Self::process_cdrs_response(response)
             }
             Self::Scylla { session, .. } => {
-                let rows = session.query(query, ()).await.unwrap().rows;
-                match rows {
-                    Some(rows) => rows
-                        .into_iter()
-                        .map(|x| {
-                            x.columns
+                let response = session.query(query, ()).await.unwrap();
+                if let Ok(rows) = response.rows() {
+                    rows.into_iter()
+                        .map(|row| {
+                            row.columns
                                 .into_iter()
                                 .map(ResultValue::new_from_scylla)
                                 .collect()
                         })
-                        .collect(),
-                    None => vec![],
+                        .collect()
+                } else {
+                    vec![]
                 }
             }
         };
@@ -509,7 +519,12 @@ impl CassandraConnection {
             }
             Self::Scylla { session, .. } => {
                 let statement = prepared_query.as_scylla();
-                let response = session.execute(statement, (value,)).await.unwrap();
+
+                let response = if let Some(value) = value {
+                    session.execute(statement, (value,)).await.unwrap()
+                } else {
+                    session.execute(statement, ()).await.unwrap()
+                };
 
                 match response.rows {
                     Some(rows) => rows
