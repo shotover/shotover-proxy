@@ -106,6 +106,11 @@ While `system.peers`/`system.peers_v2` will be rewritten to list the configured 
     # * which shotover_nodes entry is included in system.local and excluded from system.peers
     local_shotover_host_id: "2dd022d6-2937-4754-89d6-02d2933a8f7a"
 
+    # Number of milliseconds to wait for a connection to be created to a destination cassandra instance.
+    # If the timeout is exceeded then connection to another node is attempted
+    # If all known nodes have resulted in connection timeouts an error will be returned to the client.
+    connect_timeout_ms: 3000
+
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
     #tls:
@@ -148,6 +153,10 @@ No cluster discovery or routing occurs with this transform.
 - CassandraSinkSingle:
     # The IP address and port of the upstream Cassandra node/service.
     remote_address: "127.0.0.1:9042"
+
+    # Number of milliseconds to wait for a connection to be created to the destination cassandra instance.
+    # If the timeout is exceeded then an error is returned to the client.
+    connect_timeout_ms: 3000
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
@@ -290,6 +299,7 @@ If we have a parallelism of 3 then we would have 3 instances of the chain: C1, C
           name: "DR chain"
       - RedisSinkSingle:
           remote_address: "127.0.0.1:6379"
+          connect_timeout_ms: 3000
 ```
 
 ### Protect
@@ -390,6 +400,8 @@ This transform will attempt to cache values for a given primary key in a Redis h
       - RedisSinkSingle:
           # The IP address and port of the upstream redis node/service.
           remote_address: "127.0.0.1:6379"
+          connect_timeout_ms: 3000
+
 ```
 
 ### RedisClusterPortsRewrite
@@ -421,6 +433,11 @@ This transform is a full featured Redis driver that will connect to a Redis clus
     # e.g. if connection_count is 4 and there are 4 nodes there will be a total of 16 connections.
     # When this field is not provided connection_count defaults to 1.
     connection_count: 1
+
+    # Number of milliseconds to wait for a connection to be created to a destination redis instance.
+    # If the timeout is exceeded then connection to another node is attempted
+    # If all known nodes have resulted in connection timeouts an error will be returned to the client.
+    connect_timeout_ms: 3000
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.
@@ -460,6 +477,10 @@ This transform will take a query, serialise it into a RESP2 compatible format an
 - RedisSinkSingle:
     # The IP address and port of the upstream redis node/service.
     remote_address: "127.0.0.1:6379"
+
+    # Number of milliseconds to wait for a connection to be created to the destination redis instance.
+    # If the timeout is exceeded then an error is returned to the client.
+    connect_timeout_ms: 3000
 
     # When this field is provided TLS is used when connecting to the remote address.
     # Removing this field will disable TLS.

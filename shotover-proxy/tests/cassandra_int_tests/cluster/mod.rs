@@ -6,6 +6,7 @@ use shotover_proxy::transforms::cassandra::sink_cluster::{
     node::{CassandraNode, ConnectionFactory},
     topology::{create_topology_task, TaskConnectionInfo},
 };
+use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
 pub mod multi_rack;
@@ -26,7 +27,7 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         .unwrap()
     });
 
-    let mut connection_factory = ConnectionFactory::new(tls);
+    let mut connection_factory = ConnectionFactory::new(Duration::from_secs(3), tls);
     for message in create_handshake() {
         connection_factory.push_handshake_message(message);
     }

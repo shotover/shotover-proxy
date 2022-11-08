@@ -13,6 +13,7 @@ chain_config:
                 filter: Read
             - RedisSinkSingle:
                 remote_address: "127.0.0.1:1111"
+                connect_timeout_ms: 3000
         buffer_size: 10000
         chain:
           - DebugReturner:

@@ -12,12 +12,10 @@ use futures::StreamExt;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
-
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
-
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, trace, warn, Instrument};
@@ -53,6 +51,7 @@ impl<T: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug> Token for T {}
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
+    connect_timeout: Duration,
     lanes: Arc<Mutex<HashMap<Option<T>, Lane>>>,
 
     #[derivative(Debug = "ignore")]
@@ -65,19 +64,15 @@ pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
     tls: Option<TlsConnector>,
 }
 
-impl<C: Codec + 'static> ConnectionPool<C, NoopAuthenticator, ()> {
-    pub fn new(codec: C, tls: Option<TlsConnectorConfig>) -> Result<Self> {
-        ConnectionPool::new_with_auth(codec, NoopAuthenticator {}, tls)
-    }
-}
-
 impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
     pub fn new_with_auth(
+        connect_timeout: Duration,
         codec: C,
         authenticator: A,
         tls: Option<TlsConnectorConfig>,
     ) -> Result<Self> {
         Ok(Self {
+            connect_timeout,
             lanes: Arc::new(Mutex::new(HashMap::new())),
             tls: tls.map(TlsConnector::new).transpose()?,
             codec,
@@ -164,7 +159,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         address: &str,
         token: &Option<T>,
     ) -> Result<Connection, ConnectionError<A::Error>> {
-        let tcp_stream = tcp::tcp_stream(address)
+        let tcp_stream = tcp::tcp_stream(self.connect_timeout, address)
             .await
             .map_err(ConnectionError::IO)?;
 

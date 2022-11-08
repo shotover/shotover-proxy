@@ -39,6 +39,7 @@ pub struct RedisSinkClusterConfig {
     pub direct_destination: Option<String>,
     pub tls: Option<TlsConnectorConfig>,
     connection_count: Option<usize>,
+    pub connect_timeout_ms: u64,
 }
 
 impl RedisSinkClusterConfig {
@@ -48,6 +49,7 @@ impl RedisSinkClusterConfig {
             self.direct_destination.clone(),
             self.connection_count.unwrap_or(1),
             self.tls.clone(),
+            self.connect_timeout_ms,
             chain_name,
         )?;
 
@@ -89,11 +91,14 @@ impl RedisSinkCluster {
         direct_destination: Option<String>,
         connection_count: usize,
         tls: Option<TlsConnectorConfig>,
+        connect_timeout_ms: u64,
         chain_name: String,
     ) -> Result<Self> {
         let authenticator = RedisAuthenticator {};
 
-        let connection_pool = ConnectionPool::new_with_auth(RedisCodec::new(), authenticator, tls)?;
+        let connect_timeout = Duration::from_millis(connect_timeout_ms);
+        let connection_pool =
+            ConnectionPool::new_with_auth(connect_timeout, RedisCodec::new(), authenticator, tls)?;
 
         let sink_cluster = RedisSinkCluster {
             first_contact_points,

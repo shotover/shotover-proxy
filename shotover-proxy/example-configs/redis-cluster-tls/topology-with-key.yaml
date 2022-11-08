@@ -7,6 +7,7 @@ chain_config:
   redis_chain:
     - RedisSinkCluster:
         first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
+        connect_timeout_ms: 3000
         tls:
           certificate_authority_path: "example-configs/redis-tls/certs/ca.crt"
           certificate_path: "example-configs/redis-tls/certs/redis.crt"

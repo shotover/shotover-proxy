@@ -25,5 +25,6 @@ chain_config:
             data_center: "dc1"
             rack: "rack1"
             host_id: "fa74d7ec-1223-472b-97de-04a32ccdb70b"
+        connect_timeout_ms: 3000
 source_to_chain_mapping:
   cassandra_prod: main_chain

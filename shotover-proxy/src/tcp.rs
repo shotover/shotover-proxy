@@ -5,12 +5,15 @@ use tokio::{
     time::timeout,
 };
 
-pub async fn tcp_stream<A: ToSocketAddrs + std::fmt::Debug>(destination: A) -> Result<TcpStream> {
-    timeout(Duration::from_secs(3), TcpStream::connect(&destination))
+pub async fn tcp_stream<A: ToSocketAddrs + std::fmt::Debug>(
+    connect_timeout: Duration,
+    destination: A,
+) -> Result<TcpStream> {
+    timeout(connect_timeout, TcpStream::connect(&destination))
         .await
         .map_err(|_| {
             anyhow!(
-                "destination {destination:?} did not respond to connection attempt within 3 seconds"
+                "destination {destination:?} did not respond to connection attempt within {connect_timeout:?}"
             )
         })?
         .map_err(|e| {

@@ -9,5 +9,6 @@ chain_config:
         max_requests_per_second: 100000
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9043"
+        connect_timeout_ms: 3000
 source_to_chain_mapping:
   cassandra_prod: main_chain
