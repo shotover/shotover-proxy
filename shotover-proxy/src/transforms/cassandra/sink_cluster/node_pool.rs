@@ -29,7 +29,7 @@ pub struct KeyspaceMetadata {
 #[derive(Debug)]
 pub struct NodePool {
     prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
-    keyspace_metadata: Arc<RwLock<HashMap<String, KeyspaceMetadata>>>,
+    keyspace_metadata: HashMap<String, KeyspaceMetadata>,
     token_map: TokenMap,
     nodes: Vec<CassandraNode>,
     prev_idx: usize,
@@ -53,7 +53,7 @@ impl NodePool {
             token_map: TokenMap::new(nodes.as_slice()),
             nodes,
             prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
-            keyspace_metadata: Arc::new(RwLock::new(HashMap::new())),
+            keyspace_metadata: HashMap::new(),
             prev_idx: 0,
         }
     }
@@ -82,8 +82,7 @@ impl NodePool {
 
     pub async fn update_keyspaces(&mut self, keyspaces_rx: &mut KeyspaceChanRx) {
         let updated_keyspaces = keyspaces_rx.borrow_and_update().clone();
-        let mut write_keyspaces = self.keyspace_metadata.write().await;
-        *write_keyspaces = updated_keyspaces;
+        self.keyspace_metadata = updated_keyspaces;
     }
 
     pub async fn add_prepared_result(&mut self, id: CBytesShort, metadata: PreparedMetadata) {
@@ -146,19 +145,16 @@ impl NodePool {
                 .clone()
         };
 
-        let keyspace = {
-            let read_lock = self.keyspace_metadata.read().await;
-            read_lock
-                .get(
-                    &metadata
-                        .global_table_spec
-                        .as_ref()
-                        .ok_or(GetReplicaErr::NoKeyspaceMetadata)?
-                        .ks_name,
-                )
-                .ok_or(GetReplicaErr::NoKeyspaceMetadata)?
-                .clone()
-        };
+        let keyspace = self
+            .keyspace_metadata
+            .get(
+                &metadata
+                    .global_table_spec
+                    .as_ref()
+                    .ok_or(GetReplicaErr::NoKeyspaceMetadata)?
+                    .ks_name,
+            )
+            .ok_or(GetReplicaErr::NoKeyspaceMetadata)?;
 
         let routing_key = calculate_routing_key(
             &metadata.pk_indexes,
