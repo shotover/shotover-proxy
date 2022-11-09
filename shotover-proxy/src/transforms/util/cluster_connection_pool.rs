@@ -159,18 +159,17 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
         address: &str,
         token: &Option<T>,
     ) -> Result<Connection, ConnectionError<A::Error>> {
-        let tcp_stream = tcp::tcp_stream(self.connect_timeout, address)
-            .await
-            .map_err(ConnectionError::IO)?;
-
         let mut connection = if let Some(tls) = &self.tls {
             let tls_stream = tls
-                .connect(tcp_stream)
+                .connect(self.connect_timeout, address)
                 .await
                 .map_err(ConnectionError::TLS)?;
             let (rx, tx) = tokio::io::split(tls_stream);
             spawn_read_write_tasks(&self.codec, rx, tx)
         } else {
+            let tcp_stream = tcp::tcp_stream(self.connect_timeout, address)
+                .await
+                .map_err(ConnectionError::IO)?;
             let (rx, tx) = tcp_stream.into_split();
             spawn_read_write_tasks(&self.codec, rx, tx)
         };

@@ -10,6 +10,6 @@ chain_config:
         connect_timeout_ms: 3000
         tls:
           certificate_authority_path: "example-configs/redis-tls/certs/ca.crt"
-          verify_hostname: true
+          verify_hostname: false
 source_to_chain_mapping:
   redis_prod: redis_chain
