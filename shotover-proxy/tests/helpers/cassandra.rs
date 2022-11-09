@@ -310,18 +310,18 @@ impl CassandraConnection {
                 Self::process_cdrs_response(response)
             }
             Self::Scylla { session, .. } => {
-                let response = session.query(query, ()).await.unwrap();
-                if let Ok(rows) = response.rows() {
-                    rows.into_iter()
-                        .map(|row| {
-                            row.columns
+                let rows = session.query(query, ()).await.unwrap().rows;
+                match rows {
+                    Some(rows) => rows
+                        .into_iter()
+                        .map(|x| {
+                            x.columns
                                 .into_iter()
                                 .map(ResultValue::new_from_scylla)
                                 .collect()
                         })
-                        .collect()
-                } else {
-                    vec![]
+                        .collect(),
+                    None => vec![],
                 }
             }
         };

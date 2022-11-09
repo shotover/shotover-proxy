@@ -1,13 +1,16 @@
+use crate::tcp;
 use anyhow::{anyhow, Result};
 use openssl::ssl::Ssl;
 use openssl::ssl::{SslAcceptor, SslConnector, SslFiletype, SslMethod};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio_openssl::SslStream;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -127,15 +130,20 @@ impl TlsConnector {
         })
     }
 
-    pub async fn connect(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>> {
+    pub async fn connect<A: ToSocketAddrs + ToHostname + std::fmt::Debug>(
+        &self,
+        connect_timeout: Duration,
+        address: A,
+    ) -> Result<SslStream<TcpStream>> {
         let ssl = self
             .connector
             .configure()
             .map_err(openssl_stack_error_to_anyhow)?
             .verify_hostname(self.verify_hostname)
-            .into_ssl("localhost")
+            .into_ssl(&address.to_hostname())
             .map_err(openssl_stack_error_to_anyhow)?;
 
+        let tcp_stream = tcp::tcp_stream(connect_timeout, address).await?;
         let mut ssl_stream =
             SslStream::new(ssl, tcp_stream).map_err(openssl_stack_error_to_anyhow)?;
         Pin::new(&mut ssl_stream).connect().await.map_err(|e| {
@@ -147,7 +155,7 @@ impl TlsConnector {
     }
 }
 
-// Always use these openssl_* conversion methods instead of directly directly converting to anyhow
+// Always use these openssl_* conversion methods instead of directly converting to anyhow
 
 fn openssl_ssl_error_to_anyhow(error: openssl::ssl::Error) -> anyhow::Error {
     if let Some(stack) = error.ssl_error() {
@@ -205,3 +213,63 @@ pub trait AsyncStream: AsyncRead + AsyncWrite {}
 /// We need to tell rust that these types implement AsyncStream even though they already implement AsyncRead and AsyncWrite
 impl AsyncStream for tokio_openssl::SslStream<TcpStream> {}
 impl AsyncStream for TcpStream {}
+
+/// Allows retrieving the hostname from any ToSocketAddrs type
+pub trait ToHostname {
+    fn to_hostname(&self) -> String;
+}
+
+/// Implement for all reference types
+impl<T: ToHostname + ?Sized> ToHostname for &T {
+    fn to_hostname(&self) -> String {
+        (**self).to_hostname()
+    }
+}
+
+impl ToHostname for String {
+    fn to_hostname(&self) -> String {
+        self.split(':').next().unwrap_or("").to_owned()
+    }
+}
+
+impl ToHostname for &str {
+    fn to_hostname(&self) -> String {
+        self.split(':').next().unwrap_or("").to_owned()
+    }
+}
+
+impl ToHostname for (&str, u16) {
+    fn to_hostname(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+impl ToHostname for (String, u16) {
+    fn to_hostname(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+impl ToHostname for (IpAddr, u16) {
+    fn to_hostname(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+impl ToHostname for (Ipv4Addr, u16) {
+    fn to_hostname(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+impl ToHostname for (Ipv6Addr, u16) {
+    fn to_hostname(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+impl ToHostname for SocketAddr {
+    fn to_hostname(&self) -> String {
+        self.ip().to_string()
+    }
+}

@@ -3,7 +3,7 @@ use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Message, Metadata};
 use crate::server::CodecReadError;
 use crate::tcp;
-use crate::tls::TlsConnector;
+use crate::tls::{TlsConnector, ToHostname};
 use crate::transforms::util::Response;
 use crate::transforms::Messages;
 use anyhow::{anyhow, Result};
@@ -35,21 +35,19 @@ pub struct CassandraConnection {
 }
 
 impl CassandraConnection {
-    pub async fn new<A: ToSocketAddrs + std::fmt::Debug>(
+    pub async fn new<A: ToSocketAddrs + ToHostname + std::fmt::Debug>(
         connect_timeout: Duration,
         host: A,
         codec: CassandraCodec,
         mut tls: Option<TlsConnector>,
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
-        let tcp_stream = tcp::tcp_stream(connect_timeout, host).await?;
-
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();
         let (rx_process_has_shutdown_tx, rx_process_has_shutdown_rx) = oneshot::channel::<()>();
 
         if let Some(tls) = tls.as_mut() {
-            let tls_stream = tls.connect(tcp_stream).await?;
+            let tls_stream = tls.connect(connect_timeout, host).await?;
             let (read, write) = split(tls_stream);
             tokio::spawn(
                 tx_process(
@@ -72,6 +70,7 @@ impl CassandraConnection {
                 .in_current_span(),
             );
         } else {
+            let tcp_stream = tcp::tcp_stream(connect_timeout, host).await?;
             let (read, write) = split(tcp_stream);
             tokio::spawn(
                 tx_process(

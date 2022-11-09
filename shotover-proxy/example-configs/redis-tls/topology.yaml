@@ -13,13 +13,13 @@ sources:
 chain_config:
   redis_chain_tls:
     - RedisSinkSingle:
-        remote_address: "127.0.0.1:1111"
+        remote_address: "localhost:1111"
         connect_timeout_ms: 3000
         tls:
           certificate_authority_path: "example-configs/redis-tls/certs/ca.crt"
           certificate_path: "example-configs/redis-tls/certs/redis.crt"
           private_key_path: "example-configs/redis-tls/certs/redis.key"
-          verify_hostname: false
+          verify_hostname: true
 source_to_chain_mapping:
   redis_prod: redis_chain_tls
   redis_prod_tls: redis_chain_tls
