@@ -9,6 +9,7 @@ chain_config:
     # configure Shotover to connect to the Redis cluster via our defined contact points
     - RedisSinkCluster:
         first_contact_points: ["127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225"]
+        connect_timeout_ms: 3000
 source_to_chain_mapping:
   # connect our Redis source to our Redis cluster sink (transform).
   redis_prod: redis_chain

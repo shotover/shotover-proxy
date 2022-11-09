@@ -13,13 +13,16 @@ chain_config:
             - RedisTimestampTagger
             - RedisSinkSingle:
                 remote_address: "127.0.0.1:3331"
+                connect_timeout_ms: 3000
           two:
             - RedisTimestampTagger
             - RedisSinkSingle:
                 remote_address: "127.0.0.1:3332"
+                connect_timeout_ms: 3000
           three:
             - RedisTimestampTagger
             - RedisSinkSingle:
                 remote_address: "127.0.0.1:3333"
+                connect_timeout_ms: 3000
 source_to_chain_mapping:
   redis_prod: redis_chain

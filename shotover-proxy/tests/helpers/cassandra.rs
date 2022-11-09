@@ -519,7 +519,6 @@ impl CassandraConnection {
             }
             Self::Scylla { session, .. } => {
                 let statement = prepared_query.as_scylla();
-
                 let response = if let Some(value) = value {
                     session.execute(statement, (value,)).await.unwrap()
                 } else {

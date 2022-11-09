@@ -132,6 +132,7 @@ chain_config:
         port: 9043
     - CassandraSinkSingle:
         remote_address: "127.0.0.1:9042"
+        connect_timeout_ms: 3000
 named_topics:
   testtopic: 5
 source_to_chain_mapping:

@@ -14,7 +14,7 @@ The configuration file is used to change general behavior of Shotover. Currently
 
 This is a single string that you can use to configure logging with Shotover. It supports [env_filter](https://docs.rs/env_logger/0.7.1/env_logger/) style configuration and filtering syntax. Log levels and filters can be dynamically changed while Shotover is still running.
 
-### observability_interface 
+### observability_interface
 
 Shotover has an observability interface for you to collect Prometheus data from. This value will define the address and port for Shotover's observability interface. It is configured as a string in the format of `127.0.0.1:8080` for IPV4 addresses or `[2001:db8::1]:8080` for IPV6 addresses. More information is on the [observability page](./observability.md).
 
@@ -120,11 +120,13 @@ chain_config:
               name: "DR chain"
           - RedisSinkCluster:
               first_contact_points: [ "127.0.0.1:2120", "127.0.0.1:2121", "127.0.0.1:2122", "127.0.0.1:2123", "127.0.0.1:2124", "127.0.0.1:2125" ]
+              connect_timeout_ms: 3000
     #The rest of the chain, these transforms are blocking
     - QueryCounter:
         name: "Main chain"
     - RedisSinkCluster:
         first_contact_points: [ "127.0.0.1:2220", "127.0.0.1:2221", "127.0.0.1:2222", "127.0.0.1:2223", "127.0.0.1:2224", "127.0.0.1:2225" ]
+        connect_timeout_ms: 3000
 ```
 
 ### `source_to_chain_mapping` Chain Mapping

@@ -8,6 +8,7 @@ use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use derivative::Derivative;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
@@ -56,6 +57,7 @@ impl CassandraNode {
 
 #[derive(Debug)]
 pub struct ConnectionFactory {
+    connect_timeout: Duration,
     init_handshake: Vec<Message>,
     use_message: Option<Message>,
     tls: Option<TlsConnector>,
@@ -65,6 +67,7 @@ pub struct ConnectionFactory {
 impl Clone for ConnectionFactory {
     fn clone(&self) -> Self {
         Self {
+            connect_timeout: self.connect_timeout,
             init_handshake: self.init_handshake.clone(),
             use_message: None,
             tls: self.tls.clone(),
@@ -74,8 +77,9 @@ impl Clone for ConnectionFactory {
 }
 
 impl ConnectionFactory {
-    pub fn new(tls: Option<TlsConnector>) -> Self {
+    pub fn new(connect_timeout: Duration, tls: Option<TlsConnector>) -> Self {
         Self {
+            connect_timeout,
             init_handshake: vec![],
             use_message: None,
             tls,
@@ -88,6 +92,7 @@ impl ConnectionFactory {
     /// the new connection as aswell.
     pub fn new_with_same_config(&self) -> Self {
         Self {
+            connect_timeout: self.connect_timeout,
             init_handshake: vec![],
             use_message: None,
             tls: self.tls.clone(),
@@ -100,6 +105,7 @@ impl ConnectionFactory {
         address: A,
     ) -> Result<CassandraConnection> {
         let outbound = CassandraConnection::new(
+            self.connect_timeout,
             address,
             CassandraCodec::new(),
             self.tls.clone(),

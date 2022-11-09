@@ -19,6 +19,7 @@ pub struct CassandraSinkSingleConfig {
     #[serde(rename = "remote_address")]
     pub address: String,
     pub tls: Option<TlsConnectorConfig>,
+    pub connect_timeout_ms: u64,
     pub read_timeout: Option<u64>,
 }
 
@@ -29,6 +30,7 @@ impl CassandraSinkSingleConfig {
             self.address.clone(),
             chain_name,
             tls,
+            self.connect_timeout_ms,
             self.read_timeout,
         )))
     }
@@ -41,6 +43,7 @@ pub struct CassandraSinkSingle {
     failed_requests: Counter,
     tls: Option<TlsConnector>,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+    connect_timeout: Duration,
     read_timeout: Option<Duration>,
 }
 
@@ -53,6 +56,7 @@ impl Clone for CassandraSinkSingle {
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
+            connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
         }
     }
@@ -63,6 +67,7 @@ impl CassandraSinkSingle {
         address: String,
         chain_name: String,
         tls: Option<TlsConnector>,
+        connect_timeout_ms: u64,
         timeout: Option<u64>,
     ) -> CassandraSinkSingle {
         let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
@@ -75,6 +80,7 @@ impl CassandraSinkSingle {
             failed_requests,
             tls,
             pushed_messages_tx: None,
+            connect_timeout: Duration::from_millis(connect_timeout_ms),
             read_timeout: receive_timeout,
         }
     }
@@ -86,6 +92,7 @@ impl CassandraSinkSingle {
             trace!("creating outbound connection {:?}", self.address);
             self.outbound = Some(
                 CassandraConnection::new(
+                    self.connect_timeout,
                     self.address.clone(),
                     CassandraCodec::new(),
                     self.tls.clone(),
