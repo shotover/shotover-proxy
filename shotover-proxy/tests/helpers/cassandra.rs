@@ -48,21 +48,21 @@ pub enum PreparedQuery {
 
 impl PreparedQuery {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    fn as_datastax(&self) -> &PreparedStatementCpp {
+    pub fn as_datastax(&self) -> &PreparedStatementCpp {
         match self {
             PreparedQuery::Datastax(p) => p,
             _ => panic!("Not PreparedQuery::Datastax"),
         }
     }
 
-    fn as_cdrs(&self) -> &CdrsTokioPreparedQuery {
+    pub fn as_cdrs(&self) -> &CdrsTokioPreparedQuery {
         match self {
             PreparedQuery::CdrsTokio(p) => p,
             _ => panic!("Not PreparedQuery::CdrsTokio"),
         }
     }
 
-    fn as_scylla(&self) -> &PreparedStatementScylla {
+    pub fn as_scylla(&self) -> &PreparedStatementScylla {
         match self {
             PreparedQuery::Scylla(s) => s,
             _ => panic!("Not PreparedQuery::Scylla"),
@@ -83,7 +83,7 @@ fn cpp_error_to_cdrs(code: CassErrorCode, message: String) -> ErrorBody {
 }
 
 #[allow(dead_code)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax,
@@ -194,6 +194,16 @@ impl CassandraConnection {
         match self {
             Self::CdrsTokio { session, .. } => session,
             _ => panic!("Not CdrsTokio"),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is(&self, drivers: &[CassandraDriver]) -> bool {
+        match self {
+            Self::CdrsTokio { .. } => drivers.contains(&CassandraDriver::CdrsTokio),
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            Self::Datastax { .. } => drivers.contains(&CassandraDriver::Datastax),
+            Self::Scylla { .. } => drivers.contains(&CassandraDriver::Scylla),
         }
     }
 
@@ -461,13 +471,15 @@ impl CassandraConnection {
     pub async fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
-        value: i32,
+        value: Option<i32>,
     ) -> Vec<Vec<ResultValue>> {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
-                statement.bind_int32(0, value).unwrap();
+                if let Some(value) = value {
+                    statement.bind_int32(0, value).unwrap();
+                }
                 statement.set_tracing(true).unwrap();
                 match session.execute(&statement).await {
                     Ok(result) => result
@@ -481,9 +493,12 @@ impl CassandraConnection {
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
-                let query_params = QueryParamsBuilder::new()
-                    .with_values(query_values!(value))
-                    .build();
+
+                let mut builder = QueryParamsBuilder::new();
+                if let Some(value) = value {
+                    builder = builder.with_values(query_values!(value));
+                }
+                let query_params = builder.build();
 
                 let params = StatementParams {
                     query_params,
@@ -504,7 +519,11 @@ impl CassandraConnection {
             }
             Self::Scylla { session, .. } => {
                 let statement = prepared_query.as_scylla();
-                let response = session.execute(statement, (value,)).await.unwrap();
+                let response = if let Some(value) = value {
+                    session.execute(statement, (value,)).await.unwrap()
+                } else {
+                    session.execute(statement, ()).await.unwrap()
+                };
 
                 match response.rows {
                     Some(rows) => rows

@@ -6,6 +6,7 @@ use shotover_proxy::transforms::cassandra::sink_cluster::{
     node::{CassandraNode, ConnectionFactory},
     topology::{create_topology_task, TaskConnectionInfo},
 };
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
@@ -17,6 +18,7 @@ pub mod single_rack_v4;
 pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<CassandraNode> {
     let port = port.unwrap_or(9042);
     let (nodes_tx, mut nodes_rx) = watch::channel(vec![]);
+    let (keyspaces_tx, _keyspaces_rx) = watch::channel(HashMap::new());
     let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
     let tls = ca_path.map(|ca_path| {
         TlsConnector::new(TlsConnectorConfig {
@@ -33,7 +35,7 @@ pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<
         connection_factory.push_handshake_message(message);
     }
 
-    create_topology_task(nodes_tx, task_handshake_rx, "dc1".to_string());
+    create_topology_task(nodes_tx, keyspaces_tx, task_handshake_rx, "dc1".to_string());
 
     // Give the handshake task a hardcoded handshake.
     // Normally the handshake is the handshake that the client gave shotover.

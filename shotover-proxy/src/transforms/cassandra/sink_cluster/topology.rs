@@ -1,4 +1,6 @@
 use super::node::{CassandraNode, ConnectionFactory};
+use super::node_pool::KeyspaceMetadata;
+use super::KeyspaceChanTx;
 use crate::frame::cassandra::{parse_statement_single, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{Message, MessageValue};
@@ -9,6 +11,7 @@ use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
 use cassandra_protocol::frame::message_register::BodyReqRegister;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::{frame::Version, query::QueryParams};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -21,13 +24,21 @@ pub struct TaskConnectionInfo {
 
 pub fn create_topology_task(
     nodes_tx: watch::Sender<Vec<CassandraNode>>,
+    keyspaces_tx: KeyspaceChanTx,
     mut connection_info_rx: mpsc::Receiver<TaskConnectionInfo>,
     data_center: String,
 ) {
     tokio::spawn(async move {
         while let Some(mut connection_info) = connection_info_rx.recv().await {
             let mut attempts = 0;
-            match topology_task_process(&nodes_tx, &mut connection_info, &data_center).await {
+            match topology_task_process(
+                &nodes_tx,
+                &keyspaces_tx,
+                &mut connection_info,
+                &data_center,
+            )
+            .await
+            {
                 Err(err) => {
                     tracing::error!("topology task failed, retrying, error was: {err:?}");
                     attempts += 1;
@@ -47,6 +58,7 @@ pub fn create_topology_task(
 
 async fn topology_task_process(
     nodes_tx: &watch::Sender<Vec<CassandraNode>>,
+    keyspaces_tx: &KeyspaceChanTx,
     connection_info: &mut TaskConnectionInfo,
     data_center: &str,
 ) -> Result<()> {
@@ -62,8 +74,13 @@ async fn topology_task_process(
 
     let version = connection_info.connection_factory.get_version()?;
 
-    let mut nodes = fetch_current_nodes(&connection, connection_info, data_center).await?;
+    let mut nodes = fetch_current_nodes(&connection, connection_info, data_center, version).await?;
     if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
+        return Ok(());
+    }
+
+    let mut keyspaces = system_keyspaces::query(&connection, data_center, version).await?;
+    if let Err(watch::error::SendError(_)) = keyspaces_tx.send(keyspaces.clone()) {
         return Ok(());
     }
 
@@ -91,6 +108,7 @@ async fn topology_task_process(
                                         &connection,
                                         connection_info,
                                         data_center,
+                                        version,
                                     )
                                     .await?;
 
@@ -106,9 +124,21 @@ async fn topology_task_process(
                                     }
 
                                     nodes = new_nodes;
+
+                                    if let Err(watch::error::SendError(_)) =
+                                        nodes_tx.send(nodes.clone())
+                                    {
+                                        return Ok(());
+                                    }
                                 }
                                 TopologyChangeType::RemovedNode => {
-                                    nodes.retain(|node| node.address != topology.addr)
+                                    nodes.retain(|node| node.address != topology.addr);
+
+                                    if let Err(watch::error::SendError(_)) =
+                                        nodes_tx.send(nodes.clone())
+                                    {
+                                        return Ok(());
+                                    }
                                 }
                             },
                             ServerEvent::StatusChange(status) => {
@@ -120,16 +150,27 @@ async fn topology_task_process(
                                         }
                                     }
                                 }
+                                if let Err(watch::error::SendError(_)) =
+                                    nodes_tx.send(nodes.clone())
+                                {
+                                    return Ok(());
+                                }
                             }
-                            event => tracing::error!("Unexpected event: {:?}", event),
+                            ServerEvent::SchemaChange(_change) => {
+                                keyspaces =
+                                    system_keyspaces::query(&connection, data_center, version)
+                                        .await?;
+                                if let Err(watch::error::SendError(_)) =
+                                    keyspaces_tx.send(keyspaces.clone())
+                                {
+                                    return Ok(());
+                                }
+                            }
                         }
                     }
                 }
             }
             None => return Err(anyhow!("topology control connection was closed")),
-        }
-        if let Err(watch::error::SendError(_)) = nodes_tx.send(nodes.clone()) {
-            return Ok(());
         }
     }
 }
@@ -150,6 +191,7 @@ async fn register_for_topology_and_status_events(
                     events: vec![
                         SimpleServerEvent::TopologyChange,
                         SimpleServerEvent::StatusChange,
+                        SimpleServerEvent::SchemaChange,
                     ],
                 }),
             })),
@@ -171,16 +213,146 @@ async fn fetch_current_nodes(
     connection: &CassandraConnection,
     connection_info: &TaskConnectionInfo,
     data_center: &str,
+    version: Version,
 ) -> Result<Vec<CassandraNode>> {
     let (new_nodes, more_nodes) = tokio::join!(
-        system_local::query(connection, data_center, connection_info.address),
-        system_peers::query(connection, data_center)
+        system_local::query(connection, data_center, connection_info.address, version),
+        system_peers::query(connection, data_center, version)
     );
 
     let mut new_nodes = new_nodes?;
     new_nodes.extend(more_nodes?);
 
     Ok(new_nodes)
+}
+
+mod system_keyspaces {
+    use super::*;
+    use std::str::FromStr;
+
+    pub async fn query(
+        connection: &CassandraConnection,
+        data_center: &str,
+        version: Version,
+    ) -> Result<HashMap<String, KeyspaceMetadata>> {
+        let (tx, rx) = oneshot::channel();
+
+        connection.send(
+            Message::from_frame(Frame::Cassandra(CassandraFrame {
+                version,
+                stream_id: 0,
+                tracing: Tracing::Request(false),
+                warnings: vec![],
+                operation: CassandraOperation::Query {
+                    query: Box::new(parse_statement_single(
+                        "SELECT keyspace_name, replication FROM system_schema.keyspaces",
+                    )),
+
+                    params: Box::new(QueryParams::default()),
+                },
+            })),
+            tx,
+        )?;
+
+        let response = rx.await?.response?;
+        into_keyspaces(response, data_center)
+    }
+
+    fn into_keyspaces(
+        mut response: Message,
+        data_center: &str,
+    ) -> Result<HashMap<String, KeyspaceMetadata>> {
+        if let Some(Frame::Cassandra(frame)) = response.frame() {
+            match &mut frame.operation {
+                CassandraOperation::Result(CassandraResult::Rows { rows, .. }) => rows
+                    .drain(..)
+                    .map(|row| build_keyspace(row, data_center))
+                    .collect(),
+                operation => Err(anyhow!(
+                    "keyspace query returned unexpected cassandra operation: {:?}",
+                    operation
+                )),
+            }
+        } else {
+            Err(anyhow!("Failed to parse keyspace query response"))
+        }
+    }
+
+    pub fn build_keyspace(
+        mut row: Vec<MessageValue>,
+        data_center: &str,
+    ) -> Result<(String, KeyspaceMetadata)> {
+        let metadata = if let Some(MessageValue::Map(mut replication_strategy)) = row.pop() {
+            let strategy_name: String = match replication_strategy
+                .remove(&MessageValue::Varchar("class".into()))
+                .ok_or_else(|| anyhow!("replication strategy map should have a 'class' field",))?
+            {
+                MessageValue::Varchar(name) => name,
+                _ => return Err(anyhow!("'class' field should be a varchar")),
+            };
+
+            match strategy_name.as_str() {
+                "org.apache.cassandra.locator.SimpleStrategy" | "SimpleStrategy" => {
+                    let rf_str: String =
+                        match replication_strategy.remove(&MessageValue::Varchar("replication_factor".into())).ok_or_else(||
+                         anyhow!("SimpleStrategy in replication strategy map does not have a replication factor")
+                        )?{
+                            MessageValue::Varchar(rf) => rf,
+                            _ => return Err(anyhow!("SimpleStrategy replication factor should be a varchar "))
+                        };
+
+                    let replication_factor: usize = usize::from_str(&rf_str).map_err(|_| {
+                        anyhow!("Could not parse replication factor as an integer",)
+                    })?;
+
+                    KeyspaceMetadata { replication_factor }
+                }
+                "org.apache.cassandra.locator.NetworkTopologyStrategy"
+                | "NetworkTopologyStrategy" => {
+                    let data_center_rf = match replication_strategy
+                        .remove(&MessageValue::Varchar(data_center.into()))
+                    {
+                        Some(MessageValue::Varchar(rf_str)) => {
+                            usize::from_str(&rf_str).map_err(|_| {
+                                anyhow!("Could not parse replication factor as an integer",)
+                            })?
+                        }
+                        Some(_other) => {
+                            return Err(anyhow!(
+                                "NetworkTopologyStrategy replication factor should be a varchar"
+                            ))
+                        }
+                        None => 0,
+                    };
+
+                    KeyspaceMetadata {
+                        replication_factor: data_center_rf,
+                    }
+                }
+                "org.apache.cassandra.locator.LocalStrategy" | "LocalStrategy" => {
+                    KeyspaceMetadata {
+                        replication_factor: 1,
+                    }
+                }
+                _ => {
+                    tracing::warn!("Unrecognised replication strategy: {strategy_name:?}");
+                    KeyspaceMetadata {
+                        replication_factor: 1,
+                    }
+                }
+            }
+        } else {
+            return Err(anyhow!("replication strategy should be a map"));
+        };
+
+        let name = if let Some(MessageValue::Varchar(name)) = row.pop() {
+            name
+        } else {
+            return Err(anyhow!("system_schema_keyspaces.name should be a varchar"));
+        };
+
+        Ok((name, metadata))
+    }
 }
 
 mod system_local {
@@ -190,11 +362,12 @@ mod system_local {
         connection: &CassandraConnection,
         data_center: &str,
         address: SocketAddr,
+        version: Version,
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
+                version,
                 stream_id: 1,
                 tracing: Tracing::Request(false),
                 warnings: vec![],
@@ -276,11 +449,12 @@ mod system_peers {
     pub async fn query(
         connection: &CassandraConnection,
         data_center: &str,
+        version: Version,
     ) -> Result<Vec<CassandraNode>> {
         let (tx, rx) = oneshot::channel();
         connection.send(
             Message::from_frame(Frame::Cassandra(CassandraFrame {
-                version: Version::V4,
+                version,
                 stream_id: 0,
                 tracing: Tracing::Request(false),
                 warnings: vec![],
@@ -300,7 +474,7 @@ mod system_peers {
             let (tx, rx) = oneshot::channel();
             connection.send(
                 Message::from_frame(Frame::Cassandra(CassandraFrame {
-                    version: Version::V4,
+                    version,
                     stream_id: 0,
                     tracing: Tracing::Request(false),
                     warnings: vec![],
@@ -411,5 +585,77 @@ mod system_peers {
                 response
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod test_system_keyspaces {
+    use super::*;
+
+    #[test]
+    fn test_simple() {
+        let row = vec![
+            MessageValue::Varchar("test".into()),
+            MessageValue::Map(
+                vec![
+                    (
+                        MessageValue::Varchar("class".into()),
+                        MessageValue::Varchar("org.apache.cassandra.locator.SimpleStrategy".into()),
+                    ),
+                    (
+                        MessageValue::Varchar("replication_factor".into()),
+                        MessageValue::Varchar("2".into()),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        ];
+
+        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+        assert_eq!(
+            result,
+            (
+                "test".into(),
+                KeyspaceMetadata {
+                    replication_factor: 2
+                }
+            )
+        )
+    }
+
+    #[test]
+    fn test_network() {
+        let row = vec![
+            MessageValue::Varchar("test".into()),
+            MessageValue::Map(
+                vec![
+                    (
+                        MessageValue::Varchar("class".into()),
+                        MessageValue::Varchar(
+                            "org.apache.cassandra.locator.NetworkTopologyStrategy".into(),
+                        ),
+                    ),
+                    (
+                        MessageValue::Varchar("dc1".into()),
+                        MessageValue::Varchar("3".into()),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        ];
+
+        let result = system_keyspaces::build_keyspace(row, "dc1").unwrap();
+
+        assert_eq!(
+            result,
+            (
+                "test".into(),
+                KeyspaceMetadata {
+                    replication_factor: 3
+                }
+            )
+        )
     }
 }
