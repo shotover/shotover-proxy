@@ -16,8 +16,8 @@ use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::query::QueryParams;
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{FQName, Identifier};
-use cql3_parser::select::SelectElement;
+use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, RelationOperator};
+use cql3_parser::select::{Select, SelectElement};
 use futures::future::try_join_all;
 use futures::stream::FuturesOrdered;
 use futures::StreamExt;
@@ -604,6 +604,8 @@ impl CassandraSinkCluster {
         ))
     }
 
+    /// Returns any information required to correctly rewrite the response.
+    /// Will also perform minor modifications to the query required for the rewrite.
     fn get_rewrite_table(&self, request: &mut Message, index: usize) -> Option<TableToRewrite> {
         if let Some(Frame::Cassandra(cassandra)) = request.frame() {
             // No need to handle Batch as selects can only occur on Query
@@ -619,7 +621,7 @@ impl CassandraSinkCluster {
                         return None;
                     };
 
-                    let warnings = if select.where_clause.is_empty() {
+                    let warnings = if Self::has_no_where_clause(ty, select) {
                         vec![]
                     } else {
                         select.where_clause.clear();
@@ -640,6 +642,21 @@ impl CassandraSinkCluster {
             }
         }
         None
+    }
+
+    fn has_no_where_clause(ty: RewriteTableTy, select: &Select) -> bool {
+        select.where_clause.is_empty()
+            // Most drivers do `FROM system.local WHERE key = 'local'` when determining the topology.
+            // I'm not sure why they do that it seems to have no affect as there is only ever one row and its key is always 'local'.
+            // Maybe it was a workaround for an old version of cassandra that got copied around?
+            // To keep warning noise down we consider it as having no where clause.
+            || (ty == RewriteTableTy::Local
+                && select.where_clause
+                    == [RelationElement {
+                        obj: Operand::Column(Identifier::Unquoted("key".to_string())),
+                        oper: RelationOperator::Equal,
+                        value: Operand::Const("'local'".to_owned()),
+                    }])
     }
 
     async fn rewrite_table(
@@ -985,6 +1002,7 @@ struct TableToRewrite {
     warnings: Vec<String>,
 }
 
+#[derive(PartialEq, Clone, Copy)]
 enum RewriteTableTy {
     Local,
     Peers,
