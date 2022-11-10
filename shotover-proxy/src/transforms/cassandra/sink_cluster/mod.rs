@@ -607,22 +607,32 @@ impl CassandraSinkCluster {
     fn get_rewrite_table(&self, request: &mut Message, index: usize) -> Option<TableToRewrite> {
         if let Some(Frame::Cassandra(cassandra)) = request.frame() {
             // No need to handle Batch as selects can only occur on Query
-            if let CassandraOperation::Query { query, .. } = &cassandra.operation {
-                if let CassandraStatement::Select(select) = query.as_ref() {
+            if let CassandraOperation::Query { query, .. } = &mut cassandra.operation {
+                if let CassandraStatement::Select(select) = query.as_mut() {
                     let ty = if self.local_table == select.table_name {
                         RewriteTableTy::Local
                     } else if self.peers_table == select.table_name
                         || self.peers_v2_table == select.table_name
                     {
-                        // TODO: fail if WHERE exists
                         RewriteTableTy::Peers
                     } else {
                         return None;
                     };
 
+                    let warnings = if select.where_clause.is_empty() {
+                        vec![]
+                    } else {
+                        select.where_clause.clear();
+                        vec![format!(
+                            "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {:?}",
+                            select.table_name
+                        )]
+                    };
+
                     return Some(TableToRewrite {
                         index,
                         ty,
+                        warnings,
                         version: cassandra.version,
                         selects: select.columns.clone(),
                     });
@@ -724,6 +734,7 @@ impl CassandraSinkCluster {
         }
 
         if let Some(Frame::Cassandra(frame)) = peers_response.frame() {
+            frame.warnings = table.warnings;
             if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
                 &mut frame.operation
             {
@@ -867,6 +878,7 @@ impl CassandraSinkCluster {
             if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
                 &mut frame.operation
             {
+                frame.warnings = table.warnings;
                 // The local_response message is guaranteed to come from a node that is in our configured data_center/rack.
                 // That means we can leave fields like rack and data_center alone and get exactly what we want.
                 for row in rows {
@@ -950,6 +962,7 @@ struct TableToRewrite {
     ty: RewriteTableTy,
     version: Version,
     selects: Vec<SelectElement>,
+    warnings: Vec<String>,
 }
 
 enum RewriteTableTy {
