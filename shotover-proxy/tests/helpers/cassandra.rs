@@ -6,6 +6,7 @@ use cassandra_cpp::{
 };
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::ErrorType;
+use cassandra_protocol::query::QueryValues;
 use cassandra_protocol::types::IntoRustByIndex;
 use cassandra_protocol::{
     frame::message_error::ErrorBody,
@@ -471,14 +472,17 @@ impl CassandraConnection {
     pub async fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
-        value: Option<i32>,
+        values: &[ResultValue],
     ) -> Vec<Vec<ResultValue>> {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
-                if let Some(value) = value {
-                    statement.bind_int32(0, value).unwrap();
+                for (i, value) in values.iter().enumerate() {
+                    match value {
+                        ResultValue::Int(v) => statement.bind_int32(i, *v).unwrap(),
+                        value => todo!("Implement handling of {value:?} for datastax"),
+                    };
                 }
                 statement.set_tracing(true).unwrap();
                 match session.execute(&statement).await {
@@ -493,12 +497,17 @@ impl CassandraConnection {
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
-
-                let mut builder = QueryParamsBuilder::new();
-                if let Some(value) = value {
-                    builder = builder.with_values(query_values!(value));
-                }
-                let query_params = builder.build();
+                let query_params = QueryParamsBuilder::new()
+                    .with_values(QueryValues::SimpleValues(
+                        values
+                            .iter()
+                            .map(|v| match v {
+                                ResultValue::Int(v) => (*v).into(),
+                                value => todo!("Implement handling of {value:?} for cdrs-tokio"),
+                            })
+                            .collect(),
+                    ))
+                    .build();
 
                 let params = StatementParams {
                     query_params,
@@ -519,11 +528,14 @@ impl CassandraConnection {
             }
             Self::Scylla { session, .. } => {
                 let statement = prepared_query.as_scylla();
-                let response = if let Some(value) = value {
-                    session.execute(statement, (value,)).await.unwrap()
-                } else {
-                    session.execute(statement, ()).await.unwrap()
-                };
+                let values: Vec<&dyn scylla::frame::value::Value> = values
+                    .iter()
+                    .map(|v| match v {
+                        ResultValue::Int(v) => v as &dyn scylla::frame::value::Value,
+                        value => todo!("Implement handling of {value:?} for scylla"),
+                    })
+                    .collect();
+                let response = session.execute(statement, values).await.unwrap();
 
                 match response.rows {
                     Some(rows) => rows
