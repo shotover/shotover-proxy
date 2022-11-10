@@ -624,7 +624,7 @@ impl CassandraSinkCluster {
                     } else {
                         select.where_clause.clear();
                         vec![format!(
-                            "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {:?}",
+                            "WHERE clause on the query was ignored. Shotover does not support WHERE clauses on queries against {}",
                             select.table_name
                         )]
                     };
@@ -647,24 +647,42 @@ impl CassandraSinkCluster {
         table: TableToRewrite,
         responses: &mut Vec<Message>,
     ) -> Result<()> {
+        fn get_warnings(message: &mut Message) -> Vec<String> {
+            if let Some(Frame::Cassandra(frame)) = message.frame() {
+                frame.warnings.clone()
+            } else {
+                vec![]
+            }
+        }
+
         if table.index + 1 < responses.len() {
-            let peers_response = responses.remove(table.index + 1);
+            let mut peers_response = responses.remove(table.index + 1);
+
+            // Include warnings from every message that gets combined into the final message + any extra warnings noted in the TableToRewrite
+            let mut warnings = get_warnings(&mut peers_response);
+            warnings.extend(table.warnings.clone());
+
             match table.ty {
                 RewriteTableTy::Local => {
                     if let Some(local_response) = responses.get_mut(table.index) {
-                        self.rewrite_table_local(table, local_response, peers_response)
+                        warnings.extend(get_warnings(local_response));
+
+                        self.rewrite_table_local(table, local_response, peers_response, warnings)
                             .await?;
                         local_response.invalidate_cache();
                     }
                 }
                 RewriteTableTy::Peers => {
                     if table.index + 1 < responses.len() {
-                        let local_response = responses.remove(table.index + 1);
+                        let mut local_response = responses.remove(table.index + 1);
                         if let Some(client_peers_response) = responses.get_mut(table.index) {
+                            warnings.extend(get_warnings(&mut local_response));
+                            warnings.extend(get_warnings(client_peers_response));
+
                             let mut nodes = parse_system_nodes(peers_response)?;
                             nodes.extend(parse_system_nodes(local_response)?);
 
-                            self.rewrite_table_peers(table, client_peers_response, nodes)
+                            self.rewrite_table_peers(table, client_peers_response, nodes, warnings)
                                 .await?;
                             client_peers_response.invalidate_cache();
                         }
@@ -681,6 +699,7 @@ impl CassandraSinkCluster {
         table: TableToRewrite,
         peers_response: &mut Message,
         nodes: Vec<NodeInfo>,
+        warnings: Vec<String>,
     ) -> Result<()> {
         let mut data_center_alias = "data_center";
         let mut rack_alias = "rack";
@@ -734,7 +753,7 @@ impl CassandraSinkCluster {
         }
 
         if let Some(Frame::Cassandra(frame)) = peers_response.frame() {
-            frame.warnings = table.warnings;
+            frame.warnings = warnings;
             if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
                 &mut frame.operation
             {
@@ -831,6 +850,7 @@ impl CassandraSinkCluster {
         table: TableToRewrite,
         local_response: &mut Message,
         peers_response: Message,
+        warnings: Vec<String>,
     ) -> Result<()> {
         let mut peers = parse_system_nodes(peers_response)?;
         peers.retain(|node| {
@@ -878,7 +898,7 @@ impl CassandraSinkCluster {
             if let CassandraOperation::Result(CassandraResult::Rows { rows, metadata }) =
                 &mut frame.operation
             {
-                frame.warnings = table.warnings;
+                frame.warnings = warnings;
                 // The local_response message is guaranteed to come from a node that is in our configured data_center/rack.
                 // That means we can leave fields like rack and data_center alone and get exactly what we want.
                 for row in rows {
