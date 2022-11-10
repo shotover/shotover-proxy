@@ -52,7 +52,6 @@ fn get_type_str(col_type: ColType) -> &'static str {
         ColType::Set => "set",
         ColType::Udt => "udt",
         ColType::Tuple => "tuple",
-        ColType::Null => "null",
         ColType::Duration => "duration",
     }
 }
