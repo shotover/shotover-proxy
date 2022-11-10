@@ -657,21 +657,19 @@ pub enum ResultValue {
     Double(OrderedFloat<f64>),
     Duration(Vec<u8>), // TODO should be i32
     Float(OrderedFloat<f32>),
-    Inet(String),
+    Inet(IpAddr),
     SmallInt(i16),
-    Time(Vec<u8>), // TODO shoulbe be String
+    Time(i64),
     Timestamp(i64),
     TimeUuid(uuid::Uuid),
     Counter(i64),
     TinyInt(i8),
     VarInt(Vec<u8>),
-    Date(Vec<u8>), // TODO should be string
+    Date(u32),
     Set(Vec<ResultValue>),
     List(Vec<ResultValue>),
-    #[allow(dead_code)]
     Tuple(Vec<ResultValue>),
     Map(Vec<(ResultValue, ResultValue)>),
-    #[allow(dead_code)]
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
@@ -725,26 +723,20 @@ impl ResultValue {
                 ValueType::VARCHAR => ResultValue::Varchar(value.get_string().unwrap()),
                 ValueType::INT => ResultValue::Int(value.get_i32().unwrap()),
                 ValueType::BOOLEAN => ResultValue::Boolean(value.get_bool().unwrap()),
-                ValueType::UUID => ResultValue::Uuid(
-                    uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
-                ),
+                ValueType::UUID => ResultValue::Uuid(value.get_uuid().unwrap().into()),
                 ValueType::ASCII => ResultValue::Ascii(value.get_string().unwrap()),
                 ValueType::BIGINT => ResultValue::BigInt(value.get_i64().unwrap()),
                 ValueType::BLOB => ResultValue::Blob(value.get_bytes().unwrap().to_vec()),
-                ValueType::DATE => ResultValue::Date(value.get_bytes().unwrap().to_vec()),
+                ValueType::DATE => ResultValue::Date(value.get_u32().unwrap()),
                 ValueType::DECIMAL => ResultValue::Decimal(value.get_bytes().unwrap().to_vec()),
                 ValueType::DOUBLE => ResultValue::Double(value.get_f64().unwrap().into()),
                 ValueType::DURATION => ResultValue::Duration(value.get_bytes().unwrap().to_vec()),
                 ValueType::FLOAT => ResultValue::Float(value.get_f32().unwrap().into()),
-                ValueType::INET => {
-                    ResultValue::Inet(value.get_inet().map(|x| x.to_string()).unwrap())
-                }
+                ValueType::INET => ResultValue::Inet(value.get_inet().as_ref().unwrap().into()),
                 ValueType::SMALL_INT => ResultValue::SmallInt(value.get_i16().unwrap()),
-                ValueType::TIME => ResultValue::Time(value.get_bytes().unwrap().to_vec()),
+                ValueType::TIME => ResultValue::Time(value.get_i64().unwrap()),
                 ValueType::TIMESTAMP => ResultValue::Timestamp(value.get_i64().unwrap()),
-                ValueType::TIMEUUID => ResultValue::TimeUuid(
-                    uuid::Uuid::parse_str(&value.get_uuid().unwrap().to_string()).unwrap(),
-                ),
+                ValueType::TIMEUUID => ResultValue::TimeUuid(value.get_uuid().unwrap().into()),
                 ValueType::COUNTER => ResultValue::Counter(value.get_i64().unwrap()),
                 ValueType::VARINT => ResultValue::VarInt(value.get_bytes().unwrap().to_vec()),
                 ValueType::TINY_INT => ResultValue::TinyInt(value.get_i8().unwrap()),
@@ -803,21 +795,21 @@ impl ResultValue {
             CassandraType::Varchar(varchar) => ResultValue::Varchar(varchar),
             CassandraType::Varint(var_int) => ResultValue::VarInt(var_int.to_signed_bytes_be()),
             CassandraType::Timeuuid(uuid) => ResultValue::TimeUuid(uuid),
-            CassandraType::Inet(ip_addr) => ResultValue::Inet(ip_addr.to_string()),
-            CassandraType::Date(date) => ResultValue::Date(date.serialize_to_vec(version)),
-            CassandraType::Time(time) => ResultValue::Time(time.serialize_to_vec(version)),
+            CassandraType::Inet(ip_addr) => ResultValue::Inet(ip_addr),
+            CassandraType::Date(date) => ResultValue::Date(date as u32),
+            CassandraType::Time(time) => ResultValue::Time(time),
             CassandraType::Smallint(small_int) => ResultValue::SmallInt(small_int),
             CassandraType::Tinyint(tiny_int) => ResultValue::TinyInt(tiny_int),
             CassandraType::Duration(duration) => {
                 ResultValue::Duration(duration.serialize_to_vec(version))
             }
-            CassandraType::List(mut list) => ResultValue::List(
-                list.drain(..)
+            CassandraType::List(list) => ResultValue::List(
+                list.into_iter()
                     .map(|element| ResultValue::new_from_cdrs(element, version))
                     .collect(),
             ),
-            CassandraType::Map(mut map) => ResultValue::Map(
-                map.drain(..)
+            CassandraType::Map(map) => ResultValue::Map(
+                map.into_iter()
                     .map(|(k, v)| {
                         (
                             ResultValue::new_from_cdrs(k, version),
@@ -826,15 +818,15 @@ impl ResultValue {
                     })
                     .collect(),
             ),
-            CassandraType::Set(mut set) => ResultValue::Set(
-                set.drain(..)
+            CassandraType::Set(set) => ResultValue::Set(
+                set.into_iter()
                     .map(|element| ResultValue::new_from_cdrs(element, version))
                     .collect(),
             ),
             CassandraType::Udt(_) => todo!(),
-            CassandraType::Tuple(mut tuple) => ResultValue::Tuple(
+            CassandraType::Tuple(tuple) => ResultValue::Tuple(
                 tuple
-                    .drain(..)
+                    .into_iter()
                     .map(|element| ResultValue::new_from_cdrs(element, version))
                     .collect(),
             ),
@@ -869,41 +861,37 @@ impl ResultValue {
                     Self::VarInt(buf)
                 }
                 CqlValue::Timeuuid(timeuuid) => Self::TimeUuid(timeuuid),
-                CqlValue::Inet(ip) => Self::Inet(ip.to_string()),
-                CqlValue::Date(date) => Self::Date(date.to_be_bytes().to_vec()),
-                CqlValue::Time(time) => {
-                    let mut buf = vec![];
-                    buf.put_i64(time.num_nanoseconds().unwrap());
-                    Self::Time(buf)
-                }
+                CqlValue::Inet(ip) => Self::Inet(ip),
+                CqlValue::Date(date) => Self::Date(date),
+                CqlValue::Time(time) => Self::Time(time.num_nanoseconds().unwrap()),
                 CqlValue::SmallInt(small_int) => Self::SmallInt(small_int),
                 CqlValue::TinyInt(tiny_int) => Self::TinyInt(tiny_int),
                 CqlValue::Duration(_duration) => todo!(),
                 CqlValue::Double(double) => Self::Double(double.into()),
                 CqlValue::Text(text) => Self::Varchar(text),
                 CqlValue::Empty => Self::Null,
-                CqlValue::List(mut list) => Self::List(
-                    list.drain(..)
-                        .map(|v| ResultValue::new_from_scylla(Some(v)))
+                CqlValue::List(list) => Self::List(
+                    list.into_iter()
+                        .map(|v| Self::new_from_scylla(Some(v)))
                         .collect(),
                 ),
-                CqlValue::Set(mut set) => Self::Set(
-                    set.drain(..)
-                        .map(|v| ResultValue::new_from_scylla(Some(v)))
+                CqlValue::Set(set) => Self::Set(
+                    set.into_iter()
+                        .map(|v| Self::new_from_scylla(Some(v)))
                         .collect(),
                 ),
-                CqlValue::Map(mut map) => Self::Map(
-                    map.drain(..)
+                CqlValue::Map(map) => Self::Map(
+                    map.into_iter()
                         .map(|(k, v)| {
                             (
-                                ResultValue::new_from_scylla(Some(k)),
-                                ResultValue::new_from_scylla(Some(v)),
+                                Self::new_from_scylla(Some(k)),
+                                Self::new_from_scylla(Some(v)),
                             )
                         })
                         .collect(),
                 ),
-                CqlValue::Tuple(mut tuple) => {
-                    Self::Tuple(tuple.drain(..).map(ResultValue::new_from_scylla).collect())
+                CqlValue::Tuple(tuple) => {
+                    Self::Tuple(tuple.into_iter().map(Self::new_from_scylla).collect())
                 }
                 CqlValue::UserDefinedType { .. } => todo!(),
             },
