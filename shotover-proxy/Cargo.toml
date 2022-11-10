@@ -78,7 +78,7 @@ generic-array = { version = "0.14", features = ["serde"] }
 
 [dev-dependencies]
 rayon = "1.5.1"
-criterion = { git = "https://github.com/shotover/criterion.rs", branch = "version-0.4", version = "0.3", features = ["async_tokio"] }
+criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
 redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
 pcap = "0.11.0"
 pktparse = { version = "0.7.0", features = ["serde"] }
