@@ -111,7 +111,7 @@ async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnecti
         ResultValue::Int(7000),
         ResultValue::Varchar("dc1".into()),
         ResultValue::Uuid("3c3c4e2d-ba74-4f76-b52e-fb5bcee6a9f4".parse().unwrap()),
-        ResultValue::Inet("127.0.0.1".into()),
+        ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Int(9042),
         ResultValue::Null,
         ResultValue::Null,

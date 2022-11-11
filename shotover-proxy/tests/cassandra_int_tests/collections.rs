@@ -102,9 +102,9 @@ fn get_type_example_result_value(col_type: ColType) -> ResultValue {
         ColType::Timeuuid => ResultValue::TimeUuid(
             uuid::Uuid::parse_str("84196262-53de-11ec-bf63-0242ac130002").unwrap(),
         ),
-        ColType::Inet => ResultValue::Inet("127.0.0.1".into()),
-        ColType::Date => ResultValue::Date(vec![128, 0, 58, 160]),
-        ColType::Time => ResultValue::Time(vec![0, 0, 26, 229, 187, 195, 188, 0]),
+        ColType::Inet => ResultValue::Inet("127.0.0.1".parse().unwrap()),
+        ColType::Date => ResultValue::Date(2147498656),
+        ColType::Time => ResultValue::Time(29574000000000),
         ColType::Smallint => ResultValue::SmallInt(32767),
         ColType::Tinyint => ResultValue::TinyInt(127),
         _ => panic!("dont have an example for {}", col_type),
