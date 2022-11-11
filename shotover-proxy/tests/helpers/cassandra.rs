@@ -481,6 +481,22 @@ impl CassandraConnection {
                 for (i, value) in values.iter().enumerate() {
                     match value {
                         ResultValue::Int(v) => statement.bind_int32(i, *v).unwrap(),
+                        ResultValue::Ascii(v) => statement.bind_string(i, v).unwrap(),
+                        ResultValue::BigInt(v) => statement.bind_int64(i, *v).unwrap(),
+                        ResultValue::Blob(v) => statement.bind_bytes(i, v.clone()).unwrap(),
+                        ResultValue::Boolean(v) => statement.bind_bool(i, *v).unwrap(),
+                        ResultValue::Decimal(_) => {
+                            todo!("cassandra-cpp wrapper does not expose bind_decimal yet")
+                        }
+                        ResultValue::Double(v) => statement.bind_double(i, **v).unwrap(),
+                        ResultValue::Float(v) => statement.bind_float(i, **v).unwrap(),
+                        ResultValue::Timestamp(v) => statement.bind_int64(i, *v).unwrap(),
+                        ResultValue::Uuid(v) => statement.bind_uuid(i, (*v).into()).unwrap(),
+                        ResultValue::Inet(v) => statement.bind_inet(i, v.into()).unwrap(),
+                        ResultValue::Date(v) => statement.bind_uint32(i, *v).unwrap(),
+                        ResultValue::Time(v) => statement.bind_int64(i, *v).unwrap(),
+                        ResultValue::SmallInt(v) => statement.bind_int16(i, *v).unwrap(),
+                        ResultValue::TinyInt(v) => statement.bind_int8(i, *v).unwrap(),
                         value => todo!("Implement handling of {value:?} for datastax"),
                     };
                 }
@@ -503,6 +519,20 @@ impl CassandraConnection {
                             .iter()
                             .map(|v| match v {
                                 ResultValue::Int(v) => (*v).into(),
+                                ResultValue::Ascii(v) => v.as_str().into(),
+                                ResultValue::BigInt(v) => (*v).into(),
+                                ResultValue::Blob(v) => v.clone().into(),
+                                ResultValue::Boolean(v) => (*v).into(),
+                                ResultValue::Decimal(v) => v.clone().into(),
+                                ResultValue::Double(v) => (*v.as_ref()).into(),
+                                ResultValue::Float(v) => (*v.as_ref()).into(),
+                                ResultValue::Timestamp(v) => (*v).into(),
+                                ResultValue::Uuid(v) => (*v).into(),
+                                ResultValue::Inet(v) => (*v).into(),
+                                ResultValue::Date(v) => (*v).into(),
+                                ResultValue::Time(v) => (*v).into(),
+                                ResultValue::SmallInt(v) => (*v).into(),
+                                ResultValue::TinyInt(v) => (*v).into(),
                                 value => todo!("Implement handling of {value:?} for cdrs-tokio"),
                             })
                             .collect(),
@@ -527,11 +557,26 @@ impl CassandraConnection {
                 Self::process_cdrs_response(response)
             }
             Self::Scylla { session, .. } => {
+                use scylla::frame::value::Value as ScyllaValue;
                 let statement = prepared_query.as_scylla();
-                let values: Vec<&dyn scylla::frame::value::Value> = values
+                let values: Vec<Box<dyn ScyllaValue>> = values
                     .iter()
                     .map(|v| match v {
-                        ResultValue::Int(v) => v as &dyn scylla::frame::value::Value,
+                        ResultValue::Int(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Ascii(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::BigInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Blob(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Boolean(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Decimal(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Double(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
+                        ResultValue::Float(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
+                        ResultValue::Timestamp(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Uuid(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Inet(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::Date(v) => Box::new(*v as i32) as Box<dyn ScyllaValue>,
+                        ResultValue::Time(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::SmallInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                        ResultValue::TinyInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
                         value => todo!("Implement handling of {value:?} for scylla"),
                     })
                     .collect();
