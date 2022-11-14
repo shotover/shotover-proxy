@@ -1,7 +1,7 @@
 use anyhow::Result;
 use shotover_proxy::runner::{ConfigOpts, Runner};
 use std::sync::mpsc;
-use tokio::runtime::{Handle as RuntimeHandle, Runtime};
+use tokio::runtime::Runtime;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -11,7 +11,6 @@ pub mod redis_connection;
 #[must_use]
 pub struct ShotoverManager {
     pub runtime: Option<Runtime>,
-    pub runtime_handle: RuntimeHandle,
     pub join_handle: Option<JoinHandle<Result<()>>>,
     pub trigger_shutdown_tx: watch::Sender<bool>,
     panic_occured_rx: mpsc::Receiver<()>,
@@ -64,8 +63,7 @@ impl ShotoverManager {
         std::mem::forget(spawn.tracing_guard);
 
         ShotoverManager {
-            runtime: spawn.runtime,
-            runtime_handle: spawn.runtime_handle,
+            runtime: Some(spawn.runtime),
             join_handle: Some(spawn.join_handle),
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
             panic_occured_rx,
@@ -74,8 +72,27 @@ impl ShotoverManager {
 
     fn shutdown_shotover(&mut self) -> Result<()> {
         self.trigger_shutdown_tx.send(true)?;
-        let _enter_guard = self.runtime_handle.enter();
+        let _enter_guard = self.runtime.as_ref().unwrap().enter();
         futures::executor::block_on(self.join_handle.take().unwrap())?
+    }
+
+    fn shutdown_tokio(&mut self) -> Result<()> {
+        // Even if shutdown fails we still need to drop the runtime this way,
+        // otherwise we will double panic if the regular Runtime drop impl runs
+        let result = self.shutdown_shotover();
+
+        // tokio has some per thread global state that sets the current runtime that is being executed in.
+        // If we try to drop a runtime while executing in a thread with a current runtime, the runtimes drop logic will panic.
+        // We can avoid this by sending the runtime off to a brand new thread and performing the drop there.
+        if let Some(runtime) = self.runtime.take() {
+            std::thread::spawn(move || {
+                std::mem::drop(runtime);
+            })
+            .join()
+            .unwrap();
+        }
+
+        result
     }
 }
 
@@ -90,11 +107,11 @@ impl Drop for ShotoverManager {
 
         if std::thread::panicking() {
             // If already panicking do not panic while attempting to shutdown shotover in order to avoid a double panic.
-            if let Err(err) = self.shutdown_shotover() {
+            if let Err(err) = self.shutdown_tokio() {
                 println!("Failed to shutdown shotover: {err}")
             }
         } else {
-            self.shutdown_shotover().unwrap();
+            self.shutdown_tokio().unwrap();
 
             // When a panic occurs in a shotover tokio task that isnt joined on, tokio will catch the panic, print the panic message and shotover will continue running happily.
             // This behaviour is reasonable and makes shotover more robust but in our integration tests we want to ensure that panics never ever occur.

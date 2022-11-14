@@ -8,7 +8,7 @@ use clap::{crate_version, Parser};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::env;
 use std::net::SocketAddr;
-use tokio::runtime::{self, Handle as RuntimeHandle, Runtime};
+use tokio::runtime::{self, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -63,8 +63,7 @@ impl Default for ConfigOpts {
 }
 
 pub struct Runner {
-    runtime: Option<Runtime>,
-    runtime_handle: RuntimeHandle,
+    runtime: Runtime,
     topology: Topology,
     config: Config,
     tracing: TracingState,
@@ -77,11 +76,10 @@ impl Runner {
 
         let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
 
-        let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);
+        let runtime = Runner::get_runtime(params.stack_size, params.core_threads);
 
         Ok(Runner {
             runtime,
-            runtime_handle,
             topology,
             config,
             tracing,
@@ -96,7 +94,7 @@ impl Runner {
         let socket: SocketAddr = self.config.observability_interface.parse()?;
         let exporter = LogFilterHttpExporter::new(handle, socket, self.tracing.handle.clone());
 
-        self.runtime_handle.spawn(exporter.async_run());
+        self.runtime.spawn(exporter.async_run());
 
         Ok(self)
     }
@@ -104,12 +102,11 @@ impl Runner {
     pub fn run_spawn(self) -> RunnerSpawned {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
-        let join_handle =
-            self.runtime_handle
-                .spawn(run(self.topology, self.config, trigger_shutdown_rx));
+        let join_handle = self
+            .runtime
+            .spawn(run(self.topology, self.config, trigger_shutdown_rx));
 
         RunnerSpawned {
-            runtime_handle: self.runtime_handle,
             runtime: self.runtime,
             tracing_guard: self.tracing.guard,
             trigger_shutdown_tx,
@@ -120,7 +117,7 @@ impl Runner {
     pub fn run_block(self) -> Result<()> {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
-        self.runtime_handle.spawn(async move {
+        self.runtime.spawn(async move {
             let mut interrupt = signal(SignalKind::interrupt()).unwrap();
             let mut terminate = signal(SignalKind::terminate()).unwrap();
 
@@ -136,31 +133,19 @@ impl Runner {
             trigger_shutdown_tx.send(true).unwrap();
         });
 
-        self.runtime_handle
+        self.runtime
             .block_on(run(self.topology, self.config, trigger_shutdown_rx))
     }
 
     /// Get handle for an existing runtime or create one
-    fn get_runtime(stack_size: usize, core_threads: usize) -> (RuntimeHandle, Option<Runtime>) {
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            // Using block_in_place to trigger a panic in case the runtime is set up in single-threaded mode.
-            // Shotover does not function correctly in single threaded mode (currently hangs)
-            // and block_in_place gives an error message explaining to setup the runtime in multi-threaded mode.
-            // This does not protect us when calling Runtime::enter() or when no runtime is set up at all.
-            tokio::task::block_in_place(|| {});
-
-            (handle, None)
-        } else {
-            let runtime = runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_name("Shotover-Proxy-Thread")
-                .thread_stack_size(stack_size)
-                .worker_threads(core_threads)
-                .build()
-                .unwrap();
-
-            (runtime.handle().clone(), Some(runtime))
-        }
+    fn get_runtime(stack_size: usize, core_threads: usize) -> Runtime {
+        runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("Shotover-Proxy-Thread")
+            .thread_stack_size(stack_size)
+            .worker_threads(core_threads)
+            .build()
+            .unwrap()
     }
 }
 
@@ -249,8 +234,7 @@ impl ReloadHandle {
 }
 
 pub struct RunnerSpawned {
-    pub runtime: Option<Runtime>,
-    pub runtime_handle: RuntimeHandle,
+    pub runtime: Runtime,
     pub join_handle: JoinHandle<Result<()>>,
     pub tracing_guard: WorkerGuard,
     pub trigger_shutdown_tx: watch::Sender<bool>,
