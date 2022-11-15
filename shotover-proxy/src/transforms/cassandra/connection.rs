@@ -1,13 +1,13 @@
 use crate::codec::cassandra::CassandraCodec;
 use crate::frame::cassandra::CassandraMetadata;
+use crate::frame::{CassandraFrame, Frame};
 use crate::message::{Message, Metadata};
 use crate::server::CodecReadError;
 use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
-use crate::transforms::util::Response;
 use crate::transforms::Messages;
 use anyhow::{anyhow, Result};
-use cassandra_protocol::frame::Opcode;
+use cassandra_protocol::frame::{Opcode, Version};
 use derivative::Derivative;
 use futures::stream::FuturesOrdered;
 use futures::{SinkExt, StreamExt};
@@ -25,7 +25,19 @@ use tracing::{error, Instrument};
 struct Request {
     message: Message,
     return_chan: oneshot::Sender<Response>,
-    message_id: i16,
+    stream_id: i16,
+}
+
+#[derive(Debug)]
+pub struct Response {
+    pub stream_id: i16,
+    pub response: Result<Message>,
+}
+
+#[derive(Debug)]
+struct ReturnChannel {
+    return_chan: oneshot::Sender<Response>,
+    stream_id: i16,
 }
 
 #[derive(Clone, Derivative)]
@@ -43,7 +55,7 @@ impl CassandraConnection {
         pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     ) -> Result<Self> {
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
-        let (return_tx, return_rx) = mpsc::unbounded_channel::<Request>();
+        let (return_tx, return_rx) = mpsc::unbounded_channel::<ReturnChannel>();
         let (rx_process_has_shutdown_tx, rx_process_has_shutdown_rx) = oneshot::channel::<()>();
 
         if let Some(tls) = tls.as_mut() {
@@ -100,12 +112,12 @@ impl CassandraConnection {
     /// Send a `Message` to this `CassandraConnection` and expect a response on `return_chan`
     pub fn send(&self, message: Message, return_chan: oneshot::Sender<Response>) -> Result<()> {
         // Convert the message to `Request` and send upstream
-        if let Some(message_id) = message.stream_id() {
+        if let Some(stream_id) = message.stream_id() {
             self.connection
                 .send(Request {
                     message,
                     return_chan,
-                    message_id,
+                    stream_id,
                 })
                 .map_err(|x| x.into())
         } else {
@@ -117,7 +129,7 @@ impl CassandraConnection {
 async fn tx_process<T: AsyncWrite>(
     write: WriteHalf<T>,
     out_rx: mpsc::UnboundedReceiver<Request>,
-    return_tx: mpsc::UnboundedSender<Request>,
+    return_tx: mpsc::UnboundedSender<ReturnChannel>,
     codec: CassandraCodec,
     rx_process_has_shutdown_rx: oneshot::Receiver<()>,
 ) {
@@ -131,15 +143,18 @@ async fn tx_process<T: AsyncWrite>(
 async fn tx_process_fallible<T: AsyncWrite>(
     write: WriteHalf<T>,
     mut out_rx: mpsc::UnboundedReceiver<Request>,
-    return_tx: mpsc::UnboundedSender<Request>,
+    return_tx: mpsc::UnboundedSender<ReturnChannel>,
     codec: CassandraCodec,
     rx_process_has_shutdown_rx: oneshot::Receiver<()>,
 ) -> Result<()> {
     let mut in_w = FramedWrite::new(write, codec);
     loop {
         if let Some(request) = out_rx.recv().await {
-            in_w.send(vec![request.message.clone()]).await?;
-            return_tx.send(request)?;
+            in_w.send(vec![request.message]).await?;
+            return_tx.send(ReturnChannel {
+                return_chan: request.return_chan,
+                stream_id: request.stream_id,
+            })?;
         } else {
             // transform is shutting down, time to cleanly shutdown both tx_process and rx_process.
             // We need to ensure that the rx_process task has shutdown before closing the write half of the tcpstream
@@ -163,7 +178,7 @@ async fn tx_process_fallible<T: AsyncWrite>(
 
 async fn rx_process<T: AsyncRead>(
     read: ReadHalf<T>,
-    return_rx: mpsc::UnboundedReceiver<Request>,
+    return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
     codec: CassandraCodec,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     rx_process_has_shutdown_tx: oneshot::Sender<()>,
@@ -178,7 +193,7 @@ async fn rx_process<T: AsyncRead>(
 
 async fn rx_process_fallible<T: AsyncRead>(
     read: ReadHalf<T>,
-    mut return_rx: mpsc::UnboundedReceiver<Request>,
+    mut return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
     codec: CassandraCodec,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
 ) -> Result<()> {
@@ -192,13 +207,13 @@ async fn rx_process_fallible<T: AsyncRead>(
     // Implementation:
     // To process a message we need to receive things from two different sources:
     // 1. the response from the cassandra server
-    // 2. the oneshot::Sender and original message from the tx_process task
+    // 2. the oneshot::Sender from the tx_process task
     //
     // We can receive these in any order.
     // In order to handle that we have two seperate maps.
     //
-    // We store the sender + original message here if we receive from the tx_process task first
-    let mut from_tx_process: HashMap<i16, (oneshot::Sender<Response>, Message)> = HashMap::new();
+    // We store the sender here if we receive from the tx_process task first
+    let mut from_tx_process: HashMap<i16, oneshot::Sender<Response>> = HashMap::new();
 
     // We store the response message here if we receive from the server first.
     let mut from_server: HashMap<i16, Message> = HashMap::new();
@@ -209,7 +224,8 @@ async fn rx_process_fallible<T: AsyncRead>(
                 match response {
                     Some(Ok(response)) => {
                         for m in response {
-                            if let Ok(Metadata::Cassandra(CassandraMetadata { opcode: Opcode::Event, .. })) = m.metadata() {
+                            let meta = m.metadata();
+                            if let Ok(Metadata::Cassandra(CassandraMetadata { opcode: Opcode::Event, .. })) = meta {
                                 if let Some(pushed_messages_tx) = pushed_messages_tx.as_ref() {
                                     pushed_messages_tx.send(vec![m]).unwrap();
                                 }
@@ -218,8 +234,8 @@ async fn rx_process_fallible<T: AsyncRead>(
                                     None => {
                                         from_server.insert(stream_id, m);
                                     },
-                                    Some((return_tx, original)) => {
-                                        return_tx.send(Response { original, response: Ok(m) })
+                                    Some(return_tx) => {
+                                        return_tx.send(Response { stream_id, response: Ok(m) })
                                             .map_err(|_| anyhow!("couldn't send message"))?;
                                     }
                                 }
@@ -236,14 +252,14 @@ async fn rx_process_fallible<T: AsyncRead>(
                     None => return Ok(())
                 }
             },
-            original_request = return_rx.recv() => {
-                if let Some(Request { message, return_chan, message_id }) = original_request {
-                    match from_server.remove(&message_id) {
+            return_chan = return_rx.recv() => {
+                if let Some(ReturnChannel { return_chan, stream_id }) = return_chan {
+                    match from_server.remove(&stream_id) {
                         None => {
-                            from_tx_process.insert(message_id, (return_chan, message));
+                            from_tx_process.insert(stream_id, return_chan);
                         }
                         Some(m) => {
-                            return_chan.send(Response { original: message, response: Ok(m) })
+                            return_chan.send(Response { stream_id, response: Ok(m) })
                                 .map_err(|_| anyhow!("couldn't send message"))?;
                         }
                     }
@@ -259,6 +275,7 @@ pub async fn receive(
     timeout_duration: Option<Duration>,
     failed_requests: &metrics::Counter,
     mut results: FuturesOrdered<oneshot::Receiver<Response>>,
+    version: Version,
 ) -> Result<Messages> {
     let expected_size = results.len();
     let mut responses = Vec::with_capacity(expected_size);
@@ -266,7 +283,7 @@ pub async fn receive(
         if let Some(timeout_duration) = timeout_duration {
             match timeout(
                 timeout_duration,
-                receive_message(failed_requests, &mut results),
+                receive_message(failed_requests, &mut results, version),
             )
             .await
             {
@@ -282,7 +299,7 @@ pub async fn receive(
                 }
             }
         } else {
-            responses.push(receive_message(failed_requests, &mut results).await?);
+            responses.push(receive_message(failed_requests, &mut results, version).await?);
         }
     }
     Ok(responses)
@@ -291,6 +308,7 @@ pub async fn receive(
 pub async fn receive_message(
     failed_requests: &metrics::Counter,
     results: &mut FuturesOrdered<oneshot::Receiver<Response>>,
+    version: Version,
 ) -> Result<Message> {
     match results.next().await {
         Some(result) => match result? {
@@ -308,12 +326,11 @@ pub async fn receive_message(
                 Ok(message)
             }
             Response {
-                mut original,
+                stream_id,
                 response: Err(err),
-            } => {
-                original.set_error(err.to_string());
-                Ok(original)
-            }
+            } => Ok(Message::from_frame(Frame::Cassandra(
+                CassandraFrame::shotover_error(stream_id, version, &err.to_string()),
+            ))),
         },
         None => unreachable!("Ran out of responses"),
     }

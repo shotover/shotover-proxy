@@ -1,10 +1,9 @@
 use crate::error::ChainResponse;
 use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
-use crate::message::{IntSize, Message, MessageValue, Messages};
+use crate::message::{IntSize, Message, MessageValue, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::cassandra::connection::CassandraConnection;
-use crate::transforms::util::Response;
+use crate::transforms::cassandra::connection::{CassandraConnection, Response};
 use crate::transforms::{Transform, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -111,6 +110,7 @@ pub struct CassandraSinkCluster {
     control_connection_address: Option<SocketAddr>,
     init_handshake_complete: bool,
 
+    version: Version,
     chain_name: String,
     failed_requests: Counter,
     read_timeout: Option<Duration>,
@@ -138,6 +138,7 @@ impl Clone for CassandraSinkCluster {
             connection_factory: self.connection_factory.new_with_same_config(),
             control_connection_address: None,
             init_handshake_complete: false,
+            version: self.version,
             chain_name: self.chain_name.clone(),
             failed_requests: self.failed_requests.clone(),
             read_timeout: self.read_timeout,
@@ -192,6 +193,8 @@ impl CassandraSinkCluster {
             control_connection: None,
             control_connection_address: None,
             init_handshake_complete: false,
+            // Dummy value that gets replaced on the first message
+            version: Version::V4,
             chain_name,
             failed_requests,
             read_timeout: receive_timeout,
@@ -229,6 +232,18 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
 
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
+        if let Some(message) = messages.first() {
+            if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) = message.metadata() {
+                self.version = version;
+            } else {
+                return Err(anyhow!(
+                    "Failed to extract cassandra version from incoming message: Not a valid cassandra message"
+                ));
+            }
+        } else {
+            return Ok(vec![]);
+        }
+
         if self.nodes_rx.has_changed()? {
             self.pool.update_nodes(&mut self.nodes_rx);
 
@@ -265,13 +280,13 @@ impl CassandraSinkCluster {
             let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
             messages.insert(
                 table_to_rewrite.index + 1,
-                create_query(&messages, query, table_to_rewrite.version)?,
+                create_query(&messages, query, self.version)?,
             );
             if let RewriteTableTy::Peers = table_to_rewrite.ty {
                 let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
                 messages.insert(
                     table_to_rewrite.index + 2,
-                    create_query(&messages, query, table_to_rewrite.version)?,
+                    create_query(&messages, query, self.version)?,
                 );
             }
         }
@@ -386,7 +401,7 @@ impl CassandraSinkCluster {
                         .get_replica_node_in_dc(
                             execute,
                             &self.local_shotover_node.rack,
-                            &metadata.version,
+                            self.version,
                             &mut self.rng,
                         )
                         .await
@@ -408,12 +423,12 @@ impl CassandraSinkCluster {
                         Err(GetReplicaErr::NoPreparedMetadata) => {
                             let id = execute.id.clone();
                             tracing::info!("forcing re-prepare on {:?}", id);
-                            // this shotover node doesn't have the metadata
+                            // this shotover node doesn't have the metadata.
                             // send an unprepared error in response to force
                             // the client to reprepare the query
                             return_chan_tx
                                 .send(Response {
-                                    original: message.clone(),
+                                    stream_id: metadata.stream_id,
                                     response: Ok(Message::from_frame(Frame::Cassandra(
                                         CassandraFrame {
                                             operation: CassandraOperation::Error(ErrorBody {
@@ -424,7 +439,7 @@ impl CassandraSinkCluster {
                                             }),
                                             stream_id: metadata.stream_id,
                                             tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
-                                            version: metadata.version,
+                                            version: self.version,
                                             warnings: vec![],
                                         },
                                     ))),
@@ -449,15 +464,20 @@ impl CassandraSinkCluster {
             responses_future.push_back(return_chan_rx)
         }
 
-        let mut responses =
-            super::connection::receive(self.read_timeout, &self.failed_requests, responses_future)
-                .await?;
+        let mut responses = super::connection::receive(
+            self.read_timeout,
+            &self.failed_requests,
+            responses_future,
+            self.version,
+        )
+        .await?;
 
         {
             let mut prepare_responses = super::connection::receive(
                 self.read_timeout,
                 &self.failed_requests,
                 responses_future_prepare,
+                self.version,
             )
             .await?;
 
@@ -635,7 +655,6 @@ impl CassandraSinkCluster {
                         index,
                         ty,
                         warnings,
-                        version: cassandra.version,
                         selects: select.columns.clone(),
                     });
                 }
@@ -997,7 +1016,6 @@ impl CassandraSinkCluster {
 struct TableToRewrite {
     index: usize,
     ty: RewriteTableTy,
-    version: Version,
     selects: Vec<SelectElement>,
     warnings: Vec<String>,
 }
