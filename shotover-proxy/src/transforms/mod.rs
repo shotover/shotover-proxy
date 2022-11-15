@@ -399,7 +399,7 @@ impl<'a> Clone for Wrapper<'a> {
             client_details: self.client_details.clone(),
             chain_name: self.chain_name.clone(),
             local_addr: self.local_addr,
-            flush: false,
+            flush: self.flush,
         }
     }
 }
