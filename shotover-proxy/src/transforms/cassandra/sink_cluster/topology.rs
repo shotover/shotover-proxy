@@ -86,6 +86,11 @@ async fn topology_task_process(
 
     register_for_topology_and_status_events(&connection, version).await?;
 
+    tracing::info!(
+        "Topology task control connection finalized against node at: {:?}",
+        connection_info.address
+    );
+
     loop {
         // Wait for events to come in from the cassandra node.
         // If all the nodes receivers are closed then immediately stop listening and shutdown the task
