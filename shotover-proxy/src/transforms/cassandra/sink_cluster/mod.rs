@@ -110,7 +110,7 @@ pub struct CassandraSinkCluster {
     control_connection_address: Option<SocketAddr>,
     init_handshake_complete: bool,
 
-    version: Version,
+    version: Option<Version>,
     chain_name: String,
     failed_requests: Counter,
     read_timeout: Option<Duration>,
@@ -193,8 +193,7 @@ impl CassandraSinkCluster {
             control_connection: None,
             control_connection_address: None,
             init_handshake_complete: false,
-            // Dummy value that gets replaced on the first message
-            version: Version::V4,
+            version: None,
             chain_name,
             failed_requests,
             read_timeout: receive_timeout,
@@ -232,16 +231,23 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
 
 impl CassandraSinkCluster {
     async fn send_message(&mut self, mut messages: Messages) -> ChainResponse {
-        if let Some(message) = messages.first() {
-            if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) = message.metadata() {
-                self.version = version;
+        if self.version.is_none() {
+            if let Some(message) = messages.first() {
+                if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
+                    message.metadata()
+                {
+                    self.version = Some(version);
+                } else {
+                    return Err(anyhow!(
+                        "Failed to extract cassandra version from incoming message: Not a valid cassandra message"
+                    ));
+                }
             } else {
-                return Err(anyhow!(
-                    "Failed to extract cassandra version from incoming message: Not a valid cassandra message"
-                ));
+                // It's an invariant that self.version is Some.
+                // Since we were unable to set it, we need to return immediately.
+                // This is ok because if there are no messages then we have no work to do anyway.
+                return Ok(vec![]);
             }
-        } else {
-            return Ok(vec![]);
         }
 
         if self.nodes_rx.has_changed()? {
@@ -280,13 +286,13 @@ impl CassandraSinkCluster {
             let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.peers";
             messages.insert(
                 table_to_rewrite.index + 1,
-                create_query(&messages, query, self.version)?,
+                create_query(&messages, query, self.version.unwrap())?,
             );
             if let RewriteTableTy::Peers = table_to_rewrite.ty {
                 let query = "SELECT rack, data_center, schema_version, tokens, release_version FROM system.local";
                 messages.insert(
                     table_to_rewrite.index + 2,
-                    create_query(&messages, query, self.version)?,
+                    create_query(&messages, query, self.version.unwrap())?,
                 );
             }
         }
@@ -401,7 +407,7 @@ impl CassandraSinkCluster {
                         .get_replica_node_in_dc(
                             execute,
                             &self.local_shotover_node.rack,
-                            self.version,
+                            self.version.unwrap(),
                             &mut self.rng,
                         )
                         .await
@@ -439,7 +445,7 @@ impl CassandraSinkCluster {
                                             }),
                                             stream_id: metadata.stream_id,
                                             tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
-                                            version: self.version,
+                                            version: self.version.unwrap(),
                                             warnings: vec![],
                                         },
                                     ))),
@@ -468,7 +474,7 @@ impl CassandraSinkCluster {
             self.read_timeout,
             &self.failed_requests,
             responses_future,
-            self.version,
+            self.version.unwrap(),
         )
         .await?;
 
@@ -477,7 +483,7 @@ impl CassandraSinkCluster {
                 self.read_timeout,
                 &self.failed_requests,
                 responses_future_prepare,
-                self.version,
+                self.version.unwrap(),
             )
             .await?;
 

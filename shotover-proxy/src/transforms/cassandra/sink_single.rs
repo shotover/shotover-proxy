@@ -39,7 +39,7 @@ impl CassandraSinkSingleConfig {
 }
 
 pub struct CassandraSinkSingle {
-    version: Version,
+    version: Option<Version>,
     address: String,
     outbound: Option<CassandraConnection>,
     chain_name: String,
@@ -78,8 +78,7 @@ impl CassandraSinkSingle {
         let receive_timeout = timeout.map(Duration::from_secs);
 
         CassandraSinkSingle {
-            // Dummy value that gets replaced on the first message
-            version: Version::V4,
+            version: None,
             address,
             outbound: None,
             chain_name,
@@ -94,16 +93,23 @@ impl CassandraSinkSingle {
 
 impl CassandraSinkSingle {
     async fn send_message(&mut self, messages: Messages) -> ChainResponse {
-        if let Some(message) = messages.first() {
-            if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) = message.metadata() {
-                self.version = version;
+        if self.version.is_none() {
+            if let Some(message) = messages.first() {
+                if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
+                    message.metadata()
+                {
+                    self.version = Some(version);
+                } else {
+                    return Err(anyhow!(
+                        "Failed to extract cassandra version from incoming message: Not a valid cassandra message"
+                    ));
+                }
             } else {
-                return Err(anyhow!(
-                    "Failed to extract cassandra version from incoming message: Not a valid cassandra message"
-                ));
+                // It's an invariant that self.version is Some.
+                // Since we were unable to set it, we need to return immediately.
+                // This is ok because if there are no messages then we have no work to do anyway.
+                return Ok(vec![]);
             }
-        } else {
-            return Ok(vec![]);
         }
 
         if self.outbound.is_none() {
@@ -136,7 +142,7 @@ impl CassandraSinkSingle {
             self.read_timeout,
             &self.failed_requests,
             responses_future?,
-            self.version,
+            self.version.unwrap(),
         )
         .await
     }
