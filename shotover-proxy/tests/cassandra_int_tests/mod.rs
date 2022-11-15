@@ -28,7 +28,8 @@ mod collections;
 mod functions;
 mod keyspace;
 mod native_types;
-mod prepared_statements;
+mod prepared_statements_all;
+mod prepared_statements_simple;
 #[cfg(feature = "alpha-transforms")]
 mod protect;
 mod routing;
@@ -48,7 +49,8 @@ where
     native_types::test(&connection).await;
     collections::test(&connection, driver).await;
     functions::test(&connection).await;
-    prepared_statements::test(&connection, connection_creator).await;
+    prepared_statements_simple::test(&connection, connection_creator).await;
+    prepared_statements_all::test(&connection).await;
     batch_statements::test(&connection).await;
 }
 
@@ -324,7 +326,7 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     udt::test(&connection).await;
     functions::test(&connection).await;
     // collections::test // TODO: for some this test case fails here
-    prepared_statements::test(&connection, connection_creator).await;
+    prepared_statements_simple::test(&connection, connection_creator).await;
     batch_statements::test(&connection).await;
     cache::test(&connection, &mut redis_connection, &snapshotter).await;
 }
