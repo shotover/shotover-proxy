@@ -8,7 +8,7 @@ use cassandra_protocol::frame::events::ServerEvent;
 use cassandra_protocol::frame::message_batch::{
     BatchQuery, BatchQuerySubj, BatchType, BodyReqBatch,
 };
-use cassandra_protocol::frame::message_error::ErrorBody;
+use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cassandra_protocol::frame::message_event::BodyResEvent;
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_query::BodyReqQuery;
@@ -159,6 +159,19 @@ impl CassandraFrame {
             }
             _ => nonzero!(1u32),
         })
+    }
+
+    pub fn shotover_error(stream_id: i16, version: Version, message: &str) -> Self {
+        CassandraFrame {
+            version,
+            stream_id,
+            operation: CassandraOperation::Error(ErrorBody {
+                message: format!("Internal shotover error: {message}"),
+                ty: ErrorType::Server,
+            }),
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+        }
     }
 
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {

@@ -134,7 +134,7 @@ impl NodePool {
         &mut self,
         execute: &BodyReqExecuteOwned,
         rack: &str,
-        version: &Version,
+        version: Version,
         rng: &mut SmallRng,
     ) -> Result<Option<&mut CassandraNode>, GetReplicaErr> {
         let metadata = {
@@ -161,7 +161,7 @@ impl NodePool {
             execute.query_parameters.values.as_ref().ok_or_else(|| {
                 GetReplicaErr::Other(anyhow!("Execute body does not have query parameters"))
             })?,
-            *version,
+            version,
         )
         .unwrap();
 

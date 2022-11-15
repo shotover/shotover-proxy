@@ -81,7 +81,7 @@ mod test_token_aware_router {
                 .get_replica_node_in_dc(
                     &execute_body(id.clone(), query_parameters),
                     "rack1",
-                    &Version::V4,
+                    Version::V4,
                     &mut rng,
                 )
                 .await

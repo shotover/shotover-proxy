@@ -1,12 +1,14 @@
 use super::connection::CassandraConnection;
 use crate::codec::cassandra::CassandraCodec;
 use crate::error::ChainResponse;
-use crate::message::Messages;
+use crate::frame::cassandra::CassandraMetadata;
+use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
-use crate::transforms::util::Response;
+use crate::transforms::cassandra::connection::Response;
 use crate::transforms::{Transform, Transforms, Wrapper};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use cassandra_protocol::frame::Version;
 use futures::stream::FuturesOrdered;
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
@@ -37,6 +39,7 @@ impl CassandraSinkSingleConfig {
 }
 
 pub struct CassandraSinkSingle {
+    version: Option<Version>,
     address: String,
     outbound: Option<CassandraConnection>,
     chain_name: String,
@@ -50,6 +53,7 @@ pub struct CassandraSinkSingle {
 impl Clone for CassandraSinkSingle {
     fn clone(&self) -> Self {
         CassandraSinkSingle {
+            version: self.version,
             address: self.address.clone(),
             outbound: None,
             chain_name: self.chain_name.clone(),
@@ -74,6 +78,7 @@ impl CassandraSinkSingle {
         let receive_timeout = timeout.map(Duration::from_secs);
 
         CassandraSinkSingle {
+            version: None,
             address,
             outbound: None,
             chain_name,
@@ -88,6 +93,25 @@ impl CassandraSinkSingle {
 
 impl CassandraSinkSingle {
     async fn send_message(&mut self, messages: Messages) -> ChainResponse {
+        if self.version.is_none() {
+            if let Some(message) = messages.first() {
+                if let Ok(Metadata::Cassandra(CassandraMetadata { version, .. })) =
+                    message.metadata()
+                {
+                    self.version = Some(version);
+                } else {
+                    return Err(anyhow!(
+                        "Failed to extract cassandra version from incoming message: Not a valid cassandra message"
+                    ));
+                }
+            } else {
+                // It's an invariant that self.version is Some.
+                // Since we were unable to set it, we need to return immediately.
+                // This is ok because if there are no messages then we have no work to do anyway.
+                return Ok(vec![]);
+            }
+        }
+
         if self.outbound.is_none() {
             trace!("creating outbound connection {:?}", self.address);
             self.outbound = Some(
@@ -114,8 +138,13 @@ impl CassandraSinkSingle {
             })
             .collect();
 
-        super::connection::receive(self.read_timeout, &self.failed_requests, responses_future?)
-            .await
+        super::connection::receive(
+            self.read_timeout,
+            &self.failed_requests,
+            responses_future?,
+            self.version.unwrap(),
+        )
+        .await
     }
 }
 
