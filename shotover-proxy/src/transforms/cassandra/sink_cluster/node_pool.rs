@@ -8,6 +8,7 @@ use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
+use itertools::Itertools;
 use rand::prelude::*;
 use split_iter::Splittable;
 use std::sync::Arc;
@@ -171,12 +172,14 @@ impl NodePool {
                 Murmur3Token::generate(&routing_key),
                 keyspace.replication_factor,
             )
+            .unique()
             .collect::<Vec<uuid::Uuid>>();
 
         let (dc_replicas, rack_replicas) = self
             .nodes
             .iter_mut()
             .filter(|node| replica_host_ids.contains(&node.host_id) && node.is_up)
+            .unique_by(|node| node.rack.clone())
             .split(|node| node.rack == rack);
 
         if let Some(rack_replica) = rack_replicas.choose(rng) {
