@@ -24,7 +24,7 @@ Below we can see an example of a Redis node and it's Shotover sidecar. Notice th
 ```YAML
 
 redis-node-0:
-  image: docker.io/bitnami/redis-cluster:6.0-debian-10
+  image: bitnami/redis-cluster:6.0-debian-10
   networks:
     cluster_subnet:
       ipv4_address: 172.16.1.2
