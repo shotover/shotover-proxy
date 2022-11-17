@@ -129,12 +129,11 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
-    let _compose =
-        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v3.yaml");
+    let _compose = DockerCompose::new("example-configs/cassandra-cluster-v3/docker-compose.yaml");
 
     {
         let _shotover_manager = ShotoverManager::from_topology_file(
-            "example-configs/cassandra-cluster/topology-dummy-peers-v3.yaml",
+            "example-configs/cassandra-cluster-v3/topology-dummy-peers.yaml",
         );
 
         let connection = || async {
@@ -162,8 +161,7 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
-    let compose =
-        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml");
+    let compose = DockerCompose::new("example-configs/cassandra-cluster-v4/docker-compose.yaml");
 
     let connection = || async {
         let mut connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
@@ -174,7 +172,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     };
     {
         let _shotover_manager = ShotoverManager::from_topology_file(
-            "example-configs/cassandra-cluster/topology-v4.yaml",
+            "example-configs/cassandra-cluster-v4/topology.yaml",
         );
 
         standard_test_suite(&connection, driver).await;
@@ -191,7 +189,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 
     {
         let _shotover_manager = ShotoverManager::from_topology_file(
-            "example-configs/cassandra-cluster/topology-dummy-peers-v4.yaml",
+            "example-configs/cassandra-cluster-v4/topology-dummy-peers.yaml",
         );
 
         cluster::single_rack_v4::test_dummy_peers(&connection().await).await;
@@ -200,7 +198,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     cluster::single_rack_v4::test_topology_task(None, Some(9044)).await;
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
+        ShotoverManager::from_topology_file("example-configs/cassandra-cluster-v4/topology.yaml");
     cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, false).await;
 }
 
@@ -211,11 +209,10 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_single_rack_node_lost(#[case] driver: CassandraDriver) {
-    let compose =
-        DockerCompose::new("example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml");
+    let compose = DockerCompose::new("example-configs/cassandra-cluster-v4/docker-compose.yaml");
 
     let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster/topology-v4.yaml");
+        ShotoverManager::from_topology_file("example-configs/cassandra-cluster-v4/topology.yaml");
     cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, true).await;
 }
 
