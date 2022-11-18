@@ -1,10 +1,11 @@
 version: '3.3'
 services:
   redis-node-0:
-    image: &image docker.io/bitnami/redis-cluster:6.0-debian-10
+    image: &image bitnami/redis-cluster:6.0-debian-10
     ports:
       - "2230:6379"
-    environment: &environment
+    environment:
+      &environment
       - 'REDIS_PASSWORD=shotover'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
