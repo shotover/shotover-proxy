@@ -279,9 +279,9 @@ pub async fn test_node_going_down(
         // stop one of the containers to trigger a status change event.
         // event_connection_direct is connecting to cassandra-one, so make sure to instead kill caassandra-two.
         if kill {
-            compose.kill_service("cassandra-two").await;
+            compose.kill_service("cassandra-two");
         } else {
-            compose.stop_service("cassandra-two").await;
+            compose.stop_service("cassandra-two");
         }
 
         loop {
