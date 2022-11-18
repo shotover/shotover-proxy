@@ -144,8 +144,8 @@ impl DockerCompose {
                 self.wait_for_log("Startup complete", 2)
             }
             "example-configs-docker/cassandra-peers-rewrite/docker-compose.yaml"
-            | "example-configs/cassandra-cluster/docker-compose-cassandra-v4.yaml"
-            | "example-configs/cassandra-cluster/docker-compose-cassandra-v3.yaml"
+            | "example-configs/cassandra-cluster-v4/docker-compose.yaml"
+            | "example-configs/cassandra-cluster-v3/docker-compose.yaml"
             | "example-configs/cassandra-cluster-multi-rack/docker-compose.yaml"
             | "example-configs/cassandra-cluster-tls/docker-compose.yaml" => {
                 self.wait_for_log("Startup complete", 3)
