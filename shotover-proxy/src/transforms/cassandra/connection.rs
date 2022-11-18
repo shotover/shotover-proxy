@@ -18,9 +18,8 @@ use tokio::net::ToSocketAddrs;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{error, Instrument};
+use tracing::Instrument;
 
-/// Represents a `Request` to a `CassandraConnection`
 #[derive(Debug)]
 struct Request {
     message: Message,
@@ -47,6 +46,8 @@ pub struct CassandraConnection {
 }
 
 impl CassandraConnection {
+    /// If any cassandra events are received they are sent on the pushed_messages_tx field.
+    /// If the Receiver corresponding to pushed_messages_tx is dropped CassandraConnection will stop sending events but will otherwise function normally.
     pub async fn new<A: ToSocketAddrs + ToHostname + std::fmt::Debug>(
         connect_timeout: Duration,
         host: A,
@@ -56,7 +57,7 @@ impl CassandraConnection {
     ) -> Result<Self> {
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Request>();
         let (return_tx, return_rx) = mpsc::unbounded_channel::<ReturnChannel>();
-        let (rx_process_has_shutdown_tx, rx_process_has_shutdown_rx) = oneshot::channel::<()>();
+        let (rx_process_has_shutdown_tx, rx_process_has_shutdown_rx) = oneshot::channel::<String>();
 
         if let Some(tls) = tls.as_mut() {
             let tls_stream = tls.connect(connect_timeout, host).await?;
@@ -110,6 +111,17 @@ impl CassandraConnection {
     }
 
     /// Send a `Message` to this `CassandraConnection` and expect a response on `return_chan`
+    ///
+    /// The return_chan will never be closed without first sending a response.
+    /// However there is no internal timeout so the user will likely want to add their own timeout.
+    ///
+    /// The user is allowed to drop the receive half of return_chan.
+    /// In that case the request may or may not succeed but the user will receive no indication of this.
+    ///
+    /// If an IO error occurs the Response will contain an Err.
+    ///
+    /// If an internal invariant is broken the internal tasks may panic and external invariants will no longer be upheld.
+    /// But this indicates a bug within CassandraConnection and should be fixed here.
     pub fn send(&self, message: Message, return_chan: oneshot::Sender<Response>) -> Result<()> {
         // Convert the message to `Request` and send upstream
         if let Some(stream_id) = message.stream_id() {
@@ -126,42 +138,52 @@ impl CassandraConnection {
     }
 }
 
-async fn tx_process<T: AsyncWrite>(
-    write: WriteHalf<T>,
-    out_rx: mpsc::UnboundedReceiver<Request>,
-    return_tx: mpsc::UnboundedSender<ReturnChannel>,
-    codec: CassandraCodec,
-    rx_process_has_shutdown_rx: oneshot::Receiver<()>,
-) {
-    if let Err(err) =
-        tx_process_fallible(write, out_rx, return_tx, codec, rx_process_has_shutdown_rx).await
-    {
-        error!("{:?}", err.context("tx_process task terminated"));
-    }
-}
+// tx and rx task lifetimes:
+// * tx task will only shutdown when the user requests it
+// * rx task will only shutdown when the tx task requests it or when the rx task hits an IO error
+// * tx task will always outlive rx task
 
-async fn tx_process_fallible<T: AsyncWrite>(
+async fn tx_process<T: AsyncWrite>(
     write: WriteHalf<T>,
     mut out_rx: mpsc::UnboundedReceiver<Request>,
     return_tx: mpsc::UnboundedSender<ReturnChannel>,
     codec: CassandraCodec,
-    rx_process_has_shutdown_rx: oneshot::Receiver<()>,
-) -> Result<()> {
+    mut rx_process_has_shutdown_rx: oneshot::Receiver<String>,
+) {
     let mut in_w = FramedWrite::new(write, codec);
+
+    // Continue responding to requests for as long as the CassandraConnection is kept alive
+    // If we encounter an IO error the connection is now dead but we must keep the task running so that each request gets a response.
+    // Any requests received while the connection is dead will immediately be responded with the error that put the connection into a dead state.
+    let mut connection_dead_error: Option<String> = None;
     loop {
         if let Some(request) = out_rx.recv().await {
-            in_w.send(vec![request.message]).await?;
-            return_tx.send(ReturnChannel {
+            if let Some(error) = &connection_dead_error {
+                send_error_to_request(request.return_chan, request.stream_id, error);
+            } else if let Err(error) = in_w.send(vec![request.message]).await {
+                let error = format!("{:?}", error);
+                send_error_to_request(request.return_chan, request.stream_id, &error);
+                connection_dead_error = Some(error.clone());
+            } else if let Err(mpsc::error::SendError(return_chan)) = return_tx.send(ReturnChannel {
                 return_chan: request.return_chan,
                 stream_id: request.stream_id,
-            })?;
-        } else {
-            // transform is shutting down, time to cleanly shutdown both tx_process and rx_process.
-            // We need to ensure that the rx_process task has shutdown before closing the write half of the tcpstream
-            // If we dont do this, rx_process may attempt to read from the tcp stream after the write half has closed.
-            // Closing the write half will send a TCP FIN ACK to the server.
-            // The server may then respond with a TCP RST, after which any reads from the read half would return a ConnectionReset error
-
+            }) {
+                let error = rx_process_has_shutdown_rx
+                    .try_recv()
+                    .expect("Rx task must send this before closing return_tx");
+                send_error_to_request(return_chan.return_chan, return_chan.stream_id, &error);
+                connection_dead_error = Some(error.clone());
+            }
+        }
+        // CassandraConnection has been dropped, time to cleanly shutdown both tx_process and rx_process.
+        // We need to ensure that the rx_process task has shutdown before closing the write half of the tcpstream
+        // If we dont do this, rx_process may attempt to read from the tcp stream after the write half has closed.
+        // Closing the write half will send a TCP FIN ACK to the server.
+        // The server may then respond with a TCP RST, after which any reads from the read half would return a ConnectionReset error
+        //
+        // If the connection is already dead then we cant cleanly shutdown because rx_process_has_shutdown_rx has already completed.
+        // But its fine to skip clean shutdown in this case because once rx_process_has_shutdown_rx has been sent the rx task will never read from the connection again.
+        else if connection_dead_error.is_none() {
             // first we drop return_tx which will instruct rx_process to shutdown
             std::mem::drop(return_tx);
 
@@ -171,32 +193,27 @@ async fn tx_process_fallible<T: AsyncWrite>(
             // Now that rx_process is shutdown we can safely drop the write half of the
             // tcp stream without the read half hitting errors due to the connection being closed or reset.
             std::mem::drop(in_w);
-            return Ok(());
+            return;
         }
     }
 }
 
-async fn rx_process<T: AsyncRead>(
-    read: ReadHalf<T>,
-    return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
-    codec: CassandraCodec,
-    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
-    rx_process_has_shutdown_tx: oneshot::Sender<()>,
-) {
-    if let Err(err) = rx_process_fallible(read, return_rx, codec, pushed_messages_tx).await {
-        error!("{:?}", err.context("rx_process task terminated"));
-    }
-
-    // Just dropping this is enough to notify of shutdown
-    std::mem::drop(rx_process_has_shutdown_tx);
+fn send_error_to_request(return_chan: oneshot::Sender<Response>, stream_id: i16, error: &str) {
+    return_chan
+        .send(Response {
+            stream_id,
+            response: Err(anyhow!(error.to_owned())),
+        })
+        .ok();
 }
 
-async fn rx_process_fallible<T: AsyncRead>(
+async fn rx_process<T: AsyncRead>(
     read: ReadHalf<T>,
     mut return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
     codec: CassandraCodec,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
-) -> Result<()> {
+    rx_process_has_shutdown_tx: oneshot::Sender<String>,
+) {
     let mut reader = FramedRead::new(read, codec);
 
     // Invariants:
@@ -227,7 +244,7 @@ async fn rx_process_fallible<T: AsyncRead>(
                             let meta = m.metadata();
                             if let Ok(Metadata::Cassandra(CassandraMetadata { opcode: Opcode::Event, .. })) = meta {
                                 if let Some(pushed_messages_tx) = pushed_messages_tx.as_ref() {
-                                    pushed_messages_tx.send(vec![m]).unwrap();
+                                    pushed_messages_tx.send(vec![m]).ok();
                                 }
                             } else if let Some(stream_id) = m.stream_id() {
                                 match from_tx_process.remove(&stream_id) {
@@ -235,39 +252,85 @@ async fn rx_process_fallible<T: AsyncRead>(
                                         from_server.insert(stream_id, m);
                                     },
                                     Some(return_tx) => {
-                                        return_tx.send(Response { stream_id, response: Ok(m) })
-                                            .map_err(|_| anyhow!("couldn't send message"))?;
+                                        return_tx.send(Response { stream_id, response: Ok(m) }).ok();
                                     }
                                 }
                             }
                         }
                     }
                     Some(Err(CodecReadError::Io(err))) => {
-                        return Err(anyhow!(err)
-                            .context("Encountered IO error while communicating with destination cassandra node"))
+                        // Manually handle Io errors so they can use the nicer Display formatting
+                        let error_message = format!("IO error: {err}");
+                        send_errors_and_shutdown(return_rx, from_tx_process, rx_process_has_shutdown_tx, &error_message).await;
+                        return;
                     }
                     Some(Err(err)) => {
-                        return Err(anyhow!("{:?}", err).context("Encountered error while communicating with destination cassandra node"));
+                        // Anyhow errors should be formatted with Debug
+                        let error_message = format!("{err:?}");
+                        send_errors_and_shutdown(return_rx, from_tx_process, rx_process_has_shutdown_tx, &error_message).await;
+                        return;
                     }
-                    None => return Ok(())
+                    None => {
+                        // We know the connection wasnt closed by the tx task dropping its writer because the tx task must outlive the rx task
+                        send_errors_and_shutdown(return_rx, from_tx_process, rx_process_has_shutdown_tx, "The destination cassandra node closed the conection").await;
+                        return;
+                    }
                 }
             },
-            return_chan = return_rx.recv() => {
-                if let Some(ReturnChannel { return_chan, stream_id }) = return_chan {
+            original_request = return_rx.recv() => {
+                if let Some(ReturnChannel { return_chan, stream_id }) = original_request {
                     match from_server.remove(&stream_id) {
                         None => {
                             from_tx_process.insert(stream_id, return_chan);
                         }
                         Some(m) => {
-                            return_chan.send(Response { stream_id, response: Ok(m) })
-                                .map_err(|_| anyhow!("couldn't send message"))?;
+                            return_chan.send(Response { stream_id, response: Ok(m) }).ok();
                         }
                     }
                 } else {
-                    return Ok(())
+                    // tx task has requested we shutdown cleanly
+
+                    // confirm we are shutting down immediately by dropping this
+                    std::mem::drop(rx_process_has_shutdown_tx);
+                    return;
                 }
             },
         }
+    }
+}
+
+async fn send_errors_and_shutdown(
+    mut return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
+    mut waiting: HashMap<i16, oneshot::Sender<Response>>,
+    rx_process_has_shutdown_tx: oneshot::Sender<String>,
+    message: &str,
+) {
+    // Ensure we send this before closing return_rx.
+    // This means that when the tx task finds return_rx is closed, it can rely on rx_process_has_shutdown_tx being already sent
+    rx_process_has_shutdown_tx
+        .send(message.to_owned())
+        .expect("Tx task must outlive rx task");
+
+    return_rx.close();
+
+    for (stream_id, return_tx) in waiting.drain() {
+        return_tx
+            .send(Response {
+                stream_id,
+                response: Err(anyhow!(message.to_owned())),
+            })
+            .ok();
+    }
+
+    // return_rx is already closed so by looping over all remaning values we ensure there are no dropped unused return_chan's
+    while let Some(return_chan) = return_rx.recv().await {
+        return_chan
+            .return_chan
+            .send(Response {
+                stream_id: return_chan.stream_id,
+                response: Err(anyhow!(message.to_owned())),
+            })
+            .ok();
     }
 }
 
@@ -305,13 +368,13 @@ pub async fn receive(
     Ok(responses)
 }
 
-pub async fn receive_message(
+async fn receive_message(
     failed_requests: &metrics::Counter,
     results: &mut FuturesOrdered<oneshot::Receiver<Response>>,
     version: Version,
 ) -> Result<Message> {
     match results.next().await {
-        Some(result) => match result? {
+        Some(result) => match result.expect("The tx_process task must always return a value") {
             Response {
                 response: Ok(message),
                 ..
@@ -328,9 +391,12 @@ pub async fn receive_message(
             Response {
                 stream_id,
                 response: Err(err),
-            } => Ok(Message::from_frame(Frame::Cassandra(
-                CassandraFrame::shotover_error(stream_id, version, &err.to_string()),
-            ))),
+            } => {
+                tracing::error!("receive() error: {:?}", err);
+                Ok(Message::from_frame(Frame::Cassandra(
+                    CassandraFrame::shotover_error(stream_id, version, &format!("{:?}", err)),
+                )))
+            }
         },
         None => unreachable!("Ran out of responses"),
     }
