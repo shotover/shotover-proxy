@@ -224,10 +224,11 @@ impl CassandraFrame {
                                         .into_iter()
                                         .map(|row| {
                                             row.into_iter()
-                                                .map(|row_content| {
-                                                    MessageValue::Bytes(
-                                                        row_content.into_bytes().unwrap().into(),
-                                                    )
+                                                .map(|row_content| match row_content.into_bytes() {
+                                                    None => MessageValue::Null,
+                                                    Some(value) => {
+                                                        MessageValue::Bytes(value.into())
+                                                    }
                                                 })
                                                 .collect()
                                         })
