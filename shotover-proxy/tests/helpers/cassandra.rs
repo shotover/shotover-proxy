@@ -753,6 +753,8 @@ pub enum ResultValue {
     /// Can be used by the user in assertions to allow any value.
     #[allow(dead_code)]
     Any,
+    #[allow(dead_code)]
+    AnyList(Vec<ResultValue>),
 }
 
 impl PartialEq for ResultValue {
@@ -785,6 +787,11 @@ impl PartialEq for ResultValue {
             (Self::Null, Self::Null) => true,
             (Self::Any, _) => true,
             (_, Self::Any) => true,
+            (Self::AnyList(l0), Self::AnyList(r0)) => l0 == r0,
+            (Self::AnyList(l0), Self::Set(r0)) => l0 == r0,
+            (Self::AnyList(l0), Self::List(r0)) => l0 == r0,
+            (Self::Set(l0), Self::AnyList(r0)) => l0 == r0,
+            (Self::List(l0), Self::AnyList(r0)) => l0 == r0,
             _ => false,
         }
     }
