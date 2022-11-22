@@ -262,6 +262,10 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 Wrapper::flush_with_chain_name(self.chain.name.clone()),
                 "".into(),
             )
+            .instrument(tracing::error_span!(
+                "shutdown",
+                source = self.source_name.as_str()
+            ))
             .await
         {
             Ok(_) => info!("source {} was shutdown", self.source_name),
