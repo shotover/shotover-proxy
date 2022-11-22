@@ -302,7 +302,7 @@ checksum = "8234d29d30873ab5a41e3557b8515d3ecbaefb1ea5be579425b3b0074b6d0e40"
 [[package]]
 name = "cassandra-protocol"
 version = "2.0.1"
-source = "git+https://github.com/krojew/cdrs-tokio?branch=8.0-dev#85fbb2415b7a2af92225a49c176a1fec298e1546"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=8.0-dev#c207f4ea0c268dc5b1a8031aa820c0f103377ed8"
 dependencies = [
  "arc-swap",
  "arrayref",
@@ -337,7 +337,7 @@ checksum = "76a284da2e6fe2092f2353e51713435363112dfd60030e22add80be333fb928f"
 [[package]]
 name = "cdrs-tokio"
 version = "7.0.2"
-source = "git+https://github.com/krojew/cdrs-tokio?branch=8.0-dev#85fbb2415b7a2af92225a49c176a1fec298e1546"
+source = "git+https://github.com/conorbros/cdrs-tokio?branch=8.0-dev#c207f4ea0c268dc5b1a8031aa820c0f103377ed8"
 dependencies = [
  "arc-swap",
  "atomic",

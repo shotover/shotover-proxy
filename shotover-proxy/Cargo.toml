@@ -64,7 +64,7 @@ halfbrown = "0.1.11"
 
 # Transform dependencies
 redis-protocol = { version = "4.0.1", features = ["decode-mut"] }
-cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cassandra-protocol = { git = "https://github.com/conorbros/cdrs-tokio", branch = "8.0-dev" }
 crc16 = "0.4.0"
 ordered-float = { version = "3.0.0", features = ["serde"] }
 
@@ -91,7 +91,7 @@ hex-literal = "0.3.3"
 nix = "0.25.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
-cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cdrs-tokio = { git = "https://github.com/conorbros/cdrs-tokio", branch = "8.0-dev" }
 scylla = { git = "https://github.com/scylladb/scylla-rust-driver", features = ["ssl"] }
 rstest = "0.15.0"
 
