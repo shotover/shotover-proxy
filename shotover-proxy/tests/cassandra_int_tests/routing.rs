@@ -3,18 +3,18 @@ use crate::helpers::cassandra::{CassandraConnection, CassandraDriver};
 mod single_key {
     use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
 
-    pub async fn create_keyspace(connection: &mut CassandraConnection) {
+    pub async fn create_keyspace(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
     }
 
-    pub async fn create_table(connection: &mut CassandraConnection) {
+    pub async fn create_table(connection: &CassandraConnection) {
         let create_table_cql =
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_single (key int PRIMARY KEY, name text);";
         run_query(connection, create_table_cql).await;
     }
 
-    pub async fn test(shotover: &mut CassandraConnection, cassandra: &CassandraConnection) {
+    pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         create_keyspace(shotover).await;
         create_table(shotover).await;
 
@@ -77,18 +77,18 @@ mod single_key {
 mod compound_key {
     use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
 
-    async fn create_keyspace(connection: &mut CassandraConnection) {
+    async fn create_keyspace(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
     }
 
-    async fn create_table(connection: &mut CassandraConnection) {
+    async fn create_table(connection: &CassandraConnection) {
         let create_table_cql =
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_compound (key int, name text, age int, blah text, PRIMARY KEY (key, age)) WITH CLUSTERING ORDER BY (age DESC);";
         run_query(connection, create_table_cql).await;
     }
 
-    pub async fn test(shotover: &mut CassandraConnection, cassandra: &CassandraConnection) {
+    pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         create_keyspace(shotover).await;
         create_table(shotover).await;
 
@@ -185,18 +185,18 @@ mod compound_key {
 mod composite_key {
     use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
 
-    async fn create_keyspace(connection: &mut CassandraConnection) {
+    async fn create_keyspace(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
         run_query(connection, create_ks).await;
     }
 
-    async fn create_table(connection: &mut CassandraConnection) {
+    async fn create_table(connection: &CassandraConnection) {
         let create_table_cql =
         "CREATE TABLE IF NOT EXISTS test_routing_ks.my_test_table_composite (key int, name text, age int, blah text, PRIMARY KEY((key, name), age));";
         run_query(connection, create_table_cql).await;
     }
 
-    pub async fn test(shotover: &mut CassandraConnection, cassandra: &CassandraConnection) {
+    pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         create_keyspace(shotover).await;
         create_table(shotover).await;
 
@@ -330,7 +330,7 @@ pub async fn test(
         .await;
     let cassandra = CassandraConnection::new(cassandra_contact_point, cassandra_port, driver).await;
 
-    single_key::test(&mut shotover, &cassandra).await;
-    composite_key::test(&mut shotover, &cassandra).await;
-    compound_key::test(&mut shotover, &cassandra).await;
+    single_key::test(&shotover, &cassandra).await;
+    composite_key::test(&shotover, &cassandra).await;
+    compound_key::test(&shotover, &cassandra).await;
 }

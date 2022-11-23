@@ -158,7 +158,7 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
 }
 
 #[rstest]
-#[case::cdrs(CdrsTokio)] // TODO
+#[case::cdrs(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
@@ -179,7 +179,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         );
 
         standard_test_suite(&connection, driver).await;
-        cluster::single_rack_v4::test(&connection().await).await;
+        cluster::single_rack_v4::test(&connection().await, driver).await;
 
         #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
@@ -197,7 +197,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             "example-configs/cassandra-cluster-v4/topology-dummy-peers.yaml",
         );
 
-        cluster::single_rack_v4::test_dummy_peers(&connection().await).await;
+        cluster::single_rack_v4::test_dummy_peers(&connection().await, driver).await;
     }
 
     cluster::single_rack_v4::test_topology_task(None, Some(9044)).await;
@@ -297,7 +297,7 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
         };
 
         standard_test_suite(&connection, driver).await;
-        cluster::single_rack_v4::test(&connection().await).await;
+        cluster::single_rack_v4::test(&connection().await, driver).await;
     }
 
     cluster::single_rack_v4::test_topology_task(Some(ca_cert), None).await;

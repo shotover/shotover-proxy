@@ -2,7 +2,6 @@ use cassandra_protocol::frame::{Serialize, Version};
 use cassandra_protocol::query::QueryValues;
 use cassandra_protocol::types::value::Value;
 use cassandra_protocol::types::CIntShort;
-use cassandra_protocol::types::SHORT_LEN;
 use itertools::Itertools;
 use std::io::{Cursor, Write};
 
@@ -57,18 +56,8 @@ fn serialize_routing_key_with_indexes(
 
 // https://github.com/apache/cassandra/blob/3a950b45c321e051a9744721408760c568c05617/src/java/org/apache/cassandra/db/marshal/CompositeType.java#L39
 fn serialize_routing_value(cursor: &mut Cursor<&mut Vec<u8>>, value: &Vec<u8>, version: Version) {
-    let temp_size: CIntShort = 0;
-    temp_size.serialize(cursor, version);
-
-    let before_value_pos = cursor.position();
+    let size: CIntShort = value.len().try_into().unwrap();
+    size.serialize(cursor, version);
     value.serialize(cursor, version);
-
-    let after_value_pos = cursor.position();
-    cursor.set_position(before_value_pos - SHORT_LEN as u64);
-
-    let value_size: CIntShort = (after_value_pos - before_value_pos) as CIntShort;
-    value_size.serialize(cursor, version);
-
-    cursor.set_position(after_value_pos);
     let _ = cursor.write(&[0]);
 }
