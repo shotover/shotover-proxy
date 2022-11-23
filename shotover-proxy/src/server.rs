@@ -251,7 +251,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 // Only prune the list every so often
                 // theres no point in doing it every iteration because most likely none of the handles will have completed
                 if self.connection_count % 1000 == 0 {
-                    self.connection_handles.retain(|x| x.is_finished());
+                    self.connection_handles.retain(|x| !x.is_finished());
                 }
                 Ok::<(), anyhow::Error>(())
             }
