@@ -1,6 +1,6 @@
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
-use crate::transforms::{ChainResponse, Transform, Transforms, Wrapper};
+use crate::transforms::{ChainResponse, Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -12,8 +12,8 @@ pub struct DebugReturnerConfig {
 }
 
 impl DebugReturnerConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::DebugReturner(DebugReturner::new(
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::DebugReturner(DebugReturner::new(
             self.response.clone(),
         )))
     }

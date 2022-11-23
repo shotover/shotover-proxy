@@ -3,7 +3,7 @@ use crate::message::{IntSize, Message, MessageValue};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::{
     error::ChainResponse,
-    transforms::{Transform, Transforms, Wrapper},
+    transforms::{Transform, TransformBuilder, Wrapper},
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -19,8 +19,8 @@ pub struct CassandraPeersRewriteConfig {
 }
 
 impl CassandraPeersRewriteConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::CassandraPeersRewrite(
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::CassandraPeersRewrite(
             CassandraPeersRewrite::new(self.port),
         ))
     }

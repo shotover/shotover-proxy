@@ -1,10 +1,33 @@
 use crate::error::ChainResponse;
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{Transform, Wrapper};
 
 use async_trait::async_trait;
 use tokio::macros::support::thread_rng_n;
 use tracing::warn;
+
+#[derive(Debug, Clone)]
+pub struct SamplerBuilder {
+    pub numerator: u32,
+    pub denominator: u32,
+    pub sample_chain: TransformChainBuilder,
+}
+
+impl SamplerBuilder {
+    pub fn new() -> SamplerBuilder {
+        SamplerBuilder {
+            numerator: 1,
+            denominator: 100,
+            sample_chain: TransformChainBuilder::new(vec![], "dummy".to_string()),
+        }
+    }
+}
+
+impl Default for SamplerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Sampler {
@@ -13,21 +36,7 @@ pub struct Sampler {
     sample_chain: TransformChain,
 }
 
-impl Default for Sampler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Sampler {
-    pub fn new() -> Sampler {
-        Sampler {
-            numerator: 1,
-            denominator: 100,
-            sample_chain: TransformChain::new(vec![], "dummy".to_string()),
-        }
-    }
-
     fn get_name(&self) -> &'static str {
         "Sampler"
     }

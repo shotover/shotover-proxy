@@ -1,7 +1,7 @@
 use crate::{
     error::ChainResponse,
     message::Message,
-    transforms::{Transform, Transforms, Wrapper},
+    transforms::{Transform, TransformBuilder, Wrapper},
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -22,8 +22,8 @@ pub struct RequestThrottlingConfig {
 }
 
 impl RequestThrottlingConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::RequestThrottling(RequestThrottling {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::RequestThrottling(RequestThrottling {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
             ))),
@@ -92,20 +92,20 @@ impl Transform for RequestThrottling {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::transforms::chain::TransformChain;
+    use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::null::Null;
-    use crate::transforms::Transforms;
+    use crate::transforms::TransformBuilder;
 
     #[test]
     fn test_validate() {
         {
-            let chain = TransformChain::new(
+            let chain = TransformChainBuilder::new(
                 vec![
-                    Transforms::RequestThrottling(RequestThrottling {
+                    TransformBuilder::RequestThrottling(RequestThrottling {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(20u32)))),
                         max_requests_per_second: nonzero!(20u32),
                     }),
-                    Transforms::Null(Null::default()),
+                    TransformBuilder::Null(Null::default()),
                 ],
                 "test-chain".to_string(),
             );
@@ -121,13 +121,13 @@ mod test {
         }
 
         {
-            let chain = TransformChain::new(
+            let chain = TransformChainBuilder::new(
                 vec![
-                    Transforms::RequestThrottling(RequestThrottling {
+                    TransformBuilder::RequestThrottling(RequestThrottling {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(100u32)))),
                         max_requests_per_second: nonzero!(100u32),
                     }),
-                    Transforms::Null(Null::default()),
+                    TransformBuilder::Null(Null::default()),
                 ],
                 "test-chain".to_string(),
             );

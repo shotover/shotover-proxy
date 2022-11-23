@@ -6,7 +6,7 @@ use crate::message::{Message, Messages};
 use crate::server::CodecReadError;
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::stream::{SplitSink, SplitStream};
@@ -29,9 +29,9 @@ pub struct RedisSinkSingleConfig {
 }
 
 impl RedisSinkSingleConfig {
-    pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
+    pub async fn get_transform(&self, chain_name: String) -> Result<TransformBuilder> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
-        Ok(Transforms::RedisSinkSingle(RedisSinkSingle::new(
+        Ok(TransformBuilder::RedisSinkSingle(RedisSinkSingle::new(
             self.address.clone(),
             tls,
             chain_name,
