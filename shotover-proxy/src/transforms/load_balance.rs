@@ -86,11 +86,10 @@ mod test {
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::load_balance::ConnectionBalanceAndPool;
     use crate::transforms::{Transforms, Wrapper};
-    use anyhow::Result;
     use std::sync::Arc;
 
     #[tokio::test(flavor = "multi_thread")]
-    pub async fn test_balance() -> Result<()> {
+    pub async fn test_balance() {
         let transform = Transforms::PoolConnections(ConnectionBalanceAndPool {
             active_connection: None,
             max_connections: 3,
@@ -106,11 +105,11 @@ mod test {
         let mut chain = TransformChain::new(vec![transform], "test".to_string());
 
         for _ in 0..90 {
-            let r = chain
+            chain
                 .clone()
                 .process_request(Wrapper::new(Messages::new()), "test_client".to_string())
-                .await;
-            assert!(r.is_ok());
+                .await
+                .unwrap();
         }
 
         match chain.chain.remove(0) {
@@ -123,7 +122,5 @@ mod test {
             }
             _ => panic!("whoops"),
         }
-
-        Ok(())
     }
 }
