@@ -264,6 +264,10 @@ pub async fn test_node_going_down(
     run_query(&connection_shotover, "CREATE KEYSPACE cluster_single_rack_node_going_down WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 2 };").await;
     run_query(&connection_shotover, "CREATE TABLE cluster_single_rack_node_going_down.test_table (pk varchar PRIMARY KEY, col1 int, col2 boolean);").await;
 
+    // setup data to read
+    run_query(&connection_shotover, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk1', 42, true);").await;
+    run_query(&connection_shotover, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk2', 413, false);").await;
+
     {
         let event_connection_direct =
             CassandraConnection::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio).await;
@@ -322,14 +326,36 @@ pub async fn test_node_going_down(
 
         let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
-        // setup data to read
-        run_query(&new_connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk1', 42, true);").await;
-        run_query(&new_connection, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk2', 413, false);").await;
-
         // test that shotover handles new connections after node goes down
         test_connection_handles_node_down(&new_connection).await;
 
         // test that shotover handles preexisting connections after node goes down
+        test_connection_handles_node_down(&connection_shotover).await;
+
+        compose.start_service("cassandra-two");
+
+        // The direct connection should allow all events to pass through
+        let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            event,
+            ServerEvent::StatusChange(StatusChange {
+                change_type: StatusChangeType::Up,
+                addr: "172.16.1.3:9044".parse().unwrap()
+            })
+        );
+        // we have already received an event directly from the cassandra instance so its reasonable to
+        // expect shotover to have processed that event within 10 seconds if it was ever going to
+        timeout(Duration::from_secs(10), event_recv_shotover.recv())
+            .await
+            .expect_err("CassandraSinkCluster must filter out this event");
+
+        let new_new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+
+        test_connection_handles_node_down(&new_new_connection).await;
+        test_connection_handles_node_down(&new_connection).await;
         test_connection_handles_node_down(&connection_shotover).await;
     }
 
