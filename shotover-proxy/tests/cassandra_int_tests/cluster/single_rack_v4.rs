@@ -1,15 +1,14 @@
-use cassandra_protocol::events::ServerEvent;
-use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
-use test_helpers::docker_compose::DockerCompose;
-use tokio::time::{sleep, timeout};
-
 use crate::cassandra_int_tests::cluster::run_topology_task;
 use crate::helpers::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
 };
 use crate::helpers::ShotoverManager;
+use cassandra_protocol::events::ServerEvent;
+use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
 use std::net::SocketAddr;
 use std::time::Duration;
+use test_helpers::docker_compose::DockerCompose;
+use tokio::time::{sleep, timeout};
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
@@ -49,7 +48,10 @@ async fn test_rewrite_system_peers_v2(connection: &CassandraConnection) {
     .await;
 }
 
-async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection) {
+async fn test_rewrite_system_peers_dummy_peers(
+    connection: &CassandraConnection,
+    driver: CassandraDriver,
+) {
     let star_results1 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Varchar("dc1".into()),
@@ -63,7 +65,11 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+        if let CassandraDriver::CdrsTokio = driver {
+            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        } else {
+            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        },
     ];
     let star_results2 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
@@ -78,7 +84,11 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+        if let CassandraDriver::CdrsTokio = driver {
+            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        } else {
+            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        },
     ];
 
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
@@ -105,7 +115,10 @@ async fn test_rewrite_system_peers_dummy_peers(connection: &CassandraConnection)
     .await;
 }
 
-async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnection) {
+async fn test_rewrite_system_peers_v2_dummy_peers(
+    connection: &CassandraConnection,
+    driver: CassandraDriver,
+) {
     let star_results1 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
         ResultValue::Int(7000),
@@ -121,7 +134,11 @@ async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnecti
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+        if let CassandraDriver::CdrsTokio = driver {
+            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        } else {
+            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        },
     ];
     let star_results2 = [
         ResultValue::Inet("127.0.0.1".parse().unwrap()),
@@ -138,7 +155,11 @@ async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnecti
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+        if let CassandraDriver::CdrsTokio = driver {
+            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        } else {
+            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        },
     ];
 
     let all_columns = "peer, peer_port, data_center, host_id, native_address, native_port, preferred_ip, preferred_port, rack, release_version, schema_version, tokens";
@@ -165,7 +186,7 @@ async fn test_rewrite_system_peers_v2_dummy_peers(connection: &CassandraConnecti
     .await;
 }
 
-async fn test_rewrite_system_local(connection: &CassandraConnection) {
+async fn test_rewrite_system_local(connection: &CassandraConnection, driver: CassandraDriver) {
     let star_results = [
         ResultValue::Varchar("local".into()),
         ResultValue::Varchar("COMPLETED".into()),
@@ -190,7 +211,11 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
         ResultValue::Any,
         // Unfortunately token generation appears to be non-deterministic but we can at least assert that
         // there are 128 tokens per node
-        ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect()),
+        if let CassandraDriver::CdrsTokio = driver {
+            ResultValue::List(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        } else {
+            ResultValue::Set(std::iter::repeat(ResultValue::Any).take(3 * 128).collect())
+        },
         // truncated_at is non deterministic so we cant assert on it.
         ResultValue::Any,
     ];
@@ -215,16 +240,16 @@ async fn test_rewrite_system_local(connection: &CassandraConnection) {
     .await;
 }
 
-pub async fn test(connection: &CassandraConnection) {
-    test_rewrite_system_local(connection).await;
+pub async fn test(connection: &CassandraConnection, driver: CassandraDriver) {
+    test_rewrite_system_local(connection, driver).await;
     test_rewrite_system_peers(connection).await;
     test_rewrite_system_peers_v2(connection).await;
 }
 
-pub async fn test_dummy_peers(connection: &CassandraConnection) {
-    test_rewrite_system_local(connection).await;
-    test_rewrite_system_peers_dummy_peers(connection).await;
-    test_rewrite_system_peers_v2_dummy_peers(connection).await;
+pub async fn test_dummy_peers(connection: &CassandraConnection, driver: CassandraDriver) {
+    test_rewrite_system_local(connection, driver).await;
+    test_rewrite_system_peers_dummy_peers(connection, driver).await;
+    test_rewrite_system_peers_v2_dummy_peers(connection, driver).await;
 }
 
 pub async fn test_topology_task(ca_path: Option<&str>, cassandra_port: Option<u32>) {
@@ -327,10 +352,10 @@ pub async fn test_node_going_down(
         let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
         // test that shotover handles new connections after node goes down
-        test_connection_handles_node_down(&new_connection).await;
+        test_connection_handles_node_down(&new_connection, driver).await;
 
         // test that shotover handles preexisting connections after node goes down
-        test_connection_handles_node_down(&connection_shotover).await;
+        test_connection_handles_node_down(&connection_shotover, driver).await;
 
         compose.start_service("cassandra-two");
 
@@ -354,9 +379,9 @@ pub async fn test_node_going_down(
 
         let new_new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
-        test_connection_handles_node_down(&new_new_connection).await;
-        test_connection_handles_node_down(&new_connection).await;
-        test_connection_handles_node_down(&connection_shotover).await;
+        test_connection_handles_node_down(&new_new_connection, driver).await;
+        test_connection_handles_node_down(&new_connection, driver).await;
+        test_connection_handles_node_down(&connection_shotover, driver).await;
     }
 
     std::mem::drop(connection_shotover);
@@ -365,9 +390,12 @@ pub async fn test_node_going_down(
     std::mem::drop(compose);
 }
 
-async fn test_connection_handles_node_down(connection: &CassandraConnection) {
+async fn test_connection_handles_node_down(
+    connection: &CassandraConnection,
+    driver: CassandraDriver,
+) {
     // test a query that hits the control node and performs rewriting
-    test_rewrite_system_local(connection).await;
+    test_rewrite_system_local(connection, driver).await;
 
     // run this a few times to make sure we arent getting lucky with the routing
     for _ in 0..10 {
