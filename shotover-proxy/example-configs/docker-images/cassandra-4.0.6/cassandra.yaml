@@ -24,7 +24,7 @@ cluster_name: 'Test Cluster'
 # See https://cassandra.apache.org/doc/latest/getting_started/production.html#tokens for
 # best practice information about num_tokens.
 #
-#num_tokens: 16
+num_tokens: 128
 
 # Triggers automatic allocation of num_tokens tokens for this node. The allocation
 # algorithm attempts to choose tokens in a way that optimizes replicated load over
@@ -47,7 +47,7 @@ allocate_tokens_for_local_replication_factor: 3
 # vnodes (num_tokens > 1, above) -- in which case you should provide a 
 # comma-separated list -- it's primarily used when adding nodes to legacy clusters 
 # that do not have vnodes enabled.
-initial_token: 0
+#initial_token: 0
 
 # May either be "true" or "false" to enable globally
 hinted_handoff_enabled: true

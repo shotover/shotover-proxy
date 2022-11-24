@@ -69,7 +69,7 @@ impl NodePool {
         for node in self.nodes.drain(..) {
             if let Some(outbound) = node.outbound {
                 for new_node in &mut new_nodes {
-                    if new_node.host_id == node.host_id {
+                    if new_node.host_id == node.host_id && new_node.is_up {
                         new_node.outbound = Some(outbound);
                         break;
                     }
