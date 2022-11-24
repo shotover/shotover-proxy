@@ -47,13 +47,6 @@ pub trait Codec: CodecReadHalf + CodecWriteHalf {}
 impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
-    /// Shared database handle.
-    ///
-    /// Contains the key / value store as well as the broadcast channels for
-    /// pub/sub.
-    ///
-    /// This is a wrapper around an `Arc`. This enables `db` to be cloned and
-    /// passed into the per connection state (`Handler`).
     chain: TransformChain,
 
     source_name: String,
@@ -315,11 +308,6 @@ async fn create_listener(listen_addr: &str) -> Result<TcpListener> {
 }
 
 pub struct Handler<C: Codec> {
-    /// Shared source handle.
-    ///
-    /// When a command is received from `connection`, it is applied with `db`.
-    /// The implementation of the command is in the `cmd` module. Each command
-    /// will need to interact with `db` in order to complete the work.
     chain: TransformChain,
     client_details: String,
     conn_details: String,
@@ -327,15 +315,6 @@ pub struct Handler<C: Codec> {
     #[allow(dead_code)]
     source_details: String,
     codec: C,
-
-    // connection: Framed<S, C>,
-    /// The TCP connection decorated with the redis protocol encoder / decoder
-    /// implemented using a buffered `TcpStream`.
-    ///
-    /// When `Listener` receives an inbound connection, the `TcpStream` is
-    /// passed to `Connection::new`, which initializes the associated buffers.
-    /// `Connection` allows the handler to operate at the "frame" level and keep
-    /// the byte level protocol parsing details encapsulated in `Connection`.
 
     /// Max connection semaphore.
     ///

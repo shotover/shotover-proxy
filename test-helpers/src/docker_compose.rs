@@ -106,6 +106,17 @@ impl DockerCompose {
         .unwrap();
     }
 
+    /// Restarts the container with the provided service name
+    pub fn start_service(&self, service_name: &str) {
+        run_command(
+            "docker-compose",
+            &["-f", &self.file_path, "start", service_name],
+        )
+        .unwrap();
+
+        // TODO: call wait_for_containers_to_startup
+    }
+
     fn wait_for_containers_to_startup(&self) {
         match self.file_path.as_ref() {
             "tests/transforms/docker-compose-moto.yaml" => {
