@@ -2,7 +2,8 @@ use bytes::BufMut;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_cpp::{
     stmt, Batch, BatchType, CassErrorCode, CassResult, Cluster, Error, ErrorKind,
-    PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl, Value, ValueType,
+    PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl,
+    Statement as StatementCpp, Value, ValueType,
 };
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::ErrorType;
@@ -12,7 +13,7 @@ use cassandra_protocol::{
     frame::message_error::ErrorBody,
     types::cassandra_type::{wrapper_fn, CassandraType},
 };
-use cdrs_tokio::query::QueryParamsBuilder;
+use cdrs_tokio::query::{QueryParams, QueryParamsBuilder};
 use cdrs_tokio::statement::StatementParams;
 use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
@@ -21,7 +22,7 @@ use cdrs_tokio::{
     frame::{
         message_response::ResponseBody, message_result::ResResultBody, Envelope, Serialize, Version,
     },
-    load_balancing::RoundRobinLoadBalancingStrategy,
+    load_balancing::TopologyAwareLoadBalancingStrategy,
     query::{BatchQueryBuilder, PreparedQuery as CdrsTokioPreparedQuery},
     query_values,
     transport::TransportTcp,
@@ -32,6 +33,7 @@ use ordered_float::OrderedFloat;
 use scylla::batch::Batch as ScyllaBatch;
 use scylla::frame::response::result::CqlValue;
 use scylla::frame::types::Consistency;
+use scylla::frame::value::Value as ScyllaValue;
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
 use scylla::{Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -95,7 +97,7 @@ pub enum CassandraDriver {
 type CdrsTokioSessionInstance = CdrsTokioSession<
     TransportTcp,
     TcpConnectionManager,
-    RoundRobinLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
+    TopologyAwareLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
 >;
 
 pub enum CassandraConnection {
@@ -159,10 +161,12 @@ impl CassandraConnection {
                     .await
                     .unwrap();
 
-                let session =
-                    TcpSessionBuilder::new(RoundRobinLoadBalancingStrategy::new(), config)
-                        .build()
-                        .unwrap();
+                let session = TcpSessionBuilder::new(
+                    TopologyAwareLoadBalancingStrategy::new(None, true),
+                    config,
+                )
+                .build()
+                .unwrap();
                 CassandraConnection::CdrsTokio {
                     session,
                     schema_awaiter: None,
@@ -408,7 +412,7 @@ impl CassandraConnection {
     pub async fn execute_prepared_coordinator_node(
         &self,
         prepared_query: &PreparedQuery,
-        key: i32,
+        values: &[ResultValue],
     ) -> IpAddr {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -417,9 +421,8 @@ impl CassandraConnection {
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
-                let query_params = QueryParamsBuilder::new()
-                    .with_values(query_values!(key))
-                    .build();
+
+                let query_params = Self::bind_values_cdrs(values);
 
                 let params = StatementParams {
                     query_params,
@@ -454,7 +457,9 @@ impl CassandraConnection {
             }
             Self::Scylla { session, .. } => {
                 let statement = prepared_query.as_scylla();
-                let response = session.execute(statement, (key,)).await.unwrap();
+                let values = Self::build_values_scylla(values);
+
+                let response = session.execute(statement, values).await.unwrap();
                 let tracing_id = response.tracing_id.unwrap();
 
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -479,27 +484,9 @@ impl CassandraConnection {
             Self::Datastax { session, .. } => {
                 let mut statement = prepared_query.as_datastax().bind();
                 for (i, value) in values.iter().enumerate() {
-                    match value {
-                        ResultValue::Int(v) => statement.bind_int32(i, *v).unwrap(),
-                        ResultValue::Ascii(v) => statement.bind_string(i, v).unwrap(),
-                        ResultValue::BigInt(v) => statement.bind_int64(i, *v).unwrap(),
-                        ResultValue::Blob(v) => statement.bind_bytes(i, v.clone()).unwrap(),
-                        ResultValue::Boolean(v) => statement.bind_bool(i, *v).unwrap(),
-                        ResultValue::Decimal(_) => {
-                            todo!("cassandra-cpp wrapper does not expose bind_decimal yet")
-                        }
-                        ResultValue::Double(v) => statement.bind_double(i, **v).unwrap(),
-                        ResultValue::Float(v) => statement.bind_float(i, **v).unwrap(),
-                        ResultValue::Timestamp(v) => statement.bind_int64(i, *v).unwrap(),
-                        ResultValue::Uuid(v) => statement.bind_uuid(i, (*v).into()).unwrap(),
-                        ResultValue::Inet(v) => statement.bind_inet(i, v.into()).unwrap(),
-                        ResultValue::Date(v) => statement.bind_uint32(i, *v).unwrap(),
-                        ResultValue::Time(v) => statement.bind_int64(i, *v).unwrap(),
-                        ResultValue::SmallInt(v) => statement.bind_int16(i, *v).unwrap(),
-                        ResultValue::TinyInt(v) => statement.bind_int8(i, *v).unwrap(),
-                        value => todo!("Implement handling of {value:?} for datastax"),
-                    };
+                    Self::bind_statement_values_cpp(&mut statement, i, value);
                 }
+
                 statement.set_tracing(true).unwrap();
                 match session.execute(&statement).await {
                     Ok(result) => result
@@ -513,31 +500,7 @@ impl CassandraConnection {
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
-                let query_params = QueryParamsBuilder::new()
-                    .with_values(QueryValues::SimpleValues(
-                        values
-                            .iter()
-                            .map(|v| match v {
-                                ResultValue::Int(v) => (*v).into(),
-                                ResultValue::Ascii(v) => v.as_str().into(),
-                                ResultValue::BigInt(v) => (*v).into(),
-                                ResultValue::Blob(v) => v.clone().into(),
-                                ResultValue::Boolean(v) => (*v).into(),
-                                ResultValue::Decimal(v) => v.clone().into(),
-                                ResultValue::Double(v) => (*v.as_ref()).into(),
-                                ResultValue::Float(v) => (*v.as_ref()).into(),
-                                ResultValue::Timestamp(v) => (*v).into(),
-                                ResultValue::Uuid(v) => (*v).into(),
-                                ResultValue::Inet(v) => (*v).into(),
-                                ResultValue::Date(v) => (*v).into(),
-                                ResultValue::Time(v) => (*v).into(),
-                                ResultValue::SmallInt(v) => (*v).into(),
-                                ResultValue::TinyInt(v) => (*v).into(),
-                                value => todo!("Implement handling of {value:?} for cdrs-tokio"),
-                            })
-                            .collect(),
-                    ))
-                    .build();
+                let query_params = Self::bind_values_cdrs(values);
 
                 let params = StatementParams {
                     query_params,
@@ -557,29 +520,9 @@ impl CassandraConnection {
                 Self::process_cdrs_response(response)
             }
             Self::Scylla { session, .. } => {
-                use scylla::frame::value::Value as ScyllaValue;
                 let statement = prepared_query.as_scylla();
-                let values: Vec<Box<dyn ScyllaValue>> = values
-                    .iter()
-                    .map(|v| match v {
-                        ResultValue::Int(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Ascii(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::BigInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Blob(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Boolean(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Decimal(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Double(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
-                        ResultValue::Float(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
-                        ResultValue::Timestamp(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Uuid(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Inet(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::Date(v) => Box::new(*v as i32) as Box<dyn ScyllaValue>,
-                        ResultValue::Time(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::SmallInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        ResultValue::TinyInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
-                        value => todo!("Implement handling of {value:?} for scylla"),
-                    })
-                    .collect();
+                let values = Self::build_values_scylla(values);
+
                 let response = session.execute(statement, values).await.unwrap();
 
                 match response.rows {
@@ -596,6 +539,84 @@ impl CassandraConnection {
                 }
             }
         }
+    }
+
+    fn bind_values_cdrs(values: &[ResultValue]) -> QueryParams {
+        QueryParamsBuilder::new()
+            .with_values(QueryValues::SimpleValues(
+                values
+                    .iter()
+                    .map(|v| match v {
+                        ResultValue::Int(v) => (*v).into(),
+                        ResultValue::Ascii(v) => v.as_str().into(),
+                        ResultValue::BigInt(v) => (*v).into(),
+                        ResultValue::Blob(v) => v.clone().into(),
+                        ResultValue::Boolean(v) => (*v).into(),
+                        ResultValue::Decimal(v) => v.clone().into(),
+                        ResultValue::Double(v) => (*v.as_ref()).into(),
+                        ResultValue::Float(v) => (*v.as_ref()).into(),
+                        ResultValue::Timestamp(v) => (*v).into(),
+                        ResultValue::Uuid(v) => (*v).into(),
+                        ResultValue::Inet(v) => (*v).into(),
+                        ResultValue::Date(v) => (*v).into(),
+                        ResultValue::Time(v) => (*v).into(),
+                        ResultValue::SmallInt(v) => (*v).into(),
+                        ResultValue::TinyInt(v) => (*v).into(),
+                        ResultValue::Varchar(v) => v.as_str().into(),
+                        value => todo!("Implement handling of {value:?} for cdrs-tokio"),
+                    })
+                    .collect(),
+            ))
+            .build()
+    }
+
+    fn build_values_scylla(values: &[ResultValue]) -> Vec<Box<dyn ScyllaValue + '_>> {
+        values
+            .iter()
+            .map(|v| match v {
+                ResultValue::Int(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Ascii(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::BigInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Blob(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Boolean(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Decimal(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Double(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
+                ResultValue::Float(v) => Box::new(*v.as_ref()) as Box<dyn ScyllaValue>,
+                ResultValue::Timestamp(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Uuid(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Inet(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Date(v) => Box::new(*v as i32) as Box<dyn ScyllaValue>,
+                ResultValue::Time(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::SmallInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::TinyInt(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                ResultValue::Varchar(v) => Box::new(v) as Box<dyn ScyllaValue>,
+                value => todo!("Implement handling of {value:?} for scylla"),
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
+    fn bind_statement_values_cpp(statement: &mut StatementCpp, i: usize, value: &ResultValue) {
+        match value {
+            ResultValue::Int(v) => statement.bind_int32(i, *v).unwrap(),
+            ResultValue::Ascii(v) => statement.bind_string(i, v).unwrap(),
+            ResultValue::BigInt(v) => statement.bind_int64(i, *v).unwrap(),
+            ResultValue::Blob(v) => statement.bind_bytes(i, v.clone()).unwrap(),
+            ResultValue::Boolean(v) => statement.bind_bool(i, *v).unwrap(),
+            ResultValue::Decimal(_) => {
+                todo!("cassandra-cpp wrapper does not expose bind_decimal yet")
+            }
+            ResultValue::Double(v) => statement.bind_double(i, **v).unwrap(),
+            ResultValue::Float(v) => statement.bind_float(i, **v).unwrap(),
+            ResultValue::Timestamp(v) => statement.bind_int64(i, *v).unwrap(),
+            ResultValue::Uuid(v) => statement.bind_uuid(i, (*v).into()).unwrap(),
+            ResultValue::Inet(v) => statement.bind_inet(i, v.into()).unwrap(),
+            ResultValue::Date(v) => statement.bind_uint32(i, *v).unwrap(),
+            ResultValue::Time(v) => statement.bind_int64(i, *v).unwrap(),
+            ResultValue::SmallInt(v) => statement.bind_int16(i, *v).unwrap(),
+            ResultValue::TinyInt(v) => statement.bind_int8(i, *v).unwrap(),
+            value => todo!("Implement handling of {value:?} for datastax"),
+        };
     }
 
     #[allow(dead_code)]

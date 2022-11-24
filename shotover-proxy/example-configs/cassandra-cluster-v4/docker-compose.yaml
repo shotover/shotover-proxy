@@ -27,8 +27,9 @@ services:
       MIN_HEAP_SIZE: "400M"
       HEAP_NEWSIZE: "48M"
     volumes:
+      # Using volume instead of tmpfs adds 3 seconds to the runtime of the cassandra standard_test_suite but allows running tests that restart nodes
       &volumes
-      - type: tmpfs
+      - type: volume
         target: /var/lib/cassandra
     command: &command cassandra -f -Dcassandra.initial_token="$$CASSANDRA_INITIAL_TOKENS" -Dcassandra.native_transport_port=9044
 
