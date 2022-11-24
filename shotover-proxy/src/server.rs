@@ -6,6 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -445,17 +446,12 @@ impl<C: Codec + 'static> Handler<C> {
     pub async fn run(
         &mut self,
         stream: TcpStream,
-        mut pushed_messages_rx: UnboundedReceiver<Messages>,
+        pushed_messages_rx: UnboundedReceiver<Messages>,
     ) -> Result<()> {
-        debug!("Handler run() started");
-        // As long as the shutdown signal has not been received, try to read a
-        // new request frame.
-        let mut idle_time_seconds: u64 = 1;
-
         let (terminate_tx, terminate_rx) = watch::channel::<()>(());
         self.terminate_tasks = Some(terminate_tx);
 
-        let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Messages>();
+        let (in_tx, in_rx) = mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
         let local_addr = stream.local_addr()?;
@@ -484,6 +480,43 @@ impl<C: Codec + 'static> Handler<C> {
                 terminate_rx,
             );
         };
+
+        let result = self
+            .process_messages(local_addr, in_rx, out_tx, pushed_messages_rx)
+            .await;
+
+        // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
+        match self
+            .chain
+            .process_request(
+                Wrapper::flush_with_chain_name(self.chain.name.clone()),
+                self.client_details.clone(),
+            )
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => error!(
+                "{:?}",
+                e.context(format!(
+                    "encountered an error when flushing the chain {} for shutdown",
+                    self.chain.name,
+                ))
+            ),
+        }
+
+        result
+    }
+
+    async fn process_messages(
+        &mut self,
+        local_addr: SocketAddr,
+        mut in_rx: mpsc::UnboundedReceiver<Messages>,
+        out_tx: mpsc::UnboundedSender<Messages>,
+        mut pushed_messages_rx: UnboundedReceiver<Messages>,
+    ) -> Result<()> {
+        // As long as the shutdown signal has not been received, try to read a
+        // new request frame.
+        let mut idle_time_seconds: u64 = 1;
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
@@ -547,24 +580,6 @@ impl<C: Codec + 'static> Handler<C> {
             debug!("sending message: {:?}", modified_messages);
             // send the result of the process up stream
             out_tx.send(modified_messages)?;
-        }
-
-        match self
-            .chain
-            .process_request(
-                Wrapper::flush_with_chain_name(self.chain.name.clone()),
-                self.client_details.clone(),
-            )
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => error!(
-                "{:?}",
-                e.context(format!(
-                    "encountered an error when flushing the chain {} for shutdown",
-                    self.chain.name,
-                ))
-            ),
         }
 
         Ok(())
