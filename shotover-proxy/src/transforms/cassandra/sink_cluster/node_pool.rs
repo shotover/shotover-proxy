@@ -80,6 +80,15 @@ impl NodePool {
         self.token_map = TokenMap::new(self.nodes.as_slice());
     }
 
+    pub fn report_issue_with_node(&mut self, address: SocketAddr) {
+        for node in &mut self.nodes {
+            if node.address == address {
+                node.is_up = false;
+                node.outbound = None;
+            }
+        }
+    }
+
     pub async fn update_keyspaces(&mut self, keyspaces_rx: &mut KeyspaceChanRx) {
         let updated_keyspaces = keyspaces_rx.borrow_and_update().clone();
         self.keyspace_metadata = updated_keyspaces;
