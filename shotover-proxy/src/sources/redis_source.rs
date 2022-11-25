@@ -6,7 +6,6 @@ use crate::transforms::chain::TransformChain;
 use anyhow::Result;
 use serde::Deserialize;
 use std::sync::Arc;
-use tokio::runtime::Handle;
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -74,7 +73,7 @@ impl RedisSource {
         )
         .await?;
 
-        let join_handle = Handle::current().spawn(async move {
+        let join_handle = tokio::spawn(async move {
             // Check we didn't receive a shutdown signal before the receiver was created
             if !*trigger_shutdown_rx.borrow() {
                 tokio::select! {
