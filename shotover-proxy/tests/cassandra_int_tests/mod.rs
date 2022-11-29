@@ -93,6 +93,7 @@ async fn passthrough_encode(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
+#[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
@@ -261,6 +262,7 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
+#[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]

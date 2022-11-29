@@ -248,13 +248,39 @@ impl CassandraConnection {
                 cluster.set_ssl(&mut ssl);
 
                 CassandraConnection::Datastax {
-                    session: cluster.connect_async().await.unwrap(),
+                    session: cluster
+                        .connect_async()
+                        .await
+                        .map_err(|err| format!("{err}"))
+                        .unwrap(),
                     schema_awaiter: None,
                 }
             }
             // TODO actually implement TLS for cdrs-tokio
             CassandraDriver::CdrsTokio => todo!(),
-            CassandraDriver::Scylla => todo!(),
+            CassandraDriver::Scylla => {
+                let mut context = SslContext::builder(SslMethod::tls()).unwrap();
+                context.set_ca_file(ca_cert_path).unwrap();
+                let ssl_context = context.build();
+
+                let session = SessionBuilderScylla::new()
+                    .known_nodes(
+                        &contact_points
+                            .split(',')
+                            .map(|contact_point| format!("{contact_point}:{port}"))
+                            .collect::<Vec<String>>(),
+                    )
+                    .user("cassandra", "cassandra")
+                    .ssl_context(Some(ssl_context))
+                    .default_consistency(Consistency::One)
+                    .build()
+                    .await
+                    .unwrap();
+                CassandraConnection::Scylla {
+                    session,
+                    schema_awaiter: None,
+                }
+            }
         }
     }
 
