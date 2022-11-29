@@ -2,7 +2,7 @@ use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnect
 use std::time::{SystemTime, UNIX_EPOCH};
 
 async fn flag(connection: &CassandraConnection) {
-    let timestamp = setup(connection).await;
+    let timestamp = get_timestamp(connection).await;
 
     let _r = connection
         .execute_with_timestamp(
@@ -20,7 +20,7 @@ async fn flag(connection: &CassandraConnection) {
 }
 
 async fn query(connection: &CassandraConnection) {
-    let timestamp = setup(connection).await;
+    let timestamp = get_timestamp(connection).await;
 
     run_query(
         connection,
@@ -39,7 +39,10 @@ async fn query(connection: &CassandraConnection) {
     .await;
 }
 
-async fn setup(connection: &CassandraConnection) -> i64 {
+// We have to use a current timestamp from Cassandra
+// because if we send one with an earlier timestamp than Cassandra
+// has as the last write (the insert in `fn test`) it will be ignored.
+async fn get_timestamp(connection: &CassandraConnection) -> i64 {
     run_query(
         connection,
         "UPDATE test_timestamps.test_table SET a = 'a1-modified' WHERE id = 0;",
