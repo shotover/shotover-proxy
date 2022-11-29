@@ -98,9 +98,6 @@ async fn use_statement(session: &CassandraConnection) {
         .prepare("INSERT INTO table_1 (id) VALUES (?);")
         .await;
 
-    // change the keyspace to be incorrect
-    run_query(session, "USE test_prepare_statements_empty;").await;
-
     // observe query completing against the original keyspace without errors
     assert_eq!(
         session
@@ -109,13 +106,16 @@ async fn use_statement(session: &CassandraConnection) {
         Vec::<Vec<ResultValue>>::new()
     );
 
+    // change the keyspace to be incorrect
+    run_query(session, "USE test_prepare_statements_empty;").await;
+
     // observe that the query succeeded despite the keyspace being incorrect at the time.
-    assert_query_result(
-        session,
-        "SELECT id FROM test_prepare_statements.table_1 WHERE id = 358;",
-        &[&[ResultValue::Int(358)]],
-    )
-    .await;
+    assert_eq!(
+        session
+            .execute_prepared(&prepared, &[ResultValue::Int(358)])
+            .await,
+        Vec::<Vec<ResultValue>>::new()
+    );
 }
 
 pub async fn test<Fut>(session: &CassandraConnection, connection_creator: impl Fn() -> Fut)
