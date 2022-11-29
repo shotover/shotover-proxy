@@ -6,8 +6,6 @@ use crate::helpers::cassandra::{
 };
 use crate::helpers::ShotoverManager;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
-use cassandra_cpp::{Error, ErrorKind};
-#[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
@@ -159,6 +157,7 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     cluster::single_rack_v3::test_topology_task(None).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[case::cdrs(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
@@ -209,6 +208,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, false).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 //#[case::cdrs(CdrsTokio)]
@@ -261,6 +261,7 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
     cluster::multi_rack::test_topology_task(None).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO
@@ -474,7 +475,8 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case::cdrs(CdrsTokio)] // TODO
+#[case::cdrs(CdrsTokio)]
+#[case::scylla(Scylla)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -493,20 +495,21 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
 
     // Assert that the error cassandra gives because system.peers_v2 does not exist on cassandra v3
     // is passed through shotover unchanged.
-    let statement = "SELECT data_center, native_port, rack FROM system.peers_v2;";
-    let result = connection.execute_expect_err(statement).await;
     assert_eq!(
-        result,
-        ErrorBody {
+        connection
+            .execute_fallible("SELECT data_center, native_port, rack FROM system.peers_v2;")
+            .await,
+        Err(ErrorBody {
             ty: ErrorType::Invalid,
             message: "unconfigured table peers_v2".into()
-        }
+        })
     );
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case::cdrs(CdrsTokio)] // TODO
+//#[case::cdrs(CdrsTokio)] // TODO: cdrs-tokio seems to be sending extra messages triggering the rate limiter
+#[case::scylla(Scylla)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -547,10 +550,10 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
         let mut results = join_all(future_list).await;
         results.retain(|result| match result {
             Ok(_) => true,
-            Err(Error(
-                ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
-                _,
-            )) => false,
+            Err(ErrorBody {
+                ty: ErrorType::Overloaded,
+                ..
+            }) => false,
             Err(e) => panic!(
                 "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
                 e
@@ -586,7 +589,10 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
         for i in 0..60 {
             queries.push(format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i));
         }
-        let result = connection.execute_batch_expect_err(queries).await;
+        let result = connection
+            .execute_batch_fallible(queries)
+            .await
+            .unwrap_err();
         assert_eq!(
             result,
             ErrorBody {

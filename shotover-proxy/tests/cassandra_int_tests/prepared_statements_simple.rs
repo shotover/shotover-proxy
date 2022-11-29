@@ -12,7 +12,7 @@ async fn delete(session: &CassandraConnection) {
         session
             .execute_prepared(&prepared, &[ResultValue::Int(1)])
             .await,
-        Vec::<Vec<ResultValue>>::new()
+        Ok(Vec::<Vec<ResultValue>>::new())
     );
 
     assert_query_result(
@@ -32,21 +32,21 @@ async fn insert(session: &CassandraConnection) {
         session
             .execute_prepared(&prepared, &[ResultValue::Int(1)])
             .await,
-        Vec::<Vec<ResultValue>>::new()
+        Ok(Vec::<Vec<ResultValue>>::new())
     );
 
     assert_eq!(
         session
             .execute_prepared(&prepared, &[ResultValue::Int(2)])
             .await,
-        Vec::<Vec<ResultValue>>::new()
+        Ok(Vec::<Vec<ResultValue>>::new())
     );
 
     assert_eq!(
         session
             .execute_prepared(&prepared, &[ResultValue::Int(3)])
             .await,
-        Vec::<Vec<ResultValue>>::new()
+        Ok(Vec::<Vec<ResultValue>>::new())
     );
 }
 
@@ -57,7 +57,8 @@ async fn select(session: &CassandraConnection) {
 
     let result_rows = session
         .execute_prepared(&prepared, &[ResultValue::Int(1)])
-        .await;
+        .await
+        .unwrap();
 
     assert_rows(result_rows, &[&[ResultValue::Int(1)]]);
 }
@@ -79,13 +80,15 @@ async fn select_cross_connection<Fut>(
     assert_rows(
         connection_before
             .execute_prepared(&prepared, &[ResultValue::Int(1)])
-            .await,
+            .await
+            .unwrap(),
         &[&[ResultValue::Int(1), ResultValue::Int(1)]],
     );
     assert_rows(
         connection_after
             .execute_prepared(&prepared, &[ResultValue::Int(1)])
-            .await,
+            .await
+            .unwrap(),
         &[&[ResultValue::Int(1), ResultValue::Int(1)]],
     );
 }
@@ -102,7 +105,7 @@ async fn use_statement(session: &CassandraConnection) {
         session
             .execute_prepared(&prepared, &[ResultValue::Int(358)])
             .await,
-        Vec::<Vec<ResultValue>>::new()
+        Ok(Vec::<Vec<ResultValue>>::new())
     );
 
     // change the keyspace to be incorrect
@@ -113,7 +116,7 @@ async fn use_statement(session: &CassandraConnection) {
         session
             .execute_prepared(&prepared, &[ResultValue::Int(358)])
             .await,
-        Vec::<Vec<ResultValue>>::new()
+        Ok(Vec::<Vec<ResultValue>>::new())
     );
 }
 
@@ -137,5 +140,5 @@ where
 
     let cql = "SELECT * FROM system.local WHERE key = 'local'";
     let prepared = session.prepare(cql).await;
-    session.execute_prepared(&prepared, &[]).await;
+    session.execute_prepared(&prepared, &[]).await.unwrap();
 }
