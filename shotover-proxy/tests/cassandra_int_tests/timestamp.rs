@@ -2,9 +2,9 @@ use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnect
 use std::time::{SystemTime, UNIX_EPOCH};
 
 async fn flag(connection: &CassandraConnection) {
-    let timestamp = get_timestamp(connection).await;
+    let timestamp = get_timestamp();
 
-    let _r = connection
+    connection
         .execute_with_timestamp(
             "UPDATE test_timestamps.test_table SET a = 'a1-modified-1' WHERE id = 0;",
             timestamp,
@@ -20,7 +20,7 @@ async fn flag(connection: &CassandraConnection) {
 }
 
 async fn query(connection: &CassandraConnection) {
-    let timestamp = get_timestamp(connection).await;
+    let timestamp = get_timestamp();
 
     run_query(
         connection,
@@ -39,35 +39,16 @@ async fn query(connection: &CassandraConnection) {
     .await;
 }
 
-// We have to use a current timestamp from Cassandra
-// because if we send one with an earlier timestamp than Cassandra
-// has as the last write (the insert in `fn test`) it will be ignored.
-async fn get_timestamp(connection: &CassandraConnection) -> i64 {
-    run_query(
-        connection,
-        "UPDATE test_timestamps.test_table SET a = 'a1-modified' WHERE id = 0;",
-    )
-    .await;
-
-    let cassandra_timestamp = if let ResultValue::BigInt(v) = connection
-        .execute("SELECT WRITETIME(a) FROM test_timestamps.test_table WHERE id = 0;")
-        .await[0][0]
-    {
-        v
-    } else {
-        panic!("Expected a ResultValue::BigInt");
-    };
-
-    let timestamp: i64 = SystemTime::now()
+// use the current system timestamp because if we send one with an
+// earlier timestamp than Cassandra has as the last write
+// (the insert in `fn test`) it will be ignored.
+fn get_timestamp() -> i64 {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_micros()
         .try_into()
-        .unwrap();
-
-    assert!(cassandra_timestamp < timestamp);
-
-    timestamp
+        .unwrap()
 }
 
 pub async fn test(connection: &CassandraConnection) {
