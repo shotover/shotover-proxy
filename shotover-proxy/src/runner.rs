@@ -120,10 +120,15 @@ impl Runner {
     pub fn run_block(self) -> Result<()> {
         let (trigger_shutdown_tx, trigger_shutdown_rx) = watch::channel(false);
 
+        // We need to block on this part to ensure that we immediately register these signals.
+        // Otherwise if we included signal creation in the below spawned task we would be at the mercy of whenever tokio decides to start running the task.
+        let (mut interrupt, mut terminate) = self.runtime_handle.block_on(async {
+            (
+                signal(SignalKind::interrupt()).unwrap(),
+                signal(SignalKind::terminate()).unwrap(),
+            )
+        });
         self.runtime_handle.spawn(async move {
-            let mut interrupt = signal(SignalKind::interrupt()).unwrap();
-            let mut terminate = signal(SignalKind::terminate()).unwrap();
-
             tokio::select! {
                 _ = interrupt.recv() => {
                     info!("received SIGINT");
@@ -223,6 +228,9 @@ impl TracingState {
                 handle
             }
         };
+        if let LogFormat::Json = format {
+            crate::tracing_panic_handler::setup();
+        }
 
         // When in json mode we need to process panics as events instead of printing directly to stdout.
         // This is so that:
