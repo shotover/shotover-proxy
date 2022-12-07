@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
+use cassandra_protocol::frame::message_result::BodyResResultPrepared;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::query::QueryParams;
@@ -487,30 +488,30 @@ impl CassandraSinkCluster {
             )
             .await?;
 
-            if !prepare_responses.windows(2).all(|w| w[0] == w[1]) {
-                let err_str = prepare_responses
-                    .iter_mut()
-                    .filter_map(|response| {
-                        if let Some(Frame::Cassandra(CassandraFrame {
-                            operation:
-                                CassandraOperation::Result(CassandraResult::Prepared(prepared)),
-                            ..
-                        })) = response.frame()
-                        {
-                            Some(format!("\n{:?}", prepared))
-                        } else {
-                            None
-                        }
-                    })
+            let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepare_responses
+                .iter_mut()
+                .filter_map(|message| {
+                    if let Some(Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Result(CassandraResult::Prepared(prepared)),
+                        ..
+                    })) = message.frame()
+                    {
+                        Some(prepared)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
+                let err_str = prepared_results
+                    .iter()
+                    .map(|p| format!("\n{:?}", p))
                     .collect::<String>();
 
-                if cfg!(test) {
-                    panic!("{}", err_str);
-                } else {
-                    tracing::error!(
-                        "Nodes did not return the same response to PREPARE statement {err_str}"
-                    );
-                }
+                tracing::error!(
+                    "Nodes did not return the same response to PREPARE statement {err_str}"
+                );
             }
         }
 
