@@ -33,7 +33,8 @@ fn main() {
         let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", args.config_dir));
 
         // Uses ShotoverProcess instead of ShotoverManager for a more accurate benchmark
-        let shotover_manager = ShotoverProcess::new(&format!("{}/topology.yaml", args.config_dir));
+        let shotover_manager =
+            ShotoverProcess::from_topology_file(&format!("{}/topology.yaml", args.config_dir));
 
         println!("Benching Shotover ...");
         bench_read(&latte, "localhost:9043", "localhost:9042");
