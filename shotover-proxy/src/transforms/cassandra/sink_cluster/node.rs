@@ -124,7 +124,7 @@ impl ConnectionFactory {
                 })?;
             return_chan_rx.await.map_err(|e| {
                 anyhow!(e).context("Failed to initialize new connection with handshake, rx failed")
-            })?;
+            })??;
         }
 
         if let Some(use_message) = &self.use_message {
@@ -138,7 +138,7 @@ impl ConnectionFactory {
             return_chan_rx.await.map_err(|e| {
                 anyhow!(e)
                     .context("Failed to initialize new connection with use message, rx failed")
-            })?;
+            })??;
         }
 
         Ok(outbound)
