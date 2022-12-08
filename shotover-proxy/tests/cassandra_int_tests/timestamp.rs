@@ -9,7 +9,8 @@ async fn flag(connection: &CassandraConnection) {
             "UPDATE test_timestamps.test_table SET a = 'a1-modified-1' WHERE id = 0;",
             timestamp,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert_query_result(
         connection,
