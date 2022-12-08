@@ -252,6 +252,12 @@ impl CassandraSinkCluster {
         }
 
         if self.nodes_rx.has_changed()? {
+            // This approach to keeping nodes list up to date has a problem when a node goes down and then up again before this transform instance can process the down going down.
+            // When this happens we never detect that the node went down and a dead connection is left around.
+            // Broadcast channel's SendError::Lagged would solve this problem but we cant use broadcast channels because cloning them doesnt keep a past value.
+            // It might be worth implementing a custom watch channel that supports Lagged errors to improve correctness.
+            //
+            // However none of this is actually a problem because dead connection detection logic handles this case for us.
             self.pool.update_nodes(&mut self.nodes_rx);
 
             // recreate the control connection if it is down
@@ -434,23 +440,18 @@ impl CassandraSinkCluster {
                             // send an unprepared error in response to force
                             // the client to reprepare the query
                             return_chan_tx
-                                .send(Response {
-                                    stream_id: metadata.stream_id,
-                                    response: Ok(Message::from_frame(Frame::Cassandra(
-                                        CassandraFrame {
-                                            operation: CassandraOperation::Error(ErrorBody {
-                                                message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
-                                                ty: ErrorType::Unprepared(UnpreparedError {
-                                                    id,
-                                                }),
-                                            }),
-                                            stream_id: metadata.stream_id,
-                                            tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
-                                            version: self.version.unwrap(),
-                                            warnings: vec![],
-                                        },
-                                    ))),
-                                }).expect("the receiver is guaranteed to be alive, so this must succeed");
+                                .send(Ok(Message::from_frame(Frame::Cassandra(
+                                    CassandraFrame {
+                                        operation: CassandraOperation::Error(ErrorBody {
+                                            message: "Shotover does not have this query's metadata. Please re-prepare on this Shotover host before sending again.".into(),
+                                            ty: ErrorType::Unprepared(UnpreparedError { id }),
+                                        }),
+                                        stream_id: metadata.stream_id,
+                                        tracing: Tracing::Response(None), // We didn't actually hit a node so we don't have a tracing id
+                                        version: self.version.unwrap(),
+                                        warnings: vec![],
+                                    },
+                                )))).expect("the receiver is guaranteed to be alive, so this must succeed");
                         }
                         Err(GetReplicaErr::Other(err)) => {
                             return Err(err);
@@ -471,22 +472,37 @@ impl CassandraSinkCluster {
             responses_future.push_back(return_chan_rx)
         }
 
-        let mut responses = super::connection::receive(
-            self.read_timeout,
-            &self.failed_requests,
-            responses_future,
-            self.version.unwrap(),
-        )
-        .await?;
+        let response_results =
+            super::connection::receive(self.read_timeout, &self.failed_requests, responses_future)
+                .await?;
+        let mut responses = vec![];
+        for response in response_results {
+            match response {
+                Ok(response) => responses.push(response),
+                Err(error) => {
+                    self.pool.report_issue_with_node(error.destination);
+                    responses.push(error.to_response(self.version.unwrap()));
+                }
+            }
+        }
 
         {
-            let mut prepare_responses = super::connection::receive(
+            let prepare_response_results = super::connection::receive(
                 self.read_timeout,
                 &self.failed_requests,
                 responses_future_prepare,
-                self.version.unwrap(),
             )
             .await?;
+            let mut prepare_responses = vec![];
+            for response in prepare_response_results {
+                match response {
+                    Ok(response) => prepare_responses.push(response),
+                    Err(error) => {
+                        self.pool.report_issue_with_node(error.destination);
+                        prepare_responses.push(error.to_response(self.version.unwrap()));
+                    }
+                }
+            }
 
             let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepare_responses
                 .iter_mut()
@@ -1119,11 +1135,7 @@ fn is_ddl_statement(request: &mut Message) -> bool {
 }
 
 fn is_use_statement_successful(response: Option<Result<Response>>) -> bool {
-    if let Some(Ok(Response {
-        response: Ok(mut response),
-        ..
-    })) = response
-    {
+    if let Some(Ok(Ok(mut response))) = response {
         if let Some(Frame::Cassandra(CassandraFrame {
             operation: CassandraOperation::Result(CassandraResult::SetKeyspace(_)),
             ..
