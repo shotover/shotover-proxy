@@ -55,7 +55,7 @@ async fn insert(connection: &CassandraConnection) {
                     ]
                 )
                 .await,
-            Vec::<Vec<_>>::new()
+            Ok(Vec::<Vec<_>>::new())
         );
     } else {
         let prepared = connection
@@ -63,7 +63,7 @@ async fn insert(connection: &CassandraConnection) {
                 .await;
         assert_eq!(
             connection.execute_prepared(&prepared, &values()).await,
-            Vec::<Vec<_>>::new()
+            Ok(Vec::<Vec<_>>::new())
         );
     }
 }
