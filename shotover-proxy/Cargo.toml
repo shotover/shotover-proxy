@@ -57,7 +57,7 @@ base64 = "0.13.0"
 metrics = "0.20.0"
 metrics-exporter-prometheus = "0.11.0"
 tracing = { version = "0.1.15", features = ["release_max_level_info"] }
-tracing-subscriber = { version = "0.3.1", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.1", features = ["env-filter", "json"] }
 tracing-appender = "0.2.0"
 hyper = { version = "0.14.14", features = ["server"] }
 halfbrown = "0.1.11"

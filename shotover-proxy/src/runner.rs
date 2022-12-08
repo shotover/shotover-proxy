@@ -15,7 +15,11 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::Directive;
-use tracing_subscriber::fmt::format::{DefaultFields, Format};
+use tracing_subscriber::fmt::format::DefaultFields;
+use tracing_subscriber::fmt::format::Format;
+use tracing_subscriber::fmt::format::Full;
+use tracing_subscriber::fmt::format::Json;
+use tracing_subscriber::fmt::format::JsonFields;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::layer::Layered;
 use tracing_subscriber::reload::Handle;
@@ -35,6 +39,15 @@ pub struct ConfigOpts {
     // 2,097,152 = 2 * 1024 * 1024 (2MiB)
     #[clap(long, default_value = "2097152")]
     pub stack_size: usize,
+
+    #[arg(long, value_enum, default_value = "human")]
+    pub log_format: LogFormat,
+}
+
+#[derive(clap::ValueEnum, Clone)]
+pub enum LogFormat {
+    Human,
+    Json,
 }
 
 impl Default for ConfigOpts {
@@ -44,6 +57,7 @@ impl Default for ConfigOpts {
             config_file: "config/config.yaml".into(),
             core_threads: 4,
             stack_size: 2097152,
+            log_format: LogFormat::Human,
         }
     }
 }
@@ -61,7 +75,7 @@ impl Runner {
         let config = Config::from_file(params.config_file)?;
         let topology = Topology::from_file(params.topology_file)?;
 
-        let tracing = TracingState::new(config.main_log_level.as_str())?;
+        let tracing = TracingState::new(config.main_log_level.as_str(), params.log_format)?;
 
         let (runtime_handle, runtime) = Runner::get_runtime(params.stack_size, params.core_threads);
 
@@ -150,13 +164,10 @@ impl Runner {
     }
 }
 
-type TracingStateHandle =
-    Handle<EnvFilter, Layered<Layer<Registry, DefaultFields, Format, NonBlocking>, Registry>>;
-
 struct TracingState {
     /// Once this is dropped tracing logs are ignored
     guard: WorkerGuard,
-    handle: TracingStateHandle,
+    handle: ReloadHandle,
 }
 
 /// Returns a new `EnvFilter` by parsing each directive string, or an error if any directive is invalid.
@@ -181,25 +192,59 @@ fn try_parse_log_directives(directives: &[Option<&str>]) -> Result<EnvFilter> {
 }
 
 impl TracingState {
-    fn new(log_level: &str) -> Result<Self> {
+    fn new(log_level: &str, format: LogFormat) -> Result<Self> {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
 
-        let builder = tracing_subscriber::fmt()
-            .with_writer(non_blocking)
-            .with_env_filter({
-                // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.
-                // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
-                let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
-                try_parse_log_directives(&[Some(log_level), overrides.as_deref()])?
-            })
-            .with_filter_reloading();
-        let handle = builder.reload_handle();
+        // Load log directives from shotover config and then from the RUST_LOG env var, with the latter taking priority.
+        // In the future we might be able to simplify the implementation if work is done on tokio-rs/tracing#1466.
+        let overrides = env::var(EnvFilter::DEFAULT_ENV).ok();
+        let env_filter = try_parse_log_directives(&[Some(log_level), overrides.as_deref()])?;
 
-        // To avoid unit tests that run in the same excutable from blowing up when they try to reinitialize tracing we ignore the result returned by try_init.
-        // Currently the implementation of try_init will only fail when it is called multiple times.
-        builder.try_init().ok();
+        let handle = match format {
+            LogFormat::Json => {
+                let builder = tracing_subscriber::fmt()
+                    .json()
+                    .with_writer(non_blocking)
+                    .with_env_filter(env_filter)
+                    .with_filter_reloading();
+                let handle = ReloadHandle::Json(builder.reload_handle());
+                // To avoid unit tests that run in the same excutable from blowing up when they try to reinitialize tracing we ignore the result returned by try_init.
+                // Currently the implementation of try_init will only fail when it is called multiple times.
+                builder.try_init().ok();
+                handle
+            }
+            LogFormat::Human => {
+                let builder = tracing_subscriber::fmt()
+                    .with_writer(non_blocking)
+                    .with_env_filter(env_filter)
+                    .with_filter_reloading();
+                let handle = ReloadHandle::Human(builder.reload_handle());
+                builder.try_init().ok();
+                handle
+            }
+        };
 
         Ok(TracingState { guard, handle })
+    }
+}
+
+type Formatter<A, B> = Layered<Layer<Registry, A, Format<B>, NonBlocking>, Registry>;
+
+// TODO: We will be able to remove this and just directly use the handle once tracing 0.2 is released. See:
+// * https://github.com/tokio-rs/tracing/pull/1035
+// * https://github.com/linkerd/linkerd2-proxy/blob/6c484f6dcdeebda18b68c800b4494263bf98fcdc/linkerd/app/core/src/trace.rs#L19-L36
+#[derive(Clone)]
+pub enum ReloadHandle {
+    Json(Handle<EnvFilter, Formatter<JsonFields, Json>>),
+    Human(Handle<EnvFilter, Formatter<DefaultFields, Full>>),
+}
+
+impl ReloadHandle {
+    pub fn reload(&self, filter: EnvFilter) -> Result<()> {
+        match self {
+            ReloadHandle::Json(handle) => handle.reload(filter).map_err(|e| anyhow!(e)),
+            ReloadHandle::Human(handle) => handle.reload(filter).map_err(|e| anyhow!(e)),
+        }
     }
 }
 
