@@ -1,4 +1,3 @@
-use crate::helpers::cassandra::CassandraDriver;
 use crate::helpers::cassandra::{
     assert_query_result, assert_rows, run_query, CassandraConnection, ResultValue,
 };
@@ -136,9 +135,7 @@ where
     delete(session).await;
     use_statement(session).await;
 
-    if session.is(&[CassandraDriver::Scylla, CassandraDriver::CdrsTokio]) {
-        let cql = "SELECT * FROM system.local WHERE key = 'local'";
-        let prepared = session.prepare(cql).await;
-        session.execute_prepared(&prepared, &[]).await;
-    }
+    let cql = "SELECT * FROM system.local WHERE key = 'local'";
+    let prepared = session.prepare(cql).await;
+    session.execute_prepared(&prepared, &[]).await;
 }
