@@ -12,6 +12,7 @@ use derivative::Derivative;
 use futures::stream::FuturesOrdered;
 use futures::{SinkExt, StreamExt};
 use halfbrown::HashMap;
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
 use tokio::net::ToSocketAddrs;
@@ -27,10 +28,25 @@ struct Request {
     stream_id: i16,
 }
 
-#[derive(Debug)]
-pub struct Response {
+pub type Response = Result<Message, ResponseError>;
+
+#[derive(Debug, thiserror::Error)]
+#[error("Connection to destination cassandra node {destination} was closed: {cause}")]
+pub struct ResponseError {
+    #[source]
+    pub cause: anyhow::Error,
+    pub destination: SocketAddr,
     pub stream_id: i16,
-    pub response: Result<Message>,
+}
+
+impl ResponseError {
+    pub fn to_response(&self, version: Version) -> Message {
+        Message::from_frame(Frame::Cassandra(CassandraFrame::shotover_error(
+            self.stream_id,
+            version,
+            &format!("{:#}", self.cause),
+        )))
+    }
 }
 
 #[derive(Debug)]
@@ -59,7 +75,7 @@ impl CassandraConnection {
         let (return_tx, return_rx) = mpsc::unbounded_channel::<ReturnChannel>();
         let (rx_process_has_shutdown_tx, rx_process_has_shutdown_rx) = oneshot::channel::<String>();
 
-        let destination = format!("{host:?}");
+        let destination = tokio::net::lookup_host(&host).await?.next().unwrap();
 
         if let Some(tls) = tls.as_mut() {
             let tls_stream = tls.connect(connect_timeout, host).await?;
@@ -71,7 +87,7 @@ impl CassandraConnection {
                     return_tx,
                     codec.clone(),
                     rx_process_has_shutdown_rx,
-                    destination.clone(),
+                    destination,
                 )
                 .in_current_span(),
             );
@@ -96,7 +112,7 @@ impl CassandraConnection {
                     return_tx,
                     codec.clone(),
                     rx_process_has_shutdown_rx,
-                    destination.clone(),
+                    destination,
                 )
                 .in_current_span(),
             );
@@ -156,7 +172,7 @@ async fn tx_process<T: AsyncWrite>(
     codec: CassandraCodec,
     mut rx_process_has_shutdown_rx: oneshot::Receiver<String>,
     // Only used for error reporting
-    destination: String,
+    destination: SocketAddr,
 ) {
     let mut in_w = FramedWrite::new(write, codec);
 
@@ -167,10 +183,10 @@ async fn tx_process<T: AsyncWrite>(
     loop {
         if let Some(request) = out_rx.recv().await {
             if let Some(error) = &connection_dead_error {
-                send_error_to_request(request.return_chan, request.stream_id, &destination, error);
+                send_error_to_request(request.return_chan, request.stream_id, destination, error);
             } else if let Err(error) = in_w.send(vec![request.message]).await {
                 let error = format!("{:?}", error);
-                send_error_to_request(request.return_chan, request.stream_id, &destination, &error);
+                send_error_to_request(request.return_chan, request.stream_id, destination, &error);
                 connection_dead_error = Some(error.clone());
             } else if let Err(mpsc::error::SendError(return_chan)) = return_tx.send(ReturnChannel {
                 return_chan: request.return_chan,
@@ -182,7 +198,7 @@ async fn tx_process<T: AsyncWrite>(
                 send_error_to_request(
                     return_chan.return_chan,
                     return_chan.stream_id,
-                    &destination,
+                    destination,
                     &error,
                 );
                 connection_dead_error = Some(error.clone());
@@ -214,16 +230,15 @@ async fn tx_process<T: AsyncWrite>(
 fn send_error_to_request(
     return_chan: oneshot::Sender<Response>,
     stream_id: i16,
-    destination: &str,
+    destination: SocketAddr,
     error: &str,
 ) {
     return_chan
-        .send(Response {
+        .send(Err(ResponseError {
+            cause: anyhow!(error.to_owned()),
+            destination,
             stream_id,
-            response: Err(anyhow!(
-                "Connection to destination cassandra node {destination} was closed: {error}"
-            )),
-        })
+        }))
         .ok();
 }
 
@@ -234,7 +249,7 @@ async fn rx_process<T: AsyncRead>(
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     rx_process_has_shutdown_tx: oneshot::Sender<String>,
     // Only used for error reporting
-    destination: String,
+    destination: SocketAddr,
 ) {
     let mut reader = FramedRead::new(read, codec);
 
@@ -274,7 +289,7 @@ async fn rx_process<T: AsyncRead>(
                                         from_server.insert(stream_id, m);
                                     },
                                     Some(return_tx) => {
-                                        return_tx.send(Response { stream_id, response: Ok(m) }).ok();
+                                        return_tx.send(Ok(m)).ok();
                                     }
                                 }
                             }
@@ -306,7 +321,7 @@ async fn rx_process<T: AsyncRead>(
                             from_tx_process.insert(stream_id, return_chan);
                         }
                         Some(m) => {
-                            return_chan.send(Response { stream_id, response: Ok(m) }).ok();
+                            return_chan.send(Ok(m)).ok();
                         }
                     }
                 } else {
@@ -325,7 +340,7 @@ async fn send_errors_and_shutdown(
     mut return_rx: mpsc::UnboundedReceiver<ReturnChannel>,
     mut waiting: HashMap<i16, oneshot::Sender<Response>>,
     rx_process_has_shutdown_tx: oneshot::Sender<String>,
-    destination: String,
+    destination: SocketAddr,
     message: &str,
 ) {
     // Ensure we send this before closing return_rx.
@@ -337,15 +352,13 @@ async fn send_errors_and_shutdown(
 
     return_rx.close();
 
-    let full_message =
-        format!("Connection to destination cassandra node {destination} was closed: {message}");
-
     for (stream_id, return_tx) in waiting.drain() {
         return_tx
-            .send(Response {
+            .send(Err(ResponseError {
+                cause: anyhow!(message.to_owned()),
+                destination,
                 stream_id,
-                response: Err(anyhow!(full_message.to_owned())),
-            })
+            }))
             .ok();
     }
 
@@ -353,10 +366,11 @@ async fn send_errors_and_shutdown(
     while let Some(return_chan) = return_rx.recv().await {
         return_chan
             .return_chan
-            .send(Response {
+            .send(Err(ResponseError {
+                cause: anyhow!(message.to_owned()),
+                destination,
                 stream_id: return_chan.stream_id,
-                response: Err(anyhow!(full_message.to_owned())),
-            })
+            }))
             .ok();
     }
 }
@@ -365,20 +379,19 @@ pub async fn receive(
     timeout_duration: Option<Duration>,
     failed_requests: &metrics::Counter,
     mut results: FuturesOrdered<oneshot::Receiver<Response>>,
-    version: Version,
-) -> Result<Messages> {
+) -> Result<Vec<Result<Message, ResponseError>>> {
     let expected_size = results.len();
     let mut responses = Vec::with_capacity(expected_size);
     while responses.len() < expected_size {
         if let Some(timeout_duration) = timeout_duration {
             match timeout(
                 timeout_duration,
-                receive_message(failed_requests, &mut results, version),
+                receive_message(failed_requests, &mut results),
             )
             .await
             {
                 Ok(response) => {
-                    responses.push(response?);
+                    responses.push(response);
                 }
                 Err(_) => {
                     return Err(anyhow!(
@@ -389,7 +402,7 @@ pub async fn receive(
                 }
             }
         } else {
-            responses.push(receive_message(failed_requests, &mut results, version).await?);
+            responses.push(receive_message(failed_requests, &mut results).await);
         }
     }
     Ok(responses)
@@ -398,14 +411,10 @@ pub async fn receive(
 async fn receive_message(
     failed_requests: &metrics::Counter,
     results: &mut FuturesOrdered<oneshot::Receiver<Response>>,
-    version: Version,
-) -> Result<Message> {
+) -> Result<Message, ResponseError> {
     match results.next().await {
         Some(result) => match result.expect("The tx_process task must always return a value") {
-            Response {
-                response: Ok(message),
-                ..
-            } => {
+            Ok(message) => {
                 if let Ok(Metadata::Cassandra(CassandraMetadata {
                     opcode: Opcode::Error,
                     ..
@@ -415,12 +424,7 @@ async fn receive_message(
                 }
                 Ok(message)
             }
-            Response {
-                stream_id,
-                response: Err(err),
-            } => Ok(Message::from_frame(Frame::Cassandra(
-                CassandraFrame::shotover_error(stream_id, version, &format!("{:?}", err)),
-            ))),
+            err => err,
         },
         None => unreachable!("Ran out of responses"),
     }

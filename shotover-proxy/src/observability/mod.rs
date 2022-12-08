@@ -1,3 +1,4 @@
+use crate::runner::ReloadHandle;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use hyper::{
@@ -9,27 +10,20 @@ use std::convert::Infallible;
 use std::str;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, trace};
-use tracing_subscriber::reload::Handle;
-use tracing_subscriber::EnvFilter;
 
 /// Exports metrics over HTTP.
-pub struct LogFilterHttpExporter<S> {
+pub struct LogFilterHttpExporter {
     recorder_handle: PrometheusHandle,
     address: SocketAddr,
-    tracing_handle: Handle<EnvFilter, S>,
+    tracing_handle: ReloadHandle,
 }
 
 /// Sets the `tracing_suscriber` filter level to the value of `bytes` on `handle`
-fn set_filter<S>(bytes: Bytes, handle: &Handle<EnvFilter, S>) -> Result<(), String>
-where
-    S: tracing::Subscriber + 'static,
-{
-    let body = str::from_utf8(bytes.as_ref()).map_err(|e| format!("{e}"))?;
+fn set_filter(bytes: Bytes, handle: &ReloadHandle) -> Result<()> {
+    let body = str::from_utf8(bytes.as_ref())?;
     trace!(request.body = ?body);
-    let new_filter = body
-        .parse::<tracing_subscriber::filter::EnvFilter>()
-        .map_err(|e| format!("{e}"))?;
-    handle.reload(new_filter).map_err(|e| format!("{e}"))
+    let new_filter = body.parse::<tracing_subscriber::filter::EnvFilter>()?;
+    handle.reload(new_filter)
 }
 
 fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
@@ -39,17 +33,14 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
         .expect("builder with known status code must not fail")
 }
 
-impl<S> LogFilterHttpExporter<S>
-where
-    S: tracing::Subscriber + 'static,
-{
+impl LogFilterHttpExporter {
     /// Creates a new [`LogFilterHttpExporter`] that listens on the given `address`.
     ///
     /// Observers expose their output by being converted into strings.
     pub fn new(
         recorder_handle: PrometheusHandle,
         address: SocketAddr,
-        tracing_handle: Handle<EnvFilter, S>,
+        tracing_handle: ReloadHandle,
     ) -> Self {
         LogFilterHttpExporter {
             recorder_handle,
@@ -89,8 +80,11 @@ where
                                 match hyper::body::to_bytes(req).await {
                                     Ok(body) => match set_filter(body, &tracing_handle) {
                                         Err(error) => {
-                                            error!(%error, "setting filter failed!");
-                                            rsp(StatusCode::INTERNAL_SERVER_ERROR, error)
+                                            error!(?error, "setting filter failed!");
+                                            rsp(
+                                                StatusCode::INTERNAL_SERVER_ERROR,
+                                                format!("{:?}", error),
+                                            )
                                         }
                                         Ok(()) => rsp(StatusCode::NO_CONTENT, Body::empty()),
                                     },

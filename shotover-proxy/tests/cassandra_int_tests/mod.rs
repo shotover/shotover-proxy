@@ -93,6 +93,7 @@ async fn passthrough_encode(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
+#[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
@@ -191,6 +192,8 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
         native_types::test(&connection2).await;
+
+        cluster::single_rack_v4::test_node_going_down(&compose, driver).await;
     }
 
     {
@@ -202,25 +205,6 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     }
 
     cluster::single_rack_v4::test_topology_task(None, Some(9044)).await;
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster-v4/topology.yaml");
-    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, false).await;
-}
-
-#[cfg(feature = "alpha-transforms")]
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-#[rstest]
-//#[case::cdrs(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn cluster_single_rack_node_lost(#[case] driver: CassandraDriver) {
-    let compose = DockerCompose::new("example-configs/cassandra-cluster-v4/docker-compose.yaml");
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster-v4/topology.yaml");
-    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, true).await;
 }
 
 #[rstest]
@@ -264,6 +248,7 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 #[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
+#[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
