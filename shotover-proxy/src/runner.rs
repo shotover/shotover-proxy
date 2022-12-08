@@ -224,6 +224,16 @@ impl TracingState {
             }
         };
 
+        // When in json mode we need to process panics as events instead of printing directly to stdout.
+        // This is so that:
+        // * We dont include invalid json in stdout
+        // * panics can be received by whatever is processing the json events
+        //
+        // We dont do this for LogFormat::Human because the default panic messages are more readable for humans
+        if let LogFormat::Json = format {
+            crate::tracing_panic_handler::setup();
+        }
+
         Ok(TracingState { guard, handle })
     }
 }
