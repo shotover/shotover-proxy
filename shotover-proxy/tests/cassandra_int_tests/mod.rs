@@ -35,6 +35,7 @@ mod protect;
 #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
 mod routing;
 mod table;
+mod timestamp;
 mod udt;
 
 async fn standard_test_suite<Fut>(connection_creator: impl Fn() -> Fut, driver: CassandraDriver)
@@ -53,6 +54,7 @@ where
     prepared_statements_simple::test(&connection, connection_creator).await;
     prepared_statements_all::test(&connection).await;
     batch_statements::test(&connection).await;
+    timestamp::test(&connection).await;
 }
 
 #[rstest]

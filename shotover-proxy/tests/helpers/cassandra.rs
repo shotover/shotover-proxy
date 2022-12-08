@@ -14,7 +14,7 @@ use cassandra_protocol::{
     types::cassandra_type::{wrapper_fn, CassandraType},
 };
 use cdrs_tokio::query::{QueryParams, QueryParamsBuilder};
-use cdrs_tokio::statement::StatementParams;
+use cdrs_tokio::statement::{StatementParams, StatementParamsBuilder};
 use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
     cluster::session::{Session as CdrsTokioSession, SessionBuilder, TcpSessionBuilder},
@@ -35,6 +35,7 @@ use scylla::frame::response::result::CqlValue;
 use scylla::frame::types::Consistency;
 use scylla::frame::value::Value as ScyllaValue;
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
+use scylla::statement::query::Query as ScyllaQuery;
 use scylla::{Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use std::fs::read_to_string;
@@ -341,6 +342,64 @@ impl CassandraConnection {
                 Self::process_cdrs_response(response)
             }
             Self::Scylla { session, .. } => {
+                let rows = session.query(query, ()).await.unwrap().rows;
+                match rows {
+                    Some(rows) => rows
+                        .into_iter()
+                        .map(|x| {
+                            x.columns
+                                .into_iter()
+                                .map(ResultValue::new_from_scylla)
+                                .collect()
+                        })
+                        .collect(),
+                    None => vec![],
+                }
+            }
+        };
+
+        let query = query.to_uppercase();
+        let query = query.trim();
+        if query.starts_with("CREATE") || query.starts_with("ALTER") || query.starts_with("DROP") {
+            self.await_schema_agreement().await;
+        }
+
+        result
+    }
+
+    #[allow(dead_code)]
+    pub async fn execute_with_timestamp(
+        &self,
+        query: &str,
+        timestamp: i64,
+    ) -> Vec<Vec<ResultValue>> {
+        let result = match self {
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            Self::Datastax { session, .. } => {
+                let mut statement = stmt!(query);
+                statement.set_timestamp(timestamp).unwrap();
+                match session.execute(&statement).await {
+                    Ok(result) => result
+                        .into_iter()
+                        .map(|x| x.into_iter().map(ResultValue::new_from_cpp).collect())
+                        .collect(),
+                    Err(Error(err, _)) => panic!("The CQL query: {query}\nFailed with: {err}"),
+                }
+            }
+            Self::CdrsTokio { session, .. } => {
+                let statement_params = StatementParamsBuilder::new()
+                    .with_timestamp(timestamp)
+                    .build();
+
+                let response = session
+                    .query_with_params(query, statement_params)
+                    .await
+                    .unwrap();
+                Self::process_cdrs_response(response)
+            }
+            Self::Scylla { session, .. } => {
+                let mut query = ScyllaQuery::new(query);
+                query.set_timestamp(Some(timestamp));
                 let rows = session.query(query, ()).await.unwrap().rows;
                 match rows {
                     Some(rows) => rows
