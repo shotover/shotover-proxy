@@ -30,7 +30,6 @@ mod prepared_statements_all;
 mod prepared_statements_simple;
 #[cfg(feature = "alpha-transforms")]
 mod protect;
-#[cfg(not(feature = "cassandra-cpp-driver-tests"))]
 mod routing;
 mod table;
 mod timestamp;
@@ -148,7 +147,6 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
         standard_test_suite(&connection, driver).await;
         cluster::single_rack_v3::test_dummy_peers(&connection().await).await;
 
-        #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9042, driver).await;
 
         //Check for bugs in cross connection state
@@ -183,7 +181,6 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         standard_test_suite(&connection, driver).await;
         cluster::single_rack_v4::test(&connection().await, driver).await;
 
-        #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
 
         //Check for bugs in cross connection state

@@ -320,17 +320,26 @@ pub async fn test(
     cassandra_port: u16,
     driver: CassandraDriver,
 ) {
-    let mut shotover =
-        CassandraConnection::new(shotover_contact_point, shotover_port, driver).await;
-    shotover
-        .enable_schema_awaiter(
-            &format!("{}:{}", cassandra_contact_point, cassandra_port),
-            None,
-        )
-        .await;
-    let cassandra = CassandraConnection::new(cassandra_contact_point, cassandra_port, driver).await;
+    // execute_prepared_coordinator_node doesnt support cassandra-cpp yet.
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
+    let run = !matches!(driver, CassandraDriver::Datastax);
+    #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
+    let run = true;
 
-    single_key::test(&shotover, &cassandra).await;
-    composite_key::test(&shotover, &cassandra).await;
-    compound_key::test(&shotover, &cassandra).await;
+    if run {
+        let mut shotover =
+            CassandraConnection::new(shotover_contact_point, shotover_port, driver).await;
+        shotover
+            .enable_schema_awaiter(
+                &format!("{}:{}", cassandra_contact_point, cassandra_port),
+                None,
+            )
+            .await;
+        let cassandra =
+            CassandraConnection::new(cassandra_contact_point, cassandra_port, driver).await;
+
+        single_key::test(&shotover, &cassandra).await;
+        composite_key::test(&shotover, &cassandra).await;
+        compound_key::test(&shotover, &cassandra).await;
+    }
 }
