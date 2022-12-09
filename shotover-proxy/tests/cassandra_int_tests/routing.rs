@@ -362,7 +362,8 @@ mod composite_key {
                     ResultValue::Boolean(true),
                 ],
             )
-            .await;
+            .await
+            .unwrap();
 
         let _ = connection
             .execute_prepared(
@@ -372,14 +373,16 @@ mod composite_key {
                     ResultValue::Boolean(true),
                 ],
             )
-            .await;
+            .await
+            .unwrap();
 
         let _ = connection
             .execute_prepared(
                 &simple1,
                 &[ResultValue::Varchar(name), ResultValue::Boolean(true)],
             )
-            .await;
+            .await
+            .unwrap();
     }
 }
 
