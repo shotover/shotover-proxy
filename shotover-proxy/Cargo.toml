@@ -80,20 +80,20 @@ generic-array = { version = "0.14", features = ["serde"] }
 rayon = "1.5.1"
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
 redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
-pcap = "0.11.0"
+pcap = "1.0.0"
 pktparse = { version = "0.7.0", features = ["serde"] }
 tls-parser = "0.11.0"
 tokio-io-timeout = "1.1.1"
 serial_test = "0.9.0"
-cassandra-cpp = { git = "https://github.com/Metaswitch/cassandra-rs" }
+cassandra-cpp = "1.2.0"
 test-helpers = { path = "../test-helpers" }
 hex-literal = "0.3.3"
-nix = "0.25.0"
+nix = "0.26.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
 scylla = { git = "https://github.com/scylladb/scylla-rust-driver", features = ["ssl"] }
-rstest = "0.15.0"
+rstest = "0.16.0"
 
 [[bench]]
 name = "benches"
