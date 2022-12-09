@@ -1,3 +1,4 @@
+use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 use basic_driver_tests::*;
 use redis::aio::Connection;
@@ -16,22 +17,21 @@ pub mod basic_driver_tests;
 #[serial]
 async fn passthrough() {
     let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let mut flusher =
-        Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
+    let mut connection = redis_connection::new_async(6379).await;
+    let mut flusher = Flusher::new_single_connection(redis_connection::new_async(6379).await).await;
 
-    run_all(&mut connection, &mut flusher, &shotover_manager).await;
+    run_all(&mut connection, &mut flusher).await;
     test_invalid_frame().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn passthrough_redis_down() {
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-passthrough/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     test_trigger_transform_failure_driver(&mut connection).await;
     test_trigger_transform_failure_raw().await;
@@ -45,11 +45,11 @@ async fn cluster_tls() {
 
     {
         let _compose = DockerCompose::new("example-configs/redis-cluster-tls/docker-compose.yaml");
-        let shotover_manager =
+        let _shotover_manager =
             ShotoverManager::from_topology_file("example-configs/redis-cluster-tls/topology.yaml");
 
-        let mut connection = shotover_manager.redis_connection_async(6379).await;
-        let mut flusher = Flusher::new_cluster(&shotover_manager).await;
+        let mut connection = redis_connection::new_async(6379).await;
+        let mut flusher = Flusher::new_cluster().await;
 
         run_all_cluster_hiding(&mut connection, &mut flusher).await;
         test_cluster_ports_rewrite_slots(&mut connection, 6379).await;
@@ -59,11 +59,11 @@ async fn cluster_tls() {
     {
         let _compose =
             DockerCompose::new("example-configs/redis-cluster-tls/docker-compose-with-key.yaml");
-        let shotover_manager = ShotoverManager::from_topology_file(
+        let _shotover_manager = ShotoverManager::from_topology_file(
             "example-configs/redis-cluster-tls/topology-with-key.yaml",
         );
 
-        let mut connection = shotover_manager.redis_connection_async(6379).await;
+        let mut connection = redis_connection::new_async(6379).await;
         test_cluster_basics(&mut connection).await;
     }
 }
@@ -74,7 +74,7 @@ async fn source_tls_and_single_tls() {
     test_helpers::cert::generate_redis_test_certs(Path::new("example-configs/redis-tls/certs"));
 
     let _compose = DockerCompose::new("example-configs/redis-tls/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
     let tls_config = TlsConnectorConfig {
@@ -84,17 +84,12 @@ async fn source_tls_and_single_tls() {
         verify_hostname: false,
     };
 
-    let mut connection = shotover_manager
-        .redis_connection_async_tls(6380, tls_config.clone())
-        .await;
-    let mut flusher = Flusher::new_single_connection(
-        shotover_manager
-            .redis_connection_async_tls(6380, tls_config)
-            .await,
-    )
-    .await;
+    let mut connection = redis_connection::new_async_tls(6380, tls_config.clone()).await;
+    let mut flusher =
+        Flusher::new_single_connection(redis_connection::new_async_tls(6380, tls_config).await)
+            .await;
 
-    run_all(&mut connection, &mut flusher, &shotover_manager).await;
+    run_all(&mut connection, &mut flusher).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -102,13 +97,12 @@ async fn source_tls_and_single_tls() {
 async fn cluster_ports_rewrite() {
     let _compose =
         DockerCompose::new("tests/test-configs/redis-cluster-ports-rewrite/docker-compose.yaml");
-    let shotover_manager = ShotoverManager::from_topology_file(
+    let _shotover_manager = ShotoverManager::from_topology_file(
         "tests/test-configs/redis-cluster-ports-rewrite/topology.yaml",
     );
 
-    let mut connection = shotover_manager.redis_connection_async(6380).await;
-    let mut flusher =
-        Flusher::new_single_connection(shotover_manager.redis_connection_async(6380).await).await;
+    let mut connection = redis_connection::new_async(6380).await;
+    let mut flusher = Flusher::new_single_connection(redis_connection::new_async(6380).await).await;
 
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
 
@@ -120,11 +114,10 @@ async fn cluster_ports_rewrite() {
 #[serial]
 async fn multi() {
     let _compose = DockerCompose::new("example-configs/redis-multi/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-multi/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
-    let mut flusher =
-        Flusher::new_single_connection(shotover_manager.redis_connection_async(6379).await).await;
+    let mut connection = redis_connection::new_async(6379).await;
+    let mut flusher = Flusher::new_single_connection(redis_connection::new_async(6379).await).await;
 
     run_all_multi_safe(&mut connection, &mut flusher).await;
 }
@@ -133,24 +126,24 @@ async fn multi() {
 #[serial]
 async fn cluster_auth() {
     let _compose = DockerCompose::new("tests/test-configs/redis-cluster-auth/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/redis-cluster-auth/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     test_auth(&mut connection).await;
-    test_auth_isolation(&shotover_manager, &mut connection).await;
+    test_auth_isolation(&mut connection).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cluster_hiding() {
     let _compose = DockerCompose::new("example-configs/redis-cluster-hiding/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-hiding/topology.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
     let connection = &mut connection;
-    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
+    let mut flusher = Flusher::new_cluster().await;
 
     run_all_cluster_hiding(connection, &mut flusher).await;
     test_cluster_ports_rewrite_slots(connection, 6379).await;
@@ -161,13 +154,13 @@ async fn cluster_hiding() {
 #[serial]
 async fn cluster_handling() {
     let _compose = DockerCompose::new("example-configs/redis-cluster-handling/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-handling/topology.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
     let connection = &mut connection;
 
-    let mut flusher = Flusher::new_cluster(&shotover_manager).await;
+    let mut flusher = Flusher::new_cluster().await;
 
     run_all_cluster_handling(connection, &mut flusher).await;
     test_cluster_ports_rewrite_slots(connection, 6379).await;
@@ -195,9 +188,9 @@ async fn cluster_dr() {
 
     // test coalesce sends messages on shotover shutdown
     {
-        let shotover_manager =
+        let _shotover_manager =
             ShotoverManager::from_topology_file("example-configs/redis-cluster-dr/topology.yaml");
-        let mut connection = shotover_manager.redis_connection_async(6379).await;
+        let mut connection = redis_connection::new_async(6379).await;
         redis::cmd("AUTH")
             .arg("default")
             .arg("shotover")
@@ -227,11 +220,11 @@ async fn cluster_dr() {
         358
     );
 
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-cluster-dr/topology.yaml");
 
-    async fn new_connection(shotover_manager: &ShotoverManager) -> Connection {
-        let mut connection = shotover_manager.redis_connection_async(6379).await;
+    async fn new_connection() -> Connection {
+        let mut connection = redis_connection::new_async(6379).await;
 
         redis::cmd("AUTH")
             .arg("default")
@@ -242,10 +235,10 @@ async fn cluster_dr() {
 
         connection
     }
-    let mut connection = new_connection(&shotover_manager).await;
-    let mut flusher = Flusher::new_single_connection(new_connection(&shotover_manager).await).await;
+    let mut connection = new_connection().await;
+    let mut flusher = Flusher::new_single_connection(new_connection().await).await;
 
     test_cluster_replication(&mut connection, &mut replication_connection).await;
-    test_dr_auth(&shotover_manager).await;
+    test_dr_auth().await;
     run_all_cluster_hiding(&mut connection, &mut flusher).await;
 }
