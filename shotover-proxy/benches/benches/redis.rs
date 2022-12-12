@@ -4,6 +4,7 @@ use std::path::Path;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 
+use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 
 struct Query {
@@ -154,7 +155,7 @@ impl BenchResources {
         let compose = DockerCompose::new(compose_file);
         let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
 
-        let mut connection = shotover_manager.redis_connection(6379);
+        let mut connection = redis_connection::new(6379);
         redis::cmd("SET")
             .arg("bench_test_data")
             .arg("A value with some length length to it to form a reasonable benchmark")
