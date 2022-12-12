@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::error::ChainResponse;
 use crate::frame::Frame;
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedisClusterPortsRewriteConfig {
@@ -14,8 +14,8 @@ pub struct RedisClusterPortsRewriteConfig {
 }
 
 impl RedisClusterPortsRewriteConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::RedisClusterPortsRewrite(
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::RedisClusterPortsRewrite(
             RedisClusterPortsRewrite {
                 new_port: self.new_port,
             },

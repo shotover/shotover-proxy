@@ -1,5 +1,5 @@
 use crate::sources::{Sources, SourcesConfig};
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::TransformChainBuilder;
 use crate::transforms::{build_chain_from_config, TransformsConfig};
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
@@ -30,7 +30,7 @@ impl Topology {
         Topology::topology_from_config(config)
     }
 
-    async fn build_chains(&self) -> Result<HashMap<String, TransformChain>> {
+    async fn build_chains(&self) -> Result<HashMap<String, TransformChainBuilder>> {
         let mut result = HashMap::new();
         for (key, value) in &self.chain_config {
             result.insert(

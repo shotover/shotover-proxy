@@ -2,7 +2,7 @@ use crate::codec::redis::RedisCodec;
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ pub struct RedisConfig {
 impl RedisConfig {
     pub async fn get_source(
         &self,
-        chain: &TransformChain,
+        chain: &TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         RedisSource::new(
@@ -49,7 +49,7 @@ pub struct RedisSource {
 impl RedisSource {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain: &TransformChain,
+        chain: &TransformChainBuilder,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,

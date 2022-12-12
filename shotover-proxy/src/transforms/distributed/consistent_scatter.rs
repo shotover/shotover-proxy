@@ -2,7 +2,7 @@ use crate::error::ChainResponse;
 use crate::message::{Message, QueryType};
 use crate::transforms::chain::BufferedChain;
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -27,7 +27,7 @@ pub struct ConsistentScatterConfig {
 }
 
 impl ConsistentScatterConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
@@ -35,12 +35,12 @@ impl ConsistentScatterConfig {
             route_map.push(
                 build_chain_from_config(key.clone(), value)
                     .await?
-                    .into_buffered_chain(10),
+                    .build_buffered(10),
             );
         }
         route_map.sort_by_key(|x| x.original_chain.name.clone());
 
-        Ok(Transforms::ConsistentScatter(ConsistentScatter {
+        Ok(TransformBuilder::ConsistentScatter(ConsistentScatter {
             route_map,
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
@@ -182,6 +182,8 @@ impl Transform for ConsistentScatter {
             .flat_map(|buffer_chain| {
                 buffer_chain
                     .original_chain
+                    // TODO: each transform needs its own builder type so we can store the builder chains
+                    // We can make this easy for ourselves by only doing so for the types that strictly need it
                     .validate()
                     .into_iter()
                     .map(|x| format!("  {x}"))
@@ -200,12 +202,12 @@ impl Transform for ConsistentScatter {
 mod scatter_transform_tests {
     use crate::frame::{Frame, RedisFrame};
     use crate::message::{Message, Messages};
-    use crate::transforms::chain::{BufferedChain, TransformChain};
+    use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
     use crate::transforms::null::Null;
-    use crate::transforms::{Transform, Transforms, Wrapper};
+    use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
     use bytes::Bytes;
     use std::collections::HashMap;
 
@@ -221,10 +223,10 @@ mod scatter_transform_tests {
         assert_eq!(message.frame().unwrap(), &expected);
     }
 
-    async fn build_chains(route_map: HashMap<String, TransformChain>) -> Vec<BufferedChain> {
+    async fn build_chains(route_map: HashMap<String, TransformChainBuilder>) -> Vec<BufferedChain> {
         route_map
             .into_values()
-            .map(|x| x.into_buffered_chain(10))
+            .map(|x| x.build_buffered(10))
             .collect()
     }
 
@@ -238,22 +240,23 @@ mod scatter_transform_tests {
             RedisFrame::BulkString(Bytes::from_static(b"foo")),
         ))]);
 
-        let ok_repeat =
-            Transforms::DebugReturner(DebugReturner::new(Response::Message(response.clone())));
-        let err_repeat = Transforms::DebugReturner(DebugReturner::new(Response::Fail));
+        let ok_repeat = TransformBuilder::DebugReturner(DebugReturner::new(Response::Message(
+            response.clone(),
+        )));
+        let err_repeat = TransformBuilder::DebugReturner(DebugReturner::new(Response::Fail));
 
         let mut two_of_three = HashMap::new();
         two_of_three.insert(
             "one".to_string(),
-            TransformChain::new(vec![ok_repeat.clone()], "one".to_string()),
+            TransformChainBuilder::new(vec![ok_repeat.clone()], "one".to_string()),
         );
         two_of_three.insert(
             "two".to_string(),
-            TransformChain::new(vec![ok_repeat.clone()], "two".to_string()),
+            TransformChainBuilder::new(vec![ok_repeat.clone()], "two".to_string()),
         );
         two_of_three.insert(
             "three".to_string(),
-            TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
+            TransformChainBuilder::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
         let mut tuneable_success_consistency = Transforms::ConsistentScatter(ConsistentScatter {
@@ -272,15 +275,15 @@ mod scatter_transform_tests {
         let mut one_of_three = HashMap::new();
         one_of_three.insert(
             "one".to_string(),
-            TransformChain::new(vec![ok_repeat.clone()], "one".to_string()),
+            TransformChainBuilder::new(vec![ok_repeat.clone()], "one".to_string()),
         );
         one_of_three.insert(
             "two".to_string(),
-            TransformChain::new(vec![err_repeat.clone()], "two".to_string()),
+            TransformChainBuilder::new(vec![err_repeat.clone()], "two".to_string()),
         );
         one_of_three.insert(
             "three".to_string(),
-            TransformChain::new(vec![err_repeat.clone()], "three".to_string()),
+            TransformChainBuilder::new(vec![err_repeat.clone()], "three".to_string()),
         );
 
         let mut tuneable_fail_consistency = Transforms::ConsistentScatter(ConsistentScatter {
@@ -299,21 +302,18 @@ mod scatter_transform_tests {
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain_1 = TransformChain::new(
+        let chain_1 = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
-        let chain_2 = TransformChain::new(vec![], "test-chain-2".to_string());
+        let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2".to_string());
 
         let transform = ConsistentScatter {
-            route_map: vec![
-                chain_1.into_buffered_chain(10),
-                chain_2.into_buffered_chain(10),
-            ],
+            route_map: vec![chain_1.build_buffered(10), chain_2.build_buffered(10)],
             write_consistency: 1,
             read_consistency: 1,
         };
@@ -330,28 +330,25 @@ mod scatter_transform_tests {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let chain_1 = TransformChain::new(
+        let chain_1 = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
-        let chain_2 = TransformChain::new(
+        let chain_2 = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
         );
 
         let transform = ConsistentScatter {
-            route_map: vec![
-                chain_1.into_buffered_chain(10),
-                chain_2.into_buffered_chain(10),
-            ],
+            route_map: vec![chain_1.build_buffered(10), chain_2.build_buffered(10)],
             write_consistency: 1,
             read_consistency: 1,
         };

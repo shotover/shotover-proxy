@@ -3,7 +3,7 @@ use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::MessageValue;
 use crate::transforms::protect::key_management::KeyManager;
 pub use crate::transforms::protect::key_management::KeyManagerConfig;
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -26,8 +26,8 @@ pub struct ProtectConfig {
 }
 
 impl ProtectConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::Protect(Box::new(Protect {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Protect(Box::new(Protect {
             keyspace_table_columns: self
                 .keyspace_table_columns
                 .iter()
