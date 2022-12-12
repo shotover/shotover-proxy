@@ -1,6 +1,6 @@
 use crate::sources::cassandra_source::{CassandraConfig, CassandraSource};
 use crate::sources::redis_source::{RedisConfig, RedisSource};
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::Deserialize;
 use tokio::sync::watch;
@@ -33,7 +33,7 @@ pub enum SourcesConfig {
 impl SourcesConfig {
     pub(crate) async fn get_source(
         &self,
-        chain: &TransformChain,
+        chain: &TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         match self {

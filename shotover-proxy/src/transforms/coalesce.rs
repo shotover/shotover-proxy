@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -21,8 +21,8 @@ pub struct CoalesceConfig {
 }
 
 impl CoalesceConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::Coalesce(Coalesce {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::Coalesce(Coalesce {
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,

@@ -2,7 +2,7 @@ use crate::codec::cassandra::CassandraCodec;
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::TransformChainBuilder;
 use anyhow::Result;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ pub struct CassandraConfig {
 impl CassandraConfig {
     pub async fn get_source(
         &self,
-        chain: &TransformChain,
+        chain: &TransformChainBuilder,
         trigger_shutdown_rx: watch::Receiver<bool>,
     ) -> Result<Vec<Sources>> {
         Ok(vec![Sources::Cassandra(
@@ -50,7 +50,7 @@ pub struct CassandraSource {
 impl CassandraSource {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain: &TransformChain,
+        chain: &TransformChainBuilder,
         listen_addr: String,
         mut trigger_shutdown_rx: watch::Receiver<bool>,
         connection_limit: Option<usize>,
