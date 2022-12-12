@@ -1,3 +1,4 @@
+use self::cassandra::sink_cluster::CassandraSinkClusterBuilder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
@@ -76,7 +77,7 @@ pub mod util;
 #[derive(Clone, IntoStaticStr)]
 pub enum TransformBuilder {
     CassandraSinkSingle(CassandraSinkSingle),
-    CassandraSinkCluster(Box<CassandraSinkCluster>),
+    CassandraSinkCluster(Box<CassandraSinkClusterBuilder>),
     RedisSinkSingle(RedisSinkSingle),
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCacheBuilder),
@@ -105,7 +106,9 @@ impl TransformBuilder {
     pub fn build(self) -> Transforms {
         match self {
             TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t),
-            TransformBuilder::CassandraSinkCluster(t) => Transforms::CassandraSinkCluster(t),
+            TransformBuilder::CassandraSinkCluster(t) => {
+                Transforms::CassandraSinkCluster(t.build())
+            }
             TransformBuilder::CassandraPeersRewrite(t) => Transforms::CassandraPeersRewrite(t),
             TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
             TransformBuilder::Tee(t) => Transforms::Tee(t),
