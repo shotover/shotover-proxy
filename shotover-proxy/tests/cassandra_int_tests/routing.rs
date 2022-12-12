@@ -354,7 +354,7 @@ mod composite_key {
 
         let name: String = "0FjhKM4rJQJaniCNHEkKlelmUsYIBJJ9IZuBh44WJTrcPrez".into();
 
-        let _ = connection
+        connection
             .execute_prepared(
                 &range,
                 &[
@@ -365,7 +365,7 @@ mod composite_key {
             .await
             .unwrap();
 
-        let _ = connection
+        connection
             .execute_prepared(
                 &simple2,
                 &[
@@ -376,7 +376,7 @@ mod composite_key {
             .await
             .unwrap();
 
-        let _ = connection
+        connection
             .execute_prepared(
                 &simple1,
                 &[ResultValue::Varchar(name), ResultValue::Boolean(true)],
