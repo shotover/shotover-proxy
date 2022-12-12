@@ -4,7 +4,7 @@ use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use crate::message::{IntSize, Message, MessageValue, Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::{CassandraConnection, Response};
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::events::ServerEvent;
@@ -60,7 +60,7 @@ pub struct CassandraSinkClusterConfig {
 }
 
 impl CassandraSinkClusterConfig {
-    pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
+    pub async fn get_transform(&self, chain_name: String) -> Result<TransformBuilder> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self
@@ -75,7 +75,7 @@ impl CassandraSinkClusterConfig {
             })?;
         let local_node = shotover_nodes.remove(index);
 
-        Ok(Transforms::CassandraSinkCluster(Box::new(
+        Ok(TransformBuilder::CassandraSinkCluster(Box::new(
             CassandraSinkCluster::new(
                 self.first_contact_points.clone(),
                 shotover_nodes,

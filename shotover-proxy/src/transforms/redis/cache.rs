@@ -1,9 +1,9 @@
 use crate::error::ChainResponse;
 use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -82,7 +82,7 @@ pub struct RedisConfig {
 }
 
 impl RedisConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
         let missed_requests = register_counter!("cache_miss");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self
@@ -91,12 +91,19 @@ impl RedisConfig {
             .map(|(k, v)| (FQName::parse(k), v.into()))
             .collect();
 
-        Ok(Transforms::RedisCache(SimpleRedisCache {
+        Ok(TransformBuilder::RedisCache(SimpleRedisCacheBuilder {
             cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain).await?,
             caching_schema,
             missed_requests,
         }))
     }
+}
+
+#[derive(Clone)]
+pub struct SimpleRedisCacheBuilder {
+    cache_chain: TransformChainBuilder,
+    caching_schema: HashMap<FQName, TableCacheSchema>,
+    missed_requests: Counter,
 }
 
 #[derive(Clone)]
@@ -107,10 +114,6 @@ pub struct SimpleRedisCache {
 }
 
 impl SimpleRedisCache {
-    fn get_name(&self) -> &'static str {
-        "SimpleRedisCache"
-    }
-
     fn build_cache_query(&mut self, cassandra_messages: &mut Messages) -> (Messages, Vec<usize>) {
         let mut indices = Vec::with_capacity(cassandra_messages.len());
         let redis_requests = cassandra_messages
@@ -562,8 +565,22 @@ impl Transform for SimpleRedisCache {
 
         Ok(responses)
     }
+}
+impl SimpleRedisCacheBuilder {
+    pub fn build(self) -> SimpleRedisCache {
+        SimpleRedisCache {
+            cache_chain: self.cache_chain.build(),
+            caching_schema: self.caching_schema,
+            missed_requests: self.missed_requests,
+        }
+    }
 
-    fn validate(&self) -> Vec<String> {
+    fn get_name(&self) -> &'static str {
+        "SimpleRedisCache"
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        println!("HIII");
         let mut errors = self
             .cache_chain
             .validate()
@@ -577,18 +594,22 @@ impl Transform for SimpleRedisCache {
 
         errors
     }
+
+    pub fn is_terminating(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::frame::cassandra::parse_statement_single;
-    use crate::transforms::chain::TransformChain;
+    use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
     use crate::transforms::redis::cache::{
-        build_redis_key_from_cql3, HashAddress, SimpleRedisCache, TableCacheSchema,
+        build_redis_key_from_cql3, HashAddress, SimpleRedisCacheBuilder, TableCacheSchema,
     };
-    use crate::transforms::{Transform, Transforms};
+    use crate::transforms::TransformBuilder;
     use bytes::Bytes;
     use cql3_parser::common::Identifier;
     use metrics::register_counter;
@@ -788,8 +809,9 @@ mod test {
 
     #[test]
     fn test_validate_invalid_chain() {
-        let transform = SimpleRedisCache {
-            cache_chain: TransformChain::new(vec![], "test-chain".to_string()),
+        println!("START");
+        let transform = SimpleRedisCacheBuilder {
+            cache_chain: TransformChainBuilder::new(vec![], "test-chain".to_string()),
             caching_schema: HashMap::new(),
             missed_requests: register_counter!("cache_miss"),
         };
@@ -806,16 +828,16 @@ mod test {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let cache_chain = TransformChain::new(
+        let cache_chain = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain".to_string(),
         );
 
-        let transform = SimpleRedisCache {
+        let transform = SimpleRedisCacheBuilder {
             cache_chain,
             caching_schema: HashMap::new(),
             missed_requests: register_counter!("cache_miss"),

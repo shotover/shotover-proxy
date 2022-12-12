@@ -1,6 +1,6 @@
 use crate::message::Messages;
 use crate::tls::TlsAcceptor;
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
@@ -50,8 +50,7 @@ pub trait Codec: CodecReadHalf + CodecWriteHalf {}
 impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
-    chain: TransformChain,
-
+    chain: TransformChainBuilder,
     source_name: String,
 
     /// TCP listener supplied by the `run` caller.
@@ -97,7 +96,7 @@ pub struct TcpCodecListener<C: Codec> {
 impl<C: Codec + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain: TransformChain,
+        chain: TransformChainBuilder,
         source_name: String,
         listen_addr: String,
         hard_connection_limit: bool,
@@ -182,6 +181,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                     self.listener = Some(create_listener(&self.listen_addr).await?);
                 }
             }
+
             self.connection_count = self.connection_count.wrapping_add(1);
             let span = tracing::error_span!(
                 "connection",
@@ -215,7 +215,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                     tokio::sync::mpsc::unbounded_channel::<Messages>();
 
                 let mut handler = Handler {
-                    chain: self.chain.clone_with_pushed_messages_tx(pushed_messages_tx),
+                    chain: self.chain.build_with_pushed_messages(pushed_messages_tx),
                     client_details: peer,
                     conn_details: conn_string,
                     source_details: self.source_name.clone(),

@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::{Transforms, Wrapper};
+use crate::transforms::{TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
@@ -64,7 +64,7 @@ pub struct TransformChain {
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
-    pub original_chain: TransformChain,
+    pub original_chain: TransformChainBuilder,
     send_handle: mpsc::Sender<BufferedChainMessages>,
     #[cfg(test)]
     pub count: std::sync::Arc<std::sync::atomic::AtomicU64>,
@@ -73,7 +73,7 @@ pub struct BufferedChain {
 impl BufferedChain {
     #[must_use]
     pub fn to_new_instance(&self, buffer_size: usize) -> Self {
-        self.original_chain.clone().into_buffered_chain(buffer_size)
+        self.original_chain.build_buffered(buffer_size)
     }
 
     pub async fn process_request(
@@ -150,7 +150,120 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub fn into_buffered_chain(self, buffer_size: usize) -> BufferedChain {
+    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
+        self.chain.iter_mut().collect_vec()
+    }
+
+    pub async fn process_request(
+        &mut self,
+        mut wrapper: Wrapper<'_>,
+        client_details: String,
+    ) -> ChainResponse {
+        let start = Instant::now();
+        wrapper.reset(&mut self.chain);
+
+        let result = wrapper.call_next_transform().await;
+        self.chain_total.increment(1);
+        if result.is_err() {
+            self.chain_failures.increment(1);
+        }
+
+        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
+        result
+    }
+
+    pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> ChainResponse {
+        let start = Instant::now();
+
+        let mut chain: Vec<_> = self.chain.iter().cloned().rev().collect();
+        wrapper.reset(&mut chain);
+
+        let result = wrapper.call_next_transform_pushed().await;
+        self.chain_total.increment(1);
+        if result.is_err() {
+            self.chain_failures.increment(1);
+        }
+
+        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone());
+        result
+    }
+}
+
+#[derive(Derivative)]
+#[derivative(Debug, Clone)]
+pub struct TransformChainBuilder {
+    pub name: String,
+    pub chain: Vec<TransformBuilder>,
+
+    #[derivative(Debug = "ignore")]
+    chain_total: Counter,
+    #[derivative(Debug = "ignore")]
+    chain_failures: Counter,
+}
+
+impl TransformChainBuilder {
+    pub fn new(chain: Vec<TransformBuilder>, name: String) -> Self {
+        for transform in &chain {
+            register_counter!("shotover_transform_total", "transform" => transform.get_name());
+            register_counter!("shotover_transform_failures", "transform" => transform.get_name());
+            register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
+        }
+
+        let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
+        let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
+        register_histogram!("shotover_chain_latency", "chain" => name.clone());
+
+        TransformChainBuilder {
+            name,
+            chain,
+            chain_total,
+            chain_failures,
+        }
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        if self.chain.is_empty() {
+            return vec![
+                format!("{}:", self.name),
+                "  Chain cannot be empty".to_string(),
+            ];
+        }
+
+        let last_index = self.chain.len() - 1;
+
+        let mut errors = self
+            .chain
+            .iter()
+            .enumerate()
+            .flat_map(|(i, transform)| {
+                let mut errors = vec![];
+
+                if i == last_index && !transform.is_terminating() {
+                    errors.push(format!(
+                        "  Non-terminating transform {:?} is last in chain. Last transform must be terminating.",
+                        transform.get_name()
+                    ));
+                } else if i != last_index && transform.is_terminating() {
+                    errors.push(format!(
+                        "  Terminating transform {:?} is not last in chain. Terminating transform must be last in chain.",
+                        transform.get_name()
+                    ));
+                }
+
+                errors.extend(transform.validate().iter().map(|x| format!("  {x}")));
+
+                errors
+            })
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.name));
+        }
+
+        errors
+    }
+
+    pub fn build_buffered(&self, buffer_size: usize) -> BufferedChain {
         let (tx, mut rx) = mpsc::channel::<BufferedChainMessages>(buffer_size);
 
         #[cfg(test)]
@@ -160,7 +273,7 @@ impl TransformChain {
 
         // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
 
-        let mut chain = self.clone();
+        let mut chain = self.build();
         let _jh = tokio::spawn(
             async move {
                 while let Some(BufferedChainMessages {
@@ -218,134 +331,56 @@ impl TransformChain {
             send_handle: tx,
             #[cfg(test)]
             count,
-            original_chain: self,
+            original_chain: self.clone(),
         }
-    }
-
-    pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
-        for transform in &transform_list {
-            register_counter!("shotover_transform_total", "transform" => transform.get_name());
-            register_counter!("shotover_transform_failures", "transform" => transform.get_name());
-            register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
-        }
-
-        let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
-        let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", "chain" => name.clone());
-
-        TransformChain {
-            name,
-            chain: transform_list,
-            chain_total,
-            chain_failures,
-        }
-    }
-
-    pub fn validate(&self) -> Vec<String> {
-        if self.chain.is_empty() {
-            return vec![
-                format!("{}:", self.name),
-                "  Chain cannot be empty".to_string(),
-            ];
-        }
-
-        let last_index = self.chain.len() - 1;
-
-        let mut errors = self
-            .chain
-            .iter()
-            .enumerate()
-            .flat_map(|(i, transform)| {
-                let mut errors = vec![];
-
-                if i == last_index && !transform.is_terminating() {
-                    errors.push(format!(
-                        "  Non-terminating transform {:?} is last in chain. Last transform must be terminating.",
-                        transform.get_name()
-                    ));
-                } else if i != last_index && transform.is_terminating() {
-                    errors.push(format!(
-                        "  Terminating transform {:?} is not last in chain. Terminating transform must be last in chain.",
-                        transform.get_name()
-                    ));
-                }
-
-                errors.extend(transform.validate().iter().map(|x| format!("  {x}")));
-
-                errors
-            })
-            .collect::<Vec<String>>();
-
-        if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.name));
-        }
-
-        errors
-    }
-
-    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
-        self.chain.iter_mut().collect_vec()
-    }
-
-    pub async fn process_request(
-        &mut self,
-        mut wrapper: Wrapper<'_>,
-        client_details: String,
-    ) -> ChainResponse {
-        let start = Instant::now();
-        wrapper.reset(&mut self.chain);
-
-        let result = wrapper.call_next_transform().await;
-        self.chain_total.increment(1);
-        if result.is_err() {
-            self.chain_failures.increment(1);
-        }
-
-        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
-        result
-    }
-
-    pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> ChainResponse {
-        let start = Instant::now();
-
-        let mut chain: Vec<_> = self.chain.iter().cloned().rev().collect();
-        wrapper.reset(&mut chain);
-
-        let result = wrapper.call_next_transform_pushed().await;
-        self.chain_total.increment(1);
-        if result.is_err() {
-            self.chain_failures.increment(1);
-        }
-
-        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone());
-        result
     }
 
     /// Clone the chain while adding a producer for the pushed messages channel
-    pub fn clone_with_pushed_messages_tx(
+    pub fn build(&self) -> TransformChain {
+        let chain = self.chain.iter().cloned().map(|x| x.build()).collect();
+
+        TransformChain {
+            name: self.name.clone(),
+            chain,
+            chain_total: self.chain_total.clone(),
+            chain_failures: self.chain_failures.clone(),
+        }
+    }
+
+    /// Clone the chain while adding a producer for the pushed messages channel
+    pub fn build_with_pushed_messages(
         &self,
         pushed_messages_tx: mpsc::UnboundedSender<Messages>,
-    ) -> Self {
-        let mut result = self.clone();
+    ) -> TransformChain {
+        let chain = self
+            .chain
+            .iter()
+            .map(|x| {
+                let mut transform = x.clone().build();
+                transform.set_pushed_messages_tx(pushed_messages_tx.clone());
+                transform
+            })
+            .collect();
 
-        for transform in &mut result.chain {
-            transform.set_pushed_messages_tx(pushed_messages_tx.clone());
+        TransformChain {
+            name: self.name.clone(),
+            chain,
+            chain_total: self.chain_total.clone(),
+            chain_failures: self.chain_failures.clone(),
         }
-
-        result
     }
 }
 
 #[cfg(test)]
 mod chain_tests {
-    use crate::transforms::chain::TransformChain;
+    use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
-    use crate::transforms::Transforms;
+    use crate::transforms::TransformBuilder;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain = TransformChain::new(vec![], "test-chain".to_string());
+        let chain = TransformChainBuilder::new(vec![], "test-chain".to_string());
         assert_eq!(
             chain.validate(),
             vec!["test-chain:", "  Chain cannot be empty"]
@@ -354,11 +389,11 @@ mod chain_tests {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain".to_string(),
         );

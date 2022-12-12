@@ -1,7 +1,7 @@
 use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{counter, register_counter};
@@ -72,8 +72,8 @@ fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
 }
 
 impl QueryCounterConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::QueryCounter(QueryCounter::new(
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::QueryCounter(QueryCounter::new(
             self.name.clone(),
         )))
     }
