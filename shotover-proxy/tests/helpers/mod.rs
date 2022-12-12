@@ -1,17 +1,12 @@
 use anyhow::Result;
-use redis::aio::AsyncStream;
-use redis::Client;
 use shotover_proxy::runner::{ConfigOpts, Runner};
-use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
-use std::pin::Pin;
 use std::sync::mpsc;
-use std::time::Duration;
 use tokio::runtime::{Handle as RuntimeHandle, Runtime};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tokio_io_timeout::TimeoutStream;
 
 pub mod cassandra;
+pub mod redis_connection;
 
 #[must_use]
 pub struct ShotoverManager {
@@ -75,72 +70,6 @@ impl ShotoverManager {
             trigger_shutdown_tx: spawn.trigger_shutdown_tx,
             panic_occured_rx,
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn redis_connection(&self, port: u16) -> redis::Connection {
-        let address = "127.0.0.1";
-        test_helpers::wait_for_socket_to_open(address, port);
-
-        let connection = Client::open((address, port))
-            .unwrap()
-            .get_connection()
-            .unwrap();
-        connection
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .unwrap();
-        connection
-    }
-
-    #[allow(dead_code)]
-    pub async fn redis_connection_async(&self, port: u16) -> redis::aio::Connection {
-        let address = "127.0.0.1";
-        test_helpers::wait_for_socket_to_open(address, port);
-
-        let stream = Box::pin(
-            tokio::net::TcpStream::connect((address, port))
-                .await
-                .unwrap(),
-        );
-        ShotoverManager::redis_connection_async_inner(
-            Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
-        )
-        .await
-    }
-
-    #[allow(dead_code)]
-    pub async fn redis_connection_async_tls(
-        &self,
-        port: u16,
-        config: TlsConnectorConfig,
-    ) -> redis::aio::Connection {
-        let address = "127.0.0.1";
-        test_helpers::wait_for_socket_to_open(address, port);
-
-        let connector = TlsConnector::new(config).unwrap();
-        let tls_stream = connector
-            .connect(Duration::from_secs(3), (address, port))
-            .await
-            .unwrap();
-        ShotoverManager::redis_connection_async_inner(
-            Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
-        )
-        .await
-    }
-
-    async fn redis_connection_async_inner(
-        stream: Pin<Box<dyn AsyncStream + Send + Sync>>,
-    ) -> redis::aio::Connection {
-        let mut stream_with_timeout = TimeoutStream::new(stream);
-        stream_with_timeout.set_read_timeout(Some(Duration::from_secs(10)));
-
-        let connection_info = Default::default();
-        redis::aio::Connection::new(
-            &connection_info,
-            Box::pin(stream_with_timeout) as Pin<Box<dyn AsyncStream + Send + Sync>>,
-        )
-        .await
-        .unwrap()
     }
 
     fn shutdown_shotover(&mut self) -> Result<()> {

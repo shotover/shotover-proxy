@@ -4,6 +4,7 @@ use crate::helpers::cassandra::{run_query, CassandraDriver::Datastax};
 use crate::helpers::cassandra::{
     CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla,
 };
+use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
@@ -300,11 +301,11 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     recorder.install().unwrap();
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yaml");
 
-    let shotover_manager = ShotoverManager::from_topology_file_without_observability(
+    let _shotover_manager = ShotoverManager::from_topology_file_without_observability(
         "example-configs/cassandra-redis-cache/topology.yaml",
     );
 
-    let mut redis_connection = shotover_manager.redis_connection(6379);
+    let mut redis_connection = redis_connection::new(6379);
     let connection_creator = || CassandraConnection::new("127.0.0.1", 9042, driver);
     let connection = connection_creator().await;
 

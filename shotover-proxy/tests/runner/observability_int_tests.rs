@@ -1,3 +1,4 @@
+use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 use itertools::Itertools;
 use serial_test::serial;
@@ -64,9 +65,9 @@ async fn assert_metrics_key_value(key: &str, value: &str) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_metrics() {
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/null-redis/topology.yaml");
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     // Expected string looks unnatural because it is sorted in alphabetical order to make it match the sorted error output
     let expected = r#"

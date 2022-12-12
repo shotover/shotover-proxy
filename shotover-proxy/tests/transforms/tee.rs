@@ -1,3 +1,4 @@
+use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
@@ -5,10 +6,10 @@ use test_helpers::docker_compose::DockerCompose;
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_ignore_matches() {
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/tee/ignore.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -23,10 +24,10 @@ async fn test_ignore_matches() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_ignore_with_mismatch() {
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/tee/ignore_with_mismatch.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -41,9 +42,9 @@ async fn test_ignore_with_mismatch() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_fail_matches() {
-    let shotover_manager = ShotoverManager::from_topology_file("tests/test-configs/tee/fail.yaml");
+    let _shotover_manager = ShotoverManager::from_topology_file("tests/test-configs/tee/fail.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     let result = redis::cmd("SET")
         .arg("key")
@@ -58,10 +59,10 @@ async fn test_fail_matches() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_fail_with_mismatch() {
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/tee/fail_with_mismatch.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     let err = redis::cmd("SET")
         .arg("key")
@@ -79,11 +80,11 @@ async fn test_fail_with_mismatch() {
 #[serial]
 async fn test_subchain_matches() {
     let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/tee/subchain.yaml");
 
-    let mut shotover_connection = shotover_manager.redis_connection_async(6379).await;
-    let mut mismatch_chain_redis = shotover_manager.redis_connection_async(1111).await;
+    let mut shotover_connection = redis_connection::new_async(6379).await;
+    let mut mismatch_chain_redis = redis_connection::new_async(1111).await;
     redis::cmd("SET")
         .arg("key")
         .arg("myvalue")
@@ -113,11 +114,11 @@ async fn test_subchain_matches() {
 #[serial]
 async fn test_subchain_with_mismatch() {
     let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/tee/subchain_with_mismatch.yaml");
 
-    let mut shotover_connection = shotover_manager.redis_connection_async(6379).await;
-    let mut mismatch_chain_redis = shotover_manager.redis_connection_async(1111).await;
+    let mut shotover_connection = redis_connection::new_async(6379).await;
+    let mut mismatch_chain_redis = redis_connection::new_async(1111).await;
 
     // Set the value on the top level chain redis
     let mut result = redis::cmd("SET")

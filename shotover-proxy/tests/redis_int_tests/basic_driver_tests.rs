@@ -1,4 +1,4 @@
-use crate::helpers::ShotoverManager;
+use crate::helpers::redis_connection;
 use crate::redis_int_tests::assert::*;
 use futures::StreamExt;
 use rand::{thread_rng, Rng};
@@ -863,7 +863,7 @@ pub async fn test_auth(connection: &mut Connection) {
     );
 }
 
-pub async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection: &mut Connection) {
+pub async fn test_auth_isolation(connection: &mut Connection) {
     // ensure we are authenticated as the default superuser to setup for the auth isolation test.
     assert_ok(redis::cmd("AUTH").arg("shotover"), connection).await;
 
@@ -887,7 +887,7 @@ pub async fn test_auth_isolation(shotover_manager: &ShotoverManager, connection:
             .await
             .unwrap();
 
-        let mut new_connection = shotover_manager.redis_connection_async(6379).await;
+        let mut new_connection = redis_connection::new_async(6379).await;
 
         assert_eq!(
             redis::cmd("GET")
@@ -1195,18 +1195,18 @@ pub async fn test_cluster_replication(
 }
 
 // This test case is picky about the ordering of connection auth so we take a ShotoverManager and make all the connections ourselves
-pub async fn test_dr_auth(shotover_manager: &ShotoverManager) {
+pub async fn test_dr_auth() {
     // setup 3 different connections in different states
-    let mut connection_shotover_noauth = shotover_manager.redis_connection_async(6379).await;
+    let mut connection_shotover_noauth = redis_connection::new_async(6379).await;
 
-    let mut connection_shotover_auth = shotover_manager.redis_connection_async(6379).await;
+    let mut connection_shotover_auth = redis_connection::new_async(6379).await;
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_shotover_auth,
     )
     .await;
 
-    let mut connection_dr_auth = shotover_manager.redis_connection_async(2120).await;
+    let mut connection_dr_auth = redis_connection::new_async(2120).await;
     assert_ok(
         redis::cmd("AUTH").arg("default").arg("shotover"),
         &mut connection_dr_auth,
@@ -1567,11 +1567,7 @@ pub async fn run_all_cluster_handling(connection: &mut Connection, flusher: &mut
     test_time(connection).await;
 }
 
-pub async fn run_all(
-    connection: &mut Connection,
-    flusher: &mut Flusher,
-    shotover_manager: &ShotoverManager,
-) {
+pub async fn run_all(connection: &mut Connection, flusher: &mut Flusher) {
     test_args(connection).await;
     test_getset(connection).await;
     test_incr(connection).await;
@@ -1602,29 +1598,29 @@ pub async fn run_all(
     test_ping_echo(connection).await;
     test_time(connection).await;
 
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub(connection, sub_connection).await;
 
     // test again!
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub(connection, sub_connection).await;
 
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub_2subs(connection, sub_connection).await;
 
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub_unused(sub_connection).await;
 
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub_unsubscription(connection, sub_connection).await;
 
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub_automatic_unsubscription(connection, sub_connection).await;
 
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub_conn_reuse_simple(sub_connection).await;
 
-    let sub_connection = shotover_manager.redis_connection_async(6379).await;
+    let sub_connection = redis_connection::new_async(6379).await;
     test_pubsub_conn_reuse_multisub(sub_connection).await;
 }
 
@@ -1634,18 +1630,18 @@ pub struct Flusher {
 
 impl Flusher {
     /// Use the standard ports for cluster integration tests
-    pub async fn new_cluster(shotover_manager: &ShotoverManager) -> Self {
+    pub async fn new_cluster() -> Self {
         Flusher {
             connections: vec![
                 // shotover - shotover might have internal handling for flush that we want to run
-                shotover_manager.redis_connection_async(6379).await,
+                redis_connection::new_async(6379).await,
                 // redis cluster instances - shotover may or may not run flush on all cluster instances
-                shotover_manager.redis_connection_async(2220).await,
-                shotover_manager.redis_connection_async(2221).await,
-                shotover_manager.redis_connection_async(2222).await,
-                shotover_manager.redis_connection_async(2223).await,
-                shotover_manager.redis_connection_async(2224).await,
-                shotover_manager.redis_connection_async(2225).await,
+                redis_connection::new_async(2220).await,
+                redis_connection::new_async(2221).await,
+                redis_connection::new_async(2222).await,
+                redis_connection::new_async(2223).await,
+                redis_connection::new_async(2224).await,
+                redis_connection::new_async(2225).await,
             ],
         }
     }
