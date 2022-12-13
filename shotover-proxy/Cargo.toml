@@ -41,6 +41,7 @@ split-iter = "0.1.0"
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0.31"
+backtrace = "0.3.66"
 
 # Parsers
 cql3-parser = "0.3.1"
