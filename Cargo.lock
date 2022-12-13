@@ -2913,6 +2913,7 @@ dependencies = [
  "anyhow",
  "async-recursion",
  "async-trait",
+ "backtrace",
  "base64",
  "bigdecimal 0.3.0",
  "bincode",
