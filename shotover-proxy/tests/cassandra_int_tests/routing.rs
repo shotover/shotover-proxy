@@ -184,6 +184,12 @@ mod compound_key {
 
 mod composite_key {
     use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
+    use rand::{distributions::Alphanumeric, Rng};
+
+    pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
+        simple_test(shotover, cassandra).await;
+        types_test(shotover).await;
+    }
 
     async fn create_keyspace(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
@@ -196,7 +202,7 @@ mod composite_key {
         run_query(connection, create_table_cql).await;
     }
 
-    pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
+    async fn simple_test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         create_keyspace(shotover).await;
         create_table(shotover).await;
 
@@ -310,6 +316,73 @@ mod composite_key {
                 .await;
             assert_eq!(shotover_hit, cassandra_hit);
         }
+    }
+
+    async fn types_test(connection: &CassandraConnection) {
+        let create_keyspace = "CREATE KEYSPACE stresscql2small WITH replication = {'class': 'NetworkTopologyStrategy', 'dc1': 3};";
+        let create_table =
+        "CREATE TABLE stresscql2small.typestest (name text, choice boolean, address inet, PRIMARY KEY((name,choice), address)) WITH compaction = { 'class':'LeveledCompactionStrategy' } AND comment='A table of many types to test wide rows'";
+
+        run_query(connection, create_keyspace).await;
+        run_query(connection, create_table).await;
+
+        for _ in 0..1000 {
+            let name: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(48)
+                .map(char::from)
+                .collect();
+            let choice = true;
+            let address = "'127.0.0.1'";
+
+            let insert = format!(
+            "INSERT INTO stresscql2small.typestest (name, choice, address) VALUES ('{}', {}, {});",
+            name, choice, address
+        );
+            run_query(connection, &insert).await;
+        }
+
+        let simple1_cql =
+            "select * from stresscql2small.typestest where name = ? and choice = ? LIMIT 1";
+        let simple1 = connection.prepare(simple1_cql).await;
+
+        let range1_cql = "select name, choice, address  from stresscql2small.typestest where name = ? and choice = ? LIMIT 10";
+        let range = connection.prepare(range1_cql).await;
+
+        let simple2_cql = "select name, choice, address from stresscql2small.typestest where name = ? and choice = ? LIMIT 1";
+        let simple2 = connection.prepare(simple2_cql).await;
+
+        let name: String = "0FjhKM4rJQJaniCNHEkKlelmUsYIBJJ9IZuBh44WJTrcPrez".into();
+
+        connection
+            .execute_prepared(
+                &range,
+                &[
+                    ResultValue::Varchar(name.clone()),
+                    ResultValue::Boolean(true),
+                ],
+            )
+            .await
+            .unwrap();
+
+        connection
+            .execute_prepared(
+                &simple2,
+                &[
+                    ResultValue::Varchar(name.clone()),
+                    ResultValue::Boolean(true),
+                ],
+            )
+            .await
+            .unwrap();
+
+        connection
+            .execute_prepared(
+                &simple1,
+                &[ResultValue::Varchar(name), ResultValue::Boolean(true)],
+            )
+            .await
+            .unwrap();
     }
 }
 

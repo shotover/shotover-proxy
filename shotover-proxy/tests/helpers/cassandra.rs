@@ -583,6 +583,7 @@ impl CassandraConnection {
             ResultValue::Time(v) => statement.bind_int64(i, *v).unwrap(),
             ResultValue::SmallInt(v) => statement.bind_int16(i, *v).unwrap(),
             ResultValue::TinyInt(v) => statement.bind_int8(i, *v).unwrap(),
+            ResultValue::Varchar(v) => statement.bind_string(i, v).unwrap(),
             value => todo!("Implement handling of {value:?} for datastax"),
         };
     }
