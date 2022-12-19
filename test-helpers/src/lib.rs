@@ -1,6 +1,7 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 
 pub mod cert;
+pub mod connection;
 pub mod docker_compose;
 pub mod lazy;
 pub mod shotover_process;

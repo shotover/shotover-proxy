@@ -11,7 +11,7 @@ license = "Apache-2.0"
 [features]
 # Include WIP alpha transforms in the public API
 alpha-transforms = []
-cassandra-cpp-driver-tests = []
+cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
 
 [dependencies]
 pretty-hex = "0.3.0"
@@ -84,16 +84,14 @@ redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
 pcap = "1.0.0"
 pktparse = { version = "0.7.0", features = ["serde"] }
 tls-parser = "0.11.0"
-tokio-io-timeout = "1.1.1"
 serial_test = "0.9.0"
-cassandra-cpp = "1.2.0"
-test-helpers = { path = "../test-helpers" }
+cassandra-cpp = { version = "1.2.0" }
+test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tests"] }
 hex-literal = "0.3.3"
 nix = "0.26.0"
 reqwest = "0.11.6"
 metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
-scylla = { git = "https://github.com/scylladb/scylla-rust-driver", features = ["ssl"] }
 rstest = "0.16.0"
 
 [[bench]]

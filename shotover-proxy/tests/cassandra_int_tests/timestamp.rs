@@ -1,5 +1,7 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 use std::time::{SystemTime, UNIX_EPOCH};
+use test_helpers::connection::cassandra::{
+    assert_query_result, run_query, CassandraConnection, ResultValue,
+};
 
 async fn flag(connection: &CassandraConnection) {
     let timestamp = get_timestamp();

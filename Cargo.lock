@@ -2689,8 +2689,8 @@ checksum = "9c8132065adcfd6e02db789d9285a0deb2f3fcb04002865ab67d5fb103533898"
 
 [[package]]
 name = "scylla"
-version = "0.6.1"
-source = "git+https://github.com/scylladb/scylla-rust-driver#c7ed9c9790aa44e88ff442157388ef2474d46287"
+version = "0.7.0"
+source = "git+https://github.com/scylladb/scylla-rust-driver#f145ceaa2403f4fc537a0f5c1865995d230c1bda"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -2722,8 +2722,8 @@ dependencies = [
 
 [[package]]
 name = "scylla-cql"
-version = "0.0.2"
-source = "git+https://github.com/scylladb/scylla-rust-driver#c7ed9c9790aa44e88ff442157388ef2474d46287"
+version = "0.0.3"
+source = "git+https://github.com/scylladb/scylla-rust-driver#f145ceaa2403f4fc537a0f5c1865995d230c1bda"
 dependencies = [
  "async-trait",
  "bigdecimal 0.2.2",
@@ -2742,8 +2742,8 @@ dependencies = [
 
 [[package]]
 name = "scylla-macros"
-version = "0.1.1"
-source = "git+https://github.com/scylladb/scylla-rust-driver#c7ed9c9790aa44e88ff442157388ef2474d46287"
+version = "0.1.2"
+source = "git+https://github.com/scylladb/scylla-rust-driver#f145ceaa2403f4fc537a0f5c1865995d230c1bda"
 dependencies = [
  "quote",
  "syn",
@@ -2959,7 +2959,6 @@ dependencies = [
  "rstest",
  "rusoto_kms",
  "rusoto_signature",
- "scylla",
  "serde",
  "serde_json",
  "serde_yaml 0.8.26",
@@ -2970,7 +2969,6 @@ dependencies = [
  "thiserror",
  "tls-parser",
  "tokio",
- "tokio-io-timeout",
  "tokio-openssl",
  "tokio-stream",
  "tokio-util",
@@ -3150,13 +3148,24 @@ name = "test-helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
+ "cassandra-cpp",
+ "cassandra-protocol",
+ "cdrs-tokio",
+ "openssl",
+ "ordered-float 3.4.0",
  "rcgen",
+ "redis",
  "regex",
+ "scylla",
  "serde_yaml 0.9.14",
  "subprocess",
  "tokio",
  "tokio-bin-process",
+ "tokio-io-timeout",
+ "tokio-openssl",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3378,9 +3387,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.5.9"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d82e1a7758622a465f8cee077614c73484dac5b836c02ff6a40d5d1010324d7"
+checksum = "1333c76748e868a4d9d1017b5ab53171dfd095f70c712fdb4653a406547f598f"
 dependencies = [
  "serde",
 ]

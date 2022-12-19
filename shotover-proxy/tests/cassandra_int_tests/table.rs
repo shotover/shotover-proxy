@@ -1,4 +1,4 @@
-use crate::helpers::cassandra::{
+use test_helpers::connection::cassandra::{
     assert_query_result, assert_query_result_contains_row, assert_query_result_not_contains_row,
     run_query, CassandraConnection, ResultValue,
 };

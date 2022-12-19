@@ -1,6 +1,8 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
 use chacha20poly1305::Nonce;
 use serde::Deserialize;
+use test_helpers::connection::cassandra::{
+    assert_query_result, run_query, CassandraConnection, ResultValue,
+};
 
 #[derive(Deserialize)]
 pub struct Protected {

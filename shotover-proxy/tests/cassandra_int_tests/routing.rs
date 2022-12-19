@@ -1,7 +1,7 @@
-use crate::helpers::cassandra::{CassandraConnection, CassandraDriver};
+use test_helpers::connection::cassandra::{CassandraConnection, CassandraDriver};
 
 mod single_key {
-    use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
+    use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
     pub async fn create_keyspace(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
@@ -75,7 +75,7 @@ mod single_key {
 }
 
 mod compound_key {
-    use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
+    use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
     async fn create_keyspace(connection: &CassandraConnection) {
         let create_ks: &'static str = "CREATE KEYSPACE IF NOT EXISTS test_routing_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
@@ -183,8 +183,8 @@ mod compound_key {
 }
 
 mod composite_key {
-    use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
     use rand::{distributions::Alphanumeric, Rng};
+    use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
     pub async fn test(shotover: &CassandraConnection, cassandra: &CassandraConnection) {
         simple_test(shotover, cassandra).await;
