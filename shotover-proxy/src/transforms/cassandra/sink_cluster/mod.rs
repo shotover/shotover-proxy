@@ -788,12 +788,16 @@ impl CassandraSinkCluster {
                 }
             }
             RewriteTableTy::Prepare { destination_nodes } => {
-                let mut prepared_responses: Vec<Message> = destination_nodes
-                    .iter()
-                    .filter_map(|_| remove_extra_message(&table, responses))
+                let prepared_responses = &mut responses
+                    [table.incoming_index..table.incoming_index + destination_nodes.len()];
+
+                let mut warnings: Vec<String> = prepared_responses
+                    .iter_mut()
+                    .flat_map(get_warnings)
                     .collect();
 
-                let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepared_responses
+                {
+                    let prepared_results: Vec<&mut Box<BodyResResultPrepared>> = prepared_responses
                     .iter_mut()
                     .filter_map(|message| match message.frame() {
                         Some(Frame::Cassandra(CassandraFrame {
@@ -802,21 +806,48 @@ impl CassandraSinkCluster {
                             ..
                         })) => Some(prepared),
                         other => {
-                            tracing::error!("Response to prepare query was not a Prepared, was instead: {other:?}");
+                            tracing::error!("Response to Prepare query was not a Prepared, was instead: {other:?}");
+                            warnings.push(format!("Shotover: Response to Prepare query was not a Prepared, was instead: {other:?}"));
                             None
                         }
                     })
                     .collect();
-                if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
-                    let err_str = prepared_results
-                        .iter()
-                        .map(|p| format!("\n{:?}", p))
-                        .collect::<String>();
+                    if !prepared_results.windows(2).all(|w| w[0] == w[1]) {
+                        let err_str = prepared_results
+                            .iter()
+                            .map(|p| format!("\n{:?}", p))
+                            .collect::<String>();
 
-                    tracing::error!(
-                        "Nodes did not return the same response to PREPARE statement {err_str}"
-                    );
+                        tracing::error!(
+                            "Nodes did not return the same response to PREPARE statement {err_str}"
+                        );
+                        warnings.push(format!(
+                            "Shotover: Nodes did not return the same response to PREPARE statement {err_str}"
+                        ));
+                    }
                 }
+
+                // If there is a succesful response, use that as our response by moving it to the beginning
+                for (i, response) in prepared_responses.iter_mut().enumerate() {
+                    if let Some(Frame::Cassandra(CassandraFrame {
+                        operation: CassandraOperation::Result(CassandraResult::Prepared(_)),
+                        ..
+                    })) = response.frame()
+                    {
+                        prepared_responses.swap(0, i);
+                        break;
+                    }
+                }
+
+                // Finalize our response by setting its warnings list to all the warnings we have accumulated
+                if let Some(Frame::Cassandra(frame)) = prepared_responses[0].frame() {
+                    frame.warnings = warnings;
+                }
+
+                // Remove all unused messages so we are only left with the one message that will be used as the response
+                responses.drain(
+                    table.incoming_index + 1..table.incoming_index + destination_nodes.len(),
+                );
             }
         }
 
