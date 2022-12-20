@@ -1,8 +1,8 @@
-use crate::helpers::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
-};
 use cassandra_protocol::frame::message_result::ColType;
 use itertools::Itertools;
+use test_helpers::connection::cassandra::{
+    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
+};
 
 const NATIVE_COL_TYPES: [ColType; 18] = [
     ColType::Ascii,

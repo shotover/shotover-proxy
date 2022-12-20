@@ -1,13 +1,12 @@
-use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 use basic_driver_tests::*;
 use redis::aio::Connection;
 use redis::Commands;
 use serial_test::serial;
-use shotover_proxy::tls::TlsConnectorConfig;
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
+use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 
 pub mod assert;
@@ -77,17 +76,9 @@ async fn source_tls_and_single_tls() {
     let _shotover_manager =
         ShotoverManager::from_topology_file("example-configs/redis-tls/topology.yaml");
 
-    let tls_config = TlsConnectorConfig {
-        certificate_authority_path: "example-configs/redis-tls/certs/ca.crt".into(),
-        certificate_path: Some("example-configs/redis-tls/certs/redis.crt".into()),
-        private_key_path: Some("example-configs/redis-tls/certs/redis.key".into()),
-        verify_hostname: false,
-    };
-
-    let mut connection = redis_connection::new_async_tls(6380, tls_config.clone()).await;
+    let mut connection = redis_connection::new_async_tls(6380).await;
     let mut flusher =
-        Flusher::new_single_connection(redis_connection::new_async_tls(6380, tls_config).await)
-            .await;
+        Flusher::new_single_connection(redis_connection::new_async_tls(6380).await).await;
 
     run_all(&mut connection, &mut flusher).await;
 }

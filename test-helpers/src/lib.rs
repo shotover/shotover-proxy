@@ -2,6 +2,7 @@
 
 pub mod bench;
 pub mod cert;
+pub mod connection;
 pub mod docker_compose;
 pub mod latte;
 pub mod lazy;

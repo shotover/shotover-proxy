@@ -5,9 +5,6 @@ use tokio::runtime::{Handle as RuntimeHandle, Runtime};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-pub mod cassandra;
-pub mod redis_connection;
-
 #[must_use]
 pub struct ShotoverManager {
     pub runtime: Option<Runtime>,

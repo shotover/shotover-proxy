@@ -1,11 +1,11 @@
 use crate::cassandra_int_tests::cluster::run_topology_task;
-use crate::helpers::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
-};
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
 use std::net::SocketAddr;
 use std::time::Duration;
+use test_helpers::connection::cassandra::{
+    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
+};
 use test_helpers::docker_compose::DockerCompose;
 use tokio::sync::broadcast;
 use tokio::time::timeout;

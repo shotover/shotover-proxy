@@ -1,7 +1,7 @@
-use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 use itertools::Itertools;
 use serial_test::serial;
+use test_helpers::connection::redis_connection;
 
 async fn http_request_metrics() -> String {
     let url = "http://localhost:9001/metrics";

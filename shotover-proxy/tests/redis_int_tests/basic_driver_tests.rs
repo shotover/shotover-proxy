@@ -1,4 +1,3 @@
-use crate::helpers::redis_connection;
 use crate::redis_int_tests::assert::*;
 use futures::StreamExt;
 use rand::{thread_rng, Rng};
@@ -10,6 +9,7 @@ use shotover_proxy::tcp;
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
+use test_helpers::connection::redis_connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use tokio::time::timeout;

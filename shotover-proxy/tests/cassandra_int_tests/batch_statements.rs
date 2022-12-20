@@ -1,4 +1,6 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
+use test_helpers::connection::cassandra::{
+    assert_query_result, run_query, CassandraConnection, ResultValue,
+};
 
 async fn use_statement(connection: &CassandraConnection) {
     {

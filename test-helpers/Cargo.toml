@@ -7,6 +7,9 @@ license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+cassandra-cpp-driver-tests = ["cassandra-cpp"]
+
 [dependencies]
 tracing = "0.1.15"
 subprocess = "0.2.7"
@@ -14,5 +17,16 @@ anyhow = "1.0.42"
 rcgen = "0.10.0"
 serde_yaml = "0.9.0"
 regex = "1.7.0"
-tokio = { version = "1.21.1", features = ["full", "macros"] }
 tokio-bin-process = { path = "../tokio-bin-process" }
+cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cassandra-cpp = { version = "1.2.0", optional = true }
+openssl = { version = "0.10.36", features = ["vendored"] }
+bytes = "1.0.0"
+scylla = { git = "https://github.com/scylladb/scylla-rust-driver", features = ["ssl"] }
+ordered-float = { version = "3.0.0", features = ["serde"] }
+tokio = { version = "1.21.1", features = ["full", "macros"] }
+uuid = { version = "1.0.0", features = ["serde", "v4"] }
+redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
+tokio-io-timeout = "1.1.1"
+tokio-openssl = "0.6.2"

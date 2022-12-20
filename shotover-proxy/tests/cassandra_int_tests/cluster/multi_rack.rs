@@ -1,6 +1,6 @@
 use crate::cassandra_int_tests::cluster::run_topology_task;
-use crate::helpers::cassandra::{assert_query_result, CassandraConnection, ResultValue};
 use std::net::SocketAddr;
+use test_helpers::connection::cassandra::{assert_query_result, CassandraConnection, ResultValue};
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let star_results = [
