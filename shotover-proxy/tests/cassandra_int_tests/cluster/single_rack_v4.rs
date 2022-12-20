@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use test_helpers::docker_compose::DockerCompose;
 use tokio::sync::broadcast;
-use tokio::time::{sleep, timeout};
+use tokio::time::timeout;
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
@@ -376,9 +376,6 @@ impl EventConnections {
         let shotover =
             CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio).await;
         let recv_shotover = shotover.as_cdrs().create_event_receiver();
-
-        // let the driver finish connecting to the cluster and registering for the events
-        sleep(Duration::from_secs(10)).await;
 
         EventConnections {
             _direct: direct,
