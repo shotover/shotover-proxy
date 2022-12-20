@@ -62,7 +62,7 @@ impl KeyManagerConfig {
                 grant_tokens,
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
-                let decoded_base64 = base64::decode(&kek)?;
+                let decoded_base64 = base64::decode(kek)?;
 
                 if decoded_base64.len() != 32 {
                     return Err(anyhow!("Invalid key length"));

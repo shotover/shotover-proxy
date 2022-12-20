@@ -628,7 +628,7 @@ impl MessageValue {
             MessageValue::Bytes(b) => serialize_bytes(cursor, b),
             MessageValue::Strings(s) => serialize_bytes(cursor, s.as_bytes()),
             MessageValue::Integer(x, size) => match size {
-                IntSize::I64 => serialize_bytes(cursor, &(*x as i64).to_be_bytes()),
+                IntSize::I64 => serialize_bytes(cursor, &(*x).to_be_bytes()),
                 IntSize::I32 => serialize_bytes(cursor, &(*x as i32).to_be_bytes()),
                 IntSize::I16 => serialize_bytes(cursor, &(*x as i16).to_be_bytes()),
                 IntSize::I8 => serialize_bytes(cursor, &(*x as i8).to_be_bytes()),

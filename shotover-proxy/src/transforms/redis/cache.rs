@@ -579,7 +579,6 @@ impl SimpleRedisCacheBuilder {
     }
 
     pub fn validate(&self) -> Vec<String> {
-        println!("HIII");
         let mut errors = self
             .cache_chain
             .validate()
@@ -808,7 +807,6 @@ mod test {
 
     #[test]
     fn test_validate_invalid_chain() {
-        println!("START");
         let transform = SimpleRedisCacheBuilder {
             cache_chain: TransformChainBuilder::new(vec![], "test-chain".to_string()),
             caching_schema: HashMap::new(),
