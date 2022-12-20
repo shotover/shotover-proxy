@@ -17,7 +17,7 @@ use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::load_balance::ConnectionBalanceAndPool;
+use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolBuilder};
 #[cfg(test)]
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::Null;
@@ -94,7 +94,7 @@ pub enum TransformBuilder {
     DebugPrinter(DebugPrinter),
     DebugForceParse(DebugForceParse),
     ParallelMap(ParallelMapBuilder),
-    PoolConnections(ConnectionBalanceAndPool),
+    PoolConnections(ConnectionBalanceAndPoolBuilder),
     Coalesce(Coalesce),
     QueryTypeFilter(QueryTypeFilter),
     QueryCounter(QueryCounter),
@@ -120,7 +120,7 @@ impl TransformBuilder {
             TransformBuilder::Null(t) => Transforms::Null(t),
             TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t),
             TransformBuilder::ParallelMap(t) => Transforms::ParallelMap(t.build()),
-            TransformBuilder::PoolConnections(t) => Transforms::PoolConnections(t),
+            TransformBuilder::PoolConnections(t) => Transforms::PoolConnections(t.build()),
             TransformBuilder::Coalesce(t) => Transforms::Coalesce(t),
             TransformBuilder::QueryTypeFilter(t) => Transforms::QueryTypeFilter(t),
             TransformBuilder::QueryCounter(t) => Transforms::QueryCounter(t),
@@ -206,7 +206,7 @@ impl Debug for TransformBuilder {
 /// The [`crate::transforms::Transforms`] enum is responsible for [`crate::transforms::Transform`] registration and enum dispatch
 /// in the transform chain. This is largely a performance optimisation by using enum dispatch rather
 /// than using dynamic trait objects.
-#[derive(Clone, IntoStaticStr)]
+#[derive(IntoStaticStr)]
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
     CassandraSinkCluster(Box<CassandraSinkCluster>),

@@ -2,7 +2,7 @@ use bytes::BytesMut;
 use cassandra_protocol::frame::message_result::{
     ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags, TableSpec,
 };
-use cassandra_protocol::{frame::Version, query::QueryParams};
+use cassandra_protocol::frame::Version;
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
 use shotover_proxy::codec::cassandra::CassandraCodec;
 use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
@@ -22,7 +22,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             warnings: vec![],
             operation: CassandraOperation::Query {
                 query: Box::new(parse_statement_single("SELECT * FROM system.local;")),
-                params: Box::new(QueryParams::default()),
+                params: Box::default(),
             },
         }))];
 
