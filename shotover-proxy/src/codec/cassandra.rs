@@ -16,7 +16,7 @@ use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec {
-    compressor: Compression,
+    compression: Compression,
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
 }
@@ -30,7 +30,7 @@ impl Default for CassandraCodec {
 impl CassandraCodec {
     pub fn new() -> CassandraCodec {
         CassandraCodec {
-            compressor: Compression::None,
+            compression: Compression::None,
             messages: vec![],
             current_use_keyspace: None,
         }
@@ -39,7 +39,7 @@ impl CassandraCodec {
 
 impl CassandraCodec {
     fn encode_raw(&mut self, item: CassandraFrame, dst: &mut BytesMut) {
-        let buffer = item.encode().encode_with(self.compressor).unwrap();
+        let buffer = item.encode(self.compression);
         if buffer.is_empty() {
             info!("trying to send 0 length frame");
         }

@@ -682,7 +682,7 @@ impl MessageValue {
     }
 }
 
-fn serialize_with_length_prefix(
+pub(crate) fn serialize_with_length_prefix(
     cursor: &mut Cursor<&mut Vec<u8>>,
     serializer: impl FnOnce(&mut Cursor<&mut Vec<u8>>),
 ) {
