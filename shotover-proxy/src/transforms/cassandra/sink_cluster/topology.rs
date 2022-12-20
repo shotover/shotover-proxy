@@ -9,8 +9,8 @@ use anyhow::{anyhow, Result};
 use cassandra_protocol::events::{ServerEvent, SimpleServerEvent};
 use cassandra_protocol::frame::events::{StatusChangeType, TopologyChangeType};
 use cassandra_protocol::frame::message_register::BodyReqRegister;
+use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
-use cassandra_protocol::{frame::Version, query::QueryParams};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::unbounded_channel;
@@ -253,7 +253,7 @@ mod system_keyspaces {
                         "SELECT keyspace_name, replication FROM system_schema.keyspaces",
                     )),
 
-                    params: Box::new(QueryParams::default()),
+                    params: Box::default(),
                 },
             })),
             tx,
@@ -380,7 +380,7 @@ mod system_local {
                     query: Box::new(parse_statement_single(
                         "SELECT rack, tokens, host_id, data_center FROM system.local",
                     )),
-                    params: Box::new(QueryParams::default()),
+                    params: Box::default(),
                 },
             })),
             tx,
@@ -467,7 +467,7 @@ mod system_peers {
                     query: Box::new(parse_statement_single(
                         "SELECT native_port, native_address, rack, tokens, host_id, data_center FROM system.peers_v2",
                     )),
-                    params: Box::new(QueryParams::default()),
+                params: Box::default(),
                 },
             })),
             tx,
@@ -487,7 +487,7 @@ mod system_peers {
                         query: Box::new(parse_statement_single(
                             "SELECT peer, rack, tokens, host_id, data_center FROM system.peers",
                         )),
-                        params: Box::new(QueryParams::default()),
+                        params: Box::default(),
                     },
                 })),
                 tx,

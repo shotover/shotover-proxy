@@ -13,7 +13,6 @@ use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::BodyResResultPrepared;
 use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::{Opcode, Version};
-use cassandra_protocol::query::QueryParams;
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, RelationOperator};
@@ -225,7 +224,7 @@ fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Me
         warnings: vec![],
         operation: CassandraOperation::Query {
             query: Box::new(parse_statement_single(query)),
-            params: Box::new(QueryParams::default()),
+            params: Box::default(),
         },
     })))
 }
