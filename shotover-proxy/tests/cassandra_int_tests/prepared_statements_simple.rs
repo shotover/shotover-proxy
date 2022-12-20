@@ -1,7 +1,7 @@
-use crate::helpers::cassandra::{
+use futures::Future;
+use test_helpers::connection::cassandra::{
     assert_query_result, assert_rows, run_query, CassandraConnection, ResultValue,
 };
-use futures::Future;
 
 async fn delete(session: &CassandraConnection) {
     let prepared = session

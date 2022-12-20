@@ -1,6 +1,6 @@
-use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
+use test_helpers::connection::redis_connection;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
