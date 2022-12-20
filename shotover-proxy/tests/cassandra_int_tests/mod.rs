@@ -18,7 +18,7 @@ use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{timeout, Duration};
 
 mod batch_statements;
 mod cache;
@@ -458,7 +458,7 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-#[case::cdrs(CdrsTokio)]
+//#[case::cdrs(CdrsTokio)] // Disabled due to intermittent failure that only occurs on v3
 #[case::scylla(Scylla)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
@@ -604,8 +604,6 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
     let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
     let mut event_recv = connection.as_cdrs().create_event_receiver();
-
-    sleep(Duration::from_secs(10)).await; // let the driver finish connecting to the cluster and registering for the events
 
     let create_ks = "CREATE KEYSPACE IF NOT EXISTS test_events_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
     connection.execute(create_ks).await;

@@ -40,6 +40,8 @@ use scylla::{QueryResult, Session as SessionScylla, SessionBuilder as SessionBui
 use std::fs::read_to_string;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::timeout;
 
 #[derive(Debug)]
 pub enum PreparedQuery {
@@ -142,18 +144,27 @@ impl CassandraConnection {
                     .map(|contact_point| NodeAddress::from(format!("{contact_point}:{port}")))
                     .collect::<Vec<NodeAddress>>();
 
-                let config = NodeTcpConfigBuilder::new()
-                    .with_contact_points(node_addresses)
-                    .with_authenticator_provider(Arc::new(auth))
-                    .build()
-                    .await
-                    .unwrap();
-
-                let session = TcpSessionBuilder::new(
-                    TopologyAwareLoadBalancingStrategy::new(None, true),
-                    config,
+                let config = timeout(
+                    Duration::from_secs(10),
+                    NodeTcpConfigBuilder::new()
+                        .with_contact_points(node_addresses)
+                        .with_authenticator_provider(Arc::new(auth))
+                        .build(),
                 )
-                .build()
+                .await
+                .unwrap()
+                .unwrap();
+
+                let session = timeout(
+                    Duration::from_secs(10),
+                    TcpSessionBuilder::new(
+                        TopologyAwareLoadBalancingStrategy::new(None, true),
+                        config,
+                    )
+                    .build(),
+                )
+                .await
+                .unwrap()
                 .unwrap();
                 CassandraConnection::CdrsTokio {
                     session,
