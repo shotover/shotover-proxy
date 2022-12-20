@@ -106,7 +106,6 @@ pub struct SimpleRedisCacheBuilder {
     missed_requests: Counter,
 }
 
-#[derive(Clone)]
 pub struct SimpleRedisCache {
     cache_chain: TransformChain,
     caching_schema: HashMap<FQName, TableCacheSchema>,

@@ -29,7 +29,7 @@ impl Default for SamplerBuilder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Sampler {
     numerator: u32,
     denominator: u32,

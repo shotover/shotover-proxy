@@ -21,7 +21,7 @@ pub struct ParallelMapBuilder {
     ordered: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ParallelMap {
     chains: Vec<TransformChain>,
     ordered: bool,
