@@ -1,14 +1,15 @@
+use openssl::ssl::{SslConnector, SslFiletype, SslMethod};
 use redis::aio::AsyncStream;
 use redis::Client;
-use shotover_proxy::tls::{TlsConnector, TlsConnectorConfig};
 use std::pin::Pin;
 use std::time::Duration;
+use tokio::net::TcpStream;
 use tokio_io_timeout::TimeoutStream;
+use tokio_openssl::SslStream;
 
-#[allow(dead_code)]
 pub fn new(port: u16) -> redis::Connection {
     let address = "127.0.0.1";
-    test_helpers::wait_for_socket_to_open(address, port);
+    crate::wait_for_socket_to_open(address, port);
 
     let connection = Client::open((address, port))
         .unwrap()
@@ -20,10 +21,9 @@ pub fn new(port: u16) -> redis::Connection {
     connection
 }
 
-#[allow(dead_code)]
 pub async fn new_async(port: u16) -> redis::aio::Connection {
     let address = "127.0.0.1";
-    test_helpers::wait_for_socket_to_open(address, port);
+    crate::wait_for_socket_to_open(address, port);
 
     let stream = Box::pin(
         tokio::net::TcpStream::connect((address, port))
@@ -33,16 +33,34 @@ pub async fn new_async(port: u16) -> redis::aio::Connection {
     new_async_inner(Box::pin(stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await
 }
 
-#[allow(dead_code)]
-pub async fn new_async_tls(port: u16, config: TlsConnectorConfig) -> redis::aio::Connection {
+pub async fn new_async_tls(port: u16) -> redis::aio::Connection {
     let address = "127.0.0.1";
-    test_helpers::wait_for_socket_to_open(address, port);
+    let certificate_authority_path = "example-configs/redis-tls/certs/ca.crt";
+    let certificate_path = "example-configs/redis-tls/certs/redis.crt";
+    let private_key_path = "example-configs/redis-tls/certs/redis.key";
 
-    let connector = TlsConnector::new(config).unwrap();
-    let tls_stream = connector
-        .connect(Duration::from_secs(3), (address, port))
-        .await
+    crate::wait_for_socket_to_open(address, port);
+
+    let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
+    builder.set_ca_file(certificate_authority_path).unwrap();
+    builder
+        .set_private_key_file(private_key_path, SslFiletype::PEM)
         .unwrap();
+    builder
+        .set_certificate_chain_file(certificate_path)
+        .unwrap();
+
+    let ssl = builder
+        .build()
+        .configure()
+        .unwrap()
+        .verify_hostname(false)
+        .into_ssl("127.0.0.1")
+        .unwrap();
+
+    let tcp_stream = TcpStream::connect((address, port)).await.unwrap();
+    let mut tls_stream = SslStream::new(ssl, tcp_stream).unwrap();
+    Pin::new(&mut tls_stream).connect().await.unwrap();
     new_async_inner(Box::pin(tls_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>).await
 }
 

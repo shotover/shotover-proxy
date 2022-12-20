@@ -1,9 +1,9 @@
-use crate::helpers::cassandra::{CassandraConnection, CassandraDriver};
 use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::collections::HashMap;
 use test_helpers::cert::generate_cassandra_test_certs;
+use test_helpers::connection::cassandra::{CassandraConnection, CassandraDriver};
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 

@@ -1,10 +1,3 @@
-use crate::helpers::cassandra::{assert_query_result, ResultValue};
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-use crate::helpers::cassandra::{run_query, CassandraDriver::Datastax};
-use crate::helpers::cassandra::{
-    CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla,
-};
-use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
@@ -17,6 +10,13 @@ use futures::Future;
 use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
+use test_helpers::connection::cassandra::{assert_query_result, ResultValue};
+#[cfg(feature = "cassandra-cpp-driver-tests")]
+use test_helpers::connection::cassandra::{run_query, CassandraDriver::Datastax};
+use test_helpers::connection::cassandra::{
+    CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla,
+};
+use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::shotover_process::shotover_from_topology_file;
 use tokio::time::{timeout, Duration};

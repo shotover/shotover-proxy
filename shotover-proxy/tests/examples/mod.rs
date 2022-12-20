@@ -1,8 +1,8 @@
 #![cfg(feature = "cassandra-cpp-driver-tests")]
-use crate::helpers::cassandra::{
+use serial_test::serial;
+use test_helpers::connection::cassandra::{
     assert_query_result, CassandraConnection, CassandraDriver, ResultValue,
 };
-use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
 
 #[tokio::test(flavor = "multi_thread")]
