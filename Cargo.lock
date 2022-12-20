@@ -3150,11 +3150,12 @@ name = "test-helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "nix",
  "rcgen",
  "regex",
  "serde_yaml 0.9.14",
  "subprocess",
+ "tokio",
+ "tokio-bin-process",
  "tracing",
 ]
 
@@ -3287,6 +3288,24 @@ dependencies = [
  "socket2",
  "tokio-macros",
  "windows-sys 0.42.0",
+]
+
+[[package]]
+name = "tokio-bin-process"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "nix",
+ "nu-ansi-term",
+ "once_cell",
+ "rcgen",
+ "serde",
+ "serde_json",
+ "subprocess",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

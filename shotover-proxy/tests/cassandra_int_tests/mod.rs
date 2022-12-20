@@ -18,6 +18,7 @@ use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
 use test_helpers::docker_compose::DockerCompose;
+use test_helpers::shotover_process::shotover_from_topology_file;
 use tokio::time::{timeout, Duration};
 
 mod batch_statements;
@@ -64,12 +65,14 @@ where
 async fn passthrough_standard(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
+    let shotover =
+        shotover_from_topology_file("example-configs/cassandra-passthrough/topology.yaml").await;
 
     let connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
 
     standard_test_suite(&connection, driver).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[cfg(feature = "alpha-transforms")]

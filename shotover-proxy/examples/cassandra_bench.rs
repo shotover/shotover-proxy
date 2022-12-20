@@ -1,6 +1,6 @@
 use clap::Parser;
 use test_helpers::docker_compose::DockerCompose;
-use test_helpers::shotover_process::ShotoverProcess;
+use test_helpers::shotover_process::shotover_from_topology_file;
 
 /// e.g.
 /// cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough -r 1000
@@ -16,7 +16,8 @@ pub struct Args {
     pub rate: u64,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     if env!("PROFILE") != "release" {
         println!("Need to run with --release flag");
         return;
@@ -33,15 +34,15 @@ fn main() {
         let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", args.config_dir));
 
         // Uses ShotoverProcess instead of ShotoverManager for a more accurate benchmark
-        let shotover_manager =
-            ShotoverProcess::from_topology_file(&format!("{}/topology.yaml", args.config_dir));
+        let shotover =
+            shotover_from_topology_file(&format!("{}/topology.yaml", args.config_dir)).await;
 
         println!("Benching Shotover ...");
         bench_read(&latte, "localhost:9043", "localhost:9042");
         println!("Benching Direct Cassandra ...");
         bench_read(&latte, "localhost:9043", "localhost:9043");
 
-        shotover_manager.shutdown_and_assert_success();
+        shotover.shutdown_and_then_consume_events(&[]).await;
     }
 
     println!("Direct Cassandra (A) vs Shotover (B)");
