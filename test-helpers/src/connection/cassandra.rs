@@ -75,7 +75,6 @@ impl PreparedQuery {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -107,10 +106,9 @@ pub enum CassandraConnection {
 }
 
 impl CassandraConnection {
-    #[allow(dead_code)]
     pub async fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
         for contact_point in contact_points.split(',') {
-            test_helpers::wait_for_socket_to_open(contact_point, port);
+            crate::wait_for_socket_to_open(contact_point, port);
         }
 
         match driver {
@@ -193,7 +191,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub fn as_cdrs(&self) -> &CdrsTokioSessionInstance {
         match self {
             Self::CdrsTokio { session, .. } => session,
@@ -201,7 +198,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is(&self, drivers: &[CassandraDriver]) -> bool {
         match self {
             Self::CdrsTokio { .. } => drivers.contains(&CassandraDriver::CdrsTokio),
@@ -212,7 +208,6 @@ impl CassandraConnection {
     }
 
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    #[allow(dead_code)]
     pub fn as_datastax(&self) -> &DatastaxSession {
         match self {
             Self::Datastax { session, .. } => session,
@@ -220,7 +215,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code, unused_variables)]
     pub async fn new_tls(
         contact_points: &str,
         port: u16,
@@ -236,7 +230,7 @@ impl CassandraConnection {
                 Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
 
                 for contact_point in contact_points.split(',') {
-                    test_helpers::wait_for_socket_to_open(contact_point, port);
+                    crate::wait_for_socket_to_open(contact_point, port);
                 }
 
                 let mut cluster = Cluster::default();
@@ -283,7 +277,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn enable_schema_awaiter(&mut self, direct_node: &str, ca_cert: Option<&str>) {
         let context = ca_cert.map(|ca_cert| {
             let mut context = SslContext::builder(SslMethod::tls()).unwrap();
@@ -321,7 +314,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute(&self, query: &str) -> Vec<Vec<ResultValue>> {
         match self.execute_fallible(query).await {
             Ok(result) => result,
@@ -329,7 +321,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute_fallible(&self, query: &str) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         let result = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -354,7 +345,6 @@ impl CassandraConnection {
         result
     }
 
-    #[allow(dead_code)]
     pub async fn execute_with_timestamp(
         &self,
         query: &str,
@@ -391,7 +381,6 @@ impl CassandraConnection {
         result
     }
 
-    #[allow(dead_code)]
     pub async fn prepare(&self, query: &str) -> PreparedQuery {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -410,7 +399,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute_prepared_coordinator_node(
         &self,
         prepared_query: &PreparedQuery,
@@ -475,7 +463,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
@@ -599,7 +586,6 @@ impl CassandraConnection {
         };
     }
 
-    #[allow(dead_code)]
     pub async fn execute_batch_fallible(
         &self,
         queries: Vec<String>,
@@ -636,7 +622,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute_batch(&self, queries: Vec<String>) {
         let result = self.execute_batch_fallible(queries).await.unwrap();
         assert_eq!(result.len(), 0, "Batches should never return results");
@@ -774,7 +759,6 @@ pub enum ResultValue {
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
-    #[allow(dead_code)]
     Any,
 }
 
@@ -814,7 +798,6 @@ impl PartialEq for ResultValue {
 }
 
 impl ResultValue {
-    #[allow(dead_code)]
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     pub fn new_from_cpp(value: Value) -> Self {
         if value.is_null() {
@@ -1002,7 +985,6 @@ impl ResultValue {
 }
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
-#[allow(dead_code)]
 pub async fn assert_query_result(
     session: &CassandraConnection,
     query: &str,
@@ -1014,7 +996,6 @@ pub async fn assert_query_result(
 }
 
 /// Assert that the results from an integration test match the expected rows
-#[allow(dead_code)]
 pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[ResultValue]]) {
     let mut expected_rows: Vec<_> = expected_rows.iter().map(|x| x.to_vec()).collect();
     expected_rows.sort();
@@ -1023,7 +1004,6 @@ pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[Result
 }
 
 /// Execute a `query` against the `session` and assert the result rows contain `row`
-#[allow(dead_code)]
 pub async fn assert_query_result_contains_row(
     session: &CassandraConnection,
     query: &str,
@@ -1039,7 +1019,6 @@ pub async fn assert_query_result_contains_row(
 }
 
 /// Execute a `query` against the `session` and assert the result rows does not contain `row`
-#[allow(dead_code)]
 pub async fn assert_query_result_not_contains_row(
     session: &CassandraConnection,
     query: &str,
@@ -1054,7 +1033,6 @@ pub async fn assert_query_result_not_contains_row(
     }
 }
 
-#[allow(dead_code)]
 pub async fn run_query(session: &CassandraConnection, query: &str) {
     assert_query_result(session, query, &[]).await;
 }

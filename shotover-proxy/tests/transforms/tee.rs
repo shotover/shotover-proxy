@@ -1,6 +1,6 @@
-use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
+use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 
 #[tokio::test(flavor = "multi_thread")]

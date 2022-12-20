@@ -1,10 +1,10 @@
 use criterion::{criterion_group, Criterion};
 use redis::Cmd;
 use std::path::Path;
+use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 
-use crate::helpers::redis_connection;
 use crate::helpers::ShotoverManager;
 
 struct Query {

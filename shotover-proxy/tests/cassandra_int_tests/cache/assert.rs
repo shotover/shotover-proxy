@@ -1,7 +1,7 @@
-use crate::helpers::cassandra::{assert_query_result, CassandraConnection, ResultValue};
 use metrics_util::debugging::{DebugValue, Snapshotter};
 use redis::Commands;
 use std::collections::HashSet;
+use test_helpers::connection::cassandra::{assert_query_result, CassandraConnection, ResultValue};
 
 /// gets the current miss count from the cache instrumentation.
 fn get_cache_miss_value(snapshotter: &Snapshotter) -> u64 {

@@ -1,9 +1,9 @@
 mod assert;
 
-use crate::helpers::cassandra::{run_query, CassandraConnection, ResultValue};
 use metrics_util::debugging::Snapshotter;
 use redis::Commands;
 use std::collections::HashSet;
+use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
 
 pub async fn test(
     cassandra_session: &CassandraConnection,
