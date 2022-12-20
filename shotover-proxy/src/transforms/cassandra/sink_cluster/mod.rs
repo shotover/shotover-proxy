@@ -147,7 +147,7 @@ impl Clone for CassandraSinkCluster {
             peers_v2_table: self.peers_v2_table.clone(),
             system_keyspaces: self.system_keyspaces.clone(),
             local_shotover_node: self.local_shotover_node.clone(),
-            pool: NodePool::new(vec![]),
+            pool: self.pool.clone(),
             // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
             // once a single node list has been sent all new connections will immediately recognize it as a change.
             nodes_rx: self.nodes_rx.clone(),
