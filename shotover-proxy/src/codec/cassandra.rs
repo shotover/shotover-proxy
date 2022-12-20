@@ -236,7 +236,6 @@ mod cassandra_protocol_tests {
         TableSpec,
     };
     use cassandra_protocol::frame::Version;
-    use cassandra_protocol::query::QueryParams;
     use hex_literal::hex;
     use tokio_util::codec::{Decoder, Encoder};
 
@@ -467,7 +466,7 @@ mod cassandra_protocol_tests {
                 query: Box::new(parse_statement_single(
                     "SELECT * FROM system.local WHERE key = 'local'",
                 )),
-                params: Box::new(QueryParams::default()),
+                params: Box::default(),
             },
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -490,7 +489,7 @@ mod cassandra_protocol_tests {
                 query: Box::new(parse_statement_single(
                     "INSERT INTO system.foo (bar) VALUES ('bar2')",
                 )),
-                params: Box::new(QueryParams::default()),
+                params: Box::default(),
             },
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);

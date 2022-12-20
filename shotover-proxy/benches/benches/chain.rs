@@ -28,8 +28,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChainBuilder::new(
             vec![TransformBuilder::Null(Null::default())],
             "bench".to_string(),
-        )
-        .build();
+        );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::None)],
             chain.name.clone(),
@@ -39,7 +38,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("null", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -58,8 +57,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 TransformBuilder::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
             ],
             "bench".to_string(),
-        )
-        .build();
+        );
         let wrapper = Wrapper::new_with_chain_name(
             vec![
                 Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
@@ -79,7 +77,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_filter", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -101,8 +99,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 ]))),
             ],
             "bench".to_string(),
-        )
-        .build();
+        );
         let wrapper_set = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
@@ -116,7 +113,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_untagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper_set.clone(),
                     client_details: "".into(),
                 },
@@ -137,7 +134,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_tagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper_get.clone(),
                     client_details: "".into(),
                 },
@@ -154,8 +151,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 TransformBuilder::Null(Null::default()),
             ],
             "bench".to_string(),
-        )
-        .build();
+        );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                 RedisFrame::BulkString(Bytes::from_static(b"SET")),
@@ -169,7 +165,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -193,8 +189,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 TransformBuilder::Null(Null::default()),
             ],
             "bench".to_string(),
-        )
-        .build();
+        );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_bytes(
                 Bytes::from(
@@ -214,7 +209,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -231,8 +226,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 TransformBuilder::Null(Null::default()),
             ],
             "bench".into(),
-        )
-        .build();
+        );
 
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_bytes(
@@ -271,7 +265,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -305,8 +299,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 TransformBuilder::Null(Null::default()),
             ],
             "bench".into(),
-        )
-        .build();
+        );
 
         let wrapper = cassandra_parsed_query(
             "INSERT INTO test_protect_keyspace.unprotected_table (pk, cluster, col1, col2, col3) VALUES ('pk1', 'cluster', 'I am gonna get encrypted!!', 42, true);"
@@ -315,7 +308,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_unprotected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -331,7 +324,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_protected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
