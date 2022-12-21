@@ -75,7 +75,7 @@ impl CassandraSinkClusterConfig {
         let local_node = shotover_nodes.remove(index);
 
         Ok(TransformBuilder::CassandraSinkCluster(Box::new(
-            CassandraSinkCluster::new(
+            CassandraSinkClusterBuilder::new(
                 self.first_contact_points.clone(),
                 shotover_nodes,
                 chain_name,
@@ -85,6 +85,101 @@ impl CassandraSinkClusterConfig {
                 self.read_timeout,
             ),
         )))
+    }
+}
+
+#[derive(Clone)]
+pub struct CassandraSinkClusterBuilder {
+    contact_points: Vec<String>,
+    connection_factory: ConnectionFactory,
+    shotover_peers: Vec<ShotoverNode>,
+    failed_requests: Counter,
+    read_timeout: Option<Duration>,
+    local_shotover_node: ShotoverNode,
+    nodes_rx: watch::Receiver<Vec<CassandraNode>>,
+    keyspaces_rx: KeyspaceChanRx,
+    task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
+    pool: NodePool,
+}
+
+impl CassandraSinkClusterBuilder {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        contact_points: Vec<String>,
+        shotover_peers: Vec<ShotoverNode>,
+        chain_name: String,
+        local_shotover_node: ShotoverNode,
+        tls: Option<TlsConnector>,
+        connect_timeout_ms: u64,
+        timeout: Option<u64>,
+    ) -> Self {
+        let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "CassandraSinkCluster");
+        let receive_timeout = timeout.map(Duration::from_secs);
+        let connect_timeout = Duration::from_millis(connect_timeout_ms);
+
+        let (local_nodes_tx, local_nodes_rx) = watch::channel(vec![]);
+        let (keyspaces_tx, keyspaces_rx): (KeyspaceChanTx, KeyspaceChanRx) =
+            watch::channel(HashMap::new());
+
+        let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
+
+        create_topology_task(
+            local_nodes_tx,
+            keyspaces_tx,
+            task_handshake_rx,
+            local_shotover_node.data_center.clone(),
+        );
+
+        Self {
+            contact_points,
+            connection_factory: ConnectionFactory::new(connect_timeout, tls),
+            shotover_peers,
+            failed_requests,
+            read_timeout: receive_timeout,
+            local_shotover_node,
+            nodes_rx: local_nodes_rx,
+            keyspaces_rx,
+            task_handshake_tx,
+            pool: NodePool::new(vec![]),
+        }
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        vec![]
+    }
+
+    pub fn is_terminating(&self) -> bool {
+        true
+    }
+
+    pub fn build(self) -> Box<CassandraSinkCluster> {
+        Box::new(CassandraSinkCluster {
+            contact_points: self.contact_points,
+            shotover_peers: self.shotover_peers,
+            control_connection: None,
+            connection_factory: self.connection_factory.new_with_same_config(),
+            control_connection_address: None,
+            init_handshake_complete: false,
+            version: None,
+            failed_requests: self.failed_requests,
+            read_timeout: self.read_timeout,
+            local_table: FQName::new("system", "local"),
+            peers_table: FQName::new("system", "peers"),
+            peers_v2_table: FQName::new("system", "peers_v2"),
+            system_keyspaces: [
+                Identifier::parse("system"),
+                Identifier::parse("system_schema"),
+                Identifier::parse("system_distributed"),
+            ],
+            local_shotover_node: self.local_shotover_node,
+            pool: self.pool,
+            // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
+            // once a single node list has been sent all new connections will immediately recognize it as a change.
+            nodes_rx: self.nodes_rx,
+            keyspaces_rx: self.keyspaces_rx,
+            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
+            task_handshake_tx: self.task_handshake_tx,
+        })
     }
 }
 
@@ -111,7 +206,6 @@ pub struct CassandraSinkCluster {
     init_handshake_complete: bool,
 
     version: Option<Version>,
-    chain_name: String,
     failed_requests: Counter,
     read_timeout: Option<Duration>,
     local_table: FQName,
@@ -127,92 +221,6 @@ pub struct CassandraSinkCluster {
     keyspaces_rx: KeyspaceChanRx,
     rng: SmallRng,
     task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
-}
-
-impl Clone for CassandraSinkCluster {
-    fn clone(&self) -> Self {
-        Self {
-            contact_points: self.contact_points.clone(),
-            shotover_peers: self.shotover_peers.clone(),
-            control_connection: None,
-            connection_factory: self.connection_factory.new_with_same_config(),
-            control_connection_address: None,
-            init_handshake_complete: false,
-            version: self.version,
-            chain_name: self.chain_name.clone(),
-            failed_requests: self.failed_requests.clone(),
-            read_timeout: self.read_timeout,
-            local_table: self.local_table.clone(),
-            peers_table: self.peers_table.clone(),
-            peers_v2_table: self.peers_v2_table.clone(),
-            system_keyspaces: self.system_keyspaces.clone(),
-            local_shotover_node: self.local_shotover_node.clone(),
-            pool: NodePool::new(vec![]),
-            // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
-            // once a single node list has been sent all new connections will immediately recognize it as a change.
-            nodes_rx: self.nodes_rx.clone(),
-            keyspaces_rx: self.keyspaces_rx.clone(),
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            task_handshake_tx: self.task_handshake_tx.clone(),
-        }
-    }
-}
-
-impl CassandraSinkCluster {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        contact_points: Vec<String>,
-        shotover_peers: Vec<ShotoverNode>,
-        chain_name: String,
-        local_shotover_node: ShotoverNode,
-        tls: Option<TlsConnector>,
-        connect_timeout_ms: u64,
-        timeout: Option<u64>,
-    ) -> Self {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
-        let receive_timeout = timeout.map(Duration::from_secs);
-        let connect_timeout = Duration::from_millis(connect_timeout_ms);
-
-        let (local_nodes_tx, local_nodes_rx) = watch::channel(vec![]);
-        let (keyspaces_tx, keyspaces_rx): (KeyspaceChanTx, KeyspaceChanRx) =
-            watch::channel(HashMap::new());
-
-        let (task_handshake_tx, task_handshake_rx) = mpsc::channel(1);
-
-        create_topology_task(
-            local_nodes_tx,
-            keyspaces_tx,
-            task_handshake_rx,
-            local_shotover_node.data_center.clone(),
-        );
-
-        Self {
-            contact_points,
-            connection_factory: ConnectionFactory::new(connect_timeout, tls),
-            shotover_peers,
-            control_connection: None,
-            control_connection_address: None,
-            init_handshake_complete: false,
-            version: None,
-            chain_name,
-            failed_requests,
-            read_timeout: receive_timeout,
-            local_table: FQName::new("system", "local"),
-            peers_table: FQName::new("system", "peers"),
-            peers_v2_table: FQName::new("system", "peers_v2"),
-            system_keyspaces: [
-                Identifier::parse("system"),
-                Identifier::parse("system_schema"),
-                Identifier::parse("system_distributed"),
-            ],
-            local_shotover_node,
-            pool: NodePool::new(vec![]),
-            nodes_rx: local_nodes_rx,
-            keyspaces_rx,
-            rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            task_handshake_tx,
-        }
-    }
 }
 
 fn create_query(messages: &Messages, query: &str, version: Version) -> Result<Message> {
@@ -1253,10 +1261,6 @@ impl Transform for CassandraSinkCluster {
             }
         });
         message_wrapper.call_next_transform_pushed().await
-    }
-
-    fn is_terminating(&self) -> bool {
-        true
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
