@@ -4,8 +4,8 @@ use std::path::Path;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
-
-use crate::helpers::ShotoverManager;
+use test_helpers::shotover_process::{shotover_from_topology_file, BinProcess};
+use tokio::runtime::Runtime;
 
 struct Query {
     name: &'static str,
@@ -146,14 +146,30 @@ criterion_group!(benches, redis);
 
 struct BenchResources {
     connection: redis::Connection,
-    _shotover_manager: ShotoverManager,
+    shotover: Option<BinProcess>,
     _compose: DockerCompose,
+    tokio: Runtime,
+}
+
+impl Drop for BenchResources {
+    fn drop(&mut self) {
+        self.tokio.block_on(
+            self.shotover
+                .take()
+                .unwrap()
+                .shutdown_and_then_consume_events(&[]),
+        );
+    }
 }
 
 impl BenchResources {
     fn new(shotover_topology: &str, compose_file: &str) -> Self {
+        let tokio = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let compose = DockerCompose::new(compose_file);
-        let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
+        let shotover = Some(tokio.block_on(shotover_from_topology_file(shotover_topology)));
 
         let mut connection = redis_connection::new(6379);
         redis::cmd("SET")
@@ -163,8 +179,9 @@ impl BenchResources {
 
         Self {
             _compose: compose,
-            _shotover_manager: shotover_manager,
+            shotover,
             connection,
+            tokio,
         }
     }
 }
