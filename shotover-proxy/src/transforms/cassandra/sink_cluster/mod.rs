@@ -698,7 +698,9 @@ impl CassandraSinkCluster {
                                 .pool
                                 .nodes()
                                 .iter()
-                                .filter(|node| node.is_up)
+                                .filter(|node| {
+                                    node.is_up && node.rack == self.local_shotover_node.rack
+                                })
                                 .map(|node| node.host_id)
                                 .collect(),
                         },
