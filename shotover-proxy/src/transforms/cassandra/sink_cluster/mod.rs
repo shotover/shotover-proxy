@@ -15,7 +15,9 @@ use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
-use cql3_parser::common::{FQName, Identifier, Operand, RelationElement, RelationOperator};
+use cql3_parser::common::{
+    FQNameRef, Identifier, IdentifierRef, Operand, RelationElement, RelationOperator,
+};
 use cql3_parser::select::{Select, SelectElement};
 use futures::future::try_join_all;
 use futures::stream::FuturesOrdered;
@@ -44,6 +46,24 @@ pub mod topology;
 
 pub type KeyspaceChanTx = watch::Sender<HashMap<String, KeyspaceMetadata>>;
 pub type KeyspaceChanRx = watch::Receiver<HashMap<String, KeyspaceMetadata>>;
+
+const SYSTEM_KEYSPACES: [IdentifierRef<'static>; 3] = [
+    IdentifierRef::Quoted("system"),
+    IdentifierRef::Quoted("system_schema"),
+    IdentifierRef::Quoted("system_distributed"),
+];
+const LOCAL_TABLE: FQNameRef = FQNameRef {
+    keyspace: Some(IdentifierRef::Quoted("system")),
+    name: IdentifierRef::Quoted("local"),
+};
+const PEERS_TABLE: FQNameRef = FQNameRef {
+    keyspace: Some(IdentifierRef::Quoted("system")),
+    name: IdentifierRef::Quoted("peers"),
+};
+const PEERS_V2_TABLE: FQNameRef = FQNameRef {
+    keyspace: Some(IdentifierRef::Quoted("system")),
+    name: IdentifierRef::Quoted("peers_v2"),
+};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CassandraSinkClusterConfig {
@@ -163,14 +183,6 @@ impl CassandraSinkClusterBuilder {
             version: None,
             failed_requests: self.failed_requests,
             read_timeout: self.read_timeout,
-            local_table: FQName::new("system", "local"),
-            peers_table: FQName::new("system", "peers"),
-            peers_v2_table: FQName::new("system", "peers_v2"),
-            system_keyspaces: [
-                Identifier::parse("system"),
-                Identifier::parse("system_schema"),
-                Identifier::parse("system_distributed"),
-            ],
             local_shotover_node: self.local_shotover_node,
             pool: self.pool,
             // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
@@ -208,10 +220,6 @@ pub struct CassandraSinkCluster {
     version: Option<Version>,
     failed_requests: Counter,
     read_timeout: Option<Duration>,
-    local_table: FQName,
-    peers_table: FQName,
-    peers_v2_table: FQName,
-    system_keyspaces: [Identifier; 3],
     local_shotover_node: ShotoverNode,
     /// The nodes list is populated as soon as nodes_rx makes one available, but once a confirmed succesful handshake is reached
     /// we await nodes_rx to ensure that we have a nodes list from that point forward.
@@ -661,10 +669,10 @@ impl CassandraSinkCluster {
             // No need to handle Batch as selects can only occur on Query
             if let CassandraOperation::Query { query, .. } = &mut cassandra.operation {
                 if let CassandraStatement::Select(select) = query.as_mut() {
-                    let ty = if self.local_table == select.table_name {
+                    let ty = if LOCAL_TABLE == select.table_name {
                         RewriteTableTy::Local
-                    } else if self.peers_table == select.table_name
-                        || self.peers_v2_table == select.table_name
+                    } else if PEERS_TABLE == select.table_name
+                        || PEERS_V2_TABLE == select.table_name
                     {
                         RewriteTableTy::Peers
                     } else {
@@ -702,7 +710,7 @@ impl CassandraSinkCluster {
             || (ty == RewriteTableTy::Local
                 && select.where_clause
                     == [RelationElement {
-                        obj: Operand::Column(Identifier::Unquoted("key".to_string())),
+                        obj: Operand::Column(Identifier::Quoted("key".to_owned())),
                         oper: RelationOperator::Equal,
                         value: Operand::Const("'local'".to_owned()),
                     }])
@@ -787,31 +795,31 @@ impl CassandraSinkCluster {
                         Identifier::Unquoted(alias) => alias,
                         Identifier::Quoted(alias) => alias,
                     };
-                    if column.name == Identifier::Unquoted("data_center".to_string()) {
+                    if column.name == IdentifierRef::Quoted("data_center") {
                         data_center_alias = alias;
-                    } else if column.name == Identifier::Unquoted("rack".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("rack") {
                         rack_alias = alias;
-                    } else if column.name == Identifier::Unquoted("host_id".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("host_id") {
                         host_id_alias = alias;
-                    } else if column.name == Identifier::Unquoted("native_address".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("native_address") {
                         native_address_alias = alias;
-                    } else if column.name == Identifier::Unquoted("native_port".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("native_port") {
                         native_port_alias = alias;
-                    } else if column.name == Identifier::Unquoted("preferred_ip".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("preferred_ip") {
                         preferred_ip_alias = alias;
-                    } else if column.name == Identifier::Unquoted("preferred_port".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("preferred_port") {
                         preferred_port_alias = alias;
-                    } else if column.name == Identifier::Unquoted("rpc_address".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("rpc_address") {
                         rpc_address_alias = alias;
-                    } else if column.name == Identifier::Unquoted("peer".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("peer") {
                         peer_alias = alias;
-                    } else if column.name == Identifier::Unquoted("peer_port".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("peer_port") {
                         peer_port_alias = alias;
-                    } else if column.name == Identifier::Unquoted("release_version".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("release_version") {
                         release_version_alias = alias;
-                    } else if column.name == Identifier::Unquoted("tokens".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("tokens") {
                         tokens_alias = alias;
-                    } else if column.name == Identifier::Unquoted("schema_version".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("schema_version") {
                         schema_version_alias = alias;
                     }
                 }
@@ -939,21 +947,21 @@ impl CassandraSinkCluster {
                         Identifier::Unquoted(alias) => alias,
                         Identifier::Quoted(alias) => alias,
                     };
-                    if column.name == Identifier::Unquoted("release_version".to_string()) {
+                    if column.name == IdentifierRef::Quoted("release_version") {
                         release_version_alias = alias;
-                    } else if column.name == Identifier::Unquoted("tokens".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("tokens") {
                         tokens_alias = alias;
-                    } else if column.name == Identifier::Unquoted("schema_version".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("schema_version") {
                         schema_version_alias = alias;
-                    } else if column.name == Identifier::Unquoted("broadcast_address".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("broadcast_address") {
                         broadcast_address_alias = alias;
-                    } else if column.name == Identifier::Unquoted("listen_address".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("listen_address") {
                         listen_address_alias = alias;
-                    } else if column.name == Identifier::Unquoted("host_id".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("host_id") {
                         host_id_alias = alias;
-                    } else if column.name == Identifier::Unquoted("rpc_address".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("rpc_address") {
                         rpc_address_alias = alias
-                    } else if column.name == Identifier::Unquoted("rpc_port".to_string()) {
+                    } else if column.name == IdentifierRef::Quoted("rpc_port") {
                         rpc_port_alias = alias
                     }
                 }
@@ -1034,7 +1042,7 @@ impl CassandraSinkCluster {
             if let CassandraOperation::Query { query, .. } = &mut frame.operation {
                 if let CassandraStatement::Select(select) = query.as_ref() {
                     if let Some(keyspace) = &select.table_name.keyspace {
-                        return self.system_keyspaces.contains(keyspace);
+                        return SYSTEM_KEYSPACES.iter().any(|x| x == keyspace);
                     }
                 }
             }

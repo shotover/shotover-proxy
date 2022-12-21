@@ -576,8 +576,7 @@ dependencies = [
 [[package]]
 name = "cql3-parser"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3da32ab68b2179b3a25f91f83701b6d3ba1b82bdad6c1bafa9e6c44de7e83588"
+source = "git+https://github.com/rukai/rust-cql3-parser?branch=identifier_ref#fbb0563950a101e4178a8bf38ea92be2666864b8"
 dependencies = [
  "bigdecimal 0.3.0",
  "bytes",
