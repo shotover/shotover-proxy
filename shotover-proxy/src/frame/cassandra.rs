@@ -1,4 +1,4 @@
-use crate::message::{serialize_len, MessageValue, QueryType};
+use crate::message::{serialize_len, serialize_with_length_prefix, MessageValue, QueryType};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
@@ -32,7 +32,7 @@ use cql3_parser::cassandra_statement::CassandraStatement;
 use cql3_parser::common::Operand;
 use nonzero_ext::nonzero;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::str::FromStr;
@@ -356,21 +356,52 @@ impl CassandraFrame {
         }
     }
 
-    pub fn encode(self) -> RawCassandraFrame {
+    pub fn encode(self, compression: Compression) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(128);
+        let mut cursor = Cursor::new(&mut buf);
+
+        let combined_version_byte =
+            u8::from(self.version) | u8::from(self.operation.to_direction());
+
         let mut flags = Flags::default();
         flags.set(Flags::WARNING, !self.warnings.is_empty());
         flags.set(Flags::TRACING, self.tracing.enabled());
 
-        RawCassandraFrame {
-            direction: self.operation.to_direction(),
-            version: self.version,
-            flags,
-            opcode: self.operation.to_opcode(),
-            stream_id: self.stream_id,
-            body: self.operation.into_body(self.version),
-            tracing_id: self.tracing.into(),
-            warnings: self.warnings,
-        }
+        cursor.write_all(&[combined_version_byte]).ok();
+        cursor.write_all(&[flags.bits()]).ok();
+        cursor.write_all(&self.stream_id.to_be_bytes()).ok();
+        cursor.write_all(&[self.operation.to_opcode().into()]).ok();
+
+        serialize_with_length_prefix(&mut cursor, |cursor| {
+            if let Tracing::Response(Some(uuid)) = self.tracing {
+                cursor.write_all(uuid.as_bytes()).ok();
+            }
+
+            if !self.warnings.is_empty() {
+                let warnings_len = self.warnings.len() as i16;
+                cursor.write_all(&warnings_len.to_be_bytes()).ok();
+
+                for warning in &self.warnings {
+                    let warning_len = warning.len() as i16;
+                    cursor.write_all(&warning_len.to_be_bytes()).ok();
+                    cursor.write_all(warning.as_bytes()).ok();
+                }
+            }
+            if let Compression::None = compression {
+                // Special case None to avoid large copies
+                self.operation.serialize(cursor, self.version)
+            } else {
+                // TODO: While compression is obviously going to cost more than no compression, I suspect it doesnt have to be quite this bad
+                let mut body_buf = Vec::with_capacity(128);
+                let mut body_cursor = Cursor::new(&mut body_buf);
+                self.operation.serialize(&mut body_cursor, self.version);
+                cursor
+                    .write_all(&compression.encode(&body_buf).unwrap())
+                    .ok();
+            }
+        });
+
+        buf
     }
 }
 
@@ -478,51 +509,46 @@ impl CassandraOperation {
         }
     }
 
-    fn into_body(self, version: Version) -> Vec<u8> {
+    fn serialize(self, cursor: &mut Cursor<&mut Vec<u8>>, version: Version) {
         match self {
             CassandraOperation::Query { query, params } => BodyReqQuery {
                 query: query.to_string(),
                 query_params: *params,
             }
-            .serialize_to_vec(version),
+            .serialize(cursor, version),
             CassandraOperation::Result(result) => match result {
                 CassandraResult::Rows { rows, metadata } => {
-                    let mut buf = vec![];
-                    let mut cursor = Cursor::new(&mut buf);
+                    ResultKind::Rows.serialize(cursor, version);
 
-                    ResultKind::Rows.serialize(&mut cursor, version);
-
-                    metadata.serialize(&mut cursor, version);
-                    serialize_len(&mut cursor, rows.len());
+                    metadata.serialize(cursor, version);
+                    serialize_len(cursor, rows.len());
                     for row in rows {
                         for col in row {
-                            col.cassandra_serialize(&mut cursor);
+                            col.cassandra_serialize(cursor);
                         }
                     }
-
-                    buf
                 }
                 CassandraResult::SetKeyspace(set_keyspace) => {
-                    ResResultBody::SetKeyspace(*set_keyspace).serialize_to_vec(version)
+                    ResResultBody::SetKeyspace(*set_keyspace).serialize(cursor, version)
                 }
                 CassandraResult::Prepared(prepared) => {
-                    ResResultBody::Prepared(*prepared).serialize_to_vec(version)
+                    ResResultBody::Prepared(*prepared).serialize(cursor, version)
                 }
                 CassandraResult::SchemaChange(schema_change) => {
-                    ResResultBody::SchemaChange(*schema_change).serialize_to_vec(version)
+                    ResResultBody::SchemaChange(*schema_change).serialize(cursor, version)
                 }
-                CassandraResult::Void => ResResultBody::Void.serialize_to_vec(version),
+                CassandraResult::Void => ResResultBody::Void.serialize(cursor, version),
             },
-            CassandraOperation::Error(error) => error.serialize_to_vec(version),
-            CassandraOperation::Startup(bytes) => bytes.to_vec(),
-            CassandraOperation::Ready(bytes) => bytes.to_vec(),
-            CassandraOperation::Authenticate(bytes) => bytes.to_vec(),
-            CassandraOperation::Options(bytes) => bytes.to_vec(),
-            CassandraOperation::Supported(bytes) => bytes.to_vec(),
-            CassandraOperation::Prepare(bytes) => bytes.to_vec(),
-            CassandraOperation::Execute(execute) => execute.serialize_to_vec(version),
-            CassandraOperation::Register(register) => register.serialize_to_vec(version),
-            CassandraOperation::Event(event) => event.serialize_to_vec(version),
+            CassandraOperation::Error(error) => error.serialize(cursor, version),
+            CassandraOperation::Startup(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::Ready(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::Authenticate(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::Options(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::Supported(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::Prepare(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::Execute(execute) => execute.serialize(cursor, version),
+            CassandraOperation::Register(register) => register.serialize(cursor, version),
+            CassandraOperation::Event(event) => event.serialize(cursor, version),
             CassandraOperation::Batch(batch) => BodyReqBatch {
                 batch_type: batch.ty,
                 consistency: batch.consistency,
@@ -544,10 +570,10 @@ impl CassandraOperation {
                 serial_consistency: batch.serial_consistency,
                 timestamp: batch.timestamp,
             }
-            .serialize_to_vec(version),
-            CassandraOperation::AuthChallenge(bytes) => bytes.to_vec(),
-            CassandraOperation::AuthResponse(bytes) => bytes.to_vec(),
-            CassandraOperation::AuthSuccess(bytes) => bytes.to_vec(),
+            .serialize(cursor, version),
+            CassandraOperation::AuthChallenge(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::AuthResponse(bytes) => bytes.serialize(cursor, version),
+            CassandraOperation::AuthSuccess(bytes) => bytes.serialize(cursor, version),
         }
     }
 }
