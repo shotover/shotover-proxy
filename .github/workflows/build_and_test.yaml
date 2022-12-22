@@ -71,7 +71,10 @@ jobs:
     - name: Ensure that tests pass
       run: cargo test ${{ matrix.cargo_flags }} --all-features -- --include-ignored --show-output --nocapture ${{ matrix.test_flags }}
     - name: Ensure that custom benches run
-      run: cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough --rate 1000
+      run: |
+        cargo run --release --example cassandra_bench -- --config-dir example-configs/cassandra-passthrough --rate 1000
+        cargo run --release --example cassandra_cluster_bench
+        cargo run --release --example cassandra_cluster_flamegraph
       if: ${{ matrix.name == 'Ubuntu 20.04 - Release' }}
     - name: Ensure that tests did not create or modify any files that arent .gitignore'd
       run: |
