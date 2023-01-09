@@ -1,8 +1,8 @@
 use std::time::Duration;
-use tokio_bin_process::BinProcess;
 
 pub use tokio_bin_process::event::{Event, Level};
 pub use tokio_bin_process::event_matcher::{Count, EventMatcher, Events};
+pub use tokio_bin_process::BinProcess;
 
 pub async fn shotover_from_topology_file(topology_path: &str) -> BinProcess {
     let mut shotover = BinProcess::start_with_args(
