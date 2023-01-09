@@ -1194,7 +1194,6 @@ fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, C
         operation: CassandraOperation::Execute(execute_body),
         version,
         stream_id,
-        tracing,
         ..
     })) = message.frame()
     {
@@ -1203,7 +1202,6 @@ fn get_execute_message(message: &mut Message) -> Option<(&BodyReqExecuteOwned, C
             CassandraMetadata {
                 version: *version,
                 stream_id: *stream_id,
-                tracing: *tracing,
                 opcode: Opcode::Execute,
             },
         ));
