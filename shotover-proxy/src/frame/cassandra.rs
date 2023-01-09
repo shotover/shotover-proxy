@@ -40,8 +40,9 @@ use uuid::Uuid;
 
 /// Functions for operations on an unparsed Cassandra frame
 pub mod raw_frame {
-    use super::{CassandraMetadata, RawCassandraFrame, Tracing};
+    use super::{CassandraMetadata, RawCassandraFrame};
     use anyhow::{anyhow, bail, Result};
+    use cassandra_protocol::frame::Version;
     use cassandra_protocol::{compression::Compression, frame::Opcode};
     use nonzero_ext::nonzero;
     use std::convert::TryInto;
@@ -63,15 +64,13 @@ pub mod raw_frame {
 
     /// Parse metadata only from an unparsed Cassandra frame
     pub(crate) fn metadata(bytes: &[u8]) -> Result<CassandraMetadata> {
-        let frame = RawCassandraFrame::from_buffer(bytes, Compression::None)
-            .map_err(|e| anyhow!("{e:?}"))?
-            .envelope;
-        let tracing = Tracing::from_frame(&frame);
+        if bytes.len() < 9 {
+            return Err(anyhow!("Not enough bytes for cassandra frame"));
+        }
         Ok(CassandraMetadata {
-            version: frame.version,
-            stream_id: frame.stream_id,
-            tracing,
-            opcode: frame.opcode,
+            version: Version::try_from(bytes[0])?,
+            stream_id: i16::from_be_bytes(bytes[2..4].try_into()?),
+            opcode: Opcode::try_from(bytes[4])?,
         })
     }
 
@@ -88,12 +87,12 @@ pub mod raw_frame {
     }
 }
 
+/// Only includes data within the header
+/// Data within the body may require decompression which is too expensive
 pub struct CassandraMetadata {
     pub version: Version,
     pub stream_id: StreamId,
-    pub tracing: Tracing,
     pub opcode: Opcode,
-    // missing `warnings` field because we are not using it currently
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -145,7 +144,6 @@ impl CassandraFrame {
         CassandraMetadata {
             version: self.version,
             stream_id: self.stream_id,
-            tracing: self.tracing,
             opcode: self.operation.to_opcode(),
         }
     }
