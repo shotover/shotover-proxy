@@ -1,6 +1,7 @@
 use crate::transforms::protect::aws_kms::AWSKeyManagement;
 use crate::transforms::protect::local_kek::LocalKeyManagement;
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use cached::proc_macro::cached;
 use chacha20poly1305::Key;
@@ -62,7 +63,7 @@ impl KeyManagerConfig {
                 grant_tokens,
             })),
             KeyManagerConfig::Local { kek, kek_id } => {
-                let decoded_base64 = base64::decode(kek)?;
+                let decoded_base64 = general_purpose::STANDARD.decode(kek)?;
 
                 if decoded_base64.len() != 32 {
                     return Err(anyhow!("Invalid key length"));
