@@ -3,13 +3,10 @@ mod test_token_aware_router {
     use super::super::node_pool::{KeyspaceMetadata, NodePool};
     use super::super::routing_key::calculate_routing_key;
     use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
+    use crate::transforms::cassandra::sink_cluster::node_pool::PreparedMetadata;
     use crate::transforms::cassandra::sink_cluster::{KeyspaceChanRx, KeyspaceChanTx};
     use cassandra_protocol::consistency::Consistency::One;
     use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-    use cassandra_protocol::frame::message_result::PreparedMetadata;
-    use cassandra_protocol::frame::message_result::{
-        ColSpec, ColType::Varchar, ColTypeOption, TableSpec,
-    };
     use cassandra_protocol::frame::Version;
     use cassandra_protocol::query::QueryParams;
     use cassandra_protocol::query::QueryValues::SimpleValues;
@@ -50,7 +47,7 @@ mod test_token_aware_router {
         router.update_keyspaces(&mut keyspaces_rx).await;
 
         router
-            .add_prepared_result(id.clone(), prepared_metadata().clone())
+            .add_prepared_result(id.clone(), prepared_metadata())
             .await;
 
         for (pk, test_token, rack_replicas, dc_replicas) in test_data() {
@@ -149,18 +146,7 @@ mod test_token_aware_router {
     fn prepared_metadata() -> PreparedMetadata {
         PreparedMetadata {
             pk_indexes: vec![0],
-            global_table_spec: Some(TableSpec {
-                ks_name: "demo_ks".into(),
-                table_name: "books_by_author".into(),
-            }),
-            col_specs: vec![ColSpec {
-                table_spec: None,
-                name: "author".into(),
-                col_type: ColTypeOption {
-                    id: Varchar,
-                    value: None,
-                },
-            }],
+            keyspace: Some("demo_ks".into()),
         }
     }
 
