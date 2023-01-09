@@ -569,7 +569,9 @@ impl<C: Codec + 'static> Handler<C> {
             );
 
             let modified_messages = if reverse_chain {
-                self.chain.process_request_rev(wrapper).await
+                self.chain
+                    .process_request_rev(wrapper, self.client_details.clone())
+                    .await
             } else {
                 self.chain
                     .process_request(wrapper, self.client_details.clone())

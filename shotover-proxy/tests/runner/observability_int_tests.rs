@@ -1,7 +1,6 @@
-use crate::helpers::ShotoverManager;
 use itertools::Itertools;
 use serial_test::serial;
-use test_helpers::connection::redis_connection;
+use test_helpers::{connection::redis_connection, shotover_process::shotover_from_topology_file};
 
 async fn http_request_metrics() -> String {
     let url = "http://localhost:9001/metrics";
@@ -65,8 +64,7 @@ async fn assert_metrics_key_value(key: &str, value: &str) {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_metrics() {
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/null-redis/topology.yaml");
+    let shotover = shotover_from_topology_file("example-configs/null-redis/topology.yaml").await;
     let mut connection = redis_connection::new_async(6379).await;
 
     // Expected string looks unnatural because it is sorted in alphabetical order to make it match the sorted error output
@@ -83,9 +81,7 @@ query_count{name="redis-chain"}
 shotover_available_connections{source="RedisSource"}
 shotover_chain_failures{chain="redis_chain"}
 shotover_chain_latency_count{chain="redis_chain",client_details="127.0.0.1"}
-shotover_chain_latency_count{chain="redis_chain"}
 shotover_chain_latency_sum{chain="redis_chain",client_details="127.0.0.1"}
-shotover_chain_latency_sum{chain="redis_chain"}
 shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0"}
 shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0.5"}
 shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0.9"}
@@ -93,13 +89,6 @@ shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="
 shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0.99"}
 shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="0.999"}
 shotover_chain_latency{chain="redis_chain",client_details="127.0.0.1",quantile="1"}
-shotover_chain_latency{chain="redis_chain",quantile="0"}
-shotover_chain_latency{chain="redis_chain",quantile="0.5"}
-shotover_chain_latency{chain="redis_chain",quantile="0.9"}
-shotover_chain_latency{chain="redis_chain",quantile="0.95"}
-shotover_chain_latency{chain="redis_chain",quantile="0.99"}
-shotover_chain_latency{chain="redis_chain",quantile="0.999"}
-shotover_chain_latency{chain="redis_chain",quantile="1"}
 shotover_chain_total{chain="redis_chain"}
 shotover_transform_failures{transform="Null"}
 shotover_transform_failures{transform="QueryCounter"}
@@ -163,4 +152,6 @@ query_count{name="redis-chain",query="SET",type="redis"}
         "2",
     )
     .await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
