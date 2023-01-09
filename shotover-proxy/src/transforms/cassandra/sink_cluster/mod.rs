@@ -1,3 +1,4 @@
+use self::node_pool::PreparedMetadata;
 use crate::error::ChainResponse;
 use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
@@ -11,7 +12,6 @@ use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType, UnpreparedError};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::message_result::BodyResResultPrepared;
-use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::{Opcode, Version};
 use cassandra_protocol::types::CBytesShort;
 use cql3_parser::cassandra_statement::CassandraStatement;
@@ -1173,7 +1173,17 @@ fn get_prepared_result_message(message: &mut Message) -> Option<(CBytesShort, Pr
         ..
     })) = message.frame()
     {
-        return Some((prepared.id.clone(), prepared.metadata.clone()));
+        return Some((
+            prepared.id.clone(),
+            PreparedMetadata {
+                pk_indexes: prepared.metadata.pk_indexes.clone(),
+                keyspace: prepared
+                    .metadata
+                    .global_table_spec
+                    .as_ref()
+                    .map(|x| x.ks_name.clone()),
+            },
+        ));
     }
 
     None
