@@ -179,7 +179,7 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     };
     {
         let _shotover_manager = ShotoverManager::from_topology_file(
-            "example-configs/cassandra-cluster-v4/topology.yaml",
+            "example-configs/cassandra-cluster-v4/topology-encode.yaml",
         );
 
         standard_test_suite(&connection, driver).await;
