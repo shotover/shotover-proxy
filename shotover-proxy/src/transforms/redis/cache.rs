@@ -274,7 +274,7 @@ impl SimpleRedisCache {
                         // TODO: two performance issues here:
                         // 1. we should be able to generate the encoded bytes without cloning the entire frame
                         // 2. we should be able to directly use the raw bytes when the message has not yet been mutated
-                        let encoded = frame.clone().encode().encode_with(Compression::None)?;
+                        let encoded = frame.clone().encode(Compression::None);
 
                         return Ok(Some(Message::from_frame(Frame::Redis(RedisFrame::Array(
                             vec![

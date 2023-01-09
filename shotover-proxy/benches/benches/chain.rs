@@ -1,7 +1,6 @@
 use bytes::Bytes;
-use cassandra_protocol::{
-    compression::Compression, consistency::Consistency, frame::Version, query::QueryParams,
-};
+use cassandra_protocol::compression::Compression;
+use cassandra_protocol::{consistency::Consistency, frame::Version, query::QueryParams};
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
 use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
@@ -252,9 +251,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }),
                     },
                 }
-                .encode()
-                .encode_with(Compression::None)
-                .unwrap()
+                .encode(Compression::None)
                 .into(),
                 MessageType::Cassandra,
             )],

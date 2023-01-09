@@ -4,7 +4,6 @@ use super::token_map::TokenMap;
 use super::KeyspaceChanRx;
 use anyhow::{anyhow, Error, Result};
 use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
-use cassandra_protocol::frame::message_result::PreparedMetadata;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
@@ -13,6 +12,12 @@ use split_iter::Splittable;
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::sync::{watch, RwLock};
+
+#[derive(Debug, Clone)]
+pub struct PreparedMetadata {
+    pub pk_indexes: Vec<i16>,
+    pub keyspace: Option<String>,
+}
 
 #[derive(Debug)]
 pub enum GetReplicaErr {
@@ -157,11 +162,10 @@ impl NodePool {
         let keyspace = self
             .keyspace_metadata
             .get(
-                &metadata
-                    .global_table_spec
+                metadata
+                    .keyspace
                     .as_ref()
-                    .ok_or(GetReplicaErr::NoKeyspaceMetadata)?
-                    .ks_name,
+                    .ok_or(GetReplicaErr::NoKeyspaceMetadata)?,
             )
             .ok_or(GetReplicaErr::NoKeyspaceMetadata)?;
 
