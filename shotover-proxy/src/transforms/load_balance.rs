@@ -1,7 +1,7 @@
 use crate::error::ChainResponse;
-use crate::transforms::chain::{BufferedChain, TransformChain};
+use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -17,15 +17,42 @@ pub struct ConnectionBalanceAndPoolConfig {
 }
 
 impl ConnectionBalanceAndPoolConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
         let chain = build_chain_from_config(self.name.clone(), &self.chain).await?;
 
-        Ok(Transforms::PoolConnections(ConnectionBalanceAndPool {
+        Ok(TransformBuilder::PoolConnections(
+            ConnectionBalanceAndPoolBuilder {
+                max_connections: self.max_connections,
+                all_connections: Arc::new(Mutex::new(Vec::with_capacity(self.max_connections))),
+                chain_to_clone: chain,
+            },
+        ))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectionBalanceAndPoolBuilder {
+    pub max_connections: usize,
+    pub all_connections: Arc<Mutex<Vec<BufferedChain>>>,
+    pub chain_to_clone: TransformChainBuilder,
+}
+
+impl ConnectionBalanceAndPoolBuilder {
+    pub fn build(self) -> ConnectionBalanceAndPool {
+        ConnectionBalanceAndPool {
             active_connection: None,
             max_connections: self.max_connections,
-            all_connections: Arc::new(Mutex::new(Vec::with_capacity(self.max_connections))),
-            chain_to_clone: chain,
-        }))
+            all_connections: self.all_connections,
+            chain_to_clone: self.chain_to_clone,
+        }
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        vec![]
+    }
+
+    pub fn is_terminating(&self) -> bool {
+        true
     }
 }
 
@@ -36,18 +63,7 @@ pub struct ConnectionBalanceAndPool {
     pub active_connection: Option<BufferedChain>,
     pub max_connections: usize,
     pub all_connections: Arc<Mutex<Vec<BufferedChain>>>,
-    pub chain_to_clone: TransformChain,
-}
-
-impl Clone for ConnectionBalanceAndPool {
-    fn clone(&self) -> Self {
-        ConnectionBalanceAndPool {
-            active_connection: None,
-            max_connections: self.max_connections,
-            all_connections: self.all_connections.clone(),
-            chain_to_clone: self.chain_to_clone.clone(),
-        }
-    }
+    pub chain_to_clone: TransformChainBuilder,
 }
 
 #[async_trait]
@@ -56,7 +72,7 @@ impl Transform for ConnectionBalanceAndPool {
         if self.active_connection.is_none() {
             let mut all_connections = self.all_connections.lock().await;
             if all_connections.len() < self.max_connections {
-                let chain = self.chain_to_clone.clone().into_buffered_chain(5);
+                let chain = self.chain_to_clone.build_buffered(5);
                 self.active_connection = Some(chain.clone());
                 all_connections.push(chain);
             } else {
@@ -73,47 +89,43 @@ impl Transform for ConnectionBalanceAndPool {
             .process_request(message_wrapper, None)
             .await
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::message::Messages;
-    use crate::transforms::chain::TransformChain;
+    use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::returner::{DebugReturner, Response};
-    use crate::transforms::load_balance::ConnectionBalanceAndPool;
-    use crate::transforms::{Transforms, Wrapper};
+    use crate::transforms::load_balance::ConnectionBalanceAndPoolBuilder;
+    use crate::transforms::{TransformBuilder, Wrapper};
     use std::sync::Arc;
 
     #[tokio::test(flavor = "multi_thread")]
     pub async fn test_balance() {
-        let transform = Transforms::PoolConnections(ConnectionBalanceAndPool {
-            active_connection: None,
+        let transform = TransformBuilder::PoolConnections(ConnectionBalanceAndPoolBuilder {
             max_connections: 3,
             all_connections: Arc::new(Default::default()),
-            chain_to_clone: TransformChain::new(
-                vec![Transforms::DebugReturner(DebugReturner::new(
+            chain_to_clone: TransformChainBuilder::new(
+                vec![TransformBuilder::DebugReturner(DebugReturner::new(
                     Response::Message(Messages::new()),
                 ))],
                 "child_test".to_string(),
             ),
         });
 
-        let mut chain = TransformChain::new(vec![transform], "test".to_string());
+        let mut chain = TransformChainBuilder::new(vec![transform], "test".to_string());
 
         for _ in 0..90 {
             chain
                 .clone()
+                .build()
                 .process_request(Wrapper::new(Messages::new()), "test_client".to_string())
                 .await
                 .unwrap();
         }
 
         match chain.chain.remove(0) {
-            Transforms::PoolConnections(p) => {
+            TransformBuilder::PoolConnections(p) => {
                 let all_connections = p.all_connections.lock().await;
                 assert_eq!(all_connections.len(), 3);
                 for bc in all_connections.iter() {

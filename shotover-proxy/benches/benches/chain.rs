@@ -1,7 +1,6 @@
 use bytes::Bytes;
-use cassandra_protocol::{
-    compression::Compression, consistency::Consistency, frame::Version, query::QueryParams,
-};
+use cassandra_protocol::compression::Compression;
+use cassandra_protocol::{consistency::Consistency, frame::Version, query::QueryParams};
 use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
 use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
@@ -9,7 +8,7 @@ use shotover_proxy::frame::RedisFrame;
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType};
 use shotover_proxy::message::{Message, QueryType};
 use shotover_proxy::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
-use shotover_proxy::transforms::chain::TransformChain;
+use shotover_proxy::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::filter::QueryTypeFilter;
 use shotover_proxy::transforms::null::Null;
@@ -17,7 +16,7 @@ use shotover_proxy::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use shotover_proxy::transforms::throttling::RequestThrottlingConfig;
-use shotover_proxy::transforms::{Transforms, Wrapper};
+use shotover_proxy::transforms::{TransformBuilder, Wrapper};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -25,8 +24,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.noise_threshold(0.2);
 
     {
-        let chain =
-            TransformChain::new(vec![Transforms::Null(Null::default())], "bench".to_string());
+        let chain = TransformChainBuilder::new(
+            vec![TransformBuilder::Null(Null::default())],
+            "bench".to_string(),
+        );
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::None)],
             chain.name.clone(),
@@ -36,7 +37,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("null", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -47,12 +48,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
-                Transforms::QueryTypeFilter(QueryTypeFilter {
+                TransformBuilder::QueryTypeFilter(QueryTypeFilter {
                     filter: QueryType::Read,
                 }),
-                Transforms::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
+                TransformBuilder::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
             ],
             "bench".to_string(),
         );
@@ -75,7 +76,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_filter", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -86,10 +87,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
-                Transforms::RedisTimestampTagger(RedisTimestampTagger::new()),
-                Transforms::DebugReturner(DebugReturner::new(Response::Message(vec![
+                TransformBuilder::RedisTimestampTagger(RedisTimestampTagger::new()),
+                TransformBuilder::DebugReturner(DebugReturner::new(Response::Message(vec![
                     Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // real frame
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // timestamp
@@ -111,7 +112,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_untagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper_set.clone(),
                     client_details: "".into(),
                 },
@@ -132,7 +133,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_timestamp_tagger_tagged", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper_get.clone(),
                     client_details: "".into(),
                 },
@@ -143,10 +144,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
-                Transforms::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
-                Transforms::Null(Null::default()),
+                TransformBuilder::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
+                TransformBuilder::Null(Null::default()),
             ],
             "bench".to_string(),
         );
@@ -163,7 +164,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("redis_cluster_ports_rewrite", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -174,7 +175,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
                 rt.block_on(
                     RequestThrottlingConfig {
@@ -184,7 +185,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     .get_transform(),
                 )
                 .unwrap(),
-                Transforms::Null(Null::default()),
+                TransformBuilder::Null(Null::default()),
             ],
             "bench".to_string(),
         );
@@ -207,7 +208,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_request_throttling_unparsed", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -218,10 +219,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
-                Transforms::CassandraPeersRewrite(CassandraPeersRewrite::new(9042)),
-                Transforms::Null(Null::default()),
+                TransformBuilder::CassandraPeersRewrite(CassandraPeersRewrite::new(9042)),
+                TransformBuilder::Null(Null::default()),
             ],
             "bench".into(),
         );
@@ -250,9 +251,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }),
                     },
                 }
-                .encode()
-                .encode_with(Compression::None)
-                .unwrap()
+                .encode(Compression::None)
                 .into(),
                 MessageType::Cassandra,
             )],
@@ -263,7 +262,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_rewrite_peers_passthrough", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -274,7 +273,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
                 rt.block_on(
                     ProtectConfig {
@@ -294,7 +293,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     .get_transform(),
                 )
                 .unwrap(),
-                Transforms::Null(Null::default()),
+                TransformBuilder::Null(Null::default()),
             ],
             "bench".into(),
         );
@@ -306,7 +305,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_unprotected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },
@@ -322,7 +321,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("cassandra_protect_protected", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
-                    chain: chain.clone(),
+                    chain: chain.clone().build(),
                     wrapper: wrapper.clone(),
                     client_details: "".into(),
                 },

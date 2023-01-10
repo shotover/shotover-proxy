@@ -1,11 +1,12 @@
-use crate::helpers::cassandra::{CassandraConnection, CassandraDriver};
-use crate::helpers::ShotoverManager;
 use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::collections::HashMap;
 use test_helpers::cert::generate_cassandra_test_certs;
+use test_helpers::connection::cassandra::{CassandraConnection, CassandraDriver};
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
+use test_helpers::shotover_process::{shotover_from_topology_file, BinProcess};
+use tokio::runtime::Runtime;
 
 #[cfg(feature = "alpha-transforms")]
 struct Query {
@@ -262,24 +263,40 @@ criterion_main!(benches);
 
 pub struct BenchResources {
     connection: CassandraConnection,
-    _shotover_manager: ShotoverManager,
+    shotover: Option<BinProcess>,
     _compose: DockerCompose,
     queries: HashMap<String, Statement>,
+    tokio: Runtime,
+}
+
+impl Drop for BenchResources {
+    fn drop(&mut self) {
+        self.tokio.block_on(
+            self.shotover
+                .take()
+                .unwrap()
+                .shutdown_and_then_consume_events(&[]),
+        );
+    }
 }
 
 impl BenchResources {
     fn new(shotover_topology: &str, compose_file: &str) -> Self {
+        let tokio = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let compose = DockerCompose::new(compose_file);
-        let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
+        let shotover = Some(tokio.block_on(shotover_from_topology_file(shotover_topology)));
 
-        let connection =
-            futures::executor::block_on(CassandraConnection::new("127.0.0.1", 9042, DRIVER));
+        let connection = tokio.block_on(CassandraConnection::new("127.0.0.1", 9042, DRIVER));
 
         let mut bench_resources = Self {
             _compose: compose,
-            _shotover_manager: shotover_manager,
+            shotover,
             connection,
             queries: HashMap::new(),
+            tokio,
         };
         bench_resources.setup();
         bench_resources
@@ -290,13 +307,17 @@ impl BenchResources {
     }
 
     fn new_tls(shotover_topology: &str, compose_file: &str) -> Self {
+        let tokio = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         generate_cassandra_test_certs();
         let compose = DockerCompose::new(compose_file);
-        let shotover_manager = ShotoverManager::from_topology_file(shotover_topology);
+        let shotover = Some(tokio.block_on(shotover_from_topology_file(shotover_topology)));
 
         let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
-        let connection = futures::executor::block_on(CassandraConnection::new_tls(
+        let connection = tokio.block_on(CassandraConnection::new_tls(
             "127.0.0.1",
             9042,
             ca_cert,
@@ -305,9 +326,10 @@ impl BenchResources {
 
         let mut bench_resources = Self {
             _compose: compose,
-            _shotover_manager: shotover_manager,
+            shotover,
             connection,
             queries: HashMap::new(),
+            tokio,
         };
         bench_resources.setup();
         bench_resources

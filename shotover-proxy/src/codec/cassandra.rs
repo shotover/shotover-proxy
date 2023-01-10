@@ -16,7 +16,7 @@ use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct CassandraCodec {
-    compressor: Compression,
+    compression: Compression,
     messages: Vec<Message>,
     current_use_keyspace: Option<Identifier>,
 }
@@ -30,7 +30,7 @@ impl Default for CassandraCodec {
 impl CassandraCodec {
     pub fn new() -> CassandraCodec {
         CassandraCodec {
-            compressor: Compression::None,
+            compression: Compression::None,
             messages: vec![],
             current_use_keyspace: None,
         }
@@ -39,7 +39,7 @@ impl CassandraCodec {
 
 impl CassandraCodec {
     fn encode_raw(&mut self, item: CassandraFrame, dst: &mut BytesMut) {
-        let buffer = item.encode().encode_with(self.compressor).unwrap();
+        let buffer = item.encode(self.compression);
         if buffer.is_empty() {
             info!("trying to send 0 length frame");
         }
@@ -236,7 +236,6 @@ mod cassandra_protocol_tests {
         TableSpec,
     };
     use cassandra_protocol::frame::Version;
-    use cassandra_protocol::query::QueryParams;
     use hex_literal::hex;
     use tokio_util::codec::{Decoder, Encoder};
 
@@ -467,7 +466,7 @@ mod cassandra_protocol_tests {
                 query: Box::new(parse_statement_single(
                     "SELECT * FROM system.local WHERE key = 'local'",
                 )),
-                params: Box::new(QueryParams::default()),
+                params: Box::default(),
             },
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);
@@ -490,7 +489,7 @@ mod cassandra_protocol_tests {
                 query: Box::new(parse_statement_single(
                     "INSERT INTO system.foo (bar) VALUES ('bar2')",
                 )),
-                params: Box::new(QueryParams::default()),
+                params: Box::default(),
             },
         }))];
         test_frame_codec_roundtrip(&mut codec, &bytes, messages);

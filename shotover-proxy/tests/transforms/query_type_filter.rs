@@ -1,13 +1,14 @@
 use crate::helpers::ShotoverManager;
 use serial_test::serial;
+use test_helpers::connection::redis_connection;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_query_type_filter() {
-    let shotover_manager =
+    let _shotover_manager =
         ShotoverManager::from_topology_file("tests/test-configs/query_type_filter/simple.yaml");
 
-    let mut connection = shotover_manager.redis_connection_async(6379).await;
+    let mut connection = redis_connection::new_async(6379).await;
 
     // using individual queries tests QueryTypeFilter with a MessageWrapper containing a single message at a time.
     for _ in 0..100 {

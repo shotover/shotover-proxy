@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::{Message, QueryType};
-use crate::transforms::{Transform, Transforms, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -19,8 +19,8 @@ pub struct QueryTypeFilterConfig {
 }
 
 impl QueryTypeFilterConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
-        Ok(Transforms::QueryTypeFilter(QueryTypeFilter {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+        Ok(TransformBuilder::QueryTypeFilter(QueryTypeFilter {
             filter: self.filter.clone(),
         }))
     }

@@ -1,15 +1,18 @@
 use crate::message::Messages;
 use crate::tls::TlsAcceptor;
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
+use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use metrics::{register_gauge, Gauge};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, watch, Semaphore};
+use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
@@ -47,8 +50,7 @@ pub trait Codec: CodecReadHalf + CodecWriteHalf {}
 impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
-    chain: TransformChain,
-
+    chain: TransformChainBuilder,
     source_name: String,
 
     /// TCP listener supplied by the `run` caller.
@@ -87,12 +89,14 @@ pub struct TcpCodecListener<C: Codec> {
 
     /// Timeout in seconds after which to kill an idle connection. No timeout means connections will never be timed out.
     timeout: Option<u64>,
+
+    connection_handles: Vec<JoinHandle<()>>,
 }
 
 impl<C: Codec + 'static> TcpCodecListener<C> {
     #![allow(clippy::too_many_arguments)]
     pub async fn new(
-        chain: TransformChain,
+        chain: TransformChainBuilder,
         source_name: String,
         listen_addr: String,
         hard_connection_limit: bool,
@@ -121,6 +125,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
             connection_count: 0,
             available_connections_gauge,
             timeout,
+            connection_handles: vec![],
         })
     }
 
@@ -177,95 +182,87 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                 }
             }
 
-            // Accept a new socket. This will attempt to perform error handling.
-            // The `accept` method internally attempts to recover errors, so an
-            // error here is non-recoverable.
-            let socket = self.accept().await?;
-
-            debug!("got socket");
-            self.available_connections_gauge
-                .set(self.limit_connections.available_permits() as f64);
-
-            let peer = socket
-                .peer_addr()
-                .map(|p| format!("{}", p.ip()))
-                .unwrap_or_else(|_| "Unknown peer".to_string());
-
-            let conn_string = socket
-                .peer_addr()
-                .map(|p| format!("{}:{}", p.ip(), p.port()))
-                .unwrap_or_else(|_| "Unknown peer".to_string());
-
-            // Create the necessary per-connection handler state.
-            socket.set_nodelay(true)?;
-
-            let (pushed_messages_tx, pushed_messages_rx) =
-                tokio::sync::mpsc::unbounded_channel::<Messages>();
-
-            let mut handler = Handler {
-                chain: self
-                    .chain
-                    .clone_with_pushed_messages_tx(pushed_messages_tx.clone()),
-                client_details: peer,
-                conn_details: conn_string,
-                source_details: self.source_name.clone(),
-
-                // The connection state needs a handle to the max connections
-                // semaphore. When the handler is done processing the
-                // connection, a permit is added back to the semaphore.
-                codec: self.codec.clone(),
-                limit_connections: self.limit_connections.clone(),
-
-                // Receive shutdown notifications.
-                shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
-
-                terminate_tasks: None,
-                tls: self.tls.clone(),
-                timeout: self.timeout,
-            };
-
             self.connection_count = self.connection_count.wrapping_add(1);
-
-            // Spawn a new task to process the connections.
-            tokio::spawn(
-                async move {
-                    tracing::debug!("New connection from {}", handler.conn_details);
-
-                    // Process the connection. If an error is encountered, log it.
-                    if let Err(err) = handler.run(socket, pushed_messages_rx).await {
-                        error!(
-                            "{:?}",
-                            err.context("connection was unexpectedly terminated")
-                        );
-                    }
-                }
-                .instrument(tracing::error_span!(
-                    "connection",
-                    id = self.connection_count,
-                    source = self.source_name.as_str()
-                )),
+            let span = tracing::error_span!(
+                "connection",
+                id = self.connection_count,
+                source = self.source_name.as_str(),
             );
+            async {
+                // Accept a new socket. This will attempt to perform error handling.
+                // The `accept` method internally attempts to recover errors, so an
+                // error here is non-recoverable.
+                let socket = self.accept().await?;
+
+                debug!("got socket");
+                self.available_connections_gauge
+                    .set(self.limit_connections.available_permits() as f64);
+
+                let peer = socket
+                    .peer_addr()
+                    .map(|p| format!("{}", p.ip()))
+                    .unwrap_or_else(|_| "Unknown peer".to_string());
+
+                let conn_string = socket
+                    .peer_addr()
+                    .map(|p| format!("{}:{}", p.ip(), p.port()))
+                    .unwrap_or_else(|_| "Unknown peer".to_string());
+
+                // Create the necessary per-connection handler state.
+                socket.set_nodelay(true)?;
+
+                let (pushed_messages_tx, pushed_messages_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<Messages>();
+
+                let mut handler = Handler {
+                    chain: self.chain.build_with_pushed_messages(pushed_messages_tx),
+                    client_details: peer,
+                    conn_details: conn_string,
+                    source_details: self.source_name.clone(),
+
+                    // The connection state needs a handle to the max connections
+                    // semaphore. When the handler is done processing the
+                    // connection, a permit is added back to the semaphore.
+                    codec: self.codec.clone(),
+                    limit_connections: self.limit_connections.clone(),
+
+                    // Receive shutdown notifications.
+                    shutdown: Shutdown::new(self.trigger_shutdown_rx.clone()),
+
+                    terminate_tasks: None,
+                    tls: self.tls.clone(),
+                    timeout: self.timeout,
+                };
+
+                // Spawn a new task to process the connections.
+                self.connection_handles.push(tokio::spawn(
+                    async move {
+                        tracing::debug!("New connection from {}", handler.conn_details);
+
+                        // Process the connection. If an error is encountered, log it.
+                        if let Err(err) = handler.run(socket, pushed_messages_rx).await {
+                            error!(
+                                "{:?}",
+                                err.context("connection was unexpectedly terminated")
+                            );
+                        }
+                    }
+                    .in_current_span(),
+                ));
+                // Only prune the list every so often
+                // theres no point in doing it every iteration because most likely none of the handles will have completed
+                if self.connection_count % 1000 == 0 {
+                    self.connection_handles.retain(|x| !x.is_finished());
+                }
+                Ok::<(), anyhow::Error>(())
+            }
+            .instrument(span)
+            .await?;
         }
     }
 
     pub async fn shutdown(&mut self) {
-        match self
-            .chain
-            .process_request(
-                Wrapper::flush_with_chain_name(self.chain.name.clone()),
-                "".into(),
-            )
-            .await
-        {
-            Ok(_) => info!("source {} was shutdown", self.source_name),
-            Err(e) => error!(
-                "{:?}",
-                e.context(format!(
-                    "source {} encountered an error when flushing the chain for shutdown",
-                    self.source_name,
-                ))
-            ),
-        }
+        join_all(&mut self.connection_handles).await;
     }
 
     /// Accept an inbound connection.
@@ -449,17 +446,12 @@ impl<C: Codec + 'static> Handler<C> {
     pub async fn run(
         &mut self,
         stream: TcpStream,
-        mut pushed_messages_rx: UnboundedReceiver<Messages>,
+        pushed_messages_rx: UnboundedReceiver<Messages>,
     ) -> Result<()> {
-        debug!("Handler run() started");
-        // As long as the shutdown signal has not been received, try to read a
-        // new request frame.
-        let mut idle_time_seconds: u64 = 1;
-
         let (terminate_tx, terminate_rx) = watch::channel::<()>(());
         self.terminate_tasks = Some(terminate_tx);
 
-        let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Messages>();
+        let (in_tx, in_rx) = mpsc::unbounded_channel::<Messages>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<Messages>();
 
         let local_addr = stream.local_addr()?;
@@ -488,6 +480,43 @@ impl<C: Codec + 'static> Handler<C> {
                 terminate_rx,
             );
         };
+
+        let result = self
+            .process_messages(local_addr, in_rx, out_tx, pushed_messages_rx)
+            .await;
+
+        // Flush messages regardless of if we are shutting down due to a failure or due to application shutdown
+        match self
+            .chain
+            .process_request(
+                Wrapper::flush_with_chain_name(self.chain.name.clone()),
+                self.client_details.clone(),
+            )
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => error!(
+                "{:?}",
+                e.context(format!(
+                    "encountered an error when flushing the chain {} for shutdown",
+                    self.chain.name,
+                ))
+            ),
+        }
+
+        result
+    }
+
+    async fn process_messages(
+        &mut self,
+        local_addr: SocketAddr,
+        mut in_rx: mpsc::UnboundedReceiver<Messages>,
+        out_tx: mpsc::UnboundedSender<Messages>,
+        mut pushed_messages_rx: UnboundedReceiver<Messages>,
+    ) -> Result<()> {
+        // As long as the shutdown signal has not been received, try to read a
+        // new request frame.
+        let mut idle_time_seconds: u64 = 1;
 
         while !self.shutdown.is_shutdown() {
             // While reading a request frame, also listen for the shutdown signal
@@ -540,7 +569,9 @@ impl<C: Codec + 'static> Handler<C> {
             );
 
             let modified_messages = if reverse_chain {
-                self.chain.process_request_rev(wrapper).await
+                self.chain
+                    .process_request_rev(wrapper, self.client_details.clone())
+                    .await
             } else {
                 self.chain
                     .process_request(wrapper, self.client_details.clone())
@@ -552,6 +583,7 @@ impl<C: Codec + 'static> Handler<C> {
             // send the result of the process up stream
             out_tx.send(modified_messages)?;
         }
+
         Ok(())
     }
 }

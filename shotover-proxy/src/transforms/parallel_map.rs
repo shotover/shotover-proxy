@@ -1,8 +1,8 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, Transforms, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -16,6 +16,12 @@ use std::future::Future;
 use std::pin::Pin;
 
 #[derive(Debug, Clone)]
+pub struct ParallelMapBuilder {
+    chains: Vec<TransformChainBuilder>,
+    ordered: bool,
+}
+
+#[derive(Debug)]
 pub struct ParallelMap {
     chains: Vec<TransformChain>,
     ordered: bool,
@@ -68,21 +74,15 @@ pub struct ParallelMapConfig {
 }
 
 impl ParallelMapConfig {
-    pub async fn get_transform(&self) -> Result<Transforms> {
+    pub async fn get_transform(&self) -> Result<TransformBuilder> {
         let chain = build_chain_from_config("parallel_map_chain".into(), &self.chain).await?;
 
-        Ok(Transforms::ParallelMap(ParallelMap {
+        Ok(TransformBuilder::ParallelMap(ParallelMapBuilder {
             chains: std::iter::repeat(chain)
                 .take(self.parallelism as usize)
                 .collect_vec(),
             ordered: self.ordered_results,
         }))
-    }
-}
-
-impl ParallelMap {
-    fn get_name(&self) -> &'static str {
-        "ParallelMap"
     }
 }
 
@@ -119,12 +119,21 @@ impl Transform for ParallelMap {
         }
         Ok(results)
     }
+}
 
-    fn is_terminating(&self) -> bool {
-        true
+impl ParallelMapBuilder {
+    pub fn build(self) -> ParallelMap {
+        ParallelMap {
+            chains: self.chains.into_iter().map(|x| x.build()).collect(),
+            ordered: self.ordered,
+        }
     }
 
-    fn validate(&self) -> Vec<String> {
+    fn get_name(&self) -> &'static str {
+        "ParallelMap"
+    }
+
+    pub fn validate(&self) -> Vec<String> {
         let mut errors = self
             .chains
             .iter()
@@ -143,28 +152,33 @@ impl Transform for ParallelMap {
 
         errors
     }
+
+    pub fn is_terminating(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
 mod parallel_map_tests {
-    use crate::transforms::{
-        chain::TransformChain, debug::printer::DebugPrinter, null::Null, parallel_map::ParallelMap,
-        Transform, Transforms,
-    };
+    use crate::transforms::chain::TransformChainBuilder;
+    use crate::transforms::debug::printer::DebugPrinter;
+    use crate::transforms::null::Null;
+    use crate::transforms::parallel_map::ParallelMapBuilder;
+    use crate::transforms::TransformBuilder;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain_1 = TransformChain::new(
+        let chain_1 = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
-        let chain_2 = TransformChain::new(vec![], "test-chain-2".to_string());
+        let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2".to_string());
 
-        let transform = ParallelMap {
+        let transform = ParallelMapBuilder {
             chains: vec![chain_1, chain_2],
             ordered: true,
         };
@@ -181,24 +195,24 @@ mod parallel_map_tests {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let chain_1 = TransformChain::new(
+        let chain_1 = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain-1".to_string(),
         );
-        let chain_2 = TransformChain::new(
+        let chain_2 = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain-2".to_string(),
         );
 
-        let transform = ParallelMap {
+        let transform = ParallelMapBuilder {
             chains: vec![chain_1, chain_2],
             ordered: true,
         };

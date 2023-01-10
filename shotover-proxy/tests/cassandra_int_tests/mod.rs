@@ -1,12 +1,4 @@
-use crate::helpers::cassandra::{assert_query_result, ResultValue};
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-use crate::helpers::cassandra::{run_query, CassandraDriver::Datastax};
-use crate::helpers::cassandra::{
-    CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla,
-};
 use crate::helpers::ShotoverManager;
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-use cassandra_cpp::{Error, ErrorKind};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cdrs_tokio::frame::events::{
@@ -18,8 +10,16 @@ use futures::Future;
 use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
+use test_helpers::connection::cassandra::{assert_query_result, ResultValue};
+#[cfg(feature = "cassandra-cpp-driver-tests")]
+use test_helpers::connection::cassandra::{run_query, CassandraDriver::Datastax};
+use test_helpers::connection::cassandra::{
+    CassandraConnection, CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla,
+};
+use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
-use tokio::time::{sleep, timeout, Duration};
+use test_helpers::shotover_process::shotover_from_topology_file;
+use tokio::time::{timeout, Duration};
 
 mod batch_statements;
 mod cache;
@@ -32,9 +32,9 @@ mod prepared_statements_all;
 mod prepared_statements_simple;
 #[cfg(feature = "alpha-transforms")]
 mod protect;
-#[cfg(not(feature = "cassandra-cpp-driver-tests"))]
 mod routing;
 mod table;
+mod timestamp;
 mod udt;
 
 async fn standard_test_suite<Fut>(connection_creator: impl Fn() -> Fut, driver: CassandraDriver)
@@ -53,6 +53,7 @@ where
     prepared_statements_simple::test(&connection, connection_creator).await;
     prepared_statements_all::test(&connection).await;
     batch_statements::test(&connection).await;
+    timestamp::test(&connection).await;
 }
 
 #[rstest]
@@ -64,12 +65,14 @@ where
 async fn passthrough_standard(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-passthrough/topology.yaml");
+    let shotover =
+        shotover_from_topology_file("example-configs/cassandra-passthrough/topology.yaml").await;
 
     let connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
 
     standard_test_suite(&connection, driver).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[cfg(feature = "alpha-transforms")]
@@ -93,6 +96,7 @@ async fn passthrough_encode(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
+#[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
@@ -147,7 +151,6 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
         standard_test_suite(&connection, driver).await;
         cluster::single_rack_v3::test_dummy_peers(&connection().await).await;
 
-        #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9042, driver).await;
 
         //Check for bugs in cross connection state
@@ -157,6 +160,7 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     cluster::single_rack_v3::test_topology_task(None).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[case::cdrs(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
@@ -175,13 +179,12 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     };
     {
         let _shotover_manager = ShotoverManager::from_topology_file(
-            "example-configs/cassandra-cluster-v4/topology.yaml",
+            "example-configs/cassandra-cluster-v4/topology-encode.yaml",
         );
 
         standard_test_suite(&connection, driver).await;
         cluster::single_rack_v4::test(&connection().await, driver).await;
 
-        #[cfg(not(feature = "cassandra-cpp-driver-tests"))]
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
 
         //Check for bugs in cross connection state
@@ -190,6 +193,8 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
         native_types::test(&connection2).await;
+
+        cluster::single_rack_v4::test_node_going_down(&compose, driver).await;
     }
 
     {
@@ -201,24 +206,6 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     }
 
     cluster::single_rack_v4::test_topology_task(None, Some(9044)).await;
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster-v4/topology.yaml");
-    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, false).await;
-}
-
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-#[rstest]
-//#[case::cdrs(CdrsTokio)]
-#[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-async fn cluster_single_rack_node_lost(#[case] driver: CassandraDriver) {
-    let compose = DockerCompose::new("example-configs/cassandra-cluster-v4/docker-compose.yaml");
-
-    let shotover_manager =
-        ShotoverManager::from_topology_file("example-configs/cassandra-cluster-v4/topology.yaml");
-    cluster::single_rack_v4::test_node_going_down(compose, shotover_manager, driver, true).await;
 }
 
 #[rstest]
@@ -259,8 +246,10 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
     cluster::multi_rack::test_topology_task(None).await;
 }
 
+#[cfg(feature = "alpha-transforms")]
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
+#[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
@@ -315,11 +304,11 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     recorder.install().unwrap();
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yaml");
 
-    let shotover_manager = ShotoverManager::from_topology_file_without_observability(
+    let _shotover_manager = ShotoverManager::from_topology_file_without_observability(
         "example-configs/cassandra-redis-cache/topology.yaml",
     );
 
-    let mut redis_connection = shotover_manager.redis_connection(6379);
+    let mut redis_connection = redis_connection::new(6379);
     let connection_creator = || CassandraConnection::new("127.0.0.1", 9042, driver);
     let connection = connection_creator().await;
 
@@ -472,7 +461,8 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case::cdrs(CdrsTokio)] // TODO
+//#[case::cdrs(CdrsTokio)] // Disabled due to intermittent failure that only occurs on v3
+#[case::scylla(Scylla)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -491,20 +481,21 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
 
     // Assert that the error cassandra gives because system.peers_v2 does not exist on cassandra v3
     // is passed through shotover unchanged.
-    let statement = "SELECT data_center, native_port, rack FROM system.peers_v2;";
-    let result = connection.execute_expect_err(statement).await;
     assert_eq!(
-        result,
-        ErrorBody {
+        connection
+            .execute_fallible("SELECT data_center, native_port, rack FROM system.peers_v2;")
+            .await,
+        Err(ErrorBody {
             ty: ErrorType::Invalid,
             message: "unconfigured table peers_v2".into()
-        }
+        })
     );
 }
 
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
-//#[case::cdrs(CdrsTokio)] // TODO
+//#[case::cdrs(CdrsTokio)] // TODO: cdrs-tokio seems to be sending extra messages triggering the rate limiter
+#[case::scylla(Scylla)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -545,10 +536,10 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
         let mut results = join_all(future_list).await;
         results.retain(|result| match result {
             Ok(_) => true,
-            Err(Error(
-                ErrorKind::CassErrorResult(cassandra_cpp::CassErrorCode::SERVER_OVERLOADED, ..),
-                _,
-            )) => false,
+            Err(ErrorBody {
+                ty: ErrorType::Overloaded,
+                ..
+            }) => false,
             Err(e) => panic!(
                 "wrong error returned, got {:?}, expected SERVER_OVERLOADED",
                 e
@@ -584,7 +575,10 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
         for i in 0..60 {
             queries.push(format!("INSERT INTO test_keyspace.my_table (id, lastname, firstname) VALUES ({}, 'text', 'text')", i));
         }
-        let result = connection.execute_batch_expect_err(queries).await;
+        let result = connection
+            .execute_batch_fallible(queries)
+            .await
+            .unwrap_err();
         assert_eq!(
             result,
             ErrorBody {
@@ -613,8 +607,6 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
     let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
     let mut event_recv = connection.as_cdrs().create_event_receiver();
-
-    sleep(Duration::from_secs(10)).await; // let the driver finish connecting to the cluster and registering for the events
 
     let create_ks = "CREATE KEYSPACE IF NOT EXISTS test_events_ks WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
     connection.execute(create_ks).await;

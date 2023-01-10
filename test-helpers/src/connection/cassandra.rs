@@ -5,7 +5,6 @@ use cassandra_cpp::{
     PreparedStatement as PreparedStatementCpp, Session as DatastaxSession, Ssl,
     Statement as StatementCpp, Value, ValueType,
 };
-#[cfg(feature = "cassandra-cpp-driver-tests")]
 use cassandra_protocol::frame::message_error::ErrorType;
 use cassandra_protocol::query::QueryValues;
 use cassandra_protocol::types::IntoRustByIndex;
@@ -14,7 +13,7 @@ use cassandra_protocol::{
     types::cassandra_type::{wrapper_fn, CassandraType},
 };
 use cdrs_tokio::query::{QueryParams, QueryParamsBuilder};
-use cdrs_tokio::statement::StatementParams;
+use cdrs_tokio::statement::{StatementParams, StatementParamsBuilder};
 use cdrs_tokio::{
     authenticators::StaticPasswordAuthenticatorProvider,
     cluster::session::{Session as CdrsTokioSession, SessionBuilder, TcpSessionBuilder},
@@ -26,7 +25,6 @@ use cdrs_tokio::{
     query::{BatchQueryBuilder, PreparedQuery as CdrsTokioPreparedQuery},
     query_values,
     transport::TransportTcp,
-    types::prelude::Error as CdrsError,
 };
 use openssl::ssl::{SslContext, SslMethod};
 use ordered_float::OrderedFloat;
@@ -35,11 +33,15 @@ use scylla::frame::response::result::CqlValue;
 use scylla::frame::types::Consistency;
 use scylla::frame::value::Value as ScyllaValue;
 use scylla::prepared_statement::PreparedStatement as PreparedStatementScylla;
-use scylla::{Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
+use scylla::statement::query::Query as ScyllaQuery;
+use scylla::transport::errors::{DbError, QueryError};
+use scylla::{QueryResult, Session as SessionScylla, SessionBuilder as SessionBuilderScylla};
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use std::fs::read_to_string;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::timeout;
 
 #[derive(Debug)]
 pub enum PreparedQuery {
@@ -73,19 +75,6 @@ impl PreparedQuery {
     }
 }
 
-#[cfg(feature = "cassandra-cpp-driver-tests")]
-fn cpp_error_to_cdrs(code: CassErrorCode, message: String) -> ErrorBody {
-    ErrorBody {
-        ty: match code {
-            CassErrorCode::SERVER_INVALID_QUERY => ErrorType::Invalid,
-            CassErrorCode::SERVER_OVERLOADED => ErrorType::Overloaded,
-            _ => unimplemented!("{code:?} is not implemented"),
-        },
-        message,
-    }
-}
-
-#[allow(dead_code)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -117,10 +106,9 @@ pub enum CassandraConnection {
 }
 
 impl CassandraConnection {
-    #[allow(dead_code)]
     pub async fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
         for contact_point in contact_points.split(',') {
-            test_helpers::wait_for_socket_to_open(contact_point, port);
+            crate::wait_for_socket_to_open(contact_point, port);
         }
 
         match driver {
@@ -154,18 +142,27 @@ impl CassandraConnection {
                     .map(|contact_point| NodeAddress::from(format!("{contact_point}:{port}")))
                     .collect::<Vec<NodeAddress>>();
 
-                let config = NodeTcpConfigBuilder::new()
-                    .with_contact_points(node_addresses)
-                    .with_authenticator_provider(Arc::new(auth))
-                    .build()
-                    .await
-                    .unwrap();
-
-                let session = TcpSessionBuilder::new(
-                    TopologyAwareLoadBalancingStrategy::new(None, true),
-                    config,
+                let config = timeout(
+                    Duration::from_secs(10),
+                    NodeTcpConfigBuilder::new()
+                        .with_contact_points(node_addresses)
+                        .with_authenticator_provider(Arc::new(auth))
+                        .build(),
                 )
-                .build()
+                .await
+                .unwrap()
+                .unwrap();
+
+                let session = timeout(
+                    Duration::from_secs(10),
+                    TcpSessionBuilder::new(
+                        TopologyAwareLoadBalancingStrategy::new(None, true),
+                        config,
+                    )
+                    .build(),
+                )
+                .await
+                .unwrap()
                 .unwrap();
                 CassandraConnection::CdrsTokio {
                     session,
@@ -194,7 +191,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub fn as_cdrs(&self) -> &CdrsTokioSessionInstance {
         match self {
             Self::CdrsTokio { session, .. } => session,
@@ -202,7 +198,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is(&self, drivers: &[CassandraDriver]) -> bool {
         match self {
             Self::CdrsTokio { .. } => drivers.contains(&CassandraDriver::CdrsTokio),
@@ -213,7 +208,6 @@ impl CassandraConnection {
     }
 
     #[cfg(feature = "cassandra-cpp-driver-tests")]
-    #[allow(dead_code)]
     pub fn as_datastax(&self) -> &DatastaxSession {
         match self {
             Self::Datastax { session, .. } => session,
@@ -221,7 +215,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code, unused_variables)]
     pub async fn new_tls(
         contact_points: &str,
         port: u16,
@@ -237,7 +230,7 @@ impl CassandraConnection {
                 Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
 
                 for contact_point in contact_points.split(',') {
-                    test_helpers::wait_for_socket_to_open(contact_point, port);
+                    crate::wait_for_socket_to_open(contact_point, port);
                 }
 
                 let mut cluster = Cluster::default();
@@ -248,17 +241,42 @@ impl CassandraConnection {
                 cluster.set_ssl(&mut ssl);
 
                 CassandraConnection::Datastax {
-                    session: cluster.connect_async().await.unwrap(),
+                    session: cluster
+                        .connect_async()
+                        .await
+                        .map_err(|err| format!("{err}"))
+                        .unwrap(),
                     schema_awaiter: None,
                 }
             }
             // TODO actually implement TLS for cdrs-tokio
             CassandraDriver::CdrsTokio => todo!(),
-            CassandraDriver::Scylla => todo!(),
+            CassandraDriver::Scylla => {
+                let mut context = SslContext::builder(SslMethod::tls()).unwrap();
+                context.set_ca_file(ca_cert_path).unwrap();
+                let ssl_context = context.build();
+
+                let session = SessionBuilderScylla::new()
+                    .known_nodes(
+                        &contact_points
+                            .split(',')
+                            .map(|contact_point| format!("{contact_point}:{port}"))
+                            .collect::<Vec<String>>(),
+                    )
+                    .user("cassandra", "cassandra")
+                    .ssl_context(Some(ssl_context))
+                    .default_consistency(Consistency::One)
+                    .build()
+                    .await
+                    .unwrap();
+                CassandraConnection::Scylla {
+                    session,
+                    schema_awaiter: None,
+                }
+            }
         }
     }
 
-    #[allow(dead_code)]
     pub async fn enable_schema_awaiter(&mut self, direct_node: &str, ca_cert: Option<&str>) {
         let context = ca_cert.map(|ca_cert| {
             let mut context = SslContext::builder(SslMethod::tls()).unwrap();
@@ -296,38 +314,25 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute(&self, query: &str) -> Vec<Vec<ResultValue>> {
+        match self.execute_fallible(query).await {
+            Ok(result) => result,
+            Err(err) => panic!("The CQL query: {query}\nFailed with: {err:?}"),
+        }
+    }
+
+    pub async fn execute_fallible(&self, query: &str) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         let result = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let statement = stmt!(query);
-                match session.execute(&statement).await {
-                    Ok(result) => result
-                        .into_iter()
-                        .map(|x| x.into_iter().map(ResultValue::new_from_cpp).collect())
-                        .collect(),
-                    Err(Error(err, _)) => panic!("The CQL query: {query}\nFailed with: {err}"),
-                }
+                Self::process_datastax_response(session.execute(&statement).await)
             }
             Self::CdrsTokio { session, .. } => {
-                let response = session.query(query).await.unwrap();
-                Self::process_cdrs_response(response)
+                Self::process_cdrs_response(session.query(query).await)
             }
             Self::Scylla { session, .. } => {
-                let rows = session.query(query, ()).await.unwrap().rows;
-                match rows {
-                    Some(rows) => rows
-                        .into_iter()
-                        .map(|x| {
-                            x.columns
-                                .into_iter()
-                                .map(ResultValue::new_from_scylla)
-                                .collect()
-                        })
-                        .collect(),
-                    None => vec![],
-                }
+                Self::process_scylla_response(session.query(query, ()).await)
             }
         };
 
@@ -340,56 +345,42 @@ impl CassandraConnection {
         result
     }
 
-    #[allow(dead_code)]
-    #[cfg(feature = "cassandra-cpp-driver-tests")]
-    pub async fn execute_fallible(&self, query: &str) -> Result<CassResult, cassandra_cpp::Error> {
-        match self {
+    pub async fn execute_with_timestamp(
+        &self,
+        query: &str,
+        timestamp: i64,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        let result = match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
-                let statement = stmt!(query);
-                session.execute(&statement).await
-            }
-            Self::CdrsTokio { .. } => todo!(),
-            Self::Scylla { .. } => todo!(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub async fn execute_expect_err(&self, query: &str) -> ErrorBody {
-        match self {
-            #[cfg(feature = "cassandra-cpp-driver-tests")]
-            Self::Datastax { session, .. } => {
-                let statement = stmt!(query);
-                let error = session.execute(&statement).await.unwrap_err();
-
-                if let ErrorKind::CassErrorResult(code, msg, ..) = error.0 {
-                    cpp_error_to_cdrs(code, msg)
-                } else {
-                    panic!("Did not get an error result for {query}");
-                }
+                let mut statement = stmt!(query);
+                statement.set_timestamp(timestamp).unwrap();
+                Self::process_datastax_response(session.execute(&statement).await)
             }
             Self::CdrsTokio { session, .. } => {
-                let error = session.query(query).await.unwrap_err();
+                let statement_params = StatementParamsBuilder::new()
+                    .with_timestamp(timestamp)
+                    .build();
 
-                match error {
-                    CdrsError::Server { body, .. } => body,
-                    _ => todo!(),
-                }
+                let response = session.query_with_params(query, statement_params).await;
+                Self::process_cdrs_response(response)
             }
-            Self::Scylla { .. } => todo!(),
+            Self::Scylla { session, .. } => {
+                let mut query = ScyllaQuery::new(query);
+                query.set_timestamp(Some(timestamp));
+                Self::process_scylla_response(session.query(query, ()).await)
+            }
+        };
+
+        let query = query.to_uppercase();
+        let query = query.trim();
+        if query.starts_with("CREATE") || query.starts_with("ALTER") || query.starts_with("DROP") {
+            self.await_schema_agreement().await;
         }
+
+        result
     }
 
-    #[allow(dead_code)]
-    pub async fn execute_expect_err_contains(&self, query: &str, contains: &str) {
-        let error_msg = self.execute_expect_err(query).await.message;
-        assert!(
-            error_msg.contains(contains),
-            "Expected the error to contain '{contains}' but it did not and was instead '{error_msg}'"
-        );
-    }
-
-    #[allow(dead_code)]
     pub async fn prepare(&self, query: &str) -> PreparedQuery {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -408,7 +399,6 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute_prepared_coordinator_node(
         &self,
         prepared_query: &PreparedQuery,
@@ -473,12 +463,11 @@ impl CassandraConnection {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn execute_prepared(
         &self,
         prepared_query: &PreparedQuery,
         values: &[ResultValue],
-    ) -> Vec<Vec<ResultValue>> {
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
@@ -488,15 +477,7 @@ impl CassandraConnection {
                 }
 
                 statement.set_tracing(true).unwrap();
-                match session.execute(&statement).await {
-                    Ok(result) => result
-                        .into_iter()
-                        .map(|x| x.into_iter().map(ResultValue::new_from_cpp).collect())
-                        .collect(),
-                    Err(Error(err, _)) => {
-                        panic!("The statement: {statement:?}\nFailed with: {err}")
-                    }
-                }
+                Self::process_datastax_response(session.execute(&statement).await)
             }
             Self::CdrsTokio { session, .. } => {
                 let statement = prepared_query.as_cdrs();
@@ -515,28 +496,13 @@ impl CassandraConnection {
                     beta_protocol: false,
                 };
 
-                let response = session.exec_with_params(statement, &params).await.unwrap();
-
-                Self::process_cdrs_response(response)
+                Self::process_cdrs_response(session.exec_with_params(statement, &params).await)
             }
             Self::Scylla { session, .. } => {
                 let statement = prepared_query.as_scylla();
                 let values = Self::build_values_scylla(values);
 
-                let response = session.execute(statement, values).await.unwrap();
-
-                match response.rows {
-                    Some(rows) => rows
-                        .into_iter()
-                        .map(|row| {
-                            row.columns
-                                .into_iter()
-                                .map(ResultValue::new_from_scylla)
-                                .collect()
-                        })
-                        .collect(),
-                    None => vec![],
-                }
+                Self::process_scylla_response(session.execute(statement, values).await)
             }
         }
     }
@@ -615,40 +581,33 @@ impl CassandraConnection {
             ResultValue::Time(v) => statement.bind_int64(i, *v).unwrap(),
             ResultValue::SmallInt(v) => statement.bind_int16(i, *v).unwrap(),
             ResultValue::TinyInt(v) => statement.bind_int8(i, *v).unwrap(),
+            ResultValue::Varchar(v) => statement.bind_string(i, v).unwrap(),
             value => todo!("Implement handling of {value:?} for datastax"),
         };
     }
 
-    #[allow(dead_code)]
-    pub async fn execute_batch(&self, queries: Vec<String>) {
+    pub async fn execute_batch_fallible(
+        &self,
+        queries: Vec<String>,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
         match self {
             #[cfg(feature = "cassandra-cpp-driver-tests")]
             Self::Datastax { session, .. } => {
                 let mut batch = Batch::new(BatchType::LOGGED);
-
                 for query in queries {
                     batch.add_statement(&stmt!(query.as_str())).unwrap();
                 }
 
-                match session.execute_batch(&batch).await {
-                    Ok(result) => assert_eq!(
-                        result.into_iter().count(),
-                        0,
-                        "Batches should never return results",
-                    ),
-                    Err(Error(err, _)) => panic!("The batch: {batch:?}\nFailed with: {err}"),
-                }
+                Self::process_datastax_response(session.execute_batch(&batch).await)
             }
             Self::CdrsTokio { session, .. } => {
                 let mut builder = BatchQueryBuilder::new();
-
                 for query in queries {
                     builder = builder.add_query(query, query_values!());
                 }
-
                 let batch = builder.build().unwrap();
 
-                session.batch(batch).await.unwrap();
+                Self::process_cdrs_response(session.batch(batch).await)
             }
             Self::Scylla { session, .. } => {
                 let mut values = vec![];
@@ -658,66 +617,115 @@ impl CassandraConnection {
                     values.push(());
                 }
 
-                session.batch(&batch, values).await.unwrap();
+                Self::process_scylla_response(session.batch(&batch, values).await)
             }
         }
     }
 
-    #[allow(dead_code, unused_variables)]
-    pub async fn execute_batch_expect_err(&self, queries: Vec<String>) -> ErrorBody {
-        match self {
-            #[cfg(feature = "cassandra-cpp-driver-tests")]
-            Self::Datastax { session, .. } => {
-                let mut batch = Batch::new(BatchType::LOGGED);
-                for query in queries {
-                    batch.add_statement(&stmt!(query.as_str())).unwrap();
-                }
-                let error = session.execute_batch(&batch).await.unwrap_err();
-                if let ErrorKind::CassErrorResult(code, msg, ..) = error.0 {
-                    cpp_error_to_cdrs(code, msg)
-                } else {
-                    panic!("Did not get an error result for {batch:?}");
-                }
-            }
-            Self::CdrsTokio { .. } => todo!(),
-            Self::Scylla { .. } => todo!(),
+    pub async fn execute_batch(&self, queries: Vec<String>) {
+        let result = self.execute_batch_fallible(queries).await.unwrap();
+        assert_eq!(result.len(), 0, "Batches should never return results");
+    }
+
+    // allow reason: micro performance doesnt matter in a test and boxing ErrorBody makes matches unergonomic
+    #[allow(clippy::result_large_err)]
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
+    fn process_datastax_response(
+        response: Result<CassResult, cassandra_cpp::Error>,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        match response {
+            Ok(result) => Ok(result
+                .into_iter()
+                .map(|x| x.into_iter().map(ResultValue::new_from_cpp).collect())
+                .collect()),
+            Err(Error(ErrorKind::CassErrorResult(code, message, ..), _)) => Err(ErrorBody {
+                ty: match code {
+                    CassErrorCode::SERVER_OVERLOADED => ErrorType::Overloaded,
+                    CassErrorCode::SERVER_SERVER_ERROR => ErrorType::Server,
+                    CassErrorCode::SERVER_INVALID_QUERY => ErrorType::Invalid,
+                    code => todo!("Implement handling for cassandra_cpp err: {code:?}"),
+                },
+                message,
+            }),
+            Err(err) => panic!("Unexpected cassandra_cpp error: {err}"),
         }
     }
 
-    fn process_cdrs_response(response: Envelope) -> Vec<Vec<ResultValue>> {
-        let version = response.version;
-        let response_body = response.response_body().unwrap();
+    // allow reason: micro performance doesnt matter in a test and boxing ErrorBody makes matches unergonomic
+    #[allow(clippy::result_large_err)]
+    fn process_scylla_response(
+        response: Result<QueryResult, QueryError>,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        match response {
+            Ok(value) => Ok(match value.rows {
+                Some(rows) => rows
+                    .into_iter()
+                    .map(|x| {
+                        x.columns
+                            .into_iter()
+                            .map(ResultValue::new_from_scylla)
+                            .collect()
+                    })
+                    .collect(),
+                None => vec![],
+            }),
+            Err(QueryError::DbError(code, message)) => Err(ErrorBody {
+                ty: match code {
+                    DbError::Overloaded => ErrorType::Overloaded,
+                    DbError::ServerError => ErrorType::Server,
+                    DbError::Invalid => ErrorType::Invalid,
+                    code => todo!("Implement handling for cassandra_cpp err: {code:?}"),
+                },
+                message,
+            }),
+            Err(err) => panic!("Unexpected scylla error: {err:?}"),
+        }
+    }
 
-        match response_body {
-            ResponseBody::Error(err) => {
-                panic!("CQL query Failed with: {err:?}")
-            }
-            ResponseBody::Result(res_result_body) => match res_result_body {
-                ResResultBody::Rows(rows) => {
-                    let mut result_values = vec![];
+    // allow reason: micro performance doesnt matter in a test and boxing ErrorBody makes matches unergonomic
+    #[allow(clippy::result_large_err)]
+    fn process_cdrs_response(
+        response: Result<Envelope, cassandra_protocol::Error>,
+    ) -> Result<Vec<Vec<ResultValue>>, ErrorBody> {
+        match response {
+            Ok(response) => {
+                let version = response.version;
+                let response_body = response.response_body().unwrap();
 
-                    for row in &rows.rows_content {
-                        let mut row_result_values = vec![];
-                        for (i, col_spec) in rows.metadata.col_specs.iter().enumerate() {
-                            let wrapper = wrapper_fn(&col_spec.col_type.id);
-                            let value = ResultValue::new_from_cdrs(
-                                wrapper(&row[i], &col_spec.col_type, version).unwrap(),
-                                version,
-                            );
-
-                            row_result_values.push(value);
-                        }
-                        result_values.push(row_result_values);
+                Ok(match response_body {
+                    ResponseBody::Error(err) => {
+                        panic!("CQL query Failed with: {err:?}")
                     }
+                    ResponseBody::Result(res_result_body) => match res_result_body {
+                        ResResultBody::Rows(rows) => {
+                            let mut result_values = vec![];
 
-                    result_values
-                }
-                ResResultBody::Prepared(_) => todo!(),
-                ResResultBody::SchemaChange(_) => vec![],
-                ResResultBody::SetKeyspace(_) => vec![],
-                ResResultBody::Void => vec![],
-            },
-            _ => todo!(),
+                            for row in &rows.rows_content {
+                                let mut row_result_values = vec![];
+                                for (i, col_spec) in rows.metadata.col_specs.iter().enumerate() {
+                                    let wrapper = wrapper_fn(&col_spec.col_type.id);
+                                    let value = ResultValue::new_from_cdrs(
+                                        wrapper(&row[i], &col_spec.col_type, version).unwrap(),
+                                        version,
+                                    );
+
+                                    row_result_values.push(value);
+                                }
+                                result_values.push(row_result_values);
+                            }
+
+                            result_values
+                        }
+                        ResResultBody::Prepared(_) => todo!(),
+                        ResResultBody::SchemaChange(_) => vec![],
+                        ResResultBody::SetKeyspace(_) => vec![],
+                        ResResultBody::Void => vec![],
+                    },
+                    _ => todo!(),
+                })
+            }
+            Err(cassandra_protocol::Error::Server { body, .. }) => Err(body),
+            Err(err) => panic!("Unexpected cdrs-tokio error: {err:?}"),
         }
     }
 }
@@ -751,7 +759,6 @@ pub enum ResultValue {
     Null,
     /// Never output by the DB
     /// Can be used by the user in assertions to allow any value.
-    #[allow(dead_code)]
     Any,
 }
 
@@ -791,7 +798,6 @@ impl PartialEq for ResultValue {
 }
 
 impl ResultValue {
-    #[allow(dead_code)]
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     pub fn new_from_cpp(value: Value) -> Self {
         if value.is_null() {
@@ -979,7 +985,6 @@ impl ResultValue {
 }
 
 /// Execute a `query` against the `session` and assert that the result rows match `expected_rows`
-#[allow(dead_code)]
 pub async fn assert_query_result(
     session: &CassandraConnection,
     query: &str,
@@ -991,7 +996,6 @@ pub async fn assert_query_result(
 }
 
 /// Assert that the results from an integration test match the expected rows
-#[allow(dead_code)]
 pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[ResultValue]]) {
     let mut expected_rows: Vec<_> = expected_rows.iter().map(|x| x.to_vec()).collect();
     expected_rows.sort();
@@ -1000,7 +1004,6 @@ pub fn assert_rows(result_rows: Vec<Vec<ResultValue>>, expected_rows: &[&[Result
 }
 
 /// Execute a `query` against the `session` and assert the result rows contain `row`
-#[allow(dead_code)]
 pub async fn assert_query_result_contains_row(
     session: &CassandraConnection,
     query: &str,
@@ -1016,7 +1019,6 @@ pub async fn assert_query_result_contains_row(
 }
 
 /// Execute a `query` against the `session` and assert the result rows does not contain `row`
-#[allow(dead_code)]
 pub async fn assert_query_result_not_contains_row(
     session: &CassandraConnection,
     query: &str,
@@ -1031,7 +1033,6 @@ pub async fn assert_query_result_not_contains_row(
     }
 }
 
-#[allow(dead_code)]
 pub async fn run_query(session: &CassandraConnection, query: &str) {
     assert_query_result(session, query, &[]).await;
 }

@@ -1,4 +1,5 @@
 use crate::codec::redis::redis_query_type;
+use crate::frame::cassandra::Tracing;
 use crate::frame::{
     cassandra,
     cassandra::{to_cassandra_type, CassandraMetadata, CassandraOperation},
@@ -249,7 +250,7 @@ impl Message {
                     message: error,
                     ty: ErrorType::Server,
                 }),
-                tracing: frame.tracing,
+                tracing: Tracing::Response(None),
                 warnings: vec![],
             }),
             Metadata::None => Frame::None,
@@ -292,7 +293,7 @@ impl Message {
                 Frame::Cassandra(CassandraFrame {
                     version: metadata.version,
                     stream_id: metadata.stream_id,
-                    tracing: metadata.tracing,
+                    tracing: Tracing::Response(None),
                     warnings: vec![],
                     operation: body,
                 })
@@ -628,7 +629,7 @@ impl MessageValue {
             MessageValue::Bytes(b) => serialize_bytes(cursor, b),
             MessageValue::Strings(s) => serialize_bytes(cursor, s.as_bytes()),
             MessageValue::Integer(x, size) => match size {
-                IntSize::I64 => serialize_bytes(cursor, &(*x as i64).to_be_bytes()),
+                IntSize::I64 => serialize_bytes(cursor, &(*x).to_be_bytes()),
                 IntSize::I32 => serialize_bytes(cursor, &(*x as i32).to_be_bytes()),
                 IntSize::I16 => serialize_bytes(cursor, &(*x as i16).to_be_bytes()),
                 IntSize::I8 => serialize_bytes(cursor, &(*x as i8).to_be_bytes()),
@@ -682,7 +683,7 @@ impl MessageValue {
     }
 }
 
-fn serialize_with_length_prefix(
+pub(crate) fn serialize_with_length_prefix(
     cursor: &mut Cursor<&mut Vec<u8>>,
     serializer: impl FnOnce(&mut Cursor<&mut Vec<u8>>),
 ) {

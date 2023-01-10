@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::{Transforms, Wrapper};
+use crate::transforms::{TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
@@ -17,6 +17,7 @@ type InnerChain = Vec<Transforms>;
 pub struct BufferedChainMessages {
     pub local_addr: SocketAddr,
     pub messages: Messages,
+    pub flush: bool,
     pub return_chan: Option<oneshot::Sender<crate::error::ChainResponse>>,
 }
 
@@ -25,6 +26,7 @@ impl BufferedChainMessages {
         BufferedChainMessages {
             local_addr,
             messages: m,
+            flush: false,
             return_chan: None,
         }
     }
@@ -32,11 +34,13 @@ impl BufferedChainMessages {
     pub fn new(
         m: Messages,
         local_addr: SocketAddr,
+        flush: bool,
         return_chan: oneshot::Sender<ChainResponse>,
     ) -> Self {
         BufferedChainMessages {
             local_addr,
             messages: m,
+            flush,
             return_chan: Some(return_chan),
         }
     }
@@ -50,7 +54,7 @@ impl BufferedChainMessages {
 /// Transform chains are defined by the user in Shotover's configuration file and are linked to sources.
 ///
 /// The transform chain is a vector of mutable references to the enum [Transforms] (which is an enum dispatch wrapper around the various transform types).
-#[derive(Clone, Derivative)]
+#[derive(Derivative)]
 #[derivative(Debug)]
 pub struct TransformChain {
     pub name: String,
@@ -64,7 +68,7 @@ pub struct TransformChain {
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
-    pub original_chain: TransformChain,
+    pub original_chain: TransformChainBuilder,
     send_handle: mpsc::Sender<BufferedChainMessages>,
     #[cfg(test)]
     pub count: std::sync::Arc<std::sync::atomic::AtomicU64>,
@@ -73,7 +77,7 @@ pub struct BufferedChain {
 impl BufferedChain {
     #[must_use]
     pub fn to_new_instance(&self, buffer_size: usize) -> Self {
-        self.original_chain.clone().into_buffered_chain(buffer_size)
+        self.original_chain.build_buffered(buffer_size)
     }
 
     pub async fn process_request(
@@ -98,6 +102,7 @@ impl BufferedChain {
                     .send(BufferedChainMessages::new(
                         wrapper.messages,
                         wrapper.local_addr,
+                        wrapper.flush,
                         one_tx,
                     ))
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -106,7 +111,12 @@ impl BufferedChain {
             Some(timeout) => {
                 self.send_handle
                     .send_timeout(
-                        BufferedChainMessages::new(wrapper.messages, wrapper.local_addr, one_tx),
+                        BufferedChainMessages::new(
+                            wrapper.messages,
+                            wrapper.local_addr,
+                            wrapper.flush,
+                            one_tx,
+                        ),
                         Duration::from_micros(timeout),
                     )
                     .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
@@ -122,27 +132,34 @@ impl BufferedChain {
         wrapper: Wrapper<'_>,
         buffer_timeout_micros: Option<u64>,
     ) -> Result<()> {
-        match buffer_timeout_micros {
-            None => {
-                self.send_handle
-                    .send(BufferedChainMessages::new_with_no_return(
-                        wrapper.messages,
-                        wrapper.local_addr,
-                    ))
-                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
-                    .await?
-            }
-            Some(timeout) => {
-                self.send_handle
-                    .send_timeout(
-                        BufferedChainMessages::new_with_no_return(
+        if wrapper.flush {
+            // To obey flush request we need to ensure messages have completed sending before returning.
+            // In order to achieve that we need to use the regular process_request method.
+            self.process_request(wrapper, buffer_timeout_micros).await?;
+        } else {
+            // When there is no flush we can return much earlier by not waiting for a response.
+            match buffer_timeout_micros {
+                None => {
+                    self.send_handle
+                        .send(BufferedChainMessages::new_with_no_return(
                             wrapper.messages,
                             wrapper.local_addr,
-                        ),
-                        Duration::from_micros(timeout),
-                    )
-                    .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
-                    .await?
+                        ))
+                        .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                        .await?
+                }
+                Some(timeout) => {
+                    self.send_handle
+                        .send_timeout(
+                            BufferedChainMessages::new_with_no_return(
+                                wrapper.messages,
+                                wrapper.local_addr,
+                            ),
+                            Duration::from_micros(timeout),
+                        )
+                        .map_err(|e| anyhow!("Couldn't send message to wrapped chain {:?}", e))
+                        .await?
+                }
             }
         }
         Ok(())
@@ -150,80 +167,62 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub fn into_buffered_chain(self, buffer_size: usize) -> BufferedChain {
-        let (tx, mut rx) = mpsc::channel::<BufferedChainMessages>(buffer_size);
-
-        #[cfg(test)]
-        let count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        #[cfg(test)]
-        let count_clone = count.clone();
-
-        // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
-
-        let mut chain = self.clone();
-        let _jh = tokio::spawn(
-            async move {
-                while let Some(BufferedChainMessages {
-                    local_addr,
-                    return_chan,
-                    messages,
-                }) = rx.recv().await
-                {
-                    #[cfg(test)]
-                    {
-                        count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    }
-
-                    let chain_response = chain
-                        .process_request(
-                            Wrapper::new_with_chain_name(messages, chain.name.clone(), local_addr),
-                            chain.name.clone(),
-                        )
-                        .await;
-
-                    if let Err(e) = &chain_response {
-                        error!("Internal error in buffered chain: {e:?}");
-                    };
-
-                    match return_chan {
-                        None => trace!("Ignoring response due to lack of return chan"),
-                        Some(tx) => {
-                            if let Err(message) = tx.send(chain_response) {
-                                trace!("Failed to send response message over return chan. Message was: {message:?}");
-                            }
-                        }
-                    };
-                }
-
-                debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
-
-                match chain
-                    .process_request(
-                        Wrapper::flush_with_chain_name(chain.name.clone()),
-                        "".into(),
-                    )
-                    .await
-                {
-                    Ok(_) => info!("Buffered chain {} was shutdown", chain.name),
-                    Err(e) => error!(
-                        "Buffered chain {} encountered an error when flushing the chain for shutdown: {}",
-                        chain.name, e
-                    ),
-                }
-            }
-            .in_current_span(),
-        );
-
-        BufferedChain {
-            send_handle: tx,
-            #[cfg(test)]
-            count,
-            original_chain: self,
-        }
+    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
+        self.chain.iter_mut().collect_vec()
     }
 
-    pub fn new(transform_list: Vec<Transforms>, name: String) -> Self {
-        for transform in &transform_list {
+    pub async fn process_request(
+        &mut self,
+        mut wrapper: Wrapper<'_>,
+        client_details: String,
+    ) -> ChainResponse {
+        let start = Instant::now();
+        wrapper.reset(&mut self.chain);
+
+        let result = wrapper.call_next_transform().await;
+        self.chain_total.increment(1);
+        if result.is_err() {
+            self.chain_failures.increment(1);
+        }
+
+        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
+        result
+    }
+
+    pub async fn process_request_rev(
+        &mut self,
+        mut wrapper: Wrapper<'_>,
+        client_details: String,
+    ) -> ChainResponse {
+        let start = Instant::now();
+        wrapper.reset_rev(&mut self.chain);
+
+        let result = wrapper.call_next_transform_pushed().await;
+        self.chain_total.increment(1);
+        if result.is_err() {
+            self.chain_failures.increment(1);
+        }
+
+        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
+        result
+    }
+}
+
+#[derive(Derivative)]
+#[derivative(Debug, Clone)]
+pub struct TransformChainBuilder {
+    pub name: String,
+    pub chain: Vec<TransformBuilder>,
+
+    #[derivative(Debug = "ignore")]
+    chain_total: Counter,
+    #[derivative(Debug = "ignore")]
+    chain_failures: Counter,
+}
+
+impl TransformChainBuilder {
+    pub fn new(chain: Vec<TransformBuilder>, name: String) -> Self {
+        for transform in &chain {
             register_counter!("shotover_transform_total", "transform" => transform.get_name());
             register_counter!("shotover_transform_failures", "transform" => transform.get_name());
             register_histogram!("shotover_transform_latency", "transform" => transform.get_name());
@@ -231,11 +230,11 @@ impl TransformChain {
 
         let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
         let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", "chain" => name.clone());
+        // Cant register shotover_chain_latency because a unique one is created for each client ip address
 
-        TransformChain {
+        TransformChainBuilder {
             name,
-            chain: transform_list,
+            chain,
             chain_total,
             chain_failures,
         }
@@ -283,69 +282,122 @@ impl TransformChain {
         errors
     }
 
-    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
-        self.chain.iter_mut().collect_vec()
-    }
+    pub fn build_buffered(&self, buffer_size: usize) -> BufferedChain {
+        let (tx, mut rx) = mpsc::channel::<BufferedChainMessages>(buffer_size);
 
-    pub async fn process_request(
-        &mut self,
-        mut wrapper: Wrapper<'_>,
-        client_details: String,
-    ) -> ChainResponse {
-        let start = Instant::now();
-        wrapper.reset(&mut self.chain);
+        #[cfg(test)]
+        let count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        #[cfg(test)]
+        let count_clone = count.clone();
 
-        let result = wrapper.call_next_transform().await;
-        self.chain_total.increment(1);
-        if result.is_err() {
-            self.chain_failures.increment(1);
+        // Even though we don't keep the join handle, this thread will wrap up once all corresponding senders have been dropped.
+
+        let mut chain = self.build();
+        let _jh = tokio::spawn(
+            async move {
+                while let Some(BufferedChainMessages {
+                    local_addr,
+                    return_chan,
+                    messages,
+                    flush,
+                }) = rx.recv().await
+                {
+                    #[cfg(test)]
+                    {
+                        count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+
+                    let mut wrapper = Wrapper::new_with_chain_name(messages, chain.name.clone(), local_addr);
+                    wrapper.flush = flush;
+                    let chain_response = chain.process_request(wrapper, chain.name.clone()).await;
+
+                    if let Err(e) = &chain_response {
+                        error!("Internal error in buffered chain: {e:?}");
+                    };
+
+                    match return_chan {
+                        None => trace!("Ignoring response due to lack of return chan"),
+                        Some(tx) => {
+                            if let Err(message) = tx.send(chain_response) {
+                                trace!("Failed to send response message over return chan. Message was: {message:?}");
+                            }
+                        }
+                    };
+                }
+
+                debug!("buffered chain processing thread exiting, stopping chain loop and dropping");
+
+                match chain
+                    .process_request(
+                        Wrapper::flush_with_chain_name(chain.name.clone()),
+                        "".into(),
+                    )
+                    .await
+                {
+                    Ok(_) => info!("Buffered chain {} was shutdown", chain.name),
+                    Err(e) => error!(
+                        "Buffered chain {} encountered an error when flushing the chain for shutdown: {}",
+                        chain.name, e
+                    ),
+                }
+            }
+            .in_current_span(),
+        );
+
+        BufferedChain {
+            send_handle: tx,
+            #[cfg(test)]
+            count,
+            original_chain: self.clone(),
         }
-
-        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
-        result
-    }
-
-    pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> ChainResponse {
-        let start = Instant::now();
-
-        let mut chain: Vec<_> = self.chain.iter().cloned().rev().collect();
-        wrapper.reset(&mut chain);
-
-        let result = wrapper.call_next_transform_pushed().await;
-        self.chain_total.increment(1);
-        if result.is_err() {
-            self.chain_failures.increment(1);
-        }
-
-        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone());
-        result
     }
 
     /// Clone the chain while adding a producer for the pushed messages channel
-    pub fn clone_with_pushed_messages_tx(
+    pub fn build(&self) -> TransformChain {
+        let chain = self.chain.iter().cloned().map(|x| x.build()).collect();
+
+        TransformChain {
+            name: self.name.clone(),
+            chain,
+            chain_total: self.chain_total.clone(),
+            chain_failures: self.chain_failures.clone(),
+        }
+    }
+
+    /// Clone the chain while adding a producer for the pushed messages channel
+    pub fn build_with_pushed_messages(
         &self,
         pushed_messages_tx: mpsc::UnboundedSender<Messages>,
-    ) -> Self {
-        let mut result = self.clone();
+    ) -> TransformChain {
+        let chain = self
+            .chain
+            .iter()
+            .map(|x| {
+                let mut transform = x.clone().build();
+                transform.set_pushed_messages_tx(pushed_messages_tx.clone());
+                transform
+            })
+            .collect();
 
-        for transform in &mut result.chain {
-            transform.set_pushed_messages_tx(pushed_messages_tx.clone());
+        TransformChain {
+            name: self.name.clone(),
+            chain,
+            chain_total: self.chain_total.clone(),
+            chain_failures: self.chain_failures.clone(),
         }
-
-        result
     }
 }
 
 #[cfg(test)]
 mod chain_tests {
-    use crate::transforms::chain::TransformChain;
+    use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::null::Null;
-    use crate::transforms::Transforms;
+    use crate::transforms::TransformBuilder;
 
     #[tokio::test]
     async fn test_validate_invalid_chain() {
-        let chain = TransformChain::new(vec![], "test-chain".to_string());
+        let chain = TransformChainBuilder::new(vec![], "test-chain".to_string());
         assert_eq!(
             chain.validate(),
             vec!["test-chain:", "  Chain cannot be empty"]
@@ -354,11 +406,11 @@ mod chain_tests {
 
     #[tokio::test]
     async fn test_validate_valid_chain() {
-        let chain = TransformChain::new(
+        let chain = TransformChainBuilder::new(
             vec![
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::DebugPrinter(DebugPrinter::new()),
-                Transforms::Null(Null::default()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::DebugPrinter(DebugPrinter::new()),
+                TransformBuilder::Null(Null::default()),
             ],
             "test-chain".to_string(),
         );

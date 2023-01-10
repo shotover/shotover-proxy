@@ -1,4 +1,6 @@
-use crate::helpers::cassandra::{assert_query_result, run_query, CassandraConnection, ResultValue};
+use test_helpers::connection::cassandra::{
+    assert_query_result, run_query, CassandraConnection, ResultValue,
+};
 
 fn values() -> Vec<ResultValue> {
     vec![
@@ -55,7 +57,7 @@ async fn insert(connection: &CassandraConnection) {
                     ]
                 )
                 .await,
-            Vec::<Vec<_>>::new()
+            Ok(Vec::<Vec<_>>::new())
         );
     } else {
         let prepared = connection
@@ -63,7 +65,7 @@ async fn insert(connection: &CassandraConnection) {
                 .await;
         assert_eq!(
             connection.execute_prepared(&prepared, &values()).await,
-            Vec::<Vec<_>>::new()
+            Ok(Vec::<Vec<_>>::new())
         );
     }
 }

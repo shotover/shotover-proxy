@@ -1,14 +1,14 @@
 use crate::cassandra_int_tests::cluster::run_topology_task;
-use crate::helpers::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
-};
-use crate::helpers::ShotoverManager;
 use cassandra_protocol::events::ServerEvent;
 use cassandra_protocol::frame::events::{StatusChange, StatusChangeType};
 use std::net::SocketAddr;
 use std::time::Duration;
+use test_helpers::connection::cassandra::{
+    assert_query_result, run_query, CassandraConnection, CassandraDriver, ResultValue,
+};
 use test_helpers::docker_compose::DockerCompose;
-use tokio::time::{sleep, timeout};
+use tokio::sync::broadcast;
+use tokio::time::timeout;
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let all_columns = "peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens";
@@ -275,12 +275,7 @@ pub async fn test_topology_task(ca_path: Option<&str>, cassandra_port: Option<u3
     }
 }
 
-pub async fn test_node_going_down(
-    compose: DockerCompose,
-    shotover_manager: ShotoverManager,
-    driver: CassandraDriver,
-    kill: bool,
-) {
+pub async fn test_node_going_down(compose: &DockerCompose, driver: CassandraDriver) {
     let mut connection_shotover = CassandraConnection::new("127.0.0.1", 9042, driver).await;
     connection_shotover
         .enable_schema_awaiter("172.16.1.2:9044", None)
@@ -293,101 +288,172 @@ pub async fn test_node_going_down(
     run_query(&connection_shotover, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk1', 42, true);").await;
     run_query(&connection_shotover, "INSERT INTO cluster_single_rack_node_going_down.test_table (pk, col1, col2) VALUES ('pk2', 413, false);").await;
 
+    let mut event_connections = EventConnections::new().await;
+
     {
-        let event_connection_direct =
-            CassandraConnection::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio).await;
-        let mut event_recv_direct = event_connection_direct.as_cdrs().create_event_receiver();
-
-        let event_connection_shotover =
-            CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio).await;
-        let mut event_recv_shotover = event_connection_shotover.as_cdrs().create_event_receiver();
-
-        // let the driver finish connecting to the cluster and registering for the events
-        sleep(Duration::from_secs(10)).await;
-
         // stop one of the containers to trigger a status change event.
         // event_connection_direct is connecting to cassandra-one, so make sure to instead kill caassandra-two.
-        if kill {
-            compose.kill_service("cassandra-two");
-        } else {
-            compose.stop_service("cassandra-two");
-        }
-
-        loop {
-            // The direct connection should allow all events to pass through
-            let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
-                .await
-                .unwrap()
-                .unwrap();
-
-            // Sometimes we get up status events if we connect early enough.
-            // I assume these are just due to the nodes initially joining the cluster.
-            // If we hit one skip it and continue searching for our expected down status event
-            if matches!(
-                event,
-                ServerEvent::StatusChange(StatusChange {
-                    change_type: StatusChangeType::Up,
-                    ..
-                })
-            ) {
-                continue;
-            }
-
-            assert_eq!(
-                event,
-                ServerEvent::StatusChange(StatusChange {
-                    change_type: StatusChangeType::Down,
-                    addr: "172.16.1.3:9044".parse().unwrap()
-                })
-            );
-            break;
-        }
-
-        // we have already received an event directly from the cassandra instance so its reasonable to
-        // expect shotover to have processed that event within 10 seconds if it was ever going to
-        timeout(Duration::from_secs(10), event_recv_shotover.recv())
-            .await
-            .expect_err("CassandraSinkCluster must filter out this event");
+        compose.stop_service("cassandra-two");
+        assert_down_event(&mut event_connections).await;
 
         let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 
-        // test that shotover handles new connections after node goes down
+        // test that shotover handles connections created before and after node goes down
         test_connection_handles_node_down(&new_connection, driver).await;
-
-        // test that shotover handles preexisting connections after node goes down
         test_connection_handles_node_down(&connection_shotover, driver).await;
 
         compose.start_service("cassandra-two");
+        assert_up_event(&mut event_connections).await;
 
-        // The direct connection should allow all events to pass through
-        let event = timeout(Duration::from_secs(120), event_recv_direct.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            event,
-            ServerEvent::StatusChange(StatusChange {
-                change_type: StatusChangeType::Up,
-                addr: "172.16.1.3:9044".parse().unwrap()
-            })
-        );
-        // we have already received an event directly from the cassandra instance so its reasonable to
-        // expect shotover to have processed that event within 10 seconds if it was ever going to
-        timeout(Duration::from_secs(10), event_recv_shotover.recv())
-            .await
-            .expect_err("CassandraSinkCluster must filter out this event");
-
+        // test that shotover handles connections created before and after the nodes goes up
         let new_new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
-
         test_connection_handles_node_down(&new_new_connection, driver).await;
         test_connection_handles_node_down(&new_connection, driver).await;
         test_connection_handles_node_down(&connection_shotover, driver).await;
     }
+    {
+        // Kill the service this time instead of stopping it
+        compose.kill_service("cassandra-two");
+        assert_down_event(&mut event_connections).await;
 
-    std::mem::drop(connection_shotover);
-    // Purposefully dispose of these as we left the underlying cassandra cluster in a non-recoverable state
-    std::mem::drop(shotover_manager);
-    std::mem::drop(compose);
+        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+
+        test_connection_handles_node_down(&new_connection, driver).await;
+        test_connection_handles_node_down(&connection_shotover, driver).await;
+
+        compose.start_service("cassandra-two");
+        assert_up_event(&mut event_connections).await;
+
+        let new_new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        test_connection_handles_node_down(&new_new_connection, driver).await;
+        test_connection_handles_node_down(&new_connection, driver).await;
+        test_connection_handles_node_down(&connection_shotover, driver).await;
+    }
+    {
+        compose.stop_service("cassandra-two");
+        assert_down_event(&mut event_connections).await;
+
+        // Test the case where connection_shotover does not receive a message while the node is down,
+        // This ensures we handle the case where the outgoing connection is dead but the per connection state never observed the node go down
+
+        compose.start_service("cassandra-two");
+        assert_up_event(&mut event_connections).await;
+
+        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        test_connection_handles_node_down_with_one_retry(&new_connection).await;
+        if connection_shotover.is(&[CassandraDriver::CdrsTokio, CassandraDriver::Scylla]) {
+            test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
+        }
+    }
+    {
+        // Same again but with kill instead of stop
+        compose.kill_service("cassandra-two");
+        assert_down_event(&mut event_connections).await;
+
+        compose.start_service("cassandra-two");
+        assert_up_event(&mut event_connections).await;
+
+        let new_connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        test_connection_handles_node_down_with_one_retry(&new_connection).await;
+        if connection_shotover.is(&[CassandraDriver::CdrsTokio, CassandraDriver::Scylla]) {
+            test_connection_handles_node_down_with_one_retry(&connection_shotover).await;
+        }
+    }
+}
+
+struct EventConnections {
+    _direct: CassandraConnection,
+    recv_direct: broadcast::Receiver<ServerEvent>,
+    _shotover: CassandraConnection,
+    recv_shotover: broadcast::Receiver<ServerEvent>,
+}
+
+impl EventConnections {
+    async fn new() -> Self {
+        let direct = CassandraConnection::new("172.16.1.2", 9044, CassandraDriver::CdrsTokio).await;
+        let recv_direct = direct.as_cdrs().create_event_receiver();
+
+        let shotover =
+            CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::CdrsTokio).await;
+        let recv_shotover = shotover.as_cdrs().create_event_receiver();
+
+        EventConnections {
+            _direct: direct,
+            recv_direct,
+            _shotover: shotover,
+            recv_shotover,
+        }
+    }
+}
+
+async fn assert_down_event(event_connections: &mut EventConnections) {
+    loop {
+        // The direct connection should allow all events to pass through
+        let event = timeout(
+            Duration::from_secs(120),
+            event_connections.recv_direct.recv(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        // Sometimes we get up status events if we connect early enough.
+        // I assume these are just due to the nodes initially joining the cluster.
+        // If we hit one skip it and continue searching for our expected down status event
+        if matches!(
+            event,
+            ServerEvent::StatusChange(StatusChange {
+                change_type: StatusChangeType::Up,
+                ..
+            })
+        ) {
+            continue;
+        }
+
+        assert_eq!(
+            event,
+            ServerEvent::StatusChange(StatusChange {
+                change_type: StatusChangeType::Down,
+                addr: "172.16.1.3:9044".parse().unwrap()
+            })
+        );
+        break;
+    }
+
+    // we have already received an event directly from the cassandra instance so its reasonable to
+    // expect shotover to have processed that event within 10 seconds if it was ever going to
+    timeout(
+        Duration::from_secs(10),
+        event_connections.recv_shotover.recv(),
+    )
+    .await
+    .expect_err("CassandraSinkCluster must filter out this event");
+}
+
+async fn assert_up_event(event_connections: &mut EventConnections) {
+    // The direct connection should allow all events to pass through
+    let event = timeout(
+        Duration::from_secs(120),
+        event_connections.recv_direct.recv(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        event,
+        ServerEvent::StatusChange(StatusChange {
+            change_type: StatusChangeType::Up,
+            addr: "172.16.1.3:9044".parse().unwrap()
+        })
+    );
+    // we have already received an event directly from the cassandra instance so its reasonable to
+    // expect shotover to have processed that event within 10 seconds if it was ever going to
+    timeout(
+        Duration::from_secs(10),
+        event_connections.recv_shotover.recv(),
+    )
+    .await
+    .expect_err("CassandraSinkCluster must filter out this event");
 }
 
 async fn test_connection_handles_node_down(
@@ -417,4 +483,24 @@ async fn test_connection_handles_node_down(
         )
         .await;
     }
+}
+
+async fn test_connection_handles_node_down_with_one_retry(connection: &CassandraConnection) {
+    // run this a few times to make sure we arent getting lucky with the routing
+    let mut fail_count = 0;
+    for _ in 0..50 {
+        if connection
+            .execute_fallible(
+                "SELECT pk, col1, col2 FROM cluster_single_rack_node_going_down.test_table;",
+            )
+            .await
+            .is_err()
+        {
+            fail_count += 1;
+        }
+    }
+    assert!(
+        fail_count == 0 || fail_count == 1,
+        "must never fail or fail only once. The case where it fails once indicates that the connection to cassandra-two was dead but recreated allowing the next query to succeed"
+    )
 }

@@ -1,3 +1,4 @@
+use self::cassandra::sink_cluster::CassandraSinkClusterBuilder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
@@ -5,7 +6,7 @@ use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
 use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
 use crate::transforms::cassandra::sink_cluster::CassandraSinkClusterConfig;
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
-use crate::transforms::chain::TransformChain;
+use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::force_parse::DebugForceParse;
 #[cfg(feature = "alpha-transforms")]
@@ -17,16 +18,16 @@ use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
-use crate::transforms::load_balance::ConnectionBalanceAndPool;
+use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolBuilder};
 #[cfg(test)]
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::Null;
-use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
+use crate::transforms::parallel_map::{ParallelMap, ParallelMapBuilder, ParallelMapConfig};
 use crate::transforms::protect::Protect;
 #[cfg(feature = "alpha-transforms")]
 use crate::transforms::protect::ProtectConfig;
 use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
-use crate::transforms::redis::cache::{RedisConfig, SimpleRedisCache};
+use crate::transforms::redis::cache::{RedisConfig, SimpleRedisCache, SimpleRedisCacheBuilder};
 use crate::transforms::redis::cluster_ports_rewrite::{
     RedisClusterPortsRewrite, RedisClusterPortsRewriteConfig,
 };
@@ -43,8 +44,10 @@ use futures::Future;
 use metrics::{counter, histogram};
 use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
+use std::iter::Rev;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::slice::IterMut;
 use strum_macros::IntoStaticStr;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -68,12 +71,145 @@ pub mod tee;
 pub mod throttling;
 pub mod util;
 
-//TODO Generate the trait implementation for this passthrough enum via a macro
+// TODO: probably better, semantically, to have this not Clone.
+//       Fixing that is left to a followup PR though.
+//       It would also affect whether sources pointing into the same chain share state, which will require careful consideration
+#[derive(Clone, IntoStaticStr)]
+pub enum TransformBuilder {
+    CassandraSinkSingle(CassandraSinkSingle),
+    CassandraSinkCluster(Box<CassandraSinkClusterBuilder>),
+    RedisSinkSingle(RedisSinkSingle),
+    CassandraPeersRewrite(CassandraPeersRewrite),
+    RedisCache(SimpleRedisCacheBuilder),
+    Tee(Tee),
+    Null(Null),
+    #[cfg(test)]
+    Loopback(Loopback),
+    Protect(Box<Protect>),
+    ConsistentScatter(ConsistentScatter),
+    RedisTimestampTagger(RedisTimestampTagger),
+    RedisSinkCluster(RedisSinkCluster),
+    RedisClusterPortsRewrite(RedisClusterPortsRewrite),
+    DebugReturner(DebugReturner),
+    DebugRandomDelay(DebugRandomDelay),
+    DebugPrinter(DebugPrinter),
+    DebugForceParse(DebugForceParse),
+    ParallelMap(ParallelMapBuilder),
+    PoolConnections(ConnectionBalanceAndPoolBuilder),
+    Coalesce(Coalesce),
+    QueryTypeFilter(QueryTypeFilter),
+    QueryCounter(QueryCounter),
+    RequestThrottling(RequestThrottling),
+}
 
+impl TransformBuilder {
+    pub fn build(self) -> Transforms {
+        match self {
+            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t),
+            TransformBuilder::CassandraSinkCluster(t) => {
+                Transforms::CassandraSinkCluster(t.build())
+            }
+            TransformBuilder::CassandraPeersRewrite(t) => Transforms::CassandraPeersRewrite(t),
+            TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
+            TransformBuilder::Tee(t) => Transforms::Tee(t),
+            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t),
+            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t),
+            TransformBuilder::RedisTimestampTagger(t) => Transforms::RedisTimestampTagger(t),
+            TransformBuilder::RedisClusterPortsRewrite(t) => {
+                Transforms::RedisClusterPortsRewrite(t)
+            }
+            TransformBuilder::DebugPrinter(t) => Transforms::DebugPrinter(t),
+            TransformBuilder::DebugForceParse(t) => Transforms::DebugForceParse(t),
+            TransformBuilder::Null(t) => Transforms::Null(t),
+            TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t),
+            TransformBuilder::ParallelMap(t) => Transforms::ParallelMap(t.build()),
+            TransformBuilder::PoolConnections(t) => Transforms::PoolConnections(t.build()),
+            TransformBuilder::Coalesce(t) => Transforms::Coalesce(t),
+            TransformBuilder::QueryTypeFilter(t) => Transforms::QueryTypeFilter(t),
+            TransformBuilder::QueryCounter(t) => Transforms::QueryCounter(t),
+            #[cfg(test)]
+            TransformBuilder::Loopback(t) => Transforms::Loopback(t),
+            TransformBuilder::Protect(t) => Transforms::Protect(t),
+            TransformBuilder::DebugReturner(t) => Transforms::DebugReturner(t),
+            TransformBuilder::DebugRandomDelay(t) => Transforms::DebugRandomDelay(t),
+            TransformBuilder::RequestThrottling(t) => Transforms::RequestThrottling(t),
+        }
+    }
+
+    fn get_name(&self) -> &'static str {
+        self.into()
+    }
+
+    fn validate(&self) -> Vec<String> {
+        match self {
+            TransformBuilder::CassandraSinkSingle(c) => c.validate(),
+            TransformBuilder::CassandraSinkCluster(c) => c.validate(),
+            TransformBuilder::CassandraPeersRewrite(c) => c.validate(),
+            TransformBuilder::RedisCache(r) => r.validate(),
+            TransformBuilder::Tee(t) => t.validate(),
+            TransformBuilder::RedisSinkSingle(r) => r.validate(),
+            TransformBuilder::ConsistentScatter(c) => c.validate(),
+            TransformBuilder::RedisTimestampTagger(r) => r.validate(),
+            TransformBuilder::RedisClusterPortsRewrite(r) => r.validate(),
+            TransformBuilder::DebugPrinter(p) => p.validate(),
+            TransformBuilder::DebugForceParse(p) => p.validate(),
+            TransformBuilder::Null(n) => n.validate(),
+            TransformBuilder::RedisSinkCluster(r) => r.validate(),
+            TransformBuilder::ParallelMap(s) => s.validate(),
+            TransformBuilder::PoolConnections(s) => s.validate(),
+            TransformBuilder::Coalesce(s) => s.validate(),
+            TransformBuilder::QueryTypeFilter(s) => s.validate(),
+            TransformBuilder::QueryCounter(s) => s.validate(),
+            #[cfg(test)]
+            TransformBuilder::Loopback(l) => l.validate(),
+            TransformBuilder::Protect(p) => p.validate(),
+            TransformBuilder::DebugReturner(d) => d.validate(),
+            TransformBuilder::DebugRandomDelay(d) => d.validate(),
+            TransformBuilder::RequestThrottling(d) => d.validate(),
+        }
+    }
+
+    fn is_terminating(&self) -> bool {
+        match self {
+            TransformBuilder::CassandraSinkSingle(c) => c.is_terminating(),
+            TransformBuilder::CassandraSinkCluster(c) => c.is_terminating(),
+            TransformBuilder::CassandraPeersRewrite(c) => c.is_terminating(),
+            TransformBuilder::RedisCache(r) => r.is_terminating(),
+            TransformBuilder::Tee(t) => t.is_terminating(),
+            TransformBuilder::RedisSinkSingle(r) => r.is_terminating(),
+            TransformBuilder::ConsistentScatter(c) => c.is_terminating(),
+            TransformBuilder::RedisTimestampTagger(r) => r.is_terminating(),
+            TransformBuilder::RedisClusterPortsRewrite(r) => r.is_terminating(),
+            TransformBuilder::DebugPrinter(p) => p.is_terminating(),
+            TransformBuilder::DebugForceParse(p) => p.is_terminating(),
+            TransformBuilder::Null(n) => n.is_terminating(),
+            TransformBuilder::RedisSinkCluster(r) => r.is_terminating(),
+            TransformBuilder::ParallelMap(s) => s.is_terminating(),
+            TransformBuilder::PoolConnections(s) => s.is_terminating(),
+            TransformBuilder::Coalesce(s) => s.is_terminating(),
+            TransformBuilder::QueryTypeFilter(s) => s.is_terminating(),
+            TransformBuilder::QueryCounter(s) => s.is_terminating(),
+            #[cfg(test)]
+            TransformBuilder::Loopback(l) => l.is_terminating(),
+            TransformBuilder::Protect(p) => p.is_terminating(),
+            TransformBuilder::DebugReturner(d) => d.is_terminating(),
+            TransformBuilder::DebugRandomDelay(d) => d.is_terminating(),
+            TransformBuilder::RequestThrottling(d) => d.is_terminating(),
+        }
+    }
+}
+
+impl Debug for TransformBuilder {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Transform: {}", self.get_name())
+    }
+}
+
+//TODO Generate the trait implementation for this passthrough enum via a macro
 /// The [`crate::transforms::Transforms`] enum is responsible for [`crate::transforms::Transform`] registration and enum dispatch
 /// in the transform chain. This is largely a performance optimisation by using enum dispatch rather
 /// than using dynamic trait objects.
-#[derive(Clone, IntoStaticStr)]
+#[derive(IntoStaticStr)]
 pub enum Transforms {
     CassandraSinkSingle(CassandraSinkSingle),
     CassandraSinkCluster(Box<CassandraSinkCluster>),
@@ -199,64 +335,6 @@ impl Transforms {
         }
     }
 
-    fn validate(&self) -> Vec<String> {
-        match self {
-            Transforms::CassandraSinkSingle(c) => c.validate(),
-            Transforms::CassandraSinkCluster(c) => c.validate(),
-            Transforms::CassandraPeersRewrite(c) => c.validate(),
-            Transforms::RedisCache(r) => r.validate(),
-            Transforms::Tee(t) => t.validate(),
-            Transforms::RedisSinkSingle(r) => r.validate(),
-            Transforms::ConsistentScatter(c) => c.validate(),
-            Transforms::RedisTimestampTagger(r) => r.validate(),
-            Transforms::RedisClusterPortsRewrite(r) => r.validate(),
-            Transforms::DebugPrinter(p) => p.validate(),
-            Transforms::DebugForceParse(p) => p.validate(),
-            Transforms::Null(n) => n.validate(),
-            Transforms::RedisSinkCluster(r) => r.validate(),
-            Transforms::ParallelMap(s) => s.validate(),
-            Transforms::PoolConnections(s) => s.validate(),
-            Transforms::Coalesce(s) => s.validate(),
-            Transforms::QueryTypeFilter(s) => s.validate(),
-            Transforms::QueryCounter(s) => s.validate(),
-            #[cfg(test)]
-            Transforms::Loopback(l) => l.validate(),
-            Transforms::Protect(p) => p.validate(),
-            Transforms::DebugReturner(d) => d.validate(),
-            Transforms::DebugRandomDelay(d) => d.validate(),
-            Transforms::RequestThrottling(d) => d.validate(),
-        }
-    }
-
-    fn is_terminating(&self) -> bool {
-        match self {
-            Transforms::CassandraSinkSingle(c) => c.is_terminating(),
-            Transforms::CassandraSinkCluster(c) => c.is_terminating(),
-            Transforms::CassandraPeersRewrite(c) => c.is_terminating(),
-            Transforms::RedisCache(r) => r.is_terminating(),
-            Transforms::Tee(t) => t.is_terminating(),
-            Transforms::RedisSinkSingle(r) => r.is_terminating(),
-            Transforms::ConsistentScatter(c) => c.is_terminating(),
-            Transforms::RedisTimestampTagger(r) => r.is_terminating(),
-            Transforms::RedisClusterPortsRewrite(r) => r.is_terminating(),
-            Transforms::DebugPrinter(p) => p.is_terminating(),
-            Transforms::DebugForceParse(p) => p.is_terminating(),
-            Transforms::Null(n) => n.is_terminating(),
-            Transforms::RedisSinkCluster(r) => r.is_terminating(),
-            Transforms::ParallelMap(s) => s.is_terminating(),
-            Transforms::PoolConnections(s) => s.is_terminating(),
-            Transforms::Coalesce(s) => s.is_terminating(),
-            Transforms::QueryTypeFilter(s) => s.is_terminating(),
-            Transforms::QueryCounter(s) => s.is_terminating(),
-            #[cfg(test)]
-            Transforms::Loopback(l) => l.is_terminating(),
-            Transforms::Protect(p) => p.is_terminating(),
-            Transforms::DebugReturner(d) => d.is_terminating(),
-            Transforms::DebugRandomDelay(d) => d.is_terminating(),
-            Transforms::RequestThrottling(d) => d.is_terminating(),
-        }
-    }
-
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         match self {
             Transforms::CassandraSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
@@ -323,7 +401,7 @@ pub enum TransformsConfig {
 impl TransformsConfig {
     #[async_recursion]
     /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transform(&self, chain_name: String) -> Result<Transforms> {
+    pub async fn get_transform(&self, chain_name: String) -> Result<TransformBuilder> {
         match self {
             TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
             TransformsConfig::CassandraSinkCluster(c) => c.get_transform(chain_name).await,
@@ -332,15 +410,17 @@ impl TransformsConfig {
             TransformsConfig::Tee(t) => t.get_transform().await,
             TransformsConfig::RedisSinkSingle(r) => r.get_transform(chain_name).await,
             TransformsConfig::ConsistentScatter(c) => c.get_transform().await,
-            TransformsConfig::RedisTimestampTagger => {
-                Ok(Transforms::RedisTimestampTagger(RedisTimestampTagger::new()))
-            }
+            TransformsConfig::RedisTimestampTagger => Ok(TransformBuilder::RedisTimestampTagger(
+                RedisTimestampTagger::new(),
+            )),
             TransformsConfig::RedisClusterPortsRewrite(r) => r.get_transform().await,
-            TransformsConfig::DebugPrinter => Ok(Transforms::DebugPrinter(DebugPrinter::new())),
+            TransformsConfig::DebugPrinter => {
+                Ok(TransformBuilder::DebugPrinter(DebugPrinter::new()))
+            }
             TransformsConfig::DebugReturner(d) => d.get_transform().await,
-            TransformsConfig::Null => Ok(Transforms::Null(Null::default())),
+            TransformsConfig::Null => Ok(TransformBuilder::Null(Null::default())),
             #[cfg(test)]
-            TransformsConfig::Loopback => Ok(Transforms::Loopback(Loopback::default())),
+            TransformsConfig::Loopback => Ok(TransformBuilder::Loopback(Loopback::default())),
             #[cfg(feature = "alpha-transforms")]
             TransformsConfig::Protect(p) => p.get_transform().await,
             #[cfg(feature = "alpha-transforms")]
@@ -361,15 +441,13 @@ impl TransformsConfig {
 pub async fn build_chain_from_config(
     name: String,
     transform_configs: &[TransformsConfig],
-) -> Result<TransformChain> {
-    let mut transforms: Vec<Transforms> = Vec::new();
+) -> Result<TransformChainBuilder> {
+    let mut transforms: Vec<TransformBuilder> = Vec::new();
     for tc in transform_configs {
         transforms.push(tc.get_transform(name.clone()).await?)
     }
-    Ok(TransformChain::new(transforms, name))
+    Ok(TransformChainBuilder::new(transforms, name))
 }
-
-use std::slice::IterMut;
 
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
 /// remaining transforms that will process the messages attached to this [`Wrapper`].
@@ -377,7 +455,7 @@ use std::slice::IterMut;
 #[derive(Debug)]
 pub struct Wrapper<'a> {
     pub messages: Messages,
-    transforms: IterMut<'a, Transforms>,
+    transforms: TransformIter<'a>,
     pub client_details: String,
     /// Contains the shotover source's ip address and port which the message was received on
     pub local_addr: SocketAddr,
@@ -388,6 +466,33 @@ pub struct Wrapper<'a> {
     pub flush: bool,
 }
 
+#[derive(Debug)]
+enum TransformIter<'a> {
+    Forwards(IterMut<'a, Transforms>),
+    Backwards(Rev<IterMut<'a, Transforms>>),
+}
+
+impl<'a> TransformIter<'a> {
+    fn new_forwards(transforms: &'a mut [Transforms]) -> TransformIter<'a> {
+        TransformIter::Forwards(transforms.iter_mut())
+    }
+
+    fn new_backwards(transforms: &'a mut [Transforms]) -> TransformIter<'a> {
+        TransformIter::Backwards(transforms.iter_mut().rev())
+    }
+}
+
+impl<'a> Iterator for TransformIter<'a> {
+    type Item = &'a mut Transforms;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            TransformIter::Forwards(iter) => iter.next(),
+            TransformIter::Backwards(iter) => iter.next(),
+        }
+    }
+}
+
 /// [`Wrapper`] will not (cannot) bring the current list of transforms that it needs to traverse with it
 /// This is purely to make it convenient to clone all the data within Wrapper rather than it's transform
 /// state.
@@ -395,11 +500,11 @@ impl<'a> Clone for Wrapper<'a> {
     fn clone(&self) -> Self {
         Wrapper {
             messages: self.messages.clone(),
-            transforms: [].iter_mut(),
+            transforms: TransformIter::new_forwards(&mut []),
             client_details: self.client_details.clone(),
             chain_name: self.chain_name.clone(),
             local_addr: self.local_addr,
-            flush: false,
+            flush: self.flush,
         }
     }
 }
@@ -465,7 +570,7 @@ impl<'a> Wrapper<'a> {
     pub fn new(m: Messages) -> Self {
         Wrapper {
             messages: m,
-            transforms: [].iter_mut(),
+            transforms: TransformIter::new_forwards(&mut []),
             client_details: "".to_string(),
             local_addr: "127.0.0.1:8000".parse().unwrap(),
             chain_name: "".to_string(),
@@ -476,7 +581,7 @@ impl<'a> Wrapper<'a> {
     pub fn new_with_chain_name(m: Messages, chain_name: String, local_addr: SocketAddr) -> Self {
         Wrapper {
             messages: m,
-            transforms: [].iter_mut(),
+            transforms: TransformIter::new_forwards(&mut []),
             client_details: "".to_string(),
             local_addr,
             chain_name,
@@ -487,7 +592,7 @@ impl<'a> Wrapper<'a> {
     pub fn flush_with_chain_name(chain_name: String) -> Self {
         Wrapper {
             messages: vec![],
-            transforms: [].iter_mut(),
+            transforms: TransformIter::new_forwards(&mut []),
             client_details: "".into(),
             // The connection is closed so we need to just fake an address here
             local_addr: "127.0.0.1:10000".parse().unwrap(),
@@ -504,7 +609,7 @@ impl<'a> Wrapper<'a> {
     ) -> Self {
         Wrapper {
             messages: m,
-            transforms: [].iter_mut(),
+            transforms: TransformIter::new_forwards(&mut []),
             client_details,
             local_addr,
             chain_name,
@@ -513,7 +618,11 @@ impl<'a> Wrapper<'a> {
     }
 
     pub fn reset(&mut self, transforms: &'a mut [Transforms]) {
-        self.transforms = transforms.iter_mut();
+        self.transforms = TransformIter::new_forwards(transforms);
+    }
+
+    pub fn reset_rev(&mut self, transforms: &'a mut [Transforms]) {
+        self.transforms = TransformIter::new_backwards(transforms);
     }
 }
 
