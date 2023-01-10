@@ -189,7 +189,11 @@ impl TransformChain {
         result
     }
 
-    pub async fn process_request_rev(&mut self, mut wrapper: Wrapper<'_>) -> ChainResponse {
+    pub async fn process_request_rev(
+        &mut self,
+        mut wrapper: Wrapper<'_>,
+        client_details: String,
+    ) -> ChainResponse {
         let start = Instant::now();
         wrapper.reset_rev(&mut self.chain);
 
@@ -199,7 +203,7 @@ impl TransformChain {
             self.chain_failures.increment(1);
         }
 
-        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone());
+        histogram!("shotover_chain_latency", start.elapsed(),  "chain" => self.name.clone(), "client_details" => client_details);
         result
     }
 }
@@ -226,7 +230,7 @@ impl TransformChainBuilder {
 
         let chain_total = register_counter!("shotover_chain_total", "chain" => name.clone());
         let chain_failures = register_counter!("shotover_chain_failures", "chain" => name.clone());
-        register_histogram!("shotover_chain_latency", "chain" => name.clone());
+        // Cant register shotover_chain_latency because a unique one is created for each client ip address
 
         TransformChainBuilder {
             name,

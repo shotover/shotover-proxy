@@ -1,4 +1,5 @@
 use crate::codec::redis::redis_query_type;
+use crate::frame::cassandra::Tracing;
 use crate::frame::{
     cassandra,
     cassandra::{to_cassandra_type, CassandraMetadata, CassandraOperation},
@@ -249,7 +250,7 @@ impl Message {
                     message: error,
                     ty: ErrorType::Server,
                 }),
-                tracing: frame.tracing,
+                tracing: Tracing::Response(None),
                 warnings: vec![],
             }),
             Metadata::None => Frame::None,
@@ -292,7 +293,7 @@ impl Message {
                 Frame::Cassandra(CassandraFrame {
                     version: metadata.version,
                     stream_id: metadata.stream_id,
-                    tracing: metadata.tracing,
+                    tracing: Tracing::Response(None),
                     warnings: vec![],
                     operation: body,
                 })
