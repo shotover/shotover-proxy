@@ -1,8 +1,14 @@
 use crate::helpers::ShotoverManager;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
+use cdrs_tokio::cluster::send_envelope::send_envelope;
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
+use cdrs_tokio::frame::message_response::ResponseBody;
+use cdrs_tokio::frame::message_supported::BodyResSupported;
+use cdrs_tokio::frame::Envelope;
+use cdrs_tokio::frame::Version;
+use cdrs_tokio::retry::DefaultRetrySession;
 use futures::future::join_all;
 use futures::Future;
 use metrics_util::debugging::DebuggingRecorder;
@@ -310,7 +316,6 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 }
 
 #[cfg(feature = "alpha-transforms")]
-//#[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 #[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
@@ -545,7 +550,6 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-//#[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // Disabled due to intermittent failure that only occurs on v3
 #[case::scylla(Scylla)]
@@ -580,7 +584,59 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-//#[cfg(feature = "cassandra-cpp-driver-tests")]
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_options_rewrite(#[case] driver: CassandraDriver) {
+    let _docker_compose =
+        DockerCompose::new("tests/test-configs/cassandra-options-rewrite/docker-compose.yaml");
+
+    let _shotover_manager = ShotoverManager::from_topology_file(
+        "tests/test-configs/cassandra-options-rewrite/topology.yaml",
+    );
+
+    let envelope = Envelope::new_req_options(Version::V4);
+
+    let normal_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
+    let normal_query_plan = normal_connection.as_cdrs().query_plan(None);
+    let normal_result = send_envelope(
+        normal_query_plan.into_iter(),
+        &envelope,
+        false,
+        Box::<DefaultRetrySession>::default(),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .response_body()
+    .unwrap();
+    if let ResponseBody::Supported(BodyResSupported { data }) = normal_result {
+        assert_eq!(*data.get("CQL_VERSION").unwrap(), vec!["3.4.5".to_string()]);
+    }
+
+    let options_rewrite_connection = CassandraConnection::new("127.0.0.1", 9044, driver).await;
+    let options_rewrite_query_plan = options_rewrite_connection.as_cdrs().query_plan(None);
+    let options_rewrite_result = send_envelope(
+        options_rewrite_query_plan.into_iter(),
+        &envelope,
+        false,
+        Box::<DefaultRetrySession>::default(),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .response_body()
+    .unwrap();
+
+    if let ResponseBody::Supported(BodyResSupported { data }) = options_rewrite_result {
+        assert_eq!(
+            *data.get("CQL_VERSION").unwrap(),
+            vec!["changed".to_string()]
+        );
+    }
+}
+
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO: cdrs-tokio seems to be sending extra messages triggering the rate limiter
 #[case::scylla(Scylla)]
