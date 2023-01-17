@@ -8,8 +8,10 @@ use futures::Future;
 use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
+use test_helpers::connection::cassandra::run_query;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
+use test_helpers::connection::cassandra::{assert_query_result, ResultValue};
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraDriver,
     CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
@@ -308,6 +310,7 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 }
 
 #[cfg(feature = "alpha-transforms")]
+//#[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 #[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
@@ -542,6 +545,7 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
+//#[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // Disabled due to intermittent failure that only occurs on v3
 #[case::scylla(Scylla)]
@@ -576,6 +580,7 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
+//#[cfg(feature = "cassandra-cpp-driver-tests")]
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO: cdrs-tokio seems to be sending extra messages triggering the rate limiter
 #[case::scylla(Scylla)]

@@ -19,6 +19,8 @@ use cassandra_protocol::frame::message_result::{
     BodyResResultPrepared, BodyResResultSetKeyspace, ColSpec, ColTypeOption, ResResultBody,
     ResultKind, RowsMetadata, RowsMetadataFlags,
 };
+use cassandra_protocol::frame::message_startup::BodyReqStartup;
+use cassandra_protocol::frame::message_supported::BodyResSupported;
 use cassandra_protocol::frame::{
     Direction, Envelope as RawCassandraFrame, Flags, Opcode, Serialize, StreamId, Version,
 };
@@ -276,11 +278,23 @@ impl CassandraFrame {
                     unreachable!("We already know the operation is an error")
                 }
             }
-            Opcode::Startup => CassandraOperation::Startup(frame.body),
+            Opcode::Startup => {
+                if let RequestBody::Startup(body) = frame.request_body()? {
+                    CassandraOperation::Startup(body)
+                } else {
+                    unreachable!("We already know the operation is a startup")
+                }
+            }
             Opcode::Ready => CassandraOperation::Ready(frame.body),
             Opcode::Authenticate => CassandraOperation::Authenticate(frame.body),
             Opcode::Options => CassandraOperation::Options(frame.body),
-            Opcode::Supported => CassandraOperation::Supported(frame.body),
+            Opcode::Supported => {
+                if let ResponseBody::Supported(body) = frame.response_body()? {
+                    CassandraOperation::Supported(body)
+                } else {
+                    unreachable!("we already know this is a supported");
+                }
+            }
             Opcode::Prepare => CassandraOperation::Prepare(frame.body),
             Opcode::Execute => {
                 if let RequestBody::Execute(body) = frame.request_body()? {
@@ -417,11 +431,11 @@ pub enum CassandraOperation {
     Event(ServerEvent),
     Batch(CassandraBatch),
     // operations for protocol negotiation, should be ignored by transforms
-    Startup(Vec<u8>),
+    Startup(BodyReqStartup),
     Ready(Vec<u8>),
     Authenticate(Vec<u8>),
     Options(Vec<u8>),
-    Supported(Vec<u8>),
+    Supported(BodyResSupported),
     AuthChallenge(Vec<u8>),
     AuthResponse(Vec<u8>),
     AuthSuccess(Vec<u8>),

@@ -63,7 +63,7 @@ impl Decoder for CassandraCodec {
                     );
 
                     let version = Version::try_from(bytes[0])
-                        .expect("Gauranteed because check_envelope_size only returns Ok if the Version will parse");
+                        .expect("Guaranteed because check_envelope_size only returns Ok if the Version will parse");
                     if let Version::V3 | Version::V4 = version {
                         // Accept these protocols
                     } else {
@@ -72,6 +72,15 @@ impl Decoder for CassandraCodec {
                     }
 
                     let mut message = Message::from_bytes(bytes.freeze(), MessageType::Cassandra);
+
+                    // if is startup message, reject compression because shotover does not support
+                    if let Some(Frame::Cassandra(frame)) = message.frame() {
+                        if let CassandraOperation::Startup(startup) = &mut frame.operation {
+                            if let Some(compression) = startup.map.get("COMPRESSION") {
+                                return Err(reject_compression(compression));
+                            }
+                        }
+                    }
 
                     if let Ok(Metadata::Cassandra(CassandraMetadata {
                         opcode: Opcode::Query | Opcode::Batch,
@@ -196,6 +205,26 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
     ))])
 }
 
+fn reject_compression(compression: &String) -> CodecReadError {
+    info!(
+        "Rejecting compression option {} (configure the client to use no compression)",
+        compression
+    );
+
+    CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
+        CassandraFrame {
+            version: Version::V4,
+            stream_id: 0,
+            operation: CassandraOperation::Error(ErrorBody {
+                message: format!("Unsupported compression type {}", compression),
+                ty: ErrorType::Protocol,
+            }),
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+        },
+    ))])
+}
+
 impl Encoder<Messages> for CassandraCodec {
     type Error = anyhow::Error;
 
@@ -235,8 +264,10 @@ mod cassandra_protocol_tests {
         ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags,
         TableSpec,
     };
+    use cassandra_protocol::frame::message_startup::BodyReqStartup;
     use cassandra_protocol::frame::Version;
     use hex_literal::hex;
+    use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame_codec_roundtrip(
@@ -276,13 +307,14 @@ mod cassandra_protocol_tests {
 
     #[test]
     fn test_codec_startup() {
+        let mut startup_body: HashMap<String, String> = HashMap::new();
+        startup_body.insert("CQL_VERSION".into(), "3.0.0".into());
+
         let mut codec = CassandraCodec::new();
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            operation: CassandraOperation::Startup(vec![
-                0, 1, 0, 11, 67, 81, 76, 95, 86, 69, 82, 83, 73, 79, 78, 0, 5, 51, 46, 48, 46, 48,
-            ]),
+            operation: CassandraOperation::Startup(BodyReqStartup { map: startup_body }),
             stream_id: 0,
             tracing: Tracing::Request(false),
             warnings: vec![],
