@@ -14,10 +14,8 @@ use futures::Future;
 use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
-use test_helpers::connection::cassandra::run_query;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
-use test_helpers::connection::cassandra::{assert_query_result, ResultValue};
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraDriver,
     CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
