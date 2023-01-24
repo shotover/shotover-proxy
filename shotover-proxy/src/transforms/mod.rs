@@ -1,10 +1,14 @@
-use self::cassandra::sink_cluster::CassandraSinkClusterBuilder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
-use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
-use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
-use crate::transforms::cassandra::sink_cluster::CassandraSinkClusterConfig;
+use crate::transforms::cassandra::options_rewrite::{
+    CassandraOptionsRewrite, CassandraOptionsRewriteConfig,
+};
+use crate::transforms::cassandra::peers_rewrite::{
+    CassandraPeersRewrite, CassandraPeersRewriteConfig,
+};
+use crate::transforms::cassandra::sink_cluster::{
+    CassandraSinkCluster, CassandraSinkClusterBuilder, CassandraSinkClusterConfig,
+};
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
@@ -80,6 +84,7 @@ pub enum TransformBuilder {
     CassandraSinkCluster(Box<CassandraSinkClusterBuilder>),
     RedisSinkSingle(RedisSinkSingle),
     CassandraPeersRewrite(CassandraPeersRewrite),
+    CassandraOptionsRewrite(CassandraOptionsRewrite),
     RedisCache(SimpleRedisCacheBuilder),
     Tee(Tee),
     Null(Null),
@@ -110,6 +115,7 @@ impl TransformBuilder {
                 Transforms::CassandraSinkCluster(t.build())
             }
             TransformBuilder::CassandraPeersRewrite(t) => Transforms::CassandraPeersRewrite(t),
+            TransformBuilder::CassandraOptionsRewrite(t) => Transforms::CassandraOptionsRewrite(t),
             TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
             TransformBuilder::Tee(t) => Transforms::Tee(t),
             TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t),
@@ -145,6 +151,7 @@ impl TransformBuilder {
             TransformBuilder::CassandraSinkSingle(c) => c.validate(),
             TransformBuilder::CassandraSinkCluster(c) => c.validate(),
             TransformBuilder::CassandraPeersRewrite(c) => c.validate(),
+            TransformBuilder::CassandraOptionsRewrite(c) => c.validate(),
             TransformBuilder::RedisCache(r) => r.validate(),
             TransformBuilder::Tee(t) => t.validate(),
             TransformBuilder::RedisSinkSingle(r) => r.validate(),
@@ -174,6 +181,7 @@ impl TransformBuilder {
             TransformBuilder::CassandraSinkSingle(c) => c.is_terminating(),
             TransformBuilder::CassandraSinkCluster(c) => c.is_terminating(),
             TransformBuilder::CassandraPeersRewrite(c) => c.is_terminating(),
+            TransformBuilder::CassandraOptionsRewrite(c) => c.is_terminating(),
             TransformBuilder::RedisCache(r) => r.is_terminating(),
             TransformBuilder::Tee(t) => t.is_terminating(),
             TransformBuilder::RedisSinkSingle(r) => r.is_terminating(),
@@ -215,6 +223,7 @@ pub enum Transforms {
     CassandraSinkCluster(Box<CassandraSinkCluster>),
     RedisSinkSingle(RedisSinkSingle),
     CassandraPeersRewrite(CassandraPeersRewrite),
+    CassandraOptionsRewrite(CassandraOptionsRewrite),
     RedisCache(SimpleRedisCache),
     Tee(Tee),
     Null(Null),
@@ -249,6 +258,7 @@ impl Transforms {
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
+            Transforms::CassandraOptionsRewrite(c) => c.transform(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform(message_wrapper).await,
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
@@ -277,6 +287,7 @@ impl Transforms {
         match self {
             Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform_pushed(message_wrapper).await,
+            Transforms::CassandraOptionsRewrite(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
             Transforms::RedisCache(r) => r.transform_pushed(message_wrapper).await,
             Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
@@ -311,6 +322,7 @@ impl Transforms {
             Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
             Transforms::CassandraSinkCluster(a) => a.prep_transform_chain(t).await,
             Transforms::CassandraPeersRewrite(c) => c.prep_transform_chain(t).await,
+            Transforms::CassandraOptionsRewrite(c) => c.prep_transform_chain(t).await,
             Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
             Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
@@ -340,6 +352,7 @@ impl Transforms {
             Transforms::CassandraSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraPeersRewrite(c) => c.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::CassandraOptionsRewrite(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisCache(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::Tee(t) => t.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisSinkSingle(r) => r.set_pushed_messages_tx(pushed_messages_tx),
@@ -373,6 +386,7 @@ pub enum TransformsConfig {
     CassandraSinkCluster(CassandraSinkClusterConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
     CassandraPeersRewrite(CassandraPeersRewriteConfig),
+    CassandraOptionsRewrite(CassandraOptionsRewriteConfig),
     RedisCache(RedisConfig),
     Tee(TeeConfig),
     ConsistentScatter(ConsistentScatterConfig),
@@ -406,6 +420,7 @@ impl TransformsConfig {
             TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
             TransformsConfig::CassandraSinkCluster(c) => c.get_transform(chain_name).await,
             TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
+            TransformsConfig::CassandraOptionsRewrite(c) => c.get_transform().await,
             TransformsConfig::RedisCache(r) => r.get_transform().await,
             TransformsConfig::Tee(t) => t.get_transform().await,
             TransformsConfig::RedisSinkSingle(r) => r.get_transform(chain_name).await,
