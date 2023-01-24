@@ -20,11 +20,11 @@ async fn main() {
         latte.init(bench, "172.16.1.2:9044");
         latte.bench(bench, "localhost:9042");
 
+        shotover.shutdown_and_then_consume_events(&[]).await;
+
         println!("Benching Direct Cassandra ...");
         latte.init(bench, "172.16.1.2:9044");
         latte.bench(bench, "172.16.1.2:9044");
-
-        shotover.shutdown_and_then_consume_events(&[]).await;
     }
 
     println!("Direct Cassandra (A) vs Shotover (B)");
