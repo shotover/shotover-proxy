@@ -4,10 +4,11 @@
 // * write our own benchmark logic
 pub struct Latte {
     rate: u64,
+    threads: u64,
 }
 
 impl Latte {
-    pub fn new(rate: u64) -> Latte {
+    pub fn new(rate: u64, threads: u64) -> Latte {
         crate::docker_compose::run_command(
             "cargo",
             &[
@@ -19,7 +20,7 @@ impl Latte {
             ],
         )
         .unwrap();
-        Latte { rate }
+        Latte { rate, threads }
     }
 
     pub fn init(&self, name: &str, address_load: &str) {
@@ -68,6 +69,8 @@ impl Latte {
                 "15s", // default is 60s but 15 seems fine
                 "--connections",
                 "128", // Shotover performs extremely poorly with 1 connection and this is not currently an intended usecase
+                "--threads",
+                &self.threads.to_string(),
                 "--output",
                 &format!("{name}-{address_bench}.json"),
                 &format!("examples/{name}.rn"),

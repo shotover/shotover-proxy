@@ -22,7 +22,7 @@ async fn main() {
     test_helpers::bench::init();
     let args = Args::parse();
 
-    let latte = Latte::new(args.rate);
+    let latte = Latte::new(args.rate, 1);
     let bench = "read";
     {
         let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", args.config_dir));
