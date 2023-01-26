@@ -34,8 +34,11 @@ pub struct ConfigOpts {
     #[clap(short, long, default_value = "config/config.yaml")]
     pub config_file: String,
 
-    #[clap(long, default_value = "4")]
-    pub core_threads: usize,
+    // Number of tokio worker threads.
+    // By default uses the number of cores on the system.
+    #[clap(long)]
+    pub core_threads: Option<usize>,
+
     // 2,097,152 = 2 * 1024 * 1024 (2MiB)
     #[clap(long, default_value = "2097152")]
     pub stack_size: usize,
@@ -55,7 +58,7 @@ impl Default for ConfigOpts {
         Self {
             topology_file: "config/topology.yaml".into(),
             config_file: "config/config.yaml".into(),
-            core_threads: 4,
+            core_threads: None,
             stack_size: 2097152,
             log_format: LogFormat::Human,
         }
@@ -146,7 +149,10 @@ impl Runner {
     }
 
     /// Get handle for an existing runtime or create one
-    fn get_runtime(stack_size: usize, core_threads: usize) -> (RuntimeHandle, Option<Runtime>) {
+    fn get_runtime(
+        stack_size: usize,
+        worker_threads: Option<usize>,
+    ) -> (RuntimeHandle, Option<Runtime>) {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // Using block_in_place to trigger a panic in case the runtime is set up in single-threaded mode.
             // Shotover does not function correctly in single threaded mode (currently hangs)
@@ -156,13 +162,15 @@ impl Runner {
 
             (handle, None)
         } else {
-            let runtime = runtime::Builder::new_multi_thread()
+            let mut runtime_builder = runtime::Builder::new_multi_thread();
+            runtime_builder
                 .enable_all()
                 .thread_name("Shotover-Proxy-Thread")
-                .thread_stack_size(stack_size)
-                .worker_threads(core_threads)
-                .build()
-                .unwrap();
+                .thread_stack_size(stack_size);
+            if let Some(worker_threads) = worker_threads {
+                runtime_builder.worker_threads(worker_threads);
+            }
+            let runtime = runtime_builder.build().unwrap();
 
             (runtime.handle().clone(), Some(runtime))
         }
