@@ -235,8 +235,10 @@ mod cassandra_protocol_tests {
         ColSpec, ColType, ColTypeOption, ColTypeOptionValue, RowsMetadata, RowsMetadataFlags,
         TableSpec,
     };
+    use cassandra_protocol::frame::message_startup::BodyReqStartup;
     use cassandra_protocol::frame::Version;
     use hex_literal::hex;
+    use std::collections::HashMap;
     use tokio_util::codec::{Decoder, Encoder};
 
     fn test_frame_codec_roundtrip(
@@ -277,12 +279,12 @@ mod cassandra_protocol_tests {
     #[test]
     fn test_codec_startup() {
         let mut codec = CassandraCodec::new();
+        let mut startup_body: HashMap<String, String> = HashMap::new();
+        startup_body.insert("CQL_VERSION".into(), "3.0.0".into());
         let bytes = hex!("0400000001000000160001000b43514c5f56455253494f4e0005332e302e30");
         let messages = vec![Message::from_frame(Frame::Cassandra(CassandraFrame {
             version: Version::V4,
-            operation: CassandraOperation::Startup(vec![
-                0, 1, 0, 11, 67, 81, 76, 95, 86, 69, 82, 83, 73, 79, 78, 0, 5, 51, 46, 48, 46, 48,
-            ]),
+            operation: CassandraOperation::Startup(BodyReqStartup { map: startup_body }),
             stream_id: 0,
             tracing: Tracing::Request(false),
             warnings: vec![],
