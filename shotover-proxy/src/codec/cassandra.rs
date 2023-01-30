@@ -77,7 +77,7 @@ impl Decoder for CassandraCodec {
                     if let Some(Frame::Cassandra(frame)) = message.frame() {
                         if let CassandraOperation::Startup(startup) = &mut frame.operation {
                             if let Some(compression) = startup.map.get("COMPRESSION") {
-                                return Err(reject_compression(compression));
+                                return Err(reject_compression(frame.stream_id, compression));
                             }
                         }
                     }
@@ -205,7 +205,7 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
     ))])
 }
 
-fn reject_compression(compression: &String) -> CodecReadError {
+fn reject_compression(stream_id: i16, compression: &String) -> CodecReadError {
     info!(
         "Rejecting compression option {} (configure the client to use no compression)",
         compression
@@ -214,7 +214,7 @@ fn reject_compression(compression: &String) -> CodecReadError {
     CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
         CassandraFrame {
             version: Version::V4,
-            stream_id: 0,
+            stream_id,
             operation: CassandraOperation::Error(ErrorBody {
                 message: format!("Unsupported compression type {}", compression),
                 ty: ErrorType::Protocol,
