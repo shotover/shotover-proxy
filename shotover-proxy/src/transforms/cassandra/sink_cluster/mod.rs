@@ -298,18 +298,6 @@ impl CassandraSinkCluster {
             self.pool.update_keyspaces(&mut self.keyspaces_rx).await;
         }
 
-        // If we have a prepare message we will need to open connections one by one for all nodes later on.
-        // So as optimization, we instead open them all concurrently first.
-        if messages.iter_mut().any(is_prepare_message) {
-            try_join_all(
-                self.pool
-                    .nodes()
-                    .iter_mut()
-                    .map(|node| node.get_connection(&self.connection_factory)),
-            )
-            .await?;
-        }
-
         let mut outgoing_index_offset = 0;
         let tables_to_rewrite: Vec<TableToRewrite> = messages
             .iter_mut()
@@ -353,6 +341,16 @@ impl CassandraSinkCluster {
                             messages[table_to_rewrite.incoming_index].clone(),
                         );
                     }
+
+                    // This is purely an optimization: To avoid opening these connections sequentially later later on, we open them concurrently now.
+                    try_join_all(
+                        self.pool
+                            .nodes()
+                            .iter_mut()
+                            .filter(|x| destination_nodes.contains(&x.host_id))
+                            .map(|node| node.get_connection(&self.connection_factory)),
+                    )
+                    .await?;
                 }
             }
         }
