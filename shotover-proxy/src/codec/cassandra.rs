@@ -73,6 +73,15 @@ impl Decoder for CassandraCodec {
 
                     let mut message = Message::from_bytes(bytes.freeze(), MessageType::Cassandra);
 
+                    // if is startup message, reject compression because shotover does not support
+                    if let Some(Frame::Cassandra(frame)) = message.frame() {
+                        if let CassandraOperation::Startup(startup) = &mut frame.operation {
+                            if let Some(compression) = startup.map.get("COMPRESSION") {
+                                return Err(reject_compression(frame.stream_id, compression));
+                            }
+                        }
+                    }
+
                     if let Ok(Metadata::Cassandra(CassandraMetadata {
                         opcode: Opcode::Query | Opcode::Batch,
                         ..
@@ -188,6 +197,26 @@ fn reject_protocol_version(version: u8) -> CodecReadError {
             stream_id: 0,
             operation: CassandraOperation::Error(ErrorBody {
                 message: "Invalid or unsupported protocol version".into(),
+                ty: ErrorType::Protocol,
+            }),
+            tracing: Tracing::Response(None),
+            warnings: vec![],
+        },
+    ))])
+}
+
+fn reject_compression(stream_id: i16, compression: &String) -> CodecReadError {
+    info!(
+        "Rejecting compression option {} (configure the client to use no compression)",
+        compression
+    );
+
+    CodecReadError::RespondAndThenCloseConnection(vec![Message::from_frame(Frame::Cassandra(
+        CassandraFrame {
+            version: Version::V4,
+            stream_id,
+            operation: CassandraOperation::Error(ErrorBody {
+                message: format!("Unsupported compression type {}", compression),
                 ty: ErrorType::Protocol,
             }),
             tracing: Tracing::Response(None),
