@@ -5,7 +5,6 @@ use cdrs_tokio::frame::events::{
 };
 use futures::future::join_all;
 use futures::Future;
-use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -377,14 +376,10 @@ Caused by:
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
-    let recorder = DebuggingRecorder::new();
-    let snapshotter = recorder.snapshotter();
-    recorder.install().unwrap();
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yaml");
 
-    let _shotover_manager = ShotoverManager::from_topology_file_without_observability(
-        "example-configs/cassandra-redis-cache/topology.yaml",
-    );
+    let shotover =
+        shotover_from_topology_file("example-configs/cassandra-redis-cache/topology.yaml").await;
 
     let mut redis_connection = redis_connection::new(6379);
     let connection_creator = || CassandraConnection::new("127.0.0.1", 9042, driver);
@@ -397,7 +392,9 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     // collections::test // TODO: for some reason this test case fails here
     prepared_statements_simple::test(&connection, connection_creator).await;
     batch_statements::test(&connection).await;
-    cache::test(&connection, &mut redis_connection, &snapshotter).await;
+    cache::test(&connection, &mut redis_connection).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[cfg(feature = "alpha-transforms")]
