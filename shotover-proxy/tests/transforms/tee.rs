@@ -1,13 +1,12 @@
-use crate::helpers::ShotoverManager;
 use serial_test::serial;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
+use test_helpers::shotover_process::shotover_from_topology_file;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_ignore_matches() {
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-configs/tee/ignore.yaml");
+    let shotover = shotover_from_topology_file("tests/test-configs/tee/ignore.yaml").await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -19,13 +18,14 @@ async fn test_ignore_matches() {
         .unwrap();
 
     assert_eq!("42", result);
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_ignore_with_mismatch() {
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-configs/tee/ignore_with_mismatch.yaml");
+    let shotover =
+        shotover_from_topology_file("tests/test-configs/tee/ignore_with_mismatch.yaml").await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -37,12 +37,13 @@ async fn test_ignore_with_mismatch() {
         .unwrap();
 
     assert_eq!("42", result);
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_fail_matches() {
-    let _shotover_manager = ShotoverManager::from_topology_file("tests/test-configs/tee/fail.yaml");
+    let shotover = shotover_from_topology_file("tests/test-configs/tee/fail.yaml").await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -54,13 +55,14 @@ async fn test_fail_matches() {
         .unwrap();
 
     assert_eq!("42", result);
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_fail_with_mismatch() {
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-configs/tee/fail_with_mismatch.yaml");
+    let shotover =
+        shotover_from_topology_file("tests/test-configs/tee/fail_with_mismatch.yaml").await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -74,14 +76,14 @@ async fn test_fail_with_mismatch() {
 
     let expected = "An error was signalled by the server: The responses from the Tee subchain and down-chain did not match and behavior is set to fail on mismatch";
     assert_eq!(expected, err);
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_matches() {
     let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-configs/tee/subchain.yaml");
+    let shotover = shotover_from_topology_file("tests/test-configs/tee/subchain.yaml").await;
 
     let mut shotover_connection = redis_connection::new_async(6379).await;
     let mut mismatch_chain_redis = redis_connection::new_async(1111).await;
@@ -108,14 +110,15 @@ async fn test_subchain_matches() {
         .unwrap();
 
     assert_eq!(result, "myvalue");
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_subchain_with_mismatch() {
     let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-configs/tee/subchain_with_mismatch.yaml");
+    let shotover =
+        shotover_from_topology_file("tests/test-configs/tee/subchain_with_mismatch.yaml").await;
 
     let mut shotover_connection = redis_connection::new_async(6379).await;
     let mut mismatch_chain_redis = redis_connection::new_async(1111).await;
@@ -138,4 +141,5 @@ async fn test_subchain_with_mismatch() {
         .unwrap();
 
     assert_eq!("myvalue", result);
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }

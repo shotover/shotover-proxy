@@ -1,12 +1,12 @@
-use crate::helpers::ShotoverManager;
 use serial_test::serial;
 use test_helpers::connection::redis_connection;
+use test_helpers::shotover_process::shotover_from_topology_file;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_query_type_filter() {
-    let _shotover_manager =
-        ShotoverManager::from_topology_file("tests/test-configs/query_type_filter/simple.yaml");
+    let shotover =
+        shotover_from_topology_file("tests/test-configs/query_type_filter/simple.yaml").await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -74,4 +74,6 @@ async fn test_query_type_filter() {
 
         assert_eq!(result, vec!("42".to_string()));
     }
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
