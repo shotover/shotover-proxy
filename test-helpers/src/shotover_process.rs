@@ -5,9 +5,17 @@ pub use tokio_bin_process::event_matcher::{Count, EventMatcher, Events};
 pub use tokio_bin_process::BinProcess;
 
 pub async fn shotover_from_topology_file(topology_path: &str) -> BinProcess {
+    shotover_from_topology_file_with_name(topology_path, "Shotover").await
+}
+
+pub async fn shotover_from_topology_file_with_name(
+    topology_path: &str,
+    log_name: &str,
+) -> BinProcess {
     let mut shotover = BinProcess::start_with_args(
         "shotover-proxy",
         &["-t", topology_path, "--log-format", "json"],
+        log_name,
     )
     .await;
 
@@ -33,6 +41,7 @@ pub async fn shotover_from_topology_file_fail_to_startup(
     BinProcess::start_with_args(
         "shotover-proxy",
         &["-t", topology_path, "--log-format", "json"],
+        "Shotover",
     )
     .await
     .consume_remaining_events_expect_failure(expected_errors_and_warnings)

@@ -60,8 +60,18 @@ impl BinProcess {
     ///
     /// Dropping the BinProcess will trigger a panic unless shutdown_and_then_consume_events or consume_remaining_events has been called.
     /// This is done to avoid missing important assertions run by those methods.
-    pub async fn start_with_args(cargo_package_name: &str, binary_args: &[&str]) -> BinProcess {
+    pub async fn start_with_args(
+        cargo_package_name: &str,
+        binary_args: &[&str],
+        log_name: &str,
+    ) -> BinProcess {
         setup_tracing_subscriber_for_test_logic();
+
+        let log_name = if log_name.len() > 10 {
+            panic!("In order to line up in log outputs, argument log_name to BinProcess::start_with_args must be of length <= 10 but the value was: {log_name}");
+        } else {
+            format!("{log_name: <10}") //pads log_name up to 10 chars so that it lines up properly when included in log output.
+        };
 
         // PROFILE is set in build.rs from PROFILE listed in https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
         let release = env!("PROFILE") == "release";
@@ -104,7 +114,7 @@ impl BinProcess {
         let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
         let reader = BufReader::new(child.stdout.take().unwrap()).lines();
         tokio::spawn(async move {
-            if let Err(err) = process_stdout_events(reader, &event_tx).await {
+            if let Err(err) = process_stdout_events(reader, &event_tx, log_name).await {
                 // Because we are in a task, panicking is likely to be ignored.
                 // Instead we generate a fake error event, which is possibly a bit confusing for the user but will at least cause the test to fail.
                 event_tx
@@ -266,13 +276,14 @@ impl BinProcess {
 async fn process_stdout_events(
     mut reader: tokio::io::Lines<BufReader<ChildStdout>>,
     event_tx: &mpsc::UnboundedSender<Event>,
+    name: String,
 ) -> Result<()> {
     while let Some(line) = reader.next_line().await.context("An IO error occured while reading stdout from the application, I'm not actually sure when this happens?")? {
         let event = Event::from_json_str(&line).context(format!(
             "The application emitted a line that was not a valid event encoded in json: {}",
             line
         ))?;
-        println!("{} {event}", Color::Default.dimmed().paint("BINPROCESS"));
+        println!("{} {event}", Color::Default.dimmed().paint(&name));
         if event_tx.send(event).is_err() {
             // BinProcess is no longer interested in events
             return Ok(());
