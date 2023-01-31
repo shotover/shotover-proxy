@@ -7,6 +7,7 @@ pub mod docker_compose;
 pub mod flamegraph;
 pub mod latte;
 pub mod lazy;
+pub mod metrics;
 pub mod shotover_process;
 
 use anyhow::{bail, Result};

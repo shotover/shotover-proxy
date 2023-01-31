@@ -179,6 +179,7 @@ impl CassandraConnection {
                     )
                     .user("cassandra", "cassandra")
                     .default_consistency(Consistency::One)
+                    .compression(Some(scylla::transport::Compression::Snappy))
                     .build()
                     .await
                     .unwrap();

@@ -1,11 +1,9 @@
-use crate::helpers::ShotoverManager;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use cdrs_tokio::frame::events::{
     SchemaChange, SchemaChangeOptions, SchemaChangeTarget, SchemaChangeType, ServerEvent,
 };
 use futures::future::join_all;
 use futures::Future;
-use metrics_util::debugging::DebuggingRecorder;
 use rstest::rstest;
 use serial_test::serial;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -16,7 +14,9 @@ use test_helpers::connection::cassandra::{
 };
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
-use test_helpers::shotover_process::{shotover_from_topology_file, Count, EventMatcher, Level};
+use test_helpers::shotover_process::{
+    shotover_from_topology_file, shotover_from_topology_file_with_name, Count, EventMatcher, Level,
+};
 use tokio::time::{timeout, Duration};
 
 mod batch_statements;
@@ -28,7 +28,6 @@ mod keyspace;
 mod native_types;
 mod prepared_statements_all;
 mod prepared_statements_simple;
-#[cfg(feature = "alpha-transforms")]
 mod protect;
 mod routing;
 mod table;
@@ -73,7 +72,6 @@ async fn passthrough_standard(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[case::cdrs(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
@@ -179,7 +177,6 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     cluster::single_rack_v3::test_topology_task(None).await;
 }
 
-#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[case::cdrs(CdrsTokio)]
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
@@ -280,15 +277,21 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yaml");
 
     {
-        let _shotover_manager_rack1 = ShotoverManager::from_topology_file_without_observability(
+        let shotover_rack1 = shotover_from_topology_file_with_name(
             "example-configs/cassandra-cluster-multi-rack/topology_rack1.yaml",
-        );
-        let _shotover_manager_rack2 = ShotoverManager::from_topology_file_without_observability(
+            "Rack1",
+        )
+        .await;
+        let shotover_rack2 = shotover_from_topology_file_with_name(
             "example-configs/cassandra-cluster-multi-rack/topology_rack2.yaml",
-        );
-        let _shotover_manager_rack3 = ShotoverManager::from_topology_file_without_observability(
+            "Rack2",
+        )
+        .await;
+        let shotover_rack3 = shotover_from_topology_file_with_name(
             "example-configs/cassandra-cluster-multi-rack/topology_rack3.yaml",
-        );
+            "Rack3",
+        )
+        .await;
 
         let connection = || async {
             let mut connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
@@ -302,12 +305,29 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
 
         //Check for bugs in cross connection state
         native_types::test(&connection().await).await;
+
+        // TODO: This can be removed by allowing the shotover_from_topology_file_* to specify the `observability_interface`.
+        //       I've avoided doing that in this PR because shotover_from_topology_file should probably become a builder type,
+        //       and its up in the air whether we will have a config file or not.
+        let metrics_port_collision = [EventMatcher::new()
+            .with_level(Level::Error)
+            .with_target("shotover_proxy::observability")
+            .with_message(r#"Metrics HTTP server failed: Failed to bind to 0.0.0.0:9001"#)
+            .with_count(Count::Any)];
+        shotover_rack1
+            .shutdown_and_then_consume_events(&metrics_port_collision)
+            .await;
+        shotover_rack2
+            .shutdown_and_then_consume_events(&metrics_port_collision)
+            .await;
+        shotover_rack3
+            .shutdown_and_then_consume_events(&metrics_port_collision)
+            .await;
     }
 
     cluster::multi_rack::test_topology_task(None).await;
 }
 
-#[cfg(feature = "alpha-transforms")]
 #[rstest]
 #[case::scylla(Scylla)]
 //#[case::cdrs(CdrsTokio)] // TODO
@@ -377,14 +397,10 @@ Caused by:
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
-    let recorder = DebuggingRecorder::new();
-    let snapshotter = recorder.snapshotter();
-    recorder.install().unwrap();
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yaml");
 
-    let _shotover_manager = ShotoverManager::from_topology_file_without_observability(
-        "example-configs/cassandra-redis-cache/topology.yaml",
-    );
+    let shotover =
+        shotover_from_topology_file("example-configs/cassandra-redis-cache/topology.yaml").await;
 
     let mut redis_connection = redis_connection::new(6379);
     let connection_creator = || CassandraConnection::new("127.0.0.1", 9042, driver);
@@ -397,10 +413,11 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     // collections::test // TODO: for some reason this test case fails here
     prepared_statements_simple::test(&connection, connection_creator).await;
     batch_statements::test(&connection).await;
-    cache::test(&connection, &mut redis_connection, &snapshotter).await;
+    cache::test(&connection, &mut redis_connection).await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[cfg(feature = "alpha-transforms")]
 #[rstest]
 // #[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]
@@ -423,7 +440,6 @@ async fn protect_transform_local(#[case] driver: CassandraDriver) {
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
-#[cfg(feature = "alpha-transforms")]
 #[rstest]
 //#[case::cdrs(CdrsTokio)] // TODO
 #[cfg_attr(feature = "cassandra-cpp-driver-tests", case::datastax(Datastax))]

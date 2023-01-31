@@ -1,6 +1,5 @@
 mod assert;
 
-use metrics_util::debugging::Snapshotter;
 use redis::Commands;
 use std::collections::HashSet;
 use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
@@ -8,7 +7,6 @@ use test_helpers::connection::cassandra::{run_query, CassandraConnection, Result
 pub async fn test(
     cassandra_session: &CassandraConnection,
     redis_connection: &mut redis::Connection,
-    snapshotter: &Snapshotter,
 ) {
     redis::cmd("FLUSHDB").execute(redis_connection);
 
@@ -36,7 +34,6 @@ pub async fn test(
 
     // selects without where clauses do not hit the cache
     assert::assert_query_is_uncacheable(
-        snapshotter,
         cassandra_session,
         "SELECT id, x, name FROM test_cache_keyspace_simple.test_table",
         &[
@@ -61,7 +58,6 @@ pub async fn test(
 
     // query against the primary key
     assert::assert_query_is_cached(
-        snapshotter,
         cassandra_session,
         "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=1",
         &[&[
@@ -74,7 +70,6 @@ pub async fn test(
 
     // ensure key 2 and 3 are also loaded
     assert::assert_query_is_cached(
-        snapshotter,
         cassandra_session,
         "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=2",
         &[&[
@@ -86,7 +81,6 @@ pub async fn test(
     .await;
 
     assert::assert_query_is_cached(
-        snapshotter,
         cassandra_session,
         "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE id=3",
         &[&[
@@ -99,7 +93,6 @@ pub async fn test(
 
     // query without primary key does not hit the cache
     assert::assert_query_is_uncacheable(
-        snapshotter,
         cassandra_session,
         "SELECT id, x, name FROM test_cache_keyspace_simple.test_table WHERE x=11 ALLOW FILTERING",
         &[&[

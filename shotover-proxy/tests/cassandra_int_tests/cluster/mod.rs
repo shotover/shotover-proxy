@@ -14,7 +14,6 @@ use tokio::time::timeout;
 
 pub mod multi_rack;
 pub mod single_rack_v3;
-#[cfg(feature = "alpha-transforms")]
 pub mod single_rack_v4;
 
 pub async fn run_topology_task(ca_path: Option<&str>, port: Option<u32>) -> Vec<CassandraNode> {

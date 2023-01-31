@@ -1194,7 +1194,7 @@ pub async fn test_cluster_replication(
     assert_eq!(value2, Ok(b"blah".to_vec()));
 }
 
-// This test case is picky about the ordering of connection auth so we take a ShotoverManager and make all the connections ourselves
+// This test case is picky about the ordering of connection auth so we make all the connections ourselves
 pub async fn test_dr_auth() {
     // setup 3 different connections in different states
     let mut connection_shotover_noauth = redis_connection::new_async(6379).await;

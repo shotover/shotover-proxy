@@ -1,10 +1,11 @@
-use self::cassandra::sink_cluster::CassandraSinkClusterBuilder;
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
-use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewriteConfig;
-use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
-use crate::transforms::cassandra::sink_cluster::CassandraSinkClusterConfig;
+use crate::transforms::cassandra::peers_rewrite::{
+    CassandraPeersRewrite, CassandraPeersRewriteConfig,
+};
+use crate::transforms::cassandra::sink_cluster::{
+    CassandraSinkCluster, CassandraSinkClusterBuilder, CassandraSinkClusterConfig,
+};
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};

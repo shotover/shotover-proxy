@@ -8,7 +8,6 @@ use test_helpers::lazy::new_lazy_shared;
 use test_helpers::shotover_process::{shotover_from_topology_file, BinProcess};
 use tokio::runtime::Runtime;
 
-#[cfg(feature = "alpha-transforms")]
 struct Query {
     name: &'static str,
     statement: Statement,
@@ -24,7 +23,6 @@ fn cassandra(c: &mut Criterion) {
     let queries = ["insert", "select", "execute"];
 
     // Benches the case where the message does not meet the criteria for encryption
-    #[cfg(feature = "alpha-transforms")]
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
@@ -101,7 +99,6 @@ fn cassandra(c: &mut Criterion) {
         }
     }
 
-    #[cfg(feature = "alpha-transforms")]
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
@@ -127,7 +124,6 @@ fn cassandra(c: &mut Criterion) {
         }
     }
 
-    #[cfg(feature = "alpha-transforms")]
     {
         let resources = new_lazy_shared(|| {
             BenchResources::new(
@@ -174,7 +170,6 @@ fn cassandra(c: &mut Criterion) {
         }
     }
 
-    #[cfg(feature = "alpha-transforms")]
     {
         let queries = [
             Query {
