@@ -1,30 +1,25 @@
-use metrics_util::debugging::{DebugValue, Snapshotter};
 use redis::Commands;
 use std::collections::HashSet;
 use test_helpers::connection::cassandra::{assert_query_result, CassandraConnection, ResultValue};
+use test_helpers::metrics::get_metrics_value;
 
 /// gets the current miss count from the cache instrumentation.
-fn get_cache_miss_value(snapshotter: &Snapshotter) -> u64 {
-    let mut result = 0;
-    for (key, _, _, value) in snapshotter.snapshot().into_vec().iter() {
-        if let DebugValue::Counter(counter) = value {
-            if key.key().name() == "cache_miss" && *counter > result {
-                result = *counter;
-            }
-        }
-    }
-    result
+async fn get_cache_miss_value() -> u64 {
+    let value = get_metrics_value("cache_miss").await;
+    value
+        .parse()
+        .map_err(|_| format!("Failed to parse {value} to integer"))
+        .unwrap()
 }
 
 async fn assert_increment(
-    snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
-    let before = get_cache_miss_value(snapshotter);
+    let before = get_cache_miss_value().await;
     assert_query_result(session, query, expected_rows).await;
-    let after = get_cache_miss_value(snapshotter);
+    let after = get_cache_miss_value().await;
     assert_eq!(
         before + 1,
         after,
@@ -33,14 +28,13 @@ async fn assert_increment(
 }
 
 async fn assert_unchanged(
-    snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
-    let before = get_cache_miss_value(snapshotter);
+    let before = get_cache_miss_value().await;
     assert_query_result(session, query, expected_rows).await;
-    let after = get_cache_miss_value(snapshotter);
+    let after = get_cache_miss_value().await;
     assert_eq!(
         before,
         after,
@@ -49,25 +43,23 @@ async fn assert_unchanged(
 }
 
 pub async fn assert_query_is_cached(
-    snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
     // A query can be demonstrated as being cached if it is first recorded as a cache miss and then not recorded as a cache miss
-    assert_increment(snapshotter, session, query, expected_rows).await;
-    assert_unchanged(snapshotter, session, query, expected_rows).await;
+    assert_increment(session, query, expected_rows).await;
+    assert_unchanged(session, query, expected_rows).await;
 }
 
 pub async fn assert_query_is_uncacheable(
-    snapshotter: &Snapshotter,
     session: &CassandraConnection,
     query: &str,
     expected_rows: &[&[ResultValue]],
 ) {
     // A query can be demonstrated as not being cached if it never shows up as a cache miss
-    assert_unchanged(snapshotter, session, query, expected_rows).await;
-    assert_unchanged(snapshotter, session, query, expected_rows).await;
+    assert_unchanged(session, query, expected_rows).await;
+    assert_unchanged(session, query, expected_rows).await;
 }
 
 pub fn assert_sorted_set_equals(
