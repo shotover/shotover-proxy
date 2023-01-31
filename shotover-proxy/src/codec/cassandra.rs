@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
+use cassandra_protocol::frame::message_supported::BodyResSupported;
 use cassandra_protocol::frame::{
     CheckEnvelopeSizeError, Envelope as RawCassandraFrame, Opcode, Version,
 };
@@ -79,6 +80,16 @@ impl Decoder for CassandraCodec {
                             if let Some(compression) = startup.map.get("COMPRESSION") {
                                 return Err(reject_compression(frame.stream_id, compression));
                             }
+                        }
+
+                        if let CassandraOperation::Supported(BodyResSupported { data }) =
+                            &mut frame.operation
+                        {
+                            if let Some(value) = data.get_mut("COMPRESSION") {
+                                *value = vec![];
+                            }
+
+                            message.invalidate_cache();
                         }
                     }
 
