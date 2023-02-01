@@ -551,6 +551,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db34956e100b30725f2eb215f90d4871051239535632f84fea3bc92722c66b7c"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1538,6 +1547,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "348108ab3fba42ec82ff6e9564fc4ca0247bdccdc68dd8af9764bbc79c3c8ffb"
 
 [[package]]
+name = "libz-sys"
+version = "1.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9702761c3935f8cc2f101793272e202c72b99da8f4224a19ddcf1279a6450bbf"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "link-cplusplus"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2406,6 +2427,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "rdkafka"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd7c5d6d17442bcb9f943aae96d67d98c6d36af60442dd5da62aaa7fcbb25c48"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "libc",
+ "log",
+ "rdkafka-sys",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "slab",
+ "tokio",
+]
+
+[[package]]
+name = "rdkafka-sys"
+version = "4.3.0+1.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d222a401698c7f2010e3967353eae566d9934dcda49c29910da922414ab4e3f4"
+dependencies = [
+ "cmake",
+ "libc",
+ "libz-sys",
+ "num_enum",
+ "pkg-config",
+]
+
+[[package]]
 name = "redis"
 version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3020,6 +3072,7 @@ dependencies = [
  "rand",
  "rand_distr",
  "rayon",
+ "rdkafka",
  "redis",
  "redis-protocol",
  "reqwest",
@@ -3241,6 +3294,7 @@ dependencies = [
  "tokio-io-timeout",
  "tokio-openssl",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
