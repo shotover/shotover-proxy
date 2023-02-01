@@ -91,7 +91,6 @@ test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tes
 hex-literal = "0.3.3"
 nix = "0.26.0"
 reqwest = "0.11.6"
-metrics-util = "0.14.0"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
 rstest = "0.16.0"
 
