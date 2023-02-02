@@ -138,9 +138,7 @@ impl NodePool {
 
         self.prev_idx = (self.prev_idx + 1) % up_indexes.len();
 
-        self.nodes
-            .get_mut(*up_indexes.get(self.prev_idx).unwrap())
-            .unwrap()
+        &mut self.nodes[up_indexes[self.prev_idx]]
     }
 
     /// Get a token routed replica node for the supplied execute message (if exists)
@@ -195,10 +193,17 @@ impl NodePool {
             .split(|node| node.rack == rack);
 
         if let Some(rack_replica) = rack_replicas.choose(rng) {
-            return Ok(Some(rack_replica));
+            Ok(Some(rack_replica))
+        } else {
+            tracing::warn!(
+                r#"An execute message is being delivered outside of CassandraSinkCluster's designated rack. The only cases this can occur is when:
+The client correctly routes to the shotover node that reports it has the token in its rack, however the destination cassandra node has since gone down and is now inaccessible.
+or
+The clients token aware routing is broken.
+        "#
+            );
+            Ok(dc_replicas.choose(rng))
         }
-
-        Ok(dc_replicas.choose(rng))
     }
 }
 
