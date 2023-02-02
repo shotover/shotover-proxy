@@ -3,10 +3,10 @@ use crate::transforms::{Transform, Wrapper};
 use async_trait::async_trait;
 
 #[derive(Debug, Clone, Default)]
-pub struct Null {}
+pub struct NullSink {}
 
 #[async_trait]
-impl Transform for Null {
+impl Transform for NullSink {
     fn is_terminating(&self) -> bool {
         true
     }

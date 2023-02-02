@@ -22,7 +22,7 @@ use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolBuilder};
 #[cfg(test)]
 use crate::transforms::loopback::Loopback;
-use crate::transforms::null::Null;
+use crate::transforms::null::NullSink;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapBuilder, ParallelMapConfig};
 use crate::transforms::protect::Protect;
 #[cfg(feature = "alpha-transforms")]
@@ -83,7 +83,7 @@ pub enum TransformBuilder {
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCacheBuilder),
     Tee(Tee),
-    Null(Null),
+    NullSink(NullSink),
     #[cfg(test)]
     Loopback(Loopback),
     Protect(Box<Protect>),
@@ -121,7 +121,7 @@ impl TransformBuilder {
             }
             TransformBuilder::DebugPrinter(t) => Transforms::DebugPrinter(t),
             TransformBuilder::DebugForceParse(t) => Transforms::DebugForceParse(t),
-            TransformBuilder::Null(t) => Transforms::Null(t),
+            TransformBuilder::NullSink(t) => Transforms::NullSink(t),
             TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t),
             TransformBuilder::ParallelMap(t) => Transforms::ParallelMap(t.build()),
             TransformBuilder::PoolConnections(t) => Transforms::PoolConnections(t.build()),
@@ -154,7 +154,7 @@ impl TransformBuilder {
             TransformBuilder::RedisClusterPortsRewrite(r) => r.validate(),
             TransformBuilder::DebugPrinter(p) => p.validate(),
             TransformBuilder::DebugForceParse(p) => p.validate(),
-            TransformBuilder::Null(n) => n.validate(),
+            TransformBuilder::NullSink(n) => n.validate(),
             TransformBuilder::RedisSinkCluster(r) => r.validate(),
             TransformBuilder::ParallelMap(s) => s.validate(),
             TransformBuilder::PoolConnections(s) => s.validate(),
@@ -183,7 +183,7 @@ impl TransformBuilder {
             TransformBuilder::RedisClusterPortsRewrite(r) => r.is_terminating(),
             TransformBuilder::DebugPrinter(p) => p.is_terminating(),
             TransformBuilder::DebugForceParse(p) => p.is_terminating(),
-            TransformBuilder::Null(n) => n.is_terminating(),
+            TransformBuilder::NullSink(n) => n.is_terminating(),
             TransformBuilder::RedisSinkCluster(r) => r.is_terminating(),
             TransformBuilder::ParallelMap(s) => s.is_terminating(),
             TransformBuilder::PoolConnections(s) => s.is_terminating(),
@@ -218,7 +218,7 @@ pub enum Transforms {
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),
     Tee(Tee),
-    Null(Null),
+    NullSink(NullSink),
     #[cfg(test)]
     Loopback(Loopback),
     Protect(Box<Protect>),
@@ -254,7 +254,7 @@ impl Transforms {
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform(message_wrapper).await,
-            Transforms::Null(n) => n.transform(message_wrapper).await,
+            Transforms::NullSink(n) => n.transform(message_wrapper).await,
             #[cfg(test)]
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
@@ -283,7 +283,7 @@ impl Transforms {
             Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform_pushed(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::Null(n) => n.transform_pushed(message_wrapper).await,
+            Transforms::NullSink(n) => n.transform_pushed(message_wrapper).await,
             #[cfg(test)]
             Transforms::Loopback(n) => n.transform_pushed(message_wrapper).await,
             Transforms::Protect(p) => p.transform_pushed(message_wrapper).await,
@@ -317,7 +317,7 @@ impl Transforms {
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
             Transforms::DebugForceParse(a) => a.prep_transform_chain(t).await,
-            Transforms::Null(a) => a.prep_transform_chain(t).await,
+            Transforms::NullSink(a) => a.prep_transform_chain(t).await,
             #[cfg(test)]
             Transforms::Loopback(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
@@ -349,7 +349,7 @@ impl Transforms {
             Transforms::RedisClusterPortsRewrite(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugPrinter(p) => p.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugForceParse(p) => p.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Null(n) => n.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::NullSink(n) => n.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisSinkCluster(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::ParallelMap(s) => s.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::PoolConnections(s) => s.set_pushed_messages_tx(pushed_messages_tx),
@@ -382,7 +382,7 @@ pub enum TransformsConfig {
     RedisTimestampTagger,
     DebugPrinter,
     DebugReturner(DebugReturnerConfig),
-    Null,
+    NullSink,
     #[cfg(test)]
     Loopback,
     #[cfg(feature = "alpha-transforms")]
@@ -419,7 +419,7 @@ impl TransformsConfig {
                 Ok(TransformBuilder::DebugPrinter(DebugPrinter::new()))
             }
             TransformsConfig::DebugReturner(d) => d.get_transform().await,
-            TransformsConfig::Null => Ok(TransformBuilder::Null(Null::default())),
+            TransformsConfig::NullSink => Ok(TransformBuilder::NullSink(NullSink::default())),
             #[cfg(test)]
             TransformsConfig::Loopback => Ok(TransformBuilder::Loopback(Loopback::default())),
             #[cfg(feature = "alpha-transforms")]
@@ -527,7 +527,7 @@ impl<'a> Wrapper<'a> {
     pub async fn call_next_transform(mut self) -> ChainResponse {
         let transform = match self.transforms.next() {
             Some(transform) => transform,
-            None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a terminating sink transform to send the messages somewhere.")
+            None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a NullSink transform, otherwise use a terminating sink transform to send the messages somewhere.")
         };
 
         let transform_name = transform.get_name();

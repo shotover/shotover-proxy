@@ -78,20 +78,20 @@ async fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
                 .with_target("shotover_proxy::runner")
                 .with_message(r#"Topology errors
 a_first_chain:
-  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
-  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+  Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
   Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 b_second_chain:
   ConsistentScatter:
     a_chain_1:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
     b_chain_2:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     c_chain_3:
       ConsistentScatter:
         sub_chain_2:
-          Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+          Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#),
             EventMatcher::new().with_level(Level::Warn)
                 .with_target("shotover_proxy::transforms::distributed::consistent_scatter")

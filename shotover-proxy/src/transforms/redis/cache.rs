@@ -603,7 +603,7 @@ mod test {
     use crate::frame::cassandra::parse_statement_single;
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
-    use crate::transforms::null::Null;
+    use crate::transforms::null::NullSink;
     use crate::transforms::redis::cache::{
         build_redis_key_from_cql3, HashAddress, SimpleRedisCacheBuilder, TableCacheSchema,
     };
@@ -829,7 +829,7 @@ mod test {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain".to_string(),
         );

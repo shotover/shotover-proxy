@@ -93,7 +93,7 @@ impl Transform for RequestThrottling {
 mod test {
     use super::*;
     use crate::transforms::chain::TransformChainBuilder;
-    use crate::transforms::null::Null;
+    use crate::transforms::null::NullSink;
     use crate::transforms::TransformBuilder;
 
     #[test]
@@ -105,7 +105,7 @@ mod test {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(20u32)))),
                         max_requests_per_second: nonzero!(20u32),
                     }),
-                    TransformBuilder::Null(Null::default()),
+                    TransformBuilder::NullSink(NullSink::default()),
                 ],
                 "test-chain".to_string(),
             );
@@ -127,7 +127,7 @@ mod test {
                         limiter: Arc::new(RateLimiter::direct(Quota::per_second(nonzero!(100u32)))),
                         max_requests_per_second: nonzero!(100u32),
                     }),
-                    TransformBuilder::Null(Null::default()),
+                    TransformBuilder::NullSink(NullSink::default()),
                 ],
                 "test-chain".to_string(),
             );

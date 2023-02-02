@@ -392,7 +392,7 @@ impl TransformChainBuilder {
 mod chain_tests {
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
-    use crate::transforms::null::Null;
+    use crate::transforms::null::NullSink;
     use crate::transforms::TransformBuilder;
 
     #[tokio::test]
@@ -410,7 +410,7 @@ mod chain_tests {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain".to_string(),
         );
