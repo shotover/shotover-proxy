@@ -26,7 +26,7 @@ mod test_token_aware_router {
         let mut rng = SmallRng::from_rng(rand::thread_rng()).unwrap();
 
         let nodes = prepare_nodes();
-        let mut router = NodePoolBuilder::new().build();
+        let mut router = NodePoolBuilder::new("chain".to_owned()).build();
         let (_nodes_tx, mut nodes_rx) = watch::channel(nodes);
         router.update_nodes(&mut nodes_rx);
 

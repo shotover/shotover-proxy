@@ -133,7 +133,7 @@ impl CassandraSinkClusterBuilder {
         connect_timeout_ms: u64,
         timeout: Option<u64>,
     ) -> Self {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "CassandraSinkCluster");
+        let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkCluster");
         let receive_timeout = timeout.map(Duration::from_secs);
         let connect_timeout = Duration::from_millis(connect_timeout_ms);
 
@@ -160,7 +160,7 @@ impl CassandraSinkClusterBuilder {
             nodes_rx: local_nodes_rx,
             keyspaces_rx,
             task_handshake_tx,
-            pool: NodePoolBuilder::new(),
+            pool: NodePoolBuilder::new(chain_name),
         }
     }
 
