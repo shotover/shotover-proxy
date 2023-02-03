@@ -1,4 +1,4 @@
-use self::node_pool::PreparedMetadata;
+use self::node_pool::{NodePoolBuilder, PreparedMetadata};
 use crate::error::ChainResponse;
 use crate::frame::cassandra::{parse_statement_single, CassandraMetadata, Tracing};
 use crate::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
@@ -119,7 +119,7 @@ pub struct CassandraSinkClusterBuilder {
     nodes_rx: watch::Receiver<Vec<CassandraNode>>,
     keyspaces_rx: KeyspaceChanRx,
     task_handshake_tx: mpsc::Sender<TaskConnectionInfo>,
-    pool: NodePool,
+    pool: NodePoolBuilder,
 }
 
 impl CassandraSinkClusterBuilder {
@@ -160,7 +160,7 @@ impl CassandraSinkClusterBuilder {
             nodes_rx: local_nodes_rx,
             keyspaces_rx,
             task_handshake_tx,
-            pool: NodePool::new(vec![]),
+            pool: NodePoolBuilder::new(),
         }
     }
 
@@ -184,7 +184,7 @@ impl CassandraSinkClusterBuilder {
             failed_requests: self.failed_requests.clone(),
             read_timeout: self.read_timeout,
             local_shotover_node: self.local_shotover_node.clone(),
-            pool: self.pool.clone(),
+            pool: self.pool.build(),
             // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
             // once a single node list has been sent all new connections will immediately recognize it as a change.
             nodes_rx: self.nodes_rx.clone(),
