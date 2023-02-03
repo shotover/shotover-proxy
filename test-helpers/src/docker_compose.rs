@@ -9,6 +9,15 @@ use std::time::{self, Duration};
 use std::{env, path::Path};
 use subprocess::{Exec, Redirection};
 use tracing::trace;
+use tracing_subscriber::fmt::TestWriter;
+
+fn setup_tracing_subscriber_for_test_logic() {
+    tracing_subscriber::fmt()
+        .with_writer(TestWriter::new())
+        .with_env_filter("warn")
+        .try_init()
+        .ok();
+}
 
 /// Runs a command and returns the output as a string.
 ///
@@ -17,7 +26,6 @@ use tracing::trace;
 /// # Arguments
 /// * `command` - The system command to run
 /// * `args` - An array of command line arguments for the command
-///
 pub fn run_command(command: &str, args: &[&str]) -> Result<String> {
     trace!("executing {}", command);
     let data = Exec::cmd(command)
@@ -59,6 +67,8 @@ impl DockerCompose {
     /// # Panics
     /// * Will panic if docker-compose is not installed
     pub fn new(file_path: &str) -> Self {
+        setup_tracing_subscriber_for_test_logic();
+
         if let Err(ErrorKind::NotFound) = Command::new("docker-compose")
             .output()
             .map_err(|e| e.kind())
@@ -163,6 +173,10 @@ impl DockerCompose {
             Image {
                 name: "shotover-int-tests/cassandra:3.11.13",
                 log_regex_to_wait_for: r"Startup complete",
+            },
+            Image {
+                name: "bitnami/kafka:3.3.2",
+                log_regex_to_wait_for: r"Kafka Server started",
             },
         ];
 

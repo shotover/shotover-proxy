@@ -93,6 +93,7 @@ nix = "0.26.0"
 reqwest = "0.11.6"
 cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
 rstest = "0.16.0"
+rdkafka = { version = "0.29", features = ["cmake-build"] }
 
 [[bench]]
 name = "benches"
