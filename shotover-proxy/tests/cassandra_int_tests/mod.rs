@@ -8,6 +8,7 @@ use rstest::rstest;
 use serial_test::serial;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
+use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::{
     assert_query_result, run_query, CassandraConnection, CassandraDriver,
     CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
@@ -690,6 +691,70 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
     batch_statements::test(&connection).await;
 
     shotover.shutdown_and_then_consume_events(&[]).await;
+}
+
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[case::scylla(Scylla)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn compression_single(#[case] driver: CassandraDriver) {
+    async fn test(driver: CassandraDriver, topology_path: &str, compression: Compression) {
+        let _compose =
+            DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+        let shotover = shotover_from_topology_file(topology_path).await;
+        let connection =
+            || CassandraConnection::new_with_compression("127.0.0.1", 9042, driver, compression);
+
+        standard_test_suite(connection, driver).await;
+
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
+
+    // passthrough
+    for topology in [
+        "example-configs/cassandra-passthrough/topology.yaml",
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    ] {
+        for compression in [Compression::Lz4, Compression::Snappy] {
+            test(driver, topology, compression).await;
+        }
+    }
+}
+
+#[rstest]
+#[case::cdrs(CdrsTokio)]
+#[case::scylla(Scylla)]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn compression_cluster(#[case] driver: CassandraDriver) {
+    async fn test(driver: CassandraDriver, topology_path: &str, compression: Compression) {
+        let _compose =
+            DockerCompose::new("example-configs/cassandra-cluster-v4/docker-compose.yaml");
+        let shotover = shotover_from_topology_file(topology_path).await;
+        let connection = || async {
+            let mut connection =
+                CassandraConnection::new_with_compression("127.0.0.1", 9042, driver, compression)
+                    .await;
+            connection
+                .enable_schema_awaiter("172.16.1.2:9044", None)
+                .await;
+            connection
+        };
+
+        standard_test_suite(&connection, driver).await;
+
+        shotover.shutdown_and_then_consume_events(&[]).await;
+    }
+
+    for compression in [Compression::Lz4, Compression::Snappy] {
+        test(
+            driver,
+            "example-configs/cassandra-cluster-v4/topology.yaml",
+            compression,
+        )
+        .await;
+    }
 }
 
 #[rstest]
