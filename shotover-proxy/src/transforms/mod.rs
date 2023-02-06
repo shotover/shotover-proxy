@@ -7,7 +7,7 @@ use crate::transforms::cassandra::sink_cluster::{
     CassandraSinkCluster, CassandraSinkClusterBuilder, CassandraSinkClusterConfig,
 };
 use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
-use crate::transforms::chain::{TransformChain, TransformChainBuilder};
+use crate::transforms::chain::TransformChainBuilder;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::force_parse::DebugForceParse;
 #[cfg(feature = "alpha-transforms")]
@@ -305,35 +305,6 @@ impl Transforms {
 
     fn get_name(&self) -> &'static str {
         self.into()
-    }
-
-    async fn _prep_transform_chain(&mut self, t: &mut TransformChain) -> Result<()> {
-        match self {
-            Transforms::CassandraSinkSingle(a) => a.prep_transform_chain(t).await,
-            Transforms::CassandraSinkCluster(a) => a.prep_transform_chain(t).await,
-            Transforms::CassandraPeersRewrite(c) => c.prep_transform_chain(t).await,
-            Transforms::RedisSinkSingle(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisCache(a) => a.prep_transform_chain(t).await,
-            Transforms::Tee(a) => a.prep_transform_chain(t).await,
-            Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
-            Transforms::DebugForceParse(a) => a.prep_transform_chain(t).await,
-            Transforms::NullSink(a) => a.prep_transform_chain(t).await,
-            #[cfg(test)]
-            Transforms::Loopback(a) => a.prep_transform_chain(t).await,
-            Transforms::Protect(a) => a.prep_transform_chain(t).await,
-            Transforms::ConsistentScatter(a) => a.prep_transform_chain(t).await,
-            Transforms::DebugReturner(a) => a.prep_transform_chain(t).await,
-            Transforms::DebugRandomDelay(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisTimestampTagger(a) => a.prep_transform_chain(t).await,
-            Transforms::RedisSinkCluster(r) => r.prep_transform_chain(t).await,
-            Transforms::RedisClusterPortsRewrite(r) => r.prep_transform_chain(t).await,
-            Transforms::ParallelMap(s) => s.prep_transform_chain(t).await,
-            Transforms::PoolConnections(s) => s.prep_transform_chain(t).await,
-            Transforms::Coalesce(s) => s.prep_transform_chain(t).await,
-            Transforms::QueryTypeFilter(s) => s.prep_transform_chain(t).await,
-            Transforms::QueryCounter(s) => s.prep_transform_chain(t).await,
-            Transforms::RequestThrottling(s) => s.prep_transform_chain(t).await,
-        }
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
@@ -707,14 +678,6 @@ pub trait Transform: Send {
     async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         let response = message_wrapper.call_next_transform_pushed().await?;
         Ok(response)
-    }
-
-    /// This method provides a hook into chain setup that allows you to perform any chain setup
-    /// needed before receiving traffic. It is generally recommended to do any setup on the first query
-    /// as this makes Shotover lazy startup and Shotover / upstream database startup ordering challenges
-    /// easier to resolve (e.g. you can start Shotover before the upstream database).
-    async fn prep_transform_chain(&mut self, _t: &mut TransformChain) -> Result<()> {
-        Ok(())
     }
 
     fn is_terminating(&self) -> bool {
