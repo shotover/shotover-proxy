@@ -87,6 +87,17 @@ impl Message {
         }
     }
 
+    pub fn from_bytes_with_compression(bytes: Bytes, compression: Compression) -> Self {
+        Message {
+            inner: Some(MessageInner::RawBytes {
+                bytes,
+                message_type: MessageType::Cassandra,
+            }),
+            meta_timestamp: None,
+            compression: Some(compression),
+        }
+    }
+
     /// This method should be called when you have both a Frame and matching raw bytes of a message.
     /// This is expected to be used only by codecs that are decoding a protocol that does not include length of the message in the header. e.g. redis
     /// Providing both the raw bytes and Frame results in better performance if they are both already available.
@@ -95,6 +106,7 @@ impl Message {
             codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Parsed { bytes, frame }),
             meta_timestamp: None,
+            compression: None,
         }
     }
 
@@ -106,6 +118,7 @@ impl Message {
             codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Modified { frame }),
             meta_timestamp: None,
+            compression: None,
         }
     }
 }
