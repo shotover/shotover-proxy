@@ -5,7 +5,10 @@ use test_helpers::connection::cassandra::{
 async fn select(session: &CassandraConnection) {
     assert_query_result(
         session,
-        "SELECT * from test_native_types_keyspace.native_types_table WHERE id=1",
+        &format!(
+            "SELECT * from test_native_types_keyspace_{}.native_types_table WHERE id=1",
+            session.name()
+        ),
         &[&[
             ResultValue::Int(1),
             ResultValue::Ascii("ascii string".into()),
@@ -40,7 +43,7 @@ async fn insert(session: &CassandraConnection) {
         run_query(
             session,
             format!(
-                "INSERT INTO test_native_types_keyspace.native_types_table (
+                "INSERT INTO test_native_types_keyspace_{}.native_types_table (
 id,
 uuid_test,
 ascii_test,
@@ -80,6 +83,7 @@ true,
 127,
 'varchar',
 198121);",
+                session.name(),
                 i
             )
             .as_str(),
@@ -89,10 +93,11 @@ true,
 }
 
 pub async fn test(session: &CassandraConnection) {
-    run_query(session, "CREATE KEYSPACE test_native_types_keyspace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };").await;
+    run_query(session, &format!("CREATE KEYSPACE test_native_types_keyspace_{} WITH REPLICATION = {{ 'class' : 'SimpleStrategy', 'replication_factor' : 1 }};", session.name())).await;
     run_query(
         session,
-        "CREATE TABLE test_native_types_keyspace.native_types_table (
+        &format!(
+            "CREATE TABLE test_native_types_keyspace_{}.native_types_table (
 id int PRIMARY KEY,
 uuid_test UUID,
 ascii_test ascii,
@@ -113,10 +118,19 @@ varchar_test varchar,
 varint_test varint,
 date_test date,
 );",
+            session.name()
+        ),
     )
     .await;
 
     insert(session).await;
     select(session).await;
-    run_query(session, "DROP KEYSPACE test_native_types_keyspace").await;
+    run_query(
+        session,
+        &format!(
+            "DROP KEYSPACE test_native_types_keyspace_{}",
+            session.name()
+        ),
+    )
+    .await;
 }

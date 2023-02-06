@@ -729,6 +729,15 @@ impl CassandraConnection {
             Err(err) => panic!("Unexpected cdrs-tokio error: {err:?}"),
         }
     }
+
+    pub fn name(&self) -> &str {
+        match self {
+            CassandraConnection::CdrsTokio { .. } => "CDRS",
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraConnection::Datastax { .. } => "DATASTAX",
+            CassandraConnection::Scylla { .. } => "SCYLLA",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialOrd, Eq, Ord)]

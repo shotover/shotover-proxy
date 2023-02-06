@@ -4,7 +4,7 @@ use cdrs_tokio::frame::events::{
 };
 use futures::future::join_all;
 use futures::Future;
-use rstest::rstest;
+use rstest::*;
 use serial_test::serial;
 #[cfg(feature = "cassandra-cpp-driver-tests")]
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
@@ -51,6 +51,28 @@ where
     prepared_statements_all::test(&connection).await;
     batch_statements::test(&connection).await;
     timestamp::test(&connection).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn passthrough_standard_test() {
+    let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
+
+    let shotover =
+        shotover_from_topology_file("example-configs/cassandra-passthrough/topology.yaml").await;
+
+    {
+        let connection = CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::Scylla).await;
+
+        native_types::test(&connection).await;
+    }
+
+    {
+        let connection = CassandraConnection::new("127.0.0.1", 9042, CassandraDriver::Scylla).await;
+        native_types::test(&connection).await;
+    }
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[rstest]
