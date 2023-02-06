@@ -8,6 +8,22 @@ use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes};
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
+use bytes_utils::Str;
+use cassandra_protocol::compression::Compression;
+use cassandra_protocol::frame::Serialize as FrameSerialize;
+use cassandra_protocol::types::CInt;
+use cassandra_protocol::{
+    frame::{
+        message_error::{ErrorBody, ErrorType},
+        message_result::{ColSpec, ColTypeOption},
+        Version,
+    },
+    types::{
+        cassandra_type::{wrapper_fn, CassandraType},
+        CBytes,
+    },
+};
+use cql3_parser::common::Operand;
 use nonzero_ext::nonzero;
 use serde::Deserialize;
 use std::num::NonZeroU32;
@@ -39,6 +55,8 @@ pub struct Message {
     // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of ConsistentScatter
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
     pub meta_timestamp: Option<i64>,
+
+    pub compression: Option<Compression>,
 }
 
 /// `from_*` methods for `Message`
@@ -53,6 +71,18 @@ impl Message {
                 message_type,
             }),
             meta_timestamp: None,
+            compression: None,
+        }
+    }
+
+    pub fn from_bytes_with_compression(bytes: Bytes, compression: Compression) -> Self {
+        Message {
+            inner: Some(MessageInner::RawBytes {
+                bytes,
+                message_type: MessageType::Cassandra,
+            }),
+            meta_timestamp: None,
+            compression: Some(compression),
         }
     }
 
@@ -63,6 +93,7 @@ impl Message {
         Message {
             inner: Some(MessageInner::Parsed { bytes, frame }),
             meta_timestamp: None,
+            compression: None,
         }
     }
 
@@ -73,6 +104,7 @@ impl Message {
         Message {
             inner: Some(MessageInner::Modified { frame }),
             meta_timestamp: None,
+            compression: None,
         }
     }
 }
@@ -91,7 +123,7 @@ impl Message {
     /// Calling frame for the first time on a message may be an expensive operation as the raw bytes might not yet be parsed into a Frame.
     /// Calling frame again is free as the parsed message is cached.
     pub fn frame(&mut self) -> Option<&mut Frame> {
-        let (inner, result) = self.inner.take().unwrap().ensure_parsed();
+        let (inner, result) = self.inner.take().unwrap().ensure_parsed(self.compression);
         self.inner = Some(inner);
         if let Err(err) = result {
             // TODO: If we could include a stacktrace in this error it would be really helpful
@@ -323,12 +355,13 @@ enum MessageInner {
 }
 
 impl MessageInner {
-    fn ensure_parsed(self) -> (Self, Result<()>) {
+    fn ensure_parsed(self, compression: Option<Compression>) -> (Self, Result<()>) {
         match self {
             MessageInner::RawBytes {
                 bytes,
                 message_type,
-            } => match Frame::from_bytes(bytes.clone(), message_type) {
+            } => match Frame::from_bytes_with_compression(bytes.clone(), message_type, compression)
+            {
                 Ok(frame) => (MessageInner::Parsed { bytes, frame }, Ok(())),
                 Err(err) => (
                     MessageInner::RawBytes {

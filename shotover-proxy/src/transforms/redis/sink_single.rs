@@ -1,9 +1,9 @@
 use crate::codec::redis::RedisCodec;
+use crate::codec::CodecReadError;
 use crate::error::ChainResponse;
 use crate::frame::Frame;
 use crate::frame::RedisFrame;
 use crate::message::{Message, Messages};
-use crate::server::CodecReadError;
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, TransformBuilder, Wrapper};

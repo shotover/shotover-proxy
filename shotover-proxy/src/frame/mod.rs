@@ -1,11 +1,12 @@
-pub mod cassandra;
+use anyhow::{anyhow, Result};
+use bytes::Bytes;
+use cassandra_protocol::compression::Compression;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
 pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult};
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
 
-use anyhow::{anyhow, Result};
-use bytes::Bytes;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+pub mod cassandra;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MessageType {
@@ -23,7 +24,26 @@ pub enum Frame {
 impl Frame {
     pub fn from_bytes(bytes: Bytes, message_type: MessageType) -> Result<Self> {
         match message_type {
-            MessageType::Cassandra => CassandraFrame::from_bytes(bytes).map(Frame::Cassandra),
+            MessageType::Cassandra => {
+                CassandraFrame::from_bytes(bytes, Compression::None).map(Frame::Cassandra)
+            }
+            MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
+                .map(|x| Frame::Redis(x.unwrap().0))
+                .map_err(|e| anyhow!("{e:?}")),
+            MessageType::None => Ok(Frame::None),
+        }
+    }
+
+    pub fn from_bytes_with_compression(
+        bytes: Bytes,
+        message_type: MessageType,
+        compression: Option<Compression>,
+    ) -> Result<Self> {
+        match message_type {
+            MessageType::Cassandra => {
+                CassandraFrame::from_bytes(bytes, compression.unwrap_or(Compression::None))
+                    .map(Frame::Cassandra)
+            }
             MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),

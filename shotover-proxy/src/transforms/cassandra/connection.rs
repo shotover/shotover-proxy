@@ -1,8 +1,8 @@
 use crate::codec::cassandra::CassandraCodec;
+use crate::codec::CodecReadError;
 use crate::frame::cassandra::CassandraMetadata;
 use crate::frame::{CassandraFrame, Frame};
 use crate::message::{Message, Metadata};
-use crate::server::CodecReadError;
 use crate::tcp;
 use crate::tls::{TlsConnector, ToHostname};
 use crate::transforms::Messages;

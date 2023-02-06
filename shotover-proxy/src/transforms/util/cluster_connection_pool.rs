@@ -1,7 +1,5 @@
 use super::Response;
-use crate::server::Codec;
-use crate::server::CodecReadHalf;
-use crate::server::CodecWriteHalf;
+use crate::codec::{Codec, CodecReadHalf, CodecWriteHalf};
 use crate::tcp;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
