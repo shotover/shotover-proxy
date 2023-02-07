@@ -14,7 +14,7 @@ pub struct RedisClusterPortsRewriteConfig {
 }
 
 impl RedisClusterPortsRewriteConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         Ok(TransformBuilder::RedisClusterPortsRewrite(
             RedisClusterPortsRewrite {
                 new_port: self.new_port,
