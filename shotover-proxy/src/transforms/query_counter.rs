@@ -72,7 +72,7 @@ fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
 }
 
 impl QueryCounterConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         Ok(TransformBuilder::QueryCounter(QueryCounter::new(
             self.name.clone(),
         )))
