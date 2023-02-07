@@ -38,12 +38,12 @@ pub struct ConnectionBalanceAndPoolBuilder {
 }
 
 impl ConnectionBalanceAndPoolBuilder {
-    pub fn build(self) -> ConnectionBalanceAndPool {
+    pub fn build(&self) -> ConnectionBalanceAndPool {
         ConnectionBalanceAndPool {
             active_connection: None,
             max_connections: self.max_connections,
-            all_connections: self.all_connections,
-            chain_to_clone: self.chain_to_clone,
+            all_connections: self.all_connections.clone(),
+            chain_to_clone: self.chain_to_clone.clone(),
         }
     }
 
