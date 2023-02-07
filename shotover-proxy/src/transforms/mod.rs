@@ -372,40 +372,39 @@ pub enum TransformsConfig {
 
 impl TransformsConfig {
     #[async_recursion]
-    /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transform(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         match self {
-            TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
-            TransformsConfig::CassandraSinkCluster(c) => c.get_transform(chain_name).await,
-            TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
-            TransformsConfig::RedisCache(r) => r.get_transform().await,
-            TransformsConfig::Tee(t) => t.get_transform().await,
-            TransformsConfig::RedisSinkSingle(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ConsistentScatter(c) => c.get_transform().await,
+            TransformsConfig::CassandraSinkSingle(c) => c.get_builder(chain_name).await,
+            TransformsConfig::CassandraSinkCluster(c) => c.get_builder(chain_name).await,
+            TransformsConfig::CassandraPeersRewrite(c) => c.get_builder().await,
+            TransformsConfig::RedisCache(r) => r.get_builder().await,
+            TransformsConfig::Tee(t) => t.get_builder().await,
+            TransformsConfig::RedisSinkSingle(r) => r.get_builder(chain_name).await,
+            TransformsConfig::ConsistentScatter(c) => c.get_builder().await,
             TransformsConfig::RedisTimestampTagger => Ok(TransformBuilder::RedisTimestampTagger(
                 RedisTimestampTagger::new(),
             )),
-            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_transform().await,
+            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_builder().await,
             TransformsConfig::DebugPrinter => {
                 Ok(TransformBuilder::DebugPrinter(DebugPrinter::new()))
             }
-            TransformsConfig::DebugReturner(d) => d.get_transform().await,
+            TransformsConfig::DebugReturner(d) => d.get_builder().await,
             TransformsConfig::NullSink => Ok(TransformBuilder::NullSink(NullSink::default())),
             #[cfg(test)]
             TransformsConfig::Loopback => Ok(TransformBuilder::Loopback(Loopback::default())),
             #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::Protect(p) => p.get_transform().await,
+            TransformsConfig::Protect(p) => p.get_builder().await,
             #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::DebugForceParse(d) => d.get_transform().await,
+            TransformsConfig::DebugForceParse(d) => d.get_builder().await,
             #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::DebugForceEncode(d) => d.get_transform().await,
-            TransformsConfig::RedisSinkCluster(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ParallelMap(s) => s.get_transform().await,
-            //TransformsConfig::PoolConnections(s) => s.get_transform().await,
-            TransformsConfig::Coalesce(s) => s.get_transform().await,
-            TransformsConfig::QueryTypeFilter(s) => s.get_transform().await,
-            TransformsConfig::QueryCounter(s) => s.get_transform().await,
-            TransformsConfig::RequestThrottling(s) => s.get_transform().await,
+            TransformsConfig::DebugForceEncode(d) => d.get_builder().await,
+            TransformsConfig::RedisSinkCluster(r) => r.get_builder(chain_name).await,
+            TransformsConfig::ParallelMap(s) => s.get_builder().await,
+            //TransformsConfig::PoolConnections(s) => s.get_builder().await,
+            TransformsConfig::Coalesce(s) => s.get_builder().await,
+            TransformsConfig::QueryTypeFilter(s) => s.get_builder().await,
+            TransformsConfig::QueryCounter(s) => s.get_builder().await,
+            TransformsConfig::RequestThrottling(s) => s.get_builder().await,
         }
     }
 }
@@ -416,7 +415,7 @@ pub async fn build_chain_from_config(
 ) -> Result<TransformChainBuilder> {
     let mut transforms: Vec<TransformBuilder> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_transform(name.clone()).await?)
+        transforms.push(tc.get_builder(name.clone()).await?)
     }
     Ok(TransformChainBuilder::new(transforms, name))
 }
@@ -604,21 +603,18 @@ impl<'a> Wrapper<'a> {
 /// The trait has one method where you implement the majority of your logic [Transform::transform],
 /// however it also includes a setup and naming method.
 ///
-/// Transforms are cloned on a per TCP connection basis from a copy of the struct originally created
-/// by the call to the `get_transform` method on each transform's config struct.
+/// Transforms are created on a per TCP connection basis by calling `TransformBuilder::build()`.
 /// This means that each member of your struct that implements this trait can be considered private for
 /// each TCP connection or connected client. If you wish to share data between all copies of your struct
-/// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that.
-///
-/// Changing the clone behavior of this struct can also control this behavior.
+/// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that,
+/// but make sure to copy the value from the TransformBuilder to ensure all instances are referring to the same value.
 ///
 /// Once you have created your [`Transform`], you will need to create
-/// new enum variants in [Transforms] and [TransformsConfig] to make them configurable in Shotover.
+/// new enum variants in [Transforms], [TransformBuilder] and [TransformsConfig] to make them configurable in Shotover.
 /// Shotover uses a concept called enum dispatch to provide dynamic configuration of transform chains
 /// with minimal impact on performance.
 ///
 /// Implementing this trait is usually done using `#[async_trait]` macros.
-///
 #[async_trait]
 pub trait Transform: Send {
     /// This method should be implemented by your transform. The wrapper object contains the queries/

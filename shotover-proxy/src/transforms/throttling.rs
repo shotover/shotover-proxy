@@ -22,7 +22,7 @@ pub struct RequestThrottlingConfig {
 }
 
 impl RequestThrottlingConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         Ok(TransformBuilder::RequestThrottling(RequestThrottling {
             limiter: Arc::new(RateLimiter::direct(Quota::per_second(
                 self.max_requests_per_second,
