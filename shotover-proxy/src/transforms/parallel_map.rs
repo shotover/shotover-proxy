@@ -74,7 +74,7 @@ pub struct ParallelMapConfig {
 }
 
 impl ParallelMapConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         let chain = build_chain_from_config("parallel_map_chain".into(), &self.chain).await?;
 
         Ok(TransformBuilder::ParallelMap(ParallelMapBuilder {

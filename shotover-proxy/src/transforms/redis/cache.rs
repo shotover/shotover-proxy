@@ -82,7 +82,7 @@ pub struct RedisConfig {
 }
 
 impl RedisConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         let missed_requests = register_counter!("cache_miss");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self

@@ -50,7 +50,7 @@ pub struct TeeConfig {
 }
 
 impl TeeConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let mismatch_chain =
             if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
@@ -190,7 +190,7 @@ mod tests {
                 chain: vec![TransformsConfig::NullSink],
                 buffer_size: None,
             };
-            let transform = config.get_transform().await.unwrap();
+            let transform = config.get_builder().await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -202,7 +202,7 @@ mod tests {
                 chain: vec![TransformsConfig::NullSink],
                 buffer_size: None,
             };
-            let transform = config.get_transform().await.unwrap();
+            let transform = config.get_builder().await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -220,7 +220,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_transform().await.unwrap();
+        let transform = config.get_builder().await.unwrap();
         let result = transform.validate();
         let expected = vec!["Tee:", "  mismatch_chain:", "    Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain."];
         assert_eq!(result, expected);
@@ -237,7 +237,7 @@ mod tests {
             buffer_size: None,
         };
 
-        let transform = config.get_transform().await.unwrap();
+        let transform = config.get_builder().await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }
