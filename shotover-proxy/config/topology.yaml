@@ -18,10 +18,10 @@ chain_config:
     # For a list of possible transforms: https://docs.shotover.io/transforms/#transforms_1
     - DebugPrinter
 
-    # A Null transform, drops all messages it receives.
+    # A NullSink transform, drops all messages it receives.
     # You will want to replace this with a sink transform to send the message to a database.
     # For a list of possible transforms: https://docs.shotover.io/transforms/#transforms_1
-    - Null
+    - NullSink
 
 # A list of mappings from source name -> transform chain name.
 source_to_chain_mapping:

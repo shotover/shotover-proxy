@@ -187,7 +187,7 @@ mod tests {
             let config = TeeConfig {
                 behavior: Some(ConsistencyBehavior::Ignore),
                 timeout_micros: None,
-                chain: vec![TransformsConfig::Null],
+                chain: vec![TransformsConfig::NullSink],
                 buffer_size: None,
             };
             let transform = config.get_transform().await.unwrap();
@@ -199,7 +199,7 @@ mod tests {
             let config = TeeConfig {
                 behavior: Some(ConsistencyBehavior::FailOnMismatch),
                 timeout_micros: None,
-                chain: vec![TransformsConfig::Null],
+                chain: vec![TransformsConfig::NullSink],
                 buffer_size: None,
             };
             let transform = config.get_transform().await.unwrap();
@@ -212,17 +212,17 @@ mod tests {
     async fn test_validate_invalid_chain() {
         let config = TeeConfig {
             behavior: Some(ConsistencyBehavior::SubchainOnMismatch(vec![
-                TransformsConfig::Null,
-                TransformsConfig::Null,
+                TransformsConfig::NullSink,
+                TransformsConfig::NullSink,
             ])),
             timeout_micros: None,
-            chain: vec![TransformsConfig::Null],
+            chain: vec![TransformsConfig::NullSink],
             buffer_size: None,
         };
 
         let transform = config.get_transform().await.unwrap();
         let result = transform.validate();
-        let expected = vec!["Tee:", "  mismatch_chain:", "    Terminating transform \"Null\" is not last in chain. Terminating transform must be last in chain."];
+        let expected = vec!["Tee:", "  mismatch_chain:", "    Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain."];
         assert_eq!(result, expected);
     }
 
@@ -230,10 +230,10 @@ mod tests {
     async fn test_validate_valid_chain() {
         let config = TeeConfig {
             behavior: Some(ConsistencyBehavior::SubchainOnMismatch(vec![
-                TransformsConfig::Null,
+                TransformsConfig::NullSink,
             ])),
             timeout_micros: None,
-            chain: vec![TransformsConfig::Null],
+            chain: vec![TransformsConfig::NullSink],
             buffer_size: None,
         };
 
