@@ -120,8 +120,7 @@ impl Topology {
 
 #[cfg(test)]
 mod topology_tests {
-    use tokio::sync::watch;
-
+    use crate::config::topology::{Topology, TopologyConfig};
     use crate::transforms::coalesce::CoalesceConfig;
     use crate::{
         sources::{redis_source::RedisConfig, Sources, SourcesConfig},
@@ -132,8 +131,7 @@ mod topology_tests {
         },
     };
     use std::{collections::HashMap, fs};
-
-    use super::{Topology, TopologyConfig};
+    use tokio::sync::watch;
 
     async fn run_test_topology(chain: Vec<TransformsConfig>) -> anyhow::Result<Vec<Sources>> {
         let mut chain_config = HashMap::new();
@@ -355,7 +353,7 @@ redis_chain:
     async fn test_validate_chain_invalid_subchain_redis_cache() {
         let expected = r#"Topology errors
 redis_chain:
-  SimpleRedisCache:
+  RedisCache:
     cache_chain:
       Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;

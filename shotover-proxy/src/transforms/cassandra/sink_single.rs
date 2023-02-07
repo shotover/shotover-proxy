@@ -5,7 +5,7 @@ use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::cassandra::connection::Response;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cassandra_protocol::frame::Version;
@@ -26,17 +26,15 @@ pub struct CassandraSinkSingleConfig {
 }
 
 impl CassandraSinkSingleConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
-        Ok(TransformBuilder::CassandraSinkSingle(
-            CassandraSinkSingleBuilder::new(
-                self.address.clone(),
-                chain_name,
-                tls,
-                self.connect_timeout_ms,
-                self.read_timeout,
-            ),
-        ))
+        Ok(Box::new(CassandraSinkSingleBuilder::new(
+            self.address.clone(),
+            chain_name,
+            tls,
+            self.connect_timeout_ms,
+            self.read_timeout,
+        )))
     }
 }
 
@@ -70,9 +68,11 @@ impl CassandraSinkSingleBuilder {
             read_timeout: receive_timeout,
         }
     }
+}
 
-    pub fn build(&self) -> CassandraSinkSingle {
-        CassandraSinkSingle {
+impl TransformBuilder for CassandraSinkSingleBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::CassandraSinkSingle(CassandraSinkSingle {
             outbound: None,
             version: self.version,
             address: self.address.clone(),
@@ -81,14 +81,14 @@ impl CassandraSinkSingleBuilder {
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
-        }
+        })
     }
 
-    pub fn validate(&self) -> Vec<String> {
-        vec![]
+    fn get_name(&self) -> &'static str {
+        "CassandraSinkSingle"
     }
 
-    pub fn is_terminating(&self) -> bool {
+    fn is_terminating(&self) -> bool {
         true
     }
 }
@@ -169,10 +169,6 @@ impl CassandraSinkSingle {
 impl Transform for CassandraSinkSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         self.send_message(message_wrapper.messages).await
-    }
-
-    fn is_terminating(&self) -> bool {
-        true
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {

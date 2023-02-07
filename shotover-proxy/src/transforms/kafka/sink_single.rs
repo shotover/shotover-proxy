@@ -4,7 +4,7 @@ use crate::message::Messages;
 use crate::tcp;
 use crate::transforms::util::cluster_connection_pool::{spawn_read_write_tasks, Connection};
 use crate::transforms::util::{Request, Response};
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -21,15 +21,13 @@ pub struct KafkaSinkSingleConfig {
 }
 
 impl KafkaSinkSingleConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::KafkaSinkSingle(
-            KafkaSinkSingleBuilder::new(
-                self.address.clone(),
-                chain_name,
-                self.connect_timeout_ms,
-                self.read_timeout,
-            ),
-        ))
+    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(KafkaSinkSingleBuilder::new(
+            self.address.clone(),
+            chain_name,
+            self.connect_timeout_ms,
+            self.read_timeout,
+        )))
     }
 }
 
@@ -55,22 +53,24 @@ impl KafkaSinkSingleBuilder {
             read_timeout: receive_timeout,
         }
     }
+}
 
-    pub fn build(&self) -> KafkaSinkSingle {
-        KafkaSinkSingle {
+impl TransformBuilder for KafkaSinkSingleBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::KafkaSinkSingle(KafkaSinkSingle {
             outbound: None,
             address: self.address.clone(),
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
             read_timeout: self.read_timeout,
-        }
+        })
     }
 
-    pub fn validate(&self) -> Vec<String> {
-        vec![]
+    fn get_name(&self) -> &'static str {
+        "KafkaSinkSingle"
     }
 
-    pub fn is_terminating(&self) -> bool {
+    fn is_terminating(&self) -> bool {
         true
     }
 }
@@ -116,10 +116,6 @@ impl Transform for KafkaSinkSingle {
         } else {
             read_responses(responses).await
         }
-    }
-
-    fn is_terminating(&self) -> bool {
-        true
     }
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {

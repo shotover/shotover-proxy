@@ -16,7 +16,7 @@ use shotover_proxy::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
 use shotover_proxy::transforms::throttling::RequestThrottlingConfig;
-use shotover_proxy::transforms::{TransformBuilder, Wrapper};
+use shotover_proxy::transforms::Wrapper;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -24,10 +24,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.noise_threshold(0.2);
 
     {
-        let chain = TransformChainBuilder::new(
-            vec![TransformBuilder::NullSink(NullSink::default())],
-            "bench".to_string(),
-        );
+        let chain =
+            TransformChainBuilder::new(vec![Box::<NullSink>::default()], "bench".to_string());
         let wrapper = Wrapper::new_with_chain_name(
             vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
             chain.name.clone(),
@@ -50,10 +48,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                TransformBuilder::QueryTypeFilter(QueryTypeFilter {
+                Box::new(QueryTypeFilter {
                     filter: QueryType::Read,
                 }),
-                TransformBuilder::DebugReturner(DebugReturner::new(Response::Redis("a".into()))),
+                Box::new(DebugReturner::new(Response::Redis("a".into()))),
             ],
             "bench".to_string(),
         );
@@ -89,8 +87,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                TransformBuilder::RedisTimestampTagger(RedisTimestampTagger::new()),
-                TransformBuilder::DebugReturner(DebugReturner::new(Response::Message(vec![
+                Box::new(RedisTimestampTagger::new()),
+                Box::new(DebugReturner::new(Response::Message(vec![
                     Message::from_frame(Frame::Redis(RedisFrame::Array(vec![
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // real frame
                         RedisFrame::BulkString(Bytes::from_static(b"1")), // timestamp
@@ -146,8 +144,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                TransformBuilder::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::new(RedisClusterPortsRewrite::new(2004)),
+                Box::<NullSink>::default(),
             ],
             "bench".to_string(),
         );
@@ -177,15 +175,13 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                rt.block_on(
-                    RequestThrottlingConfig {
-                        // an absurdly large value is given so that all messages will pass through
-                        max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
-                    }
-                    .get_builder(),
-                )
+                RequestThrottlingConfig {
+                    // an absurdly large value is given so that all messages will pass through
+                    max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
+                }
+                .get_builder()
                 .unwrap(),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<NullSink>::default(),
             ],
             "bench".to_string(),
         );
@@ -223,8 +219,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let chain = TransformChainBuilder::new(
             vec![
-                TransformBuilder::CassandraPeersRewrite(CassandraPeersRewrite::new(9042)),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::new(CassandraPeersRewrite::new(9042)),
+                Box::<NullSink>::default(),
             ],
             "bench".into(),
         );
@@ -297,7 +293,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     .get_builder(),
                 )
                 .unwrap(),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::<NullSink>::default(),
             ],
             "bench".into(),
         );

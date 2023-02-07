@@ -9,6 +9,7 @@ use crate::frame::RedisFrame;
 use crate::message::{Message, Messages};
 use crate::tcp;
 use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
+use crate::transforms::Transforms;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -34,16 +35,14 @@ pub struct RedisSinkSingleConfig {
 }
 
 impl RedisSinkSingleConfig {
-    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
-        Ok(TransformBuilder::RedisSinkSingle(
-            RedisSinkSingleBuilder::new(
-                self.address.clone(),
-                tls,
-                chain_name,
-                self.connect_timeout_ms,
-            ),
-        ))
+        Ok(Box::new(RedisSinkSingleBuilder::new(
+            self.address.clone(),
+            tls,
+            chain_name,
+            self.connect_timeout_ms,
+        )))
     }
 }
 
@@ -72,23 +71,25 @@ impl RedisSinkSingleBuilder {
             connect_timeout,
         }
     }
+}
 
-    pub fn build(&self) -> RedisSinkSingle {
-        RedisSinkSingle {
+impl TransformBuilder for RedisSinkSingleBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::RedisSinkSingle(RedisSinkSingle {
             address: self.address.clone(),
             tls: self.tls.clone(),
             connection: None,
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
             connect_timeout: self.connect_timeout,
-        }
+        })
     }
 
-    pub fn validate(&self) -> Vec<String> {
-        vec![]
+    fn get_name(&self) -> &'static str {
+        "RedisSinkSingle"
     }
 
-    pub fn is_terminating(&self) -> bool {
+    fn is_terminating(&self) -> bool {
         true
     }
 }
@@ -112,10 +113,6 @@ pub struct RedisSinkSingle {
 
 #[async_trait]
 impl Transform for RedisSinkSingle {
-    fn is_terminating(&self) -> bool {
-        true
-    }
-
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         // Return immediately if we have no messages.
         // If we tried to send no messages we would block forever waiting for a reply that will never come.

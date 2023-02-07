@@ -1,3 +1,4 @@
+use super::Transforms;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
@@ -21,13 +22,42 @@ pub struct CoalesceConfig {
 }
 
 impl CoalesceConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::Coalesce(Coalesce {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(Coalesce {
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,
             flush_when_millis_since_last_flush: self.flush_when_millis_since_last_flush,
             last_write: Instant::now(),
         }))
+    }
+}
+
+impl TransformBuilder for Coalesce {
+    fn build(&self) -> Transforms {
+        Transforms::Coalesce(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "Coalesce"
+    }
+
+    fn validate(&self) -> Vec<String> {
+        if self.flush_when_buffered_message_count.is_none()
+            && self.flush_when_millis_since_last_flush.is_none()
+        {
+            vec![
+                "Coalesce:".into(),
+                "  Need to provide at least one of these fields:".into(),
+                "  * flush_when_buffered_message_count".into(),
+                "  * flush_when_millis_since_last_flush".into(),
+                "".into(),
+                "  But none of them were provided.".into(),
+                "  Check https://docs.shotover.io/transforms.html#coalesce for more information."
+                    .into(),
+            ]
+        } else {
+            vec![]
+        }
     }
 }
 
@@ -54,25 +84,6 @@ impl Transform for Coalesce {
             message_wrapper.call_next_transform().await
         } else {
             Ok(vec![])
-        }
-    }
-
-    fn validate(&self) -> Vec<String> {
-        if self.flush_when_buffered_message_count.is_none()
-            && self.flush_when_millis_since_last_flush.is_none()
-        {
-            vec![
-                "Coalesce:".into(),
-                "  Need to provide at least one of these fields:".into(),
-                "  * flush_when_buffered_message_count".into(),
-                "  * flush_when_millis_since_last_flush".into(),
-                "".into(),
-                "  But none of them were provided.".into(),
-                "  Check https://docs.shotover.io/transforms.html#coalesce for more information."
-                    .into(),
-            ]
-        } else {
-            vec![]
         }
     }
 }

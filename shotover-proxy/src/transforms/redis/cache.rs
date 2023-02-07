@@ -3,7 +3,7 @@ use crate::frame::{CassandraFrame, CassandraOperation, Frame, RedisFrame};
 use crate::message::{Message, Messages};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
+    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -82,7 +82,7 @@ pub struct RedisConfig {
 }
 
 impl RedisConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
         let missed_requests = register_counter!("cache_miss");
 
         let caching_schema: HashMap<FQName, TableCacheSchema> = self
@@ -91,7 +91,7 @@ impl RedisConfig {
             .map(|(k, v)| (FQName::parse(k), v.into()))
             .collect();
 
-        Ok(TransformBuilder::RedisCache(SimpleRedisCacheBuilder {
+        Ok(Box::new(SimpleRedisCacheBuilder {
             cache_chain: build_chain_from_config("cache_chain".to_string(), &self.chain).await?,
             caching_schema,
             missed_requests,
@@ -104,6 +104,35 @@ pub struct SimpleRedisCacheBuilder {
     cache_chain: TransformChainBuilder,
     caching_schema: HashMap<FQName, TableCacheSchema>,
     missed_requests: Counter,
+}
+
+impl TransformBuilder for SimpleRedisCacheBuilder {
+    fn build(&self) -> Transforms {
+        Transforms::RedisCache(SimpleRedisCache {
+            cache_chain: self.cache_chain.build(),
+            caching_schema: self.caching_schema.clone(),
+            missed_requests: self.missed_requests.clone(),
+        })
+    }
+
+    fn get_name(&self) -> &'static str {
+        "RedisCache"
+    }
+
+    fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .cache_chain
+            .validate()
+            .iter()
+            .map(|x| format!("  {x}"))
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+
+        errors
+    }
 }
 
 pub struct SimpleRedisCache {
@@ -565,39 +594,6 @@ impl Transform for SimpleRedisCache {
         Ok(responses)
     }
 }
-impl SimpleRedisCacheBuilder {
-    pub fn build(&self) -> SimpleRedisCache {
-        SimpleRedisCache {
-            cache_chain: self.cache_chain.build(),
-            caching_schema: self.caching_schema.clone(),
-            missed_requests: self.missed_requests.clone(),
-        }
-    }
-
-    fn get_name(&self) -> &'static str {
-        "SimpleRedisCache"
-    }
-
-    pub fn validate(&self) -> Vec<String> {
-        let mut errors = self
-            .cache_chain
-            .validate()
-            .iter()
-            .map(|x| format!("  {x}"))
-            .collect::<Vec<String>>();
-
-        if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
-        }
-
-        errors
-    }
-
-    pub fn is_terminating(&self) -> bool {
-        false
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::frame::cassandra::parse_statement_single;
@@ -815,11 +811,7 @@ mod test {
 
         assert_eq!(
             transform.validate(),
-            vec![
-                "SimpleRedisCache:",
-                "  test-chain:",
-                "    Chain cannot be empty"
-            ]
+            vec!["RedisCache:", "  test-chain:", "    Chain cannot be empty"]
         );
     }
 
@@ -827,9 +819,9 @@ mod test {
     async fn test_validate_valid_chain() {
         let cache_chain = TransformChainBuilder::new(
             vec![
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::NullSink(NullSink::default()),
+                Box::new(DebugPrinter::new()),
+                Box::new(DebugPrinter::new()),
+                Box::<NullSink>::default(),
             ],
             "test-chain".to_string(),
         );

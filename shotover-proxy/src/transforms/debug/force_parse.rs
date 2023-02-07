@@ -5,7 +5,7 @@
 /// without worrying about the performance impact of other transform logic.
 /// It could also be used to ensure that messages round trip correctly when parsed.
 use crate::error::ChainResponse;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -19,8 +19,8 @@ pub struct DebugForceParseConfig {
 }
 
 impl DebugForceParseConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::DebugForceParse(DebugForceParse {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(DebugForceParse {
             parse_requests: self.parse_requests,
             parse_responses: self.parse_responses,
             encode_requests: false,
@@ -38,8 +38,8 @@ pub struct DebugForceEncodeConfig {
 }
 
 impl DebugForceEncodeConfig {
-    pub async fn get_builder(&self) -> Result<TransformBuilder> {
-        Ok(TransformBuilder::DebugForceParse(DebugForceParse {
+    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+        Ok(Box::new(DebugForceParse {
             parse_requests: self.encode_requests,
             parse_responses: self.encode_responses,
             encode_requests: self.encode_requests,
@@ -54,6 +54,16 @@ pub struct DebugForceParse {
     parse_responses: bool,
     encode_requests: bool,
     encode_responses: bool,
+}
+
+impl TransformBuilder for DebugForceParse {
+    fn build(&self) -> Transforms {
+        Transforms::DebugForceParse(self.clone())
+    }
+
+    fn get_name(&self) -> &'static str {
+        "DebugForceParse"
+    }
 }
 
 #[async_trait]
