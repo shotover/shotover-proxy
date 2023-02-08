@@ -31,6 +31,30 @@ pub struct KeyspaceMetadata {
     pub replication_factor: usize,
 }
 
+// Values in the builder are shared between transform instances that come from the same transform in the topology.yaml
+#[derive(Clone)]
+pub struct NodePoolBuilder {
+    prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
+}
+
+impl NodePoolBuilder {
+    pub fn new() -> Self {
+        Self {
+            prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub fn build(&self) -> NodePool {
+        NodePool {
+            prepared_metadata: self.prepared_metadata.clone(),
+            keyspace_metadata: HashMap::new(),
+            token_map: TokenMap::new(&[]),
+            nodes: vec![],
+            prev_idx: 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct NodePool {
     prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
@@ -40,29 +64,7 @@ pub struct NodePool {
     prev_idx: usize,
 }
 
-impl Clone for NodePool {
-    fn clone(&self) -> Self {
-        Self {
-            prepared_metadata: self.prepared_metadata.clone(),
-            keyspace_metadata: self.keyspace_metadata.clone(),
-            token_map: TokenMap::new(&[]),
-            nodes: vec![],
-            prev_idx: 0,
-        }
-    }
-}
-
 impl NodePool {
-    pub fn new(nodes: Vec<CassandraNode>) -> Self {
-        Self {
-            token_map: TokenMap::new(nodes.as_slice()),
-            nodes,
-            prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
-            keyspace_metadata: HashMap::new(),
-            prev_idx: 0,
-        }
-    }
-
     pub fn nodes(&mut self) -> &mut [CassandraNode] {
         &mut self.nodes
     }
@@ -210,7 +212,9 @@ mod test_node_pool {
     fn test_round_robin() {
         let nodes = prepare_nodes();
 
-        let mut node_pool = NodePool::new(nodes.clone());
+        let mut node_pool = NodePoolBuilder::new().build();
+        let (_nodes_tx, mut nodes_rx) = watch::channel(nodes.clone());
+        node_pool.update_nodes(&mut nodes_rx);
 
         node_pool.nodes[1].is_up = false;
         node_pool.nodes[3].is_up = false;

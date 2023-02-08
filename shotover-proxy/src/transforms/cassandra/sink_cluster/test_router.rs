@@ -1,9 +1,11 @@
 #[cfg(test)]
 mod test_token_aware_router {
-    use super::super::node_pool::{KeyspaceMetadata, NodePool};
+    use super::super::node_pool::KeyspaceMetadata;
     use super::super::routing_key::calculate_routing_key;
     use crate::transforms::cassandra::sink_cluster::node::CassandraNode;
-    use crate::transforms::cassandra::sink_cluster::node_pool::PreparedMetadata;
+    use crate::transforms::cassandra::sink_cluster::node_pool::{
+        NodePoolBuilder, PreparedMetadata,
+    };
     use crate::transforms::cassandra::sink_cluster::{KeyspaceChanRx, KeyspaceChanTx};
     use cassandra_protocol::consistency::Consistency::One;
     use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
@@ -23,7 +25,10 @@ mod test_token_aware_router {
     async fn test_router() {
         let mut rng = SmallRng::from_rng(rand::thread_rng()).unwrap();
 
-        let mut router = NodePool::new(prepare_nodes());
+        let nodes = prepare_nodes();
+        let mut router = NodePoolBuilder::new().build();
+        let (_nodes_tx, mut nodes_rx) = watch::channel(nodes);
+        router.update_nodes(&mut nodes_rx);
 
         let id = CBytesShort::new(vec![
             11, 241, 38, 11, 140, 72, 217, 34, 214, 128, 175, 241, 151, 73, 197, 227,
