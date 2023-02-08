@@ -4,7 +4,6 @@ use crate::transforms::{TransformBuilder, Transforms, Wrapper};
 use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use futures::TryFutureExt;
-use itertools::Itertools;
 use metrics::{histogram, register_counter, register_histogram, Counter};
 use std::net::SocketAddr;
 use tokio::sync::{mpsc, oneshot};
@@ -68,18 +67,12 @@ pub struct TransformChain {
 
 #[derive(Debug, Clone)]
 pub struct BufferedChain {
-    pub original_chain: TransformChainBuilder,
     send_handle: mpsc::Sender<BufferedChainMessages>,
     #[cfg(test)]
     pub count: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl BufferedChain {
-    #[must_use]
-    pub fn to_new_instance(&self, buffer_size: usize) -> Self {
-        self.original_chain.build_buffered(buffer_size)
-    }
-
     pub async fn process_request(
         &mut self,
         wrapper: Wrapper<'_>,
@@ -167,10 +160,6 @@ impl BufferedChain {
 }
 
 impl TransformChain {
-    pub fn get_inner_chain_refs(&mut self) -> Vec<&mut Transforms> {
-        self.chain.iter_mut().collect_vec()
-    }
-
     pub async fn process_request(
         &mut self,
         mut wrapper: Wrapper<'_>,
@@ -348,7 +337,6 @@ impl TransformChainBuilder {
             send_handle: tx,
             #[cfg(test)]
             count,
-            original_chain: self.clone(),
         }
     }
 
