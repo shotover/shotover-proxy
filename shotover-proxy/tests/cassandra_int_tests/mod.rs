@@ -128,23 +128,7 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 
     standard_test_suite(&connection, driver).await;
 
-    if let CassandraDriver::Scylla | CassandraDriver::CdrsTokio = driver {
-        shotover.shutdown_and_then_consume_events(&[]).await;
-    } else {
-        shotover
-            .shutdown_and_then_consume_events(&[EventMatcher::new()
-                .with_level(Level::Error)
-                .with_target("shotover_proxy::server")
-                .with_message(
-                    r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Failed to accept TLS connection
-    1: unexpected EOF"#,
-                )
-                .with_count(Count::Any)])
-            .await;
-    }
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[rstest]
@@ -382,23 +366,7 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
         standard_test_suite(&connection, driver).await;
         cluster::single_rack_v4::test(&connection().await, driver).await;
 
-        if let CassandraDriver::Scylla | CassandraDriver::CdrsTokio = driver {
-            shotover.shutdown_and_then_consume_events(&[]).await;
-        } else {
-            shotover
-                .shutdown_and_then_consume_events(&[EventMatcher::new()
-                    .with_level(Level::Error)
-                    .with_target("shotover_proxy::server")
-                    .with_message(
-                        r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Failed to accept TLS connection
-    1: unexpected EOF"#,
-                    )
-                    .with_count(Count::Any)])
-                .await;
-        }
+        shotover.shutdown_and_then_consume_events(&[]).await;
     }
 
     cluster::single_rack_v4::test_topology_task(Some(ca_cert), None).await;

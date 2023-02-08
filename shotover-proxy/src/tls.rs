@@ -1,6 +1,6 @@
 use crate::tcp;
-use anyhow::{anyhow, Result};
-use openssl::ssl::Ssl;
+use anyhow::{anyhow, Error, Result};
+use openssl::ssl::{ErrorCode, Ssl};
 use openssl::ssl::{SslAcceptor, SslConnector, SslFiletype, SslMethod};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
@@ -26,6 +26,13 @@ pub struct TlsAcceptorConfig {
 #[derive(Clone)]
 pub struct TlsAcceptor {
     acceptor: Arc<SslAcceptor>,
+}
+
+pub enum AcceptError {
+    /// The client decided it didnt need the connection anymore and politely disconnected before the handshake completed.
+    /// This can occur during regular use and indicates the connection should be quietly discarded.
+    Disconnected,
+    Failure(Error),
 }
 
 pub fn check_file_field(field_name: &str, file_path: &str) -> Result<()> {
@@ -68,13 +75,21 @@ impl TlsAcceptor {
         })
     }
 
-    pub async fn accept(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>> {
-        let ssl = Ssl::new(self.acceptor.context()).map_err(openssl_stack_error_to_anyhow)?;
-        let mut ssl_stream =
-            SslStream::new(ssl, tcp_stream).map_err(openssl_stack_error_to_anyhow)?;
+    pub async fn accept(&self, tcp_stream: TcpStream) -> Result<SslStream<TcpStream>, AcceptError> {
+        let ssl = Ssl::new(self.acceptor.context())
+            .map_err(|e| AcceptError::Failure(openssl_stack_error_to_anyhow(e)))?;
+        let mut ssl_stream = SslStream::new(ssl, tcp_stream)
+            .map_err(|e| AcceptError::Failure(openssl_stack_error_to_anyhow(e)))?;
 
         Pin::new(&mut ssl_stream).accept().await.map_err(|e| {
-            openssl_ssl_error_to_anyhow(e).context("Failed to accept TLS connection")
+            // This is the internal logic that results in the "unexpected EOF" error in the ssl::error::Error display impl
+            if e.code() == ErrorCode::SYSCALL && e.io_error().is_none() {
+                AcceptError::Disconnected
+            } else {
+                AcceptError::Failure(
+                    openssl_ssl_error_to_anyhow(e).context("Failed to accept TLS connection"),
+                )
+            }
         })?;
         Ok(ssl_stream)
     }
