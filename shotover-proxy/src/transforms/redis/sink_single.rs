@@ -31,12 +31,60 @@ pub struct RedisSinkSingleConfig {
 impl RedisSinkSingleConfig {
     pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
-        Ok(TransformBuilder::RedisSinkSingle(RedisSinkSingle::new(
-            self.address.clone(),
+        Ok(TransformBuilder::RedisSinkSingle(
+            RedisSinkSingleBuilder::new(
+                self.address.clone(),
+                tls,
+                chain_name,
+                self.connect_timeout_ms,
+            ),
+        ))
+    }
+}
+
+#[derive(Clone)]
+pub struct RedisSinkSingleBuilder {
+    address: String,
+    tls: Option<TlsConnector>,
+    failed_requests: Counter,
+    connect_timeout: Duration,
+}
+
+impl RedisSinkSingleBuilder {
+    pub fn new(
+        address: String,
+        tls: Option<TlsConnector>,
+        chain_name: String,
+        connect_timeout_ms: u64,
+    ) -> Self {
+        let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "RedisSinkSingle");
+        let connect_timeout = Duration::from_millis(connect_timeout_ms);
+
+        RedisSinkSingleBuilder {
+            address,
             tls,
-            chain_name,
-            self.connect_timeout_ms,
-        )))
+            failed_requests,
+            connect_timeout,
+        }
+    }
+
+    pub fn build(&self) -> RedisSinkSingle {
+        RedisSinkSingle {
+            address: self.address.clone(),
+            tls: self.tls.clone(),
+            connection: None,
+            failed_requests: self.failed_requests.clone(),
+            pushed_messages_tx: None,
+            connect_timeout: self.connect_timeout,
+        }
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        vec![]
+    }
+
+    pub fn is_terminating(&self) -> bool {
+        true
     }
 }
 
@@ -52,46 +100,9 @@ pub struct RedisSinkSingle {
     address: String,
     tls: Option<TlsConnector>,
     connection: Option<Connection>,
-    chain_name: String,
     failed_requests: Counter,
     pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
-}
-
-impl Clone for RedisSinkSingle {
-    fn clone(&self) -> Self {
-        RedisSinkSingle {
-            address: self.address.clone(),
-            tls: self.tls.clone(),
-            connection: None,
-            chain_name: self.chain_name.clone(),
-            failed_requests: self.failed_requests.clone(),
-            pushed_messages_tx: None,
-            connect_timeout: self.connect_timeout,
-        }
-    }
-}
-
-impl RedisSinkSingle {
-    pub fn new(
-        address: String,
-        tls: Option<TlsConnector>,
-        chain_name: String,
-        connect_timeout_ms: u64,
-    ) -> RedisSinkSingle {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "RedisSinkSingle");
-        let connect_timeout = Duration::from_millis(connect_timeout_ms);
-
-        RedisSinkSingle {
-            address,
-            tls,
-            connection: None,
-            chain_name,
-            failed_requests,
-            pushed_messages_tx: None,
-            connect_timeout,
-        }
-    }
 }
 
 #[async_trait]
