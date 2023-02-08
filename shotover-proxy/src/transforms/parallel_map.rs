@@ -74,7 +74,7 @@ pub struct ParallelMapConfig {
 }
 
 impl ParallelMapConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         let chain = build_chain_from_config("parallel_map_chain".into(), &self.chain).await?;
 
         Ok(TransformBuilder::ParallelMap(ParallelMapBuilder {
@@ -122,9 +122,9 @@ impl Transform for ParallelMap {
 }
 
 impl ParallelMapBuilder {
-    pub fn build(self) -> ParallelMap {
+    pub fn build(&self) -> ParallelMap {
         ParallelMap {
-            chains: self.chains.into_iter().map(|x| x.build()).collect(),
+            chains: self.chains.iter().map(|x| x.build()).collect(),
             ordered: self.ordered,
         }
     }
@@ -162,7 +162,7 @@ impl ParallelMapBuilder {
 mod parallel_map_tests {
     use crate::transforms::chain::TransformChainBuilder;
     use crate::transforms::debug::printer::DebugPrinter;
-    use crate::transforms::null::Null;
+    use crate::transforms::null::NullSink;
     use crate::transforms::parallel_map::ParallelMapBuilder;
     use crate::transforms::TransformBuilder;
 
@@ -172,7 +172,7 @@ mod parallel_map_tests {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain-1".to_string(),
         );
@@ -199,7 +199,7 @@ mod parallel_map_tests {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain-1".to_string(),
         );
@@ -207,7 +207,7 @@ mod parallel_map_tests {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain-2".to_string(),
         );

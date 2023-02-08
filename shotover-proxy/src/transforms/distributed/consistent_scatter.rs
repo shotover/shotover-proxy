@@ -27,7 +27,7 @@ pub struct ConsistentScatterConfig {
 }
 
 impl ConsistentScatterConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         let mut route_map = Vec::with_capacity(self.route_map.len());
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
@@ -206,7 +206,7 @@ mod scatter_transform_tests {
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::debug::returner::{DebugReturner, Response};
     use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
-    use crate::transforms::null::Null;
+    use crate::transforms::null::NullSink;
     use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
     use bytes::Bytes;
     use std::collections::HashMap;
@@ -306,7 +306,7 @@ mod scatter_transform_tests {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain-1".to_string(),
         );
@@ -334,7 +334,7 @@ mod scatter_transform_tests {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain-1".to_string(),
         );
@@ -342,7 +342,7 @@ mod scatter_transform_tests {
             vec![
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
                 TransformBuilder::DebugPrinter(DebugPrinter::new()),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "test-chain-2".to_string(),
         );

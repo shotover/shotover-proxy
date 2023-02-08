@@ -11,7 +11,7 @@ use shotover_proxy::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover_proxy::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
 use shotover_proxy::transforms::filter::QueryTypeFilter;
-use shotover_proxy::transforms::null::Null;
+use shotover_proxy::transforms::null::NullSink;
 use shotover_proxy::transforms::protect::{KeyManagerConfig, ProtectConfig};
 use shotover_proxy::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
 use shotover_proxy::transforms::redis::timestamp_tagging::RedisTimestampTagger;
@@ -25,7 +25,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let chain = TransformChainBuilder::new(
-            vec![TransformBuilder::Null(Null::default())],
+            vec![TransformBuilder::NullSink(NullSink::default())],
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
@@ -34,7 +34,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "127.0.0.1:6379".parse().unwrap(),
         );
 
-        group.bench_function("null", |b| {
+        group.bench_function("NullSink", |b| {
             b.to_async(&rt).iter_batched(
                 || BenchInput {
                     chain: chain.clone().build(),
@@ -147,7 +147,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChainBuilder::new(
             vec![
                 TransformBuilder::RedisClusterPortsRewrite(RedisClusterPortsRewrite::new(2004)),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "bench".to_string(),
         );
@@ -182,10 +182,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                         // an absurdly large value is given so that all messages will pass through
                         max_requests_per_second: std::num::NonZeroU32::new(100_000_000).unwrap(),
                     }
-                    .get_transform(),
+                    .get_builder(),
                 )
                 .unwrap(),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "bench".to_string(),
         );
@@ -222,7 +222,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let chain = TransformChainBuilder::new(
             vec![
                 TransformBuilder::CassandraPeersRewrite(CassandraPeersRewrite::new(9042)),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "bench".into(),
         );
@@ -290,10 +290,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                             kek_id: "".to_string(),
                         },
                     }
-                    .get_transform(),
+                    .get_builder(),
                 )
                 .unwrap(),
-                TransformBuilder::Null(Null::default()),
+                TransformBuilder::NullSink(NullSink::default()),
             ],
             "bench".into(),
         );

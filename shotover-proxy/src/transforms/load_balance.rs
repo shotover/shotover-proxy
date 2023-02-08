@@ -17,7 +17,7 @@ pub struct ConnectionBalanceAndPoolConfig {
 }
 
 impl ConnectionBalanceAndPoolConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         let chain = build_chain_from_config(self.name.clone(), &self.chain).await?;
 
         Ok(TransformBuilder::PoolConnections(
@@ -38,12 +38,12 @@ pub struct ConnectionBalanceAndPoolBuilder {
 }
 
 impl ConnectionBalanceAndPoolBuilder {
-    pub fn build(self) -> ConnectionBalanceAndPool {
+    pub fn build(&self) -> ConnectionBalanceAndPool {
         ConnectionBalanceAndPool {
             active_connection: None,
             max_connections: self.max_connections,
-            all_connections: self.all_connections,
-            chain_to_clone: self.chain_to_clone,
+            all_connections: self.all_connections.clone(),
+            chain_to_clone: self.chain_to_clone.clone(),
         }
     }
 
