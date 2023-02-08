@@ -6,7 +6,9 @@ use crate::transforms::cassandra::peers_rewrite::{
 use crate::transforms::cassandra::sink_cluster::{
     CassandraSinkCluster, CassandraSinkClusterBuilder, CassandraSinkClusterConfig,
 };
-use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
+use crate::transforms::cassandra::sink_single::{
+    CassandraSinkSingle, CassandraSinkSingleBuilder, CassandraSinkSingleConfig,
+};
 use crate::transforms::chain::TransformChainBuilder;
 use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
 use crate::transforms::debug::force_parse::DebugForceParse;
@@ -33,9 +35,11 @@ use crate::transforms::redis::cluster_ports_rewrite::{
     RedisClusterPortsRewrite, RedisClusterPortsRewriteConfig,
 };
 use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterConfig};
-use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
+use crate::transforms::redis::sink_single::{
+    RedisSinkSingle, RedisSinkSingleBuilder, RedisSinkSingleConfig,
+};
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::tee::{Tee, TeeConfig};
+use crate::transforms::tee::{Tee, TeeBuilder, TeeConfig};
 use crate::transforms::throttling::{RequestThrottling, RequestThrottlingConfig};
 use anyhow::{anyhow, Result};
 use async_recursion::async_recursion;
@@ -77,12 +81,12 @@ pub mod util;
 //       It would also affect whether sources pointing into the same chain share state, which will require careful consideration
 #[derive(Clone, IntoStaticStr)]
 pub enum TransformBuilder {
-    CassandraSinkSingle(CassandraSinkSingle),
+    CassandraSinkSingle(CassandraSinkSingleBuilder),
     CassandraSinkCluster(Box<CassandraSinkClusterBuilder>),
-    RedisSinkSingle(RedisSinkSingle),
+    RedisSinkSingle(RedisSinkSingleBuilder),
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCacheBuilder),
-    Tee(Tee),
+    Tee(TeeBuilder),
     NullSink(NullSink),
     #[cfg(test)]
     Loopback(Loopback),
@@ -106,7 +110,7 @@ pub enum TransformBuilder {
 impl TransformBuilder {
     pub fn build(&self) -> Transforms {
         match self {
-            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t.clone()),
+            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t.build()),
             TransformBuilder::CassandraSinkCluster(t) => {
                 Transforms::CassandraSinkCluster(t.build())
             }
@@ -114,8 +118,8 @@ impl TransformBuilder {
                 Transforms::CassandraPeersRewrite(t.clone())
             }
             TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
-            TransformBuilder::Tee(t) => Transforms::Tee(t.clone()),
-            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t.clone()),
+            TransformBuilder::Tee(t) => Transforms::Tee(t.build()),
+            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t.build()),
             TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t.clone()),
             TransformBuilder::RedisTimestampTagger(t) => {
                 Transforms::RedisTimestampTagger(t.clone())
