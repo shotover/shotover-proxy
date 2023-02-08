@@ -29,7 +29,7 @@ impl CassandraSinkSingleConfig {
     pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         Ok(TransformBuilder::CassandraSinkSingle(
-            CassandraSinkSingle::new(
+            CassandraSinkSingleBuilder::new(
                 self.address.clone(),
                 chain_name,
                 tls,
@@ -40,25 +40,42 @@ impl CassandraSinkSingleConfig {
     }
 }
 
-pub struct CassandraSinkSingle {
+#[derive(Clone)]
+pub struct CassandraSinkSingleBuilder {
     version: Option<Version>,
     address: String,
-    outbound: Option<CassandraConnection>,
-    chain_name: String,
     failed_requests: Counter,
     tls: Option<TlsConnector>,
-    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
     connect_timeout: Duration,
     read_timeout: Option<Duration>,
 }
 
-impl Clone for CassandraSinkSingle {
-    fn clone(&self) -> Self {
+impl CassandraSinkSingleBuilder {
+    pub fn new(
+        address: String,
+        chain_name: String,
+        tls: Option<TlsConnector>,
+        connect_timeout_ms: u64,
+        timeout: Option<u64>,
+    ) -> CassandraSinkSingleBuilder {
+        let failed_requests = register_counter!("failed_requests", "chain" => chain_name, "transform" => "CassandraSinkSingle");
+        let receive_timeout = timeout.map(Duration::from_secs);
+
+        CassandraSinkSingleBuilder {
+            version: None,
+            address,
+            failed_requests,
+            tls,
+            connect_timeout: Duration::from_millis(connect_timeout_ms),
+            read_timeout: receive_timeout,
+        }
+    }
+
+    pub fn build(&self) -> CassandraSinkSingle {
         CassandraSinkSingle {
+            outbound: None,
             version: self.version,
             address: self.address.clone(),
-            outbound: None,
-            chain_name: self.chain_name.clone(),
             tls: self.tls.clone(),
             failed_requests: self.failed_requests.clone(),
             pushed_messages_tx: None,
@@ -66,31 +83,25 @@ impl Clone for CassandraSinkSingle {
             read_timeout: self.read_timeout,
         }
     }
+
+    pub fn validate(&self) -> Vec<String> {
+        vec![]
+    }
+
+    pub fn is_terminating(&self) -> bool {
+        true
+    }
 }
 
-impl CassandraSinkSingle {
-    pub fn new(
-        address: String,
-        chain_name: String,
-        tls: Option<TlsConnector>,
-        connect_timeout_ms: u64,
-        timeout: Option<u64>,
-    ) -> CassandraSinkSingle {
-        let failed_requests = register_counter!("failed_requests", "chain" => chain_name.clone(), "transform" => "CassandraSinkSingle");
-        let receive_timeout = timeout.map(Duration::from_secs);
-
-        CassandraSinkSingle {
-            version: None,
-            address,
-            outbound: None,
-            chain_name,
-            failed_requests,
-            tls,
-            pushed_messages_tx: None,
-            connect_timeout: Duration::from_millis(connect_timeout_ms),
-            read_timeout: receive_timeout,
-        }
-    }
+pub struct CassandraSinkSingle {
+    version: Option<Version>,
+    address: String,
+    outbound: Option<CassandraConnection>,
+    failed_requests: Counter,
+    tls: Option<TlsConnector>,
+    pushed_messages_tx: Option<mpsc::UnboundedSender<Messages>>,
+    connect_timeout: Duration,
+    read_timeout: Option<Duration>,
 }
 
 impl CassandraSinkSingle {

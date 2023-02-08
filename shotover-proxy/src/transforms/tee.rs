@@ -9,7 +9,8 @@ use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use tracing::trace;
 
-pub struct Tee {
+#[derive(Clone)]
+pub struct TeeBuilder {
     pub tx: BufferedChain,
     pub mismatch_chain: Option<BufferedChain>,
     pub buffer_size: usize,
@@ -18,8 +19,54 @@ pub struct Tee {
     dropped_messages: Counter,
 }
 
-impl Clone for Tee {
-    fn clone(&self) -> Self {
+impl TeeBuilder {
+    pub fn new(
+        tx: BufferedChain,
+        mismatch_chain: Option<BufferedChain>,
+        buffer_size: usize,
+        behavior: ConsistencyBehavior,
+        timeout_micros: Option<u64>,
+    ) -> Self {
+        let dropped_messages = register_counter!("tee_dropped_messages", "chain" => "Tee");
+
+        TeeBuilder {
+            tx,
+            mismatch_chain,
+            buffer_size,
+            behavior,
+            timeout_micros,
+            dropped_messages,
+        }
+    }
+
+    fn get_name(&self) -> &'static str {
+        "Tee"
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        if let Some(mismatch_chain) = &self.mismatch_chain {
+            let mut errors = mismatch_chain
+                .original_chain
+                .validate()
+                .iter()
+                .map(|x| format!("  {x}"))
+                .collect::<Vec<String>>();
+
+            if !errors.is_empty() {
+                errors.insert(0, format!("{}:", self.get_name()));
+            }
+
+            errors
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn is_terminating(&self) -> bool {
+        false
+    }
+
+    pub fn build(&self) -> Tee {
         Tee {
             tx: self.tx.to_new_instance(self.buffer_size),
             mismatch_chain: self
@@ -32,6 +79,15 @@ impl Clone for Tee {
             dropped_messages: self.dropped_messages.clone(),
         }
     }
+}
+
+pub struct Tee {
+    pub tx: BufferedChain,
+    pub mismatch_chain: Option<BufferedChain>,
+    pub buffer_size: usize,
+    pub behavior: ConsistencyBehavior,
+    pub timeout_micros: Option<u64>,
+    dropped_messages: Counter,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -64,7 +120,7 @@ impl TeeConfig {
             };
         let tee_chain = build_chain_from_config("tee_chain".to_string(), &self.chain).await?;
 
-        Ok(TransformBuilder::Tee(Tee::new(
+        Ok(TransformBuilder::Tee(TeeBuilder::new(
             tee_chain.build_buffered(buffer_size),
             mismatch_chain,
             buffer_size,
@@ -74,54 +130,8 @@ impl TeeConfig {
     }
 }
 
-impl Tee {
-    pub fn new(
-        tx: BufferedChain,
-        mismatch_chain: Option<BufferedChain>,
-        buffer_size: usize,
-        behavior: ConsistencyBehavior,
-        timeout_micros: Option<u64>,
-    ) -> Self {
-        let dropped_messages = register_counter!("tee_dropped_messages", "chain" => "Tee");
-
-        Tee {
-            tx,
-            mismatch_chain,
-            buffer_size,
-            behavior,
-            timeout_micros,
-            dropped_messages,
-        }
-    }
-}
-
-impl Tee {
-    fn get_name(&self) -> &'static str {
-        "Tee"
-    }
-}
-
 #[async_trait]
 impl Transform for Tee {
-    fn validate(&self) -> Vec<String> {
-        if let Some(mismatch_chain) = &self.mismatch_chain {
-            let mut errors = mismatch_chain
-                .original_chain
-                .validate()
-                .iter()
-                .map(|x| format!("  {x}"))
-                .collect::<Vec<String>>();
-
-            if !errors.is_empty() {
-                errors.insert(0, format!("{}:", self.get_name()));
-            }
-
-            errors
-        } else {
-            vec![]
-        }
-    }
-
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self.behavior {
             ConsistencyBehavior::Ignore => {
