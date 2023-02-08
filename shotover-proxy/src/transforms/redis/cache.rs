@@ -566,11 +566,11 @@ impl Transform for SimpleRedisCache {
     }
 }
 impl SimpleRedisCacheBuilder {
-    pub fn build(self) -> SimpleRedisCache {
+    pub fn build(&self) -> SimpleRedisCache {
         SimpleRedisCache {
             cache_chain: self.cache_chain.build(),
-            caching_schema: self.caching_schema,
-            missed_requests: self.missed_requests,
+            caching_schema: self.caching_schema.clone(),
+            missed_requests: self.missed_requests.clone(),
         }
     }
 

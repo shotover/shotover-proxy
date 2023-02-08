@@ -104,36 +104,40 @@ pub enum TransformBuilder {
 }
 
 impl TransformBuilder {
-    pub fn build(self) -> Transforms {
+    pub fn build(&self) -> Transforms {
         match self {
-            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t),
+            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t.clone()),
             TransformBuilder::CassandraSinkCluster(t) => {
                 Transforms::CassandraSinkCluster(t.build())
             }
-            TransformBuilder::CassandraPeersRewrite(t) => Transforms::CassandraPeersRewrite(t),
-            TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
-            TransformBuilder::Tee(t) => Transforms::Tee(t),
-            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t),
-            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t),
-            TransformBuilder::RedisTimestampTagger(t) => Transforms::RedisTimestampTagger(t),
-            TransformBuilder::RedisClusterPortsRewrite(t) => {
-                Transforms::RedisClusterPortsRewrite(t)
+            TransformBuilder::CassandraPeersRewrite(t) => {
+                Transforms::CassandraPeersRewrite(t.clone())
             }
-            TransformBuilder::DebugPrinter(t) => Transforms::DebugPrinter(t),
-            TransformBuilder::DebugForceParse(t) => Transforms::DebugForceParse(t),
-            TransformBuilder::NullSink(t) => Transforms::NullSink(t),
-            TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t),
+            TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
+            TransformBuilder::Tee(t) => Transforms::Tee(t.clone()),
+            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t.clone()),
+            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t.clone()),
+            TransformBuilder::RedisTimestampTagger(t) => {
+                Transforms::RedisTimestampTagger(t.clone())
+            }
+            TransformBuilder::RedisClusterPortsRewrite(t) => {
+                Transforms::RedisClusterPortsRewrite(t.clone())
+            }
+            TransformBuilder::DebugPrinter(t) => Transforms::DebugPrinter(t.clone()),
+            TransformBuilder::DebugForceParse(t) => Transforms::DebugForceParse(t.clone()),
+            TransformBuilder::NullSink(t) => Transforms::NullSink(t.clone()),
+            TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t.clone()),
             TransformBuilder::ParallelMap(t) => Transforms::ParallelMap(t.build()),
             TransformBuilder::PoolConnections(t) => Transforms::PoolConnections(t.build()),
-            TransformBuilder::Coalesce(t) => Transforms::Coalesce(t),
-            TransformBuilder::QueryTypeFilter(t) => Transforms::QueryTypeFilter(t),
-            TransformBuilder::QueryCounter(t) => Transforms::QueryCounter(t),
+            TransformBuilder::Coalesce(t) => Transforms::Coalesce(t.clone()),
+            TransformBuilder::QueryTypeFilter(t) => Transforms::QueryTypeFilter(t.clone()),
+            TransformBuilder::QueryCounter(t) => Transforms::QueryCounter(t.clone()),
             #[cfg(test)]
-            TransformBuilder::Loopback(t) => Transforms::Loopback(t),
-            TransformBuilder::Protect(t) => Transforms::Protect(t),
-            TransformBuilder::DebugReturner(t) => Transforms::DebugReturner(t),
-            TransformBuilder::DebugRandomDelay(t) => Transforms::DebugRandomDelay(t),
-            TransformBuilder::RequestThrottling(t) => Transforms::RequestThrottling(t),
+            TransformBuilder::Loopback(t) => Transforms::Loopback(t.clone()),
+            TransformBuilder::Protect(t) => Transforms::Protect(t.clone()),
+            TransformBuilder::DebugReturner(t) => Transforms::DebugReturner(t.clone()),
+            TransformBuilder::DebugRandomDelay(t) => Transforms::DebugRandomDelay(t.clone()),
+            TransformBuilder::RequestThrottling(t) => Transforms::RequestThrottling(t.clone()),
         }
     }
 

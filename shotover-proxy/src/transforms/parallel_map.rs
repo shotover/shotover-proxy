@@ -122,9 +122,9 @@ impl Transform for ParallelMap {
 }
 
 impl ParallelMapBuilder {
-    pub fn build(self) -> ParallelMap {
+    pub fn build(&self) -> ParallelMap {
         ParallelMap {
-            chains: self.chains.into_iter().map(|x| x.build()).collect(),
+            chains: self.chains.iter().map(|x| x.build()).collect(),
             ordered: self.ordered,
         }
     }
