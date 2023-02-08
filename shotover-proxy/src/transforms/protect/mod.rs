@@ -26,7 +26,7 @@ pub struct ProtectConfig {
 }
 
 impl ProtectConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         Ok(TransformBuilder::Protect(Box::new(Protect {
             keyspace_table_columns: self
                 .keyspace_table_columns

@@ -79,7 +79,7 @@ pub struct CassandraSinkClusterConfig {
 }
 
 impl CassandraSinkClusterConfig {
-    pub async fn get_transform(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         let tls = self.tls.clone().map(TlsConnector::new).transpose()?;
         let mut shotover_nodes = self.shotover_nodes.clone();
         let index = self
@@ -172,25 +172,25 @@ impl CassandraSinkClusterBuilder {
         true
     }
 
-    pub fn build(self) -> Box<CassandraSinkCluster> {
+    pub fn build(&self) -> Box<CassandraSinkCluster> {
         Box::new(CassandraSinkCluster {
-            contact_points: self.contact_points,
-            shotover_peers: self.shotover_peers,
+            contact_points: self.contact_points.clone(),
+            shotover_peers: self.shotover_peers.clone(),
             control_connection: None,
             connection_factory: self.connection_factory.new_with_same_config(),
             control_connection_address: None,
             init_handshake_complete: false,
             version: None,
-            failed_requests: self.failed_requests,
+            failed_requests: self.failed_requests.clone(),
             read_timeout: self.read_timeout,
-            local_shotover_node: self.local_shotover_node,
-            pool: self.pool,
+            local_shotover_node: self.local_shotover_node.clone(),
+            pool: self.pool.clone(),
             // Because the self.nodes_rx is always copied from the original nodes_rx created before any node lists were sent,
             // once a single node list has been sent all new connections will immediately recognize it as a change.
-            nodes_rx: self.nodes_rx,
-            keyspaces_rx: self.keyspaces_rx,
+            nodes_rx: self.nodes_rx.clone(),
+            keyspaces_rx: self.keyspaces_rx.clone(),
             rng: SmallRng::from_rng(rand::thread_rng()).unwrap(),
-            task_handshake_tx: self.task_handshake_tx,
+            task_handshake_tx: self.task_handshake_tx.clone(),
         })
     }
 }

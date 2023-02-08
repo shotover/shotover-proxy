@@ -43,7 +43,7 @@ pub struct RedisSinkClusterConfig {
 }
 
 impl RedisSinkClusterConfig {
-    pub async fn get_transform(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         let mut cluster = RedisSinkCluster::new(
             self.first_contact_points.clone(),
             self.direct_destination.clone(),

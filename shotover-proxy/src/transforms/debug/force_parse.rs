@@ -19,7 +19,7 @@ pub struct DebugForceParseConfig {
 }
 
 impl DebugForceParseConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         Ok(TransformBuilder::DebugForceParse(DebugForceParse {
             parse_requests: self.parse_requests,
             parse_responses: self.parse_responses,
@@ -38,7 +38,7 @@ pub struct DebugForceEncodeConfig {
 }
 
 impl DebugForceEncodeConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         Ok(TransformBuilder::DebugForceParse(DebugForceParse {
             parse_requests: self.encode_requests,
             parse_responses: self.encode_responses,

@@ -33,7 +33,7 @@ Future transforms won't be added to the public API while in alpha. But in these 
 | [ConsistentScatter](#consistentscatter)               | ✅          | Alpha                 |
 | [DebugPrinter](#debugprinter)                         | ❌          | Alpha                 |
 | [DebugReturner](#debugreturner)                       | ✅          | Alpha                 |
-| [Null](#null)                                         | ✅          | Beta                  |
+| [NullSink](#NullSink)                                         | ✅          | Beta                  |
 | [ParallelMap](#parallelmap)                           | ✅          | Alpha                 |
 | [Protect](#protect)                                   | ❌          | Alpha                 |
 | [QueryCounter](#querycounter)                         | ❌          | Alpha                 |
@@ -267,12 +267,12 @@ Delay the transform chain at the position that this transform sits at.
 ```
 -->
 
-### Null
+### NullSink
 
 This transform will drop any messages it receives and return an empty response.
 
 ```yaml
-- Null
+- NullSink
 ```
 
 ### ParallelMap
@@ -531,7 +531,7 @@ The response from the down-chain transform is returned back up-chain but various
     #   SubchainOnMismatch:
     #     - QueryTypeFilter:
     #         filter: Read
-    #     - Null
+    #     - NullSink
 
     # Timeout for sending to the sub chain in microseconds
     timeout_micros: 1000
@@ -542,7 +542,7 @@ The response from the down-chain transform is returned back up-chain but various
     chain:
       - QueryTypeFilter:
           filter: Read
-      - Null
+      - NullSink
 ```
 
 This transfrom emits a metrics [counter](user-guide/observability.md#counter) named `tee_dropped_messages` and the label `chain` as `Tee`.

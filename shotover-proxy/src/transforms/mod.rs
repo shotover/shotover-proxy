@@ -22,7 +22,7 @@ use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolBuilder};
 #[cfg(test)]
 use crate::transforms::loopback::Loopback;
-use crate::transforms::null::Null;
+use crate::transforms::null::NullSink;
 use crate::transforms::parallel_map::{ParallelMap, ParallelMapBuilder, ParallelMapConfig};
 use crate::transforms::protect::Protect;
 #[cfg(feature = "alpha-transforms")]
@@ -83,7 +83,7 @@ pub enum TransformBuilder {
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCacheBuilder),
     Tee(Tee),
-    Null(Null),
+    NullSink(NullSink),
     #[cfg(test)]
     Loopback(Loopback),
     Protect(Box<Protect>),
@@ -104,36 +104,40 @@ pub enum TransformBuilder {
 }
 
 impl TransformBuilder {
-    pub fn build(self) -> Transforms {
+    pub fn build(&self) -> Transforms {
         match self {
-            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t),
+            TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t.clone()),
             TransformBuilder::CassandraSinkCluster(t) => {
                 Transforms::CassandraSinkCluster(t.build())
             }
-            TransformBuilder::CassandraPeersRewrite(t) => Transforms::CassandraPeersRewrite(t),
-            TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
-            TransformBuilder::Tee(t) => Transforms::Tee(t),
-            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t),
-            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t),
-            TransformBuilder::RedisTimestampTagger(t) => Transforms::RedisTimestampTagger(t),
-            TransformBuilder::RedisClusterPortsRewrite(t) => {
-                Transforms::RedisClusterPortsRewrite(t)
+            TransformBuilder::CassandraPeersRewrite(t) => {
+                Transforms::CassandraPeersRewrite(t.clone())
             }
-            TransformBuilder::DebugPrinter(t) => Transforms::DebugPrinter(t),
-            TransformBuilder::DebugForceParse(t) => Transforms::DebugForceParse(t),
-            TransformBuilder::Null(t) => Transforms::Null(t),
-            TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t),
+            TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
+            TransformBuilder::Tee(t) => Transforms::Tee(t.clone()),
+            TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t.clone()),
+            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t.clone()),
+            TransformBuilder::RedisTimestampTagger(t) => {
+                Transforms::RedisTimestampTagger(t.clone())
+            }
+            TransformBuilder::RedisClusterPortsRewrite(t) => {
+                Transforms::RedisClusterPortsRewrite(t.clone())
+            }
+            TransformBuilder::DebugPrinter(t) => Transforms::DebugPrinter(t.clone()),
+            TransformBuilder::DebugForceParse(t) => Transforms::DebugForceParse(t.clone()),
+            TransformBuilder::NullSink(t) => Transforms::NullSink(t.clone()),
+            TransformBuilder::RedisSinkCluster(t) => Transforms::RedisSinkCluster(t.clone()),
             TransformBuilder::ParallelMap(t) => Transforms::ParallelMap(t.build()),
             TransformBuilder::PoolConnections(t) => Transforms::PoolConnections(t.build()),
-            TransformBuilder::Coalesce(t) => Transforms::Coalesce(t),
-            TransformBuilder::QueryTypeFilter(t) => Transforms::QueryTypeFilter(t),
-            TransformBuilder::QueryCounter(t) => Transforms::QueryCounter(t),
+            TransformBuilder::Coalesce(t) => Transforms::Coalesce(t.clone()),
+            TransformBuilder::QueryTypeFilter(t) => Transforms::QueryTypeFilter(t.clone()),
+            TransformBuilder::QueryCounter(t) => Transforms::QueryCounter(t.clone()),
             #[cfg(test)]
-            TransformBuilder::Loopback(t) => Transforms::Loopback(t),
-            TransformBuilder::Protect(t) => Transforms::Protect(t),
-            TransformBuilder::DebugReturner(t) => Transforms::DebugReturner(t),
-            TransformBuilder::DebugRandomDelay(t) => Transforms::DebugRandomDelay(t),
-            TransformBuilder::RequestThrottling(t) => Transforms::RequestThrottling(t),
+            TransformBuilder::Loopback(t) => Transforms::Loopback(t.clone()),
+            TransformBuilder::Protect(t) => Transforms::Protect(t.clone()),
+            TransformBuilder::DebugReturner(t) => Transforms::DebugReturner(t.clone()),
+            TransformBuilder::DebugRandomDelay(t) => Transforms::DebugRandomDelay(t.clone()),
+            TransformBuilder::RequestThrottling(t) => Transforms::RequestThrottling(t.clone()),
         }
     }
 
@@ -154,7 +158,7 @@ impl TransformBuilder {
             TransformBuilder::RedisClusterPortsRewrite(r) => r.validate(),
             TransformBuilder::DebugPrinter(p) => p.validate(),
             TransformBuilder::DebugForceParse(p) => p.validate(),
-            TransformBuilder::Null(n) => n.validate(),
+            TransformBuilder::NullSink(n) => n.validate(),
             TransformBuilder::RedisSinkCluster(r) => r.validate(),
             TransformBuilder::ParallelMap(s) => s.validate(),
             TransformBuilder::PoolConnections(s) => s.validate(),
@@ -183,7 +187,7 @@ impl TransformBuilder {
             TransformBuilder::RedisClusterPortsRewrite(r) => r.is_terminating(),
             TransformBuilder::DebugPrinter(p) => p.is_terminating(),
             TransformBuilder::DebugForceParse(p) => p.is_terminating(),
-            TransformBuilder::Null(n) => n.is_terminating(),
+            TransformBuilder::NullSink(n) => n.is_terminating(),
             TransformBuilder::RedisSinkCluster(r) => r.is_terminating(),
             TransformBuilder::ParallelMap(s) => s.is_terminating(),
             TransformBuilder::PoolConnections(s) => s.is_terminating(),
@@ -218,7 +222,7 @@ pub enum Transforms {
     CassandraPeersRewrite(CassandraPeersRewrite),
     RedisCache(SimpleRedisCache),
     Tee(Tee),
-    Null(Null),
+    NullSink(NullSink),
     #[cfg(test)]
     Loopback(Loopback),
     Protect(Box<Protect>),
@@ -254,7 +258,7 @@ impl Transforms {
             Transforms::Tee(m) => m.transform(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform(message_wrapper).await,
-            Transforms::Null(n) => n.transform(message_wrapper).await,
+            Transforms::NullSink(n) => n.transform(message_wrapper).await,
             #[cfg(test)]
             Transforms::Loopback(n) => n.transform(message_wrapper).await,
             Transforms::Protect(p) => p.transform(message_wrapper).await,
@@ -283,7 +287,7 @@ impl Transforms {
             Transforms::Tee(m) => m.transform_pushed(message_wrapper).await,
             Transforms::DebugPrinter(p) => p.transform_pushed(message_wrapper).await,
             Transforms::DebugForceParse(p) => p.transform_pushed(message_wrapper).await,
-            Transforms::Null(n) => n.transform_pushed(message_wrapper).await,
+            Transforms::NullSink(n) => n.transform_pushed(message_wrapper).await,
             #[cfg(test)]
             Transforms::Loopback(n) => n.transform_pushed(message_wrapper).await,
             Transforms::Protect(p) => p.transform_pushed(message_wrapper).await,
@@ -317,7 +321,7 @@ impl Transforms {
             Transforms::Tee(a) => a.prep_transform_chain(t).await,
             Transforms::DebugPrinter(a) => a.prep_transform_chain(t).await,
             Transforms::DebugForceParse(a) => a.prep_transform_chain(t).await,
-            Transforms::Null(a) => a.prep_transform_chain(t).await,
+            Transforms::NullSink(a) => a.prep_transform_chain(t).await,
             #[cfg(test)]
             Transforms::Loopback(a) => a.prep_transform_chain(t).await,
             Transforms::Protect(a) => a.prep_transform_chain(t).await,
@@ -349,7 +353,7 @@ impl Transforms {
             Transforms::RedisClusterPortsRewrite(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugPrinter(p) => p.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::DebugForceParse(p) => p.set_pushed_messages_tx(pushed_messages_tx),
-            Transforms::Null(n) => n.set_pushed_messages_tx(pushed_messages_tx),
+            Transforms::NullSink(n) => n.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::RedisSinkCluster(r) => r.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::ParallelMap(s) => s.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::PoolConnections(s) => s.set_pushed_messages_tx(pushed_messages_tx),
@@ -382,7 +386,7 @@ pub enum TransformsConfig {
     RedisTimestampTagger,
     DebugPrinter,
     DebugReturner(DebugReturnerConfig),
-    Null,
+    NullSink,
     #[cfg(test)]
     Loopback,
     #[cfg(feature = "alpha-transforms")]
@@ -401,40 +405,39 @@ pub enum TransformsConfig {
 
 impl TransformsConfig {
     #[async_recursion]
-    /// Return a new instance of the transform that the config is specifying.
-    pub async fn get_transform(&self, chain_name: String) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         match self {
-            TransformsConfig::CassandraSinkSingle(c) => c.get_transform(chain_name).await,
-            TransformsConfig::CassandraSinkCluster(c) => c.get_transform(chain_name).await,
-            TransformsConfig::CassandraPeersRewrite(c) => c.get_transform().await,
-            TransformsConfig::RedisCache(r) => r.get_transform().await,
-            TransformsConfig::Tee(t) => t.get_transform().await,
-            TransformsConfig::RedisSinkSingle(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ConsistentScatter(c) => c.get_transform().await,
+            TransformsConfig::CassandraSinkSingle(c) => c.get_builder(chain_name).await,
+            TransformsConfig::CassandraSinkCluster(c) => c.get_builder(chain_name).await,
+            TransformsConfig::CassandraPeersRewrite(c) => c.get_builder().await,
+            TransformsConfig::RedisCache(r) => r.get_builder().await,
+            TransformsConfig::Tee(t) => t.get_builder().await,
+            TransformsConfig::RedisSinkSingle(r) => r.get_builder(chain_name).await,
+            TransformsConfig::ConsistentScatter(c) => c.get_builder().await,
             TransformsConfig::RedisTimestampTagger => Ok(TransformBuilder::RedisTimestampTagger(
                 RedisTimestampTagger::new(),
             )),
-            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_transform().await,
+            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_builder().await,
             TransformsConfig::DebugPrinter => {
                 Ok(TransformBuilder::DebugPrinter(DebugPrinter::new()))
             }
-            TransformsConfig::DebugReturner(d) => d.get_transform().await,
-            TransformsConfig::Null => Ok(TransformBuilder::Null(Null::default())),
+            TransformsConfig::DebugReturner(d) => d.get_builder().await,
+            TransformsConfig::NullSink => Ok(TransformBuilder::NullSink(NullSink::default())),
             #[cfg(test)]
             TransformsConfig::Loopback => Ok(TransformBuilder::Loopback(Loopback::default())),
             #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::Protect(p) => p.get_transform().await,
+            TransformsConfig::Protect(p) => p.get_builder().await,
             #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::DebugForceParse(d) => d.get_transform().await,
+            TransformsConfig::DebugForceParse(d) => d.get_builder().await,
             #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::DebugForceEncode(d) => d.get_transform().await,
-            TransformsConfig::RedisSinkCluster(r) => r.get_transform(chain_name).await,
-            TransformsConfig::ParallelMap(s) => s.get_transform().await,
-            //TransformsConfig::PoolConnections(s) => s.get_transform().await,
-            TransformsConfig::Coalesce(s) => s.get_transform().await,
-            TransformsConfig::QueryTypeFilter(s) => s.get_transform().await,
-            TransformsConfig::QueryCounter(s) => s.get_transform().await,
-            TransformsConfig::RequestThrottling(s) => s.get_transform().await,
+            TransformsConfig::DebugForceEncode(d) => d.get_builder().await,
+            TransformsConfig::RedisSinkCluster(r) => r.get_builder(chain_name).await,
+            TransformsConfig::ParallelMap(s) => s.get_builder().await,
+            //TransformsConfig::PoolConnections(s) => s.get_builder().await,
+            TransformsConfig::Coalesce(s) => s.get_builder().await,
+            TransformsConfig::QueryTypeFilter(s) => s.get_builder().await,
+            TransformsConfig::QueryCounter(s) => s.get_builder().await,
+            TransformsConfig::RequestThrottling(s) => s.get_builder().await,
         }
     }
 }
@@ -445,7 +448,7 @@ pub async fn build_chain_from_config(
 ) -> Result<TransformChainBuilder> {
     let mut transforms: Vec<TransformBuilder> = Vec::new();
     for tc in transform_configs {
-        transforms.push(tc.get_transform(name.clone()).await?)
+        transforms.push(tc.get_builder(name.clone()).await?)
     }
     Ok(TransformChainBuilder::new(transforms, name))
 }
@@ -527,7 +530,7 @@ impl<'a> Wrapper<'a> {
     pub async fn call_next_transform(mut self) -> ChainResponse {
         let transform = match self.transforms.next() {
             Some(transform) => transform,
-            None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a Null transform, otherwise use a terminating sink transform to send the messages somewhere.")
+            None => panic!("The transform chain does not end with a terminating transform. If you want to throw the messages away use a NullSink transform, otherwise use a terminating sink transform to send the messages somewhere.")
         };
 
         let transform_name = transform.get_name();
@@ -633,21 +636,18 @@ impl<'a> Wrapper<'a> {
 /// The trait has one method where you implement the majority of your logic [Transform::transform],
 /// however it also includes a setup and naming method.
 ///
-/// Transforms are cloned on a per TCP connection basis from a copy of the struct originally created
-/// by the call to the `get_transform` method on each transform's config struct.
+/// Transforms are created on a per TCP connection basis by calling `TransformBuilder::build()`.
 /// This means that each member of your struct that implements this trait can be considered private for
 /// each TCP connection or connected client. If you wish to share data between all copies of your struct
-/// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that.
-///
-/// Changing the clone behavior of this struct can also control this behavior.
+/// then wrapping a member in an [`Arc<Mutex<_>>`](std::sync::Mutex) will achieve that,
+/// but make sure to copy the value from the TransformBuilder to ensure all instances are referring to the same value.
 ///
 /// Once you have created your [`Transform`], you will need to create
-/// new enum variants in [Transforms] and [TransformsConfig] to make them configurable in Shotover.
+/// new enum variants in [Transforms], [TransformBuilder] and [TransformsConfig] to make them configurable in Shotover.
 /// Shotover uses a concept called enum dispatch to provide dynamic configuration of transform chains
 /// with minimal impact on performance.
 ///
 /// Implementing this trait is usually done using `#[async_trait]` macros.
-///
 #[async_trait]
 pub trait Transform: Send {
     /// This method should be implemented by your transform. The wrapper object contains the queries/

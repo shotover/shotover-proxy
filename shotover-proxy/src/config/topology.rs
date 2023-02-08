@@ -23,11 +23,31 @@ pub struct TopologyConfig {
 }
 
 impl Topology {
-    pub fn new_from_yaml(yaml_contents: String) -> Topology {
-        let config: TopologyConfig = serde_yaml::from_str(&yaml_contents)
-            .map_err(|e| anyhow!(e))
-            .unwrap();
+    pub fn from_yaml(yaml_contents: String) -> Topology {
+        let deserializer = serde_yaml::Deserializer::from_str(&yaml_contents);
+        let config: TopologyConfig =
+            serde_yaml::with::singleton_map_recursive::deserialize(deserializer).unwrap();
         Topology::topology_from_config(config)
+    }
+
+    pub fn from_file(filepath: String) -> Result<Topology> {
+        let file = std::fs::File::open(&filepath).map_err(|err| {
+            anyhow!(err).context(format!("Couldn't open the topology file {}", &filepath))
+        })?;
+        let deserializer = serde_yaml::Deserializer::from_reader(file);
+        let config: TopologyConfig =
+            serde_yaml::with::singleton_map_recursive::deserialize(deserializer)
+                .map_err(|e| anyhow!(e))?;
+
+        Ok(Topology::topology_from_config(config))
+    }
+
+    fn topology_from_config(config: TopologyConfig) -> Topology {
+        Topology {
+            sources: config.sources,
+            chain_config: config.chain_config,
+            source_to_chain_mapping: config.source_to_chain_mapping,
+        }
     }
 
     async fn build_chains(&self) -> Result<HashMap<String, TransformChainBuilder>> {
@@ -96,28 +116,6 @@ impl Topology {
         );
         Ok(sources_list)
     }
-
-    pub fn from_file(filepath: String) -> Result<Topology> {
-        let file = std::fs::File::open(&filepath).map_err(|err| {
-            anyhow!(err).context(format!("Couldn't open the topology file {}", &filepath))
-        })?;
-        let config: TopologyConfig = serde_yaml::from_reader(file)?;
-
-        Ok(Topology::topology_from_config(config))
-    }
-
-    pub fn from_string(topology: String) -> Result<Topology> {
-        let config: TopologyConfig = serde_yaml::from_slice(topology.as_bytes())?;
-        Ok(Topology::topology_from_config(config))
-    }
-
-    pub fn topology_from_config(config: TopologyConfig) -> Topology {
-        Topology {
-            sources: config.sources,
-            chain_config: config.chain_config,
-            source_to_chain_mapping: config.source_to_chain_mapping,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -177,9 +175,12 @@ redis_chain:
 
     #[tokio::test]
     async fn test_validate_chain_valid_chain() {
-        run_test_topology(vec![TransformsConfig::DebugPrinter, TransformsConfig::Null])
-            .await
-            .unwrap();
+        run_test_topology(vec![
+            TransformsConfig::DebugPrinter,
+            TransformsConfig::NullSink,
+        ])
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -200,7 +201,7 @@ redis_chain:
                 flush_when_buffered_message_count: None,
                 flush_when_millis_since_last_flush: None,
             }),
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ])
         .await
         .unwrap_err()
@@ -213,13 +214,13 @@ redis_chain:
     async fn test_validate_chain_terminating_in_middle() {
         let expected = r#"Topology errors
 redis_chain:
-  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
         let error = run_test_topology(vec![
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
+            TransformsConfig::NullSink,
         ])
         .await
         .unwrap_err()
@@ -251,14 +252,14 @@ redis_chain:
     async fn test_validate_chain_terminating_middle_non_terminating_at_end() {
         let expected = r#"Topology errors
 redis_chain:
-  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
   Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
         let error = run_test_topology(vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
             TransformsConfig::DebugPrinter,
         ])
         .await
@@ -273,7 +274,7 @@ redis_chain:
         let subchain = vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ];
 
         let mut route_map = HashMap::new();
@@ -298,14 +299,14 @@ redis_chain:
 redis_chain:
   ConsistentScatter:
     subchain-1:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
         let subchain = vec![
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ];
 
         let mut route_map = HashMap::new();
@@ -332,7 +333,7 @@ redis_chain:
         let chain = vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ];
 
         let caching_schema = HashMap::new();
@@ -344,7 +345,7 @@ redis_chain:
                 chain,
                 caching_schema,
             }),
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ])
         .await
         .unwrap();
@@ -356,14 +357,14 @@ redis_chain:
 redis_chain:
   SimpleRedisCache:
     cache_chain:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
         let chain = vec![
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ];
 
         let error = run_test_topology(vec![
@@ -373,7 +374,7 @@ redis_chain:
                 chain,
                 caching_schema: HashMap::new(),
             }),
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ])
         .await
         .unwrap_err()
@@ -387,7 +388,7 @@ redis_chain:
         let chain = vec![
             TransformsConfig::DebugPrinter,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ];
 
         run_test_topology(vec![
@@ -409,14 +410,14 @@ redis_chain:
 redis_chain:
   ParallelMap:
     parallel_map_chain:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
         let chain = vec![
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ];
 
         let error = run_test_topology(vec![
@@ -441,14 +442,14 @@ redis_chain:
 redis_chain:
   ConsistentScatter:
     subchain-1:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
         let subchain = vec![
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
         ];
 
         let mut route_map = HashMap::new();
@@ -509,13 +510,13 @@ redis_chain:
 redis_chain:
   ConsistentScatter:
     subchain-1:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 "#;
 
         let subchain = vec![
             TransformsConfig::DebugPrinter,
-            TransformsConfig::Null,
+            TransformsConfig::NullSink,
             TransformsConfig::DebugPrinter,
         ];
 
@@ -545,7 +546,7 @@ redis_chain:
         let yaml_contents =
             fs::read_to_string("tests/test-configs/invalid_subchains.yaml").unwrap();
 
-        let topology = Topology::new_from_yaml(yaml_contents);
+        let topology = Topology::from_yaml(yaml_contents);
         let error = topology
             .run_chains(trigger_shutdown_rx)
             .await
@@ -554,20 +555,20 @@ redis_chain:
 
         let expected = r#"Topology errors
 a_first_chain:
-  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
-  Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+  Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
+  Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
   Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
 b_second_chain:
   ConsistentScatter:
     a_chain_1:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
       Non-terminating transform "DebugPrinter" is last in chain. Last transform must be terminating.
     b_chain_2:
-      Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+      Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
     c_chain_3:
       ConsistentScatter:
         sub_chain_2:
-          Terminating transform "Null" is not last in chain. Terminating transform must be last in chain.
+          Terminating transform "NullSink" is not last in chain. Terminating transform must be last in chain.
 "#;
 
         assert_eq!(error, expected);

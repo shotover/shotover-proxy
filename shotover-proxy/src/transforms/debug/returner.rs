@@ -12,7 +12,7 @@ pub struct DebugReturnerConfig {
 }
 
 impl DebugReturnerConfig {
-    pub async fn get_transform(&self) -> Result<TransformBuilder> {
+    pub async fn get_builder(&self) -> Result<TransformBuilder> {
         Ok(TransformBuilder::DebugReturner(DebugReturner::new(
             self.response.clone(),
         )))
