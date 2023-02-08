@@ -1,5 +1,5 @@
 use crate::message::Messages;
-use crate::tls::TlsAcceptor;
+use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
 use crate::transforms::Wrapper;
 use anyhow::{anyhow, Context, Result};
@@ -457,7 +457,11 @@ impl<C: Codec + 'static> Handler<C> {
         let local_addr = stream.local_addr()?;
 
         if let Some(tls) = &self.tls {
-            let tls_stream = tls.accept(stream).await?;
+            let tls_stream = match tls.accept(stream).await {
+                Ok(x) => x,
+                Err(AcceptError::Disconnected) => return Ok(()),
+                Err(AcceptError::Failure(err)) => return Err(err),
+            };
             let (rx, tx) = tokio::io::split(tls_stream);
             spawn_read_write_tasks(
                 self.codec.clone(),

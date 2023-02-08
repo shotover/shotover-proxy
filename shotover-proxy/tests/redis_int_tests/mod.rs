@@ -120,19 +120,7 @@ async fn source_tls_and_single_tls() {
 
     run_all(&mut connection, &mut flusher).await;
 
-    shotover
-        .shutdown_and_then_consume_events(&[EventMatcher::new()
-            .with_level(Level::Error)
-            .with_target("shotover_proxy::server")
-            .with_message(
-                r#"connection was unexpectedly terminated
-
-Caused by:
-    0: Failed to accept TLS connection
-    1: unexpected EOF"#,
-            )
-            .with_count(Count::Times(2))])
-        .await;
+    shotover.shutdown_and_then_consume_events(&[]).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
