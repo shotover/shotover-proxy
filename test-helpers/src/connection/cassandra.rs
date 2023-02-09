@@ -721,6 +721,7 @@ impl CassandraConnection {
                         ResResultBody::SchemaChange(_) => vec![],
                         ResResultBody::SetKeyspace(_) => vec![],
                         ResResultBody::Void => vec![],
+                        _ => unreachable!(),
                     },
                     _ => todo!(),
                 })
@@ -916,6 +917,7 @@ impl ResultValue {
                     .collect(),
             ),
             CassandraType::Null => ResultValue::Null,
+            _ => unreachable!(),
         }
     }
 

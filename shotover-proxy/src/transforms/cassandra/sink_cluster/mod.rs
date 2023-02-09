@@ -1372,6 +1372,7 @@ impl Transform for CassandraSinkCluster {
                     ServerEvent::TopologyChange(_) => false,
                     ServerEvent::StatusChange(_) => false,
                     ServerEvent::SchemaChange(_) => true,
+                    _ => unreachable!(),
                 }
             } else {
                 true
