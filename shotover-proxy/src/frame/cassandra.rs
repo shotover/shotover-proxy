@@ -266,6 +266,7 @@ impl CassandraFrame {
                             CassandraResult::SchemaChange(Box::new(schema_change)),
                         ),
                         ResResultBody::Void => CassandraOperation::Result(CassandraResult::Void),
+                        _ => unreachable!(),
                     }
                 } else {
                     unreachable!("We already know the operation is a result")
@@ -349,6 +350,7 @@ impl CassandraFrame {
             Opcode::AuthChallenge => CassandraOperation::AuthChallenge(frame.body),
             Opcode::AuthResponse => CassandraOperation::AuthResponse(frame.body),
             Opcode::AuthSuccess => CassandraOperation::AuthSuccess(frame.body),
+            _ => unreachable!(),
         };
 
         Ok(CassandraFrame {

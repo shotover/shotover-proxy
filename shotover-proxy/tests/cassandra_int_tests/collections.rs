@@ -53,6 +53,7 @@ fn get_type_str(col_type: ColType) -> &'static str {
         ColType::Udt => "udt",
         ColType::Tuple => "tuple",
         ColType::Duration => "duration",
+        _ => unreachable!(),
     }
 }
 

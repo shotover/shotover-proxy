@@ -14,7 +14,7 @@ subprocess = "0.2.7"
 anyhow = "1.0.42"
 nix = "0.26.0"
 rcgen = "0.10.0"
-tokio = { version = "1.21.1", features = ["full", "macros"] }
+tokio = { version = "1.25.0", features = ["full", "macros"] }
 serde = { version = "1.0.111", features = ["derive"] }
 serde_json = "1.0.89"
 nu-ansi-term = "0.46.0"

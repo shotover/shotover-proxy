@@ -620,6 +620,7 @@ impl MessageValue {
                 MessageValue::Tuple(value_list)
             }
             CassandraType::Null => MessageValue::Null,
+            _ => unreachable!(),
         }
     }
 

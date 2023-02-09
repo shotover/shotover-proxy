@@ -145,6 +145,7 @@ async fn topology_task_process(
                                         return Ok(());
                                     }
                                 }
+                                _ => unreachable!(),
                             },
                             ServerEvent::StatusChange(status) => {
                                 for node in &mut nodes {
@@ -152,6 +153,7 @@ async fn topology_task_process(
                                         node.is_up = match status.change_type {
                                             StatusChangeType::Up => true,
                                             StatusChangeType::Down => false,
+                                            _ => unreachable!(),
                                         }
                                     }
                                 }
@@ -171,6 +173,7 @@ async fn topology_task_process(
                                     return Ok(());
                                 }
                             }
+                            _ => unreachable!(),
                         }
                     }
                 }
