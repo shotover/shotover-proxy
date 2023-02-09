@@ -1,6 +1,9 @@
 use crate::cassandra_int_tests::cluster::run_topology_task;
 use std::net::SocketAddr;
-use test_helpers::connection::cassandra::{assert_query_result, CassandraConnection, ResultValue};
+use test_helpers::{
+    connection::cassandra::{assert_query_result, CassandraConnection, ResultValue},
+    metrics::get_metrics_value,
+};
 
 async fn test_rewrite_system_peers(connection: &CassandraConnection) {
     let star_results = [
@@ -151,6 +154,12 @@ pub async fn test(connection: &CassandraConnection) {
     test_rewrite_system_local(connection).await;
     test_rewrite_system_peers(connection).await;
     test_rewrite_system_peers_v2(connection).await;
+
+    let out_of_rack_request = get_metrics_value(
+        "out_of_rack_requests{chain=\"main_chain\",transform=\"CassandraSinkCluster\"}",
+    )
+    .await;
+    assert_eq!(out_of_rack_request, "0");
 }
 
 pub async fn test_topology_task(ca_path: Option<&str>) {
