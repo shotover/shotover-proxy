@@ -7,6 +7,7 @@ use cassandra_protocol::frame::message_execute::BodyReqExecuteOwned;
 use cassandra_protocol::frame::Version;
 use cassandra_protocol::token::Murmur3Token;
 use cassandra_protocol::types::CBytesShort;
+use metrics::{register_counter, Counter};
 use rand::prelude::*;
 use split_iter::Splittable;
 use std::sync::Arc;
@@ -35,12 +36,14 @@ pub struct KeyspaceMetadata {
 #[derive(Clone)]
 pub struct NodePoolBuilder {
     prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
+    out_of_rack_requests: Counter,
 }
 
 impl NodePoolBuilder {
-    pub fn new() -> Self {
+    pub fn new(chain_name: String) -> Self {
         Self {
             prepared_metadata: Arc::new(RwLock::new(HashMap::new())),
+            out_of_rack_requests: register_counter!("out_of_rack_requests", "chain" => chain_name, "transform" => "CassandraSinkCluster"),
         }
     }
 
@@ -51,17 +54,18 @@ impl NodePoolBuilder {
             token_map: TokenMap::new(&[]),
             nodes: vec![],
             prev_idx: 0,
+            out_of_rack_requests: self.out_of_rack_requests.clone(),
         }
     }
 }
 
-#[derive(Debug)]
 pub struct NodePool {
     prepared_metadata: Arc<RwLock<HashMap<CBytesShort, PreparedMetadata>>>,
     keyspace_metadata: HashMap<String, KeyspaceMetadata>,
     token_map: TokenMap,
     nodes: Vec<CassandraNode>,
     prev_idx: usize,
+    out_of_rack_requests: Counter,
 }
 
 impl NodePool {
@@ -138,9 +142,7 @@ impl NodePool {
 
         self.prev_idx = (self.prev_idx + 1) % up_indexes.len();
 
-        self.nodes
-            .get_mut(*up_indexes.get(self.prev_idx).unwrap())
-            .unwrap()
+        &mut self.nodes[up_indexes[self.prev_idx]]
     }
 
     /// Get a token routed replica node for the supplied execute message (if exists)
@@ -195,10 +197,15 @@ impl NodePool {
             .split(|node| node.rack == rack);
 
         if let Some(rack_replica) = rack_replicas.choose(rng) {
-            return Ok(Some(rack_replica));
+            Ok(Some(rack_replica))
+        } else {
+            // An execute message is being delivered outside of CassandraSinkCluster's designated rack. The only cases this can occur is when:
+            // The client correctly routes to the shotover node that reports it has the token in its rack, however the destination cassandra node has since gone down and is now inaccessible.
+            // or
+            // The clients token aware routing is broken.
+            self.out_of_rack_requests.increment(1);
+            Ok(dc_replicas.choose(rng))
         }
-
-        Ok(dc_replicas.choose(rng))
     }
 }
 
@@ -212,7 +219,7 @@ mod test_node_pool {
     fn test_round_robin() {
         let nodes = prepare_nodes();
 
-        let mut node_pool = NodePoolBuilder::new().build();
+        let mut node_pool = NodePoolBuilder::new("chain".to_owned()).build();
         let (_nodes_tx, mut nodes_rx) = watch::channel(nodes.clone());
         node_pool.update_nodes(&mut nodes_rx);
 
