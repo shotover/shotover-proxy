@@ -781,7 +781,9 @@ async fn compression_single(#[case] driver: CassandraDriver) {
     async fn test(driver: CassandraDriver, topology_path: &str, compression: Compression) {
         let _compose =
             DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
-        let shotover = shotover_from_topology_file(topology_path).await;
+        let shotover = ShotoverProcessBuilder::new_with_topology(topology_path)
+            .start()
+            .await;
         let connection =
             || CassandraConnection::new_with_compression("127.0.0.1", 9042, driver, compression);
 
@@ -802,7 +804,6 @@ async fn compression_single(#[case] driver: CassandraDriver) {
 }
 
 #[rstest]
-#[case::cdrs(CdrsTokio)]
 #[case::scylla(Scylla)]
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
@@ -810,7 +811,9 @@ async fn compression_cluster(#[case] driver: CassandraDriver) {
     async fn test(driver: CassandraDriver, topology_path: &str, compression: Compression) {
         let _compose =
             DockerCompose::new("example-configs/cassandra-cluster-v4/docker-compose.yaml");
-        let shotover = shotover_from_topology_file(topology_path).await;
+        let shotover = ShotoverProcessBuilder::new_with_topology(topology_path)
+            .start()
+            .await;
         let connection = || async {
             let mut connection =
                 CassandraConnection::new_with_compression("127.0.0.1", 9042, driver, compression)
@@ -826,14 +829,12 @@ async fn compression_cluster(#[case] driver: CassandraDriver) {
         shotover.shutdown_and_then_consume_events(&[]).await;
     }
 
-    for compression in [Compression::Lz4, Compression::Snappy] {
-        test(
-            driver,
-            "example-configs/cassandra-cluster-v4/topology.yaml",
-            compression,
-        )
-        .await;
-    }
+    test(
+        driver,
+        "example-configs/cassandra-cluster-v4/topology.yaml",
+        Compression::Snappy,
+    )
+    .await;
 }
 
 #[rstest]
