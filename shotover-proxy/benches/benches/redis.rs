@@ -4,7 +4,7 @@ use std::path::Path;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
-use test_helpers::shotover_process::{shotover_from_topology_file, BinProcess};
+use test_helpers::shotover_process::{BinProcess, ShotoverProcessBuilder};
 use tokio::runtime::Runtime;
 
 struct Query {
@@ -169,7 +169,9 @@ impl BenchResources {
             .build()
             .unwrap();
         let compose = DockerCompose::new(compose_file);
-        let shotover = Some(tokio.block_on(shotover_from_topology_file(shotover_topology)));
+        let shotover = Some(
+            tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
+        );
 
         let mut connection = redis_connection::new(6379);
         redis::cmd("SET")

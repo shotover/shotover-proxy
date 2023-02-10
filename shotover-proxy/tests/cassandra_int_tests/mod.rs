@@ -14,9 +14,7 @@ use test_helpers::connection::cassandra::{
 };
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
-use test_helpers::shotover_process::{
-    shotover_from_topology_file, shotover_from_topology_file_with_name, Count, EventMatcher, Level,
-};
+use test_helpers::shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder};
 use tokio::time::{timeout, Duration};
 
 mod batch_statements;
@@ -62,8 +60,11 @@ where
 async fn passthrough_standard(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-    let shotover =
-        shotover_from_topology_file("example-configs/cassandra-passthrough/topology.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology.yaml",
+    )
+    .start()
+    .await;
 
     let connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
 
@@ -81,9 +82,11 @@ async fn passthrough_standard(#[case] driver: CassandraDriver) {
 async fn passthrough_encode(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-    let shotover =
-        shotover_from_topology_file("example-configs/cassandra-passthrough/topology-encode.yaml")
-            .await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology-encode.yaml",
+    )
+    .start()
+    .await;
 
     let connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
 
@@ -102,7 +105,10 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
     test_helpers::cert::generate_cassandra_test_certs();
     let _compose = DockerCompose::new("example-configs/cassandra-tls/docker-compose.yaml");
 
-    let shotover = shotover_from_topology_file("example-configs/cassandra-tls/topology.yaml").await;
+    let shotover =
+        ShotoverProcessBuilder::new_with_topology("example-configs/cassandra-tls/topology.yaml")
+            .start()
+            .await;
 
     let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
@@ -135,9 +141,10 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-cluster-v3/docker-compose.yaml");
 
     {
-        let shotover = shotover_from_topology_file(
+        let shotover = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-cluster-v3/topology-dummy-peers.yaml",
         )
+        .start()
         .await;
 
         let connection = || async {
@@ -178,8 +185,11 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         connection
     };
     {
-        let shotover =
-            shotover_from_topology_file("example-configs/cassandra-cluster-v4/topology.yaml").await;
+        let shotover = ShotoverProcessBuilder::new_with_topology(
+            "example-configs/cassandra-cluster-v4/topology.yaml",
+        )
+        .start()
+        .await;
 
         standard_test_suite(&connection, driver).await;
         cluster::single_rack_v4::test(&connection().await, driver).await;
@@ -237,9 +247,10 @@ Caused by:
     }
 
     {
-        let shotover = shotover_from_topology_file(
+        let shotover = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-cluster-v4/topology-dummy-peers.yaml",
         )
+        .start()
         .await;
 
         cluster::single_rack_v4::test_dummy_peers(&connection().await, driver).await;
@@ -261,20 +272,23 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         DockerCompose::new("example-configs/cassandra-cluster-multi-rack/docker-compose.yaml");
 
     {
-        let shotover_rack1 = shotover_from_topology_file_with_name(
+        let shotover_rack1 = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-cluster-multi-rack/topology_rack1.yaml",
-            "Rack1",
         )
+        .with_log_name("Rack1")
+        .start()
         .await;
-        let shotover_rack2 = shotover_from_topology_file_with_name(
+        let shotover_rack2 = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-cluster-multi-rack/topology_rack2.yaml",
-            "Rack2",
         )
+        .with_log_name("Rack2")
+        .start()
         .await;
-        let shotover_rack3 = shotover_from_topology_file_with_name(
+        let shotover_rack3 = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-cluster-multi-rack/topology_rack3.yaml",
-            "Rack3",
         )
+        .with_log_name("Rack3")
+        .start()
         .await;
 
         let connection = || async {
@@ -290,9 +304,7 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         //Check for bugs in cross connection state
         native_types::test(&connection().await).await;
 
-        // TODO: This can be removed by allowing the shotover_from_topology_file_* to specify the `observability_interface`.
-        //       I've avoided doing that in this PR because shotover_from_topology_file should probably become a builder type,
-        //       and its up in the air whether we will have a config file or not.
+        // TODO: This can be removed by allowing the ShotoverProcessBuilder to specify the `observability_interface`.
         let metrics_port_collision = [EventMatcher::new()
             .with_level(Level::Error)
             .with_target("shotover_proxy::observability")
@@ -324,9 +336,11 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 
     let _compose = DockerCompose::new("example-configs/cassandra-cluster-tls/docker-compose.yaml");
     {
-        let shotover =
-            shotover_from_topology_file("example-configs/cassandra-cluster-tls/topology.yaml")
-                .await;
+        let shotover = ShotoverProcessBuilder::new_with_topology(
+            "example-configs/cassandra-cluster-tls/topology.yaml",
+        )
+        .start()
+        .await;
 
         {
             // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
@@ -367,8 +381,11 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-redis-cache/docker-compose.yaml");
 
-    let shotover =
-        shotover_from_topology_file("example-configs/cassandra-redis-cache/topology.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-redis-cache/topology.yaml",
+    )
+    .start()
+    .await;
 
     let mut redis_connection = redis_connection::new(6379);
     let connection_creator = || CassandraConnection::new("127.0.0.1", 9042, driver);
@@ -396,8 +413,11 @@ async fn protect_transform_local(#[case] driver: CassandraDriver) {
     let _compose =
         DockerCompose::new("example-configs/cassandra-protect-local/docker-compose.yaml");
 
-    let shotover =
-        shotover_from_topology_file("example-configs/cassandra-protect-local/topology.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-protect-local/topology.yaml",
+    )
+    .start()
+    .await;
 
     let shotover_connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
     let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
@@ -418,8 +438,11 @@ async fn protect_transform_aws(#[case] driver: CassandraDriver) {
     let _compose = DockerCompose::new("example-configs/cassandra-protect-aws/docker-compose.yaml");
     let _compose_aws = DockerCompose::new_moto();
 
-    let shotover =
-        shotover_from_topology_file("example-configs/cassandra-protect-aws/topology.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-protect-aws/topology.yaml",
+    )
+    .start()
+    .await;
 
     let shotover_connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
     let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
@@ -441,9 +464,11 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-4.0-cassandra.yaml",
     );
 
-    let shotover =
-        shotover_from_topology_file("tests/test-configs/cassandra-peers-rewrite/topology.yaml")
-            .await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
+    )
+    .start()
+    .await;
 
     let normal_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
     let rewrite_port_connection = CassandraConnection::new("127.0.0.1", 9044, driver).await;
@@ -537,9 +562,11 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
         "tests/test-configs/cassandra-peers-rewrite/docker-compose-3.11-cassandra.yaml",
     );
 
-    let shotover =
-        shotover_from_topology_file("tests/test-configs/cassandra-peers-rewrite/topology.yaml")
-            .await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/cassandra-peers-rewrite/topology.yaml",
+    )
+    .start()
+    .await;
 
     let connection = CassandraConnection::new("127.0.0.1", 9044, driver).await;
     // run some basic tests to confirm it works as normal
@@ -570,8 +597,11 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-    let shotover =
-        shotover_from_topology_file("tests/test-configs/cassandra-request-throttling.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/cassandra-request-throttling.yaml",
+    )
+    .start()
+    .await;
 
     let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window and not trigger the rate limiter with client's startup reqeusts
@@ -670,8 +700,11 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
     let _docker_compose =
         DockerCompose::new("example-configs/cassandra-passthrough/docker-compose.yaml");
 
-    let shotover =
-        shotover_from_topology_file("example-configs/cassandra-passthrough/topology.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "example-configs/cassandra-passthrough/topology.yaml",
+    )
+    .start()
+    .await;
 
     let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
 

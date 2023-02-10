@@ -1,12 +1,15 @@
 use serial_test::serial;
 use test_helpers::connection::redis_connection;
-use test_helpers::shotover_process::shotover_from_topology_file;
+use test_helpers::shotover_process::ShotoverProcessBuilder;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_query_type_filter() {
-    let shotover =
-        shotover_from_topology_file("tests/test-configs/query_type_filter/simple.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/query_type_filter/simple.yaml",
+    )
+    .start()
+    .await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
