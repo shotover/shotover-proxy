@@ -289,18 +289,21 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
             "example-configs/cassandra-cluster-multi-rack/topology_rack1.yaml",
         )
         .with_log_name("Rack1")
+        .with_observability_address("127.0.0.1:9001".parse().unwrap())
         .start()
         .await;
         let shotover_rack2 = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-cluster-multi-rack/topology_rack2.yaml",
         )
         .with_log_name("Rack2")
+        .with_observability_address("127.0.0.1:9002".parse().unwrap())
         .start()
         .await;
         let shotover_rack3 = ShotoverProcessBuilder::new_with_topology(
             "example-configs/cassandra-cluster-multi-rack/topology_rack3.yaml",
         )
         .with_log_name("Rack3")
+        .with_observability_address("127.0.0.1:9003".parse().unwrap())
         .start()
         .await;
 
@@ -319,21 +322,9 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         //Check for bugs in cross connection state
         native_types::test(&connection().await).await;
 
-        // TODO: This can be removed by allowing the ShotoverProcessBuilder to specify the `observability_interface`.
-        let metrics_port_collision = [EventMatcher::new()
-            .with_level(Level::Error)
-            .with_target("shotover_proxy::observability")
-            .with_message(r#"Metrics HTTP server failed: Failed to bind to 0.0.0.0:9001"#)
-            .with_count(Count::Any)];
-        shotover_rack1
-            .shutdown_and_then_consume_events(&metrics_port_collision)
-            .await;
-        shotover_rack2
-            .shutdown_and_then_consume_events(&metrics_port_collision)
-            .await;
-        shotover_rack3
-            .shutdown_and_then_consume_events(&metrics_port_collision)
-            .await;
+        shotover_rack1.shutdown_and_then_consume_events(&[]).await;
+        shotover_rack2.shutdown_and_then_consume_events(&[]).await;
+        shotover_rack3.shutdown_and_then_consume_events(&[]).await;
     }
 
     cluster::multi_rack::test_topology_task(None).await;
