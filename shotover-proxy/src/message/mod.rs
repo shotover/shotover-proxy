@@ -36,6 +36,7 @@ use uuid::Uuid;
 pub enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
+    Kafka,
 }
 
 pub type Messages = Vec<Message>;
@@ -184,6 +185,7 @@ impl Message {
             } => match message_type {
                 MessageType::Redis => nonzero!(1u32),
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
+                MessageType::Kafka => todo!(),
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 Frame::Cassandra(frame) => frame.cell_count()?,
@@ -248,6 +250,7 @@ impl Message {
                 tracing: Tracing::Response(None),
                 warnings: vec![],
             }),
+            Metadata::Kafka => todo!(),
         });
         self.invalidate_cache();
     }
@@ -263,6 +266,7 @@ impl Message {
                     Ok(Metadata::Cassandra(cassandra::raw_frame::metadata(bytes)?))
                 }
                 MessageType::Redis => Ok(Metadata::Redis),
+                MessageType::Kafka => Ok(Metadata::Kafka),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
@@ -290,9 +294,8 @@ impl Message {
                     operation: body,
                 })
             }
-            Metadata::Redis => {
-                unimplemented!()
-            }
+            Metadata::Redis => unimplemented!(),
+            Metadata::Kafka => unimplemented!(),
         });
 
         Ok(())
