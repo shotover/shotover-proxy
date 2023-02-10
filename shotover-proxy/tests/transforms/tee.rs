@@ -1,12 +1,14 @@
 use serial_test::serial;
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
-use test_helpers::shotover_process::shotover_from_topology_file;
+use test_helpers::shotover_process::ShotoverProcessBuilder;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_ignore_matches() {
-    let shotover = shotover_from_topology_file("tests/test-configs/tee/ignore.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology("tests/test-configs/tee/ignore.yaml")
+        .start()
+        .await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -24,8 +26,11 @@ async fn test_ignore_matches() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_ignore_with_mismatch() {
-    let shotover =
-        shotover_from_topology_file("tests/test-configs/tee/ignore_with_mismatch.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/tee/ignore_with_mismatch.yaml",
+    )
+    .start()
+    .await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -43,7 +48,9 @@ async fn test_ignore_with_mismatch() {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_fail_matches() {
-    let shotover = shotover_from_topology_file("tests/test-configs/tee/fail.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology("tests/test-configs/tee/fail.yaml")
+        .start()
+        .await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -62,7 +69,9 @@ async fn test_fail_matches() {
 #[serial]
 async fn test_fail_with_mismatch() {
     let shotover =
-        shotover_from_topology_file("tests/test-configs/tee/fail_with_mismatch.yaml").await;
+        ShotoverProcessBuilder::new_with_topology("tests/test-configs/tee/fail_with_mismatch.yaml")
+            .start()
+            .await;
 
     let mut connection = redis_connection::new_async(6379).await;
 
@@ -83,7 +92,10 @@ async fn test_fail_with_mismatch() {
 #[serial]
 async fn test_subchain_matches() {
     let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
-    let shotover = shotover_from_topology_file("tests/test-configs/tee/subchain.yaml").await;
+    let shotover =
+        ShotoverProcessBuilder::new_with_topology("tests/test-configs/tee/subchain.yaml")
+            .start()
+            .await;
 
     let mut shotover_connection = redis_connection::new_async(6379).await;
     let mut mismatch_chain_redis = redis_connection::new_async(1111).await;
@@ -117,8 +129,11 @@ async fn test_subchain_matches() {
 #[serial]
 async fn test_subchain_with_mismatch() {
     let _compose = DockerCompose::new("example-configs/redis-passthrough/docker-compose.yaml");
-    let shotover =
-        shotover_from_topology_file("tests/test-configs/tee/subchain_with_mismatch.yaml").await;
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/tee/subchain_with_mismatch.yaml",
+    )
+    .start()
+    .await;
 
     let mut shotover_connection = redis_connection::new_async(6379).await;
     let mut mismatch_chain_redis = redis_connection::new_async(1111).await;

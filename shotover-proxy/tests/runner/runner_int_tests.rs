@@ -1,13 +1,11 @@
 use serial_test::serial;
-use test_helpers::shotover_process::{
-    shotover_from_topology_file, shotover_from_topology_file_fail_to_startup, Count, EventMatcher,
-    Level,
-};
+use test_helpers::shotover_process::{Count, EventMatcher, Level, ShotoverProcessBuilder};
 
 #[tokio::test]
 #[serial]
 async fn test_early_shutdown_cassandra_source() {
-    shotover_from_topology_file("example-configs/null-cassandra/topology.yaml")
+    ShotoverProcessBuilder::new_with_topology("example-configs/null-cassandra/topology.yaml")
+        .start()
         .await
         .shutdown_and_then_consume_events(&[])
         .await;
@@ -19,7 +17,9 @@ async fn test_shotover_responds_sigterm() {
     // Ensure it isnt reliant on timing
     for _ in 0..1000 {
         let shotover_process =
-            shotover_from_topology_file("example-configs/null-redis/topology.yaml").await;
+            ShotoverProcessBuilder::new_with_topology("example-configs/null-redis/topology.yaml")
+                .start()
+                .await;
         shotover_process.signal(nix::sys::signal::Signal::SIGTERM);
 
         let events = shotover_process.consume_remaining_events(&[]).await;
@@ -36,7 +36,9 @@ async fn test_shotover_responds_sigterm() {
 #[serial]
 async fn test_shotover_responds_sigint() {
     let shotover_process =
-        shotover_from_topology_file("example-configs/null-redis/topology.yaml").await;
+        ShotoverProcessBuilder::new_with_topology("example-configs/null-redis/topology.yaml")
+            .start()
+            .await;
     shotover_process.signal(nix::sys::signal::Signal::SIGINT);
 
     let events = shotover_process.consume_remaining_events(&[]).await;
@@ -51,28 +53,29 @@ async fn test_shotover_responds_sigint() {
 #[tokio::test]
 #[serial]
 async fn test_shotover_shutdown_when_invalid_topology_non_terminating_last() {
-    shotover_from_topology_file_fail_to_startup(
+    ShotoverProcessBuilder::new_with_topology(
         "tests/test-configs/invalid_non_terminating_last.yaml",
-        &[],
     )
+    .assert_fails_to_start(&[])
     .await;
 }
 
 #[tokio::test]
 #[serial]
 async fn test_shotover_shutdown_when_invalid_topology_terminating_not_last() {
-    shotover_from_topology_file_fail_to_startup(
+    ShotoverProcessBuilder::new_with_topology(
         "tests/test-configs/invalid_terminating_not_last.yaml",
-        &[],
     )
+    .assert_fails_to_start(&[])
     .await;
 }
 
 #[tokio::test]
 #[serial]
 async fn test_shotover_shutdown_when_topology_invalid_topology_subchains() {
-    shotover_from_topology_file_fail_to_startup(
+    ShotoverProcessBuilder::new_with_topology(
         "tests/test-configs/invalid_subchains.yaml",
+    ).assert_fails_to_start(
         &[
             EventMatcher::new().with_level(Level::Error)
                 .with_target("shotover_proxy::runner")

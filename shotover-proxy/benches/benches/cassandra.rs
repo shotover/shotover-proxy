@@ -5,7 +5,7 @@ use test_helpers::cert::generate_cassandra_test_certs;
 use test_helpers::connection::cassandra::{CassandraConnection, CassandraDriver};
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
-use test_helpers::shotover_process::{shotover_from_topology_file, BinProcess};
+use test_helpers::shotover_process::{BinProcess, ShotoverProcessBuilder};
 use tokio::runtime::Runtime;
 
 struct Query {
@@ -282,7 +282,9 @@ impl BenchResources {
             .build()
             .unwrap();
         let compose = DockerCompose::new(compose_file);
-        let shotover = Some(tokio.block_on(shotover_from_topology_file(shotover_topology)));
+        let shotover = Some(
+            tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
+        );
 
         let connection = tokio.block_on(CassandraConnection::new("127.0.0.1", 9042, DRIVER));
 
@@ -308,7 +310,9 @@ impl BenchResources {
             .unwrap();
         generate_cassandra_test_certs();
         let compose = DockerCompose::new(compose_file);
-        let shotover = Some(tokio.block_on(shotover_from_topology_file(shotover_topology)));
+        let shotover = Some(
+            tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
+        );
 
         let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
