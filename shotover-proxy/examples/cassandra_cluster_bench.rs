@@ -1,6 +1,6 @@
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::latte::Latte;
-use test_helpers::shotover_process::shotover_from_topology_file;
+use test_helpers::shotover_process::ShotoverProcessBuilder;
 
 #[tokio::main]
 async fn main() {
@@ -11,7 +11,10 @@ async fn main() {
     let bench = "read";
     {
         let _compose = DockerCompose::new(&format!("{}/docker-compose.yaml", config_dir));
-        let shotover = shotover_from_topology_file(&format!("{}/topology.yaml", config_dir)).await;
+        let shotover =
+            ShotoverProcessBuilder::new_with_topology(&format!("{}/topology.yaml", config_dir))
+                .start()
+                .await;
 
         println!("Benching Shotover ...");
         latte.init(bench, "172.16.1.2:9044");

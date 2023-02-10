@@ -1,12 +1,15 @@
 use serial_test::serial;
 use test_helpers::connection::redis_connection;
 use test_helpers::metrics::{assert_metrics_has_keys, assert_metrics_key_value};
-use test_helpers::shotover_process::shotover_from_topology_file;
+use test_helpers::shotover_process::ShotoverProcessBuilder;
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_metrics() {
-    let shotover = shotover_from_topology_file("example-configs/null-redis/topology.yaml").await;
+    let shotover =
+        ShotoverProcessBuilder::new_with_topology("example-configs/null-redis/topology.yaml")
+            .start()
+            .await;
     let mut connection = redis_connection::new_async(6379).await;
 
     // Expected string looks unnatural because it is sorted in alphabetical order to make it match the sorted error output
