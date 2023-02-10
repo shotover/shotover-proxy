@@ -389,21 +389,12 @@ impl CassandraFrame {
         cursor.write_all(&[self.operation.to_opcode().into()]).ok();
 
         serialize_with_length_prefix(&mut cursor, |cursor| {
-            if Compression::None == compression || self.operation.to_opcode() == Opcode::Startup {
+            if Compression::None == compression {
                 if let Tracing::Response(Some(uuid)) = self.tracing {
                     cursor.write_all(uuid.as_bytes()).ok();
                 }
 
-                if !self.warnings.is_empty() {
-                    let warnings_len = self.warnings.len() as i16;
-                    cursor.write_all(&warnings_len.to_be_bytes()).ok();
-
-                    for warning in &self.warnings {
-                        let warning_len = warning.len() as i16;
-                        cursor.write_all(&warning_len.to_be_bytes()).ok();
-                        cursor.write_all(warning.as_bytes()).ok();
-                    }
-                }
+                self.write_warnings(cursor);
 
                 self.operation.serialize(cursor, self.version)
             } else {
@@ -415,16 +406,7 @@ impl CassandraFrame {
                     body_cursor.write_all(uuid.as_bytes()).ok();
                 }
 
-                if !self.warnings.is_empty() {
-                    let warnings_len = self.warnings.len() as i16;
-                    body_cursor.write_all(&warnings_len.to_be_bytes()).ok();
-
-                    for warning in &self.warnings {
-                        let warning_len = warning.len() as i16;
-                        body_cursor.write_all(&warning_len.to_be_bytes()).ok();
-                        body_cursor.write_all(warning.as_bytes()).ok();
-                    }
-                }
+                self.write_warnings(&mut body_cursor);
 
                 self.operation.serialize(&mut body_cursor, self.version);
                 cursor
@@ -434,6 +416,19 @@ impl CassandraFrame {
         });
 
         buf
+    }
+
+    fn write_warnings(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
+        if !self.warnings.is_empty() {
+            let warnings_len = self.warnings.len() as i16;
+            cursor.write_all(&warnings_len.to_be_bytes()).ok();
+
+            for warning in &self.warnings {
+                let warning_len = warning.len() as i16;
+                cursor.write_all(&warning_len.to_be_bytes()).ok();
+                cursor.write_all(warning.as_bytes()).ok();
+            }
+        }
     }
 }
 

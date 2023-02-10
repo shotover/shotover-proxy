@@ -291,9 +291,7 @@ impl Encoder<Messages> for CassandraCodec {
                         .into_cassandra()
                         .unwrap()
                         .encode(compression.unwrap_or(Compression::None));
-                    if buffer.is_empty() {
-                        info!("trying to send 0 length frame");
-                    }
+
                     dst.put(buffer.as_slice());
                 }
             }

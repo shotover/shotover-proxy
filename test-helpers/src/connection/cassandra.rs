@@ -261,6 +261,10 @@ impl CassandraConnection {
                             .collect::<Vec<String>>(),
                     )
                     .user("cassandra", "cassandra")
+                    .compression(compression.map(|x| match x {
+                        Compression::Snappy => scylla::transport::Compression::Snappy,
+                        Compression::Lz4 => scylla::transport::Compression::Lz4,
+                    }))
                     .default_consistency(Consistency::One);
 
                 if let Some(compression) = compression {
