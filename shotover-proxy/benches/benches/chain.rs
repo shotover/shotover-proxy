@@ -29,7 +29,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             "bench".to_string(),
         );
         let wrapper = Wrapper::new_with_chain_name(
-            vec![Message::from_frame(Frame::None)],
+            vec![Message::from_frame(Frame::Redis(RedisFrame::Null))],
             chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
         );

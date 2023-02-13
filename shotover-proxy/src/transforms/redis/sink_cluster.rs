@@ -915,7 +915,7 @@ fn short_circuit(frame: RedisFrame) -> Result<ResponseFuture> {
 
     one_tx
         .send(Response {
-            original: Message::from_frame(Frame::None),
+            original: Message::from_frame(Frame::Redis(RedisFrame::Null)),
             response: Ok(Message::from_frame(Frame::Redis(frame))),
         })
         .map_err(|_| anyhow!("Failed to send short circuited redis frame"))?;
@@ -954,7 +954,7 @@ impl Transform for RedisSinkCluster {
             trace!("Got resp {:?}", s);
             let Response { original, response } = s.or_else(|e| -> Result<Response> {
                 Ok(Response {
-                    original: Message::from_frame(Frame::None),
+                    original: Message::from_frame(Frame::Redis(RedisFrame::Null)),
                     response: Ok(Message::from_frame(Frame::Redis(RedisFrame::Error(
                         format!("ERR Could not route request - {e}").into(),
                     )))),
