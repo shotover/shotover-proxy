@@ -1,5 +1,6 @@
 use crate::frame::{CassandraOperation, CassandraResult, Frame};
-use crate::message::{IntSize, Message, MessageValue};
+use crate::message::Message;
+use crate::message_value::{IntSize, MessageValue};
 use crate::transforms::cassandra::peers_rewrite::CassandraOperation::Event;
 use crate::{
     error::ChainResponse,

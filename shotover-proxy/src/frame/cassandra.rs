@@ -1,4 +1,5 @@
-use crate::message::{serialize_len, serialize_with_length_prefix, MessageValue, QueryType};
+use crate::message::QueryType;
+use crate::message_value::{serialize_len, serialize_with_length_prefix, MessageValue};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cassandra_protocol::compression::Compression;
