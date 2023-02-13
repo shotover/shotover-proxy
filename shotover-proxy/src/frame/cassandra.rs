@@ -394,6 +394,8 @@ impl CassandraFrame {
                 self.write_tracing_and_warnings(cursor);
 
                 self.operation.serialize(cursor, self.version)
+
+            // Special case None to avoid large copies
             } else {
                 // TODO: While compression is obviously going to cost more than no compression, I suspect it doesnt have to be quite this bad
                 let mut body_buf = Vec::with_capacity(128);
