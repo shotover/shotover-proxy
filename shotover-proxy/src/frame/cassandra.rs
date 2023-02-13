@@ -390,23 +390,17 @@ impl CassandraFrame {
 
         serialize_with_length_prefix(&mut cursor, |cursor| {
             if Compression::None == compression {
-                if let Tracing::Response(Some(uuid)) = self.tracing {
-                    cursor.write_all(uuid.as_bytes()).ok();
-                }
-
-                self.write_warnings(cursor);
+                self.write_tracing_and_warnings(cursor);
 
                 self.operation.serialize(cursor, self.version)
+
+            // Special case None to avoid large copies
             } else {
                 // TODO: While compression is obviously going to cost more than no compression, I suspect it doesnt have to be quite this bad
                 let mut body_buf = Vec::with_capacity(128);
                 let mut body_cursor = Cursor::new(&mut body_buf);
 
-                if let Tracing::Response(Some(uuid)) = self.tracing {
-                    body_cursor.write_all(uuid.as_bytes()).ok();
-                }
-
-                self.write_warnings(&mut body_cursor);
+                self.write_tracing_and_warnings(&mut body_cursor);
 
                 self.operation.serialize(&mut body_cursor, self.version);
                 cursor
@@ -418,7 +412,11 @@ impl CassandraFrame {
         buf
     }
 
-    fn write_warnings(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
+    fn write_tracing_and_warnings(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
+        if let Tracing::Response(Some(uuid)) = self.tracing {
+            cursor.write_all(uuid.as_bytes()).ok();
+        }
+
         if !self.warnings.is_empty() {
             let warnings_len = self.warnings.len() as i16;
             cursor.write_all(&warnings_len.to_be_bytes()).ok();
