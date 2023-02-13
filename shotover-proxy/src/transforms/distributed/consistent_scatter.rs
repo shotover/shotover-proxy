@@ -150,7 +150,7 @@ impl Transform for ConsistentScatter {
         Ok(if results.len() < max_required_successes as usize {
             let mut messages = message_wrapper.messages;
             for message in &mut messages {
-                message.set_error("Not enough responses".into());
+                *message = message.to_error_response("Not enough responses".into());
             }
             messages
         } else {
@@ -219,7 +219,7 @@ mod scatter_transform_tests {
 
     fn check_err_responses(mut messages: Messages, expected_err: &str) {
         let mut message = messages.pop().unwrap();
-        let expected = Frame::Redis(RedisFrame::Error(expected_err.into()));
+        let expected = Frame::Redis(RedisFrame::Error(format!("ERR {expected_err}").into()));
         assert_eq!(message.frame().unwrap(), &expected);
     }
 
