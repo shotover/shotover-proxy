@@ -36,7 +36,6 @@ use uuid::Uuid;
 pub enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
-    None,
 }
 
 pub type Messages = Vec<Message>;
@@ -184,13 +183,11 @@ impl Message {
                 message_type,
             } => match message_type {
                 MessageType::Redis => nonzero!(1u32),
-                MessageType::None => nonzero!(1u32),
                 MessageType::Cassandra => cassandra::raw_frame::cell_count(bytes)?,
             },
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 Frame::Cassandra(frame) => frame.cell_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
-                Frame::None => nonzero!(1u32),
             },
         })
     }
@@ -224,7 +221,6 @@ impl Message {
                 tracing: frame.tracing,
                 warnings: vec![],
             }),
-            Frame::None => Frame::None,
         })
     }
 
@@ -232,7 +228,6 @@ impl Message {
         match self.frame() {
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
             Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
-            Some(Frame::None) => QueryType::ReadWrite,
             None => QueryType::ReadWrite,
         }
     }
@@ -253,7 +248,6 @@ impl Message {
                 tracing: Tracing::Response(None),
                 warnings: vec![],
             }),
-            Metadata::None => Frame::None,
         });
         self.invalidate_cache();
     }
@@ -269,12 +263,10 @@ impl Message {
                     Ok(Metadata::Cassandra(cassandra::raw_frame::metadata(bytes)?))
                 }
                 MessageType::Redis => Ok(Metadata::Redis),
-                MessageType::None => Ok(Metadata::None),
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
                 Frame::Redis(_) => Ok(Metadata::Redis),
-                Frame::None => Ok(Metadata::None),
             },
         }
     }
@@ -301,7 +293,6 @@ impl Message {
             Metadata::Redis => {
                 unimplemented!()
             }
-            Metadata::None => Frame::None,
         });
 
         Ok(())
@@ -329,7 +320,6 @@ impl Message {
                 match frame {
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
                     Frame::Redis(_) => None,
-                    Frame::None => None,
                 }
             }
             None => None,

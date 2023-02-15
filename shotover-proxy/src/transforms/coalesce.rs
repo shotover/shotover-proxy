@@ -79,7 +79,7 @@ impl Transform for Coalesce {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::Frame;
+    use crate::frame::{Frame, RedisFrame};
     use crate::message::Message;
     use crate::transforms::coalesce::Coalesce;
     use crate::transforms::loopback::Loopback;
@@ -97,7 +97,9 @@ mod test {
 
         let mut chain = vec![Transforms::Loopback(Loopback::default())];
 
-        let messages: Vec<_> = (0..25).map(|_| Message::from_frame(Frame::None)).collect();
+        let messages: Vec<_> = (0..25)
+            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.reset(&mut chain);
@@ -134,7 +136,9 @@ mod test {
 
         let mut chain = vec![Transforms::Loopback(Loopback::default())];
 
-        let messages: Vec<_> = (0..25).map(|_| Message::from_frame(Frame::None)).collect();
+        let messages: Vec<_> = (0..25)
+            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.reset(&mut chain);
@@ -168,7 +172,9 @@ mod test {
 
         let mut chain = vec![Transforms::Loopback(Loopback::default())];
 
-        let messages: Vec<_> = (0..25).map(|_| Message::from_frame(Frame::None)).collect();
+        let messages: Vec<_> = (0..25)
+            .map(|_| Message::from_frame(Frame::Redis(RedisFrame::Null)))
+            .collect();
 
         let mut message_wrapper = Wrapper::new(messages.clone());
         message_wrapper.reset(&mut chain);
