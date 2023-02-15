@@ -11,14 +11,12 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 pub enum MessageType {
     Redis,
     Cassandra,
-    None,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Frame {
     Cassandra(CassandraFrame),
     Redis(RedisFrame),
-    None,
 }
 
 impl Frame {
@@ -28,7 +26,6 @@ impl Frame {
             MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
-            MessageType::None => Ok(Frame::None),
         }
     }
 
@@ -36,7 +33,6 @@ impl Frame {
         match self {
             Frame::Redis(_) => "Redis",
             Frame::Cassandra(_) => "Cassandra",
-            Frame::None => "None",
         }
     }
 
@@ -44,7 +40,6 @@ impl Frame {
         match self {
             Frame::Cassandra(_) => MessageType::Cassandra,
             Frame::Redis(_) => MessageType::Redis,
-            Frame::None => MessageType::None,
         }
     }
 
@@ -61,7 +56,6 @@ impl Frame {
     pub fn into_redis(self) -> Result<RedisFrame> {
         match self {
             Frame::Redis(frame) => Ok(frame),
-            Frame::None => Ok(RedisFrame::Null),
             frame => Err(anyhow!(
                 "Expected redis frame but received {} frame",
                 frame.name()
@@ -85,7 +79,6 @@ impl Display for Frame {
         match self {
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
             Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
-            Frame::None => write!(f, "None"),
         }
     }
 }
