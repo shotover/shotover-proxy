@@ -1,9 +1,27 @@
 use crate::message::Messages;
+use cassandra_protocol::compression::Compression;
 use tokio_util::codec::{Decoder, Encoder};
 
 pub mod cassandra;
 pub mod kafka;
 pub mod redis;
+
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum CodecState {
+    Cassandra { compression: Compression },
+    Redis,
+}
+
+impl CodecState {
+    pub fn as_compression(&self) -> Compression {
+        match self {
+            CodecState::Cassandra { compression } => *compression,
+            CodecState::Redis => {
+                panic!("This is a CodecState::Redis, expected CodecState::Cassandra")
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum CodecReadError {

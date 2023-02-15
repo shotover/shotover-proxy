@@ -5,8 +5,8 @@ use criterion::{criterion_group, BatchSize, Criterion};
 use hex_literal::hex;
 use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
 use shotover_proxy::frame::RedisFrame;
-use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame, MessageType};
-use shotover_proxy::message::{Message, QueryType};
+use shotover_proxy::frame::{CassandraFrame, CassandraOperation, Frame};
+use shotover_proxy::message::{Message, ProtocolType, QueryType};
 use shotover_proxy::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
 use shotover_proxy::transforms::chain::{TransformChain, TransformChainBuilder};
 use shotover_proxy::transforms::debug::returner::{DebugReturner, Response};
@@ -199,7 +199,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     )
                     .to_vec(),
                 ),
-                MessageType::Cassandra,
+                ProtocolType::Cassandra(Compression::None),
             )],
             chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
@@ -253,7 +253,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 }
                 .encode(Compression::None)
                 .into(),
-                MessageType::Cassandra,
+                ProtocolType::Cassandra(Compression::None),
             )],
             "bench".into(),
             "127.0.0.1:6379".parse().unwrap(),

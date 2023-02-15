@@ -115,11 +115,16 @@ impl Decoder for CassandraCodec {
                     let compressed = self.check_compression(&bytes).unwrap();
 
                     let mut message = if !compressed {
-                        Message::from_bytes(bytes.freeze(), MessageType::Cassandra)
-                    } else {
-                        Message::from_bytes_with_compression(
+                        Message::from_bytes(
                             bytes.freeze(),
-                            *self.compression.read().unwrap(),
+                            crate::message::ProtocolType::Cassandra(Compression::None),
+                        )
+                    } else {
+                        Message::from_bytes(
+                            bytes.freeze(),
+                            crate::message::ProtocolType::Cassandra(
+                                *self.compression.read().unwrap(),
+                            ),
                         )
                     };
 
@@ -256,7 +261,7 @@ impl Encoder<Messages> for CassandraCodec {
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
             let start = dst.len();
-            let compression = m.compression;
+            let compression = m.codec_state.as_compression();
 
             // TODO: always check if cassandra message
             match m.into_encodable(MessageType::Cassandra)? {
@@ -287,10 +292,7 @@ impl Encoder<Messages> for CassandraCodec {
                         self.set_compression(startup);
                     };
 
-                    let buffer = frame
-                        .into_cassandra()
-                        .unwrap()
-                        .encode(compression.unwrap_or(Compression::None));
+                    let buffer = frame.into_cassandra().unwrap().encode(compression);
 
                     dst.put(buffer.as_slice());
                 }

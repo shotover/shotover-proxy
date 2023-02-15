@@ -1,4 +1,5 @@
 use crate::codec::redis::redis_query_type;
+use crate::codec::CodecState;
 use crate::frame::cassandra::Tracing;
 use crate::frame::{
     cassandra,
@@ -34,6 +35,23 @@ pub enum Metadata {
     Kafka,
 }
 
+#[derive(PartialEq)]
+pub enum ProtocolType {
+    Cassandra(Compression),
+    Redis,
+}
+
+impl From<&ProtocolType> for CodecState {
+    fn from(value: &ProtocolType) -> Self {
+        match value {
+            ProtocolType::Cassandra(compression) => Self::Cassandra {
+                compression: *compression,
+            },
+            ProtocolType::Redis => Self::Redis,
+        }
+    }
+}
+
 pub type Messages = Vec<Message>;
 
 /// The Message type is designed to effeciently abstract over the message being in various states of processing.
@@ -56,7 +74,7 @@ pub struct Message {
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
     pub meta_timestamp: Option<i64>,
 
-    pub compression: Option<Compression>,
+    pub codec_state: CodecState,
 }
 
 /// `from_*` methods for `Message`
@@ -64,25 +82,14 @@ impl Message {
     /// This method should be called when you have have just the raw bytes of a message.
     /// This is expected to be used only by codecs that are decoding a protocol where the length of the message is provided in the header. e.g. cassandra
     /// Providing just the bytes results in better performance when only the raw bytes are available.
-    pub fn from_bytes(bytes: Bytes, message_type: MessageType) -> Self {
+    pub fn from_bytes(bytes: Bytes, protocol_type: ProtocolType) -> Self {
         Message {
             inner: Some(MessageInner::RawBytes {
                 bytes,
-                message_type,
+                message_type: MessageType::from(&protocol_type),
             }),
             meta_timestamp: None,
-            compression: None,
-        }
-    }
-
-    pub fn from_bytes_with_compression(bytes: Bytes, compression: Compression) -> Self {
-        Message {
-            inner: Some(MessageInner::RawBytes {
-                bytes,
-                message_type: MessageType::Cassandra,
-            }),
-            meta_timestamp: None,
-            compression: Some(compression),
+            codec_state: CodecState::from(&protocol_type),
         }
     }
 
@@ -91,9 +98,9 @@ impl Message {
     /// Providing both the raw bytes and Frame results in better performance if they are both already available.
     pub fn from_bytes_and_frame(bytes: Bytes, frame: Frame) -> Self {
         Message {
+            codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Parsed { bytes, frame }),
             meta_timestamp: None,
-            compression: None,
         }
     }
 
@@ -102,9 +109,9 @@ impl Message {
     /// Providing just the Frame results in better performance when only the Frame is available.
     pub fn from_frame(frame: Frame) -> Self {
         Message {
+            codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Modified { frame }),
             meta_timestamp: None,
-            compression: None,
         }
     }
 }
@@ -123,7 +130,7 @@ impl Message {
     /// Calling frame for the first time on a message may be an expensive operation as the raw bytes might not yet be parsed into a Frame.
     /// Calling frame again is free as the parsed message is cached.
     pub fn frame(&mut self) -> Option<&mut Frame> {
-        let (inner, result) = self.inner.take().unwrap().ensure_parsed(self.compression);
+        let (inner, result) = self.inner.take().unwrap().ensure_parsed(self.codec_state);
         self.inner = Some(inner);
         if let Err(err) = result {
             // TODO: If we could include a stacktrace in this error it would be really helpful
@@ -355,13 +362,12 @@ enum MessageInner {
 }
 
 impl MessageInner {
-    fn ensure_parsed(self, compression: Option<Compression>) -> (Self, Result<()>) {
+    fn ensure_parsed(self, codec_state: CodecState) -> (Self, Result<()>) {
         match self {
             MessageInner::RawBytes {
                 bytes,
                 message_type,
-            } => match Frame::from_bytes_with_compression(bytes.clone(), message_type, compression)
-            {
+            } => match Frame::from_bytes(bytes.clone(), message_type, codec_state) {
                 Ok(frame) => (MessageInner::Parsed { bytes, frame }, Ok(())),
                 Err(err) => (
                     MessageInner::RawBytes {

@@ -1,11 +1,10 @@
+use crate::{codec::CodecState, message::ProtocolType};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use cassandra_protocol::compression::Compression;
-use std::fmt::{Display, Formatter, Result as FmtResult};
-
 pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult};
+use cassandra_protocol::compression::Compression;
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
-
+use std::fmt::{Display, Formatter, Result as FmtResult};
 pub mod cassandra;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -15,6 +14,26 @@ pub enum MessageType {
     Kafka,
 }
 
+impl From<&ProtocolType> for MessageType {
+    fn from(value: &ProtocolType) -> Self {
+        match value {
+            ProtocolType::Cassandra(_compression) => Self::Cassandra,
+            ProtocolType::Redis => Self::Redis,
+        }
+    }
+}
+
+impl Frame {
+    pub fn as_codec_state(&self) -> CodecState {
+        match self {
+            Frame::Cassandra(_) => CodecState::Cassandra {
+                compression: Compression::None,
+            },
+            Frame::Redis(_) => CodecState::Redis,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum Frame {
     Cassandra(CassandraFrame),
@@ -22,15 +41,19 @@ pub enum Frame {
 }
 
 impl Frame {
-    pub fn from_bytes(bytes: Bytes, message_type: MessageType) -> Result<Self> {
+    pub fn from_bytes(
+        bytes: Bytes,
+        message_type: MessageType,
+        codec_state: CodecState,
+    ) -> Result<Self> {
         match message_type {
             MessageType::Cassandra => {
-                CassandraFrame::from_bytes(bytes, Compression::None).map(Frame::Cassandra)
+                CassandraFrame::from_bytes(bytes, codec_state.as_compression())
+                    .map(Frame::Cassandra)
             }
             MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
-            MessageType::None => Ok(Frame::None),
         }
     }
 
