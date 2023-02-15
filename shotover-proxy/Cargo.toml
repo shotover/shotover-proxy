@@ -17,7 +17,7 @@ cassandra-cpp-driver-tests = ["test-helpers/cassandra-cpp-driver-tests"]
 pretty-hex = "0.3.0"
 hex = "0.4.3"
 tokio.workspace = true
-tokio-util = { version = "0.7.0" }
+tokio-util = { version = "0.7.7" }
 tokio-stream = "0.1.2"
 bytes.workspace = true
 bytes-utils = "0.1.1"
@@ -73,7 +73,7 @@ ordered-float = { version = "3.0.0", features = ["serde"] }
 #Crypto
 rusoto_kms = "0.48.0"
 rusoto_signature = "0.48.0"
-csv = "1.1.6"
+csv = "1.2.0"
 strum_macros = "0.24"
 chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
