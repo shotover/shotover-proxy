@@ -42,7 +42,7 @@ impl Transform for QueryCounter {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
                     }
                 }
-                Some(Frame::None) | None => {
+                None => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }
             }
