@@ -28,5 +28,5 @@ async fn produce(brokers: &str, topic_name: &str) {
 }
 
 pub async fn basic() {
-    produce("localhost:9092", "foo").await;
+    produce("localhost:9192", "foo").await;
 }
