@@ -7,7 +7,6 @@ use crate::frame::{
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes};
-use bytes_utils::Str;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use nonzero_ext::nonzero;
 use serde::Deserialize;
@@ -187,25 +186,6 @@ impl Message {
         self.inner = self.inner.take().map(|x| x.invalidate_cache());
     }
 
-    // TODO: this could be optimized to avoid parsing the cassandra sql
-    pub fn to_filtered_reply(&mut self) -> Message {
-        Message::from_frame(match self.frame().unwrap() {
-            Frame::Redis(_) => Frame::Redis(RedisFrame::Error(
-                "ERR Message was filtered out by shotover".into(),
-            )),
-            Frame::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
-                version: frame.version,
-                stream_id: frame.stream_id,
-                operation: CassandraOperation::Error(ErrorBody {
-                    message: "Message was filtered out by shotover".into(),
-                    ty: ErrorType::Server,
-                }),
-                tracing: frame.tracing,
-                warnings: vec![],
-            }),
-        })
-    }
-
     pub fn get_query_type(&mut self) -> QueryType {
         match self.frame() {
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
@@ -214,12 +194,13 @@ impl Message {
         }
     }
 
-    // TODO: replace with a to_error_reply, should be easier to reason about
-    pub fn set_error(&mut self, error: String) {
-        *self = Message::from_frame(match self.metadata().unwrap() {
-            Metadata::Redis => {
-                Frame::Redis(RedisFrame::Error(Str::from_inner(error.into()).unwrap()))
-            }
+    #[must_use]
+    /// Returns an error response with the provided error message.
+    /// If self is a request: the returned `Message` is a valid response to self
+    /// If self is a response: the returned `Message` is a valid replacement of self
+    pub fn to_error_response(&self, error: String) -> Message {
+        Message::from_frame(match self.metadata().unwrap() {
+            Metadata::Redis => Frame::Redis(RedisFrame::Error(format!("ERR {error}").into())),
             Metadata::Cassandra(frame) => Frame::Cassandra(CassandraFrame {
                 version: frame.version,
                 stream_id: frame.stream_id,
@@ -231,8 +212,7 @@ impl Message {
                 warnings: vec![],
             }),
             Metadata::Kafka => todo!(),
-        });
-        self.invalidate_cache();
+        })
     }
 
     /// Get metadata for this `Message`
