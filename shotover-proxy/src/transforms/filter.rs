@@ -40,7 +40,12 @@ impl Transform for QueryTypeFilter {
                     None
                 }
             })
-            .map(|(i, m)| (i, m.to_filtered_reply()))
+            .map(|(i, m)| {
+                (
+                    i,
+                    m.to_error_response("Message was filtered out by shotover".to_owned()),
+                )
+            })
             .collect();
 
         for (i, _) in removed_indexes.iter().rev() {

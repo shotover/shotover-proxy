@@ -13,7 +13,7 @@ impl Transform for NullSink {
 
     async fn transform<'a>(&'a mut self, mut message_wrapper: Wrapper<'a>) -> ChainResponse {
         for message in &mut message_wrapper.messages {
-            message.set_error("Handled by shotover null transform".to_string());
+            *message = message.to_error_response("Handled by shotover null transform".to_string());
         }
         Ok(message_wrapper.messages)
     }
