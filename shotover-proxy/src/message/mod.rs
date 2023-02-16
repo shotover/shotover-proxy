@@ -37,17 +37,19 @@ pub enum Metadata {
 
 #[derive(PartialEq)]
 pub enum ProtocolType {
-    Cassandra(Compression),
+    Cassandra { compression: Compression },
     Redis,
+    Kafka,
 }
 
 impl From<&ProtocolType> for CodecState {
     fn from(value: &ProtocolType) -> Self {
         match value {
-            ProtocolType::Cassandra(compression) => Self::Cassandra {
+            ProtocolType::Cassandra { compression } => Self::Cassandra {
                 compression: *compression,
             },
             ProtocolType::Redis => Self::Redis,
+            ProtocolType::Kafka => Self::Kafka,
         }
     }
 }

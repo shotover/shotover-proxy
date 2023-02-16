@@ -199,7 +199,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                     )
                     .to_vec(),
                 ),
-                ProtocolType::Cassandra(Compression::None),
+                ProtocolType::Cassandra {
+                    compression: Compression::None,
+                },
             )],
             chain.name.clone(),
             "127.0.0.1:6379".parse().unwrap(),
@@ -253,7 +255,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                 }
                 .encode(Compression::None)
                 .into(),
-                ProtocolType::Cassandra(Compression::None),
+                ProtocolType::Cassandra {
+                    compression: Compression::None,
+                },
             )],
             "bench".into(),
             "127.0.0.1:6379".parse().unwrap(),

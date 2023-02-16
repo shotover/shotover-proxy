@@ -10,14 +10,15 @@ pub mod redis;
 pub enum CodecState {
     Cassandra { compression: Compression },
     Redis,
+    Kafka,
 }
 
 impl CodecState {
     pub fn as_compression(&self) -> Compression {
         match self {
             CodecState::Cassandra { compression } => *compression,
-            CodecState::Redis => {
-                panic!("This is a CodecState::Redis, expected CodecState::Cassandra")
+            _ => {
+                panic!("This is a {self:?}, expected CodecState::Cassandra")
             }
         }
     }

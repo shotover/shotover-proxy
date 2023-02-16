@@ -17,8 +17,9 @@ pub enum MessageType {
 impl From<&ProtocolType> for MessageType {
     fn from(value: &ProtocolType) -> Self {
         match value {
-            ProtocolType::Cassandra(_compression) => Self::Cassandra,
+            ProtocolType::Cassandra { .. } => Self::Cassandra,
             ProtocolType::Redis => Self::Redis,
+            ProtocolType::Kafka => Self::Kafka,
         }
     }
 }
@@ -54,6 +55,7 @@ impl Frame {
             MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
+            MessageType::Kafka => todo!(),
         }
     }
 

@@ -117,14 +117,16 @@ impl Decoder for CassandraCodec {
                     let mut message = if !compressed {
                         Message::from_bytes(
                             bytes.freeze(),
-                            crate::message::ProtocolType::Cassandra(Compression::None),
+                            crate::message::ProtocolType::Cassandra {
+                                compression: Compression::None,
+                            },
                         )
                     } else {
                         Message::from_bytes(
                             bytes.freeze(),
-                            crate::message::ProtocolType::Cassandra(
-                                *self.compression.read().unwrap(),
-                            ),
+                            crate::message::ProtocolType::Cassandra {
+                                compression: *self.compression.read().unwrap(),
+                            },
                         )
                     };
 
