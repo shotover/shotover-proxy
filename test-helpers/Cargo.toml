@@ -11,26 +11,26 @@ license = "Apache-2.0"
 cassandra-cpp-driver-tests = ["cassandra-cpp"]
 
 [dependencies]
-tracing = "0.1.15"
-subprocess = "0.2.7"
-anyhow = "1.0.42"
-rcgen = "0.10.0"
-serde_yaml = "0.9.0"
+tracing.workspace = true
+subprocess.workspace = true
 regex = "1.7.0"
 tokio-bin-process = { path = "../tokio-bin-process" }
-cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
-cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cdrs-tokio.workspace = true
+cassandra-protocol.workspace = true
 cassandra-cpp = { version = "1.2.0", optional = true }
-openssl = { version = "0.10.36", features = ["vendored"] }
-bytes = "1.0.0"
 scylla = { version = "0.7.0", features = ["ssl"] }
+openssl.workspace = true
+bytes.workspace = true
 ordered-float = { version = "3.0.0", features = ["serde"] }
-tokio = { version = "1.25.0", features = ["full", "macros"] }
-uuid = { version = "1.0.0", features = ["serde", "v4"] }
-redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
+tokio.workspace = true
+uuid.workspace = true
+redis.workspace = true
 tokio-io-timeout = "1.1.1"
-tokio-openssl = "0.6.2"
-inferno = "0.11.13"
-itertools = "0.10.1"
-reqwest = "0.11.6"
-tracing-subscriber = "0.3.16"
+tokio-openssl.workspace = true
+inferno = "0.11.15"
+itertools.workspace = true
+reqwest.workspace = true
+tracing-subscriber.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+rcgen.workspace = true
