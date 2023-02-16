@@ -11,6 +11,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 pub enum MessageType {
     Redis,
     Cassandra,
+    Kafka,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -26,6 +27,7 @@ impl Frame {
             MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
+            MessageType::Kafka => todo!(),
         }
     }
 

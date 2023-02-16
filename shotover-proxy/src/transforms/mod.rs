@@ -21,6 +21,9 @@ use crate::transforms::distributed::consistent_scatter::{
     ConsistentScatter, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
+#[cfg(feature = "alpha-transforms")]
+use crate::transforms::kafka::sink_single::KafkaSinkSingleConfig;
+use crate::transforms::kafka::sink_single::{KafkaSinkSingle, KafkaSinkSingleBuilder};
 use crate::transforms::load_balance::{ConnectionBalanceAndPool, ConnectionBalanceAndPoolBuilder};
 #[cfg(test)]
 use crate::transforms::loopback::Loopback;
@@ -63,6 +66,7 @@ pub mod coalesce;
 pub mod debug;
 pub mod distributed;
 pub mod filter;
+pub mod kafka;
 pub mod load_balance;
 pub mod loopback;
 pub mod noop;
@@ -81,6 +85,7 @@ pub mod util;
 //       It would also affect whether sources pointing into the same chain share state, which will require careful consideration
 #[derive(Clone, IntoStaticStr)]
 pub enum TransformBuilder {
+    KafkaSinkSingle(KafkaSinkSingleBuilder),
     CassandraSinkSingle(CassandraSinkSingleBuilder),
     CassandraSinkCluster(Box<CassandraSinkClusterBuilder>),
     RedisSinkSingle(RedisSinkSingleBuilder),
@@ -110,6 +115,7 @@ pub enum TransformBuilder {
 impl TransformBuilder {
     pub fn build(&self) -> Transforms {
         match self {
+            TransformBuilder::KafkaSinkSingle(t) => Transforms::KafkaSinkSingle(t.build()),
             TransformBuilder::CassandraSinkSingle(t) => Transforms::CassandraSinkSingle(t.build()),
             TransformBuilder::CassandraSinkCluster(t) => {
                 Transforms::CassandraSinkCluster(t.build())
@@ -151,6 +157,7 @@ impl TransformBuilder {
 
     fn validate(&self) -> Vec<String> {
         match self {
+            TransformBuilder::KafkaSinkSingle(c) => c.validate(),
             TransformBuilder::CassandraSinkSingle(c) => c.validate(),
             TransformBuilder::CassandraSinkCluster(c) => c.validate(),
             TransformBuilder::CassandraPeersRewrite(c) => c.validate(),
@@ -180,6 +187,7 @@ impl TransformBuilder {
 
     fn is_terminating(&self) -> bool {
         match self {
+            TransformBuilder::KafkaSinkSingle(c) => c.is_terminating(),
             TransformBuilder::CassandraSinkSingle(c) => c.is_terminating(),
             TransformBuilder::CassandraSinkCluster(c) => c.is_terminating(),
             TransformBuilder::CassandraPeersRewrite(c) => c.is_terminating(),
@@ -220,6 +228,7 @@ impl Debug for TransformBuilder {
 /// than using dynamic trait objects.
 #[derive(IntoStaticStr)]
 pub enum Transforms {
+    KafkaSinkSingle(KafkaSinkSingle),
     CassandraSinkSingle(CassandraSinkSingle),
     CassandraSinkCluster(Box<CassandraSinkCluster>),
     RedisSinkSingle(RedisSinkSingle),
@@ -255,6 +264,7 @@ impl Debug for Transforms {
 impl Transforms {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
+            Transforms::KafkaSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform(message_wrapper).await,
@@ -284,6 +294,7 @@ impl Transforms {
 
     async fn transform_pushed<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         match self {
+            Transforms::KafkaSinkSingle(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkSingle(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraSinkCluster(c) => c.transform_pushed(message_wrapper).await,
             Transforms::CassandraPeersRewrite(c) => c.transform_pushed(message_wrapper).await,
@@ -317,6 +328,7 @@ impl Transforms {
 
     fn set_pushed_messages_tx(&mut self, pushed_messages_tx: mpsc::UnboundedSender<Messages>) {
         match self {
+            Transforms::KafkaSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraSinkSingle(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraSinkCluster(c) => c.set_pushed_messages_tx(pushed_messages_tx),
             Transforms::CassandraPeersRewrite(c) => c.set_pushed_messages_tx(pushed_messages_tx),
@@ -349,6 +361,8 @@ impl Transforms {
 /// in the transform chain. Allows you to register your config struct for the config file.
 #[derive(Deserialize, Debug, Clone)]
 pub enum TransformsConfig {
+    #[cfg(feature = "alpha-transforms")]
+    KafkaSinkSingle(KafkaSinkSingleConfig),
     CassandraSinkSingle(CassandraSinkSingleConfig),
     CassandraSinkCluster(CassandraSinkClusterConfig),
     RedisSinkSingle(RedisSinkSingleConfig),
@@ -382,6 +396,8 @@ impl TransformsConfig {
     #[async_recursion]
     pub async fn get_builder(&self, chain_name: String) -> Result<TransformBuilder> {
         match self {
+            #[cfg(feature = "alpha-transforms")]
+            TransformsConfig::KafkaSinkSingle(c) => c.get_builder(chain_name).await,
             TransformsConfig::CassandraSinkSingle(c) => c.get_builder(chain_name).await,
             TransformsConfig::CassandraSinkCluster(c) => c.get_builder(chain_name).await,
             TransformsConfig::CassandraPeersRewrite(c) => c.get_builder().await,
