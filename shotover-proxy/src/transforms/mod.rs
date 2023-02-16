@@ -18,7 +18,7 @@ use crate::transforms::debug::printer::DebugPrinter;
 use crate::transforms::debug::random_delay::DebugRandomDelay;
 use crate::transforms::debug::returner::{DebugReturner, DebugReturnerConfig};
 use crate::transforms::distributed::consistent_scatter::{
-    ConsistentScatter, ConsistentScatterConfig,
+    ConsistentScatter, ConsistentScatterBuilder, ConsistentScatterConfig,
 };
 use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
 #[cfg(feature = "alpha-transforms")]
@@ -96,7 +96,7 @@ pub enum TransformBuilder {
     #[cfg(test)]
     Loopback(Loopback),
     Protect(Box<Protect>),
-    ConsistentScatter(ConsistentScatter),
+    ConsistentScatter(ConsistentScatterBuilder),
     RedisTimestampTagger(RedisTimestampTagger),
     RedisSinkCluster(RedisSinkCluster),
     RedisClusterPortsRewrite(RedisClusterPortsRewrite),
@@ -126,7 +126,7 @@ impl TransformBuilder {
             TransformBuilder::RedisCache(t) => Transforms::RedisCache(t.build()),
             TransformBuilder::Tee(t) => Transforms::Tee(t.build()),
             TransformBuilder::RedisSinkSingle(t) => Transforms::RedisSinkSingle(t.build()),
-            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t.clone()),
+            TransformBuilder::ConsistentScatter(t) => Transforms::ConsistentScatter(t.build()),
             TransformBuilder::RedisTimestampTagger(t) => {
                 Transforms::RedisTimestampTagger(t.clone())
             }

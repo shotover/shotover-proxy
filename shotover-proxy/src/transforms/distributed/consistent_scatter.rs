@@ -1,6 +1,6 @@
 use crate::error::ChainResponse;
 use crate::message::{Message, QueryType};
-use crate::transforms::chain::BufferedChain;
+use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{
     build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
 };
@@ -11,13 +11,6 @@ use futures::StreamExt;
 use serde::Deserialize;
 use std::collections::HashMap;
 use tracing::{debug, error, trace, warn};
-
-#[derive(Clone)]
-pub struct ConsistentScatter {
-    route_map: Vec<BufferedChain>,
-    write_consistency: i32,
-    read_consistency: i32,
-}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConsistentScatterConfig {
@@ -32,20 +25,72 @@ impl ConsistentScatterConfig {
         warn!("Using this transform is considered unstable - Does not work with REDIS pipelines");
 
         for (key, value) in &self.route_map {
-            route_map.push(
-                build_chain_from_config(key.clone(), value)
-                    .await?
-                    .build_buffered(10),
-            );
+            route_map.push(build_chain_from_config(key.clone(), value).await?);
         }
-        route_map.sort_by_key(|x| x.original_chain.name.clone());
+        route_map.sort_by_key(|x| x.name.clone());
 
-        Ok(TransformBuilder::ConsistentScatter(ConsistentScatter {
-            route_map,
+        Ok(TransformBuilder::ConsistentScatter(
+            ConsistentScatterBuilder {
+                route_map,
+                write_consistency: self.write_consistency,
+                read_consistency: self.read_consistency,
+            },
+        ))
+    }
+}
+
+#[derive(Clone)]
+pub struct ConsistentScatterBuilder {
+    route_map: Vec<TransformChainBuilder>,
+    write_consistency: i32,
+    read_consistency: i32,
+}
+
+impl ConsistentScatterBuilder {
+    pub fn is_terminating(&self) -> bool {
+        true
+    }
+
+    pub fn validate(&self) -> Vec<String> {
+        let mut errors = self
+            .route_map
+            .iter()
+            .flat_map(|buffer_chain| {
+                buffer_chain
+                    .validate()
+                    .into_iter()
+                    .map(|x| format!("  {x}"))
+            })
+            .collect::<Vec<String>>();
+
+        if !errors.is_empty() {
+            errors.insert(0, format!("{}:", self.get_name()));
+        }
+        errors
+    }
+
+    fn get_name(&self) -> &'static str {
+        "ConsistentScatter"
+    }
+
+    pub fn build(&self) -> ConsistentScatter {
+        ConsistentScatter {
+            route_map: self
+                .route_map
+                .iter()
+                .map(|x| x.build_buffered(10))
+                .collect(),
             write_consistency: self.write_consistency,
             read_consistency: self.read_consistency,
-        }))
+        }
     }
+}
+
+#[derive(Clone)]
+pub struct ConsistentScatter {
+    route_map: Vec<BufferedChain>,
+    write_consistency: i32,
+    read_consistency: i32,
 }
 
 fn get_size(_message: &Message) -> usize {
@@ -93,12 +138,6 @@ fn resolve_fragments(fragments: &mut Vec<Message>) -> Option<Message> {
     } else {
         // panic!("shouldn't happen");
         biggest_fragment
-    }
-}
-
-impl ConsistentScatter {
-    fn get_name(&self) -> &'static str {
-        "ConsistentScatter"
     }
 }
 
@@ -170,32 +209,6 @@ impl Transform for ConsistentScatter {
                 .collect()
         })
     }
-
-    fn is_terminating(&self) -> bool {
-        true
-    }
-
-    fn validate(&self) -> Vec<String> {
-        let mut errors = self
-            .route_map
-            .iter()
-            .flat_map(|buffer_chain| {
-                buffer_chain
-                    .original_chain
-                    // TODO: each transform needs its own builder type so we can store the builder chains
-                    // We can make this easy for ourselves by only doing so for the types that strictly need it
-                    .validate()
-                    .into_iter()
-                    .map(|x| format!("  {x}"))
-            })
-            .collect::<Vec<String>>();
-
-        if !errors.is_empty() {
-            errors.insert(0, format!("{}:", self.get_name()));
-        }
-
-        errors
-    }
 }
 
 #[cfg(test)]
@@ -205,9 +218,11 @@ mod scatter_transform_tests {
     use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
     use crate::transforms::debug::printer::DebugPrinter;
     use crate::transforms::debug::returner::{DebugReturner, Response};
-    use crate::transforms::distributed::consistent_scatter::ConsistentScatter;
+    use crate::transforms::distributed::consistent_scatter::{
+        ConsistentScatter, ConsistentScatterBuilder,
+    };
     use crate::transforms::null::NullSink;
-    use crate::transforms::{Transform, TransformBuilder, Transforms, Wrapper};
+    use crate::transforms::{TransformBuilder, Transforms, Wrapper};
     use bytes::Bytes;
     use std::collections::HashMap;
 
@@ -312,8 +327,8 @@ mod scatter_transform_tests {
         );
         let chain_2 = TransformChainBuilder::new(vec![], "test-chain-2".to_string());
 
-        let transform = ConsistentScatter {
-            route_map: vec![chain_1.build_buffered(10), chain_2.build_buffered(10)],
+        let transform = ConsistentScatterBuilder {
+            route_map: vec![chain_1, chain_2],
             write_consistency: 1,
             read_consistency: 1,
         };
@@ -347,8 +362,8 @@ mod scatter_transform_tests {
             "test-chain-2".to_string(),
         );
 
-        let transform = ConsistentScatter {
-            route_map: vec![chain_1.build_buffered(10), chain_2.build_buffered(10)],
+        let transform = ConsistentScatterBuilder {
+            route_map: vec![chain_1, chain_2],
             write_consistency: 1,
             read_consistency: 1,
         };

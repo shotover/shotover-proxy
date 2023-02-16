@@ -1,5 +1,5 @@
 use crate::error::ChainResponse;
-use crate::transforms::chain::BufferedChain;
+use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
 use crate::transforms::{
     build_chain_from_config, Transform, TransformBuilder, TransformsConfig, Wrapper,
 };
@@ -11,8 +11,8 @@ use tracing::trace;
 
 #[derive(Clone)]
 pub struct TeeBuilder {
-    pub tx: BufferedChain,
-    pub mismatch_chain: Option<BufferedChain>,
+    pub tx: TransformChainBuilder,
+    pub mismatch_chain: Option<TransformChainBuilder>,
     pub buffer_size: usize,
     pub behavior: ConsistencyBehavior,
     pub timeout_micros: Option<u64>,
@@ -21,8 +21,8 @@ pub struct TeeBuilder {
 
 impl TeeBuilder {
     pub fn new(
-        tx: BufferedChain,
-        mismatch_chain: Option<BufferedChain>,
+        tx: TransformChainBuilder,
+        mismatch_chain: Option<TransformChainBuilder>,
         buffer_size: usize,
         behavior: ConsistencyBehavior,
         timeout_micros: Option<u64>,
@@ -46,7 +46,6 @@ impl TeeBuilder {
     pub fn validate(&self) -> Vec<String> {
         if let Some(mismatch_chain) = &self.mismatch_chain {
             let mut errors = mismatch_chain
-                .original_chain
                 .validate()
                 .iter()
                 .map(|x| format!("  {x}"))
@@ -68,11 +67,11 @@ impl TeeBuilder {
 
     pub fn build(&self) -> Tee {
         Tee {
-            tx: self.tx.to_new_instance(self.buffer_size),
+            tx: self.tx.build_buffered(self.buffer_size),
             mismatch_chain: self
                 .mismatch_chain
                 .as_ref()
-                .map(|x| x.to_new_instance(self.buffer_size)),
+                .map(|x| x.build_buffered(self.buffer_size)),
             buffer_size: self.buffer_size,
             behavior: self.behavior.clone(),
             timeout_micros: self.timeout_micros,
@@ -110,18 +109,14 @@ impl TeeConfig {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let mismatch_chain =
             if let Some(ConsistencyBehavior::SubchainOnMismatch(mismatch_chain)) = &self.behavior {
-                Some(
-                    build_chain_from_config("mismatch_chain".to_string(), mismatch_chain)
-                        .await?
-                        .build_buffered(buffer_size),
-                )
+                Some(build_chain_from_config("mismatch_chain".to_string(), mismatch_chain).await?)
             } else {
                 None
             };
         let tee_chain = build_chain_from_config("tee_chain".to_string(), &self.chain).await?;
 
         Ok(TransformBuilder::Tee(TeeBuilder::new(
-            tee_chain.build_buffered(buffer_size),
+            tee_chain,
             mismatch_chain,
             buffer_size,
             self.behavior.clone().unwrap_or(ConsistencyBehavior::Ignore),
