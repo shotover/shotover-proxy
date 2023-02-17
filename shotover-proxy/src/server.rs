@@ -1,3 +1,4 @@
+use crate::codec::{Codec, CodecReadError};
 use crate::message::Messages;
 use crate::tls::{AcceptError, TlsAcceptor};
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
@@ -16,38 +17,9 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio::time::timeout;
 use tokio::time::Duration;
-use tokio_util::codec::{Decoder, Encoder};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::Instrument;
 use tracing::{debug, error, info, warn};
-
-#[derive(Debug)]
-pub enum CodecReadError {
-    /// The codec failed to parse a received message
-    Parser(anyhow::Error),
-    /// The tcp connection returned an error
-    Io(std::io::Error),
-    /// Respond to the client with the provided messages and then close the connection
-    RespondAndThenCloseConnection(Messages),
-}
-
-impl From<std::io::Error> for CodecReadError {
-    fn from(err: std::io::Error) -> Self {
-        CodecReadError::Io(err)
-    }
-}
-
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait CodecReadHalf: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send {}
-impl<T: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send> CodecReadHalf for T {}
-
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
-impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
-
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf {}
-impl<T: CodecReadHalf + CodecWriteHalf> Codec for T {}
 
 pub struct TcpCodecListener<C: Codec> {
     chain: TransformChainBuilder,
@@ -223,7 +195,7 @@ impl<C: Codec + 'static> TcpCodecListener<C> {
                     // The connection state needs a handle to the max connections
                     // semaphore. When the handler is done processing the
                     // connection, a permit is added back to the semaphore.
-                    codec: self.codec.clone(),
+                    codec: self.codec.clone_without_state(),
                     limit_connections: self.limit_connections.clone(),
 
                     // Receive shutdown notifications.

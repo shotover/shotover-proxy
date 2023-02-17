@@ -1,6 +1,6 @@
+use crate::codec::{Codec, CodecReadError};
 use crate::frame::MessageType;
-use crate::message::{Encodable, Message, Messages};
-use crate::server::CodecReadError;
+use crate::message::{Encodable, Message, Messages, ProtocolType};
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
@@ -15,6 +15,8 @@ impl Default for KafkaCodec {
         Self::new()
     }
 }
+
+impl Codec for KafkaCodec {}
 
 impl KafkaCodec {
     pub fn new() -> KafkaCodec {
@@ -48,7 +50,7 @@ impl Decoder for KafkaCodec {
                     pretty_hex::pretty_hex(&bytes)
                 );
                 self.messages
-                    .push(Message::from_bytes(bytes.freeze(), MessageType::Kafka));
+                    .push(Message::from_bytes(bytes.freeze(), ProtocolType::Kafka));
             } else if self.messages.is_empty() || src.remaining() != 0 {
                 return Ok(None);
             } else {

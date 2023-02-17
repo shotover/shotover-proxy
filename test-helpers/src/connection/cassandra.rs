@@ -76,6 +76,18 @@ impl PreparedQuery {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
+pub enum Compression {
+    Snappy,
+    Lz4,
+}
+
+enum Tls {
+    #[cfg(feature = "cassandra-cpp-driver-tests")]
+    Datastax(Ssl),
+    Scylla(SslContext),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum CassandraDriver {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax,
@@ -107,6 +119,66 @@ pub enum CassandraConnection {
 
 impl CassandraConnection {
     pub async fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
+        CassandraConnection::new_inner(contact_points, port, driver, None, None).await
+    }
+
+    pub async fn new_tls(
+        contact_points: &str,
+        port: u16,
+        ca_cert_path: &str,
+        driver: CassandraDriver,
+    ) -> Self {
+        match driver {
+            #[cfg(feature = "cassandra-cpp-driver-tests")]
+            CassandraDriver::Datastax => {
+                let ca_cert = read_to_string(ca_cert_path).unwrap();
+                let mut ssl = Ssl::default();
+                Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
+
+                CassandraConnection::new_inner(
+                    contact_points,
+                    port,
+                    driver,
+                    None,
+                    Some(Tls::Datastax(ssl)),
+                )
+                .await
+            }
+            // TODO actually implement TLS for cdrs-tokio
+            CassandraDriver::CdrsTokio => todo!(),
+            CassandraDriver::Scylla => {
+                let mut context = SslContext::builder(SslMethod::tls()).unwrap();
+                context.set_ca_file(ca_cert_path).unwrap();
+                let ssl_context = context.build();
+
+                CassandraConnection::new_inner(
+                    contact_points,
+                    port,
+                    driver,
+                    None,
+                    Some(Tls::Scylla(ssl_context)),
+                )
+                .await
+            }
+        }
+    }
+
+    pub async fn new_with_compression(
+        contact_points: &str,
+        port: u16,
+        driver: CassandraDriver,
+        compression: Compression,
+    ) -> Self {
+        CassandraConnection::new_inner(contact_points, port, driver, Some(compression), None).await
+    }
+
+    async fn new_inner(
+        contact_points: &str,
+        port: u16,
+        driver: CassandraDriver,
+        compression: Option<Compression>,
+        tls: Option<Tls>,
+    ) -> Self {
         for contact_point in contact_points.split(',') {
             crate::wait_for_socket_to_open(contact_point, port);
         }
@@ -120,6 +192,10 @@ impl CassandraConnection {
                 cluster.set_credentials("cassandra", "cassandra").unwrap();
                 cluster.set_port(port).unwrap();
                 cluster.set_load_balance_round_robin();
+
+                if let Some(Tls::Datastax(mut ssl)) = tls {
+                    cluster.set_ssl(&mut ssl);
+                }
 
                 CassandraConnection::Datastax {
                     session: cluster
@@ -153,24 +229,31 @@ impl CassandraConnection {
                 .unwrap()
                 .unwrap();
 
-                let session = timeout(
-                    Duration::from_secs(10),
-                    TcpSessionBuilder::new(
-                        TopologyAwareLoadBalancingStrategy::new(None, true),
-                        config,
-                    )
-                    .build(),
-                )
-                .await
-                .unwrap()
-                .unwrap();
+                let mut session_builder = TcpSessionBuilder::new(
+                    TopologyAwareLoadBalancingStrategy::new(None, true),
+                    config,
+                );
+
+                if let Some(compression) = compression {
+                    let compression = match compression {
+                        Compression::Snappy => cassandra_protocol::compression::Compression::Snappy,
+                        Compression::Lz4 => cassandra_protocol::compression::Compression::Lz4,
+                    };
+
+                    session_builder = session_builder.with_compression(compression);
+                }
+
+                let session = timeout(Duration::from_secs(10), session_builder.build())
+                    .await
+                    .unwrap()
+                    .unwrap();
                 CassandraConnection::CdrsTokio {
                     session,
                     schema_awaiter: None,
                 }
             }
             CassandraDriver::Scylla => {
-                let session = SessionBuilderScylla::new()
+                let mut builder = SessionBuilderScylla::new()
                     .known_nodes(
                         &contact_points
                             .split(',')
@@ -178,11 +261,26 @@ impl CassandraConnection {
                             .collect::<Vec<String>>(),
                     )
                     .user("cassandra", "cassandra")
-                    .default_consistency(Consistency::One)
-                    .compression(Some(scylla::transport::Compression::Snappy))
-                    .build()
-                    .await
-                    .unwrap();
+                    .compression(compression.map(|x| match x {
+                        Compression::Snappy => scylla::transport::Compression::Snappy,
+                        Compression::Lz4 => scylla::transport::Compression::Lz4,
+                    }))
+                    .default_consistency(Consistency::One);
+
+                if let Some(compression) = compression {
+                    let compression = match compression {
+                        Compression::Snappy => scylla::transport::Compression::Snappy,
+                        Compression::Lz4 => scylla::transport::Compression::Lz4,
+                    };
+
+                    builder = builder.compression(Some(compression));
+                }
+
+                if let Some(Tls::Scylla(ssl_context)) = tls {
+                    builder = builder.ssl_context(Some(ssl_context));
+                }
+
+                let session = builder.build().await.unwrap();
 
                 CassandraConnection::Scylla {
                     session,
@@ -213,68 +311,6 @@ impl CassandraConnection {
         match self {
             Self::Datastax { session, .. } => session,
             _ => panic!("Not Datastax"),
-        }
-    }
-
-    pub async fn new_tls(
-        contact_points: &str,
-        port: u16,
-        ca_cert_path: &str,
-        driver: CassandraDriver,
-    ) -> Self {
-        match driver {
-            #[cfg(feature = "cassandra-cpp-driver-tests")]
-            CassandraDriver::Datastax => {
-                cassandra_cpp::set_log_logger();
-                let ca_cert = read_to_string(ca_cert_path).unwrap();
-                let mut ssl = Ssl::default();
-                Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
-
-                for contact_point in contact_points.split(',') {
-                    crate::wait_for_socket_to_open(contact_point, port);
-                }
-
-                let mut cluster = Cluster::default();
-                cluster.set_credentials("cassandra", "cassandra").unwrap();
-                cluster.set_contact_points(contact_points).unwrap();
-                cluster.set_port(port).ok();
-                cluster.set_load_balance_round_robin();
-                cluster.set_ssl(&mut ssl);
-
-                CassandraConnection::Datastax {
-                    session: cluster
-                        .connect_async()
-                        .await
-                        .map_err(|err| format!("{err}"))
-                        .unwrap(),
-                    schema_awaiter: None,
-                }
-            }
-            // TODO actually implement TLS for cdrs-tokio
-            CassandraDriver::CdrsTokio => todo!(),
-            CassandraDriver::Scylla => {
-                let mut context = SslContext::builder(SslMethod::tls()).unwrap();
-                context.set_ca_file(ca_cert_path).unwrap();
-                let ssl_context = context.build();
-
-                let session = SessionBuilderScylla::new()
-                    .known_nodes(
-                        &contact_points
-                            .split(',')
-                            .map(|contact_point| format!("{contact_point}:{port}"))
-                            .collect::<Vec<String>>(),
-                    )
-                    .user("cassandra", "cassandra")
-                    .ssl_context(Some(ssl_context))
-                    .default_consistency(Consistency::One)
-                    .build()
-                    .await
-                    .unwrap();
-                CassandraConnection::Scylla {
-                    session,
-                    schema_awaiter: None,
-                }
-            }
         }
     }
 

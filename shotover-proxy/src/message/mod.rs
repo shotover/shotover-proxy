@@ -1,4 +1,5 @@
 use crate::codec::redis::redis_query_type;
+use crate::codec::CodecState;
 use crate::frame::cassandra::Tracing;
 use crate::frame::{
     cassandra,
@@ -7,6 +8,7 @@ use crate::frame::{
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes};
+use cassandra_protocol::compression::Compression;
 use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use nonzero_ext::nonzero;
 use serde::Deserialize;
@@ -16,6 +18,25 @@ pub enum Metadata {
     Cassandra(CassandraMetadata),
     Redis,
     Kafka,
+}
+
+#[derive(PartialEq)]
+pub enum ProtocolType {
+    Cassandra { compression: Compression },
+    Redis,
+    Kafka,
+}
+
+impl From<&ProtocolType> for CodecState {
+    fn from(value: &ProtocolType) -> Self {
+        match value {
+            ProtocolType::Cassandra { compression } => Self::Cassandra {
+                compression: *compression,
+            },
+            ProtocolType::Redis => Self::Redis,
+            ProtocolType::Kafka => Self::Kafka,
+        }
+    }
 }
 
 pub type Messages = Vec<Message>;
@@ -39,6 +60,8 @@ pub struct Message {
     // TODO: Not a fan of this field and we could get rid of it by making TimestampTagger an implicit part of ConsistentScatter
     // This metadata field is only used for communication between transforms and should not be touched by sinks or sources
     pub meta_timestamp: Option<i64>,
+
+    pub codec_state: CodecState,
 }
 
 /// `from_*` methods for `Message`
@@ -46,13 +69,14 @@ impl Message {
     /// This method should be called when you have have just the raw bytes of a message.
     /// This is expected to be used only by codecs that are decoding a protocol where the length of the message is provided in the header. e.g. cassandra
     /// Providing just the bytes results in better performance when only the raw bytes are available.
-    pub fn from_bytes(bytes: Bytes, message_type: MessageType) -> Self {
+    pub fn from_bytes(bytes: Bytes, protocol_type: ProtocolType) -> Self {
         Message {
             inner: Some(MessageInner::RawBytes {
                 bytes,
-                message_type,
+                message_type: MessageType::from(&protocol_type),
             }),
             meta_timestamp: None,
+            codec_state: CodecState::from(&protocol_type),
         }
     }
 
@@ -61,6 +85,7 @@ impl Message {
     /// Providing both the raw bytes and Frame results in better performance if they are both already available.
     pub fn from_bytes_and_frame(bytes: Bytes, frame: Frame) -> Self {
         Message {
+            codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Parsed { bytes, frame }),
             meta_timestamp: None,
         }
@@ -71,6 +96,7 @@ impl Message {
     /// Providing just the Frame results in better performance when only the Frame is available.
     pub fn from_frame(frame: Frame) -> Self {
         Message {
+            codec_state: frame.as_codec_state(),
             inner: Some(MessageInner::Modified { frame }),
             meta_timestamp: None,
         }
@@ -91,7 +117,7 @@ impl Message {
     /// Calling frame for the first time on a message may be an expensive operation as the raw bytes might not yet be parsed into a Frame.
     /// Calling frame again is free as the parsed message is cached.
     pub fn frame(&mut self) -> Option<&mut Frame> {
-        let (inner, result) = self.inner.take().unwrap().ensure_parsed();
+        let (inner, result) = self.inner.take().unwrap().ensure_parsed(self.codec_state);
         self.inner = Some(inner);
         if let Err(err) = result {
             // TODO: If we could include a stacktrace in this error it would be really helpful
@@ -323,12 +349,12 @@ enum MessageInner {
 }
 
 impl MessageInner {
-    fn ensure_parsed(self) -> (Self, Result<()>) {
+    fn ensure_parsed(self, codec_state: CodecState) -> (Self, Result<()>) {
         match self {
             MessageInner::RawBytes {
                 bytes,
                 message_type,
-            } => match Frame::from_bytes(bytes.clone(), message_type) {
+            } => match Frame::from_bytes(bytes.clone(), message_type, codec_state) {
                 Ok(frame) => (MessageInner::Parsed { bytes, frame }, Ok(())),
                 Err(err) => (
                     MessageInner::RawBytes {

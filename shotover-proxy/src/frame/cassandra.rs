@@ -175,8 +175,8 @@ impl CassandraFrame {
         }
     }
 
-    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
-        let frame = RawCassandraFrame::from_buffer(&bytes, Compression::None)
+    pub fn from_bytes(bytes: Bytes, compression: Compression) -> Result<Self> {
+        let frame = RawCassandraFrame::from_buffer(&bytes, compression)
             .map_err(|e| anyhow!("{e:?}"))?
             .envelope;
 
@@ -379,6 +379,7 @@ impl CassandraFrame {
             u8::from(self.version) | u8::from(self.operation.to_direction());
 
         let mut flags = Flags::default();
+        flags.set(Flags::COMPRESSION, compression != Compression::None);
         flags.set(Flags::WARNING, !self.warnings.is_empty());
         flags.set(Flags::TRACING, self.tracing.enabled());
 
@@ -388,27 +389,18 @@ impl CassandraFrame {
         cursor.write_all(&[self.operation.to_opcode().into()]).ok();
 
         serialize_with_length_prefix(&mut cursor, |cursor| {
-            if let Tracing::Response(Some(uuid)) = self.tracing {
-                cursor.write_all(uuid.as_bytes()).ok();
-            }
+            // Special case None to avoid large copies
+            if Compression::None == compression {
+                self.write_tracing_and_warnings(cursor);
 
-            if !self.warnings.is_empty() {
-                let warnings_len = self.warnings.len() as i16;
-                cursor.write_all(&warnings_len.to_be_bytes()).ok();
-
-                for warning in &self.warnings {
-                    let warning_len = warning.len() as i16;
-                    cursor.write_all(&warning_len.to_be_bytes()).ok();
-                    cursor.write_all(warning.as_bytes()).ok();
-                }
-            }
-            if let Compression::None = compression {
-                // Special case None to avoid large copies
                 self.operation.serialize(cursor, self.version)
             } else {
                 // TODO: While compression is obviously going to cost more than no compression, I suspect it doesnt have to be quite this bad
                 let mut body_buf = Vec::with_capacity(128);
                 let mut body_cursor = Cursor::new(&mut body_buf);
+
+                self.write_tracing_and_warnings(&mut body_cursor);
+
                 self.operation.serialize(&mut body_cursor, self.version);
                 cursor
                     .write_all(&compression.encode(&body_buf).unwrap())
@@ -417,6 +409,23 @@ impl CassandraFrame {
         });
 
         buf
+    }
+
+    fn write_tracing_and_warnings(&self, cursor: &mut Cursor<&mut Vec<u8>>) {
+        if let Tracing::Response(Some(uuid)) = self.tracing {
+            cursor.write_all(uuid.as_bytes()).ok();
+        }
+
+        if !self.warnings.is_empty() {
+            let warnings_len = self.warnings.len() as i16;
+            cursor.write_all(&warnings_len.to_be_bytes()).ok();
+
+            for warning in &self.warnings {
+                let warning_len = warning.len() as i16;
+                cursor.write_all(&warning_len.to_be_bytes()).ok();
+                cursor.write_all(warning.as_bytes()).ok();
+            }
+        }
     }
 }
 

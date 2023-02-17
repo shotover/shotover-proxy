@@ -168,7 +168,7 @@ impl SimpleRedisCache {
                                 None
                             }
                             RedisFrame::BulkString(redis_bytes) => {
-                                match CassandraFrame::from_bytes(redis_bytes.clone()) {
+                                match CassandraFrame::from_bytes(redis_bytes.clone(), Compression::None) {
                                     Ok(mut response_frame) => {
                                         if let Some(Frame::Cassandra(request_frame)) =
                                             cassandra_requests[redis_index].frame()

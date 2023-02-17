@@ -1,7 +1,7 @@
+use crate::codec::{Codec, CodecReadError};
 use crate::frame::RedisFrame;
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, QueryType};
-use crate::server::CodecReadError;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
 use redis_protocol::resp2::prelude::decode_mut;
@@ -35,6 +35,8 @@ impl Default for RedisCodec {
         Self::new()
     }
 }
+
+impl Codec for RedisCodec {}
 
 impl RedisCodec {
     pub fn new() -> RedisCodec {
