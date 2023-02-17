@@ -8,23 +8,8 @@ use crate::frame::{
 use crate::frame::{CassandraFrame, Frame, MessageType, RedisFrame};
 use anyhow::{anyhow, Result};
 use bytes::{Buf, Bytes};
-use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
-use bytes_utils::Str;
 use cassandra_protocol::compression::Compression;
-use cassandra_protocol::frame::Serialize as FrameSerialize;
-use cassandra_protocol::types::CInt;
-use cassandra_protocol::{
-    frame::{
-        message_error::{ErrorBody, ErrorType},
-        message_result::{ColSpec, ColTypeOption},
-        Version,
-    },
-    types::{
-        cassandra_type::{wrapper_fn, CassandraType},
-        CBytes,
-    },
-};
-use cql3_parser::common::Operand;
+use cassandra_protocol::frame::message_error::{ErrorBody, ErrorType};
 use nonzero_ext::nonzero;
 use serde::Deserialize;
 use std::num::NonZeroU32;

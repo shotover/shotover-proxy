@@ -68,7 +68,6 @@ impl CassandraCodec {
             {
                 self.set_compression(&startup);
             };
-            return Ok(false);
         }
 
         Ok(compressed)
@@ -114,21 +113,16 @@ impl Decoder for CassandraCodec {
 
                     let compressed = self.check_compression(&bytes).unwrap();
 
-                    let mut message = if !compressed {
-                        Message::from_bytes(
-                            bytes.freeze(),
-                            crate::message::ProtocolType::Cassandra {
-                                compression: Compression::None,
+                    let mut message = Message::from_bytes(
+                        bytes.freeze(),
+                        crate::message::ProtocolType::Cassandra {
+                            compression: if compressed {
+                                *self.compression.read().unwrap()
+                            } else {
+                                Compression::None
                             },
-                        )
-                    } else {
-                        Message::from_bytes(
-                            bytes.freeze(),
-                            crate::message::ProtocolType::Cassandra {
-                                compression: *self.compression.read().unwrap(),
-                            },
-                        )
-                    };
+                        },
+                    );
 
                     if let Ok(Metadata::Cassandra(CassandraMetadata {
                         opcode: Opcode::Query | Opcode::Batch,
