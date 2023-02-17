@@ -26,8 +26,8 @@ serde_yaml = "0.9.17"
 uuid = { version = "1.0.0", features = ["serde", "v4"] }
 reqwest = "0.11.6"
 redis = { version = "0.22.0", features = ["tokio-comp", "cluster"] }
-cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
-cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio", branch = "8.0-dev" }
+cdrs-tokio = { git = "https://github.com/krojew/cdrs-tokio" }
+cassandra-protocol = { git = "https://github.com/krojew/cdrs-tokio" }
 tracing = "0.1.15"
 tracing-subscriber = { version = "0.3.1", features = ["env-filter", "json"] }
 nix = "0.26.0"
