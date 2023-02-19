@@ -68,22 +68,6 @@ impl Frame {
         }
     }
 
-    pub fn from_bytes_with_compression(
-        bytes: Bytes,
-        message_type: MessageType,
-        compression: Option<Compression>,
-    ) -> Result<Self> {
-        match message_type {
-            MessageType::Cassandra => {
-                CassandraFrame::from_bytes(bytes, compression.unwrap_or(Compression::None))
-                    .map(Frame::Cassandra)
-            }
-            MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
-                .map(|x| Frame::Redis(x.unwrap().0))
-                .map_err(|e| anyhow!("{e:?}")),
-        }
-    }
-
     pub fn name(&self) -> &'static str {
         match self {
             Frame::Redis(_) => "Redis",
