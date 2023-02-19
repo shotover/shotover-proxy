@@ -1,9 +1,17 @@
-use crate::codec::{Codec, CodecReadError};
+use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::MessageType;
 use crate::message::{Encodable, Message, Messages, ProtocolType};
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
+
+impl CodecBuilder for KafkaCodec {
+    type Decoder = KafkaCodec;
+    type Encoder = KafkaCodec;
+    fn build(&self) -> (KafkaCodec, KafkaCodec) {
+        (KafkaCodec::new(), KafkaCodec::new())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct KafkaCodec {
@@ -15,8 +23,6 @@ impl Default for KafkaCodec {
         Self::new()
     }
 }
-
-impl Codec for KafkaCodec {}
 
 impl KafkaCodec {
     pub fn new() -> KafkaCodec {

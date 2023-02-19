@@ -41,16 +41,15 @@ impl From<std::io::Error> for CodecReadError {
 }
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait CodecReadHalf: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send {}
-impl<T: Decoder<Item = Messages, Error = CodecReadError> + Clone + Send> CodecReadHalf for T {}
+pub trait DecoderHalf: Decoder<Item = Messages, Error = CodecReadError> + Send {}
+impl<T: Decoder<Item = Messages, Error = CodecReadError> + Send> DecoderHalf for T {}
 
 // TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait CodecWriteHalf: Encoder<Messages, Error = anyhow::Error> + Clone + Send {}
-impl<T: Encoder<Messages, Error = anyhow::Error> + Clone + Send> CodecWriteHalf for T {}
+pub trait EncoderHalf: Encoder<Messages, Error = anyhow::Error> + Send {}
+impl<T: Encoder<Messages, Error = anyhow::Error> + Send> EncoderHalf for T {}
 
-// TODO: Replace with trait_alias (rust-lang/rust#41517).
-pub trait Codec: CodecReadHalf + CodecWriteHalf + Sized + Clone {
-    fn clone_without_state(&self) -> Self {
-        self.clone()
-    }
+pub trait CodecBuilder: Clone + Send {
+    type Decoder: DecoderHalf;
+    type Encoder: EncoderHalf;
+    fn build(&self) -> (Self::Decoder, Self::Encoder);
 }

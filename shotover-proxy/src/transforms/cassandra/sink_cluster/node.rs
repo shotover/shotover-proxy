@@ -1,4 +1,4 @@
-use crate::codec::cassandra::CassandraCodec;
+use crate::codec::cassandra::CassandraCodecBuilder;
 use crate::frame::Frame;
 use crate::message::{Message, Messages};
 use crate::tls::{TlsConnector, ToHostname};
@@ -107,7 +107,7 @@ impl ConnectionFactory {
         let outbound = CassandraConnection::new(
             self.connect_timeout,
             address,
-            CassandraCodec::new(),
+            CassandraCodecBuilder::new(),
             self.tls.clone(),
             self.pushed_messages_tx.clone(),
         )

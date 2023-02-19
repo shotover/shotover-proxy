@@ -1,4 +1,4 @@
-use crate::codec::{Codec, CodecReadError};
+use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::RedisFrame;
 use crate::frame::{Frame, MessageType};
 use crate::message::{Encodable, Message, Messages, QueryType};
@@ -7,6 +7,14 @@ use bytes::{Buf, BytesMut};
 use redis_protocol::resp2::prelude::decode_mut;
 use redis_protocol::resp2::prelude::encode_bytes;
 use tokio_util::codec::{Decoder, Encoder};
+
+impl CodecBuilder for RedisCodec {
+    type Decoder = RedisCodec;
+    type Encoder = RedisCodec;
+    fn build(&self) -> (RedisCodec, RedisCodec) {
+        (RedisCodec::new(), RedisCodec::new())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RedisCodec {
@@ -35,8 +43,6 @@ impl Default for RedisCodec {
         Self::new()
     }
 }
-
-impl Codec for RedisCodec {}
 
 impl RedisCodec {
     pub fn new() -> RedisCodec {
