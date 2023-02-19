@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")"
 
 sudo apt-get update
-sudo apt-get install -y libpcap-dev gcc-aarch64-linux-gnu
+sudo apt-get install -y gcc-aarch64-linux-gnu
 
 # Install dependencies of the cpp-driver even if they are already on CI so that we can run this locally
 sudo apt-get install -y libuv1 libuv1-dev cmake g++ libssl-dev zlib1g-dev

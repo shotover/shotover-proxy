@@ -26,7 +26,7 @@ async-trait = "0.1.30"
 clap = { version = "4.0.4", features = ["cargo", "derive"] }
 derivative = "2.1.1"
 itertools.workspace = true
-rand = { version = "0.8.4" }
+rand = "0.8.4"
 rand_distr = "0.4.1"
 cached = "0.42"
 pin-project-lite = "0.2"
@@ -79,20 +79,16 @@ chacha20poly1305 = { version = "0.10.0", features = ["std"] }
 generic-array = { version = "0.14", features = ["serde"] }
 
 [dev-dependencies]
-rayon = "1.5.1"
 criterion = { git = "https://github.com/shotover/criterion.rs", branch = "0.4.0-bench_with_input_fn", features = ["async_tokio"] }
 redis.workspace = true
-pcap = "1.0.0"
-pktparse = { version = "0.7.0", features = ["serde"] }
-tls-parser = "0.11.0"
 serial_test = "1.0.0"
 cassandra-cpp = { version = "1.2.0" }
 test-helpers = { path = "../test-helpers", features = ["cassandra-cpp-driver-tests"] }
 hex-literal = "0.3.3"
 nix.workspace = true
-reqwest.workspace = true
 cdrs-tokio.workspace = true
 rstest = "0.16.0"
+rand = { version = "0.8.4", features = ["small_rng"] }
 rdkafka = { version = "0.29", features = ["cmake-build"] }
 
 [[bench]]
