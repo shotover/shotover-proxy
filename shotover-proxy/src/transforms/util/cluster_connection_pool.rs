@@ -287,7 +287,7 @@ async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
 #[cfg(test)]
 mod test {
     use super::spawn_read_write_tasks;
-    use crate::codec::redis::RedisCodec;
+    use crate::codec::redis::RedisCodecBuilder;
     use std::mem;
     use std::time::Duration;
     use tokio::io::AsyncReadExt;
@@ -318,7 +318,7 @@ mod test {
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let (rx, tx) = stream.into_split();
-        let codec = RedisCodec::new();
+        let codec = RedisCodecBuilder::new();
         let sender = spawn_read_write_tasks(&codec, rx, tx);
 
         assert!(remote.await.unwrap());
@@ -358,7 +358,7 @@ mod test {
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let (rx, tx) = stream.into_split();
-        let codec = RedisCodec::new();
+        let codec = RedisCodecBuilder::new();
 
         // Drop sender immediately.
         std::mem::drop(spawn_read_write_tasks(&codec, rx, tx));

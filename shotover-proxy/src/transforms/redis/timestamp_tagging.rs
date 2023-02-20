@@ -1,5 +1,5 @@
-use crate::codec::redis::redis_query_type;
 use crate::error::ChainResponse;
+use crate::frame::redis::redis_query_type;
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, QueryType};
 use crate::transforms::{Transform, Wrapper};

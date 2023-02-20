@@ -1,4 +1,7 @@
-use crate::codec::redis::RedisCodec;
+use crate::codec::redis::RedisCodecBuilder;
+use crate::codec::redis::RedisDecoder;
+use crate::codec::redis::RedisEncoder;
+use crate::codec::CodecBuilder;
 use crate::codec::CodecReadError;
 use crate::error::ChainResponse;
 use crate::frame::Frame;
@@ -9,15 +12,17 @@ use crate::tls::{AsyncStream, TlsConnector, TlsConnectorConfig};
 use crate::transforms::{Transform, TransformBuilder, Wrapper};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use futures::stream::{SplitSink, SplitStream};
 use futures::{FutureExt, SinkExt, StreamExt};
 use metrics::{register_counter, Counter};
 use serde::Deserialize;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::time::Duration;
+use tokio::io::ReadHalf;
+use tokio::io::WriteHalf;
 use tokio::sync::mpsc;
-use tokio_util::codec::Framed;
+use tokio_util::codec::FramedRead;
+use tokio_util::codec::FramedWrite;
 use tracing::Instrument;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -88,10 +93,10 @@ impl RedisSinkSingleBuilder {
     }
 }
 
-type RedisFramed = Framed<Pin<Box<dyn AsyncStream + Send + Sync>>, RedisCodec>;
+type PinStream = Pin<Box<dyn AsyncStream + Send + Sync>>;
 
 struct Connection {
-    outbound_tx: SplitSink<RedisFramed, Messages>,
+    outbound_tx: FramedWrite<WriteHalf<PinStream>, RedisEncoder>,
     response_messages_rx: mpsc::UnboundedReceiver<Message>,
     sent_message_type_tx: mpsc::UnboundedSender<MessageType>,
 }
@@ -130,7 +135,10 @@ impl Transform for RedisSinkSingle {
                 Box::pin(tcp_stream) as Pin<Box<dyn AsyncStream + Send + Sync>>
             };
 
-            let (outbound_tx, outbound_rx) = Framed::new(generic_stream, RedisCodec::new()).split();
+            let (decoder, encoder) = RedisCodecBuilder::new().build();
+            let (stream_rx, stream_tx) = tokio::io::split(generic_stream);
+            let outbound_tx = FramedWrite::new(stream_tx, encoder);
+            let outbound_rx = FramedRead::new(stream_rx, decoder);
             let (response_messages_tx, response_messages_rx) = mpsc::unbounded_channel();
             let (sent_message_type_tx, sent_message_type_rx) = mpsc::unbounded_channel();
 
@@ -211,7 +219,7 @@ impl Transform for RedisSinkSingle {
 ///
 /// The task will end silently if either the RedisSinkSingle transform is dropped or the server closes the connection.
 async fn server_response_processing_task(
-    mut outbound_rx: SplitStream<RedisFramed>,
+    mut outbound_rx: FramedRead<ReadHalf<PinStream>, RedisDecoder>,
     subscribe_tx: Option<mpsc::UnboundedSender<Messages>>,
     response_messages_tx: mpsc::UnboundedSender<Message>,
     mut sent_message_type: mpsc::UnboundedReceiver<MessageType>,

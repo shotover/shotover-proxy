@@ -5,7 +5,9 @@ pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult};
 use cassandra_protocol::compression::Compression;
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+
 pub mod cassandra;
+pub mod redis;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MessageType {
