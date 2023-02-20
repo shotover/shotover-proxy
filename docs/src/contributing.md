@@ -23,10 +23,6 @@ On Ubuntu you can install them via `sudo apt-get install cmake gcc g++ libssl-de
 
 While not required for building Shotover, installing `docker` and `docker-compose` will allow you to run Shotover's integration tests and also build the static libc version of Shotover.
 
-#### libpcap-dev
-
-Some tests will require `libpcap-dev` to be installed as well (reading pcap files for protocol tests).
-
 ## Building Shotover
 
 Now you can build Shotover by running `cargo build`. The executable will then be found in `target/debug/shotover-proxy`.

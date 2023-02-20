@@ -14,11 +14,9 @@ tests/soaktest-*
 /shotover-proxy/example-configs/docker-images/cassandra-tls-4.0.6/certs/*.csr
 /shotover-proxy/example-configs/docker-images/cassandra-tls-4.0.6/certs/*.crt
 .workspace.code-workspace
-/test_tmp
 output.txt
 **/.DS_Store
 /.project
-/test_data
 /docs/book
 /docs/mdbook_bin
 shotover-proxy/read-localhost:9042.json
