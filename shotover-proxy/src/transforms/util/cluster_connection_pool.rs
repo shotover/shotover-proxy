@@ -1,5 +1,5 @@
 use super::Response;
-use crate::codec::{Codec, CodecReadHalf, CodecWriteHalf};
+use crate::codec::{CodecBuilder, DecoderHalf, EncoderHalf};
 use crate::tcp;
 use crate::tls::{TlsConnector, TlsConnectorConfig};
 use crate::transforms::util::{ConnectionError, Request};
@@ -48,7 +48,7 @@ impl<T: Send + Sync + std::hash::Hash + Eq + Clone + fmt::Debug> Token for T {}
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
-pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
+pub struct ConnectionPool<C: CodecBuilder, A: Authenticator<T>, T: Token> {
     connect_timeout: Duration,
     lanes: Arc<Mutex<HashMap<Option<T>, Lane>>>,
 
@@ -62,7 +62,7 @@ pub struct ConnectionPool<C: Codec, A: Authenticator<T>, T: Token> {
     tls: Option<TlsConnector>,
 }
 
-impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
+impl<C: CodecBuilder + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> {
     pub fn new_with_auth(
         connect_timeout: Duration,
         codec: C,
@@ -184,7 +184,7 @@ impl<C: Codec + 'static, A: Authenticator<T>, T: Token> ConnectionPool<C, A, T> 
 }
 
 pub fn spawn_read_write_tasks<
-    C: Codec + 'static,
+    C: CodecBuilder + 'static,
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 >(
@@ -196,11 +196,11 @@ pub fn spawn_read_write_tasks<
     let (return_tx, return_rx) = tokio::sync::mpsc::unbounded_channel::<Request>();
     let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
 
-    let codec_clone = codec.clone();
+    let (decoder, encoder) = codec.build();
 
     tokio::spawn(async move {
         tokio::select! {
-            result = tx_process(stream_tx, out_rx, return_tx, codec_clone) => if let Err(e) = result {
+            result = tx_process(stream_tx, out_rx, return_tx, encoder) => if let Err(e) = result {
                 trace!("connection write-closed with error: {:?}", e);
             } else {
                 trace!("connection write-closed gracefully");
@@ -211,11 +211,9 @@ pub fn spawn_read_write_tasks<
         }
     }.in_current_span());
 
-    let codec_clone = codec.clone();
-
     tokio::spawn(
         async move {
-            if let Err(e) = rx_process(stream_rx, return_rx, codec_clone).await {
+            if let Err(e) = rx_process(stream_rx, return_rx, decoder).await {
                 trace!("connection read-closed with error: {:?}", e);
             } else {
                 trace!("connection read-closed gracefully");
@@ -230,7 +228,7 @@ pub fn spawn_read_write_tasks<
     out_tx
 }
 
-async fn tx_process<C: CodecWriteHalf, W: AsyncWrite + Unpin + Send + 'static>(
+async fn tx_process<C: EncoderHalf, W: AsyncWrite + Unpin + Send + 'static>(
     write: W,
     out_rx: UnboundedReceiver<Request>,
     return_tx: UnboundedSender<Request>,
@@ -245,7 +243,7 @@ async fn tx_process<C: CodecWriteHalf, W: AsyncWrite + Unpin + Send + 'static>(
     rx_stream.forward(writer).await
 }
 
-async fn rx_process<C: CodecReadHalf, R: AsyncRead + Unpin + Send + 'static>(
+async fn rx_process<C: DecoderHalf, R: AsyncRead + Unpin + Send + 'static>(
     read: R,
     mut return_rx: UnboundedReceiver<Request>,
     codec: C,

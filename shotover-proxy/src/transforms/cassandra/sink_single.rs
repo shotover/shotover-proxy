@@ -1,5 +1,5 @@
 use super::connection::CassandraConnection;
-use crate::codec::cassandra::CassandraCodec;
+use crate::codec::cassandra::CassandraCodecBuilder;
 use crate::error::ChainResponse;
 use crate::frame::cassandra::CassandraMetadata;
 use crate::message::{Messages, Metadata};
@@ -131,7 +131,7 @@ impl CassandraSinkSingle {
                 CassandraConnection::new(
                     self.connect_timeout,
                     self.address.clone(),
-                    CassandraCodec::new(),
+                    CassandraCodecBuilder::new(),
                     self.tls.clone(),
                     self.pushed_messages_tx.clone(),
                 )
