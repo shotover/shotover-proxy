@@ -4,7 +4,8 @@ use cassandra_protocol::frame::message_result::{
 };
 use cassandra_protocol::frame::Version;
 use criterion::{black_box, criterion_group, BatchSize, Criterion};
-use shotover_proxy::codec::cassandra::CassandraCodec;
+use shotover_proxy::codec::cassandra::CassandraCodecBuilder;
+use shotover_proxy::codec::CodecBuilder;
 use shotover_proxy::frame::cassandra::{parse_statement_single, Tracing};
 use shotover_proxy::frame::{CassandraFrame, CassandraOperation, CassandraResult, Frame};
 use shotover_proxy::message::Message;
@@ -27,14 +28,14 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
         }))];
 
-        let mut codec = CassandraCodec::new();
+        let (_, mut encoder) = CassandraCodecBuilder::new().build();
 
         group.bench_function("encode_cassandra_system.local_query", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
                     let mut bytes = BytesMut::new();
-                    codec.encode(messages, &mut bytes).unwrap();
+                    encoder.encode(messages, &mut bytes).unwrap();
                     black_box(bytes)
                 },
                 BatchSize::SmallInput,
@@ -51,14 +52,14 @@ fn criterion_benchmark(c: &mut Criterion) {
             operation: CassandraOperation::Result(peers_v2_result()),
         }))];
 
-        let mut codec = CassandraCodec::new();
+        let (_, mut encoder) = CassandraCodecBuilder::new().build();
 
         group.bench_function("encode_cassandra_system.local_result", |b| {
             b.iter_batched(
                 || messages.clone(),
                 |messages| {
                     let mut bytes = BytesMut::new();
-                    codec.encode(messages, &mut bytes).unwrap();
+                    encoder.encode(messages, &mut bytes).unwrap();
                     black_box(bytes)
                 },
                 BatchSize::SmallInput,
