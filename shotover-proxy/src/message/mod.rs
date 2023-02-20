@@ -1,3 +1,4 @@
+use crate::codec::kafka::RequestHeader;
 use crate::codec::CodecState;
 use crate::frame::cassandra::Tracing;
 use crate::frame::redis::redis_query_type;
@@ -22,9 +23,13 @@ pub enum Metadata {
 
 #[derive(PartialEq)]
 pub enum ProtocolType {
-    Cassandra { compression: Compression },
+    Cassandra {
+        compression: Compression,
+    },
     Redis,
-    Kafka,
+    Kafka {
+        request_header: Option<RequestHeader>,
+    },
 }
 
 impl From<&ProtocolType> for CodecState {
@@ -34,7 +39,9 @@ impl From<&ProtocolType> for CodecState {
                 compression: *compression,
             },
             ProtocolType::Redis => Self::Redis,
-            ProtocolType::Kafka => Self::Kafka,
+            ProtocolType::Kafka { request_header } => Self::Kafka {
+                request_header: *request_header,
+            },
         }
     }
 }
@@ -121,7 +128,7 @@ impl Message {
         self.inner = Some(inner);
         if let Err(err) = result {
             // TODO: If we could include a stacktrace in this error it would be really helpful
-            tracing::error!("Failed to parse frame {err}");
+            tracing::error!("{:?}", err.context("Failed to parse frame"));
             return None;
         }
 
@@ -195,6 +202,7 @@ impl Message {
             MessageInner::Modified { frame } | MessageInner::Parsed { frame, .. } => match frame {
                 Frame::Cassandra(frame) => frame.cell_count()?,
                 Frame::Redis(_) => nonzero!(1u32),
+                Frame::Kafka(_) => todo!(),
             },
         })
     }
@@ -216,6 +224,7 @@ impl Message {
         match self.frame() {
             Some(Frame::Cassandra(cassandra)) => cassandra.get_query_type(),
             Some(Frame::Redis(redis)) => redis_query_type(redis), // free-standing function as we cant define methods on RedisFrame
+            Some(Frame::Kafka(_)) => todo!(),
             None => QueryType::ReadWrite,
         }
     }
@@ -256,6 +265,7 @@ impl Message {
             },
             MessageInner::Parsed { frame, .. } | MessageInner::Modified { frame } => match frame {
                 Frame::Cassandra(frame) => Ok(Metadata::Cassandra(frame.metadata())),
+                Frame::Kafka(_) => Ok(Metadata::Kafka),
                 Frame::Redis(_) => Ok(Metadata::Redis),
             },
         }
@@ -309,6 +319,7 @@ impl Message {
                 match frame {
                     Frame::Cassandra(cassandra) => Some(cassandra.stream_id),
                     Frame::Redis(_) => None,
+                    Frame::Kafka(_) => None,
                 }
             }
             None => None,

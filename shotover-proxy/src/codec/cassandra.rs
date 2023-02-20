@@ -271,7 +271,7 @@ impl Encoder<Messages> for CassandraEncoder {
     ) -> std::result::Result<(), Self::Error> {
         for m in item {
             let start = dst.len();
-            let compression = m.codec_state.as_compression();
+            let compression = m.codec_state.as_cassandra();
 
             // TODO: always check if cassandra message
             match m.into_encodable(MessageType::Cassandra)? {

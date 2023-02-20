@@ -1,16 +1,36 @@
 use crate::codec::{CodecBuilder, CodecReadError};
 use crate::frame::MessageType;
 use crate::message::{Encodable, Message, Messages, ProtocolType};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bytes::{Buf, BytesMut};
+use kafka_protocol::messages::ApiKey;
+use std::sync::mpsc;
 use tokio_util::codec::{Decoder, Encoder};
 
-#[derive(Clone, Default)]
-pub struct KafkaCodecBuilder {}
+/// Depending on if the codec is used in a sink or a source requires different processing logic:
+/// * Sources parse requests which do not require any special handling
+/// * Sinks parse responses which requires first matching up the version and api_key with its corresponding request
+///     + To achieve this Sinks use an mpsc channel to send header data from the encoder to the decoder
+#[derive(Copy, Clone)]
+pub enum Direction {
+    Source,
+    Sink,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct RequestHeader {
+    pub api_key: ApiKey,
+    pub version: i16,
+}
+
+#[derive(Clone)]
+pub struct KafkaCodecBuilder {
+    direction: Direction,
+}
 
 impl KafkaCodecBuilder {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(direction: Direction) -> Self {
+        KafkaCodecBuilder { direction }
     }
 }
 
@@ -18,18 +38,28 @@ impl CodecBuilder for KafkaCodecBuilder {
     type Decoder = KafkaDecoder;
     type Encoder = KafkaEncoder;
     fn build(&self) -> (KafkaDecoder, KafkaEncoder) {
-        (KafkaDecoder::new(), KafkaEncoder::new())
+        let (tx, rx) = match self.direction {
+            Direction::Source => (None, None),
+            Direction::Sink => {
+                let (tx, rx) = mpsc::channel();
+                (Some(tx), Some(rx))
+            }
+        };
+        (KafkaDecoder::new(rx), KafkaEncoder::new(tx))
     }
 }
 
-#[derive(Default)]
 pub struct KafkaDecoder {
+    request_header_rx: Option<mpsc::Receiver<RequestHeader>>,
     messages: Messages,
 }
 
 impl KafkaDecoder {
-    pub fn new() -> Self {
-        KafkaDecoder::default()
+    pub fn new(request_header_rx: Option<mpsc::Receiver<RequestHeader>>) -> Self {
+        KafkaDecoder {
+            request_header_rx,
+            messages: vec![],
+        }
     }
 }
 
@@ -58,8 +88,17 @@ impl Decoder for KafkaDecoder {
                     "incoming kafka message:\n{}",
                     pretty_hex::pretty_hex(&bytes)
                 );
-                self.messages
-                    .push(Message::from_bytes(bytes.freeze(), ProtocolType::Kafka));
+                let request_header = if let Some(rx) = self.request_header_rx.as_ref() {
+                    Some(rx.recv().map_err(|_| {
+                        CodecReadError::Parser(anyhow!("kafka encoder half was lost"))
+                    })?)
+                } else {
+                    None
+                };
+                self.messages.push(Message::from_bytes(
+                    bytes.freeze(),
+                    ProtocolType::Kafka { request_header },
+                ));
             } else if self.messages.is_empty() || src.remaining() != 0 {
                 return Ok(None);
             } else {
@@ -69,12 +108,13 @@ impl Decoder for KafkaDecoder {
     }
 }
 
-#[derive(Default)]
-pub struct KafkaEncoder {}
+pub struct KafkaEncoder {
+    request_header_tx: Option<mpsc::Sender<RequestHeader>>,
+}
 
 impl KafkaEncoder {
-    pub fn new() -> Self {
-        KafkaEncoder::default()
+    pub fn new(request_header_tx: Option<mpsc::Sender<RequestHeader>>) -> Self {
+        KafkaEncoder { request_header_tx }
     }
 }
 
@@ -89,8 +129,16 @@ impl Encoder<Messages> for KafkaEncoder {
                     dst.extend_from_slice(&bytes);
                     Ok(())
                 }
-                Encodable::Frame(_) => todo!("kafka frame is unimplemented"),
+                Encodable::Frame(frame) => frame.into_kafka().unwrap().encode(dst),
             };
+
+            if let Some(tx) = self.request_header_tx.as_ref() {
+                let api_key = i16::from_be_bytes(dst[start + 4..start + 6].try_into().unwrap());
+                let version = i16::from_be_bytes(dst[start + 6..start + 8].try_into().unwrap());
+                let api_key =
+                    ApiKey::try_from(api_key).map_err(|_| anyhow!("unknown api key {api_key}"))?;
+                tx.send(RequestHeader { api_key, version })?;
+            }
             tracing::debug!(
                 "outgoing kafka message:\n{}",
                 pretty_hex::pretty_hex(&&dst[start..])
