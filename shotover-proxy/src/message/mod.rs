@@ -1,6 +1,6 @@
-use crate::codec::redis::redis_query_type;
 use crate::codec::CodecState;
 use crate::frame::cassandra::Tracing;
+use crate::frame::redis::redis_query_type;
 use crate::frame::{
     cassandra,
     cassandra::{CassandraMetadata, CassandraOperation},
