@@ -5,28 +5,31 @@ use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
-impl CodecBuilder for KafkaCodec {
-    type Decoder = KafkaCodec;
-    type Encoder = KafkaCodec;
-    fn build(&self) -> (KafkaCodec, KafkaCodec) {
-        (KafkaCodec::new(), KafkaCodec::new())
+#[derive(Clone, Default)]
+pub struct KafkaCodecBuilder {}
+
+impl KafkaCodecBuilder {
+    pub fn new() -> Self {
+        Default::default()
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct KafkaCodec {
+impl CodecBuilder for KafkaCodecBuilder {
+    type Decoder = KafkaDecoder;
+    type Encoder = KafkaEncoder;
+    fn build(&self) -> (KafkaDecoder, KafkaEncoder) {
+        (KafkaDecoder::new(), KafkaEncoder::new())
+    }
+}
+
+#[derive(Default)]
+pub struct KafkaDecoder {
     messages: Messages,
 }
 
-impl Default for KafkaCodec {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl KafkaCodec {
-    pub fn new() -> KafkaCodec {
-        KafkaCodec { messages: vec![] }
+impl KafkaDecoder {
+    pub fn new() -> Self {
+        KafkaDecoder::default()
     }
 }
 
@@ -43,7 +46,7 @@ fn get_length_of_full_message(src: &mut BytesMut) -> Option<usize> {
     }
 }
 
-impl Decoder for KafkaCodec {
+impl Decoder for KafkaDecoder {
     type Item = Messages;
     type Error = CodecReadError;
 
@@ -66,13 +69,21 @@ impl Decoder for KafkaCodec {
     }
 }
 
-impl Encoder<Messages> for KafkaCodec {
+#[derive(Default)]
+pub struct KafkaEncoder {}
+
+impl KafkaEncoder {
+    pub fn new() -> Self {
+        KafkaEncoder::default()
+    }
+}
+
+impl Encoder<Messages> for KafkaEncoder {
     type Error = anyhow::Error;
 
     fn encode(&mut self, item: Messages, dst: &mut BytesMut) -> Result<()> {
         item.into_iter().try_for_each(|m| {
             let start = dst.len();
-            // TODO: MessageType::Kafka
             let result = match m.into_encodable(MessageType::Kafka)? {
                 Encodable::Bytes(bytes) => {
                     dst.extend_from_slice(&bytes);
