@@ -130,7 +130,7 @@ impl Display for Frame {
         match self {
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
             Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
-            Frame::Kafka(frame) => write!(f, "Redis {:?})", frame),
+            Frame::Kafka(frame) => write!(f, "Kafka {:?})", frame),
         }
     }
 }
