@@ -5,7 +5,7 @@ mod test_cases;
 
 #[tokio::test]
 #[serial]
-async fn passthrough() {
+async fn passthrough_standard() {
     let _docker_compose =
         DockerCompose::new("tests/test-configs/kafka/passthrough/docker-compose.yaml");
     let shotover = ShotoverProcessBuilder::new_with_topology(
