@@ -10,8 +10,8 @@ use serial_test::serial;
 use test_helpers::connection::cassandra::CassandraDriver::Datastax;
 use test_helpers::connection::cassandra::Compression;
 use test_helpers::connection::cassandra::{
-    assert_query_result, run_query, CassandraConnection, CassandraDriver,
-    CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
+    assert_query_result, run_query, CassandraConnection, CassandraConnectionBuilder,
+    CassandraDriver, CassandraDriver::CdrsTokio, CassandraDriver::Scylla, ResultValue,
 };
 use test_helpers::connection::redis_connection;
 use test_helpers::docker_compose::DockerCompose;
@@ -67,7 +67,7 @@ async fn passthrough_standard(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
+    let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
 
     standard_test_suite(&connection, driver).await;
 
@@ -89,7 +89,7 @@ async fn passthrough_encode(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
+    let connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
 
     standard_test_suite(&connection, driver).await;
 
@@ -115,8 +115,10 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
 
     {
         // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-        let direct_connection =
-            CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver).await;
+        let direct_connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .with_tls(ca_cert)
+            .build()
+            .await;
         assert_query_result(
             &direct_connection,
             "SELECT bootstrapped FROM system.local",
@@ -125,7 +127,11 @@ async fn source_tls_and_single_tls(#[case] driver: CassandraDriver) {
         .await;
     }
 
-    let connection = || CassandraConnection::new_tls("127.0.0.1", 9043, ca_cert, driver);
+    let connection = || {
+        CassandraConnectionBuilder::new("127.0.0.1", 9043, driver)
+            .with_tls(ca_cert)
+            .build()
+    };
 
     standard_test_suite(&connection, driver).await;
 
@@ -149,7 +155,9 @@ async fn cluster_single_rack_v3(#[case] driver: CassandraDriver) {
         .await;
 
         let connection = || async {
-            let mut connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+            let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+                .build()
+                .await;
             connection
                 .enable_schema_awaiter("172.16.1.2:9042", None)
                 .await;
@@ -179,7 +187,9 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
     let compose = DockerCompose::new("example-configs/cassandra-cluster-v4/docker-compose.yaml");
 
     let connection = || async {
-        let mut connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
         connection
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -198,7 +208,9 @@ async fn cluster_single_rack_v4(#[case] driver: CassandraDriver) {
         routing::test("127.0.0.1", 9042, "172.16.1.2", 9044, driver).await;
 
         //Check for bugs in cross connection state
-        let mut connection2 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+        let mut connection2 = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+            .build()
+            .await;
         connection2
             .enable_schema_awaiter("172.16.1.2:9044", None)
             .await;
@@ -293,7 +305,9 @@ async fn cluster_multi_rack(#[case] driver: CassandraDriver) {
         .await;
 
         let connection = || async {
-            let mut connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+            let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+                .build()
+                .await;
             connection
                 .enable_schema_awaiter("172.16.1.2:9042", None)
                 .await;
@@ -345,8 +359,10 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
 
         {
             // Run a quick test straight to Cassandra to check our assumptions that Shotover and Cassandra TLS are behaving exactly the same
-            let direct_connection =
-                CassandraConnection::new_tls("172.16.1.2", 9042, ca_cert, driver).await;
+            let direct_connection = CassandraConnectionBuilder::new("172.16.1.2", 9042, driver)
+                .with_tls(ca_cert)
+                .build()
+                .await;
             assert_query_result(
                 &direct_connection,
                 "SELECT bootstrapped FROM system.local",
@@ -356,8 +372,10 @@ async fn source_tls_and_cluster_tls(#[case] driver: CassandraDriver) {
         }
 
         let connection = || async {
-            let mut connection =
-                CassandraConnection::new_tls("127.0.0.1", 9042, ca_cert, driver).await;
+            let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+                .with_tls(ca_cert)
+                .build()
+                .await;
             connection
                 .enable_schema_awaiter("172.16.1.2:9042", Some(ca_cert))
                 .await;
@@ -389,7 +407,7 @@ async fn cassandra_redis_cache(#[case] driver: CassandraDriver) {
     .await;
 
     let mut redis_connection = redis_connection::new(6379);
-    let connection_creator = || CassandraConnection::new("127.0.0.1", 9042, driver);
+    let connection_creator = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
     let connection = connection_creator().await;
 
     keyspace::test(&connection).await;
@@ -420,8 +438,10 @@ async fn protect_transform_local(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let shotover_connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
-    let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
+    let shotover_connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
+    let direct_connection = CassandraConnectionBuilder::new("127.0.0.1", 9043, driver)
+        .build()
+        .await;
 
     standard_test_suite(shotover_connection, driver).await;
     protect::test(&shotover_connection().await, &direct_connection).await;
@@ -445,8 +465,10 @@ async fn protect_transform_aws(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let shotover_connection = || CassandraConnection::new("127.0.0.1", 9042, driver);
-    let direct_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
+    let shotover_connection = || CassandraConnectionBuilder::new("127.0.0.1", 9042, driver).build();
+    let direct_connection = CassandraConnectionBuilder::new("127.0.0.1", 9043, driver)
+        .build()
+        .await;
 
     standard_test_suite(shotover_connection, driver).await;
     protect::test(&shotover_connection().await, &direct_connection).await;
@@ -471,8 +493,12 @@ async fn peers_rewrite_v4(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let normal_connection = CassandraConnection::new("127.0.0.1", 9043, driver).await;
-    let rewrite_port_connection = CassandraConnection::new("127.0.0.1", 9044, driver).await;
+    let normal_connection = CassandraConnectionBuilder::new("127.0.0.1", 9043, driver)
+        .build()
+        .await;
+    let rewrite_port_connection = CassandraConnectionBuilder::new("127.0.0.1", 9044, driver)
+        .build()
+        .await;
 
     // run some basic tests to confirm it works as normal
     table::test(&normal_connection).await;
@@ -569,7 +595,9 @@ async fn peers_rewrite_v3(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let connection = CassandraConnection::new("127.0.0.1", 9044, driver).await;
+    let connection = CassandraConnectionBuilder::new("127.0.0.1", 9044, driver)
+        .build()
+        .await;
     // run some basic tests to confirm it works as normal
     table::test(&connection).await;
 
@@ -604,9 +632,13 @@ async fn request_throttling(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+        .build()
+        .await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window and not trigger the rate limiter with client's startup reqeusts
-    let connection_2 = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let connection_2 = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+        .build()
+        .await;
     std::thread::sleep(std::time::Duration::from_secs(1)); // sleep to reset the window again
 
     let statement = "SELECT * FROM system.peers";
@@ -704,8 +736,11 @@ async fn compression_single(#[case] driver: CassandraDriver) {
         let shotover = ShotoverProcessBuilder::new_with_topology(topology_path)
             .start()
             .await;
-        let connection =
-            || CassandraConnection::new_with_compression("127.0.0.1", 9042, driver, compression);
+        let connection = || {
+            CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+                .with_compression(compression)
+                .build()
+        };
 
         standard_test_suite(connection, driver).await;
 
@@ -735,9 +770,10 @@ async fn compression_cluster(#[case] driver: CassandraDriver) {
             .start()
             .await;
         let connection = || async {
-            let mut connection =
-                CassandraConnection::new_with_compression("127.0.0.1", 9042, driver, compression)
-                    .await;
+            let mut connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+                .with_compression(compression)
+                .build()
+                .await;
             connection
                 .enable_schema_awaiter("172.16.1.2:9044", None)
                 .await;
@@ -771,7 +807,9 @@ async fn events_keyspace(#[case] driver: CassandraDriver) {
     .start()
     .await;
 
-    let connection = CassandraConnection::new("127.0.0.1", 9042, driver).await;
+    let connection = CassandraConnectionBuilder::new("127.0.0.1", 9042, driver)
+        .build()
+        .await;
 
     let mut event_recv = connection.as_cdrs().create_event_receiver();
 

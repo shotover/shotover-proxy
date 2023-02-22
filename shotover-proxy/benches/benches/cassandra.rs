@@ -2,7 +2,9 @@ use cassandra_cpp::{stmt, Session, Statement};
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::collections::HashMap;
 use test_helpers::cert::generate_cassandra_test_certs;
-use test_helpers::connection::cassandra::{CassandraConnection, CassandraDriver};
+use test_helpers::connection::cassandra::{
+    CassandraConnection, CassandraConnectionBuilder, CassandraDriver,
+};
 use test_helpers::docker_compose::DockerCompose;
 use test_helpers::lazy::new_lazy_shared;
 use test_helpers::shotover_process::{BinProcess, ShotoverProcessBuilder};
@@ -286,7 +288,8 @@ impl BenchResources {
             tokio.block_on(ShotoverProcessBuilder::new_with_topology(shotover_topology).start()),
         );
 
-        let connection = tokio.block_on(CassandraConnection::new("127.0.0.1", 9042, DRIVER));
+        let connection =
+            tokio.block_on(CassandraConnectionBuilder::new("127.0.0.1", 9042, DRIVER).build());
 
         let mut bench_resources = Self {
             _compose: compose,
@@ -316,12 +319,11 @@ impl BenchResources {
 
         let ca_cert = "example-configs/docker-images/cassandra-tls-4.0.6/certs/localhost_CA.crt";
 
-        let connection = tokio.block_on(CassandraConnection::new_tls(
-            "127.0.0.1",
-            9042,
-            ca_cert,
-            DRIVER,
-        ));
+        let connection = tokio.block_on(
+            CassandraConnectionBuilder::new("127.0.0.1", 9042, DRIVER)
+                .with_tls(ca_cert)
+                .build(),
+        );
 
         let mut bench_resources = Self {
             _compose: compose,
