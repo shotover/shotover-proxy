@@ -42,6 +42,9 @@ impl Transform for QueryCounter {
                         counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "redis");
                     }
                 }
+                Some(Frame::Kafka(_)) => {
+                    counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "kafka");
+                }
                 None => {
                     counter!("query_count", 1, "name" => self.counter_name.clone(), "query" => "unknown", "type" => "none")
                 }
@@ -51,6 +54,7 @@ impl Transform for QueryCounter {
         message_wrapper.call_next_transform().await
     }
 }
+
 fn get_redis_query_type(frame: &RedisFrame) -> Option<String> {
     if let RedisFrame::Array(array) = frame {
         if let Some(RedisFrame::BulkString(v)) = array.get(0) {

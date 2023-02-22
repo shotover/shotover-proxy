@@ -3,10 +3,12 @@ use anyhow::{anyhow, Result};
 use bytes::Bytes;
 pub use cassandra::{CassandraFrame, CassandraOperation, CassandraResult};
 use cassandra_protocol::compression::Compression;
+use kafka::KafkaFrame;
 pub use redis_protocol::resp2::types::Frame as RedisFrame;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 pub mod cassandra;
+pub mod kafka;
 pub mod redis;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -21,7 +23,7 @@ impl From<&ProtocolType> for MessageType {
         match value {
             ProtocolType::Cassandra { .. } => Self::Cassandra,
             ProtocolType::Redis => Self::Redis,
-            ProtocolType::Kafka => Self::Kafka,
+            ProtocolType::Kafka { .. } => Self::Kafka,
         }
     }
 }
@@ -33,6 +35,9 @@ impl Frame {
                 compression: Compression::None,
             },
             Frame::Redis(_) => CodecState::Redis,
+            Frame::Kafka(_) => CodecState::Kafka {
+                request_header: None,
+            },
         }
     }
 }
@@ -41,6 +46,7 @@ impl Frame {
 pub enum Frame {
     Cassandra(CassandraFrame),
     Redis(RedisFrame),
+    Kafka(KafkaFrame),
 }
 
 impl Frame {
@@ -51,13 +57,14 @@ impl Frame {
     ) -> Result<Self> {
         match message_type {
             MessageType::Cassandra => {
-                CassandraFrame::from_bytes(bytes, codec_state.as_compression())
-                    .map(Frame::Cassandra)
+                CassandraFrame::from_bytes(bytes, codec_state.as_cassandra()).map(Frame::Cassandra)
             }
             MessageType::Redis => redis_protocol::resp2::decode::decode(&bytes)
                 .map(|x| Frame::Redis(x.unwrap().0))
                 .map_err(|e| anyhow!("{e:?}")),
-            MessageType::Kafka => todo!(),
+            MessageType::Kafka => {
+                KafkaFrame::from_bytes(bytes, codec_state.as_kafka()).map(Frame::Kafka)
+            }
         }
     }
 
@@ -65,6 +72,7 @@ impl Frame {
         match self {
             Frame::Redis(_) => "Redis",
             Frame::Cassandra(_) => "Cassandra",
+            Frame::Kafka(_) => "Kafka",
         }
     }
 
@@ -72,6 +80,7 @@ impl Frame {
         match self {
             Frame::Cassandra(_) => MessageType::Cassandra,
             Frame::Redis(_) => MessageType::Redis,
+            Frame::Kafka(_) => MessageType::Kafka,
         }
     }
 
@@ -80,6 +89,16 @@ impl Frame {
             Frame::Redis(frame) => Ok(frame),
             frame => Err(anyhow!(
                 "Expected redis frame but received {} frame",
+                frame.name()
+            )),
+        }
+    }
+
+    pub fn into_kafka(self) -> Result<KafkaFrame> {
+        match self {
+            Frame::Kafka(frame) => Ok(frame),
+            frame => Err(anyhow!(
+                "Expected kafka frame but received {} frame",
                 frame.name()
             )),
         }
@@ -111,6 +130,7 @@ impl Display for Frame {
         match self {
             Frame::Cassandra(frame) => write!(f, "Cassandra {}", frame),
             Frame::Redis(frame) => write!(f, "Redis {:?})", frame),
+            Frame::Kafka(frame) => write!(f, "Kafka {:?})", frame),
         }
     }
 }

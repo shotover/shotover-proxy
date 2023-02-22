@@ -1,5 +1,6 @@
 use crate::message::Messages;
 use cassandra_protocol::compression::Compression;
+use kafka::RequestHeader;
 use tokio_util::codec::{Decoder, Encoder};
 
 pub mod cassandra;
@@ -8,17 +9,30 @@ pub mod redis;
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum CodecState {
-    Cassandra { compression: Compression },
+    Cassandra {
+        compression: Compression,
+    },
     Redis,
-    Kafka,
+    Kafka {
+        request_header: Option<RequestHeader>,
+    },
 }
 
 impl CodecState {
-    pub fn as_compression(&self) -> Compression {
+    pub fn as_cassandra(&self) -> Compression {
         match self {
             CodecState::Cassandra { compression } => *compression,
             _ => {
                 panic!("This is a {self:?}, expected CodecState::Cassandra")
+            }
+        }
+    }
+
+    pub fn as_kafka(&self) -> Option<RequestHeader> {
+        match self {
+            CodecState::Kafka { request_header } => *request_header,
+            _ => {
+                panic!("This is a {self:?}, expected CodecState::Kafka")
             }
         }
     }

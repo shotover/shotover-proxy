@@ -1,4 +1,4 @@
-use crate::codec::kafka::KafkaCodecBuilder;
+use crate::codec::kafka::{Direction, KafkaCodecBuilder};
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::tcp;
@@ -87,7 +87,7 @@ pub struct KafkaSinkSingle {
 impl Transform for KafkaSinkSingle {
     async fn transform<'a>(&'a mut self, message_wrapper: Wrapper<'a>) -> ChainResponse {
         if self.outbound.is_none() {
-            let codec = KafkaCodecBuilder::new();
+            let codec = KafkaCodecBuilder::new(Direction::Sink);
             let tcp_stream = tcp::tcp_stream(self.connect_timeout, &self.address).await?;
             let (rx, tx) = tcp_stream.into_split();
             self.outbound = Some(spawn_read_write_tasks(&codec, rx, tx));

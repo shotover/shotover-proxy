@@ -18,3 +18,19 @@ async fn passthrough() {
 
     shotover.shutdown_and_then_consume_events(&[]).await;
 }
+
+#[tokio::test]
+#[serial]
+async fn passthrough_encode() {
+    let _docker_compose =
+        DockerCompose::new("tests/test-configs/kafka/passthrough/docker-compose.yaml");
+    let shotover = ShotoverProcessBuilder::new_with_topology(
+        "tests/test-configs/kafka/passthrough/topology-encode.yaml",
+    )
+    .start()
+    .await;
+
+    test_cases::basic().await;
+
+    shotover.shutdown_and_then_consume_events(&[]).await;
+}

@@ -1,4 +1,4 @@
-use crate::codec::kafka::KafkaCodecBuilder;
+use crate::codec::kafka::{Direction, KafkaCodecBuilder};
 use crate::server::TcpCodecListener;
 use crate::sources::Sources;
 use crate::tls::{TlsAcceptor, TlsAcceptorConfig};
@@ -67,7 +67,7 @@ impl KafkaSource {
             name.to_string(),
             listen_addr.clone(),
             hard_connection_limit.unwrap_or(false),
-            KafkaCodecBuilder::new(),
+            KafkaCodecBuilder::new(Direction::Source),
             Arc::new(Semaphore::new(connection_limit.unwrap_or(512))),
             trigger_shutdown_rx.clone(),
             tls.map(TlsAcceptor::new).transpose()?,
