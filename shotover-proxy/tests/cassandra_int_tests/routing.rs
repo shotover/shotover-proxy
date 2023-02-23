@@ -1,4 +1,4 @@
-use test_helpers::connection::cassandra::{CassandraConnection, CassandraDriver};
+use test_helpers::connection::cassandra::{CassandraConnectionBuilder, CassandraDriver};
 
 mod single_key {
     use test_helpers::connection::cassandra::{run_query, CassandraConnection, ResultValue};
@@ -401,7 +401,9 @@ pub async fn test(
 
     if run {
         let mut shotover =
-            CassandraConnection::new(shotover_contact_point, shotover_port, driver).await;
+            CassandraConnectionBuilder::new(shotover_contact_point, shotover_port, driver)
+                .build()
+                .await;
         shotover
             .enable_schema_awaiter(
                 &format!("{}:{}", cassandra_contact_point, cassandra_port),
@@ -409,7 +411,9 @@ pub async fn test(
             )
             .await;
         let cassandra =
-            CassandraConnection::new(cassandra_contact_point, cassandra_port, driver).await;
+            CassandraConnectionBuilder::new(cassandra_contact_point, cassandra_port, driver)
+                .build()
+                .await;
 
         single_key::test(&shotover, &cassandra).await;
         composite_key::test(&shotover, &cassandra).await;

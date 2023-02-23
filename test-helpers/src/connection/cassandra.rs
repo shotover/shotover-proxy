@@ -43,6 +43,79 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
 
+pub struct CassandraConnectionBuilder {
+    contact_points: String,
+    port: u16,
+    driver: CassandraDriver,
+    ca_cert_path: Option<String>,
+    compression: Option<Compression>,
+    protocol_version: Option<ProtocolVersion>,
+}
+
+impl CassandraConnectionBuilder {
+    pub fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
+        Self {
+            contact_points: contact_points.into(),
+            port,
+            driver,
+            ca_cert_path: None,
+            compression: None,
+            protocol_version: None,
+        }
+    }
+
+    pub fn with_tls(mut self, ca_cert_path: &str) -> Self {
+        self.ca_cert_path = Some(ca_cert_path.into());
+        self
+    }
+
+    pub fn with_compression(mut self, compression: Compression) -> Self {
+        self.compression = Some(compression);
+        self
+    }
+
+    pub fn with_protocol_version(mut self, protocol_version: ProtocolVersion) -> Self {
+        self.protocol_version = Some(protocol_version);
+        self
+    }
+
+    pub async fn build(self) -> CassandraConnection {
+        let tls = if let Some(ca_cert_path) = self.ca_cert_path {
+            match self.driver {
+                #[cfg(feature = "cassandra-cpp-driver-tests")]
+                CassandraDriver::Datastax => {
+                    let ca_cert = read_to_string(ca_cert_path).unwrap();
+                    let mut ssl = Ssl::default();
+                    Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
+
+                    Some(Tls::Datastax(ssl))
+                }
+                // TODO actually implement TLS for cdrs-tokio
+                CassandraDriver::CdrsTokio => todo!(),
+                CassandraDriver::Scylla => {
+                    let mut context = SslContext::builder(SslMethod::tls()).unwrap();
+                    context.set_ca_file(ca_cert_path).unwrap();
+                    let ssl_context = context.build();
+
+                    Some(Tls::Scylla(ssl_context))
+                }
+            }
+        } else {
+            None
+        };
+
+        CassandraConnection::new(
+            &self.contact_points,
+            self.port,
+            self.driver,
+            self.compression,
+            tls,
+            self.protocol_version,
+        )
+        .await
+    }
+}
+
 #[derive(Debug)]
 pub enum PreparedQuery {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
@@ -81,7 +154,14 @@ pub enum Compression {
     Lz4,
 }
 
-enum Tls {
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum ProtocolVersion {
+    V3,
+    V4,
+    V5,
+}
+
+pub enum Tls {
     #[cfg(feature = "cassandra-cpp-driver-tests")]
     Datastax(Ssl),
     Scylla(SslContext),
@@ -118,66 +198,13 @@ pub enum CassandraConnection {
 }
 
 impl CassandraConnection {
-    pub async fn new(contact_points: &str, port: u16, driver: CassandraDriver) -> Self {
-        CassandraConnection::new_inner(contact_points, port, driver, None, None).await
-    }
-
-    pub async fn new_tls(
-        contact_points: &str,
-        port: u16,
-        ca_cert_path: &str,
-        driver: CassandraDriver,
-    ) -> Self {
-        match driver {
-            #[cfg(feature = "cassandra-cpp-driver-tests")]
-            CassandraDriver::Datastax => {
-                let ca_cert = read_to_string(ca_cert_path).unwrap();
-                let mut ssl = Ssl::default();
-                Ssl::add_trusted_cert(&mut ssl, &ca_cert).unwrap();
-
-                CassandraConnection::new_inner(
-                    contact_points,
-                    port,
-                    driver,
-                    None,
-                    Some(Tls::Datastax(ssl)),
-                )
-                .await
-            }
-            // TODO actually implement TLS for cdrs-tokio
-            CassandraDriver::CdrsTokio => todo!(),
-            CassandraDriver::Scylla => {
-                let mut context = SslContext::builder(SslMethod::tls()).unwrap();
-                context.set_ca_file(ca_cert_path).unwrap();
-                let ssl_context = context.build();
-
-                CassandraConnection::new_inner(
-                    contact_points,
-                    port,
-                    driver,
-                    None,
-                    Some(Tls::Scylla(ssl_context)),
-                )
-                .await
-            }
-        }
-    }
-
-    pub async fn new_with_compression(
-        contact_points: &str,
-        port: u16,
-        driver: CassandraDriver,
-        compression: Compression,
-    ) -> Self {
-        CassandraConnection::new_inner(contact_points, port, driver, Some(compression), None).await
-    }
-
-    async fn new_inner(
+    pub async fn new(
         contact_points: &str,
         port: u16,
         driver: CassandraDriver,
         compression: Option<Compression>,
         tls: Option<Tls>,
+        protocol: Option<ProtocolVersion>,
     ) -> Self {
         for contact_point in contact_points.split(',') {
             crate::wait_for_socket_to_open(contact_point, port);
@@ -192,6 +219,20 @@ impl CassandraConnection {
                 cluster.set_credentials("cassandra", "cassandra").unwrap();
                 cluster.set_port(port).unwrap();
                 cluster.set_load_balance_round_robin();
+
+                if let Some(protocol) = protocol {
+                    cluster
+                        .set_protocol_version(match protocol {
+                            ProtocolVersion::V3 => 3,
+                            ProtocolVersion::V4 => 4,
+                            ProtocolVersion::V5 => 5,
+                        })
+                        .unwrap();
+                }
+
+                if compression.is_some() {
+                    panic!("Cannot set compression with Datastax driver");
+                }
 
                 if let Some(Tls::Datastax(mut ssl)) = tls {
                     cluster.set_ssl(&mut ssl);
@@ -218,16 +259,22 @@ impl CassandraConnection {
                     .map(|contact_point| NodeAddress::from(format!("{contact_point}:{port}")))
                     .collect::<Vec<NodeAddress>>();
 
-                let config = timeout(
-                    Duration::from_secs(10),
-                    NodeTcpConfigBuilder::new()
-                        .with_contact_points(node_addresses)
-                        .with_authenticator_provider(Arc::new(auth))
-                        .build(),
-                )
-                .await
-                .unwrap()
-                .unwrap();
+                let mut node_config_builder = NodeTcpConfigBuilder::new()
+                    .with_contact_points(node_addresses)
+                    .with_authenticator_provider(Arc::new(auth));
+
+                if let Some(protocol) = protocol {
+                    node_config_builder = node_config_builder.with_version(match protocol {
+                        ProtocolVersion::V3 => Version::V3,
+                        ProtocolVersion::V4 => Version::V4,
+                        ProtocolVersion::V5 => Version::V5,
+                    });
+                }
+
+                let config = timeout(Duration::from_secs(10), node_config_builder.build())
+                    .await
+                    .unwrap()
+                    .unwrap();
 
                 let mut session_builder = TcpSessionBuilder::new(
                     TopologyAwareLoadBalancingStrategy::new(None, true),
@@ -274,6 +321,10 @@ impl CassandraConnection {
                     };
 
                     builder = builder.compression(Some(compression));
+                }
+
+                if protocol.is_some() {
+                    panic!("Cannot set protocol with Scylla");
                 }
 
                 if let Some(Tls::Scylla(ssl_context)) = tls {
