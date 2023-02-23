@@ -49,7 +49,7 @@ pub struct CassandraConnectionBuilder {
     driver: CassandraDriver,
     ca_cert_path: Option<String>,
     compression: Option<Compression>,
-    protocol_version: ProtocolVersion,
+    protocol_version: Option<ProtocolVersion>,
 }
 
 impl CassandraConnectionBuilder {
@@ -60,7 +60,7 @@ impl CassandraConnectionBuilder {
             driver,
             ca_cert_path: None,
             compression: None,
-            protocol_version: ProtocolVersion::V4,
+            protocol_version: None,
         }
     }
 
@@ -75,7 +75,7 @@ impl CassandraConnectionBuilder {
     }
 
     pub fn with_protocol_version(mut self, protocol_version: ProtocolVersion) -> Self {
-        self.protocol_version = protocol_version;
+        self.protocol_version = Some(protocol_version);
         self
     }
 
@@ -204,7 +204,7 @@ impl CassandraConnection {
         driver: CassandraDriver,
         compression: Option<Compression>,
         tls: Option<Tls>,
-        protocol: ProtocolVersion,
+        protocol: Option<ProtocolVersion>,
     ) -> Self {
         for contact_point in contact_points.split(',') {
             crate::wait_for_socket_to_open(contact_point, port);
@@ -219,13 +219,16 @@ impl CassandraConnection {
                 cluster.set_credentials("cassandra", "cassandra").unwrap();
                 cluster.set_port(port).unwrap();
                 cluster.set_load_balance_round_robin();
-                cluster
-                    .set_protocol_version(match protocol {
-                        ProtocolVersion::V3 => 3,
-                        ProtocolVersion::V4 => 4,
-                        ProtocolVersion::V5 => 5,
-                    })
-                    .unwrap();
+
+                if let Some(protocol) = protocol {
+                    cluster
+                        .set_protocol_version(match protocol {
+                            ProtocolVersion::V3 => 3,
+                            ProtocolVersion::V4 => 4,
+                            ProtocolVersion::V5 => 5,
+                        })
+                        .unwrap();
+                }
 
                 if compression.is_some() {
                     panic!("Cannot set compression with Datastax driver");
@@ -256,21 +259,22 @@ impl CassandraConnection {
                     .map(|contact_point| NodeAddress::from(format!("{contact_point}:{port}")))
                     .collect::<Vec<NodeAddress>>();
 
-                let config = timeout(
-                    Duration::from_secs(10),
-                    NodeTcpConfigBuilder::new()
-                        .with_contact_points(node_addresses)
-                        .with_authenticator_provider(Arc::new(auth))
-                        .with_version(match protocol {
-                            ProtocolVersion::V3 => Version::V3,
-                            ProtocolVersion::V4 => Version::V4,
-                            ProtocolVersion::V5 => Version::V5,
-                        })
-                        .build(),
-                )
-                .await
-                .unwrap()
-                .unwrap();
+                let mut node_config_builder = NodeTcpConfigBuilder::new()
+                    .with_contact_points(node_addresses)
+                    .with_authenticator_provider(Arc::new(auth));
+
+                if let Some(protocol) = protocol {
+                    node_config_builder = node_config_builder.with_version(match protocol {
+                        ProtocolVersion::V3 => Version::V3,
+                        ProtocolVersion::V4 => Version::V4,
+                        ProtocolVersion::V5 => Version::V5,
+                    });
+                }
+
+                let config = timeout(Duration::from_secs(10), node_config_builder.build())
+                    .await
+                    .unwrap()
+                    .unwrap();
 
                 let mut session_builder = TcpSessionBuilder::new(
                     TopologyAwareLoadBalancingStrategy::new(None, true),
@@ -317,6 +321,10 @@ impl CassandraConnection {
                     };
 
                     builder = builder.compression(Some(compression));
+                }
+
+                if protocol.is_some() {
+                    panic!("Cannot set protocol with Scylla");
                 }
 
                 if let Some(Tls::Scylla(ssl_context)) = tls {
