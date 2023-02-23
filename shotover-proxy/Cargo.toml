@@ -44,8 +44,7 @@ anyhow.workspace = true
 backtrace = "0.3.66"
 
 # Parsers
-#cql3-parser = "0.3.1"
-cql3-parser =  { version = "0.3.1", git = "https://github.com/rukai/rust-cql3-parser", branch = "identifier_ref" }
+cql3-parser = "0.3.2"
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

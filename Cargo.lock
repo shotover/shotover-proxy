@@ -322,7 +322,7 @@ checksum = "8234d29d30873ab5a41e3557b8515d3ecbaefb1ea5be579425b3b0074b6d0e40"
 [[package]]
 name = "cassandra-protocol"
 version = "2.0.1"
-source = "git+https://github.com/krojew/cdrs-tokio#df2f97efb6a12e8d6b47ca94f2bc11818215947d"
+source = "git+https://github.com/krojew/cdrs-tokio#37f78c295744f4c5f1cb7aa5829b4b7ac847c950"
 dependencies = [
  "arc-swap",
  "arrayref",
@@ -358,7 +358,7 @@ checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
 [[package]]
 name = "cdrs-tokio"
 version = "7.0.4"
-source = "git+https://github.com/krojew/cdrs-tokio#df2f97efb6a12e8d6b47ca94f2bc11818215947d"
+source = "git+https://github.com/krojew/cdrs-tokio#37f78c295744f4c5f1cb7aa5829b4b7ac847c950"
 dependencies = [
  "arc-swap",
  "atomic",
@@ -592,8 +592,9 @@ dependencies = [
 
 [[package]]
 name = "cql3-parser"
-version = "0.3.1"
-source = "git+https://github.com/rukai/rust-cql3-parser?branch=identifier_ref#fbb0563950a101e4178a8bf38ea92be2666864b8"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5054875219c936ab95368db398efc53d36a795965018bde4ceb7a2eab03fe5b"
 dependencies = [
  "bigdecimal 0.3.0",
  "bytes",
@@ -2588,9 +2589,9 @@ dependencies = [
 
 [[package]]
 name = "rgb"
-version = "0.8.35"
+version = "0.8.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7495acf66551cdb696b7711408144bcd3194fc78e32f3a09e809bfe7dd4a7ce3"
+checksum = "20ec2d3e3fc7a92ced357df9cebd5a10b6fb2aa1ee797bf7e9ce2f17dffc8f59"
 dependencies = [
  "bytemuck",
 ]
@@ -3450,9 +3451,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d660770404473ccd7bc9f8b28494a811bc18542b915c0855c51e8f419d5223ce"
+checksum = "8fb52b74f05dbf495a8fba459fdc331812b96aa086d9eb78101fa0d4569c3313"
 dependencies = [
  "futures-core",
  "pin-project-lite",
