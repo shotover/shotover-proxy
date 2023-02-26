@@ -119,6 +119,7 @@ impl Transform for KafkaSinkSingle {
             read_responses(responses).await
         }?;
 
+        // Rewrite FindCoordinator responses messages to use shotovers port instead of kafkas port
         for response in &mut responses {
             if let Some(Frame::Kafka(KafkaFrame::Response {
                 body: ResponseBody::FindCoordinator(find_coordinator),
