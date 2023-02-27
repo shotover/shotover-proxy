@@ -1,8 +1,7 @@
+use crate::config::chain::TransformChainConfig;
 use crate::error::ChainResponse;
 use crate::transforms::chain::{BufferedChain, TransformChainBuilder};
-use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use metrics::{register_counter, Counter};
@@ -102,7 +101,7 @@ pub enum ConsistencyBehavior {
 pub struct TeeConfig {
     pub behavior: Option<ConsistencyBehaviorConfig>,
     pub timeout_micros: Option<u64>,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: TransformChainConfig,
     pub buffer_size: Option<usize>,
 }
 
@@ -110,11 +109,13 @@ pub struct TeeConfig {
 pub enum ConsistencyBehaviorConfig {
     Ignore,
     FailOnMismatch,
-    SubchainOnMismatch(Vec<TransformsConfig>),
+    SubchainOnMismatch(TransformChainConfig),
 }
 
-impl TeeConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "Tee")]
+#[async_trait(?Send)]
+impl TransformConfig for TeeConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         let buffer_size = self.buffer_size.unwrap_or(5);
         let behavior = match &self.behavior {
             Some(ConsistencyBehaviorConfig::Ignore) => ConsistencyBehaviorBuilder::Ignore,
@@ -123,12 +124,14 @@ impl TeeConfig {
             }
             Some(ConsistencyBehaviorConfig::SubchainOnMismatch(mismatch_chain)) => {
                 ConsistencyBehaviorBuilder::SubchainOnMismatch(
-                    build_chain_from_config("mismatch_chain".to_string(), mismatch_chain).await?,
+                    mismatch_chain
+                        .get_builder("mismatch_chain".to_string())
+                        .await?,
                 )
             }
             None => ConsistencyBehaviorBuilder::Ignore,
         };
-        let tee_chain = build_chain_from_config("tee_chain".to_string(), &self.chain).await?;
+        let tee_chain = self.chain.get_builder("tee_chain".to_string()).await?;
 
         Ok(Box::new(TeeBuilder::new(
             tee_chain,
@@ -196,7 +199,7 @@ impl Transform for Tee {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transforms::TransformsConfig;
+    use crate::transforms::null::NullSinkConfig;
 
     #[tokio::test]
     async fn test_validate_no_subchain() {
@@ -204,10 +207,10 @@ mod tests {
             let config = TeeConfig {
                 behavior: Some(ConsistencyBehaviorConfig::Ignore),
                 timeout_micros: None,
-                chain: vec![TransformsConfig::NullSink],
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
                 buffer_size: None,
             };
-            let transform = config.get_builder().await.unwrap();
+            let transform = config.get_builder("".to_owned()).await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -216,10 +219,10 @@ mod tests {
             let config = TeeConfig {
                 behavior: Some(ConsistencyBehaviorConfig::FailOnMismatch),
                 timeout_micros: None,
-                chain: vec![TransformsConfig::NullSink],
+                chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
                 buffer_size: None,
             };
-            let transform = config.get_builder().await.unwrap();
+            let transform = config.get_builder("".to_owned()).await.unwrap();
             let result = transform.validate();
             assert_eq!(result, Vec::<String>::new());
         }
@@ -228,16 +231,15 @@ mod tests {
     #[tokio::test]
     async fn test_validate_invalid_chain() {
         let config = TeeConfig {
-            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch(vec![
-                TransformsConfig::NullSink,
-                TransformsConfig::NullSink,
-            ])),
+            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch(
+                TransformChainConfig(vec![Box::new(NullSinkConfig), Box::new(NullSinkConfig)]),
+            )),
             timeout_micros: None,
-            chain: vec![TransformsConfig::NullSink],
+            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
         };
 
-        let transform = config.get_builder().await.unwrap();
+        let transform = config.get_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
         let expected = vec!["Tee:", "  mismatch_chain:", "    Terminating transform \"NullSink\" is not last in chain. Terminating transform must be last in chain."];
         assert_eq!(result, expected);
@@ -246,15 +248,15 @@ mod tests {
     #[tokio::test]
     async fn test_validate_valid_chain() {
         let config = TeeConfig {
-            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch(vec![
-                TransformsConfig::NullSink,
-            ])),
+            behavior: Some(ConsistencyBehaviorConfig::SubchainOnMismatch(
+                TransformChainConfig(vec![Box::new(NullSinkConfig)]),
+            )),
             timeout_micros: None,
-            chain: vec![TransformsConfig::NullSink],
+            chain: TransformChainConfig(vec![Box::new(NullSinkConfig)]),
             buffer_size: None,
         };
 
-        let transform = config.get_builder().await.unwrap();
+        let transform = config.get_builder("".to_owned()).await.unwrap();
         let result = transform.validate();
         assert_eq!(result, Vec::<String>::new());
     }

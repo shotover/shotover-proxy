@@ -1,7 +1,6 @@
-use super::Transforms;
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::{Transform, TransformBuilder, Wrapper};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -21,8 +20,10 @@ pub struct CoalesceConfig {
     pub flush_when_millis_since_last_flush: Option<u128>,
 }
 
-impl CoalesceConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "Coalesce")]
+#[async_trait(?Send)]
+impl TransformConfig for CoalesceConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(Coalesce {
             buffer: Vec::with_capacity(self.flush_when_buffered_message_count.unwrap_or(0)),
             flush_when_buffered_message_count: self.flush_when_buffered_message_count,

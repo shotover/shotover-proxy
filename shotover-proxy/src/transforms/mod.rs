@@ -1,52 +1,35 @@
 use crate::error::ChainResponse;
 use crate::message::Messages;
-use crate::transforms::cassandra::peers_rewrite::{
-    CassandraPeersRewrite, CassandraPeersRewriteConfig,
-};
-use crate::transforms::cassandra::sink_cluster::{
-    CassandraSinkCluster, CassandraSinkClusterConfig,
-};
-use crate::transforms::cassandra::sink_single::{CassandraSinkSingle, CassandraSinkSingleConfig};
-use crate::transforms::chain::TransformChainBuilder;
-use crate::transforms::coalesce::{Coalesce, CoalesceConfig};
+use crate::transforms::cassandra::peers_rewrite::CassandraPeersRewrite;
+use crate::transforms::cassandra::sink_cluster::CassandraSinkCluster;
+use crate::transforms::cassandra::sink_single::CassandraSinkSingle;
+use crate::transforms::coalesce::Coalesce;
 use crate::transforms::debug::force_parse::DebugForceParse;
-#[cfg(feature = "alpha-transforms")]
-use crate::transforms::debug::force_parse::{DebugForceEncodeConfig, DebugForceParseConfig};
 use crate::transforms::debug::printer::DebugPrinter;
 use crate::transforms::debug::random_delay::DebugRandomDelay;
-use crate::transforms::debug::returner::{DebugReturner, DebugReturnerConfig};
-use crate::transforms::distributed::tuneable_consistency_scatter::{
-    TuneableConsistencyScatterConfig, TuneableConsistentencyScatter,
-};
-use crate::transforms::filter::{QueryTypeFilter, QueryTypeFilterConfig};
+use crate::transforms::debug::returner::DebugReturner;
+use crate::transforms::distributed::tuneable_consistency_scatter::TuneableConsistentencyScatter;
+use crate::transforms::filter::QueryTypeFilter;
 use crate::transforms::kafka::sink_single::KafkaSinkSingle;
-#[cfg(feature = "alpha-transforms")]
-use crate::transforms::kafka::sink_single::KafkaSinkSingleConfig;
 use crate::transforms::load_balance::ConnectionBalanceAndPool;
 use crate::transforms::loopback::Loopback;
 use crate::transforms::null::NullSink;
-use crate::transforms::parallel_map::{ParallelMap, ParallelMapConfig};
+use crate::transforms::parallel_map::ParallelMap;
 use crate::transforms::protect::Protect;
-#[cfg(feature = "alpha-transforms")]
-use crate::transforms::protect::ProtectConfig;
-use crate::transforms::query_counter::{QueryCounter, QueryCounterConfig};
-use crate::transforms::redis::cache::{RedisConfig, SimpleRedisCache};
-use crate::transforms::redis::cluster_ports_rewrite::{
-    RedisClusterPortsRewrite, RedisClusterPortsRewriteConfig,
-};
-use crate::transforms::redis::sink_cluster::{RedisSinkCluster, RedisSinkClusterConfig};
-use crate::transforms::redis::sink_single::{RedisSinkSingle, RedisSinkSingleConfig};
+use crate::transforms::query_counter::QueryCounter;
+use crate::transforms::redis::cache::SimpleRedisCache;
+use crate::transforms::redis::cluster_ports_rewrite::RedisClusterPortsRewrite;
+use crate::transforms::redis::sink_cluster::RedisSinkCluster;
+use crate::transforms::redis::sink_single::RedisSinkSingle;
 use crate::transforms::redis::timestamp_tagging::RedisTimestampTagger;
-use crate::transforms::tee::{Tee, TeeConfig};
-use crate::transforms::throttling::{RequestThrottling, RequestThrottlingConfig};
+use crate::transforms::tee::Tee;
+use crate::transforms::throttling::RequestThrottling;
 use anyhow::{anyhow, Result};
-use async_recursion::async_recursion;
 use async_trait::async_trait;
 use core::fmt;
 use dyn_clone::DynClone;
 use futures::Future;
 use metrics::{counter, histogram};
-use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
 use std::iter::Rev;
 use std::net::SocketAddr;
@@ -235,95 +218,10 @@ impl Transforms {
     }
 }
 
-/// The TransformsConfig enum is responsible for TransformConfig registration and enum dispatch
-/// in the transform chain. Allows you to register your config struct for the config file.
-#[derive(Deserialize, Debug)]
-pub enum TransformsConfig {
-    #[cfg(feature = "alpha-transforms")]
-    KafkaSinkSingle(KafkaSinkSingleConfig),
-    CassandraSinkSingle(CassandraSinkSingleConfig),
-    CassandraSinkCluster(CassandraSinkClusterConfig),
-    RedisSinkSingle(RedisSinkSingleConfig),
-    CassandraPeersRewrite(CassandraPeersRewriteConfig),
-    RedisCache(RedisConfig),
-    Tee(TeeConfig),
-    TuneableConsistencyScatter(TuneableConsistencyScatterConfig),
-    RedisSinkCluster(RedisSinkClusterConfig),
-    RedisClusterPortsRewrite(RedisClusterPortsRewriteConfig),
-    RedisTimestampTagger,
-    DebugPrinter,
-    DebugReturner(DebugReturnerConfig),
-    NullSink,
-    #[cfg(test)]
-    Loopback,
-    #[cfg(feature = "alpha-transforms")]
-    Protect(ProtectConfig),
-    #[cfg(feature = "alpha-transforms")]
-    DebugForceParse(DebugForceParseConfig),
-    #[cfg(feature = "alpha-transforms")]
-    DebugForceEncode(DebugForceEncodeConfig),
-    ParallelMap(ParallelMapConfig),
-    //PoolConnections(ConnectionBalanceAndPoolConfig),
-    Coalesce(CoalesceConfig),
-    QueryTypeFilter(QueryTypeFilterConfig),
-    QueryCounter(QueryCounterConfig),
-    RequestThrottling(RequestThrottlingConfig),
-}
-
-impl TransformsConfig {
-    #[async_recursion]
-    pub async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>> {
-        match self {
-            #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::KafkaSinkSingle(c) => c.get_builder(chain_name).await,
-            TransformsConfig::CassandraSinkSingle(c) => c.get_builder(chain_name).await,
-            TransformsConfig::CassandraSinkCluster(c) => c.get_builder(chain_name).await,
-            TransformsConfig::CassandraPeersRewrite(c) => c.get_builder().await,
-            TransformsConfig::RedisCache(r) => r.get_builder().await,
-            TransformsConfig::Tee(t) => t.get_builder().await,
-            TransformsConfig::RedisSinkSingle(r) => r.get_builder(chain_name).await,
-            TransformsConfig::TuneableConsistencyScatter(c) => c.get_builder().await,
-            TransformsConfig::RedisTimestampTagger => {
-                Ok(Box::new(RedisTimestampTagger::new()) as Box<dyn TransformBuilder>)
-            }
-            TransformsConfig::RedisClusterPortsRewrite(r) => r.get_builder().await,
-            TransformsConfig::DebugPrinter => {
-                Ok(Box::new(DebugPrinter::new()) as Box<dyn TransformBuilder>)
-            }
-            TransformsConfig::DebugReturner(d) => d.get_builder().await,
-            TransformsConfig::NullSink => {
-                Ok(Box::<NullSink>::default() as Box<dyn TransformBuilder>)
-            }
-            #[cfg(test)]
-            TransformsConfig::Loopback => {
-                Ok(Box::<Loopback>::default() as Box<dyn TransformBuilder>)
-            }
-            #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::Protect(p) => p.get_builder().await,
-            #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::DebugForceParse(d) => d.get_builder().await,
-            #[cfg(feature = "alpha-transforms")]
-            TransformsConfig::DebugForceEncode(d) => d.get_builder().await,
-            TransformsConfig::RedisSinkCluster(r) => r.get_builder(chain_name).await,
-            TransformsConfig::ParallelMap(s) => s.get_builder().await,
-            // TransformsConfig::PoolConnections(s) => s.get_builder().await,
-            TransformsConfig::Coalesce(s) => s.get_builder().await,
-            TransformsConfig::QueryTypeFilter(s) => s.get_builder().await,
-            TransformsConfig::QueryCounter(s) => s.get_builder().await,
-            TransformsConfig::RequestThrottling(s) => s.get_builder(),
-        }
-    }
-}
-
-pub async fn build_chain_from_config(
-    name: String,
-    transform_configs: &[TransformsConfig],
-) -> Result<TransformChainBuilder> {
-    let mut transforms: Vec<Box<dyn TransformBuilder>> = Vec::new();
-    for tc in transform_configs {
-        transforms.push(tc.get_builder(name.clone()).await?)
-    }
-    Ok(TransformChainBuilder::new(transforms, name))
+#[typetag::deserialize]
+#[async_trait(?Send)]
+pub trait TransformConfig: Debug {
+    async fn get_builder(&self, chain_name: String) -> Result<Box<dyn TransformBuilder>>;
 }
 
 /// The [`Wrapper`] struct is passed into each transform and contains a list of mutable references to the
@@ -515,7 +413,8 @@ impl<'a> Wrapper<'a> {
 /// but make sure to copy the value from the TransformBuilder to ensure all instances are referring to the same value.
 ///
 /// Once you have created your [`Transform`], you will need to create
-/// new enum variants in [Transforms], [TransformBuilder] and [TransformsConfig] to make them configurable in Shotover.
+/// new enum variants in [Transforms].
+/// And implement the [TransformBuilder] and [TransformConfig] traits to make them configurable in Shotover.
 /// Shotover uses a concept called enum dispatch to provide dynamic configuration of transform chains
 /// with minimal impact on performance.
 ///

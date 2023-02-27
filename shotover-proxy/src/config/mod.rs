@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
+pub mod chain;
 pub mod topology;
 
 #[derive(Deserialize, Debug, Clone)]

@@ -1,9 +1,8 @@
+use crate::config::chain::TransformChainConfig;
 use crate::error::ChainResponse;
 use crate::message::Messages;
 use crate::transforms::chain::{TransformChain, TransformChainBuilder};
-use crate::transforms::{
-    build_chain_from_config, Transform, TransformBuilder, Transforms, TransformsConfig, Wrapper,
-};
+use crate::transforms::{Transform, TransformBuilder, TransformConfig, Transforms, Wrapper};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
@@ -69,13 +68,15 @@ where
 #[derive(Deserialize, Debug)]
 pub struct ParallelMapConfig {
     pub parallelism: u32,
-    pub chain: Vec<TransformsConfig>,
+    pub chain: TransformChainConfig,
     pub ordered_results: bool,
 }
 
-impl ParallelMapConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
-        let chain = build_chain_from_config("parallel_map_chain".into(), &self.chain).await?;
+#[typetag::deserialize(name = "ParallelMap")]
+#[async_trait(?Send)]
+impl TransformConfig for ParallelMapConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
+        let chain = self.chain.get_builder("parallel_map_chain".into()).await?;
 
         Ok(Box::new(ParallelMapBuilder {
             chains: std::iter::repeat(chain)

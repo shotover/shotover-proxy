@@ -1,6 +1,8 @@
 use crate::frame::{Frame, RedisFrame};
 use crate::message::{Message, Messages};
-use crate::transforms::{ChainResponse, Transform, TransformBuilder, Transforms, Wrapper};
+use crate::transforms::{
+    ChainResponse, Transform, TransformBuilder, TransformConfig, Transforms, Wrapper,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -11,8 +13,10 @@ pub struct DebugReturnerConfig {
     response: Response,
 }
 
-impl DebugReturnerConfig {
-    pub async fn get_builder(&self) -> Result<Box<dyn TransformBuilder>> {
+#[typetag::deserialize(name = "DebugReturner")]
+#[async_trait(?Send)]
+impl TransformConfig for DebugReturnerConfig {
+    async fn get_builder(&self, _chain_name: String) -> Result<Box<dyn TransformBuilder>> {
         Ok(Box::new(DebugReturner::new(self.response.clone())))
     }
 }
